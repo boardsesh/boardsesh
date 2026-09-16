@@ -8,11 +8,19 @@ const mocks = vi.hoisted(() => ({ mutationError: false, snapshotError: false, mu
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({
-  useFollowedAuthors: () => ({ data: {}, setterNames: new Set(), isError: mocks.snapshotError }),
+  useFollowedAuthors: () => ({
+    data: mocks.snapshotError ? undefined : {},
+    setterNames: new Set(),
+    isError: mocks.snapshotError,
+  }),
   useToggleAuthorFollow: () => ({ isError: mocks.mutationError, isPending: false, mutate: mocks.mutate }),
 }));
 vi.mock('../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) => <button onClick={onPress}>{title}</button>,
+  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {title}
+    </button>
+  ),
 }));
 vi.mock('../Text', () => ({ Text: ({ children }: { children: ReactNode }) => <span>{children}</span> }));
 beforeEach(() => {
@@ -27,6 +35,7 @@ describe('SetterFollowButton errors', () => {
     const screen = render(<SetterFollowButton username="accountless" />);
     expect(screen.getByText('authors.followError')).not.toBeNull();
     expect(screen.queryByText('authors.syncNeeded')).toBeNull();
+    expect((screen.getByRole('button', { name: 'authors.follow' }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'authors.follow' }));
     expect(mocks.mutate).toHaveBeenCalledWith({ kind: 'setter', identifier: 'accountless', follow: true });
   });
@@ -35,5 +44,9 @@ describe('SetterFollowButton errors', () => {
     const screen = render(<SetterFollowButton username="accountless" />);
     expect(screen.getByText('authors.syncNeeded')).not.toBeNull();
     expect(screen.queryByText('authors.followError')).toBeNull();
+    const followButton = screen.getByRole('button', { name: 'authors.follow' }) as HTMLButtonElement;
+    expect(followButton.disabled).toBe(true);
+    fireEvent.click(followButton);
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 });
