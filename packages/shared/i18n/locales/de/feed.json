@@ -4,9 +4,6 @@
   },
   "mobile": {
     "home": {
-      "betaTitle": "Frische Beta",
-      "betaEmpty": "Noch keine Beta-Videos",
-      "betaError": "Beta-Videos ließen sich nicht laden.",
       "betaOpenError": "Dieses Beta-Video ließ sich nicht öffnen.",
       "betaCardLabel": "Beta-Video öffnen",
       "feedTitle": "Aus deiner Crew",
@@ -15,9 +12,7 @@
       "searchAction": "Kletterer*innen finden",
       "emptyTitle": "Noch keine Sessions",
       "emptyBody": "Folg ein paar Kletterer*innen, dann füllt sich das hier mit Sessions und Begehungen.",
-      "unknownClimb": "Unbekannter Boulder",
       "sessionsTitle": "Letzte Sessions",
-      "betaTitleBoard": "Frische Beta auf diesem Board",
       "boardEmptyTitle": "Auf {{board}} ist gerade Ruhe",
       "boardEmptyBody": "Trag als Erste*r eine Session ein oder schau, was alle anderen klettern.",
       "boardEmptyCta": "Alle ansehen",
@@ -26,6 +21,75 @@
         "everyone": "Alle",
         "findGym": "Halle in deiner Nähe finden",
         "hint": "Legt fest, wessen Boulder du siehst"
+      }
+    },
+    "liveSessions": {
+      "title": "Gerade am Klettern",
+      "liveCount_one": "{{count}} live",
+      "liveCount_other": "{{count}} live",
+      "live": "Live",
+      "names": {
+        "two": "{{first}} und {{second}}",
+        "you": "Du",
+        "youAnd": "Du und {{name}}",
+        "justYou": "Bisher nur du",
+        "someone": "Jemand"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "Board, dem du folgst",
+      "onClimb": "An {{climb}}",
+      "onClimbGrade": "An {{climb}} · {{grade}}",
+      "sends_one": "{{count}} Begehung",
+      "sends_other": "{{count}} Begehungen",
+      "elapsed": {
+        "minutes": "{{minutes}} Min.",
+        "hours": "{{hours}} Std.",
+        "hoursMinutes": "{{hours}} Std. {{minutes}} Min."
+      },
+      "actions": {
+        "join": "Beitreten",
+        "open": "Öffnen",
+        "invite": "Einladen"
+      },
+      "start": {
+        "title": "Starte eine Session",
+        "body": "Wer dir folgt, sieht sie hier und kann beitreten.",
+        "cta": "Session starten",
+        "bleTitle": "Du bist an {{board}}",
+        "bleBody": "Starte eine Session, damit deine Crew beitreten kann."
+      },
+      "find": {
+        "title": "Hol deine Crew dazu",
+        "body": "Folg Kletterer*innen und ihre Live-Sessions landen hier.",
+        "cta": "Kletterer*innen finden"
+      },
+      "error": "Konnte nicht laden, wer gerade klettert.",
+      "offline": "Kein Netz. Sessions tauchen wieder auf, sobald du online bist.",
+      "board": {
+        "header": "Gerade hier am Klettern",
+        "more_one": "{{count}} weitere",
+        "more_other": "{{count}} weitere",
+        "emptyTitle": "Hier läuft gerade keine Session.",
+        "emptyBody": "Starte eine, dann kann jede*r an dieser Wand beitreten.",
+        "emptyBodyLitBy": "{{name}} ist an der Wand. Starte eine Session, dann kann {{name}} deiner Warteschlange beitreten.",
+        "emptyCta": "Hier eine Session starten"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} und {{count}} weitere Person",
+        "namesOthers_other": "{{name}} und {{count}} weitere Personen",
+        "youOthers_one": "Du und {{count}} weitere Person",
+        "youOthers_other": "Du und {{count}} weitere Personen",
+        "liveOn": "live an {{board}}",
+        "liveNow": "gerade live",
+        "boardAngle": "{{board}} bei {{angle}} Grad",
+        "started": "vor {{elapsed}} gestartet",
+        "minutes_one": "{{count}} Minute",
+        "minutes_other": "{{count}} Minuten",
+        "hours_one": "{{count}} Stunde",
+        "hours_other": "{{count}} Stunden",
+        "hardest": "schwerste Begehung {{grade}}",
+        "hint": "Öffnet die Session",
+        "invite": "Kletterer*innen zu deiner Session einladen"
       }
     }
   },

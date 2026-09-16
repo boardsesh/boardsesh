@@ -4,9 +4,6 @@
   },
   "mobile": {
     "home": {
-      "betaTitle": "Beta reciente",
-      "betaEmpty": "Aún no hay vídeos de beta",
-      "betaError": "No se pudieron cargar los vídeos de beta.",
       "betaOpenError": "No se pudo abrir ese vídeo de beta.",
       "betaCardLabel": "Abrir vídeo de beta",
       "feedTitle": "De tu crew",
@@ -15,9 +12,7 @@
       "searchAction": "Buscar escaladores",
       "emptyTitle": "Aún no hay actividad",
       "emptyBody": "Sigue a escaladores y equipadores para llenar esto.",
-      "unknownClimb": "Bloque desconocido",
       "sessionsTitle": "Sesiones recientes",
-      "betaTitleBoard": "Beta reciente en este plafón",
       "boardEmptyTitle": "Tranquilo en {{board}} ahora mismo",
       "boardEmptyBody": "Sé el primero en registrar una sesión, o mira qué está escalando el resto.",
       "boardEmptyCta": "Ver a todos",
@@ -26,6 +21,75 @@
         "everyone": "Todos",
         "findGym": "Busca un rocódromo cerca",
         "hint": "Cambia de quién ves las vías"
+      }
+    },
+    "liveSessions": {
+      "title": "Escalando ahora",
+      "liveCount_one": "{{count}} en directo",
+      "liveCount_other": "{{count}} en directo",
+      "live": "En directo",
+      "names": {
+        "two": "{{first}} y {{second}}",
+        "you": "Tú",
+        "youAnd": "Tú y {{name}}",
+        "justYou": "De momento solo tú",
+        "someone": "Alguien"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "Plafón que sigues",
+      "onClimb": "En {{climb}}",
+      "onClimbGrade": "En {{climb}} · {{grade}}",
+      "sends_one": "{{count}} encadene",
+      "sends_other": "{{count}} encadenes",
+      "elapsed": {
+        "minutes": "{{minutes}} min",
+        "hours": "{{hours}} h",
+        "hoursMinutes": "{{hours}} h {{minutes}} min"
+      },
+      "actions": {
+        "join": "Unirse",
+        "open": "Abrir",
+        "invite": "Invitar"
+      },
+      "start": {
+        "title": "Empieza una sesión",
+        "body": "Quien te sigue puede verla aquí y unirse.",
+        "cta": "Empezar sesión",
+        "bleTitle": "Estás en {{board}}",
+        "bleBody": "Empieza una sesión para que tu crew pueda unirse."
+      },
+      "find": {
+        "title": "Trae a tu crew",
+        "body": "Sigue a escaladores y sus sesiones en directo aparecerán aquí.",
+        "cta": "Buscar escaladores"
+      },
+      "error": "No se pudo cargar quién está escalando.",
+      "offline": "Sin conexión. Las sesiones vuelven a aparecer cuando recuperes la conexión.",
+      "board": {
+        "header": "Escalando aquí ahora",
+        "more_one": "{{count}} más",
+        "more_other": "{{count}} más",
+        "emptyTitle": "Nadie está en una sesión aquí.",
+        "emptyBody": "Empieza una y cualquiera en este muro podrá unirse.",
+        "emptyBodyLitBy": "{{name}} está en el muro. Empieza una sesión y {{name}} podrá unirse a tu cola.",
+        "emptyCta": "Empezar una sesión aquí"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} y {{count}} más",
+        "namesOthers_other": "{{name}} y {{count}} más",
+        "youOthers_one": "Tú y {{count}} más",
+        "youOthers_other": "Tú y {{count}} más",
+        "liveOn": "en directo en {{board}}",
+        "liveNow": "en directo",
+        "boardAngle": "{{board}} a {{angle}} grados",
+        "started": "empezó hace {{elapsed}}",
+        "minutes_one": "{{count}} minuto",
+        "minutes_other": "{{count}} minutos",
+        "hours_one": "{{count}} hora",
+        "hours_other": "{{count}} horas",
+        "hardest": "grado máximo {{grade}}",
+        "hint": "Abre la sesión",
+        "invite": "Invitar escaladores a tu sesión"
       }
     }
   },
