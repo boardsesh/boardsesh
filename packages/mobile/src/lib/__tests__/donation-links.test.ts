@@ -118,6 +118,22 @@ describe('useDonationLinksAllowed', () => {
     expect(getCountryCode).toHaveBeenCalledTimes(1);
   });
 
+  it('does not flash back to the fallback when the screen is reopened', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    const { useDonationLinksAllowed } = await loadDonationLinks();
+    const first = renderHook(() => useDonationLinksAllowed());
+    await waitFor(() => expect(first.result.current).toBe(true));
+    first.unmount();
+
+    // Leaving and reopening Acknowledgements must not start on the fallback and
+    // flip a frame later — the resolved storefront seeds the state directly.
+    const second = renderHook(() => useDonationLinksAllowed());
+    expect(second.result.current).toBe(true);
+  });
+
   it('hides links on Expo web, where there is no storefront to read', async () => {
     platformMock.OS = 'web';
     flagsMock['donation-links'] = true;

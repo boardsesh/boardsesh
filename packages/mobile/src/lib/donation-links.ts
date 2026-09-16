@@ -52,6 +52,10 @@ export const SUPPORT_URL = 'https://www.boardsesh.com/support';
 export const SUPPORT_URL_DISPLAY = 'boardsesh.com/support';
 
 let storefrontCountryPromise: Promise<string | null> | null = null;
+// The resolved answer, kept beside the promise so a remount can read it
+// synchronously. Without it, leaving Acknowledgements and coming back would
+// start every visit on the fallback text and flip to the button a frame later.
+let resolvedStorefrontCountry: string | null = null;
 
 /**
  * The App Store storefront country, resolved once per app run.
@@ -63,7 +67,13 @@ let storefrontCountryPromise: Promise<string | null> | null = null;
  */
 export function readStorefrontCountry(): Promise<string | null> {
   if (!storefrontNative) return Promise.resolve(null);
-  storefrontCountryPromise ??= storefrontNative.getCountryCode().catch(() => null);
+  storefrontCountryPromise ??= storefrontNative
+    .getCountryCode()
+    .catch(() => null)
+    .then((country) => {
+      resolvedStorefrontCountry = country;
+      return country;
+    });
   return storefrontCountryPromise;
 }
 
@@ -76,9 +86,11 @@ export function readStorefrontCountry(): Promise<string | null> {
  */
 export function useDonationLinksAllowed(): boolean {
   const flagEnabled = useFeatureFlag('donation-links') === true;
-  // Starts null — "not read yet" and "not the US" are both "not allowed", so the
-  // first frame needs no special case.
-  const [storefrontCountry, setStorefrontCountry] = useState<string | null>(null);
+  // Seeded from the module-level answer, which is null until the first read
+  // lands. So the very first mount of the app starts on the fallback and every
+  // later one starts on the truth — and "not read yet" and "not the US" are the
+  // same answer anyway, so neither needs a special case.
+  const [storefrontCountry, setStorefrontCountry] = useState<string | null>(resolvedStorefrontCountry);
 
   useEffect(() => {
     if (!flagEnabled || Platform.OS !== 'ios') return;
