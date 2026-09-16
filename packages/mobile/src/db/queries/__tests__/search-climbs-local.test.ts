@@ -691,15 +691,11 @@ describe('isOfflineSearchSupported', () => {
     expect(isOfflineSearchSupported(makeInput({ holdsFilter: { hold_5: { STARTING: 'include' } } }))).toBe(false);
   });
 
-  // `missing_hold_count` is not on the device until SW-15 (#5448). Answering
-  // INTACT/BROKEN from a column we do not have would call every climb on a
-  // freshly reset wall intact — the one answer the filter exists to contradict.
-  // ANY carries no predicate on either side, so it stays local.
-  it('declines a hold-integrity search, but still serves ANY', () => {
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'INTACT' }))).toBe(false);
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'BROKEN' }))).toBe(false);
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'ANY' }))).toBe(true);
-  });
+  // The SW-12 decline is gone: SW-15 (#5448) puts `missing_hold_count` on the
+  // device at migration v7, so INTACT/BROKEN are answered rather than refused.
+  // The three cases live in the "spray-wall hold integrity" block below, against
+  // real rows — including the NULL rule, which is the half a support flag cannot
+  // express.
 
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
