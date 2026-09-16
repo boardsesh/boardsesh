@@ -27,6 +27,7 @@ import {
   recomputeMissingHoldCounts,
 } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
