@@ -491,41 +491,64 @@ async function viewerMayUseBoardArm(
 // Candidates
 // ---------------------------------------------------------------------------
 
+/**
+ * `and()` / `or()` over conditions where at least one is always present.
+ * Drizzle types both as possibly `undefined` (they drop undefined arguments and
+ * return undefined when nothing is left); with a required first condition that
+ * cannot happen, and the `??` keeps the type honest without a cast.
+ */
+function allOf(required: SQL, ...optional: Array<SQL | undefined>): SQL {
+  return and(required, ...optional) ?? required;
+}
+
+function anyOf(required: SQL, ...optional: Array<SQL | undefined>): SQL {
+  return or(required, ...optional) ?? required;
+}
+
 function candidateBase(now: Date): SQL {
-  return and(
+  return allOf(
     eq(boardSessions.origin, 'explicit'),
     eq(boardSessions.status, 'active'),
     isNull(boardSessions.endedAt),
     gt(boardSessions.lastActivity, windowStart(now)),
-  ) as SQL;
+  );
 }
 
 function windowStart(now: Date): Date {
   return new Date(now.getTime() - LIVE_SESSION_CANDIDATE_WINDOW_MS);
 }
 
-function participantRowExists(userCondition: SQL): SQL {
+/**
+ * A `board_session_participants` row for the candidate session, written inside
+ * the candidate window. Participant rows are permanent — nothing removes one
+ * when its climber leaves — so an unbounded match would let long-gone visits
+ * fill the 50-row cap. Only a row written inside the window can still be a
+ * live roster seat worth a candidate slot; the live roster confirms it later.
+ */
+function recentParticipantRowExists(userCondition: SQL, now: Date): SQL {
   const participants = dbSchema.boardSessionParticipants;
   return exists(
     db
       .select({ one: sql`1` })
       .from(participants)
-      .where(and(eq(participants.sessionId, boardSessions.id), userCondition)),
+      .where(
+        allOf(eq(participants.sessionId, boardSessions.id), gt(participants.joinedAt, windowStart(now)), userCondition),
+      ),
   );
 }
 
 /**
  * The SQL half of the visibility rule. A private session only passes when the
- * viewer created it or has a participant row; the live roster confirms the
- * latter afterwards.
+ * viewer created it or joined it inside the candidate window; the live roster
+ * confirms the latter afterwards.
  */
-function visibilityPrefilter(viewerId: string | null): SQL {
+function visibilityPrefilter(viewerId: string | null, now: Date): SQL {
   if (!viewerId) return eq(boardSessions.isPublic, true);
-  return or(
+  return anyOf(
     eq(boardSessions.isPublic, true),
     eq(boardSessions.createdByUserId, viewerId),
-    participantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId)),
-  ) as SQL;
+    recentParticipantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId), now),
+  );
 }
 
 /**
@@ -1013,26 +1036,21 @@ export async function findFollowedLiveSessions(
       .from(dbSchema.userFollows)
       .where(eq(dbSchema.userFollows.followerId, viewerId));
   const participants = dbSchema.boardSessionParticipants;
-  const socialArm = or(
+  const socialArm = anyOf(
     eq(boardSessions.createdByUserId, viewerId),
     inArray(boardSessions.createdByUserId, followedUserIds()),
-    participantRowExists(
-      or(
-        eq(participants.userId, viewerId),
-        // Participant rows are permanent, so an unbounded match would let
-        // followed climbers' long-gone visits fill the 50-row cap. Only a row
-        // written inside the candidate window can still be a live roster seat.
-        and(inArray(participants.userId, followedUserIds()), gt(participants.joinedAt, windowStart(now))),
-      ) as SQL,
+    recentParticipantRowExists(
+      anyOf(eq(participants.userId, viewerId), inArray(participants.userId, followedUserIds())),
+      now,
     ),
   );
 
   const candidates = await loadCandidates(
-    and(
+    allOf(
       candidateBase(now),
-      visibilityPrefilter(viewerId),
-      or(socialArm, boardArmPrefilter([...armBoards.values()], redisBoundSessionIds)),
-    ) as SQL,
+      visibilityPrefilter(viewerId, now),
+      anyOf(socialArm, boardArmPrefilter([...armBoards.values()], redisBoundSessionIds)),
+    ),
   );
 
   const followedBoardIds = new Set(followedBoards.map((board) => board.id));
@@ -1077,7 +1095,7 @@ export async function findBoardLiveSessions(boardId: number, viewerId: string | 
 
   const redisBoundSessionIds = await readBoardBoundSessionIds([board.id]);
   const candidates = await loadCandidates(
-    and(candidateBase(now), visibilityPrefilter(viewerId), boardArmPrefilter([board], redisBoundSessionIds)) as SQL,
+    allOf(candidateBase(now), visibilityPrefilter(viewerId, now), boardArmPrefilter([board], redisBoundSessionIds)),
   );
 
   return buildLiveSessions({

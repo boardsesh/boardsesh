@@ -713,9 +713,9 @@ Two queries list sessions happening right now: Home's "Climbing now" rail (`foll
 
 **Candidates.** One Drizzle query: `origin = 'explicit'`, `status = 'active'`, `endedAt IS NULL`, `lastActivity` within 4 hours, newest 50. The arm filters go into the same `WHERE`, so 50 unrelated sessions can never push a relevant one past the cap:
 
-- social arm (Home only): the viewer or someone they follow created the session, or has a `board_session_participants` row in it. A followed climber's row only counts when its `joined_at` falls inside the same 4-hour window. Participant rows are never deleted, so without that limit sessions they left long ago could fill the 50-row cap;
+- social arm (Home only): the viewer or someone they follow created the session, or has a `board_session_participants` row in it. A row only counts when its `joined_at` falls inside the same 4-hour window. Participant rows are never deleted, so without that limit sessions they left long ago could fill the 50-row cap;
 - board arm: the session points at a followed board, the `boardUuid` board, or `boardId` through any source in the resolution order below. A followed or selected spray wall only counts while the viewer can still read it, so a wall that goes private or is hidden by an admin stops listing sessions for anyone but its owner;
-- visibility: `isPublic`, or the viewer created it or has a participant row. Anonymous callers get `isPublic` only.
+- visibility: `isPublic`, or the viewer created it or has a participant row written inside the window. Anonymous callers get `isPublic` only.
 
 **Liveness.** `roomManager.getSessionConnectionLiveness` (`room-manager/session-liveness.ts`, whose signals `findNearbySessions` reads too) reads live connection counts and Redis key existence for every candidate, without touching a roster. A session stays when it has at least 1 live connection, or when `lastActivity` is under 20 minutes old and its Redis session key still exists. `nearbySessions` applies no 20-minute limit. Rosters (`getSessionUsers`) are read only for the sessions that pass this check, and on the board sheet only for sessions on that board. `participantCount` is the roster length.
 

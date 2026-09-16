@@ -23,8 +23,7 @@ export const liveSessionQueries = {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 60, 'followedLiveSessions');
     const validated = validateInput(FollowedLiveSessionsArgsSchema, args, 'followedLiveSessions arguments');
-    const viewerId = ctx.userId;
-    if (!viewerId) throw new Error('Authentication required to perform this operation');
+    const viewerId = ctx.userId!;
 
     const limit = Math.min(
       Math.max(validated.limit ?? FOLLOWED_LIVE_SESSIONS_DEFAULT_LIMIT, 1),

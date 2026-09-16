@@ -717,6 +717,35 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(ids(await followedLiveSessions(VIEWER))).toEqual([friendSession]);
   });
 
+  it('keeps the viewer’s old private memberships from crowding the candidate cap', async () => {
+    await follow(VIEWER, FRIEND);
+    // Private sessions the viewer joined five hours ago, all newer than the
+    // friend's public session: the visibility arm must not give them slots.
+    const crowdIds = Array.from({ length: 55 }, () => uuidv4());
+    await db.insert(dbSchema.boardSessions).values(
+      crowdIds.map((id) => ({
+        id,
+        boardPath: KILTER_PATH,
+        createdByUserId: STRANGER,
+        isPublic: false,
+        lastActivity: new Date(),
+        startedAt: new Date(),
+      })),
+    );
+    await db.insert(dbSchema.boardSessionParticipants).values(
+      crowdIds.map((sessionId) => ({
+        sessionId,
+        userId: VIEWER,
+        joinedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      })),
+    );
+
+    const friendSession = await makeSession({ createdBy: FRIEND, lastActivity: new Date(Date.now() - 10 * 60 * 1000) });
+    await goLive(friendSession, FRIEND);
+
+    expect(ids(await followedLiveSessions(VIEWER))).toEqual([friendSession]);
+  });
+
   it('names the hardest send with the board’s own grade, from the consensus grade when the tick has none', async () => {
     await follow(VIEWER, FRIEND);
     const consensusClimb = `ls-climb-${uuidv4()}`;
@@ -908,6 +937,24 @@ describe('session privacy switch', () => {
 
     await goLive(result.id, VIEWER, result.boardPath);
     expect(await readIsPublic(result.id)).toBe(false);
+  });
+
+  it('HTTP createSession fails outright when the private pre-insert fails, so no join can create it public', async () => {
+    // A creator id with no users row makes the insert hit the created_by_user_id
+    // foreign key: a real database failure, not a mock.
+    const ghostCtx = authCtx(`${USER_PREFIX}ghost`);
+    const sessionsBefore = await db.select({ id: dbSchema.boardSessions.id }).from(dbSchema.boardSessions);
+
+    await expect(
+      sessionMutations.createSession(
+        undefined,
+        { input: createInput({ isPublic: false, name: 'Ghost sesh' }) },
+        ghostCtx,
+      ),
+    ).rejects.toThrow();
+
+    const sessionsAfter = await db.select({ id: dbSchema.boardSessions.id }).from(dbSchema.boardSessions);
+    expect(sessionsAfter).toHaveLength(sessionsBefore.length);
   });
 
   it('HTTP createSession defaults to public and still leaves the row to the WebSocket join', async () => {
