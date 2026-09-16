@@ -372,6 +372,66 @@ so a ring an editor redraws is decimated by exactly the algorithm that produced 
 beside it. `scripts/generate-board-art-geometry.ts` still holds its own copy and switches to
 importing this one; until it does, a change to either has to be made to both.
 
+## Runtime geometry
+
+Everything above assumes a board whose art existed when the tables were generated.
+A **spray wall** does not: it is a photograph its owner took, its holds arrive from
+`sprayWallRenderData`, and its catalogue layout is created at runtime
+(`docs/spray-walls.md`). There is no shard for it and there never can be.
+
+So the loader takes a second source, consulted **before** the shards:
+
+```ts
+import {
+  registerRuntimeGeometry,
+  unregisterRuntimeGeometry,
+  getRuntimeGeometry,
+  boardArtGeometryKey,
+} from '@boardsesh/board-art-geometry';
+
+registerRuntimeGeometry(boardArtGeometryKey({ boardName: 'spray', layoutId, sizeId: layoutId }), {
+  outlines, // placementId -> flat ring in radius units, exactly as a shard stores it
+  silhouetteLightness: {},
+  ledBright: {},
+});
+```
+
+| Function | What it does |
+| --- | --- |
+| `registerRuntimeGeometry(key, geometry)` | Publishes geometry under a shard key, **replacing** whatever was there. |
+| `unregisterRuntimeGeometry(key)` | Withdraws it, so the key falls back to the shards (for a wall: to nothing). |
+| `getRuntimeGeometry(key)` | What is registered right now, or `null`. |
+
+**Who registers.** Only `packages/mobile/src/lib/spray/spray-wall-registry.ts`, from
+`registerSprayWall`. It maps the wall's canonical holds through the version's inverse
+homography into photo pixels first, so what lands here is in the same radius units,
+relative to the same centres, as any shard.
+
+Four things about the ordering are load-bearing.
+
+- **Runtime beats the shard cache, including a memoised `null`.** `loadBoardArtGeometry`
+  caches "absent from the catalogue" forever, which is true of a shard and false of a
+  wall — a surface that asked before the query landed would otherwise get rings for the
+  rest of the session.
+- **Registering replaces rather than merges.** A wall reset is a new hold generation, and
+  a hold that came off must disappear rather than linger because it was registered once.
+- **It cannot reach a shipped shard.** Registration is the caller's explicit act under a
+  key it chose; nothing merges into a catalogue board's table, and `unregisterRuntimeGeometry`
+  restores the catalogue answer.
+- **`boardArtGeometryPending` is false for a registered key.** The geometry is already in
+  hand, so nothing is in flight, and a consumer that skips its memo while a chunk downloads
+  does not skip it here.
+
+`clearBoardArtGeometryCache()` drops runtime registrations along with the shards. That is
+a test-only reset; production withdraws a wall by name.
+
+Consumers need no branch at all. `spray/<layoutId>-<sizeId>` is exactly what
+`boardArtGeometryKey` produces for a wall (whose size id *is* its layout id), so
+`use-native-climb-render.ts` and the backend's `board-geometry.ts` read a wall's true hold
+shapes through the `loadBoardArtGeometry` call they already make. Aura draws the
+silhouettes, classic draws rings, and a hold with no stored outline falls back to a ring
+like any untraced placement.
+
 ## Hand-corrected outlines (`hold_outline_overrides`)
 
 The tracer gets most holds right; the ones it does not are fixed as database rows rather

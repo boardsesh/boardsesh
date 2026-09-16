@@ -63,7 +63,7 @@ function registerWall(version: number) {
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
     photoThumbUrl: null,
-    photoExpiresAt: '2026-09-15T12:15:00.000Z',
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds: [{ id: 7, cx: 100, cy: 200, r: 18 }],
   });
 }
@@ -131,6 +131,14 @@ describe('useNativeClimbRender reacts to the spray registry', () => {
   });
 
   it('does not re-render a catalogue board when a wall is registered', async () => {
+    // A negative assertion needs a positive oracle, not a sleep: a fixed delay
+    // either flakes under load or passes vacuously because the work it was meant
+    // to wait for had not started yet. So a SPRAY hook is mounted alongside the
+    // kilter one, and its reaction is what proves the registration has been fully
+    // processed — only then does the kilter count mean anything.
+    getBoardRenderDataMock.mockImplementation(renderDataFromRegistry);
+    const spray = renderHook(() => useNativeClimbRender(SPRAY_BOARD));
+
     getBoardRenderDataMock.mockImplementation(() => ({
       boardWidth: 1080,
       boardHeight: 1920,
@@ -145,8 +153,8 @@ describe('useNativeClimbRender reacts to the spray registry', () => {
     // `sprayCacheToken` is `''` for a catalogue board, so its snapshot does not
     // move and the subscription costs it nothing.
     registerWall(1);
-    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(ensureBackgroundsCachedMock.mock.calls.length).toBe(callsBefore);
+    await waitFor(() => expect(spray.result.current.backgroundPaths).toEqual(['file:///photo.jpg']));
+    expect(ensureBackgroundsCachedMock.mock.calls.length).toBe(callsBefore + 1);
   });
 });

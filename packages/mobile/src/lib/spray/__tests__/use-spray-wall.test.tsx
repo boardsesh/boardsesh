@@ -33,7 +33,7 @@ function wallPayload(version: number) {
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
     photoThumbUrl: null,
-    photoExpiresAt: '2026-09-15T12:15:00.000Z',
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds: HOLDS,
   };
 }
@@ -99,10 +99,14 @@ describe('useSprayWall', () => {
     setSprayWallLoader(loader);
 
     const { result } = renderHook(() => useSprayWall(null));
-
     expect(result.current.loadState).toBe('idle');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(loader).not.toHaveBeenCalled();
+
+    // The oracle, not a sleep: a hook WITH a layout id must reach the loader, and
+    // once it has, a null one that was going to ask would have.
+    renderHook(() => useSprayWall(LAYOUT_ID));
+    await waitFor(() => expect(loader).toHaveBeenCalledWith(LAYOUT_ID));
+
+    expect(loader).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a registered wall when it unmounts, so other surfaces keep drawing', async () => {

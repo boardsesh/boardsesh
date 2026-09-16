@@ -37,7 +37,7 @@ function registerWall(version: number, holds: SprayPhotoHold[] = HOLDS) {
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
     photoThumbUrl: null,
-    photoExpiresAt: '2026-09-15T12:15:00.000Z',
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds,
   });
 }
@@ -99,7 +99,7 @@ describe('getBoardRenderData — spray branch', () => {
       photoHeight: 0,
       photoUrl: 'https://private.example/photo',
       photoThumbUrl: null,
-      photoExpiresAt: '2026-09-15T12:15:00.000Z',
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
       holds: HOLDS,
     });
     expect(getBoardRenderData(SPRAY_CONFIG)).toBeNull();

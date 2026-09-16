@@ -16,7 +16,7 @@ function wallPayload(version: number) {
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
     photoThumbUrl: null,
-    photoExpiresAt: '2026-09-15T12:15:00.000Z',
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
     holds: HOLDS,
   };
 }
@@ -77,11 +77,14 @@ describe('useSprayWallToken', () => {
     setSprayWallLoader(loader);
 
     const { result } = renderHook(() => useSprayWallToken('kilter', 1));
-
     expect(result.current).toBe('');
-    // A catalogue row must not be able to start a spray fetch.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(loader).not.toHaveBeenCalled();
+
+    // The oracle, not a sleep: a spray row mounted right after must reach the
+    // loader, and once it has, a kilter row that was going to ask would have.
+    renderHook(() => useSprayWallToken('spray', LAYOUT_ID));
+    await waitFor(() => expect(loader).toHaveBeenCalledWith(LAYOUT_ID));
+
+    expect(loader).toHaveBeenCalledTimes(1);
   });
 
   it('tolerates a board that has not resolved yet', () => {

@@ -663,7 +663,7 @@ describe('the wall version in the render cache keys', () => {
       photoHeight: 1600,
       photoUrl: 'https://private.example/photo',
       photoThumbUrl: null,
-      photoExpiresAt: '2026-09-15T12:15:00.000Z',
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
       holds: [{ id: 1, cx: 100, cy: 200, r: 18 }],
     });
   }
