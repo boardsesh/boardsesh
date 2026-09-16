@@ -161,9 +161,9 @@ export const sessionEditMutations = {
     // must not fail the edit the creator asked for.
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
       await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
-        // warn, not error: a kiosk that keeps its last snapshot until the next
-        // queue event is operational noise, not a page.
-        logger.warn('[updateSession] board-queue-preview republish failed after a visibility change', {
+        // error, not warn: after a flip to private, a failed republish leaves
+        // the session's queue on the wall kiosk until its next queue event.
+        logger.error('[updateSession] board-queue-preview republish failed after a visibility change', {
           sessionId: validated.sessionId,
           isPublic: nextIsPublic,
           error: error instanceof Error ? (error.stack ?? error.message) : String(error),
