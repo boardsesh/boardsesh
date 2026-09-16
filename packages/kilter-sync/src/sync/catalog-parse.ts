@@ -190,6 +190,46 @@ export function decodeGripsClimbConcat(
   return { ok: true, frames, holds };
 }
 
+export type UniqueDecodableLayout = {
+  layoutId: number;
+  decoded: Extract<GripsDecodeResult, { ok: true }>;
+};
+
+/**
+ * Find the one OTHER board layout whose placements decode this `climb_concat`
+ * in full, or null when none or several do.
+ *
+ * Kilter occasionally tags a climb with the wrong product layout: eight live
+ * climbs on 2026-09-15 (Holy1!, La Push, Pickled Carrots, Put em up, skullder,
+ * Campos c, power drill 2, smile it away) carry Original/Homewall the wrong way
+ * round, so every hole in the concat misses on the layout we resolved and the
+ * climb lands in the skip backlog as `unplaceable_hole` forever.
+ *
+ * "Exactly one other layout, decoding the WHOLE concat" is what makes acting on
+ * that safe. A partial match can't happen — `decodeGripsClimbConcat` fails on
+ * the first unplaceable hole — and two candidates mean the hole ids are shared
+ * between layouts, where picking one would be a guess. The source layout is
+ * never a candidate: it already failed, and returning it would loop. Pure +
+ * exported for unit testing.
+ */
+export function findUniqueDecodableLayout(
+  climbConcat: string,
+  frameCount: number,
+  sourceLayoutId: number,
+  holeToPlacementByLayout: ReadonlyMap<number, Map<number, number>>,
+): UniqueDecodableLayout | null {
+  let onlyHit: UniqueDecodableLayout | null = null;
+  for (const [layoutId, holeToPlacement] of holeToPlacementByLayout) {
+    if (layoutId === sourceLayoutId) continue;
+    const decoded = decodeGripsClimbConcat(climbConcat, holeToPlacement, frameCount);
+    if (!decoded.ok) continue;
+    // A second decodable layout makes the target a coin flip — refuse instead.
+    if (onlyHit !== null) return null;
+    onlyHit = { layoutId, decoded };
+  }
+  return onlyHit;
+}
+
 /**
  * Role code → hold-state name, mirroring `convertLitUpHoldsStringToMap` so a
  * decoded climb produces the same `board_climb_holds.hold_state` values the

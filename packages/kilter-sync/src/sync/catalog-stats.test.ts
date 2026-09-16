@@ -1,13 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  buildDeletedLowerUuidSet,
+  decideIdentityRelist,
   foldCatalogStat,
   foldCatalogStatOnce,
   shouldRelistFoldedCanonical,
   shouldSkipEmptyCatalogStat,
 } from './catalog-sync';
 import type { KilterCatalogStat } from '../api/kilter-rest';
-import type { StatAccum } from './catalog-sync';
+import type { ExistingClimbMeta, StatAccum } from './catalog-sync';
 
 const CANON = 'canon-uuid';
 const MERGED = 'merged-uuid';
@@ -390,5 +392,55 @@ describe('shouldRelistFoldedCanonical — re-list fold decision', () => {
     // A canonical inserted earlier in the same run is absent from the existing
     // meta map — it was just inserted as listed, so there is nothing to re-list.
     expect(shouldRelistFoldedCanonical(undefined)).toBe(false);
+  });
+});
+
+describe('buildDeletedLowerUuidSet — the run-wide /delteduuids set', () => {
+  it('lowercases every reported uuid', () => {
+    expect(buildDeletedLowerUuidSet(['AbC', 'DEF'])).toEqual(new Set(['abc', 'def']));
+  });
+
+  it('is null for a missing or empty list, so callers can tell "none" from "unknown"', () => {
+    expect(buildDeletedLowerUuidSet([])).toBeNull();
+    expect(buildDeletedLowerUuidSet(null)).toBeNull();
+    expect(buildDeletedLowerUuidSet(undefined)).toBeNull();
+  });
+});
+
+describe('decideIdentityRelist — re-listing a climb Kilter still lists', () => {
+  function meta(overrides: Partial<ExistingClimbMeta> = {}): ExistingClimbMeta {
+    return { isListed: false, userId: null, isDraft: false, ...overrides };
+  }
+  const otherDeletions = new Set<string>(['something-else']);
+
+  it('re-lists a synced canonical that is unlisted and not reported deleted', () => {
+    expect(decideIdentityRelist(meta(), 'climb-1', otherDeletions)).toBe('relist');
+    // is_listed can be stored as NULL (never-listed synced row) — still re-list.
+    expect(decideIdentityRelist(meta({ isListed: null }), 'climb-1', otherDeletions)).toBe('relist');
+  });
+
+  it('blocks a uuid Kilter reports deleted, matching case-insensitively', () => {
+    // Prod, 2026-09-15: /climbs/all still returned 124 climbs that the same
+    // run's deletion pass unlisted. Re-listing those would flip them back every
+    // cycle and churn offline sync.
+    const deleted = buildDeletedLowerUuidSet(['ABC123']);
+    expect(decideIdentityRelist(meta(), 'abc123', deleted)).toBe('blocked_deleted_upstream');
+    expect(decideIdentityRelist(meta(), 'AbC123', deleted)).toBe('blocked_deleted_upstream');
+  });
+
+  it('blocks every re-list when the run has no deletion list at all', () => {
+    expect(decideIdentityRelist(meta(), 'climb-1', null)).toBe('blocked_no_deletion_list');
+  });
+
+  it('never re-lists a draft or a user-authored canonical', () => {
+    expect(decideIdentityRelist(meta({ isDraft: true }), 'climb-1', otherDeletions)).toBe('not_needed');
+    expect(decideIdentityRelist(meta({ userId: 'user-1' }), 'climb-1', otherDeletions)).toBe('not_needed');
+  });
+
+  it('reports not_needed — not blocked — for a climb that needs nothing, even with no list', () => {
+    // Otherwise relistsBlockedByDeletionHistory would count every already-listed
+    // climb on a run whose deletion fetch failed, burying the real signal.
+    expect(decideIdentityRelist(meta({ isListed: true }), 'climb-1', null)).toBe('not_needed');
+    expect(decideIdentityRelist(undefined, 'climb-1', null)).toBe('not_needed');
   });
 });
