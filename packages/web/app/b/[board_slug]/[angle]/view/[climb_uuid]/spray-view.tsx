@@ -8,6 +8,7 @@ import { getClimb } from '@/app/lib/data/queries';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { fetchSprayWallPageData, resolveSprayPhotoUrl } from '@/app/lib/spray/spray-wall-render-data.server';
+import { resolveSprayWallVisibility } from '@/app/lib/spray/spray-visibility';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import type { ParsedBoardRouteParametersWithUuid } from '@/app/lib/types';
@@ -36,20 +37,6 @@ import type { ParsedBoardRouteParametersWithUuid } from '@/app/lib/types';
  * ride-along that unlocks unlisted WRITES in the app (`sprayWallUuid`, SW-14)
  * is a different capability for a different surface — this page only reads.
  */
-
-export type SprayWallVisibility = 'public' | 'unlisted' | 'private';
-
-/**
- * Public wins over unlisted when a row somehow carries both flags: the public
- * copy of the photo exists, the climbs are already announced to feeds, and
- * treating it as unlisted would withhold an OG card for a wall whose owner has
- * asked for the opposite.
- */
-export function resolveSprayWallVisibility(board: Pick<ResolvedBoard, 'isPublic' | 'isUnlisted'>): SprayWallVisibility {
-  if (board.isPublic) return 'public';
-  if (board.isUnlisted) return 'unlisted';
-  return 'private';
-}
 
 type SprayViewMetadataArgs = {
   board: ResolvedBoard;

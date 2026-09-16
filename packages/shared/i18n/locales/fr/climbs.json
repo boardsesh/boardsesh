@@ -852,6 +852,15 @@
     "metadata": {
       "title": "{{climbName}} {{grade}} sur {{wallName}} | Mur de pan",
       "description": "{{climbName}}, {{grade}}, sur le mur de pan {{wallName}} à {{angle}}°, ouvert par {{setter}}. Vois les prises sur la photo du mur."
+    },
+    "wall": {
+      "summary": "Un mur de pan à {{angle}}° avec {{holdCount}} prises.",
+      "photoAlt": "Le mur de pan {{wallName}}",
+      "openInApp": "Ouvre ce mur dans l’app Boardsesh pour voir ses blocs, ouvrir les tiens et enregistrer tes croix.",
+      "metadata": {
+        "title": "{{wallName}} | Mur de pan",
+        "description": "{{wallName}}, un mur de pan à {{angle}}°. Vois le mur et ouvre-le dans l’app Boardsesh."
+      }
     }
   }
 }

@@ -852,6 +852,15 @@
     "metadata": {
       "title": "{{climbName}} {{grade}} en {{wallName}} | Plafón de spray",
       "description": "{{climbName}}, {{grade}}, en el plafón de spray {{wallName}} a {{angle}}°, equipado por {{setter}}. Mira las presas sobre la foto del plafón."
+    },
+    "wall": {
+      "summary": "Un plafón de spray a {{angle}}° con {{holdCount}} presas.",
+      "photoAlt": "El plafón de spray {{wallName}}",
+      "openInApp": "Abre este plafón en la app de Boardsesh para ver sus bloques, equipar los tuyos y registrar tus ascensiones.",
+      "metadata": {
+        "title": "{{wallName}} | Plafón de spray",
+        "description": "{{wallName}}, un plafón de spray a {{angle}}°. Mira el plafón y ábrelo en la app de Boardsesh."
+      }
     }
   }
 }
