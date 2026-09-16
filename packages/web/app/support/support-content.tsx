@@ -39,7 +39,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
             <Stack spacing={3} className={styles.cardContent}>
               <div className={styles.heroSection}>
                 <Logo size="lg" linkToHome={false} />
-                <Typography variant="h2" className={styles.heroTitle}>
+                <Typography variant="h2" component="h1" className={styles.heroTitle}>
                   {t('support.hero.title')}
                 </Typography>
                 <Typography variant="body2" component="span" color="text.secondary" className={styles.heroSubtitle}>
@@ -48,7 +48,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               </div>
 
               <section>
-                <Typography variant="h3">
+                <Typography variant="h3" component="h2">
                   <FavoriteBorderOutlined className={`${styles.sectionIcon} ${styles.primaryIcon}`} />
                   {t('support.why.title')}
                 </Typography>
@@ -61,10 +61,12 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               </section>
 
               <section>
-                <Typography variant="h3">{t('support.rails.title')}</Typography>
+                <Typography variant="h3" component="h2">
+                  {t('support.rails.title')}
+                </Typography>
                 <Box className={styles.rails}>
                   <Box className={styles.rail}>
-                    <Typography variant="h4" component="h4" className={styles.railTitle}>
+                    <Typography variant="h4" component="h3" className={styles.railTitle}>
                       <GitHub className={styles.sectionIcon} />
                       {t('support.sponsors.title')}
                     </Typography>
@@ -80,7 +82,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
 
                   {stripeDonateUrl ? (
                     <Box className={styles.rail} data-testid="support-one-time-rail">
-                      <Typography variant="h4" component="h4" className={styles.railTitle}>
+                      <Typography variant="h4" component="h3" className={styles.railTitle}>
                         <CreditCardOutlined className={`${styles.sectionIcon} ${styles.successIcon}`} />
                         {t('support.oneTime.title')}
                       </Typography>
@@ -98,7 +100,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               </section>
 
               <section>
-                <Typography variant="h3">
+                <Typography variant="h3" component="h2">
                   <InfoOutlined className={`${styles.sectionIcon} ${styles.warningIcon}`} />
                   {t('support.honesty.title')}
                 </Typography>
@@ -111,7 +113,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               </section>
 
               <section>
-                <Typography variant="h3">
+                <Typography variant="h3" component="h2">
                   <GroupOutlined className={`${styles.sectionIcon} ${styles.successIcon}`} />
                   {t('support.thanks.title')}
                 </Typography>

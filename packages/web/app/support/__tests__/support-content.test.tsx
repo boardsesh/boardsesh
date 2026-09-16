@@ -72,6 +72,16 @@ describe('SupportContent', () => {
     expect(screen.getByText(tFromCatalog('marketing', 'support.honesty.p1'))).toBeTruthy();
   });
 
+  // The page is indexable, so it owes a crawler exactly one h1 carrying the
+  // thing people search for. `/about` renders its hero as an h2 and has none.
+  it('gives the hero the only h1 on the page', () => {
+    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
+
+    const headings = Array.from(container.querySelectorAll('h1'));
+    expect(headings).toHaveLength(1);
+    expect(headings[0]?.textContent).toBe(tFromCatalog('marketing', 'support.hero.title'));
+  });
+
   it('links onward to /about for the internal-link rule', () => {
     const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
 
