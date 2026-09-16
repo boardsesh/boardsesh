@@ -737,7 +737,7 @@
       "nothingToMove": "Pick a hold first, then drag it.",
       "pickOneToRedraw": "Pick one hold, then draw its edge.",
       "mergeNeedsTwo": "Pick two holds to merge them.",
-      "tooManyHolds": "That is more holds than a wall can carry. Drop a few and save again.",
+      "tooManyHolds": "A wall carries up to {{max}} holds. Drop a few and save again.",
       "saveFailed": "Saving the wall failed.",
       "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
       "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
@@ -794,9 +794,9 @@
       "clear": "Start the corners again"
     },
     "upload": {
-      "title": "Sending your photo",
-      "working": "Sending your photo…",
-      "percent": "Sent {{percent}}%",
+      "title": "Uploading your photo",
+      "working": "Uploading your photo…",
+      "percent": "Uploaded {{percent}}%",
       "failed": "The photo didn't make it up.",
       "retry": "Try again",
       "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
@@ -914,5 +914,15 @@
     "done": {
       "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
     }
+  },
+  "sprayCaps": {
+    "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
+    "versions": "A wall keeps {{max}} resets, and this one has used them all.",
+    "walls": "You can keep {{max}} walls. Delete one to make room.",
+    "wallsHint": "You can keep up to {{max}} walls."
+  },
+  "sprayHidden": {
+    "body": "Someone reported it and we took it out of everyone else’s view. It’s still here for you, and nothing on it was deleted.",
+    "title": "This wall is hidden"
   }
 }

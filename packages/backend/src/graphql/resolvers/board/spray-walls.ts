@@ -140,6 +140,15 @@ type UserBoardRow = typeof dbSchema.userBoards.$inferSelect;
 type LoadedWall = { wall: SprayWallRow; board: UserBoardRow };
 
 /**
+ * The part of a wall row the visibility rules read.
+ *
+ * Structural, not `SprayWallRow`, so a caller that selected only what it needs —
+ * `requireVisibleSprayWall` in `../climbs/spray-authoring.ts` selects the whole
+ * row, but a future one need not — can still be checked.
+ */
+export type SprayWallVisibility = { hiddenAt: Date | null };
+
+/**
  * Anything that can run these reads and writes: the pooled client or a
  * transaction handle. Spelled out so the checks that MUST run inside the wall
  * lock cannot accidentally be handed the pool instead of the transaction.
@@ -202,6 +211,11 @@ async function viewerIsWallPrincipal(board: UserBoardRow, userId: string | null 
  * or unlisted. An unlisted wall opens up here and NOWHERE else: a uuid is an
  * unguessable 122-bit capability, so knowing one is the whole of the claim.
  *
+ * A wall an admin has HIDDEN (SW-17) short-circuits all of that: it reads exactly
+ * like a private wall for everybody but its owner, who keeps seeing it with a
+ * notice. Hiding has to take a wall off the internet, so it outranks both the
+ * public flag and the share-link capability.
+ *
  * `is_unlisted` is therefore not an identity check but a property of the lookup —
  * which is exactly why `sprayWallByLayout` must not use this function. Layout ids
  * come out of `spray_wall_catalog_id_seq`, i.e. 1, 2, 3, …, so treating unlisted
@@ -209,7 +223,12 @@ async function viewerIsWallPrincipal(board: UserBoardRow, userId: string | null 
  * sequence and collect a live presigned photo of every unlisted home wall in the
  * database. Use `viewerCanSeeSprayWallByLayout` for any enumerable key.
  */
-export async function viewerCanSeeSprayWall(board: UserBoardRow, userId: string | null | undefined): Promise<boolean> {
+export async function viewerCanSeeSprayWall(
+  wall: SprayWallVisibility,
+  board: UserBoardRow,
+  userId: string | null | undefined,
+): Promise<boolean> {
+  if (wall.hiddenAt != null) return board.ownerId === userId;
   if (board.isPublic || board.isUnlisted) return true;
   return viewerIsWallPrincipal(board, userId);
 }
@@ -219,11 +238,14 @@ export async function viewerCanSeeSprayWall(board: UserBoardRow, userId: string 
  *
  * Same rule minus the unlisted exemption: the owner, a gym member, or a public
  * wall. Nothing about the wall's existence is answerable from a guessed number.
+ * A hidden wall is the owner's alone here too.
  */
 export async function viewerCanSeeSprayWallByLayout(
+  wall: SprayWallVisibility,
   board: UserBoardRow,
   userId: string | null | undefined,
 ): Promise<boolean> {
+  if (wall.hiddenAt != null) return board.ownerId === userId;
   if (board.isPublic) return true;
   return viewerIsWallPrincipal(board, userId);
 }
@@ -250,11 +272,16 @@ export async function viewerCanSeeSprayWallByLayout(
  * wall — so this is not an oracle for which layout ids are unlisted walls.
  */
 export async function viewerCanWriteSprayClimbs(
+  wall: SprayWallVisibility,
   board: UserBoardRow,
   userId: string | null | undefined,
   presentedWallUuid: string | null | undefined,
 ): Promise<boolean> {
-  if (await viewerCanSeeSprayWallByLayout(board, userId)) return true;
+  if (await viewerCanSeeSprayWallByLayout(wall, board, userId)) return true;
+  // A hidden wall hands out no capability: the share link an owner sent before an
+  // admin acted stops working, or hiding a wall would not take it off the
+  // internet. The owner is already back at the line above.
+  if (wall.hiddenAt != null) return false;
   if (!board.isUnlisted) return false;
   return presentedWallUuid != null && presentedWallUuid === board.uuid;
 }
@@ -269,7 +296,7 @@ export async function viewerCanWriteSprayClimbs(
 async function loadVisibleWall(uuid: string, userId: string | null | undefined): Promise<LoadedWall | undefined> {
   const loaded = await loadWall('uuid', uuid);
   if (!loaded) return undefined;
-  return (await viewerCanSeeSprayWall(loaded.board, userId)) ? loaded : undefined;
+  return (await viewerCanSeeSprayWall(loaded.wall, loaded.board, userId)) ? loaded : undefined;
 }
 
 /** Load a wall for a mutation and assert the caller may edit it. */
@@ -421,6 +448,9 @@ async function toGraphQLWall(loaded: LoadedWall, userId: string | null | undefin
     ),
     holdCount: wall.holdCount,
     viewerCanEdit: canEdit,
+    // Only ever non-null for the owner: `loadVisibleWall` refuses a hidden wall to
+    // everybody else, so nobody else can reach this field to read it.
+    hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
   };
 }
 
@@ -580,7 +610,7 @@ export function resolveVersionGeometry(input: {
  * together — a crash between them would leave the wall private and its feed rows
  * standing.
  */
-async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: number): Promise<number> {
+export async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: number): Promise<number> {
   const result = await tx.execute(sql`
     DELETE FROM feed_items
     WHERE (
@@ -875,7 +905,7 @@ export const sprayWallQueries = {
     // NOT `viewerCanSeeSprayWall`: a layout id is a small integer from a
     // sequence, so an unlisted wall must not resolve here. See that function.
     const loaded = await loadWall('layoutId', layoutId);
-    if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.board, ctx.userId))) return null;
+    if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
@@ -1030,7 +1060,8 @@ export const sprayWallQueries = {
     // climbs stop being remixable with it.
     const presentedWallUuid = sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
     const loaded = await loadWall('layoutId', parent.layoutId);
-    if (!loaded || !(await viewerCanWriteSprayClimbs(loaded.board, ctx.userId, presentedWallUuid))) return null;
+    if (!loaded || !(await viewerCanWriteSprayClimbs(loaded.wall, loaded.board, ctx.userId, presentedWallUuid)))
+      return null;
 
     // The wall as it stands, read ONCE and used for both halves below: it splits
     // the parent's own holds into kept and lost, and then filters the successors a

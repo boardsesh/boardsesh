@@ -33,6 +33,13 @@ import { sql, type SQL } from 'drizzle-orm';
  * layout id is not a uuid. Keep the two in step; if that resolver's rule changes,
  * this changes with it.
  *
+ * On top of that, a wall an admin has HIDDEN (`spray_walls.hidden_at`, SW-17)
+ * reads exactly like a private one to everybody but its owner: the owner keeps
+ * seeing their wall and its climbs, and every other reader — gym member and
+ * anonymous alike — gets the same empty answer a never-public wall gives. Folded
+ * in here rather than at the ~15 call sites for the same reason the rest of the
+ * rule is: they do not share a query builder.
+ *
  * ## Why it is shaped as "not spray, OR visible"
  *
  * ## `IS DISTINCT FROM`, not `<>`
@@ -83,6 +90,7 @@ export function sprayClimbVisibilityCondition(columns: SprayVisibilityColumns, u
       WHERE sw.layout_id = ${columns.layoutId}
         AND sw.deleted_at IS NULL
         AND ub.deleted_at IS NULL
+        AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
         AND (
           ub.is_public
           OR (
@@ -129,6 +137,7 @@ export function sprayReferenceVisibilityCondition(
         WHERE sw.layout_id = ref_climb.layout_id
           AND sw.deleted_at IS NULL
           AND ub.deleted_at IS NULL
+          AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
           AND (
             ub.is_public
             OR (
@@ -166,6 +175,7 @@ export function sprayLayoutVisibilitySql(layoutId: number, userId: string | null
     WHERE sw.layout_id = ${layoutId}
       AND sw.deleted_at IS NULL
       AND ub.deleted_at IS NULL
+      AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
       AND (
         ub.is_public
         OR (

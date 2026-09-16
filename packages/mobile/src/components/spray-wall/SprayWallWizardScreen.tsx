@@ -28,7 +28,14 @@ import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import {
+  SHARED_EVENTS,
+  sprayHoldsReviewed,
+  sprayWallDetectionFinished,
+  sprayWallPhotoPicked,
+  sprayWallUploadFinished,
+} from '@boardsesh/analytics';
+import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -47,7 +54,8 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
@@ -101,6 +109,24 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
+
+  /**
+   * A cap refusal said in the climber's own language, with its number, ahead of
+   * anything the server wrote.
+   *
+   * The wall cap and the version cap are both reachable by ordinary use, and both
+   * come back as an English sentence from a resolver. Branching on
+   * `extensions.code` — never on that sentence — is what lets the app say the
+   * rule and the number instead of relaying a string nobody translated.
+   */
+  const capOrServerMessage = useCallback(
+    (error: unknown, fallback: string): string => {
+      const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
+      if (cap) return sprayCapMessage(cap, t);
+      return extractGraphqlMessage(error) ?? fallback;
+    },
+    [t],
+  );
   const router = useRouter();
   const queryClient = useQueryClient();
   const { width: windowWidth } = useWindowDimensions();
@@ -293,7 +319,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           return;
         }
         if (result.outcome === 'cancelled') return;
-        track(SHARED_EVENTS.SprayWallPhotoPicked, { source });
+        trackSprayEvent(sprayWallPhotoPicked(source));
         dispatch({ type: 'PHOTO_PICKED', photo: { ...result.photo, source } });
       } catch (error) {
         reportError(error);
@@ -318,11 +344,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         storedPhoto: stored,
         onProgress: (done, total) => dispatch({ type: 'DETECTION_PROGRESS', done, total }),
       });
-      track(SHARED_EVENTS.SprayWallDetectionFinished, {
-        outcome: result.outcome,
-        candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
-        durationMs: Date.now() - startedAt,
-      });
+      trackSprayEvent(
+        sprayWallDetectionFinished({
+          outcome: result.outcome,
+          candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
+          durationMs: Date.now() - startedAt,
+        }),
+      );
       if (result.outcome === 'ok') {
         dispatch({ type: 'DETECTION_FINISHED', candidates: result.candidates });
         return;
@@ -392,12 +420,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         uri: photo.uri,
         onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
       });
-      track(SHARED_EVENTS.SprayWallUploadFinished, {
-        outcome: 'ok',
-        durationMs: Date.now() - startedAt,
-        determinate: uploaded.determinate,
-        attempt,
-      });
+      trackSprayEvent(
+        sprayWallUploadFinished({
+          outcome: 'ok',
+          durationMs: Date.now() - startedAt,
+          determinate: uploaded.determinate,
+          attempt,
+        }),
+      );
 
       const stored = { width: uploaded.width, height: uploaded.height };
       // The anchors were tapped on the LOCAL file. The stored object is the
@@ -413,13 +443,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       await runDetection(photo, stored);
     } catch (error) {
       reportError(error);
-      track(SHARED_EVENTS.SprayWallUploadFinished, {
-        outcome: 'failed',
-        durationMs: Date.now() - startedAt,
-        determinate: false,
-        attempt,
-      });
-      dispatch({ type: 'UPLOAD_FAILED', message: extractGraphqlMessage(error) ?? t('sprayWizard.upload.failed') });
+      trackSprayEvent(
+        sprayWallUploadFinished({
+          outcome: 'failed',
+          durationMs: Date.now() - startedAt,
+          determinate: false,
+          attempt,
+        }),
+      );
+      dispatch({ type: 'UPLOAD_FAILED', message: capOrServerMessage(error, t('sprayWizard.upload.failed')) });
     }
   }, [
     state.photo,
@@ -525,7 +557,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       else router.back();
     } catch (error) {
       reportError(error);
-      dispatch({ type: 'PUBLISH_FAILED', message: extractGraphqlMessage(error) ?? t('sprayWizard.publish.failed') });
+      dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
   }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, router, t]);
 
@@ -589,7 +621,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const candidateCount = state.detection.candidates.length;
   const onHoldsSaved = useCallback(
     ({ written }: { written: number; removed: number }) => {
-      track(SHARED_EVENTS.SprayHoldsReviewed, { holdCount: written, hadCandidates: candidateCount > 0 });
+      trackSprayEvent(sprayHoldsReviewed({ holdCount: written, hadCandidates: candidateCount > 0 }));
       dispatch({ type: 'HOLDS_SAVED', holdCount: written });
     },
     [candidateCount],
@@ -694,6 +726,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             </Text>
 
             <BoardVisibilityFields builder={builder} publicHint={t('sprayWizard.meta.publicHint')} />
+
+            {/* The wall cap said before it bites rather than after: ten is a
+                number a gym with a lot of bays can reach, and meeting it as a
+                refusal on the publish step — with a photo already uploaded — is
+                the worst moment to learn it. */}
+            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+              {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
+            </Text>
           </>
         ) : null}
 

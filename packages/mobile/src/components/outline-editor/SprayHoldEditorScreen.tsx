@@ -14,6 +14,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing } from '../../theme/tokens';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
@@ -424,7 +425,10 @@ export function SprayHoldEditorScreen({
       return;
     }
     if (plan.overCap) {
-      setErrorText(t('sprayEditor.errors.tooManyHolds'));
+      // The cap said out loud, with its number, read from the same constant the
+      // server refuses on — a message that hides the rule is one a climber can
+      // only learn by hitting it twice.
+      setErrorText(t('sprayEditor.errors.tooManyHolds', { max: SPRAY_CAP_VALUES.holds }));
       return;
     }
     setErrorText(null);

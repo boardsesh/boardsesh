@@ -57,13 +57,19 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// The screen reaches analytics through the SW-17 builders, which return the
+// event name and its properties as one payload for `trackSprayEvent` to unpack.
+// Stubbed to that shape so a missing export cannot silently swallow a dispatch.
 vi.mock('@boardsesh/analytics', () => ({
-  SHARED_EVENTS: { SprayWallPhotoPicked: 'p', SprayWallUploadFinished: 'u', SprayWallDetectionFinished: 'd' },
+  sprayWallPhotoPicked: (source: string) => ({ name: 'p', properties: { source } }),
+  sprayWallUploadFinished: (properties: Record<string, unknown>) => ({ name: 'u', properties }),
+  sprayWallDetectionFinished: (properties: Record<string, unknown>) => ({ name: 'd', properties }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: (e: unknown) => (e as Error)?.message,
+  extractGraphqlCode: () => undefined,
 }));
 
 vi.mock('../../Text', () => ({

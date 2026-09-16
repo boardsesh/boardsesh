@@ -55,6 +55,7 @@ describe('monitorSlugForJob', () => {
       'scheduler-profile-percentiles',
       'scheduler-refresh-sitemap-climbs',
       'scheduler-refresh-gym-activity-stats',
+      'scheduler-purge-spray-wall-photos',
     ]);
   });
 });
@@ -90,6 +91,7 @@ describe('monitorConfigForJob', () => {
       'scheduler-profile-percentiles': '0 6 * * 0',
       'scheduler-refresh-sitemap-climbs': '0 */6 * * *',
       'scheduler-refresh-gym-activity-stats': '30 6 * * *',
+      'scheduler-purge-spray-wall-photos': '0 7 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {

@@ -27,6 +27,18 @@ export function extractGraphqlMessage(error: unknown): string | null {
   return null;
 }
 
+/**
+ * The first GraphQL error's `extensions.code`, or null.
+ *
+ * A code, never the message text: the server's prose is not a contract and is
+ * not translated, so a client that string-matches it stops recognising the case
+ * the first time somebody rewords an error.
+ */
+export function extractGraphqlCode(error: unknown): string | null {
+  const code = getGraphqlErrors(error)[0]?.extensions?.code;
+  return typeof code === 'string' ? code : null;
+}
+
 export function isGraphqlRateLimitedError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 

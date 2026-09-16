@@ -11,6 +11,14 @@ Reports are resolved by the same weighted vote every proposal is.
 
 Feature issue: #5049.
 
+**This is for CLIMBS, and spray walls deliberately do not reuse it.** A proposal
+is a change to a climb that a weighted vote is the right judge of — several
+climbers who have been on it know better than any one of them. "Should we be
+serving this photograph of somebody's home" has exactly one right answer, and the
+people who could vote are the ones who can already see the wall, so
+`reportSprayWall` writes a flat `spray_wall_reports` row and an admin flips
+`spray_walls.hidden_at`. See [spray-walls.md](./spray-walls.md) → "Moderation".
+
 ---
 
 ## The report flow

@@ -131,6 +131,16 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     them: they can edit the gym's page and not a wall's holds.
     """
     viewerCanEdit: Boolean!
+    """
+    When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
+    case.
+
+    Only ever non-null for the wall's OWNER: a hidden wall reads exactly like a
+    private one to everybody else, so nobody else can resolve it to ask. The
+    owner's app shows a notice off this field — a wall that vanished without a
+    word would look like data loss.
+    """
+    hiddenAt: String
   }
 
   """
@@ -428,5 +438,72 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
     record of which of today's holds replaced one of yesterday's.
     """
     suggestedHoldIds: [Int!]!
+  }
+`;
+
+export const sprayWallModerationTypeDefs = /* GraphQL */ `
+  """
+  Why a climber reported a wall. A closed set — there is no free-text field
+  anywhere in the report path.
+  """
+  enum SprayWallReportReason {
+    "The photograph or the wall's name is not something we should be serving."
+    INAPPROPRIATE
+    "Not a climbing wall at all."
+    NOT_A_WALL
+    "Somebody's face, address or documents are in the frame."
+    PERSONAL_INFO
+    OTHER
+  }
+
+  """
+  What the report did. \`ALREADY_REPORTED\` is the answer to a second report from
+  the same climber: their first one still stands, and nothing about the queue's
+  state leaks back to them.
+  """
+  enum SprayWallReportStatus {
+    CREATED
+    ALREADY_REPORTED
+  }
+
+  type SprayWallReportResult {
+    status: SprayWallReportStatus!
+  }
+
+  input ReportSprayWallInput {
+    wallUuid: ID!
+    reason: SprayWallReportReason!
+  }
+
+  input SetSprayWallHiddenInput {
+    uuid: ID!
+    hidden: Boolean!
+  }
+
+  "The outcome of the admin switch, thin on purpose: a moderation tool, not a wall read."
+  type SprayWallModerationResult {
+    uuid: ID!
+    layoutId: Int!
+    hidden: Boolean!
+    hiddenAt: String
+  }
+
+  "One pending report, for the admin queue."
+  type SprayWallReport {
+    id: ID!
+    wallUuid: ID!
+    layoutId: Int!
+    reason: SprayWallReportReason!
+    "Whether the wall is hidden right now."
+    hidden: Boolean!
+    createdAt: String!
+  }
+
+  "What one purge run cleared. Photographs only — no wall row is ever deleted."
+  type SprayWallPhotoPurgeResult {
+    wallsPurged: Int!
+    objectsDeleted: Int!
+    wallsConsidered: Int!
+    durationMs: Int!
   }
 `;
