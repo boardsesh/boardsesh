@@ -44,6 +44,10 @@ import { BOARD_ART_GEOMETRY_SHARDS_ASYNC } from './shards-async';
  * renderer acts on by falling back to a ring. A key that is merely *not loaded
  * yet* must never be written here, or that fallback becomes permanent for the
  * session. Pending loads live in `pendingShards` instead.
+ *
+ * One exception, and it is deliberate: a chunk whose download has failed
+ * `MAX_SHARD_DOWNLOAD_ATTEMPTS` times is written as `null` so the answer becomes
+ * final. See `MAX_SHARD_DOWNLOAD_ATTEMPTS`.
  */
 const shardCache = new Map<string, BoardArtGeometry | null>();
 
@@ -93,6 +97,22 @@ export function unregisterRuntimeGeometry(key: BoardArtGeometryKey): void {
 export function getRuntimeGeometry(key: BoardArtGeometryKey): BoardArtGeometry | null {
   return runtimeGeometry.get(key) ?? null;
 }
+
+/**
+ * How many times one key's chunk may be fetched before a persistent failure is
+ * answered as "no art for this board".
+ *
+ * Without a cap, "the download failed" and "the download has not finished" are
+ * the same observable state — `boardArtGeometryPending` stays `true` — so a
+ * caller that re-renders on the pending flag and asks again gets an unbounded
+ * import loop off one offline board. Three attempts covers the transient drop
+ * this retry exists for; past that the ring fallback is the honest answer, and
+ * it costs the silhouettes of one board until the page is reloaded.
+ */
+const MAX_SHARD_DOWNLOAD_ATTEMPTS = 3;
+
+/** Failed `import()` count per key, cleared as soon as one succeeds. */
+const shardFailureCounts = new Map<string, number>();
 
 /**
  * The traced silhouettes, silhouette lightness and painted-LED offsets for one
@@ -160,7 +180,9 @@ export function boardArtGeometryPending(query: BoardArtGeometryQuery): boolean {
  *
  * Never rejects. A chunk that fails to download resolves as `null`, which is the
  * same ring fallback the renderer already draws for an untraced board — a
- * transient network error should cost the silhouettes, not the board.
+ * transient network error should cost the silhouettes, not the board. After
+ * `MAX_SHARD_DOWNLOAD_ATTEMPTS` failures that `null` becomes the cached answer,
+ * so a caller polling on `boardArtGeometryPending` cannot loop forever.
  */
 export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Promise<BoardArtGeometry | null> {
   const key = boardArtGeometryKey(query);
@@ -178,12 +200,26 @@ export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Pr
 
   const loading = asyncShard()
     .then((geometry) => {
+      shardFailureCounts.delete(key);
       shardCache.set(key, geometry);
       return geometry;
     })
     .catch(() => {
-      // Deliberately not cached: a failed download is not evidence the shard is
-      // absent, and the next board view should be free to try again.
+      const failures = (shardFailureCounts.get(key) ?? 0) + 1;
+      // Not cached while retries remain: a failed download is not evidence the
+      // shard is absent, and the next board view should be free to try again.
+      // Once they run out it IS cached, as `null` — that stops
+      // `boardArtGeometryPending` reporting the key as still in flight, which is
+      // what a caller re-asking on every render is reading. The tally has done
+      // its job by then, and that cached `null` short-circuits every later call
+      // before this handler, so drop the count rather than hold it for the rest
+      // of the session.
+      if (failures >= MAX_SHARD_DOWNLOAD_ATTEMPTS) {
+        shardCache.set(key, null);
+        shardFailureCounts.delete(key);
+      } else {
+        shardFailureCounts.set(key, failures);
+      }
       return null;
     })
     .finally(() => {
