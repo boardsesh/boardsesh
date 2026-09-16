@@ -8246,7 +8246,13 @@ export type SprayRemixSeed = {
   /** The climb being remixed. */
   parentUuid: Scalars['ID']['output'];
   /**
-   * Successors the reset review linked for the lost holds, nearest first.
+   * Successors the reset review linked for the lost holds, in hold-id order.
+   *
+   * At most one per entry in `lostHoldIds` — a commit refuses two additions
+   * naming the same `movedFromHoldId` — so this is a set of successors, not a
+   * ranking: there is no "best" suggestion to put first. It is NOT positionally
+   * aligned with `lostHoldIds` either, because a lost hold may have no successor
+   * at all; pair them by reading `movedFromHoldId` off the holds themselves.
    *
    * A remix wants somewhere to start, and `moved_from_hold_id` is the only
    * record of which of today's holds replaced one of yesterday's.

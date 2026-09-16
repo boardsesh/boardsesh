@@ -1071,7 +1071,8 @@ export const sprayWallQueries = {
     // The parent is shown even when it is no longer climbable (epic decision
     // 2026-09-14) — a climb that lost three holds is exactly the one worth
     // remixing, and refusing the seed would strand it.
-    const alive = new Set((await aliveHolds(db, loaded.wall.id)).map((hold) => hold.holdId));
+    const aliveRows = await aliveHolds(db, loaded.wall.id);
+    const alive = new Set(aliveRows.map((hold) => hold.holdId));
 
     // The frames grammar is `p<placementId>r<code>`, concatenated. Split on the
     // token boundary rather than a separator: the string carries none, and a
@@ -1090,23 +1091,23 @@ export const sprayWallQueries = {
       }
     }
 
-    // What replaced each lost hold, when the reset review linked a move. Scoped to
-    // the wall, so a `moved_from_hold_id` copied from elsewhere cannot suggest a
-    // hold that is not there, and to holds that are ALIVE, so a successor that has
-    // itself since come off is not offered.
-    const successors =
-      lostHoldIds.length === 0
-        ? []
-        : await db
-            .select({ holdId: dbSchema.sprayWallHolds.holdId })
-            .from(dbSchema.sprayWallHolds)
-            .where(
-              and(
-                eq(dbSchema.sprayWallHolds.wallId, loaded.wall.id),
-                inArray(dbSchema.sprayWallHolds.movedFromHoldId, lostHoldIds),
-              ),
-            )
-            .orderBy(asc(dbSchema.sprayWallHolds.holdId));
+    // What replaced each lost hold, when the reset review linked a move.
+    //
+    // Read off the alive rows already in hand rather than queried again. Those rows
+    // ARE the answer: `aliveHolds` returned the published generation, and each one
+    // carries the `moved_from_hold_id` a reset wrote — so a successor that has since
+    // come off, and one an unpublished draft merely drew, are both absent by
+    // construction instead of being fetched and filtered out. A wall with a long
+    // reset history no longer ships every successor it has ever had over the wire,
+    // and there is no second predicate to keep in step with the alive rule.
+    //
+    // `aliveHolds` orders by hold id, so this does too. There is no ranking to
+    // preserve: a commit refuses two additions naming one `movedFromHoldId`, so
+    // each lost hold has at most one successor here.
+    const lost = new Set(lostHoldIds);
+    const suggestedHoldIds = aliveRows
+      .filter((hold) => hold.movedFromHoldId != null && lost.has(hold.movedFromHoldId))
+      .map((hold) => hold.holdId);
 
     return {
       parentUuid: parent.uuid,
@@ -1116,7 +1117,7 @@ export const sprayWallQueries = {
       frames: survivingTokens.join(''),
       lostHoldIds,
       keptHoldIds,
-      suggestedHoldIds: successors.map((row) => row.holdId).filter((holdId) => alive.has(holdId)),
+      suggestedHoldIds,
     };
   },
 };
