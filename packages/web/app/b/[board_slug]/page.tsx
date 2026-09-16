@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { GymQrSearchParams } from '@boardsesh/analytics';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { gymQrAttributionQuery } from '@/app/lib/gym-attribution';
+import { WALL_CAPABILITY_PARAM } from './[angle]/list/spray-wall-view';
 
 type BoardSlugPageParams = {
   board_slug: string;
@@ -9,8 +10,23 @@ type BoardSlugPageParams = {
 
 type BoardSlugPageProps = {
   params: Promise<BoardSlugPageParams>;
-  searchParams: Promise<GymQrSearchParams>;
+  searchParams: Promise<GymQrSearchParams & { [WALL_CAPABILITY_PARAM]?: string | string[] }>;
 };
+
+/**
+ * The share-link capability, re-emitted onto the redirect target.
+ *
+ * `buildSprayWallShareUrl` produces `/b/{slug}?wall=<uuid>` for an unlisted wall
+ * when it has no angle to name, and this hop is the only thing between that link
+ * and the page that redeems it — drop the param here and the link lands on a 404.
+ * Re-emitted rather than forwarded wholesale, for the same reason the QR
+ * attribution is: only the one param we understand rides through.
+ */
+function wallCapabilityQuery(wallParam: string | string[] | undefined): string {
+  const wallUuid = Array.isArray(wallParam) ? wallParam[0] : wallParam;
+  if (!wallUuid) return '';
+  return `${WALL_CAPABILITY_PARAM}=${encodeURIComponent(wallUuid)}`;
+}
 
 /**
  * Redirect /b/[slug] → /b/[slug]/{board.angle}/list
@@ -49,5 +65,10 @@ export default async function BoardSlugPage(props: BoardSlugPageProps) {
   }
 
   const listPath = `/b/${encodeURIComponent(board.slug)}/${board.angle}/list`;
-  redirect(`${listPath}${gymQrAttributionQuery(searchParams)}`);
+  // Both re-emitters produce at most one `?`-prefixed group, so they are merged
+  // rather than concatenated.
+  const query = [gymQrAttributionQuery(searchParams).replace(/^\?/, ''), wallCapabilityQuery(searchParams.wall)]
+    .filter((part) => part.length > 0)
+    .join('&');
+  redirect(query ? `${listPath}?${query}` : listPath);
 }

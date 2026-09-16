@@ -1644,6 +1644,9 @@ importers:
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
+      '@boardsesh/spray-wall-geometry':
+        specifier: workspace:*
+        version: link:../shared/spray-wall-geometry
       '@boardsesh/static-assets':
         specifier: workspace:*
         version: link:../shared/static-assets

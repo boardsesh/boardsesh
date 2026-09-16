@@ -1,9 +1,19 @@
 import { toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
-import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
+import { constructBoardSlugViewUrl, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
 import type { SitemapItem } from './entries';
-import { isIndexableBoardType } from './indexable-boards';
+import { isIndexableClimbConfig } from './indexable-boards';
+
+/**
+ * A board configuration the climbs shard may build URLs from.
+ *
+ * `sprayWallSlug` is set by exactly one source — `getPublicSprayWallConfigs()`
+ * in `spray-wall-configs.ts` — and only for a wall its owner made public. It is
+ * the consent token SW-16 (#5449) keys on, and it is also the only way a spray
+ * climb HAS a URL: `/spray/...` config tuples are not routed on www.
+ */
+export type SitemapClimbConfig = PopularBoardConfig & { sprayWallSlug?: string };
 
 /**
  * The board configuration a climb's sitemap URL is built from.
@@ -19,6 +29,12 @@ export type ClimbConfigGroup = {
   layoutId: number;
   sizeId: number;
   setIds: number[];
+  /**
+   * The `user_boards.slug` of a public spray wall, carried through from the
+   * config. Present only for spray, and its presence is what makes the group
+   * resolvable at all — see `isResolvableGroup`.
+   */
+  boardSlug?: string;
 };
 
 /** One tier-2 row: the climb, at the one angle the shard publishes. */
@@ -73,13 +89,15 @@ function isBetterConfig(candidate: PopularBoardConfig, incumbent: PopularBoardCo
  * expected gap between the addressable tier-2 universe and the shipped shard
  * count, and it is what the branch-time reconciliation measures.
  */
-export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]): ClimbConfigGroup[] {
-  const best = new Map<string, PopularBoardConfig>();
+export function resolveClimbSitemapGroups(configs: readonly SitemapClimbConfig[]): ClimbConfigGroup[] {
+  const best = new Map<string, SitemapClimbConfig>();
 
   for (const config of configs) {
     if (!toBoardName(config.boardType)) continue;
-    // Never submit a private board type for crawling (see `isIndexableBoardType`).
-    if (!isIndexableBoardType(config.boardType)) continue;
+    // Never submit a private wall for crawling (see `isIndexableClimbConfig`):
+    // every board type but spray is indexable, and spray only with the slug a
+    // public wall carries.
+    if (!isIndexableClimbConfig(config)) continue;
     if (config.climbCount <= 0) continue;
 
     const key = groupKey(config.boardType, config.layoutId);
@@ -95,6 +113,12 @@ export function resolveClimbSitemapGroups(configs: readonly PopularBoardConfig[]
       layoutId: config.layoutId,
       sizeId: config.sizeId,
       setIds: config.setIds,
+      // Spray only. A non-spray group is validated through the config-tuple
+      // probe but would be EMITTED at the `/b/{slug}` shape, so a slug that
+      // leaked onto one would mean validating one URL and submitting another.
+      // Unreachable today — `getPublicSprayWallConfigs` is the only writer of
+      // the field — and this keeps it that way if a future source is careless.
+      boardSlug: config.boardType === 'spray' ? config.sprayWallSlug : undefined,
     }))
     .filter((group) => isResolvableGroup(group))
     .sort((left, right) =>
@@ -127,6 +151,13 @@ const PROBE_UUID = '00000000000000000000000000000000';
  * tuple. 69 tier-2 climbs, documented rather than fixed.
  */
 export function isResolvableGroup(group: ClimbConfigGroup): boolean {
+  // Spray never passes the probe and never can: `boardHasDeepConfigRoute` does
+  // not route `/spray/...`, so `tryConstructSlugViewUrl` correctly answers null
+  // for every wall. Its URLs are the `/b/{slug}` shape instead, so the slug is
+  // what "resolvable" means here — and a spray group without one is dropped, the
+  // same way an unroutable tuple is.
+  if (group.boardType === 'spray') return Boolean(group.boardSlug);
+
   return (
     tryConstructSlugViewUrl(group.boardType, group.layoutId, group.sizeId, group.setIds, 0, PROBE_UUID, 'probe') !==
     null
@@ -165,15 +196,22 @@ export function climbRowsToItems(
 
   for (const row of rows) {
     const climbName = resolveClimbDisplayName(row.name, group.boardType);
-    const path = tryConstructSlugViewUrl(
-      group.boardType,
-      group.layoutId,
-      group.sizeId,
-      group.setIds,
-      row.angle,
-      row.uuid,
-      climbName,
-    );
+    // A spray wall's climb lives at `/b/{slug}/{angle}/view/...`, which is the
+    // same builder and the same resolved name the spray climb view page emits as
+    // its own canonical, so the two are byte-identical. The config-tuple builder
+    // below would answer null for it, and rule 2 would then silently drop every
+    // climb on the wall.
+    const path = group.boardSlug
+      ? constructBoardSlugViewUrl(group.boardSlug, row.angle, row.uuid, climbName)
+      : tryConstructSlugViewUrl(
+          group.boardType,
+          group.layoutId,
+          group.sizeId,
+          group.setIds,
+          row.angle,
+          row.uuid,
+          climbName,
+        );
 
     if (!path) {
       dropped += 1;
