@@ -51,6 +51,10 @@ export const SUPPORT_URL = 'https://www.boardsesh.com/support';
  */
 export const SUPPORT_URL_DISPLAY = 'boardsesh.com/support';
 
+// Both of these live for the app's lifetime on purpose — one native read per
+// run, shared by every caller. They are module state, so a test that needs a
+// different storefront must `vi.resetModules()` and re-import rather than
+// expecting a fresh cache; see donation-links.test.ts.
 let storefrontCountryPromise: Promise<string | null> | null = null;
 // The resolved answer, kept beside the promise so a remount can read it
 // synchronously. Without it, leaving Acknowledgements and coming back would

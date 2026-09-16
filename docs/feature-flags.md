@@ -197,6 +197,43 @@ value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
 
+### `donation-links` — the one flag whose targeting is a compliance boundary
+
+Almost every flag here decides whether a feature is visible. This one decides
+whether the app breaks a store policy, so it is worth reading before touching it
+in the dashboard.
+
+An external donation link is a rejection risk in both stores. Two narrow windows
+allow it: the **iOS US storefront** (external purchase links, allowed since May
+2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
+compliant surface is unlinked text that merely names the website — the pattern
+StreetComplete ships and Google sanctions. The Acknowledgements screen renders
+exactly one of those two, and `useDonationLinksAllowed`
+(`packages/mobile/src/lib/donation-links.ts`) picks.
+
+**The two platforms are not equally protected, and the asymmetry is the whole
+point of this section.**
+
+- **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
+  App Store storefront of `USA`, read from the device through
+  `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
+  shows a French iPhone the unlinked text. The module is a native change, so on
+  every binary that predates it — and in Expo Go, and on Android — the probe
+  returns null, which reads as not-allowed. That is the designed degradation.
+- **Android has no client guard at all.** Play exposes no storefront to the app,
+  so there is nothing on-device to check a country against. **The PostHog
+  targeting IS the guard**, and it has to be exactly:
+
+  > platform = Android **and** country = AU **and** date >= 2026-09-30
+
+  A percentage rollout on Android, or any country condition wider than AU, ships
+  a policy violation directly — nothing downstream will catch it.
+
+Everything else about the flag is ordinary: a POSITIVE rollout flag read as
+`=== true`, so unresolved, absent and off all land on the unlinked text, which
+is the safe answer in every region. It deliberately does not wait on
+`useFeatureFlagsResolved` — the first-frame render is already the compliant one.
+
 ### The board-render flags (issue #2202) — both retired
 
 Neither `board-render-mode-default` nor `board-glow-falloff` exists any more.
