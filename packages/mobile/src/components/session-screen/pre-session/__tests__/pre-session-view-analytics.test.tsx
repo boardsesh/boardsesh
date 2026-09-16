@@ -53,7 +53,20 @@ const picker = vi.hoisted(() => ({ onChange: null as ((selection: GeneratorSelec
 // Surfaces the Start button's onPress.
 const startButton = vi.hoisted(() => ({ onPress: null as (() => void) | null }));
 
+// Surfaces the "Show this session live" switch so the test can read and flip it.
+const visibilityRow = vi.hoisted(() => ({
+  isPublic: null as boolean | null,
+  onChange: null as ((next: boolean) => void) | null,
+}));
+
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../../SessionVisibilityRow', () => ({
+  SessionVisibilityRow: ({ isPublic, onChange }: { isPublic: boolean; onChange: (next: boolean) => void }) => {
+    visibilityRow.isPublic = isPublic;
+    visibilityRow.onChange = onChange;
+    return null;
+  },
+}));
 vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 
 // Platform + PlatformColor are included so this mock is leak-safe for theme/
@@ -179,6 +192,8 @@ beforeEach(() => {
   preview.result.plannedSlots = previewRows.map((preview) => preview.slot);
   picker.onChange = null;
   startButton.onPress = null;
+  visibilityRow.isPublic = null;
+  visibilityRow.onChange = null;
 });
 
 describe('PreSessionView analytics', () => {
@@ -277,5 +292,36 @@ describe('PreSessionView analytics', () => {
 
     expect(queue.startSession).not.toHaveBeenCalled();
     expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('PreSessionView "Show this session live" switch', () => {
+  it('starts on and starts a public session when left alone', async () => {
+    render(createElement(PreSessionView));
+    expect(visibilityRow.isPublic).toBe(true);
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(queue.startSession).toHaveBeenCalledWith({ isPublic: true }));
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Visibility Changed', expect.anything());
+  });
+
+  it('fires "Session Visibility Changed" on toggle and starts a private session', async () => {
+    render(createElement(PreSessionView));
+
+    act(() => {
+      visibilityRow.onChange?.(false);
+    });
+    expect(visibilityRow.isPublic).toBe(false);
+    expect(analytics.track).toHaveBeenCalledWith('Session Visibility Changed', {
+      isPublic: false,
+      phase: 'pre_session',
+    });
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(queue.startSession).toHaveBeenCalledWith({ isPublic: false }));
   });
 });

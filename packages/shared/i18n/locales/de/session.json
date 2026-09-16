@@ -348,6 +348,12 @@
       "lengthPillAria": "Länge der Pause, {{value}}",
       "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen."
     },
+    "sessionVisibility": {
+      "title": "Diese Session live zeigen",
+      "descriptionOn": "Deine Crew und Kletterer*innen an diesem Board können sie sehen und beitreten.",
+      "descriptionOff": "Nur Leute mit deinem Einladungslink können beitreten.",
+      "updateError": "Die Sichtbarkeit konnte nicht geändert werden. Versuch es nochmal."
+    },
     "queueSheet": {
       "emptyQueue": "Deine Warteschlange ist leer",
       "toggleHistory": "Historie ein- oder ausblenden",

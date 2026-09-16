@@ -28,6 +28,7 @@ import { RecordTopChrome } from '../RecordTopChrome';
 import { SESSION_START_FAB_HEIGHT, SessionStartFab } from '../SessionStartFab';
 import { BoardSummaryCard } from './BoardSummaryCard';
 import { RestTimerArmRow } from '../RestTimerArmRow';
+import { SessionVisibilityRow } from '../SessionVisibilityRow';
 import {
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
@@ -139,6 +140,13 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
 
   const [selection, setSelection] = useState<GeneratorSelection>(initialGeneratorSelection);
   const [isStarting, setIsStarting] = useState(false);
+  // "Show this session live". Public by default and not remembered between
+  // sessions: every Start opens on, and turning it off is a per-session choice.
+  const [isPublic, setIsPublic] = useState(true);
+  const handleVisibilityChange = useCallback((next: boolean) => {
+    setIsPublic(next);
+    track(SHARED_EVENTS.SessionVisibilityChanged, { isPublic: next, phase: 'pre_session' });
+  }, []);
   const [activePreviewUuid, setActivePreviewUuid] = useState<string | null>(null);
   // Measured height of the Start capsule's container, so the list reserves exactly
   // its real height (+ the bottom offset) instead of a hardcoded clearance. Seeded
@@ -217,7 +225,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
 
     setIsStarting(true);
     try {
-      const newSessionId = await startSession();
+      const newSessionId = await startSession({ isPublic });
       if (!newSessionId) {
         // startSession already toasted on failure; just bail.
         return;
@@ -250,6 +258,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
     refreshingUuids,
     plannedCount,
     startSession,
+    isPublic,
     appendGeneratedSession,
     showToast,
     t,
@@ -319,6 +328,12 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
           <RestTimerArmRow />
         </View>
 
+        {/* Whether the session you're about to start shows up live for your
+            crew and climbers on this board. Sent with Start. */}
+        <View style={styles.cardInset}>
+          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} />
+        </View>
+
         <GeneratorPickerCard
           boardName={activeBoard ? toBoardName(activeBoard.boardType) : null}
           layoutId={activeBoard?.layoutId ?? null}
@@ -349,6 +364,8 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       activeTip,
       dismissTip,
       handleOpenBoardSwitcher,
+      handleVisibilityChange,
+      isPublic,
       previewStateMessage,
       selection,
       setSelection,

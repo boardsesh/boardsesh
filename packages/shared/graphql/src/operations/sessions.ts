@@ -99,6 +99,8 @@ export type UpdateSessionVariables = {
     sessionId: string;
     name?: string | null;
     notes?: string | null;
+    /** Omit or null to leave visibility unchanged. */
+    isPublic?: boolean | null;
   };
 };
 

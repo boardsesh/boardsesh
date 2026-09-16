@@ -167,3 +167,40 @@ describe('useSessionCommands — createSessionWithConfig boardPath', () => {
     expect(joiner.params.setSessionId).toHaveBeenCalledWith(sessionToJoin);
   });
 });
+
+describe('useSessionCommands — createSessionWithConfig visibility', () => {
+  beforeEach(() => {
+    mocks.storedActiveBoard = homeBoard();
+    mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
+  });
+
+  function lastCreateInput(): Record<string, unknown> | undefined {
+    const variables = mocks.request.mock.calls.at(-1)?.[1] as { input?: Record<string, unknown> } | undefined;
+    return variables?.input;
+  }
+
+  it('sends isPublic: false when the climber turned "Show this session live" off', async () => {
+    const { result } = renderSessionCommands();
+
+    await act(async () => {
+      await result.current.createSessionWithConfig({ isPublic: false });
+    });
+
+    expect(lastCreateInput()).toMatchObject({ isPublic: false });
+  });
+
+  it('leaves isPublic out for a live session, since absent means public server-side', async () => {
+    const { result } = renderSessionCommands();
+
+    await act(async () => {
+      await result.current.createSessionWithConfig({ isPublic: true });
+    });
+    expect(lastCreateInput()).not.toHaveProperty('isPublic');
+
+    const unconfigured = renderSessionCommands();
+    await act(async () => {
+      await unconfigured.result.current.createSessionWithConfig();
+    });
+    expect(lastCreateInput()).not.toHaveProperty('isPublic');
+  });
+});

@@ -566,6 +566,11 @@ export type CreateSessionInput = {
   isPermanent?: boolean;
   boardIds?: number[];
   color?: string;
+  /**
+   * Whether the session shows up in live-session listings. Absent means public
+   * server-side, so callers send it only to make a session private.
+   */
+  isPublic?: boolean;
 };
 
 export type CreateSessionMutationVariables = {
@@ -681,6 +686,7 @@ export const GET_SESSION = gql`
       boardPath
       color
       goal
+      isPublic
       startedAt
       endedAt
       users {
@@ -705,6 +711,8 @@ export type SessionPreview = {
   boardPath: string;
   color: string | null;
   goal: string | null;
+  /** Shown in live-session listings. The creator flips it from the Record tab. */
+  isPublic: boolean;
   startedAt: string | null;
   endedAt: string | null;
   users: SessionUser[];

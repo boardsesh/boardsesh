@@ -121,6 +121,10 @@ export function useSessionCommands({
               ...(config?.goal ? { goal: config.goal } : {}),
               ...(config?.color ? { color: config.color } : {}),
               ...(config?.isPermanent ? { isPermanent: config.isPermanent } : {}),
+              // Absent means public server-side. Sending the key only for a
+              // private session keeps the default Start input identical to what
+              // older backends accept.
+              ...(config?.isPublic === false ? { isPublic: false } : {}),
             },
           });
           const newId = response.createSession.id;
@@ -189,7 +193,12 @@ export function useSessionCommands({
               : null;
           reportError(error, {
             tags: { source: 'createSession' },
-            extra: { boardPath, httpStatus, discoverable: config?.discoverable ?? false },
+            extra: {
+              boardPath,
+              httpStatus,
+              discoverable: config?.discoverable ?? false,
+              isPublic: config?.isPublic !== false,
+            },
           });
           // Against a local backend (dev) errors aren't masked, so surface the
           // real server message to speed up diagnosis; shipped builds keep the

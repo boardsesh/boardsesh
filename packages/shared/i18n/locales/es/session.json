@@ -348,6 +348,12 @@
       "lengthPillAria": "Duración del descanso, {{value}}",
       "lengthPillHint": "Añade 30 segundos. Mantén pulsado para elegir cualquier duración."
     },
+    "sessionVisibility": {
+      "title": "Mostrar esta sesión en directo",
+      "descriptionOn": "Tu grupo y quienes escalan en este plafón pueden verla y unirse.",
+      "descriptionOff": "Solo quien tenga tu enlace de invitación puede unirse.",
+      "updateError": "No se pudo cambiar quién ve esta sesión. Inténtalo de nuevo."
+    },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
