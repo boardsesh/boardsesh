@@ -113,6 +113,11 @@ export default function HomeTab() {
   const sessionFeed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady && mode === 'gym');
   const crewFeed = useCrewFeed(isAuthenticated && scopeReady && mode === 'crew');
   const feed = mode === 'crew' ? crewFeed : sessionFeed;
+  // A visibility recheck can remove every candidate from one page. Advancing
+  // that cursor needs an explicit tap, not an automatic drain of sparse pages.
+  const lastCrewPage = crewFeed.data?.pages.at(-1)?.crewFeed;
+  const requiresManualPage = mode === 'crew' && lastCrewPage?.items.length === 0 && lastCrewPage.hasMore;
+  const loadingPageRef = useRef(false);
   // The feed is network-only and `networkMode: 'offlineFirst'` pauses an offline
   // fetch instead of failing it, so neither `isLoading` nor `isError` ever
   // resolves — the skeleton list would sit there for good.
@@ -199,9 +204,16 @@ export default function HomeTab() {
     [openPlayDrawer, router],
   );
 
+  const loadNextPage = useCallback(() => {
+    if (!feed.hasNextPage || feed.isFetchingNextPage || loadingPageRef.current) return;
+    loadingPageRef.current = true;
+    void feed.fetchNextPage().finally(() => {
+      loadingPageRef.current = false;
+    });
+  }, [feed.hasNextPage, feed.isFetchingNextPage, feed.fetchNextPage]);
   const handleEndReached = useCallback(() => {
-    if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
-  }, [feed]);
+    if (!requiresManualPage) loadNextPage();
+  }, [requiresManualPage, loadNextPage]);
 
   const handleRefresh = useCallback(() => {
     // The rail subscribes to its own query, so the screen refreshes it by key.
@@ -432,7 +444,7 @@ export default function HomeTab() {
                   <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
                 </View>
               </View>
-            ) : mode === 'gym' && selectedBoard != null ? (
+            ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
               <View style={styles.feedState}>
                 <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
@@ -466,7 +478,11 @@ export default function HomeTab() {
           </>
         }
         ListFooterComponent={
-          feed.isFetchingNextPage ? <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} /> : null
+          feed.isFetchingNextPage ? (
+            <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} />
+          ) : requiresManualPage ? (
+            <Button title={t('crewLoadMore')} onPress={loadNextPage} />
+          ) : null
         }
       />
       <HomeTopChrome
