@@ -221,6 +221,13 @@
       "item2": "Deine Begehungen bleiben deine. Wir schreiben nie etwas zurück, was du nicht selbst eingetragen hast.",
       "link": "Zum Migrations-Guide"
     },
+    "climbCounts": {
+      "title": "Warum zeigt die Kilter-App mehr Boulder?",
+      "intro": "Beide Apps haben dieselben Boulder. Sie zählen sie nur anders.",
+      "item1": "Boardsesh zählt jeden Boulder einmal und zeigt dir Grad und Begehungen für den Winkel, den du wählst.",
+      "item2": "Die Kilter-App zählt einen Boulder einmal pro Winkel, in dem er eingetragen wurde. Ein Boulder mit Begehungen bei 40° und 45° zählt also doppelt.",
+      "item3": "Deshalb kann dasselbe Board in der Kilter-App bis zu etwa doppelt so viele Boulder anzeigen."
+    },
     "ask": {
       "title": "Kommst du nicht weiter?",
       "intro": "Frag uns. Wir lesen alle drei.",

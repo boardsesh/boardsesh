@@ -1018,6 +1018,28 @@ describe('ClimbFilterSheet hold + zone rows by board', () => {
   });
 });
 
+// Kilter's app counts a climb once per angle, so its totals run about double
+// ours. The note under Show explains that, and only where the comparison exists.
+describe('ClimbFilterSheet climb-count note', () => {
+  it('shows the note under Show on a Kilter board', () => {
+    const { queryByText } = renderFilterSheet();
+
+    expect(queryByText('mobile.filter.countNote')).not.toBeNull();
+  });
+
+  it('hides the note on a Tension board', () => {
+    const { queryByText } = renderFilterSheet({ boardConfig: { ...boardConfig, boardName: 'tension' } });
+
+    expect(queryByText('mobile.filter.countNote')).toBeNull();
+  });
+
+  it('hides the note when there is no board config', () => {
+    const { queryByText } = renderFilterSheet({ boardConfig: null });
+
+    expect(queryByText('mobile.filter.countNote')).toBeNull();
+  });
+});
+
 describe('ClimbFilterSheet random sort', () => {
   it('shows a reshuffle button for random and mints a fresh seed on tap', () => {
     const onApply = vi.fn();

@@ -447,6 +447,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
+      "countNote": "Jeder Boulder zählt nur einmal, nicht je Winkel.",
       "sort": {
         "ascents": "Begehungen",
         "quality": "Qualität",

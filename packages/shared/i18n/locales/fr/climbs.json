@@ -447,6 +447,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
+      "countNote": "Chaque bloc compte une fois, pas une fois par angle.",
       "sort": {
         "ascents": "Ascensions",
         "quality": "Qualité",
