@@ -24,6 +24,11 @@ A new version shipped to the App Store.
 - Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out. ([#5484](https://github.com/boardsesh/boardsesh/pull/5484))
 - No user can reach a spray wall until SW-09 ships the front door. ([#5479](https://github.com/boardsesh/boardsesh/pull/5479))
 
+### Fixed
+
+- Board art on the web now fills in once a slow load finishes, instead of leaving you with rings. ([#5502](https://github.com/boardsesh/boardsesh/pull/5502))
+- Tester-only screen behind Development; never reaches a climber. ([#5517](https://github.com/boardsesh/boardsesh/pull/5517))
+
 ## 2026-09-15
 
 ### Improved

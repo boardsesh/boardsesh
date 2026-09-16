@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-16T09:09:02.296Z",
+  "generatedAt": "2026-09-16T09:33:04.215Z",
   "entries": [
+    {
+      "prNumber": 5502,
+      "category": "fixed",
+      "title": "Board art on the web now fills in once a slow load finishes, instead of leaving you with rings.",
+      "mergedAt": "2026-09-16T09:13:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5502"
+    },
+    {
+      "prNumber": 5517,
+      "category": "fixed",
+      "title": "Tester-only screen behind Development; never reaches a climber.",
+      "mergedAt": "2026-09-16T09:13:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5517"
+    },
     {
       "prNumber": 5499,
       "category": "new",
