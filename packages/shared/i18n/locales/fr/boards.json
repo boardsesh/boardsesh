@@ -14,6 +14,7 @@
       "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
       "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
+      "configLockedHintSpray": "La configuration d'un mur, c'est sa photo. Photographie-le à nouveau pour changer les prises.",
       "duplicate": {
         "title": "Vous avez déjà cette configuration",
         "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
@@ -97,7 +98,8 @@
       "pinAria": "Épingler {{name}}",
       "unpinAria": "Désépingler {{name}}",
       "pinnedBadgeAria": "Épinglée",
-      "pinError": "Impossible de mettre à jour tes boards épinglées"
+      "pinError": "Impossible de mettre à jour tes boards épinglées",
+      "addWallTile": "Mur spray"
     },
     "create": {
       "screenTitle": "Configure ta board",
@@ -171,6 +173,16 @@
         "sets": "Sets",
         "angle": "Angle",
         "adjustable": "ajustable"
+      },
+      "spray": {
+        "kind": "Mur de pan",
+        "editHolds": "Modifier les prises",
+        "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
+        "newPhoto": "Nouvelle photo",
+        "newPhotoHint": "Photographie le mur à nouveau après un changement de prises.",
+        "shareLink": "Partager le lien",
+        "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
+        "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
       }
     },
     "disambiguation": {
@@ -348,6 +360,26 @@
       "empty": "Aucune salle à proximité",
       "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
+    },
+    "sprayShare": {
+      "title": "Partage ce mur",
+      "publicBody": "Ce mur est public : n'importe qui peut l'ouvrir, il apparaît sur la page de la salle et ses blocs arrivent dans le feed.",
+      "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir le mur. Il n'est listé nulle part.",
+      "copyLink": "Copier le lien",
+      "share": "Partager",
+      "copied": "Lien copié",
+      "qrLabel": "Code QR de {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Qui peut le voir",
+      "private": "Privé",
+      "unlisted": "Lien seulement",
+      "public": "Public",
+      "privateHint": "Toi seul. La photo de ton mur reste dans ton compte.",
+      "unlistedHint": "Toute personne qui a le lien entre. Le mur n'apparaît pas sur la page de la salle et sa photo reste hors du web ouvert.",
+      "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
+      "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",
+      "updateError": "Impossible de changer qui voit ce mur. Réessaie."
     }
   },
   "boardEntity": {
@@ -685,5 +717,243 @@
     "sent": "Merci, on regarde ça et on les fusionne.",
     "alreadyReported": "Vous avez déjà signalé cette paire. On s'en occupe.",
     "errorGeneric": "Une erreur s'est produite. Réessayez."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "Ce que fait ton doigt",
+      "pan": "Déplacer",
+      "add": "Ajouter",
+      "move": "Replacer",
+      "draw": "Dessiner"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Seuil de confiance",
+      "value": "Détections au-dessus de {{percent}} %"
+    },
+    "counts": {
+      "alive_one": "{{count}} prise",
+      "alive_other": "{{count}} prises",
+      "pending": "{{value}} à vérifier",
+      "hidden": "{{value}} masquées",
+      "unsaved": "{{value}} non enregistrées"
+    },
+    "actions": {
+      "merge": "Fusionner",
+      "delete": "Supprimer",
+      "undo": "Annuler",
+      "redo": "Rétablir",
+      "accept": "Garder",
+      "reject": "Écarter",
+      "acceptAll": "Tout garder",
+      "save": "Enregistrer le mur"
+    },
+    "status": {
+      "readOnly": "Ce mur n'est pas à toi, tu ne peux pas le modifier.",
+      "pan": "Fais glisser pour déplacer la photo. Touche une prise pour la choisir.",
+      "add": "Touche le mur nu pour créer une prise, ou dessine autour d'une prise.",
+      "move": "Fais glisser une prise là où elle est vraiment.",
+      "draw": "Choisis une prise, puis dessine son contour.",
+      "oneSelected": "Prise n° {{id}} choisie.",
+      "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une.",
+      "oneSelectedNew": "Ta nouvelle prise est sélectionnée.",
+      "manySelected": "{{value}} prises sélectionnées. Supprimer les retire toutes."
+    },
+    "errors": {
+      "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
+      "pickOneToRedraw": "Choisis une seule prise, puis dessine son contour.",
+      "mergeNeedsTwo": "Choisis deux prises pour les fusionner.",
+      "tooManyHolds": "Un mur porte jusqu'à {{max}} prises. Écarte-en quelques-unes et enregistre à nouveau.",
+      "saveFailed": "L'enregistrement du mur a échoué.",
+      "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
+      "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
+      "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
+      "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
+      "allHoldsOffWall": "Ces prises tombent en dehors du mur. Remets-les sur la photo puis enregistre à nouveau.",
+      "someHoldsOffWall_one": "{{count}} prise est tombée en dehors du mur et n'a pas été enregistrée.",
+      "someHoldsOffWall_other": "{{count}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
+    },
+    "toast": {
+      "saved_one": "{{count}} prise enregistrée",
+      "saved_other": "{{count}} prises enregistrées"
+    },
+    "empty": {
+      "noPhoto": "Ce mur n'a pas encore de photo à modifier."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Ajouter un mur de spray",
+    "stepCounter": "Étape {{current}} sur {{total}}",
+    "back": "Retour",
+    "meta": {
+      "title": "C'est quoi ce mur ?",
+      "body": "Donne-lui un nom, dis son dévers et choisis qui peut le voir.",
+      "namePlaceholder": "Mur du garage",
+      "angle": "Angle",
+      "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
+      "publicHint": "Désactivé, le mur et sa photo restent pour toi seul.",
+      "next": "Choisir une photo",
+      "anglePreview": "Mur à {{angle}} degrés"
+    },
+    "photo": {
+      "title": "Photographie le mur",
+      "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
+      "library": "Choisir une photo",
+      "camera": "Prendre une photo",
+      "pickAnother": "Choisir une autre photo",
+      "next": "Suivant",
+      "libraryDenied": "Boardsesh a besoin de ta photothèque pour ajouter un mur.",
+      "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
+      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
+    },
+    "anchors": {
+      "title": "Marque les coins",
+      "body": "Fais glisser les quatre cercles sur les coins du mur. Passe si tu as shooté bien en face.",
+      "hint": "En haut à gauche, en haut à droite, en bas à droite, en bas à gauche.",
+      "crossed": "Ces coins se croisent. Place-les autour du mur dans l'ordre.",
+      "cornerTopLeft": "Coin en haut à gauche",
+      "cornerTopRight": "Coin en haut à droite",
+      "cornerBottomRight": "Coin en bas à droite",
+      "cornerBottomLeft": "Coin en bas à gauche",
+      "use": "Utiliser ces coins",
+      "skip": "Passer pour l'instant",
+      "clear": "Recommencer les coins"
+    },
+    "upload": {
+      "title": "Téléversement de ta photo",
+      "working": "Téléversement de ta photo…",
+      "percent": "Téléversé à {{percent}} %",
+      "failed": "La photo n'est pas passée.",
+      "retry": "Réessayer",
+      "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
+    },
+    "detect": {
+      "title": "Recherche des prises",
+      "working": "Recherche des prises…",
+      "tiles": "Passe {{done}} sur {{total}}"
+    },
+    "review": {
+      "found": "{{value}} prises à vérifier",
+      "nothingFound": "Rien trouvé. Dessine les prises toi-même.",
+      "manualOnly": "Cette version ne peut pas proposer de prises. Dessine-les toi-même.",
+      "detectionFailed": "La recherche de prises a échoué. Dessine-les toi-même.",
+      "done": "Terminé"
+    },
+    "publish": {
+      "title": "Ajoute-le à tes boards",
+      "body": "Tes prises sont enregistrées. Publie le mur et tu peux commencer à ouvrir.",
+      "cta": "Ajouter ce mur",
+      "failed": "La publication du mur a échoué."
+    },
+    "done": {
+      "body": "Préparation de ton mur…"
+    },
+    "leave": {
+      "title": "Laisser ce mur pour l'instant ?",
+      "body": "Ton mur et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
+      "stay": "Continuer",
+      "go": "Quitter"
+    },
+    "resume": {
+      "checking": "Recherche d'un mur commencé…",
+      "title": "Tu as un mur en cours",
+      "body": "« {{name}} » n'est pas fini. Reprends où tu t'es arrêté, ou recommence.",
+      "pickUp": "Reprendre",
+      "startOver": "Recommencer",
+      "checkFailed": "Impossible de vérifier ce mur. Réessaie.",
+      "retry": "Réessayer"
+    }
+  },
+  "sprayReset": {
+    "screenTitle": "Réinitialiser le mur",
+    "notYours": "Ce mur n'est pas à toi, tu ne peux pas le réinitialiser.",
+    "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
+    "openDraft": {
+      "title": "Une réinitialisation est à moitié faite",
+      "body": "Une photo d'un essai précédent est encore ouverte sur ce mur. Jette-la et recommence : rien n'a encore changé sur le mur.",
+      "discard": "La jeter et recommencer",
+      "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
+      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie."
+    },
+    "photo": {
+      "title": "Photographie le mur à nouveau",
+      "body": "Place-toi où tu étais la première fois si tu peux. Même mur, nouvelles prises."
+    },
+    "anchors": {
+      "title": "Marque les coins",
+      "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
+      "use": "Utiliser ces coins",
+      "notConvex": "Ces coins se croisent. Place-les autour du mur dans l'ordre."
+    },
+    "detect": {
+      "title": "On regarde ce qui a changé"
+    },
+    "leave": {
+      "title": "Quitter la réinitialisation ?",
+      "body": "Ta nouvelle photo reste en brouillon. Rien ne change sur le mur tant que tu ne confirmes pas."
+    },
+    "compare": {
+      "working": "On calcule ce qui a changé…",
+      "unavailable": "On n'a pas pu calculer ce qui a changé sur ce mur.",
+      "counts": "{{kept}} gardées · {{removed}} parties · {{added}} nouvelles",
+      "climbsAffected_one": "{{count}} bloc perd une prise",
+      "climbsAffected_other": "{{count}} blocs perdent des prises",
+      "aspectWarning": "Cette photo est cadrée différemment de la précédente. Vérifie que les coins sont bien sur les coins.",
+      "filterLabel": "Quels cercles afficher",
+      "tapHint": "Touche n'importe quel cercle pour changer d'avis.",
+      "confirm": "Confirmer la réinitialisation",
+      "acceptMoves": "Accepter tous les déplacements proposés",
+      "noDetections": "Rien à comparer",
+      "noDetectionsBody": "Ce téléphone n'a pas trouvé les prises sur ta nouvelle photo, donc il n'y a rien à comparer. Ta photo est gardée en brouillon."
+    },
+    "commit": {
+      "failed": "La réinitialisation n'est pas passée. Rien n'a changé sur le mur."
+    },
+    "filter": {
+      "all": "Toutes",
+      "kept": "Gardées {{value}}",
+      "removed": "Parties {{value}}",
+      "new": "Nouvelles {{value}}",
+      "unsure": "À vérifier {{value}}"
+    },
+    "hold": {
+      "kept": "Prise {{id}} — toujours sur le mur",
+      "removed": "Prise {{id}} — elle part",
+      "unsure": "Prise {{id}} — à vérifier",
+      "stillHere": "Elle est toujours là",
+      "gone": "Elle est partie"
+    },
+    "detection": {
+      "new": "Une prise qui n'était pas là",
+      "rejected": "Ce n'est pas une prise",
+      "accept": "C'est bien une prise",
+      "reject": "Ce n'est pas une prise"
+    },
+    "pairing": {
+      "start": "Même prise, déplacée ici",
+      "prompt": "Touche le cercle où cette prise était avant.",
+      "cancel": "Laisse tomber",
+      "paired": "Remplace la prise {{id}}",
+      "unpair": "Ce n'est pas cette prise",
+      "useSuggestion": "Remplace la prise {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
+    }
+  },
+  "sprayCaps": {
+    "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
+    "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",
+    "walls": "Tu peux garder {{max}} murs. Supprimes-en un pour faire de la place.",
+    "wallsHint": "Tu peux garder jusqu’à {{max}} murs."
+  },
+  "sprayHidden": {
+    "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
+    "title": "Ce mur est masqué"
   }
 }

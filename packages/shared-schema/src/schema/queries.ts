@@ -740,6 +740,51 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Every wall the caller owns, newest first. Includes walls with no published version."
     mySprayWalls: [SprayWall!]!
 
+    """
+    Spray wall reports still waiting on a decision, newest first. Community admins
+    only (\`spray\`-scoped or global). Pass a wall uuid to read just that wall's.
+    """
+    sprayWallReports(uuid: ID): [SprayWallReport!]!
+
+    """
+    What a reset WOULD do: match the detections from a new photo against the
+    holds on the wall today and report kept / removed / added.
+
+    Writes nothing — not one row — so a client may call it as often as the owner
+    drags a hold around. The detections are expected in the wall's CANONICAL
+    frame, i.e. already mapped through the draft version's own homography, which
+    is the only reason two photographs taken from different spots can be compared
+    at all. Editor only, since a proposal describes an unpublished draft.
+    """
+    proposeSprayWallReset(input: ProposeSprayWallResetInput!): SprayWallResetProposal
+
+    """
+    A remix starting point: a climb on a spray wall with every hold it has since
+    lost stripped out of its frames.
+
+    Gated by exactly the rule \`saveClimb\` applies to a spray climb write: the
+    owner, a member of the wall's gym, or anyone on a public wall — plus the
+    share-link capability, which is \`sprayWallUuid\`. Send the wall's uuid and an
+    UNLISTED wall opens up, the same way it does for setting a climb on it; a
+    PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+    climb is not on a spray wall, or when the viewer may not see the wall — the two
+    are indistinguishable on purpose.
+
+    The PARENT is shown even when it is no longer climbable (epic decision
+    2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+    """
+    remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
+
+    """
+    Every spray wall attached to a gym that the caller may see, by wall name.
+
+    NOT the same rule as \`sprayWall\`: a listing is enumerable, so the unlisted
+    exemption does not apply. Gym members see the gym's walls including private
+    ones; everyone else — logged out included, which is how the web gym page reads
+    this — sees only public walls. An unknown gym is an empty list, not an error.
+    """
+    gymSprayWalls(gymUuid: ID!): [SprayWall!]!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

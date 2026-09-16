@@ -1002,8 +1002,36 @@ export type Climb = {
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
+  /**
+   * The holds this climb was set on that are no longer on the wall, carrying the
+   * geometry they had while they were — so a client can draw ghost rings where
+   * they used to be and the climber can see what the reset took.
+   *
+   * Spray walls only: null on every catalogue board, where holds do not come off,
+   * and null on a climb that has lost nothing, so the common case costs no query.
+   * An empty list means the climb's holds are all still there but the server did
+   * look.
+   *
+   * Coordinates are the wall's canonical frame — the same frame
+   * `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
+   * conversion. `removedVersion` is the generation that took each hold off.
+   *
+   * Resolved per climb, with its own query. A list must not select it; it is for a
+   * single-climb surface — the play drawer and the remix editor.
+   */
+  lostHolds?: Maybe<Array<SprayWallHold>>;
   /** Whether the climb should be displayed mirrored */
   mirrored?: Maybe<Scalars['Boolean']['output']>;
+  /**
+   * How many of this climb's holds are no longer on the wall.
+   *
+   * Spray walls only — null on every catalogue board, where holds do not come off.
+   * 0 is an intact climb; anything higher is a climb that survived a reset minus
+   * some holds, which stays findable, gets a badge and can be remixed. Materialised
+   * on `board_climbs` rather than joined, because the offline mirror has no
+   * `board_climb_holds` table to join through.
+   */
+  missingHoldCount?: Maybe<Scalars['Int']['output']>;
   /** Name/title of the climb */
   name: Scalars['String']['output'];
   /** ISO timestamp of when this climb was first published (null while still a draft) */
@@ -1082,6 +1110,8 @@ export type ClimbInput = {
   /** Layout the climb belongs to. Round-tripped so a connected board can skip a climb set for another layout. */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   mirrored?: InputMaybe<Scalars['Boolean']['input']>;
+  /** How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board. */
+  missingHoldCount?: InputMaybe<Scalars['Int']['input']>;
   name: Scalars['String']['input'];
   /** ISO timestamp of when this climb was first published. */
   published_at?: InputMaybe<Scalars['String']['input']>;
@@ -1172,6 +1202,8 @@ export type ClimbSearchInput = {
   hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide climbs the user has completed (requires auth) */
   hideCompleted?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Keep only intact climbs, only climbs that have lost a hold, or everything (the default). */
+  holdIntegrity?: InputMaybe<HoldIntegrityFilter>;
   /** Hold filter object: { holdId: 'ANY' | 'NOT', ... } */
   holdsFilter?: InputMaybe<Scalars['JSON']['input']>;
   /** Layout ID */
@@ -1435,6 +1467,21 @@ export type CommentsInput = {
   sortBy?: InputMaybe<SortMode>;
   /** Time period filter */
   timePeriod?: InputMaybe<TimePeriod>;
+};
+
+/**
+ * The reviewed outcome of a reset. Re-validated against the wall's current state
+ * inside the commit transaction — a proposal computed ten minutes ago against a
+ * generation that has since been published is rejected, not applied.
+ */
+export type CommitSprayWallVersionInput = {
+  added: Array<SprayWallAddedDecisionInput>;
+  kept: Array<SprayWallKeptDecisionInput>;
+  /** Hold ids that came off the wall. */
+  removed: Array<Scalars['Int']['input']>;
+  /** The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput). */
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
 };
 
 /** A community role assignment for a user. */
@@ -3016,6 +3063,16 @@ export type GymTopClimb = {
 };
 
 /**
+ * Whether a climb still has every hold it was set on.
+ *
+ * ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+ * nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+ * reset takes holds off the wall; on a catalogue board every climb is INTACT, so
+ * BROKEN there is an empty result rather than an error.
+ */
+export type HoldIntegrityFilter = 'ANY' | 'BROKEN' | 'INTACT';
+
+/**
  * A board config, identified the way a geometry shard is. Set ids are absent on
  * purpose: every shard is traced with every set of its layout and size mounted,
  * so an override never names one.
@@ -3364,6 +3421,19 @@ export type Mutation = {
    */
   clearLocationSyncFreeze: ClearLocationSyncFreezeResult;
   /**
+   * Land a reviewed reset: apply the decisions and publish the draft, in ONE
+   * transaction under the wall lock.
+   *
+   * Removed holds are stamped, never deleted — the climbs set on them stay
+   * findable and countable. Added holds get a fresh catalogue pair and, where the
+   * review confirmed a move, a `movedFromHoldId` back to the hold they replaced.
+   * Kept holds keep their published position and take only a fresher silhouette.
+   * The previous generation is superseded and every climb on the wall has its
+   * `missingHoldCount` re-materialised, which is what makes the badge, the
+   * Intact / Lost holds filter and the remix prompt agree. Owner only.
+   */
+  commitSprayWallVersion: SprayWallResetResult;
+  /**
    * Confirm to all session participants that a climb was successfully relayed to the wall
    * over BLE from this client's phone. Any session participant may call — the BLE-capable
    * phone that handled the send is the source of truth for confirmation. The server stamps
@@ -3582,6 +3652,15 @@ export type Mutation = {
    */
   publishSprayWallVersion: SprayWallVersion;
   /**
+   * Delete the photographs of walls soft-deleted more than 30 days ago
+   * (`SPRAY_WALL_PHOTO_RETENTION_DAYS`). Cron-authenticated; the scheduler's
+   * `purge-spray-wall-photos` job is the only caller.
+   *
+   * Photographs only. The catalogue rows and every climb ever set on the wall stay
+   * behind, because other people's ticks point at them.
+   */
+  purgeDeletedSprayWallPhotos: SprayWallPhotoPurgeResult;
+  /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,
    * a departed committee member, a claim approved to the wrong person. The
    * listing's human-curation freeze is left exactly as it was, the outgoing
@@ -3663,6 +3742,15 @@ export type Mutation = {
    * pair so repeated reports don't spam the team.
    */
   reportGymDuplicate: ReportGymDuplicateResult;
+  /**
+   * Report a spray wall. Any signed-in climber who can see it, once per wall.
+   *
+   * Nothing is hidden automatically — the outcome of a report is an admin reading
+   * it. A second report from the same climber answers `ALREADY_REPORTED` and
+   * writes nothing, and a wall the caller cannot see answers "not found", exactly
+   * like a uuid that is not a wall.
+   */
+  reportSprayWall: SprayWallReportResult;
   /**
    * Report that this client's BLE link to the wall dropped (explicit lightbulb-off or a
    * detected drop), so every session participant turns the queue-control-bar lightbulb off.
@@ -3800,6 +3888,14 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /**
+   * Hide or unhide a wall. Community admins only (`spray`-scoped or global).
+   *
+   * A hidden wall reads exactly like a PRIVATE one for everybody but its owner,
+   * who keeps seeing it with a notice. Reversible, and it destroys nothing: the
+   * photographs, the holds and every climb set on the wall stay where they are.
+   */
+  setSprayWallHidden: SprayWallModerationResult;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
   /**
@@ -3975,6 +4071,11 @@ export type MutationChooseBoardForSerialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationClearLocationSyncFreezeArgs = {
   input: ClearLocationSyncFreezeInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCommitSprayWallVersionArgs = {
+  input: CommitSprayWallVersionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4240,6 +4341,11 @@ export type MutationPublishSprayWallVersionArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationPurgeDeletedSprayWallPhotosArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReassignGymOwnerArgs = {
   input: ReassignGymOwnerInput;
 };
@@ -4333,6 +4439,11 @@ export type MutationReportClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportGymDuplicateArgs = {
   input: ReportGymDuplicateInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportSprayWallArgs = {
+  input: ReportSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4464,6 +4575,11 @@ export type MutationSetSessionBoardSerialArgs = {
 export type MutationSetSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSprayWallHiddenArgs = {
+  input: SetSprayWallHiddenInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5161,6 +5277,20 @@ export type ProposalVoteSummary = {
   weightedUpvotes: Scalars['Int']['output'];
 };
 
+export type ProposeSprayWallResetInput = {
+  /** Every hold found in the new photo, in the wall's canonical frame. */
+  detections: Array<SprayWallDetectionInput>;
+  /**
+   * The DRAFT version whose photo these detections came from.
+   *
+   * It must carry anchors: the canonical frame is version 1's photo frame forever,
+   * so from version 2 on the four corners are the only thing that says where this
+   * photograph's pixels sit in it.
+   */
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -5571,6 +5701,15 @@ export type Query = {
    */
   gymOwnershipLookup: GymOwnershipLookupResult;
   /**
+   * Every spray wall attached to a gym that the caller may see, by wall name.
+   *
+   * NOT the same rule as `sprayWall`: a listing is enumerable, so the unlisted
+   * exemption does not apply. Gym members see the gym's walls including private
+   * ones; everyone else — logged out included, which is how the web gym page reads
+   * this — sees only public walls. An unknown gym is an empty list, not an error.
+   */
+  gymSprayWalls: Array<SprayWall>;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -5688,6 +5827,17 @@ export type Query = {
    * Returns null if not authenticated.
    */
   profile?: Maybe<UserProfile>;
+  /**
+   * What a reset WOULD do: match the detections from a new photo against the
+   * holds on the wall today and report kept / removed / added.
+   *
+   * Writes nothing — not one row — so a client may call it as often as the owner
+   * drags a hold around. The detections are expected in the wall's CANONICAL
+   * frame, i.e. already mapped through the draft version's own homography, which
+   * is the only reason two photographs taken from different spots can be compared
+   * at all. Editor only, since a proposal describes an unpublished draft.
+   */
+  proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
   /**
@@ -5707,6 +5857,22 @@ export type Query = {
    * thumbnails are already cached in our S3; no live IG/TikTok enrichment.
    */
   recentBetaLinks: Array<RecentBetaLink>;
+  /**
+   * A remix starting point: a climb on a spray wall with every hold it has since
+   * lost stripped out of its frames.
+   *
+   * Gated by exactly the rule `saveClimb` applies to a spray climb write: the
+   * owner, a member of the wall's gym, or anyone on a public wall — plus the
+   * share-link capability, which is `sprayWallUuid`. Send the wall's uuid and an
+   * UNLISTED wall opens up, the same way it does for setting a climb on it; a
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+   * climb is not on a spray wall, or when the viewer may not see the wall — the two
+   * are indistinguishable on purpose.
+   *
+   * The PARENT is shown even when it is no longer climbable (epic decision
+   * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+   */
+  remixClimb?: Maybe<SprayRemixSeed>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -5809,6 +5975,11 @@ export type Query = {
    * as is a wall with nothing published yet.
    */
   sprayWallRenderData?: Maybe<SprayWallRenderData>;
+  /**
+   * Spray wall reports still waiting on a decision, newest first. Community admins
+   * only (`spray`-scoped or global). Pass a wall uuid to read just that wall's.
+   */
+  sprayWallReports: Array<SprayWallReport>;
   /**
    * Boards that probably belong to a gym but aren't linked to it yet, for the
    * gym's Boards tab. Requires edit access to the gym. Returns two kinds of
@@ -6226,6 +6397,11 @@ export type QueryGymOwnershipLookupArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryGymSprayWallsArgs = {
+  gymUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryGymStatsArgs = {
   input: GymStatsInput;
 };
@@ -6330,6 +6506,11 @@ export type QueryPopularBoardConfigsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryProposeSprayWallResetArgs = {
+  input: ProposeSprayWallResetInput;
+};
+
+/** Root query type for all read operations. */
 export type QueryPublicProfileArgs = {
   userId: Scalars['ID']['input'];
 };
@@ -6345,6 +6526,12 @@ export type QueryRecentBetaLinksArgs = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryRemixClimbArgs = {
+  parentUuid: Scalars['ID']['input'];
+  sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -6451,6 +6638,11 @@ export type QuerySprayWallByLayoutArgs = {
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallReportsArgs = {
+  uuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -6897,6 +7089,11 @@ export type ReportGymDuplicateResult = {
 
 export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
 
+export type ReportSprayWallInput = {
+  reason: SprayWallReportReason;
+  wallUuid: Scalars['ID']['input'];
+};
+
 /** Input for requesting ownership of a gym. */
 export type RequestGymClaimInput = {
   /** Work email at the gym's website domain (domain-verified path). Omit to request admin review. */
@@ -7004,6 +7201,16 @@ export type SaveClimbInput = {
   name: Scalars['String']['input'];
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  /**
+   * The spray wall climb this one was remixed from.
+   *
+   * Writes a `spray_climb_lineage` row alongside the child, which is what the
+   * child's screen reads to link back to the parent's ticks and grade history.
+   * Only meaningful for `boardType: "spray"`, and the parent has to be a climb
+   * on the SAME wall. The parent is kept even when it is no longer climbable —
+   * that is usually why it was remixed.
+   */
+  remixOfClimbUuid?: InputMaybe<Scalars['ID']['input']>;
   /** Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -7689,6 +7896,11 @@ export type SetCommunitySettingInput = {
   value: Scalars['String']['input'];
 };
 
+export type SetSprayWallHiddenInput = {
+  hidden: Scalars['Boolean']['input'];
+  uuid: Scalars['ID']['input'];
+};
+
 /** A climb created by a setter, for display on profile pages. */
 export type SetterClimb = {
   __typename?: 'SetterClimb';
@@ -8027,6 +8239,44 @@ export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
 /**
+ * A remix starting point: the parent climb with every hold it has since lost
+ * stripped out of its frames.
+ *
+ * Nothing is written by asking for one. Pass `parentUuid` back as
+ * `SaveClimbInput.remixOfClimbUuid` and the lineage row is written with the
+ * child.
+ */
+export type SprayRemixSeed = {
+  __typename?: 'SprayRemixSeed';
+  angle: Scalars['Int']['output'];
+  /** The parent's frames with the lost holds removed. Empty when nothing survived. */
+  frames: Scalars['String']['output'];
+  /** Holds of the parent that are still there. */
+  keptHoldIds: Array<Scalars['Int']['output']>;
+  layoutId: Scalars['Int']['output'];
+  /** Holds the parent used that are no longer on the wall. */
+  lostHoldIds: Array<Scalars['Int']['output']>;
+  parentName: Scalars['String']['output'];
+  /** The climb being remixed. */
+  parentUuid: Scalars['ID']['output'];
+  /**
+   * Successors the reset review linked for the lost holds, in hold-id order.
+   *
+   * At most one per entry in `lostHoldIds`: a commit refuses two additions
+   * naming the same `movedFromHoldId`, and where the ordinary hold editor has
+   * left a second claim on one predecessor, the more recently installed hold
+   * wins. So this is a set of successors, not a
+   * ranking: there is no "best" suggestion to put first. It is NOT positionally
+   * aligned with `lostHoldIds` either, because a lost hold may have no successor
+   * at all; pair them by reading `movedFromHoldId` off the holds themselves.
+   *
+   * A remix wants somewhere to start, and `moved_from_hold_id` is the only
+   * record of which of today's holds replaced one of yesterday's.
+   */
+  suggestedHoldIds: Array<Scalars['Int']['output']>;
+};
+
+/**
  * A climber's own wall: one runtime-created catalogue layout under the `spray`
  * board type. Its owner, name, angle, visibility and gym live on the
  * `user_boards` row `board` returns — nothing about a wall is stored twice.
@@ -8036,10 +8286,32 @@ export type SprayWall = {
   board: UserBoard;
   /** The published version climbers see. Null until the first publish. */
   currentVersion?: Maybe<SprayWallVersion>;
+  /**
+   * When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
+   * case.
+   *
+   * Only ever non-null for the wall's OWNER: a hidden wall reads exactly like a
+   * private one to everybody else, so nobody else can resolve it to ask. The
+   * owner's app shows a notice off this field — a wall that vanished without a
+   * word would look like data loss.
+   */
+  hiddenAt?: Maybe<Scalars['String']['output']>;
   /** Holds alive on the current version. */
   holdCount: Scalars['Int']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
+  /**
+   * A stable, unsigned URL for the wall photo — public walls only, null for every
+   * other wall.
+   *
+   * A public wall has to show up on a web gym page that a logged-out climber
+   * reads, and nobody there can hold a fifteen-minute signature. So going public
+   * COPIES the current photo into the world-readable `media` bucket under an
+   * unguessable random key and serves that; going private deletes the object and
+   * nulls this. Null on a public wall means nothing has been published yet, or the
+   * copy has not been made.
+   */
+  publicPhotoUrl?: Maybe<Scalars['String']['output']>;
   referenceHeight?: Maybe<Scalars['Int']['output']>;
   /** The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands. */
   referenceWidth?: Maybe<Scalars['Int']['output']>;
@@ -8057,6 +8329,49 @@ export type SprayWall = {
    * them: they can edit the gym's page and not a wall's holds.
    */
   viewerCanEdit: Scalars['Boolean']['output'];
+};
+
+/** Put this detection on the wall as a new hold, with a new catalogue id. */
+export type SprayWallAddedDecisionInput = {
+  detection: SprayWallDetectionInput;
+  /**
+   * The hold this one replaced, when the review confirmed a move.
+   *
+   * It has to be in this commit's `removed` list: a move is one removal and one
+   * addition in the same reset. A predecessor that is still on the wall, or one an
+   * earlier reset already took off, is refused — either would leave remix offering
+   * an unrelated hold as a successor, with nothing to notice it afterwards.
+   */
+  movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * One hold the client found in the NEW photo, already mapped through that photo's
+ * homography into the wall's canonical frame.
+ *
+ * The server never re-runs detection on these (epic decision 2026-09-14): it is
+ * the owner's wall. What it does with them is match them against the holds that
+ * are on the wall today, which is a question about two coordinate sets and not
+ * about whether a blob is a hold.
+ */
+export type SprayWallDetectionInput = {
+  /**
+   * Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
+   *
+   * **Accepted and currently ignored.** The matcher can only compare colours when
+   * BOTH sides carry a descriptor of the same length, and the holds already on the
+   * wall carry none — `spray_wall_holds` has nowhere to put one. So a reset today
+   * is decided on geometry alone, whatever is sent here. The field stays so a
+   * client need not change when SW-12b (#5485) gives a stored hold a descriptor.
+   */
+  colour?: InputMaybe<Array<Scalars['Float']['input']>>;
+  confidence?: InputMaybe<Scalars['Float']['input']>;
+  cx: Scalars['Int']['input'];
+  cy: Scalars['Int']['input'];
+  /** Flat implicitly-closed ring in radius units, same contract as SprayWallHold.outline. */
+  outline?: InputMaybe<Array<Scalars['Float']['input']>>;
+  r: Scalars['Int']['input'];
+  source?: InputMaybe<SprayHoldSource>;
 };
 
 /**
@@ -8104,6 +8419,45 @@ export type SprayWallHoldInput = {
   source?: InputMaybe<SprayHoldSource>;
 };
 
+/** Keep this hold, optionally refreshing its silhouette from the new photo. */
+export type SprayWallKeptDecisionInput = {
+  /**
+   * The detection this hold matched.
+   *
+   * Only the OUTLINE is taken from it. `cx` / `cy` / `r` stay exactly as
+   * published: every climb on the wall renders from those numbers, so nudging a
+   * kept hold by the few pixels two photographs disagree by would move the climbs
+   * with it. A silhouette is a picture of the hold, not a position, so a sharper
+   * one from the newer photo is free.
+   */
+  detection?: InputMaybe<SprayWallDetectionInput>;
+  holdId: Scalars['Int']['input'];
+};
+
+/** The outcome of the admin switch, thin on purpose: a moderation tool, not a wall read. */
+export type SprayWallModerationResult = {
+  __typename?: 'SprayWallModerationResult';
+  hidden: Scalars['Boolean']['output'];
+  hiddenAt?: Maybe<Scalars['String']['output']>;
+  layoutId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+/**
+ * A removed hold paired with the nearest added detection.
+ *
+ * Strictly a suggestion — the proposal still reports the pair as one removal and
+ * one addition, because a hold that moved is not the hold a climb used any more.
+ * Confirming one writes `movedFromHoldId` so remix can offer the successor.
+ */
+export type SprayWallMoveSuggestion = {
+  __typename?: 'SprayWallMoveSuggestion';
+  detectionIndex: Scalars['Int']['output'];
+  /** Centre-to-centre distance in canonical pixels. */
+  distance: Scalars['Float']['output'];
+  movedFromHoldId: Scalars['Int']['output'];
+};
+
 /**
  * A wall photo, behind short-lived presigned URLs.
  *
@@ -8127,6 +8481,15 @@ export type SprayWallPhoto = {
   width?: Maybe<Scalars['Int']['output']>;
 };
 
+/** What one purge run cleared. Photographs only — no wall row is ever deleted. */
+export type SprayWallPhotoPurgeResult = {
+  __typename?: 'SprayWallPhotoPurgeResult';
+  durationMs: Scalars['Int']['output'];
+  objectsDeleted: Scalars['Int']['output'];
+  wallsConsidered: Scalars['Int']['output'];
+  wallsPurged: Scalars['Int']['output'];
+};
+
 /**
  * Everything a renderer needs for one wall at one version: the photo, the
  * geometry that maps it, and the holds alive at that version.
@@ -8145,6 +8508,106 @@ export type SprayWallRenderData = {
   photo: SprayWallPhoto;
   versionNumber: Scalars['Int']['output'];
   wall: SprayWall;
+};
+
+/** One pending report, for the admin queue. */
+export type SprayWallReport = {
+  __typename?: 'SprayWallReport';
+  createdAt: Scalars['String']['output'];
+  /** Whether the wall is hidden right now. */
+  hidden: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  layoutId: Scalars['Int']['output'];
+  reason: SprayWallReportReason;
+  wallUuid: Scalars['ID']['output'];
+};
+
+/**
+ * Why a climber reported a wall. A closed set — there is no free-text field
+ * anywhere in the report path.
+ */
+export type SprayWallReportReason =
+  /** The photograph or the wall's name is not something we should be serving. */
+  | 'INAPPROPRIATE'
+  /** Not a climbing wall at all. */
+  | 'NOT_A_WALL'
+  | 'OTHER'
+  /** Somebody's face, address or documents are in the frame. */
+  | 'PERSONAL_INFO';
+
+export type SprayWallReportResult = {
+  __typename?: 'SprayWallReportResult';
+  status: SprayWallReportStatus;
+};
+
+/**
+ * What the report did. `ALREADY_REPORTED` is the answer to a second report from
+ * the same climber: their first one still stands, and nothing about the queue's
+ * state leaks back to them.
+ */
+export type SprayWallReportStatus = 'ALREADY_REPORTED' | 'CREATED';
+
+/** A hold the matcher believes is still on the wall, and which detection it matched. */
+export type SprayWallResetKeptHold = {
+  __typename?: 'SprayWallResetKeptHold';
+  /** 1 - match cost, clamped to 0..1. 1 is a perfect overlap of identical colours. */
+  confidence: Scalars['Float']['output'];
+  /** Index into the `detections` array that was submitted. */
+  detectionIndex: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+};
+
+/**
+ * What a reset would do, computed and thrown away. `proposeSprayWallReset`
+ * writes nothing at all — the owner reviews this and `commitSprayWallVersion`
+ * is what lands it.
+ */
+export type SprayWallResetProposal = {
+  __typename?: 'SprayWallResetProposal';
+  /** Indices into `detections` that matched nothing already on the wall. */
+  added: Array<Scalars['Int']['output']>;
+  /**
+   * The new photo's aspect ratio differs from the wall's canonical frame by more
+   * than a tenth.
+   *
+   * A WARNING and never a block (epic decision 2026-09-14). A phone held the other
+   * way up, or a step back from the wall, changes the framing without changing the
+   * wall — the anchors are what put the two photos in one frame, and they have
+   * already been applied by the time these detections arrive.
+   */
+  aspectMismatch: Scalars['Boolean']['output'];
+  /** How many climbs on this wall use at least one of the removed holds. */
+  climbsAffected: Scalars['Int']['output'];
+  kept: Array<SprayWallResetKeptHold>;
+  /** Kept hold ids a human should look at — a second detection was nearly as good a match. */
+  lowConfidence: Array<Scalars['Int']['output']>;
+  movesSuggested: Array<SprayWallMoveSuggestion>;
+  /** Hold ids with no detection inside the gates: these came off the wall. */
+  removed: Array<Scalars['Int']['output']>;
+  /** The draft version number the proposal was computed against. */
+  versionNumber: Scalars['Int']['output'];
+};
+
+/** What a committed reset changed. */
+export type SprayWallResetResult = {
+  __typename?: 'SprayWallResetResult';
+  /** Holds this commit put on the wall. */
+  addedCount: Scalars['Int']['output'];
+  /** Climbs whose `missingHoldCount` moved as a result. */
+  climbsChanged: Scalars['Int']['output'];
+  /**
+   * Holds still on the wall from the previous generation.
+   *
+   * The holds that were alive minus the ones this commit removed — NOT the length
+   * of the `kept` list. An alive hold the decisions never mention simply stays,
+   * so a client that lists only the holds it had something to say about would
+   * otherwise be told most of its wall had vanished.
+   */
+  keptCount: Scalars['Int']['output'];
+  /** Holds this commit took off the wall. */
+  removedCount: Scalars['Int']['output'];
+  /** The version, now PUBLISHED. */
+  version: SprayWallVersion;
 };
 
 /** One photograph of the wall, with the geometry that maps it onto the canonical frame. */

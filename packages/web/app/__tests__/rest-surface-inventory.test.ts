@@ -107,7 +107,7 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/og/session/route.tsx': 'keep-caller',
   'app/api/og/setter/route.tsx': 'keep-caller',
 
-  // --- /api/v1/* (10) — published in the OpenAPI doc rendered at the
+  // --- /api/v1/* (11) — published in the OpenAPI doc rendered at the
   // indexable, sitemapped /docs and served as a crawlable /openapi.json.
   // "No in-repo caller" is the intended steady state of a published API. ---
   'app/api/v1/[board_name]/grades/route.ts': 'keep-external',
@@ -120,6 +120,12 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/v1/[board_name]/slugs/layout/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/size/[layout_id]/[slug]/route.ts': 'keep-external',
   'app/api/v1/[board_name]/slugs/sets/[layout_id]/[size_id]/[slug]/route.ts': 'keep-external',
+  // The odd one out on this list, and it has an in-repo caller: the spray climb
+  // page points an UNLISTED wall's photo at it. It has to be a route rather than
+  // a URL in the HTML because the underlying object is behind a fifteen-minute
+  // signature while the page carries a 24-hour CDN `s-maxage`, so the signature
+  // is minted per image fetch and this answers `no-store` every time.
+  'app/api/v1/spray-walls/[wall_uuid]/photo/route.ts': 'keep-caller',
 };
 
 function collectRouteFiles(dir: string, out: string[] = []): string[] {
@@ -251,6 +257,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(40);
   });
 });

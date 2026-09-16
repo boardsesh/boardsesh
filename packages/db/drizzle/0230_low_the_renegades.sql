@@ -1,0 +1,1 @@
+ALTER TABLE "spray_walls" ADD COLUMN "public_photo_key" text;

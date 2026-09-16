@@ -20,6 +20,7 @@
 import { classifyClimbBoardCompatibility, formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
+import { ensureSprayWallLoaded } from '../spray/spray-wall-registry';
 import {
   getPlaylistRenderBoardTarget,
   resolvePlaylistClimbRenderBoard,
@@ -60,6 +61,25 @@ function drawOnActiveBoard(boardConfig: BoardConfig): ClimbRenderBoardResult {
   return { boardConfig, fit: 'exact', incompatible: false };
 }
 
+/**
+ * Pull a spray wall in if this is the first time anything resolved it.
+ *
+ * A wall's holds and photo are runtime data, so a board config naming one the
+ * registry has never heard of renders a placeholder — forever, because nothing
+ * else would ever ask. This is the hook-less door onto the same deduped fetch the
+ * active board uses: a Map lookup per call, at most one request per wall, and the
+ * registry notifies its subscribers when it lands so the rows that asked
+ * re-render. A no-op for every catalogue board.
+ */
+function requestSprayWall(boardConfig: BoardConfig): void {
+  if (boardConfig.boardName === 'spray') ensureSprayWallLoaded(boardConfig.layoutId);
+}
+
+function withSprayWallRequested(result: ClimbRenderBoardResult): ClimbRenderBoardResult {
+  requestSprayWall(result.boardConfig);
+  return result;
+}
+
 function toResolverInput(climb: ClimbRenderBoardClimb, fallbackAngle: number): ClimbRenderBoardInput {
   return {
     boardType: climb.boardType ?? undefined,
@@ -82,12 +102,16 @@ export function resolveClimbRenderBoard(
   climb: ClimbRenderBoardClimb | null | undefined,
   activeBoardConfig: BoardConfig | null,
 ): ClimbRenderBoardResult | null {
-  if (!climb) return activeBoardConfig ? drawOnActiveBoard(activeBoardConfig) : null;
+  if (!climb) return activeBoardConfig ? withSprayWallRequested(drawOnActiveBoard(activeBoardConfig)) : null;
 
   if (!activeBoardConfig) {
     const resolved = resolvePlaylistClimbRenderBoard(toResolverInput(climb, 0), null);
     if (!resolved) return null;
-    return { boardConfig: resolved.renderBoard, fit: resolved.fit, incompatible: resolved.incompatible };
+    return withSprayWallRequested({
+      boardConfig: resolved.renderBoard,
+      fit: resolved.fit,
+      incompatible: resolved.incompatible,
+    });
   }
 
   const activeBoardName = toBoardName(activeBoardConfig.boardName);
@@ -100,13 +124,13 @@ export function resolveClimbRenderBoard(
 
   // No usable board signal on either side: keep today's behaviour and draw the
   // climb on the active board rather than guessing a board for it.
-  if (identity === 'unknown') return drawOnActiveBoard(activeBoardConfig);
+  if (identity === 'unknown') return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
   // A climb with no layout can only be placed by GUESSING one — the brand's
   // first layout, via `getDefaultRenderBoard`. That guess can land on exactly
   // the wrong-placement render this resolver exists to prevent, so a missing
   // layout always fails open, even when the brand disagrees with the active
   // board. (With a layout in hand the fallback is the climb's real board.)
-  if (climb.layoutId == null) return drawOnActiveBoard(activeBoardConfig);
+  if (climb.layoutId == null) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
 
   const resolved = resolvePlaylistClimbRenderBoard(
     toResolverInput(climb, activeBoardConfig.angle),
@@ -116,9 +140,13 @@ export function resolveClimbRenderBoard(
   // The climb names a board we can't build render data for (an unknown board
   // string, a retired layout). Drawing it on the active board is what happened
   // before this resolver existed, and it beats blanking the surface.
-  if (!resolved) return drawOnActiveBoard(activeBoardConfig);
+  if (!resolved) return withSprayWallRequested(drawOnActiveBoard(activeBoardConfig));
 
-  return { boardConfig: resolved.renderBoard, fit: resolved.fit, incompatible: resolved.incompatible };
+  return withSprayWallRequested({
+    boardConfig: resolved.renderBoard,
+    fit: resolved.fit,
+    incompatible: resolved.incompatible,
+  });
 }
 
 /**

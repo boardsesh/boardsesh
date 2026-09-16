@@ -27,6 +27,18 @@ export function extractGraphqlMessage(error: unknown): string | null {
   return null;
 }
 
+/**
+ * The first GraphQL error's `extensions.code`, or null.
+ *
+ * A code, never the message text: the server's prose is not a contract and is
+ * not translated, so a client that string-matches it stops recognising the case
+ * the first time somebody rewords an error.
+ */
+export function extractGraphqlCode(error: unknown): string | null {
+  const code = getGraphqlErrors(error)[0]?.extensions?.code;
+  return typeof code === 'string' ? code : null;
+}
+
 export function isGraphqlRateLimitedError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -80,6 +92,21 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
     (graphqlError) =>
       typeof graphqlError.extensions?.code === 'string' &&
       EXPECTED_BETA_VALIDATION_CODES.has(graphqlError.extensions.code),
+  );
+}
+
+/**
+ * The wall's owner, and only the wall's owner, may change who can see it.
+ *
+ * A gym admin or a community moderator can rename a wall and re-gym it, but
+ * flipping it public publishes the climber's own photograph to the open web and
+ * starts pushing their climbs into feeds — so the server rejects that with
+ * `SPRAY_WALL_VISIBILITY_OWNER_ONLY` and the edit screen says so in words next to
+ * the control, rather than failing the whole save.
+ */
+export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
+  return getGraphqlErrors(error).some(
+    (graphqlError) => graphqlError.extensions?.code === 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
   );
 }
 

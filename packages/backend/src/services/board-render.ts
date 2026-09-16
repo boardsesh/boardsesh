@@ -441,6 +441,29 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
   return renderPromise;
 }
 
+/**
+ * Run CPU-heavy render work under the SHARED render cap.
+ *
+ * `BOARD_RENDER_CONCURRENCY` is documented as the cap for "OG and board-image
+ * misses" (`docs/og-climb.md`), and a spray-wall card is another miss competing
+ * for the same cores — sharp decoding and compositing a phone photograph is the
+ * same kind of work as the WASM overlay, so it belongs in the same queue rather
+ * than in a second one that could double the real concurrency.
+ *
+ * Deliberately NOT `async`: the saturation check and the enqueue have to happen
+ * in one synchronous step, or two requests arriving in the same tick can both
+ * read a `pending` below the ceiling and both enqueue. Same reason
+ * `renderBoardImage` does the check inline rather than after an `await`.
+ *
+ * @throws RenderQueueSaturatedError when the queue is already at its ceiling.
+ */
+export function runOnRenderSemaphore<T>(fn: () => Promise<T>): Promise<T> {
+  if (renderSemaphore.pending >= MAX_QUEUED_RENDERS) {
+    throw new RenderQueueSaturatedError();
+  }
+  return renderSemaphore.run(fn);
+}
+
 /** `/og/climb` compatibility wrapper over the canonical renderer. */
 export function renderOgClimb(params: OgClimbRenderParams): Promise<OgClimbRenderResult> {
   return renderBoardImage({

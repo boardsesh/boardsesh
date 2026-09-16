@@ -47,6 +47,19 @@ export type BoardLabelScope = 'global' | 'within-gym';
 export type BoardLabelOptions = {
   /** Defaults to `global`. */
   scope?: BoardLabelScope;
+  /**
+   * What to call a spray wall, in the reader's language.
+   *
+   * This package holds no catalogues and no i18n, and `formatBoardDisplayName`
+   * is deliberately English — it spells brand names ("MoonBoard", "So iLL"), and
+   * a brand does not translate. "Spray wall" is the one value it returns that is
+   * not a brand: it describes a KIND of wall, and it is the word a spray row
+   * leads with, so leaving it English would put one English phrase in front of
+   * an otherwise translated row. Callers with a catalogue in hand pass the
+   * translated word; callers without one (www's gym page, a test) get the
+   * English default and read exactly as they did before.
+   */
+  sprayKindLabel?: string;
 };
 
 /** Trimmed value, or null for null/undefined/blank. Blank strings come back from the API. */
@@ -134,6 +147,16 @@ function serialFacet(board: BoardLabelSource): string | null {
  * than a raw id.
  */
 export function boardConfigLabel(board: BoardLabelSource): string | null {
+  // A spray wall has no catalogue layout and no catalogue size to name — its
+  // layout row is created at runtime when the owner photographs it, and its size
+  // is that same row. Both facets below would miss the generated tables and
+  // answer null anyway; saying so here makes it a decision rather than an
+  // accident, and keeps the subtitle at `formatBoardDisplayName` ("Spray wall")
+  // instead of some raw id a future table might start returning. The wall's own
+  // name is the row title, and the angle is still available as a disambiguation
+  // facet when two of a climber's walls collide.
+  if (toBoardName(board.boardType) === 'spray') return null;
+
   const parts = [layoutFacet(board), sizeFacet(board)].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(' ') : null;
 }
@@ -141,8 +164,22 @@ export function boardConfigLabel(board: BoardLabelSource): string | null {
 /**
  * The one-line subtitle under a board's name: where it is, else what it is,
  * else the brand. Never the raw lowercase board type (CLAUDE.md trademark rule).
+ *
+ * A spray wall inverts that order and leads with WHAT it is: "Spray wall", with
+ * the place appended when there is one. Every other board type is recognisable
+ * from its name — "Kilter 12×14" says what it is on its own — but a wall is named
+ * by its owner ("Garage", "The cave", "Main wall"), so a row reading just
+ * "Bergen Klatresenter" under a name like that tells a climber nothing about
+ * which of the gym's walls they are looking at, and hides the one fact that
+ * separates it from the Kilter on the next row. Whichever list the row is in,
+ * spray leads the same way: the `within-gym` scope drops the place, not the kind.
  */
 export function boardRowSubtitle(board: BoardLabelSource, options?: BoardLabelOptions): string {
+  if (toBoardName(board.boardType) === 'spray') {
+    const kind = options?.sprayKindLabel ?? formatBoardDisplayName(board.boardType);
+    const place = boardPlaceLabel(board, options);
+    return place === null ? kind : `${kind} · ${place}`;
+  }
   return boardPlaceLabel(board, options) ?? boardConfigLabel(board) ?? formatBoardDisplayName(board.boardType);
 }
 

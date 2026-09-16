@@ -5,6 +5,7 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { type BoardConfig } from '../../providers/drawer-host-provider';
 import { BoardImageNative } from '../BoardImageNative';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 
 /** Square slot size for the accessory-bar board thumbnail. */
 export const ACCESSORY_THUMBNAIL_SLOT_SIZE = 40;
@@ -76,6 +77,14 @@ export function AccessoryClimbThumbnail({
     [boardType, climbLayoutId, climbAngle, frames, compatibleSizeIds, boardConfig],
   );
 
+  // Above the early return below, and that placement is the whole point: for a
+  // spray wall this session has not got, `getBoardRenderData` answers null and
+  // this component returns BEFORE mounting `BoardImageNative` and the registry
+  // subscription inside it. The wall's arrival would then have nothing to
+  // re-render — the props have not moved — and the thumbnail would stay blank.
+  // This asks for the wall and subscribes, so the arrival brings it back.
+  const sprayToken = useSprayWallToken(renderBoard?.boardName, renderBoard?.layoutId);
+
   const boardRenderData = useMemo(() => {
     if (!renderBoard) return null;
     const setIdValues = renderBoard.setIds
@@ -89,7 +98,9 @@ export function AccessoryClimbThumbnail({
       sizeId: renderBoard.sizeId,
       setIds: setIdValues,
     });
-  }, [renderBoard]);
+    // `sprayToken` is a real dependency, not a lint appeasement: it is what
+    // makes this memo recompute when the wall lands or is reset.
+  }, [renderBoard, sprayToken]);
 
   if (!boardRenderData || !renderBoard) return null;
 

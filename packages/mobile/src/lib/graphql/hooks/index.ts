@@ -100,6 +100,8 @@ import {
   type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
+import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
+import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import {
@@ -559,6 +561,40 @@ export function useUpdateBoard() {
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
+    },
+  });
+}
+
+/**
+ * Change a spray wall's own fields — name, description, gym, angle and, the point
+ * of it, its VISIBILITY.
+ *
+ * Visibility on a wall does not go through `updateBoard`: the server refuses a
+ * visibility change on a spray board there (`SPRAY_WALL_VISIBILITY_ELSEWHERE`)
+ * because flipping a wall public is not a board-row edit — it publishes the
+ * wall's photo to the open web and starts pushing its climbs into feeds, and only
+ * the owner may do it (`SPRAY_WALL_VISIBILITY_OWNER_ONLY`, which the edit screen
+ * surfaces inline).
+ *
+ * `uuid` here is the wall's uuid, which IS its board uuid — so the same
+ * invalidations as `useUpdateBoard`: the roster rows and the single-board cache
+ * both carry `isPublic` / `isUnlisted`, and the wall finder's lists and pins show
+ * or hide the wall on the strength of them.
+ */
+export function useUpdateSprayWall() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: UpdateSprayWallInput) => {
+      const response = await getHttpClient().request<{ updateSprayWall: SprayWall }>(UPDATE_SPRAY_WALL, { input });
+      return response.updateSprayWall;
+    },
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayWall', updated.uuid] });
+      void queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', updated.layoutId] });
     },
   });
 }

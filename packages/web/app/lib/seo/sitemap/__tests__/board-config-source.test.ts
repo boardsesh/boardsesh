@@ -62,6 +62,41 @@ vi.mock('@/app/lib/db/db', () => ({
   },
 }));
 
+/**
+ * The public spray walls (SW-16, #5449), stubbed so this file keeps testing the
+ * MERGE rather than the wall query — `spray-wall-sitemap.test.ts` renders that
+ * query's real SQL. Stubbing it is also what keeps the `dbzRead` stand-in above
+ * honest: it answers exactly the MoonBoard grouped count and nothing else.
+ */
+const sprayWalls = vi.hoisted(() => ({
+  configs: [] as (PopularBoardConfig & { sprayWallSlug: string })[],
+  calls: 0,
+  throws: false,
+}));
+vi.mock('../spray-wall-configs', () => ({
+  getPublicSprayWallConfigs: async () => {
+    sprayWalls.calls += 1;
+    if (sprayWalls.throws) throw new Error('spray wall read failed');
+    return sprayWalls.configs;
+  },
+}));
+
+const PUBLIC_SPRAY_WALL: PopularBoardConfig & { sprayWallSlug: string } = {
+  boardType: 'spray',
+  layoutId: 900,
+  layoutName: "Marco's garage",
+  sizeId: 900,
+  sizeName: "Marco's garage",
+  sizeDescription: "Marco's garage",
+  setIds: [1],
+  setNames: ['Holds'],
+  climbCount: 42,
+  totalAscents: 0,
+  boardCount: 1,
+  displayName: "Marco's garage",
+  sprayWallSlug: 'marcos-garage',
+};
+
 const {
   buildMoonBoardClimbCountQuery,
   getBoardsShardConfigsOrThrow,
@@ -93,6 +128,9 @@ beforeEach(() => {
   climbCounts.calls = 0;
   climbCounts.throws = false;
   climbCounts.stalls = false;
+  sprayWalls.configs = [];
+  sprayWalls.calls = 0;
+  sprayWalls.throws = false;
 });
 
 describe('getSitemapClimbConfigsOrThrow', () => {
@@ -264,6 +302,27 @@ describe('the count query is bounded', () => {
   });
 });
 
+describe('the public spray wall leg', () => {
+  it('appends a public wall to the climbs shard configs, slug and all', async () => {
+    sprayWalls.configs = [PUBLIC_SPRAY_WALL];
+
+    const configs = await getSitemapClimbConfigsOrThrow();
+
+    expect(configs.filter((config) => config.boardType === 'spray')).toEqual([PUBLIC_SPRAY_WALL]);
+    // Appended, never spliced in: the listed configs still lead.
+    expect(configs[0]).toEqual(KILTER_CONFIG);
+  });
+
+  it('fails the whole climbs shard rather than serving a shorter one', async () => {
+    // Same reason the MoonBoard leg is strict here: the climbs shard resolves
+    // its groups twice per crawl, and a wall present for one pass and absent for
+    // the other is "cache epochs disagree".
+    sprayWalls.throws = true;
+
+    await expect(getSitemapClimbConfigsOrThrow()).rejects.toThrow('spray wall read failed');
+  });
+});
+
 describe('getBoardsShardConfigsOrThrow', () => {
   it('serves the listed configs when the MoonBoard count fails, rather than 503ing the whole shard', async () => {
     // The lopsided trade this exists for: on the dev image MoonBoard contributes
@@ -286,6 +345,15 @@ describe('getBoardsShardConfigsOrThrow', () => {
     const moonboard = (await getBoardsShardConfigsOrThrow()).filter((config) => config.boardType === 'moonboard');
 
     expect(moonboard).toHaveLength(7);
+  });
+
+  it('never names a spray wall: a wall has no /list URL on www', async () => {
+    sprayWalls.configs = [PUBLIC_SPRAY_WALL];
+
+    const configs = await getBoardsShardConfigsOrThrow();
+
+    expect(configs.some((config) => config.boardType === 'spray')).toBe(false);
+    expect(sprayWalls.calls).toBe(0);
   });
 
   it('does not swallow a MoonBoard failure for the climbs shard', async () => {

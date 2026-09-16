@@ -231,6 +231,58 @@ The existing route pattern `/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle
 
 ---
 
+### Spray Walls [IMPLEMENTED]
+
+A spray wall is a climber's own wall — photographed, its holds detected and
+corrected by hand, then set and logged on like any other board. It is **not a new
+kind of entity**: it is a `user_boards` row with `board_type = 'spray'` plus a
+runtime-created catalogue layout, which is what makes queue, play, ticks, stats,
+playlists, feed, comments, search and the duplicate gate work on it unchanged.
+Everything below is the per-wall state that does not belong on immutable
+catalogue rows.
+
+Full design — the identity mapping, the canonical frame, resets, the visibility
+rule and ops — is [spray-walls.md](./spray-walls.md). This section is the entity
+shape only.
+
+**Tables:** `packages/db/src/schema/app/spray-walls.ts`
+
+| Table | What one row is |
+| --- | --- |
+| `spray_walls` | One physical wall. Points at the `user_boards` row that carries its owner, name, angle, visibility and gym, so nothing about a wall is stored twice. Carries the wall's `layout_id` (which is also its size id), the canonical frame, the current version, the hold count, `deleted_at` and the moderation flag `hidden_at` / `hidden_by`. |
+| `spray_wall_versions` | One photograph of the wall. Version 1 is the first photo; every reset adds another. Carries the photo key, the four corner anchors and the photo→canonical homography. A version NEVER creates a new layout or size. |
+| `spray_wall_holds` | One hold across its whole life, keyed `(wall_id, hold_id)` where `hold_id` is the wall's `board_placements` id AND its `board_holes` id. `installed_version_id` / `removed_version_id` are a range, so the table is append-only apart from stamping a removal. |
+| `spray_climb_lineage` | Which climb a remix was rebuilt from, and on which version of the wall. |
+| `spray_wall_reports` | One climber's report of one wall, `(wall_id, reporter_id)` unique. The whole moderation queue: a wall photograph's safety question has one right answer, so there is nothing for the `climb_proposals` vote machinery to decide. |
+
+**Relationships:**
+
+| Relationship | Mechanism | Status |
+| --- | --- | --- |
+| Is 1 board | `spray_walls.board_uuid` FK → `user_boards.uuid`, ON DELETE RESTRICT | [IMPLEMENTED] |
+| Has versions | `spray_wall_versions.wall_id` FK → `spray_walls.id`, CASCADE | [IMPLEMENTED] |
+| Has holds | `spray_wall_holds.wall_id` FK → `spray_walls.id`, CASCADE | [IMPLEMENTED] |
+| Has climbs | `board_climbs` on `(board_type = 'spray', layout_id)` — no FK, the catalogue partition IS the link | [IMPLEMENTED] |
+| Has reports | `spray_wall_reports.wall_id` FK → `spray_walls.id`, CASCADE | [IMPLEMENTED] |
+
+**Key constraints and rules:**
+
+- `board_uuid` and `layout_id` are both unique: a wall is exactly one board and
+  exactly one layout.
+- `RESTRICT`, not `CASCADE`, on the board FK. `user_boards` rows are never
+  hard-deleted, so a cascade would only fire on a path that is not supposed to
+  exist — and it would take the wall's whole history while every climb ever set
+  on it stayed behind pointing at an empty layout.
+- **Soft delete only**, and it is also the tombstone: stamping
+  `spray_walls.deleted_at` fires `log_deletion_spray_walls()` so offline clients
+  drop the wall. The catalogue rows and every climb stay behind — a deleted wall
+  stops being reachable, it does not un-set anybody's climbs. Thirty days later a
+  scheduler job deletes the PHOTOGRAPHS and nothing else.
+- `hidden_at` is independent of `deleted_at`: a hidden wall reads like a private
+  one for everybody but its owner, and clearing the flag restores it exactly.
+
+---
+
 ### Sessions [IMPLEMENTED, enhancements PLANNED]
 
 A session represents a climbing session on one or more boards — the real-time party mode where users share a queue and take turns. Sessions are ephemeral by default but can be made permanent.

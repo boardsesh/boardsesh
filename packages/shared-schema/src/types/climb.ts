@@ -81,6 +81,10 @@ export type Climb = {
   // their own origins, so hold-id containment alone can't tell them apart
   // (canAddClimbToBoard rule 5).
   compatibleSizeIds?: number[] | null;
+  // `board_climbs.missing_hold_count` — how many of this climb's holds have come
+  // off the wall. Spray walls only: null/undefined on every catalogue board, and
+  // on any spray row a reset has never touched. Both mean intact.
+  missingHoldCount?: number | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
@@ -126,6 +130,11 @@ export type ClimbInput = {
   // party peer on a different-sized wall can tell the climb doesn't fit theirs.
   // Null/undefined means unknown and imposes no constraint.
   compatibleSizeIds?: number[] | null;
+  // How many of this climb's holds are no longer on the wall after a spray-wall
+  // reset. Round-tripped through the queue because a broken climb stays
+  // queueable and stays playable, and the peer showing it has to be able to say
+  // so. Null/undefined on every catalogue board, where holds do not come off.
+  missingHoldCount?: number | null;
 };
 
 /**
@@ -182,6 +191,10 @@ export type ClimbSearchInput = {
   onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
+  // Spray-wall hold integrity: INTACT keeps climbs that have lost no holds,
+  // BROKEN keeps only the ones that have, ANY (and an absent value) adds no
+  // filter. Reads the materialised `board_climbs.missing_hold_count`.
+  holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN';
   // Resolve stats through the climb's own set angle when the browsed angle has
   // none. Always on for Woods and MoonBoard; opt-in elsewhere. See #5405.
   crossAngleStats?: boolean;
@@ -278,6 +291,25 @@ export type SaveClimbInput = {
    * which derives `compatible_size_ids` from the hold bounding box.
    */
   sizeId?: number | null;
+  /**
+   * The setter's own grade, seeded into `board_climb_stats.display_difficulty`.
+   *
+   * REQUIRED to publish on a spray wall, which has no crowd grade to fall back on
+   * (`getBoardCapabilities('spray').crowdGrade` is false). Ignored elsewhere,
+   * where the grade comes from ticks or the Aurora sync.
+   */
+  userGrade?: string | null;
+  /**
+   * The spray wall this climb is being set on, as the share link carries it.
+   *
+   * Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+   * neither the wall's owner nor a member of its gym: the wall's `layoutId` comes
+   * out of a sequence, so it is not a secret and authorizes nothing on its own.
+   * The wall's uuid IS the capability an UNLISTED wall's share link hands out. A
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Send it on
+   * every spray write; it costs nothing when the caller is a principal.
+   */
+  sprayWallUuid?: string | null;
 };
 
 export type SaveMoonBoardClimbInput = {
@@ -343,6 +375,25 @@ export type UpdateClimbInput = {
    * omitted keeps the stored size.
    */
   sizeId?: number | null;
+  /**
+   * The setter's own grade.
+   *
+   * Needed to publish a DRAFT on a spray wall that was created without one: that
+   * board has no crowd grade to converge on, so the grade comes from either the
+   * stats row `saveClimb` seeded or this field. Ignored on every other board.
+   */
+  userGrade?: string | null;
+  /**
+   * The spray wall this climb is being set on, as the share link carries it.
+   *
+   * Only meaningful for `boardType: "spray"`, and only needed by a caller who is
+   * neither the wall's owner nor a member of its gym: the wall's `layoutId` comes
+   * out of a sequence, so it is not a secret and authorizes nothing on its own.
+   * The wall's uuid IS the capability an UNLISTED wall's share link hands out. A
+   * PRIVATE wall refuses everyone but its principals, uuid or not. Send it on
+   * every spray write; it costs nothing when the caller is a principal.
+   */
+  sprayWallUuid?: string | null;
 };
 
 export type UpdateClimbResult = {

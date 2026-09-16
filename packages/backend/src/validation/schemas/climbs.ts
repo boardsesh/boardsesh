@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
+import { ClimbUuidSchema, ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
@@ -128,6 +128,11 @@ export const ClimbInputSchema = z.object({
   // (their hold ids overlap as different holds). Bounded: a board type has a
   // handful of product sizes, never dozens.
   compatibleSizeIds: z.array(z.number().int()).max(50).nullish(),
+  // How many of this climb's holds a spray-wall reset has taken off. Round-trips
+  // through the queue because a broken climb is still queueable and still
+  // playable, and the peer showing it has to be able to say why the board is
+  // drawing fewer holds than the setter painted. Null on every catalogue board.
+  missingHoldCount: z.number().int().min(0).nullish(),
 });
 
 /**
@@ -225,6 +230,10 @@ export const ClimbSearchInputSchema = z.object({
   onlyRatedByMe: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
+  // Spray-wall hold integrity. No `.default()` — ANY and an omitted value are the
+  // same thing (no predicate), and a default here would apply for real, since
+  // searchClimbs uses this schema's parsed return.
+  holdIntegrity: z.enum(['ANY', 'INTACT', 'BROKEN']).optional(),
   crossAngleStats: z.boolean().optional(),
   // No default here on purpose: omitted means "no climb-type constraint"
   // (both boulders and routes match), not "boulders-only". searchClimbs (see
@@ -320,6 +329,12 @@ export const SaveClimbInputSchema = z
     // here and matched against the wall in the resolver, which is where the wall
     // data lives.
     sprayWallUuid: UUIDSchema.optional(),
+    // The spray climb this one was remixed from. Shape only here: whether the
+    // parent exists, is on the SAME wall, and is visible to the caller are all
+    // wall questions, answered in the resolver where the wall data lives.
+    // `ClimbUuidSchema`, not `UUIDSchema`: a climb uuid is Aurora's 32-hex form,
+    // not an RFC-4122 one, and every Boardsesh-authored climb follows it.
+    remixOfClimbUuid: ClimbUuidSchema.optional(),
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,

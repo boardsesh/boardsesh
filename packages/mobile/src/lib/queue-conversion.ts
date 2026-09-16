@@ -57,6 +57,10 @@ export type SubscriptionClimb = {
   // keeps the one signal that separates Woods' two boards (their hold ids
   // overlap as different holds). Nullish from older peers.
   compatibleSizeIds?: number[] | null;
+  // How many of this climb's holds a spray-wall reset has taken off, so a peer
+  // standing at the same wall can say why the board is drawing fewer holds than
+  // the setter painted. Nullish from older peers and on every catalogue board.
+  missingHoldCount?: number | null;
 };
 
 export type SubscriptionQueueItemUser = {
@@ -125,6 +129,7 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       boardseshDifficulty: subscriptionItem.climb.boardseshDifficulty,
       boardseshConfidence: subscriptionItem.climb.boardseshConfidence,
       compatibleSizeIds: subscriptionItem.climb.compatibleSizeIds,
+      missingHoldCount: subscriptionItem.climb.missingHoldCount,
     },
   };
 }

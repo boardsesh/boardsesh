@@ -319,6 +319,8 @@ export const setterFollowQueries = {
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // How many of the climb's holds have come off the wall — see get-climb.ts.
+          missing_hold_count: tables.climbs.missingHoldCount,
           // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
           characteristics: tables.climbs.characteristics,
           // The angle the stats row was joined at. Pinned to `angle` here, so it
@@ -376,6 +378,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        missingHoldCount: result.missing_hold_count ?? null,
         characteristics: result.characteristics ?? null,
         angle,
         statsAngle: result.statsAngle ?? null,
@@ -435,6 +438,8 @@ export const setterFollowQueries = {
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          // How many of the climb's holds have come off the wall — see get-climb.ts.
+          missing_hold_count: tables.climbs.missingHoldCount,
           // Structured climb rules — see the note in hydrate-climbs.ts (#5214).
           characteristics: tables.climbs.characteristics,
           statsAngle: tables.climbStats.angle,
@@ -500,6 +505,7 @@ export const setterFollowQueries = {
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
+          missingHoldCount: result.missing_hold_count ?? null,
           characteristics: result.characteristics ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           statsAngle: result.statsAngle ?? null,
@@ -617,6 +623,7 @@ export const setterFollowQueries = {
       frames_count: number | null;
       frames_pace: number | null;
       compatible_size_ids: number[] | null;
+      missing_hold_count: number | null;
       characteristics: string[] | null;
       required_set_ids: number[] | null;
       is_hidden: boolean | null;
@@ -645,6 +652,7 @@ export const setterFollowQueries = {
           c.frames_count,
           c.frames_pace,
           c.compatible_size_ids,
+          c.missing_hold_count,
           c.characteristics,
           c.required_set_ids,
           c.is_hidden,
@@ -683,6 +691,7 @@ export const setterFollowQueries = {
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
         owned_climbs.compatible_size_ids,
+        owned_climbs.missing_hold_count,
         owned_climbs.characteristics,
         owned_climbs.required_set_ids,
         owned_climbs.is_hidden,
@@ -727,6 +736,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        missingHoldCount: result.missing_hold_count ?? null,
         characteristics: result.characteristics ?? null,
         is_hidden: result.is_hidden ?? false,
         angle: result.stats_angle ?? DEFAULT_ANGLE,

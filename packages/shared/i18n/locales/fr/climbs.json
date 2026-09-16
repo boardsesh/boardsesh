@@ -334,6 +334,11 @@
         "title": "Aucun bloc trouvé",
         "subtitle": "Essayez d'ajuster les paramètres de votre board"
       },
+      "unsetWall": {
+        "title": "Personne n’a encore ouvert sur ce mur",
+        "subtitle": "Choisis tes prises, donne-lui un nom, et le mur a son premier bloc.",
+        "cta": "Ouvrir le premier bloc"
+      },
       "noMatches": {
         "title": "Aucun résultat",
         "description": "Rien ne correspond à \"{{query}}\""
@@ -424,6 +429,12 @@
       "collection": {
         "label": "Collection",
         "any": "Toutes"
+      },
+      "holdIntegrity": {
+        "label": "Prises",
+        "any": "Toutes",
+        "intact": "Intacts seulement",
+        "broken": "Prises perdues"
       },
       "pin": "Épingler comme raccourci",
       "unpin": "Retirer des raccourcis",
@@ -590,6 +601,16 @@
       "chip": "Masqué",
       "banner": "Masqué par la communauté"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} prise en moins",
+      "chip_other": "{{count}} prises en moins",
+      "chipAria_one": "{{count}} prise n'est plus sur le mur",
+      "chipAria_other": "{{count}} prises ne sont plus sur le mur",
+      "banner_one": "{{count}} prise de ce bloc n'est plus là",
+      "banner_other": "{{count}} prises de ce bloc ne sont plus là",
+      "bannerBody": "Remixe-le avec ce qu'il y a sur le mur maintenant.",
+      "remix": "Remixer"
+    },
     "climbActions": {
       "preview": "Aperçu",
       "copyLink": "Copier le lien",
@@ -699,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
+        "blocked": "Ajoute une prise de départ et une prise d'arrivée pour publier",
+        "gradeBlocked": "Choisis ta cotation pour publier"
       },
       "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer.",
       "routeMenu": {
@@ -707,6 +729,11 @@
         "makeRoute": "Convertir en voie",
         "makeBoulder": "Convertir en bloc",
         "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images"
+      },
+      "grade": {
+        "label": "Ta cotation",
+        "required": "Nécessaire pour publier",
+        "optional": "Facultatif sur un brouillon"
       }
     },
     "holdFilter": {
@@ -806,6 +833,34 @@
       "climbThis": "Grimper ce bloc",
       "ariaLabel": "Ouvrir {{climbName}} dans l’app Boardsesh",
       "helper": "Ouvre l’app, allume les prises, enregistre la croix."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Sans cotation",
+    "unknownSetter": "un ouvreur inconnu",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "Sur {{wallName}}, un mur de pan à {{angle}}° avec {{holdCount}} prises.",
+    "setterLine": "Ouvert par {{setter}}. {{ascents}} croix enregistrées.",
+    "ascentsLine": "{{ascents}} croix enregistrées.",
+    "setterNotesHeading": "Notes de l’ouvreur",
+    "keepLookingHeading": "Continue à chercher",
+    "setterLink": "Plus de blocs de {{setter}}",
+    "gymsLink": "Trouver une salle avec des murs",
+    "homeLink": "Accueil Boardsesh",
+    "photoAlt": "{{climbName}}, {{grade}}, allumé sur le mur de pan {{wallName}}",
+    "noPhoto": "Ce mur n’a pas encore de photo à montrer.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} sur {{wallName}} | Mur de pan",
+      "description": "{{climbName}}, {{grade}}, sur le mur de pan {{wallName}} à {{angle}}°, ouvert par {{setter}}. Vois les prises sur la photo du mur."
+    },
+    "wall": {
+      "summary": "Un mur de pan à {{angle}}° avec {{holdCount}} prises.",
+      "photoAlt": "Le mur de pan {{wallName}}",
+      "openInApp": "Ouvre ce mur dans l’app Boardsesh pour voir ses blocs, ouvrir les tiens et enregistrer tes croix.",
+      "metadata": {
+        "title": "{{wallName}} | Mur de pan",
+        "description": "{{wallName}}, un mur de pan à {{angle}}°. Vois le mur et ouvre-le dans l’app Boardsesh."
+      }
     }
   }
 }

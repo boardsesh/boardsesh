@@ -18,6 +18,7 @@ import type { BoardName } from '@boardsesh/board-constants';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { recomputeMissingHoldCountForClimb } from '@boardsesh/db/queries';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
@@ -28,6 +29,7 @@ import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
   assertSprayClimbIsSingleFrame,
+  recordRemixLineage,
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
@@ -165,6 +167,17 @@ export const climbMutations = {
       // the duplicate gate, which only fires for a single frame, so a multi-frame
       // spray climb would bypass the per-wall duplicate check entirely.
       assertSprayClimbIsSingleFrame(validated.framesCount, validated.frames);
+    }
+
+    // A remix is a spray-wall idea and `spray_climb_lineage` is a spray table, so
+    // there is nothing a remix of a Kilter climb could write. Rejected rather than
+    // ignored: dropping the field silently would save the climb, report success,
+    // and leave the client believing a link exists that never will — and the
+    // lineage row can only be written once, with the child.
+    if (!sprayTarget && validated.remixOfClimbUuid) {
+      throw new GraphQLError('Only spray wall climbs can be remixed', {
+        extensions: { code: SPRAY_CLIMB_CODES.remixParentNotFound, boardType },
+      });
     }
 
     // Woods is code-driven: no board_placements to validate a hold against and
@@ -350,9 +363,12 @@ export const climbMutations = {
         // else, `required_set_ids` is the one synthetic "Holds" set, and the
         // fingerprint is written HERE because a wall has no Aurora sync to come
         // back and fill it in — without it the per-wall duplicate gate has
-        // nothing to key on. `missing_hold_count` starts at 0: every hold is
-        // alive right now (the check below just proved it), and a reset is what
-        // moves the number.
+        // nothing to key on. `missing_hold_count` starts at 0, not NULL:
+        // `assertSprayHoldsAreAlive` ran a few lines above, inside this same
+        // transaction and under the wall lock, and refused every hold that is not
+        // on the published generation — so a climb cannot be born broken. A reset
+        // is what moves the number, and an edit that changes the frames re-derives
+        // it (`recomputeMissingHoldCountForClimb`).
         ...(sprayTarget
           ? {
               compatibleSizeIds: sprayTarget.compatibleSizeIds,
@@ -381,6 +397,13 @@ export const climbMutations = {
             })),
           )
           .onConflictDoNothing();
+      }
+
+      // The remix link, written with the child rather than after it: a lineage row
+      // is the only record of where a remix came from, and a climb that landed
+      // without it would look like an original forever.
+      if (sprayTarget && validated.remixOfClimbUuid) {
+        await recordRemixLineage(tx, sprayTarget, uuid, validated.remixOfClimbUuid);
       }
 
       // Derive the denormalised columns, then re-assert the spray ones — see
@@ -765,12 +788,6 @@ export const climbMutations = {
       throw new Error('Cannot publish climb without an angle');
     }
 
-    // Publishing a spray climb needs a grade, and `updateClimb` has no
-    // `userGrade` field to take one from — so the grade has to already be on the
-    // stats row `saveClimb` seeded when the draft was created. Checking it here is
-    // what stops draft → publish from being a way around
-    // `assertSprayGradeOnPublish`: without it a client could save an ungraded
-    // draft and immediately publish it.
     // Decided inside the transaction, under the wall lock — see `saveClimb`.
     let sprayMayAnnounce = sprayTarget?.publishesFeedEvents ?? false;
 
@@ -807,6 +824,26 @@ export const climbMutations = {
             extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
           });
         }
+      }
+    }
+
+    // A grade EDIT, as opposed to the publish transition above.
+    //
+    // `saveClimb` seeds the setter's grade and the transition re-seeds it, but
+    // neither covers what the editor's picker actually offers most of the time:
+    // reopening a climb inside the edit window and moving the grade. Without this
+    // the mutation returned success, the client showed a "published" toast and
+    // updated its saved baseline, and the stats row kept the old grade — the
+    // climb re-read as whatever it was graded the first time.
+    //
+    // No extra authorization: `updateClimb` has already refused anyone but
+    // `existing.userId`, and on a spray wall the owner of the climb IS its setter.
+    if (sprayTarget && sprayGradeToSeed === null && validated.userGrade != null) {
+      sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
+      if (sprayGradeToSeed === null) {
+        throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
+          extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
+        });
       }
     }
 
@@ -1068,6 +1105,25 @@ export const climbMutations = {
               )
               .onConflictDoNothing();
           }
+
+          // The climb just moved under the wall, so its integrity number now
+          // describes holds it no longer uses. A climber whose problem lost two
+          // holds and who edited it onto two that are still there has fixed it —
+          // but nothing else would ever say so: the wall-wide recompute only runs
+          // when a reset lands, so until somebody reset that wall again the climb
+          // would sit in BROKEN searches wearing a badge for a problem its setter
+          // had already dealt with.
+          //
+          // Inside the same transaction as the hold rewrite it answers, and after
+          // it, so the count is read off the rows this edit just wrote. The wall
+          // lock is already held: `sprayWallMayAnnounceUnderLock` took it above —
+          // it runs for every spray write — and `pg_advisory_xact_lock` holds to
+          // commit. Not `assertSprayHoldsAreAlive`: that one returns before it
+          // locks when the edit touches no holds, which is the same reason
+          // `recordRemixLineage` refuses to lean on it.
+          if (sprayTarget) {
+            await recomputeMissingHoldCountForClimb(tx, sprayTarget.wallId, validated.uuid);
+          }
         }
       }
 
@@ -1077,11 +1133,12 @@ export const climbMutations = {
       // because search filters by exact angle, and removing it would race with concurrent ticks.
       // The combined check also re-narrows `resolvedAngle` to non-null for TS — we threw
       // above on (shouldSeedStats && null) so the second clause is the only path through.
-      // The grade this call supplied, on the row the publish is about to make
-      // searchable. `onConflictDoUpdate` rather than `DoNothing`: a draft created
-      // without a grade may already HAVE a barebones stats row (a previous angle
-      // edit seeds one), and leaving it ungraded would publish a spray climb with
-      // no grade after the check above said there was one.
+      // The grade this call supplied — either the one the publish needs, or a
+      // plain grade edit. `onConflictDoUpdate` rather than `DoNothing`: a draft
+      // created without a grade may already HAVE a barebones stats row (a previous
+      // angle edit seeds one), and leaving it ungraded would publish a spray climb
+      // with no grade after the check above said there was one. The same update is
+      // what lets a setter MOVE the grade of a climb that already has stats.
       if (sprayGradeToSeed !== null && resolvedAngle !== null) {
         await tx
           .insert(dbSchema.boardClimbStats)
