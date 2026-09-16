@@ -30,6 +30,11 @@ snapshot time, exact ordering timestamp, and stable prefixed ID. Session candida
 selection excludes ticks newer than the snapshot. Existing `sessionGroupedFeed`
 callers keep offset pagination and their current result shape.
 
+A page can contain fewer than `limit` items after the visibility recheck, while
+still carrying `hasMore: true`. The cursor advances past the selected candidates,
+including any that disappeared. Clients request one page per end-reach; they
+must not drain pages automatically to fill a viewport.
+
 These APIs are additive. Deploy the backend before releasing the mobile client
 that consumes them. Notification delivery and existing website follows retain
 their current behavior.

@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
-import { followedAuthorCondition } from '@boardsesh/db/queries';
+import { eq, sql } from 'drizzle-orm';
 import { boardClimbs, boardseshTicks, setterFollows, userFollows, users } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -121,21 +120,24 @@ describe('Crew feed', () => {
     expect(selected.hasMore).toBe(true);
   });
 
-  it('can explain the author-filtered catalogue lookup', async () => {
-    const lookup = db
-      .select({ uuid: boardClimbs.uuid })
+  it.each([
+    ['2024-02-29T12:00:00Z', '2024-02-29T12:00:00'],
+    ['2025-02-29T12:00:00Z', null],
+    ['2026-04-31T12:00:00Z', null],
+    ['2026-09-01T24:00:00Z', null],
+    ['2026-09-01T12:00:00+14:00', '2026-08-31T22:00:00'],
+    ['2026-09-01T12:00:00-04:30', '2026-09-01T16:30:00'],
+    ['2026-09-01 12:00:00', '2026-09-01T12:00:00'],
+    ['2026-09-01T12:00:00+99:00', null],
+  ])('validates imported timestamp %s before casting', async (timestamp, expected) => {
+    await db.update(boardClimbs).set({ createdAt: timestamp }).where(eq(boardClimbs.uuid, 'crew-invalid-date'));
+    const [parsed] = await db
+      .select({
+        timestamp: sql<string | null>`to_char(${crewPublicationTime} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS')`,
+      })
       .from(boardClimbs)
-      .where(
-        and(
-          followedAuthorCondition(viewerId),
-          eq(boardClimbs.isDraft, false),
-          sql`${crewPublicationTime} >= ${daysAgo(30)}::timestamptz`,
-        ),
-      )
-      .orderBy(crewPublicationTime)
-      .limit(21);
-    const plan = await db.execute(sql`EXPLAIN ${lookup}`);
-    expect(plan.length).toBeGreaterThan(0);
+      .where(eq(boardClimbs.uuid, 'crew-invalid-date'));
+    expect(parsed.timestamp).toBe(expected);
   });
 
   it('carries the climb-specific board geometry instead of the largest default', async () => {

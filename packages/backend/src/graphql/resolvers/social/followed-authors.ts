@@ -1,6 +1,6 @@
 import { eq, asc } from 'drizzle-orm';
 import type { ConnectionContext, FollowedAuthors } from '@boardsesh/shared-schema';
-import { db } from '../../../db/client';
+import { dbRead } from '../../../db/client';
 import { setterFollows, userFollows, userBoardMappings } from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit } from '../shared/helpers';
 
@@ -10,7 +10,7 @@ export const followedAuthorQueries = {
     await applyRateLimit(ctx, 60, 'followedAuthors');
     // One repeatable-read snapshot: an empty accounts list is complete, not an
     // indication that another page or a second profile request is needed.
-    return db.transaction(
+    return dbRead.transaction(
       async (tx) => {
         const setters = await tx
           .select({ setterUsername: setterFollows.setterUsername })

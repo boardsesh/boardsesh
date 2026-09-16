@@ -23,6 +23,9 @@ const inputSchema = z.object({
 const publicationText = sql`COALESCE(NULLIF(${boardClimbs.publishedAt}, ''), NULLIF(${boardClimbs.createdAt}, ''))`;
 // Imports contain both naive UTC timestamps and ISO timestamps with offsets.
 // Invalid legacy dates are omitted, never treated as newly published on import.
+// First reject malformed components and timezone suffixes, then check the real
+// month's length (including leap years) before casting. This keeps one corrupt
+// import from failing the entire feed on PostgreSQL versions without pg_input_is_valid.
 export const crewPublicationTime = sql`CASE
   WHEN ${publicationText} ~ '^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([T ]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,6})?(Z|[+-](0[0-9]|1[0-4]):[0-5][0-9])?)?$' THEN
     CASE WHEN substring(${publicationText}, 9, 2)::int <= EXTRACT(day FROM (

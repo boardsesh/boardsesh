@@ -120,7 +120,7 @@ export async function getSessionFeed(
   }
   const viewerUserId = followingOnly ? (ctx?.userId ?? null) : null;
 
-  const offset = validatedInput.cursor ? (decodeOffsetCursor(validatedInput.cursor) ?? 0) : 0;
+  const offset = !pagination && validatedInput.cursor ? (decodeOffsetCursor(validatedInput.cursor) ?? 0) : 0;
 
   // Board filter — scope to the EXACT board (user_boards.id), not the board
   // type + layout. A layout is shared by 1,000+ gyms, so the old type+layout
