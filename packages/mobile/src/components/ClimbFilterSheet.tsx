@@ -34,6 +34,7 @@ import {
   newSortSeed,
   type BoardSearchConfig,
   type ProgressFilter,
+  type HoldIntegrityFilterValue,
 } from '@boardsesh/climb-filters';
 import { Text } from './Text';
 import { Button } from './Button';
@@ -485,6 +486,22 @@ export function ClimbFilterSheet({
       ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
     ],
     [t, isAuthenticated],
+  );
+  // Hold integrity (SW-13) — on a spray wall, whether a climb still has every
+  // hold it was set on. 'any' is the default and sends nothing, so a climb that
+  // lost holds stays findable until the climber asks otherwise. 'broken' is an
+  // honest empty list on a catalogue board, where holds don't come off.
+  const handleHoldIntegrityChange = useCallback(
+    (value: HoldIntegrityFilterValue) => setFiltersPatch({ holdIntegrity: value === 'any' ? undefined : value }),
+    [setFiltersPatch],
+  );
+  const holdIntegrityOptions = useMemo(
+    () => [
+      { key: 'any' as const, label: t('mobile.filter.holdIntegrity.any') },
+      { key: 'intact' as const, label: t('mobile.filter.holdIntegrity.intact') },
+      { key: 'broken' as const, label: t('mobile.filter.holdIntegrity.broken') },
+    ],
+    [t],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -1026,6 +1043,18 @@ export function ClimbFilterSheet({
                 selectedKey={getCollectionFilter(localFilters, localBoardFilters)}
                 onSelect={handleCollectionChange}
                 accessibilityLabel={t('mobile.filter.collection.label')}
+              />
+
+              <View style={styles.subsectionGap} />
+              <Text variant="footnote" style={styles.subsectionLabel}>
+                {t('mobile.filter.holdIntegrity.label')}
+              </Text>
+              <View style={styles.controlGap} />
+              <SegmentedControl
+                options={holdIntegrityOptions}
+                selectedKey={localFilters.holdIntegrity ?? 'any'}
+                onSelect={handleHoldIntegrityChange}
+                accessibilityLabel={t('mobile.filter.holdIntegrity.label')}
               />
 
               <View style={styles.subsectionGap} />

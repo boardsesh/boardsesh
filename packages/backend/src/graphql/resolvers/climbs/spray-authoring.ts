@@ -42,6 +42,7 @@ export const SPRAY_CLIMB_CODES = {
   holdNotAlive: 'SPRAY_WALL_HOLD_NOT_ALIVE',
   angleMismatch: 'SPRAY_CLIMB_ANGLE_MISMATCH',
   multiFrame: 'SPRAY_CLIMB_MULTI_FRAME',
+  remixParentNotFound: 'SPRAY_REMIX_PARENT_NOT_FOUND',
 } as const;
 
 /** True for the one board type these rules apply to. Keeps the string literal in one place. */
@@ -335,4 +336,85 @@ export async function populateSprayClimbColumns(
       requiredSetIds: sprayTarget.requiredSetIds,
     })
     .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)));
+}
+
+/**
+ * Record that a climb was remixed from another on the same wall.
+ *
+ * A remix is an ordinary `saveClimb` — the child is a normal climb with its own
+ * ticks, grade and comments — plus this one row, which is the only record of
+ * where it came from. The child's screen reads it to link back to the parent's
+ * ticks and grade history, and the parent's screen reads it the other way to list
+ * what has been remixed off it.
+ *
+ * Three things are checked, and each is a way the link could lie:
+ *
+ *  - the parent has to be a SPRAY climb on the SAME wall. A lineage row pointing
+ *    at a Kilter climb, or at a climb on somebody else's wall, would render a
+ *    "remixed from" link the viewer cannot open and that means nothing.
+ *  - the wall has to have a published version. `wall_version_id` is NOT NULL and
+ *    says which generation the child was set against; there is no honest value for
+ *    a wall that has published nothing, and no climb can be written on one anyway.
+ *  - a bad parent is a hard error, not a silently dropped row. The caller asked
+ *    for a remix; saving the child with the lineage quietly missing would look
+ *    like it worked and leave the link gone forever.
+ *
+ * Visibility is NOT re-checked here: the caller has already been through
+ * `requireVisibleSprayWall` for the wall this climb is being written to, and the
+ * parent is on that same wall by the check above. A wall the caller may write
+ * climbs to is a wall whose climbs they may see.
+ *
+ * Runs in the caller's transaction, so a climb never lands without its lineage.
+ */
+export async function recordRemixLineage(
+  executor: DrizzleExecutor,
+  target: Pick<SprayClimbTarget, 'wallId' | 'layoutId'>,
+  childUuid: string,
+  parentUuid: string,
+): Promise<void> {
+  const [parent] = await executor
+    .select({ uuid: dbSchema.boardClimbs.uuid })
+    .from(dbSchema.boardClimbs)
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.uuid, parentUuid),
+        eq(dbSchema.boardClimbs.boardType, 'spray'),
+        eq(dbSchema.boardClimbs.layoutId, target.layoutId),
+      ),
+    )
+    .limit(1);
+
+  if (!parent) {
+    throw new GraphQLError('The climb this one is remixed from is not on this wall', {
+      extensions: { code: SPRAY_CLIMB_CODES.remixParentNotFound, parentUuid },
+    });
+  }
+
+  // Under the wall lock, like every other read this file makes to decide a write.
+  // `wall_version_id` says which generation the child was set against, and a
+  // `commitSprayWallVersion` landing between this read and the caller's commit
+  // would leave the lineage row naming a generation that had already been
+  // superseded. `assertSprayHoldsAreAlive` takes the same lock a few lines earlier
+  // in the caller — but only when the climb HAS holds, so relying on that is an
+  // implicit dependency on another function's early return. `pg_advisory_xact_lock`
+  // is re-entrant within a transaction, so taking it again costs nothing.
+  await lockWallForWrite(executor, target.wallId);
+
+  const [wall] = await executor
+    .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+    .from(dbSchema.sprayWalls)
+    .where(and(eq(dbSchema.sprayWalls.id, target.wallId), isNull(dbSchema.sprayWalls.deletedAt)))
+    .limit(1);
+
+  if (wall?.currentVersionId == null) {
+    throw new GraphQLError('This wall has no published photo, so there is nothing to remix against', {
+      extensions: { code: SPRAY_CLIMB_CODES.remixParentNotFound },
+    });
+  }
+
+  await executor.insert(dbSchema.sprayClimbLineage).values({
+    childUuid,
+    parentUuid,
+    wallVersionId: wall.currentVersionId,
+  });
 }

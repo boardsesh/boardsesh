@@ -98,6 +98,8 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
+import { LostHoldsBanner } from './LostHoldsBanner';
+import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
@@ -534,6 +536,24 @@ export function PlayDrawer({
     [displayedClimb, boardConfig],
   );
   const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
+
+  /**
+   * Remix a climb that lost holds in a reset.
+   *
+   * The same handoff the climb-actions sheet uses — one accepted action that
+   * dismisses the player, waits for the native transition, then pushes the
+   * create route — because a second path to the create screen would be a second
+   * place for that ordering to be got wrong. `openRemix` carries the parent's
+   * frames, and the create editor's own sanitiser drops the hold ids that are no
+   * longer on the wall, so the editor opens with exactly the holds that survived.
+   */
+  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const lostHoldCount = displayedClimb?.missingHoldCount ?? 0;
+  const handleRemixLostHolds = useCallback(() => {
+    if (!displayedClimb) return;
+    track(SHARED_EVENTS.ClimbRemixedFromBroken, { lostHoldCount, source: 'play_drawer' });
+    openRemix(displayedClimb, renderBoardConfig);
+  }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -1829,6 +1849,14 @@ export function PlayDrawer({
                           }
                         />
                       </View>
+
+                      {/* A climb that survived a reset minus a couple of holds. It
+                          is still findable, still playable and still holds its
+                          own ticks — but nothing else on this screen would say
+                          why the board is drawing fewer holds than the setter
+                          painted. Above the board, because it is about what the
+                          board is showing. */}
+                      <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds} />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a

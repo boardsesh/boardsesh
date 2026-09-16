@@ -78,6 +78,48 @@ type Climb {
   apart (see canAddClimbToBoard rule 5).
   """
   compatibleSizeIds: [Int!]
+  """
+  How many of this climb's holds are no longer on the wall.
+
+  Spray walls only — null on every catalogue board, where holds do not come off.
+  0 is an intact climb; anything higher is a climb that survived a reset minus
+  some holds, which stays findable, gets a badge and can be remixed. Materialised
+  on `board_climbs` rather than joined, because the offline mirror has no
+  `board_climb_holds` table to join through.
+  """
+  missingHoldCount: Int
+  """
+  The holds this climb was set on that are no longer on the wall, carrying the
+  geometry they had while they were — so a client can draw ghost rings where
+  they used to be and the climber can see what the reset took.
+
+  Spray walls only: null on every catalogue board, where holds do not come off,
+  and null on a climb that has lost nothing, so the common case costs no query.
+  An empty list means the climb's holds are all still there but the server did
+  look.
+
+  Coordinates are the wall's canonical frame — the same frame
+  `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
+  conversion. `removedVersion` is the generation that took each hold off.
+
+  Resolved per climb, with its own query. A list must not select it; it is for a
+  single-climb surface — the play drawer and the remix editor.
+  """
+  lostHolds: [SprayWallHold!]
+}
+
+"""
+Whether a climb still has every hold it was set on.
+
+ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+reset takes holds off the wall; on a catalogue board every climb is INTACT, so
+BROKEN there is an empty result rather than an error.
+"""
+enum HoldIntegrityFilter {
+  ANY
+  INTACT
+  BROKEN
 }
 
 """
@@ -122,6 +164,8 @@ input ClimbInput {
   boardseshConfidence: String
   "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
   compatibleSizeIds: [Int!]
+  "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
+  missingHoldCount: Int
 }
 
 # ============================================
@@ -221,6 +265,8 @@ input ClimbSearchInput {
   onlyDrafts: Boolean
   "Show only unclimbed projects (climbs with 0 ascents)"
   projectsOnly: Boolean
+  "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
+  holdIntegrity: HoldIntegrityFilter
   "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read."
   crossAngleStats: Boolean
   "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
@@ -4842,6 +4888,16 @@ input SaveClimbInput {
   caller is a principal.
   """
   sprayWallUuid: String
+  """
+  The spray wall climb this one was remixed from.
+
+  Writes a `spray_climb_lineage` row alongside the child, which is what the
+  child's screen reads to link back to the parent's ticks and grade history.
+  Only meaningful for `boardType: "spray"`, and the parent has to be a climb
+  on the SAME wall. The parent is kept even when it is no longer climbable —
+  that is usually why it was remixed.
+  """
+  remixOfClimbUuid: ID
 }
 
 """
@@ -5677,6 +5733,196 @@ input UpdateSprayWallInput {
 }
 
 """
+One hold the client found in the NEW photo, already mapped through that photo's
+homography into the wall's canonical frame.
+
+The server never re-runs detection on these (epic decision 2026-09-14): it is
+the owner's wall. What it does with them is match them against the holds that
+are on the wall today, which is a question about two coordinate sets and not
+about whether a blob is a hold.
+"""
+input SprayWallDetectionInput {
+  cx: Int!
+  cy: Int!
+  r: Int!
+  "Flat implicitly-closed ring in radius units, same contract as SprayWallHold.outline."
+  outline: [Float!]
+  """
+  Optional colour descriptor (a Lab triple, or Lab plus a hue histogram).
+
+  **Accepted and currently ignored.** The matcher can only compare colours when
+  BOTH sides carry a descriptor of the same length, and the holds already on the
+  wall carry none — `spray_wall_holds` has nowhere to put one. So a reset today
+  is decided on geometry alone, whatever is sent here. The field stays so a
+  client need not change when SW-12b (#5485) gives a stored hold a descriptor.
+  """
+  colour: [Float!]
+  source: SprayHoldSource
+  confidence: Float
+}
+
+input ProposeSprayWallResetInput {
+  wallUuid: ID!
+  """
+  The DRAFT version whose photo these detections came from.
+
+  It must carry anchors: the canonical frame is version 1's photo frame forever,
+  so from version 2 on the four corners are the only thing that says where this
+  photograph's pixels sit in it.
+  """
+  versionId: ID!
+  "Every hold found in the new photo, in the wall's canonical frame."
+  detections: [SprayWallDetectionInput!]!
+}
+
+"A hold the matcher believes is still on the wall, and which detection it matched."
+type SprayWallResetKeptHold {
+  holdId: Int!
+  "Index into the `detections` array that was submitted."
+  detectionIndex: Int!
+  "1 - match cost, clamped to 0..1. 1 is a perfect overlap of identical colours."
+  confidence: Float!
+}
+
+"""
+A removed hold paired with the nearest added detection.
+
+Strictly a suggestion — the proposal still reports the pair as one removal and
+one addition, because a hold that moved is not the hold a climb used any more.
+Confirming one writes `movedFromHoldId` so remix can offer the successor.
+"""
+type SprayWallMoveSuggestion {
+  movedFromHoldId: Int!
+  detectionIndex: Int!
+  "Centre-to-centre distance in canonical pixels."
+  distance: Float!
+}
+
+"""
+What a reset would do, computed and thrown away. `proposeSprayWallReset`
+writes nothing at all — the owner reviews this and `commitSprayWallVersion`
+is what lands it.
+"""
+type SprayWallResetProposal {
+  "The draft version number the proposal was computed against."
+  versionNumber: Int!
+  kept: [SprayWallResetKeptHold!]!
+  "Hold ids with no detection inside the gates: these came off the wall."
+  removed: [Int!]!
+  "Indices into `detections` that matched nothing already on the wall."
+  added: [Int!]!
+  "Kept hold ids a human should look at — a second detection was nearly as good a match."
+  lowConfidence: [Int!]!
+  "How many climbs on this wall use at least one of the removed holds."
+  climbsAffected: Int!
+  movesSuggested: [SprayWallMoveSuggestion!]!
+  """
+  The new photo's aspect ratio differs from the wall's canonical frame by more
+  than a tenth.
+
+  A WARNING and never a block (epic decision 2026-09-14). A phone held the other
+  way up, or a step back from the wall, changes the framing without changing the
+  wall — the anchors are what put the two photos in one frame, and they have
+  already been applied by the time these detections arrive.
+  """
+  aspectMismatch: Boolean!
+}
+
+"Keep this hold, optionally refreshing its silhouette from the new photo."
+input SprayWallKeptDecisionInput {
+  holdId: Int!
+  """
+  The detection this hold matched.
+
+  Only the OUTLINE is taken from it. `cx` / `cy` / `r` stay exactly as
+  published: every climb on the wall renders from those numbers, so nudging a
+  kept hold by the few pixels two photographs disagree by would move the climbs
+  with it. A silhouette is a picture of the hold, not a position, so a sharper
+  one from the newer photo is free.
+  """
+  detection: SprayWallDetectionInput
+}
+
+"Put this detection on the wall as a new hold, with a new catalogue id."
+input SprayWallAddedDecisionInput {
+  detection: SprayWallDetectionInput!
+  """
+  The hold this one replaced, when the review confirmed a move.
+
+  It has to be in this commit's `removed` list: a move is one removal and one
+  addition in the same reset. A predecessor that is still on the wall, or one an
+  earlier reset already took off, is refused — either would leave remix offering
+  an unrelated hold as a successor, with nothing to notice it afterwards.
+  """
+  movedFromHoldId: Int
+}
+
+"""
+The reviewed outcome of a reset. Re-validated against the wall's current state
+inside the commit transaction — a proposal computed ten minutes ago against a
+generation that has since been published is rejected, not applied.
+"""
+input CommitSprayWallVersionInput {
+  wallUuid: ID!
+  "The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput)."
+  versionId: ID!
+  kept: [SprayWallKeptDecisionInput!]!
+  "Hold ids that came off the wall."
+  removed: [Int!]!
+  added: [SprayWallAddedDecisionInput!]!
+}
+
+"What a committed reset changed."
+type SprayWallResetResult {
+  "The version, now PUBLISHED."
+  version: SprayWallVersion!
+  """
+  Holds still on the wall from the previous generation.
+
+  The holds that were alive minus the ones this commit removed — NOT the length
+  of the `kept` list. An alive hold the decisions never mention simply stays,
+  so a client that lists only the holds it had something to say about would
+  otherwise be told most of its wall had vanished.
+  """
+  keptCount: Int!
+  "Holds this commit took off the wall."
+  removedCount: Int!
+  "Holds this commit put on the wall."
+  addedCount: Int!
+  "Climbs whose `missingHoldCount` moved as a result."
+  climbsChanged: Int!
+}
+
+"""
+A remix starting point: the parent climb with every hold it has since lost
+stripped out of its frames.
+
+Nothing is written by asking for one. Pass `parentUuid` back as
+`SaveClimbInput.remixOfClimbUuid` and the lineage row is written with the
+child.
+"""
+type SprayRemixSeed {
+  "The climb being remixed."
+  parentUuid: ID!
+  parentName: String!
+  layoutId: Int!
+  angle: Int!
+  "The parent's frames with the lost holds removed. Empty when nothing survived."
+  frames: String!
+  "Holds the parent used that are no longer on the wall."
+  lostHoldIds: [Int!]!
+  "Holds of the parent that are still there."
+  keptHoldIds: [Int!]!
+  """
+  Successors the reset review linked for the lost holds, nearest first.
+
+  A remix wants somewhere to start, and `moved_from_hold_id` is the only
+  record of which of today's holds replaced one of yesterday's.
+  """
+  suggestedHoldIds: [Int!]!
+}
+
+"""
 Root query type for all read operations.
 """
 type Query {
@@ -6416,6 +6662,35 @@ type Query {
 
   "Every wall the caller owns, newest first. Includes walls with no published version."
   mySprayWalls: [SprayWall!]!
+
+  """
+  What a reset WOULD do: match the detections from a new photo against the
+  holds on the wall today and report kept / removed / added.
+
+  Writes nothing — not one row — so a client may call it as often as the owner
+  drags a hold around. The detections are expected in the wall's CANONICAL
+  frame, i.e. already mapped through the draft version's own homography, which
+  is the only reason two photographs taken from different spots can be compared
+  at all. Editor only, since a proposal describes an unpublished draft.
+  """
+  proposeSprayWallReset(input: ProposeSprayWallResetInput!): SprayWallResetProposal
+
+  """
+  A remix starting point: a climb on a spray wall with every hold it has since
+  lost stripped out of its frames.
+
+  Gated by exactly the rule `saveClimb` applies to a spray climb write: the
+  owner, a member of the wall's gym, or anyone on a public wall — plus the
+  share-link capability, which is `sprayWallUuid`. Send the wall's uuid and an
+  UNLISTED wall opens up, the same way it does for setting a climb on it; a
+  PRIVATE wall refuses everyone but its principals, uuid or not. Null when the
+  climb is not on a spray wall, or when the viewer may not see the wall — the two
+  are indistinguishable on purpose.
+
+  The PARENT is shown even when it is no longer climbable (epic decision
+  2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+  """
+  remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
 
   # ============================================
   # Gym Kiosk Queries
@@ -7346,6 +7621,20 @@ type Mutation {
   it has to stay findable and countable. Owner only.
   """
   removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
+
+  """
+  Land a reviewed reset: apply the decisions and publish the draft, in ONE
+  transaction under the wall lock.
+
+  Removed holds are stamped, never deleted — the climbs set on them stay
+  findable and countable. Added holds get a fresh catalogue pair and, where the
+  review confirmed a move, a `movedFromHoldId` back to the hold they replaced.
+  Kept holds keep their published position and take only a fresher silhouette.
+  The previous generation is superseded and every climb on the wall has its
+  `missingHoldCount` re-materialised, which is what makes the badge, the
+  Intact / Lost holds filter and the remix prompt agree. Owner only.
+  """
+  commitSprayWallVersion(input: CommitSprayWallVersionInput!): SprayWallResetResult!
 
   """
   Publish a draft version: it becomes the generation climbers set against, the

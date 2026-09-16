@@ -143,6 +143,15 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   if (input.onlyDrafts) return false;
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
+  // Spray-wall hold integrity (SW-12). The server predicate is
+  // `holdIntegrityCondition` in packages/db/src/queries/climbs/create-climb-filters.ts,
+  // reading `board_climbs.missing_hold_count` — a column the on-device schema does
+  // not have and the pull client does not send until SW-15 (#5448). Declining IS the
+  // mirror here: answering from a column the device lacks would report every climb
+  // on a wall that has just been reset as intact, which is the one answer this
+  // filter exists to contradict. ANY carries no predicate on either side, so it is
+  // still served locally.
+  if (input.holdIntegrity === 'INTACT' || input.holdIntegrity === 'BROKEN') return false;
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
   return true;

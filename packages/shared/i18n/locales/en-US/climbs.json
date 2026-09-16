@@ -425,6 +425,12 @@
         "label": "Collection",
         "any": "Any"
       },
+      "holdIntegrity": {
+        "label": "Holds",
+        "any": "All",
+        "intact": "Intact only",
+        "broken": "Lost holds"
+      },
       "pin": "Pin to shortcuts",
       "unpin": "Remove from shortcuts",
       "established2plus": "Established 2+",
@@ -589,6 +595,16 @@
       "short": "hidden",
       "chip": "Hidden",
       "banner": "Hidden by the community"
+    },
+    "lostHolds": {
+      "chip_one": "{{count}} hold gone",
+      "chip_other": "{{count}} holds gone",
+      "chipAria_one": "{{count}} hold is no longer on the wall",
+      "chipAria_other": "{{count}} holds are no longer on the wall",
+      "banner_one": "{{count}} hold on this climb is gone",
+      "banner_other": "{{count}} holds on this climb are gone",
+      "bannerBody": "Remix it onto what's on the wall now.",
+      "remix": "Remix it"
     },
     "climbActions": {
       "preview": "Preview",
