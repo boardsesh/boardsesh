@@ -33,10 +33,10 @@ import {
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
 import {
-  editorCounts,
+  countEditorHolds,
+  countsHaveUnsavedWork,
   filterVisible,
   holdsInIdOrder,
-  hasUnsavedWork as stateHasUnsavedWork,
   initialSprayEditorState,
   sprayEditorReducer,
   type SprayEditorHold,
@@ -223,8 +223,15 @@ export function SprayHoldEditorScreen({
   // list instead of re-sorting up to 1500 holds.
   const allEditorHolds = useMemo(() => holdsInIdOrder(state.holds), [state.holds]);
   const holds = useMemo(() => filterVisible(allEditorHolds, state.threshold), [allEditorHolds, state.threshold]);
-  const counts = useMemo(() => editorCounts(state), [state]);
-  const hasUnsaved = useMemo(() => stateHasUnsavedWork(state), [state]);
+  // Memoised on exactly what a count reads. Depending on the whole `state` re-ran
+  // this loop on every selection tap and every undo-stack push, neither of which
+  // can change a count.
+  const counts = useMemo(
+    () => countEditorHolds(state.holds, state.removedIds.length, state.threshold),
+    [state.holds, state.removedIds, state.threshold],
+  );
+  // Derived from the counts already in hand rather than re-counting the wall.
+  const hasUnsaved = countsHaveUnsavedWork(counts);
 
   // The board's own tap layer still gets targets, for the `pan` tool where the
   // draw overlay declines every touch and the board handles selection itself.

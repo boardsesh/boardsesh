@@ -462,25 +462,51 @@ export type SprayEditorCounts = {
   unsavedRemovals: number;
 };
 
-export function editorCounts(state: SprayEditorState): SprayEditorCounts {
+/**
+ * Count the wall, taking only the three things the count actually reads.
+ *
+ * Narrower than `SprayEditorState` on purpose: a caller memoising on the whole
+ * state re-runs this O(n) loop on every selection tap and every undo-stack push,
+ * neither of which can change a count, and a wall may carry 1500 holds.
+ */
+export function countEditorHolds(
+  holds: Readonly<Record<number, SprayEditorHold>>,
+  removedCount: number,
+  threshold: number,
+): SprayEditorCounts {
   let alive = 0;
   let pending = 0;
   let hidden = 0;
   let unsavedWrites = 0;
-  for (const hold of Object.values(state.holds)) {
+  for (const hold of Object.values(holds)) {
     if (hold.review === 'pending') {
       pending += 1;
-      if (isHiddenByThreshold(hold, state.threshold)) hidden += 1;
+      if (isHiddenByThreshold(hold, threshold)) hidden += 1;
     } else {
       alive += 1;
       if (hold.dirty) unsavedWrites += 1;
     }
   }
-  return { alive, pending, hidden, unsavedWrites, unsavedRemovals: state.removedIds.length };
+  return { alive, pending, hidden, unsavedWrites, unsavedRemovals: removedCount };
 }
 
-/** Anything at all to save? Drives the Save button and the unsaved-work guard. */
+/** {@link countEditorHolds} against a whole state. */
+export function editorCounts(state: SprayEditorState): SprayEditorCounts {
+  return countEditorHolds(state.holds, state.removedIds.length, state.threshold);
+}
+
+/**
+ * Anything at all to save? Drives the Save button and the unsaved-work guard.
+ *
+ * A caller that already has the counts should read them directly rather than
+ * call this — it is a second full pass over the wall for two numbers it is
+ * already holding.
+ */
 export function hasUnsavedWork(state: SprayEditorState): boolean {
-  const counts = editorCounts(state);
+  return countsHaveUnsavedWork(editorCounts(state));
+}
+
+/** The same question, asked of counts already in hand. */
+export function countsHaveUnsavedWork(counts: SprayEditorCounts): boolean {
   return counts.unsavedWrites > 0 || counts.unsavedRemovals > 0;
 }

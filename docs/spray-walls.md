@@ -565,9 +565,15 @@ Three things the editor does are decided by this document rather than by taste:
   a hold. Accepting is what marks it for the upsert — so a candidate cannot
   become a hold on somebody's wall as a side effect of saving something else.
 - **A save clears the dirty flags of the holds it actually wrote**
-  (`MARK_SAVED` takes the ids), rather than Until they are clear a second press of Save re-sends
-  holds the server has already applied — and a correction re-sent names an id the
-  resolver has just superseded, which fails the whole batch.
+  (`MARK_SAVED` takes the ids), rather than waiting for the refetch. Until they
+  are clear, a second press of Save re-sends holds the server has already applied
+  — and a correction re-sent names an id the resolver has just superseded, which
+  fails the whole batch. Named rather than "everything", because a plan can
+  SUCCEED while leaving holds out of it: one the homography sends off the wall,
+  one drawn while the request was in flight. The screen says so, and clearing
+  those too would let the next re-seed delete the work it had just promised was
+  still there — so they stay dirty and ride over the re-seed
+  (`holdsToCarryOver`).
 - **The removal half reports separately** (`MARK_REMOVED`), the moment
   `removeSprayWallHolds` comes back and before the upsert runs. It also strips those
   ids from every snapshot in the undo stack: the removal has LANDED, and undoing
