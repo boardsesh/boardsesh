@@ -27,6 +27,9 @@ export function SessionVisibilityRow({ isPublic, onChange, disabled = false }: S
         description={
           isPublic ? t('mobile.sessionVisibility.descriptionOn') : t('mobile.sessionVisibility.descriptionOff')
         }
+        // The subtitle is the whole point of the row: who can see the session.
+        // Truncated, "Your crew and climbers on this board…" says nothing.
+        wrapDescription
         value={isPublic}
         onValueChange={onChange}
         disabled={disabled}
