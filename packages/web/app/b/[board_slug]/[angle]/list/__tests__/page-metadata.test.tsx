@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+// `page.tsx` now branches into `./spray-wall-view`, which reaches
+// `spray-wall-render-data.server` and its `import 'server-only'`. That module
+// throws outside a Server Component, so it is stubbed here the same way the
+// spray suites next door stub it.
+vi.mock('server-only', () => ({}));
+
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(),
 }));

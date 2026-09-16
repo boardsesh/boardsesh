@@ -19,9 +19,16 @@ vi.mock('../services/board-render', () => ({
 vi.mock('../utils/redis-rate-limiter', () => ({
   checkRateLimitRedis: vi.fn(async () => {}),
 }));
+// Spray cards (SW-16) talk to Postgres and the media bucket; the handler's own
+// branch is what is under test here.
+vi.mock('../services/spray-og-card', () => ({
+  createSprayOgCardDeps: vi.fn(() => ({})),
+  renderSprayOgCard: vi.fn(),
+}));
 
 import { handleOgClimb } from '../handlers/og-climb';
 import { RenderQueueSaturatedError, ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { renderSprayOgCard } from '../services/spray-og-card';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -293,6 +300,99 @@ describe('handleOgClimb', () => {
     it('sheds a saturated render queue with retryable, non-cacheable 503', async () => {
       vi.mocked(renderOgClimb).mockRejectedValueOnce(new RenderQueueSaturatedError());
       const res = await run(validParams);
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
+  });
+
+  // Spray walls, issue #5449. The card comes from the database rather than from
+  // the query string, so the answer is public-wall-or-404 and the bytes are
+  // never immutable.
+  describe('spray walls', () => {
+    const sprayParams = {
+      board_name: 'spray',
+      layout_id: '90001',
+      size_id: '90001',
+      set_ids: '1',
+      frames: 'p501r1p502r2',
+    };
+
+    it('serves a public wall with a daily, non-immutable cache policy', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        timings: { photoMs: 30, composeMs: 60 },
+      });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Content-Type']).toBe('image/jpeg');
+      // A reset re-points the photo under the same URL, so a year of immutable
+      // would pin last year's wall at the edge.
+      expect(String(res.headers['Cache-Control'])).not.toContain('immutable');
+      expect(String(res.headers['Cache-Control'])).toContain('s-maxage=86400');
+      expect(res.headers['Content-Length']).toBe(4);
+      expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+      expect(String(res.headers['Server-Timing'])).toContain('photo;dur=');
+      // The catalogue renderer has no part in this.
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('answers a private wall with an uncacheable 404, not a 403', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({ kind: 'not-found' });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(String(res.body))).toEqual({ error: 'Not found' });
+      // A wall made public tomorrow must not stay a 404 at the edge.
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('serves the card even when the WASM renderer never booted', async () => {
+      vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(false);
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        timings: { photoMs: 1, composeMs: 2 },
+      });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('passes the layout id, frames and format straight through', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        contentType: 'image/png',
+        timings: { photoMs: 1, composeMs: 2 },
+      });
+
+      await run({ ...sprayParams, format: 'png' });
+      expect(vi.mocked(renderSprayOgCard).mock.calls[0][0]).toEqual({
+        layoutId: 90001,
+        frames: 'p501r1p502r2',
+        format: 'png',
+      });
+    });
+
+    it('answers 500 without saying whether the wall existed when the render throws', async () => {
+      vi.mocked(renderSprayOgCard).mockRejectedValueOnce(new Error('photo fetch exploded'));
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(500);
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
+
+    it('answers 503 with Retry-After when the shared render queue is saturated', async () => {
+      // The spray branch runs under the SAME cap as the catalogue path, so it
+      // saturates the same way and owes callers backpressure, not a 500 — an
+      // unfurler that retries is the whole point of the header.
+      vi.mocked(renderSprayOgCard).mockRejectedValueOnce(new RenderQueueSaturatedError());
+      const res = await run(sprayParams);
       expect(res.statusCode).toBe(503);
       expect(res.headers['Retry-After']).toBe('5');
       expect(res.headers['Cache-Control']).toBe('no-store');
