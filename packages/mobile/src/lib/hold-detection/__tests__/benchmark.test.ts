@@ -415,3 +415,56 @@ describe('runBenchmark runtime recycling', () => {
     expect(report.sizes).toHaveLength(2);
   });
 });
+
+describe('runBenchmark onSizeComplete', () => {
+  const baseInput = {
+    image: greyPhoto(64, 48),
+    modelVersion: '2026-09-15',
+    modelConfig: 'nano-untiled-1024',
+    requestedExecutionProvider: 'coreml',
+    defaultThreshold: 0.6,
+    fit: 'stretch' as const,
+    mean: [0.485, 0.456, 0.406] as readonly [number, number, number],
+    std: [0.229, 0.224, 0.225] as readonly [number, number, number],
+    runsPerSize: 1,
+  };
+
+  it('flushes after every size, cumulatively', async () => {
+    const flushes: number[][] = [];
+    await runBenchmark({
+      ...baseInput,
+      runtime: fakeRuntime([0.9]),
+      sizes: [512, 640, 768],
+      onSizeComplete: (sizes) => flushes.push(sizes.map((row) => row.size)),
+    });
+
+    // Cumulative, not just the latest: a kill after any flush must leave every
+    // size measured so far on disk, not only the most recent one.
+    expect(flushes).toEqual([[512], [512, 640], [512, 640, 768]]);
+  });
+
+  it('has already flushed the smaller sizes before the largest one runs', async () => {
+    const flushedBeforeEachRun: number[][] = [];
+    let latest: number[] = [];
+    await runBenchmark({
+      ...baseInput,
+      runtime: fakeRuntime([0.9]),
+      sizes: [512, 640, 768],
+      onSizeComplete: (sizes) => {
+        latest = sizes.map((row) => row.size);
+      },
+      onProgress: (size) => {
+        if (size === 768) flushedBeforeEachRun.push([...latest]);
+      },
+    });
+
+    // This is the whole point of the change: by the time 768 — the size that
+    // kills the process on a real device — starts, 512 and 640 are durable.
+    expect(flushedBeforeEachRun[0]).toEqual([512, 640]);
+  });
+
+  it('is optional, so a caller that does not persist still works', async () => {
+    const report = await runBenchmark({ ...baseInput, runtime: fakeRuntime([0.9]), sizes: [512] });
+    expect(report.sizes).toHaveLength(1);
+  });
+});
