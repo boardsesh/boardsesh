@@ -9835,6 +9835,553 @@ export type DeleteAccountMutationVariables = Exact<{
 
 export type DeleteAccountMutation = { __typename?: 'Mutation'; deleteAccount: boolean };
 
+export type GetActivityFeedQueryVariables = Exact<{
+  input?: InputMaybe<ActivityFeedInput>;
+}>;
+
+export type GetActivityFeedQuery = {
+  __typename?: 'Query';
+  activityFeed: {
+    __typename?: 'ActivityFeedResult';
+    cursor?: string | null;
+    hasMore: boolean;
+    items: Array<{
+      __typename?: 'ActivityFeedItem';
+      id: string;
+      type: ActivityFeedItemType;
+      entityType: SocialEntityType;
+      entityId: string;
+      boardUuid?: string | null;
+      actorId?: string | null;
+      actorDisplayName?: string | null;
+      actorAvatarUrl?: string | null;
+      climbName?: string | null;
+      climbUuid?: string | null;
+      boardType?: string | null;
+      layoutId?: number | null;
+      gradeName?: string | null;
+      status?: string | null;
+      angle?: number | null;
+      frames?: string | null;
+      setterUsername?: string | null;
+      commentBody?: string | null;
+      isMirror?: boolean | null;
+      isBenchmark?: boolean | null;
+      isNoMatch?: boolean | null;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      quality?: number | null;
+      attemptCount?: number | null;
+      comment?: string | null;
+      commentCount?: number | null;
+      createdAt: string;
+    }>;
+  };
+};
+
+export type SessionFeedItemFieldsFragment = {
+  __typename?: 'SessionFeedItem';
+  sessionId: string;
+  sessionType: string;
+  sessionName?: string | null;
+  ownerUserId?: string | null;
+  totalSends: number;
+  totalFlashes: number;
+  totalAttempts: number;
+  tickCount: number;
+  boardTypes: Array<string>;
+  hardestGrade?: string | null;
+  firstTickAt: string;
+  lastTickAt: string;
+  durationMinutes?: number | null;
+  goal?: string | null;
+  notes?: string | null;
+  upvotes: number;
+  downvotes: number;
+  voteScore: number;
+  commentCount: number;
+  socialEntityType: SocialEntityType;
+  socialEntityId: string;
+  participants: Array<{
+    __typename?: 'SessionFeedParticipant';
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    sends: number;
+    flashes: number;
+    attempts: number;
+  }>;
+  gradeDistribution: Array<{
+    __typename?: 'SessionGradeDistributionItem';
+    grade: string;
+    flash: number;
+    send: number;
+    attempt: number;
+  }>;
+  hardestSend?: {
+    __typename?: 'SessionFeedTickHighlight';
+    uuid: string;
+    userId: string;
+    climbUuid: string;
+    climbName?: string | null;
+    boardType: string;
+    layoutId?: number | null;
+    angle: number;
+    status: string;
+    attemptCount: number;
+    difficulty?: number | null;
+    difficultyName?: string | null;
+    boardseshDifficulty?: number | null;
+    boardseshConfidence?: string | null;
+    quality?: number | null;
+    isMirror: boolean;
+    isBenchmark: boolean;
+    isNoMatch: boolean;
+    comment?: string | null;
+    frames?: string | null;
+    setterUsername?: string | null;
+    climbedAt: string;
+    renderBoard?: { __typename?: 'RenderBoardConfig'; layoutId: number; sizeId: number; setIds: Array<number> } | null;
+  } | null;
+  featuredBeta?: {
+    __typename?: 'SessionFeedBetaHighlight';
+    tick: {
+      __typename?: 'SessionFeedTickHighlight';
+      uuid: string;
+      userId: string;
+      climbUuid: string;
+      climbName?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      status: string;
+      attemptCount: number;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      boardseshDifficulty?: number | null;
+      boardseshConfidence?: string | null;
+      quality?: number | null;
+      isMirror: boolean;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      comment?: string | null;
+      frames?: string | null;
+      setterUsername?: string | null;
+      climbedAt: string;
+      renderBoard?: {
+        __typename?: 'RenderBoardConfig';
+        layoutId: number;
+        sizeId: number;
+        setIds: Array<number>;
+      } | null;
+    };
+    betaLink: {
+      __typename?: 'BetaLink';
+      climbUuid: string;
+      link: string;
+      foreignUsername?: string | null;
+      angle?: number | null;
+      thumbnail?: string | null;
+      isListed?: boolean | null;
+      createdAt?: string | null;
+      tickUuid?: string | null;
+      boardId?: number | null;
+    };
+  } | null;
+};
+
+export type GetSessionGroupedFeedQueryVariables = Exact<{
+  input?: InputMaybe<ActivityFeedInput>;
+}>;
+
+export type GetSessionGroupedFeedQuery = {
+  __typename?: 'Query';
+  sessionGroupedFeed: {
+    __typename?: 'SessionFeedResult';
+    cursor?: string | null;
+    hasMore: boolean;
+    sessions: Array<{
+      __typename?: 'SessionFeedItem';
+      sessionId: string;
+      sessionType: string;
+      sessionName?: string | null;
+      ownerUserId?: string | null;
+      totalSends: number;
+      totalFlashes: number;
+      totalAttempts: number;
+      tickCount: number;
+      boardTypes: Array<string>;
+      hardestGrade?: string | null;
+      firstTickAt: string;
+      lastTickAt: string;
+      durationMinutes?: number | null;
+      goal?: string | null;
+      notes?: string | null;
+      upvotes: number;
+      downvotes: number;
+      voteScore: number;
+      commentCount: number;
+      socialEntityType: SocialEntityType;
+      socialEntityId: string;
+      participants: Array<{
+        __typename?: 'SessionFeedParticipant';
+        userId: string;
+        displayName?: string | null;
+        avatarUrl?: string | null;
+        sends: number;
+        flashes: number;
+        attempts: number;
+      }>;
+      gradeDistribution: Array<{
+        __typename?: 'SessionGradeDistributionItem';
+        grade: string;
+        flash: number;
+        send: number;
+        attempt: number;
+      }>;
+      hardestSend?: {
+        __typename?: 'SessionFeedTickHighlight';
+        uuid: string;
+        userId: string;
+        climbUuid: string;
+        climbName?: string | null;
+        boardType: string;
+        layoutId?: number | null;
+        angle: number;
+        status: string;
+        attemptCount: number;
+        difficulty?: number | null;
+        difficultyName?: string | null;
+        boardseshDifficulty?: number | null;
+        boardseshConfidence?: string | null;
+        quality?: number | null;
+        isMirror: boolean;
+        isBenchmark: boolean;
+        isNoMatch: boolean;
+        comment?: string | null;
+        frames?: string | null;
+        setterUsername?: string | null;
+        climbedAt: string;
+        renderBoard?: {
+          __typename?: 'RenderBoardConfig';
+          layoutId: number;
+          sizeId: number;
+          setIds: Array<number>;
+        } | null;
+      } | null;
+      featuredBeta?: {
+        __typename?: 'SessionFeedBetaHighlight';
+        tick: {
+          __typename?: 'SessionFeedTickHighlight';
+          uuid: string;
+          userId: string;
+          climbUuid: string;
+          climbName?: string | null;
+          boardType: string;
+          layoutId?: number | null;
+          angle: number;
+          status: string;
+          attemptCount: number;
+          difficulty?: number | null;
+          difficultyName?: string | null;
+          boardseshDifficulty?: number | null;
+          boardseshConfidence?: string | null;
+          quality?: number | null;
+          isMirror: boolean;
+          isBenchmark: boolean;
+          isNoMatch: boolean;
+          comment?: string | null;
+          frames?: string | null;
+          setterUsername?: string | null;
+          climbedAt: string;
+          renderBoard?: {
+            __typename?: 'RenderBoardConfig';
+            layoutId: number;
+            sizeId: number;
+            setIds: Array<number>;
+          } | null;
+        };
+        betaLink: {
+          __typename?: 'BetaLink';
+          climbUuid: string;
+          link: string;
+          foreignUsername?: string | null;
+          angle?: number | null;
+          thumbnail?: string | null;
+          isListed?: boolean | null;
+          createdAt?: string | null;
+          tickUuid?: string | null;
+          boardId?: number | null;
+        };
+      } | null;
+    }>;
+  };
+};
+
+export type GetCrewFeedQueryVariables = Exact<{
+  input?: InputMaybe<CrewFeedInput>;
+}>;
+
+export type GetCrewFeedQuery = {
+  __typename?: 'Query';
+  crewFeed: {
+    __typename?: 'CrewFeedResult';
+    cursor?: string | null;
+    hasMore: boolean;
+    items: Array<
+      | {
+          __typename: 'CrewClimbItem';
+          id: string;
+          occurredAt: string;
+          climb: {
+            __typename?: 'ActivityFeedItem';
+            id: string;
+            type: ActivityFeedItemType;
+            entityType: SocialEntityType;
+            entityId: string;
+            actorId?: string | null;
+            actorDisplayName?: string | null;
+            actorAvatarUrl?: string | null;
+            climbUuid?: string | null;
+            climbName?: string | null;
+            boardType?: string | null;
+            layoutId?: number | null;
+            setterUsername?: string | null;
+            frames?: string | null;
+            angle?: number | null;
+            difficultyName?: string | null;
+            isNoMatch?: boolean | null;
+            createdAt: string;
+            renderBoard?: {
+              __typename?: 'RenderBoardConfig';
+              layoutId: number;
+              sizeId: number;
+              setIds: Array<number>;
+            } | null;
+          };
+        }
+      | {
+          __typename: 'CrewSessionItem';
+          id: string;
+          occurredAt: string;
+          session: {
+            __typename?: 'SessionFeedItem';
+            sessionId: string;
+            sessionType: string;
+            sessionName?: string | null;
+            ownerUserId?: string | null;
+            totalSends: number;
+            totalFlashes: number;
+            totalAttempts: number;
+            tickCount: number;
+            boardTypes: Array<string>;
+            hardestGrade?: string | null;
+            firstTickAt: string;
+            lastTickAt: string;
+            durationMinutes?: number | null;
+            goal?: string | null;
+            notes?: string | null;
+            upvotes: number;
+            downvotes: number;
+            voteScore: number;
+            commentCount: number;
+            socialEntityType: SocialEntityType;
+            socialEntityId: string;
+            participants: Array<{
+              __typename?: 'SessionFeedParticipant';
+              userId: string;
+              displayName?: string | null;
+              avatarUrl?: string | null;
+              sends: number;
+              flashes: number;
+              attempts: number;
+            }>;
+            gradeDistribution: Array<{
+              __typename?: 'SessionGradeDistributionItem';
+              grade: string;
+              flash: number;
+              send: number;
+              attempt: number;
+            }>;
+            hardestSend?: {
+              __typename?: 'SessionFeedTickHighlight';
+              uuid: string;
+              userId: string;
+              climbUuid: string;
+              climbName?: string | null;
+              boardType: string;
+              layoutId?: number | null;
+              angle: number;
+              status: string;
+              attemptCount: number;
+              difficulty?: number | null;
+              difficultyName?: string | null;
+              boardseshDifficulty?: number | null;
+              boardseshConfidence?: string | null;
+              quality?: number | null;
+              isMirror: boolean;
+              isBenchmark: boolean;
+              isNoMatch: boolean;
+              comment?: string | null;
+              frames?: string | null;
+              setterUsername?: string | null;
+              climbedAt: string;
+              renderBoard?: {
+                __typename?: 'RenderBoardConfig';
+                layoutId: number;
+                sizeId: number;
+                setIds: Array<number>;
+              } | null;
+            } | null;
+            featuredBeta?: {
+              __typename?: 'SessionFeedBetaHighlight';
+              tick: {
+                __typename?: 'SessionFeedTickHighlight';
+                uuid: string;
+                userId: string;
+                climbUuid: string;
+                climbName?: string | null;
+                boardType: string;
+                layoutId?: number | null;
+                angle: number;
+                status: string;
+                attemptCount: number;
+                difficulty?: number | null;
+                difficultyName?: string | null;
+                boardseshDifficulty?: number | null;
+                boardseshConfidence?: string | null;
+                quality?: number | null;
+                isMirror: boolean;
+                isBenchmark: boolean;
+                isNoMatch: boolean;
+                comment?: string | null;
+                frames?: string | null;
+                setterUsername?: string | null;
+                climbedAt: string;
+                renderBoard?: {
+                  __typename?: 'RenderBoardConfig';
+                  layoutId: number;
+                  sizeId: number;
+                  setIds: Array<number>;
+                } | null;
+              };
+              betaLink: {
+                __typename?: 'BetaLink';
+                climbUuid: string;
+                link: string;
+                foreignUsername?: string | null;
+                angle?: number | null;
+                thumbnail?: string | null;
+                isListed?: boolean | null;
+                createdAt?: string | null;
+                tickUuid?: string | null;
+                boardId?: number | null;
+              };
+            } | null;
+          };
+        }
+    >;
+  };
+};
+
+export type GetSessionDetailQueryVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+}>;
+
+export type GetSessionDetailQuery = {
+  __typename?: 'Query';
+  sessionDetail?: {
+    __typename?: 'SessionDetail';
+    sessionId: string;
+    sessionType: string;
+    sessionName?: string | null;
+    ownerUserId?: string | null;
+    totalSends: number;
+    totalFlashes: number;
+    totalAttempts: number;
+    tickCount: number;
+    boardTypes: Array<string>;
+    hardestGrade?: string | null;
+    firstTickAt: string;
+    lastTickAt: string;
+    durationMinutes?: number | null;
+    goal?: string | null;
+    notes?: string | null;
+    upvotes: number;
+    downvotes: number;
+    voteScore: number;
+    commentCount: number;
+    healthKitWorkoutId?: string | null;
+    participants: Array<{
+      __typename?: 'SessionFeedParticipant';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      sends: number;
+      flashes: number;
+      attempts: number;
+    }>;
+    gradeDistribution: Array<{
+      __typename?: 'SessionGradeDistributionItem';
+      grade: string;
+      flash: number;
+      send: number;
+      attempt: number;
+    }>;
+    ticks: Array<{
+      __typename?: 'SessionDetailTick';
+      uuid: string;
+      userId: string;
+      climbUuid: string;
+      climbName?: string | null;
+      boardType: string;
+      layoutId?: number | null;
+      angle: number;
+      status: string;
+      attemptCount: number;
+      difficulty?: number | null;
+      difficultyName?: string | null;
+      boardseshDifficulty?: number | null;
+      boardseshConfidence?: string | null;
+      quality?: number | null;
+      isMirror: boolean;
+      isBenchmark: boolean;
+      isNoMatch: boolean;
+      comment?: string | null;
+      frames?: string | null;
+      setterUsername?: string | null;
+      climbedAt: string;
+      upvotes: number;
+      totalAttempts?: number | null;
+      renderBoard?: {
+        __typename?: 'RenderBoardConfig';
+        layoutId: number;
+        sizeId: number;
+        setIds: Array<number>;
+      } | null;
+      betaLinks?: Array<{
+        __typename?: 'BetaLink';
+        climbUuid: string;
+        link: string;
+        foreignUsername?: string | null;
+        angle?: number | null;
+        thumbnail?: string | null;
+        isListed?: boolean | null;
+        createdAt?: string | null;
+        tickUuid?: string | null;
+        boardId?: number | null;
+      }> | null;
+    }>;
+  } | null;
+};
+
+export type SetSessionHealthKitWorkoutIdMutationVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+  workoutId: Scalars['String']['input'];
+}>;
+
+export type SetSessionHealthKitWorkoutIdMutation = { __typename?: 'Mutation'; setSessionHealthKitWorkoutId: boolean };
+
 export type GetBetaLinksQueryVariables = Exact<{
   boardType: Scalars['String']['input'];
   climbUuid: Scalars['String']['input'];
@@ -12820,6 +13367,181 @@ export type UpdateTickMutation = {
   };
 };
 
+export const SessionFeedItemFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionFeedItemFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionFeedItem' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flashes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalFlashes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'tickCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flash' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'send' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempt' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestGrade' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'firstTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestSend' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'renderBoard' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'featuredBeta' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'tick' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'betaLink' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SessionFeedItemFieldsFragment, unknown>;
 export const LiveSessionFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -13059,6 +13781,782 @@ export const DeleteAccountDocument = {
     },
   ],
 } as unknown as DocumentNode<DeleteAccountMutation, DeleteAccountMutationVariables>;
+export const GetActivityFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetActivityFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ActivityFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'activityFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'gradeName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentBody' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'cursor' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetActivityFeedQuery, GetActivityFeedQueryVariables>;
+export const GetSessionGroupedFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionGroupedFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ActivityFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionGroupedFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'sessions' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SessionFeedItemFields' } }],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'cursor' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionFeedItemFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionFeedItem' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flashes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalFlashes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'tickCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flash' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'send' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempt' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestGrade' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'firstTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestSend' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'renderBoard' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'featuredBeta' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'tick' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'betaLink' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionGroupedFeedQuery, GetSessionGroupedFeedQueryVariables>;
+export const GetCrewFeedDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetCrewFeed' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'CrewFeedInput' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'crewFeed' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'items' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: '__typename' } },
+                      {
+                        kind: 'InlineFragment',
+                        typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'CrewSessionItem' } },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'occurredAt' } },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'session' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  { kind: 'FragmentSpread', name: { kind: 'Name', value: 'SessionFeedItemFields' } },
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'InlineFragment',
+                        typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'CrewClimbItem' } },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'occurredAt' } },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'climb' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                                  {
+                                    kind: 'Field',
+                                    name: { kind: 'Name', value: 'renderBoard' },
+                                    selectionSet: {
+                                      kind: 'SelectionSet',
+                                      selections: [
+                                        { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                                        { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                                        { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                                      ],
+                                    },
+                                  },
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'cursor' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SessionFeedItemFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SessionFeedItem' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flashes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalFlashes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'tickCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'gradeDistribution' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'flash' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'send' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attempt' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestGrade' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'firstTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastTickAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'hardestSend' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'renderBoard' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'featuredBeta' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'tick' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'betaLink' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetCrewFeedQuery, GetCrewFeedQueryVariables>;
+export const GetSessionDetailDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionDetail' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionDetail' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'participants' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sends' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'flashes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalSends' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalFlashes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'tickCount' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'gradeDistribution' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'flash' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'send' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attempt' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardTypes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hardestGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'firstTickAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'lastTickAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'downvotes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'voteScore' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'healthKitWorkoutId' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'ticks' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'renderBoard' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                          ],
+                        },
+                      },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'totalAttempts' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'betaLinks' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'link' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'foreignUsername' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'thumbnail' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isListed' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'tickUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionDetailQuery, GetSessionDetailQueryVariables>;
+export const SetSessionHealthKitWorkoutIdDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetSessionHealthKitWorkoutId' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'workoutId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setSessionHealthKitWorkoutId' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'workoutId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'workoutId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetSessionHealthKitWorkoutIdMutation, SetSessionHealthKitWorkoutIdMutationVariables>;
 export const GetBetaLinksDocument = {
   kind: 'Document',
   definitions: [
