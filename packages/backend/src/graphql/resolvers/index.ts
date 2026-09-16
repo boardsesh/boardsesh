@@ -21,6 +21,7 @@ import { favoriteMutations } from './favorites/mutations';
 import { playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
+import { liveSessionQueries } from './sessions/live-sessions';
 import { sessionMutations } from './sessions/mutations';
 import { pushTokenMutations } from './sessions/push-tokens';
 import { sessionSubscriptions } from './sessions/subscriptions';
@@ -83,6 +84,7 @@ export const resolvers = {
   // Root operation types
   Query: {
     ...sessionQueries,
+    ...liveSessionQueries,
     ...boardQueries,
     ...holdOutlineQueries,
     ...sprayWallQueries,

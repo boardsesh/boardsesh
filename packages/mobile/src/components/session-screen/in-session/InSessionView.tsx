@@ -53,6 +53,7 @@ import { SessionAnalytics } from './SessionAnalytics';
 import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
+import { SessionVisibilityControl } from './SessionVisibilityControl';
 import { sortHardestSends, type HardestSend } from './hardest-sends';
 
 type InSessionViewProps = {
@@ -645,6 +646,13 @@ export function InSessionView({
       {/* Turn the rest timer on for the session you're in (#5378), and see it
           without leaving the Record tab. */}
       <RestTimerArmRow />
+
+      {/* "Show this session live", creator only. Renders nothing for joiners. */}
+      <SessionVisibilityControl
+        sessionId={sessionId ?? null}
+        selfUserId={selfUserId}
+        startedOnThisDevice={startedOnThisDevice}
+      />
 
       <View>
         {/* SectionHeader self-insets 16px; the list already pads 16, so bleed the

@@ -49,12 +49,14 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
+import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
+import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
@@ -165,6 +167,12 @@ export type NowOnTheWallPanelProps = {
   boardConfig: BoardConfig | null;
   /** Sheet only: when set, the header renders a close chevron that calls this. */
   onClose?: () => void;
+  /**
+   * Sheet only: dismiss and resolve once the dismiss has settled. Routes pushed
+   * from inside the sheet (the live-session join preview) wait on this so a
+   * native modal never starts presenting while the sheet is still leaving.
+   */
+  dismissAndWait?: () => Promise<DismissAndWaitResult>;
   /** Open the existing board switcher from the footer control. */
   onSwitchBoard: () => void;
   /**
@@ -194,6 +202,7 @@ function NowOnTheWallPanelComponent(
     boardLabel,
     boardConfig,
     onClose,
+    dismissAndWait,
     onSwitchBoard,
     activeBoard,
     onSelectGymWall,
@@ -236,7 +245,11 @@ function NowOnTheWallPanelComponent(
   const boardConfigSignatureRef = useRef(boardConfigSignature);
   boardConfigSignatureRef.current = boardConfigSignature;
 
-  const { currentClimb } = useBoardPresenceCurrent();
+  const { currentClimb, holder } = useBoardPresenceCurrent();
+  // Whoever is connected to the board now, not whoever lit the last climb: that
+  // climber may have left an hour ago.
+  const holderName = holder?.displayName?.trim() || null;
+  const holderUserId = holder?.userId ?? null;
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
@@ -506,6 +519,18 @@ function NowOnTheWallPanelComponent(
     onClose?.();
   }, [invalidatePendingActions, onClose]);
 
+  // True once the sheet is gone and a route may be pushed; false when the
+  // handoff was aborted (the sheet's owner went away mid-dismiss).
+  const leaveSheet = useCallback(async (): Promise<boolean> => {
+    invalidatePendingActions();
+    if (!dismissAndWait) {
+      onClose?.();
+      return true;
+    }
+    const result = await dismissAndWait();
+    return result.status === 'dismissed';
+  }, [invalidatePendingActions, dismissAndWait, onClose]);
+
   // A ref, not a dep: a list `.length` in a callback's deps rebuilds it on every
   // page of history (docs/react-native-performance.md).
   const historyCountRef = useRef(combinedHistory.length);
@@ -628,6 +653,17 @@ function NowOnTheWallPanelComponent(
             gradeColor={heroGrade.color}
           />
         )}
+        {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
+            where a passer-by's "Join" or "Start" would act on the kiosk's
+            account. */}
+        {variant === 'sheet' ? (
+          <BoardLiveSessionsBlock
+            boardId={boardPresenceBoardId}
+            holderName={holderName}
+            holderUserId={holderUserId}
+            onBeforeNavigate={leaveSheet}
+          />
+        ) : null}
         {stats ? (
           // testID anchors the store-screenshot flow: the stats only exist once the
           // wall history has landed, and this block is on screen at the top of the
@@ -709,6 +745,10 @@ function NowOnTheWallPanelComponent(
     onSelectGymWall,
     canSwitchGymWall,
     gymWallsExpanded,
+    boardPresenceBoardId,
+    holderName,
+    holderUserId,
+    leaveSheet,
   ]);
 
   const listEmpty = useMemo(

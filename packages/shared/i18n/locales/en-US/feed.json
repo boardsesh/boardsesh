@@ -4,9 +4,6 @@
   },
   "mobile": {
     "home": {
-      "betaTitle": "Fresh beta",
-      "betaEmpty": "No beta videos yet",
-      "betaError": "Couldn't load beta videos.",
       "betaOpenError": "Couldn't open that beta video.",
       "betaCardLabel": "Open beta video",
       "feedTitle": "From your crew",
@@ -15,9 +12,7 @@
       "searchAction": "Find climbers",
       "emptyTitle": "No sessions yet",
       "emptyBody": "Follow climbers to fill this with sessions and daily sends.",
-      "unknownClimb": "Unknown climb",
       "sessionsTitle": "Recent sessions",
-      "betaTitleBoard": "Fresh beta on this board",
       "boardEmptyTitle": "Quiet on {{board}} right now",
       "boardEmptyBody": "Be the first to log a session, or see what everyone else is climbing.",
       "boardEmptyCta": "Browse everyone",
@@ -26,6 +21,81 @@
         "everyone": "Everyone",
         "findGym": "Find a gym near you",
         "hint": "Switches whose climbs you see"
+      }
+    },
+    "liveSessions": {
+      "title": "Climbing now",
+      "liveCount_one": "{{count}} live",
+      "liveCount_other": "{{count}} live",
+      "live": "Live",
+      "quiet": "Quiet",
+      "names": {
+        "two": "{{first}} and {{second}}",
+        "you": "You",
+        "youAnd": "You and {{name}}",
+        "justYou": "Just you so far",
+        "someone": "A climber"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "Board you follow",
+      "onClimb": "On {{climb}}",
+      "onClimbGrade": "On {{climb}} · {{grade}}",
+      "sends_one": "{{count}} send",
+      "sends_other": "{{count}} sends",
+      "elapsed": {
+        "minutes": "{{minutes}}m",
+        "hours": "{{hours}}h",
+        "hoursMinutes": "{{hours}}h {{minutes}}m",
+        "justStarted": "Just started"
+      },
+      "actions": {
+        "join": "Join",
+        "open": "Open",
+        "invite": "Invite"
+      },
+      "start": {
+        "title": "Start a session",
+        "body": "People who follow you can see it here and join.",
+        "cta": "Start a session",
+        "bleTitle": "You're on {{board}}",
+        "bleBody": "Start a session so your crew can join."
+      },
+      "find": {
+        "title": "Bring your crew",
+        "body": "Follow climbers and their live sessions land here.",
+        "cta": "Find climbers"
+      },
+      "error": "Couldn't load who's climbing.",
+      "offline": "No signal. Sessions show up again when you're back online.",
+      "offlineMode": "Offline mode is on. Sessions show up again when you turn it off.",
+      "board": {
+        "header": "Climbing here now",
+        "more_one": "{{count}} more",
+        "more_other": "{{count}} more",
+        "emptyTitle": "Nobody's in a session here.",
+        "emptyBody": "Start one and anyone at this wall can join.",
+        "emptyBodyLitBy": "{{name}}'s on the wall. Start a session and {{name}} can join your queue.",
+        "emptyCta": "Start a session here"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} and {{count}} other",
+        "namesOthers_other": "{{name}} and {{count}} others",
+        "youOthers_one": "You and {{count}} other",
+        "youOthers_other": "You and {{count}} others",
+        "liveOn": "live on {{board}}",
+        "liveNow": "live now",
+        "quietOn": "quiet on {{board}}",
+        "quietNow": "quiet now",
+        "boardAngle": "{{board}} at {{angle}} degrees",
+        "started": "started {{elapsed}} ago",
+        "minutes_one": "{{count}} minute",
+        "minutes_other": "{{count}} minutes",
+        "hours_one": "{{count}} hour",
+        "hours_other": "{{count}} hours",
+        "hardest": "hardest {{grade}}",
+        "hint": "Opens the session",
+        "invite": "Invite climbers to your session",
+        "justStarted": "just started"
       }
     }
   },

@@ -7,6 +7,7 @@ import {
   SessionNotesSchema,
   LatitudeSchema,
   LongitudeSchema,
+  UUIDSchema,
 } from './primitives';
 
 /**
@@ -25,6 +26,8 @@ export const CreateSessionInputSchema = z.object({
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be a valid hex color')
     .optional(),
+  // Absent or null means public.
+  isPublic: z.boolean().nullable().optional(),
 });
 
 /**
@@ -51,4 +54,15 @@ export const UpdateSessionInputSchema = z.object({
   sessionId: SessionIdSchema,
   name: z.string().max(SESSION_NAME_MAX_LENGTH, 'Session name too long').nullable().optional(),
   notes: SessionNotesSchema.nullable().optional(),
+  // Absent or null leaves visibility unchanged — there is nothing to "clear".
+  isPublic: z.boolean().nullable().optional(),
+});
+
+/**
+ * `followedLiveSessions` arguments. `limit` is clamped by the resolver (default
+ * 10, max 20) rather than rejected, matching `boardHistory`'s limit handling.
+ */
+export const FollowedLiveSessionsArgsSchema = z.object({
+  boardUuid: UUIDSchema.nullable().optional(),
+  limit: z.number().int().nullable().optional(),
 });

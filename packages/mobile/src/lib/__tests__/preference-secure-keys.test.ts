@@ -49,7 +49,7 @@ describe('preference-secure-keys imports', () => {
 });
 
 describe('PREFERENCE_SECURE_KEYS', () => {
-  it('is exactly the sixteen preference keys the migration covers', async () => {
+  it('is exactly the seventeen preference keys the migration covers', async () => {
     const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
 
     // Pinned as literals so a renamed or deleted constant lands as a diff on
@@ -57,6 +57,7 @@ describe('PREFERENCE_SECURE_KEYS', () => {
     expect(PREFERENCE_SECURE_KEYS).toEqual([
       'boardsesh_active_session_id',
       'boardsesh_created_session_id',
+      'boardsesh_session_visibility',
       'boardsesh_last_used_grade',
       'boardsesh_recent_filters',
       'boardsesh_last_search_by_board',

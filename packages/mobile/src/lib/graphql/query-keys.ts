@@ -46,3 +46,17 @@ export const CLIMB_QUERY_KEY = ['climb'] as const;
 export const SEARCH_CLIMBS_QUERY_KEY = ['searchClimbs'] as const;
 export const INFINITE_SEARCH_CLIMBS_QUERY_KEY = ['infiniteSearchClimbs'] as const;
 export const SEARCH_CLIMBS_COUNT_QUERY_KEY = ['searchClimbsCount'] as const;
+
+/**
+ * Live sessions ("Climbing now" on Home, "Climbing here now" in the board sheet).
+ *
+ * Here because Home's pull-to-refresh invalidates the rail's query without
+ * rendering it: the rail is a self-subscribing component in the list header, so
+ * the screen has no query result of its own to call `refetch` on.
+ */
+export const LIVE_SESSIONS_QUERY_KEY = ['liveSessions'] as const;
+export const FOLLOWED_LIVE_SESSIONS_QUERY_KEY = [...LIVE_SESSIONS_QUERY_KEY, 'followed'] as const;
+export const followedLiveSessionsQueryKey = (boardUuid: string | null) =>
+  [...FOLLOWED_LIVE_SESSIONS_QUERY_KEY, boardUuid] as const;
+export const boardLiveSessionsQueryKey = (boardId: number | null) =>
+  [...LIVE_SESSIONS_QUERY_KEY, 'board', boardId] as const;

@@ -5,7 +5,11 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub, type QueueEventHook } from '../pubsub';
 import { roomManager } from './room-manager';
 import { isBoardAnonReadable } from '../graphql/resolvers/board-presence/shared';
-import { isPublicActiveSession, readBoardSessionPreviewGate } from './board-queue-preview-tombstone';
+import {
+  buildEmptyBoardQueuePreview,
+  isPublicActiveSession,
+  readBoardSessionPreviewGate,
+} from './board-queue-preview-tombstone';
 import { logger } from '../utils/logger';
 
 // The tombstone + gate-2 session-visibility helpers live in their own module
@@ -157,6 +161,42 @@ export async function getBoardQueuePreviewSnapshot(
   if (!sessionId) return null;
   const queueState = await roomManager.getQueueState(sessionId);
   return buildBoardQueuePreview(boardId, queueState);
+}
+
+/**
+ * Re-derive one board's preview from scratch and publish it: the snapshot of
+ * whichever session `resolvePublicPreviewSessionForBoard` picks NOW, or an
+ * empty tombstone when none qualifies.
+ *
+ * For changes that are not queue events but can change which session a kiosk
+ * should show, such as a session's `is_public` flip. Resolving instead of
+ * patching covers every way a kiosk can have picked the session up: the Redis
+ * board binding AND the durable `board_sessions.board_id` fallback. Gate 1
+ * runs first, so nothing is ever published on a board that is not anonymously
+ * readable, not even a tombstone.
+ */
+export async function republishBoardQueuePreviewForBoard(boardId: number): Promise<void> {
+  if (!(await isBoardAnonReadable(boardId))) return;
+  const snapshot = await getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified: true });
+  pubsub.publishBoardQueuePreview(String(boardId), snapshot ?? buildEmptyBoardQueuePreview(boardId));
+}
+
+/**
+ * `republishBoardQueuePreviewForBoard` for every board a session can be
+ * previewed on: its Redis session→board binding and its durable `board_id`
+ * column (the preview's fallback source). Call it after writing a session's
+ * `is_public`: flipped private, kiosks clear (or move on to another public
+ * session on the wall); flipped public, they re-seed with its queue.
+ */
+export async function republishBoardQueuePreviewsForSession(
+  sessionId: string,
+  durableBoardId: number | null,
+): Promise<void> {
+  const boardIds = new Set<number>();
+  for (const candidate of [Number(await pubsub.getSessionBoard(sessionId)), durableBoardId]) {
+    if (candidate != null && Number.isSafeInteger(candidate) && candidate > 0) boardIds.add(candidate);
+  }
+  await Promise.all([...boardIds].map((boardId) => republishBoardQueuePreviewForBoard(boardId)));
 }
 
 /**

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Sentry from '@sentry/node';
 import type { ConnectionContext, SessionEvent, ClimbQueueItem } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
+import { ensureSessionRecordExists } from '../../../services/room-manager/client-lifecycle';
 import { pubsub } from '../../../pubsub/index';
 import { updateContext } from '../../context';
 import {
@@ -259,6 +260,10 @@ export const sessionMutations = {
       const sessionId = uuidv4();
       if (DEBUG) logger.info(`[createSession] Generated sessionId: ${sessionId}`);
 
+      // Absent or null means public — the pre-existing behaviour every client
+      // that predates the privacy switch relies on.
+      const isPublic = input.isPublic !== false;
+
       if (input.discoverable) {
         // Discoverable sessions require authentication (they write to DB with userId)
         requireAuthenticated(ctx);
@@ -274,6 +279,7 @@ export const sessionMutations = {
           input.goal,
           input.isPermanent,
           input.color,
+          isPublic,
         );
 
         // If boardIds provided, create sessionBoards junction rows
@@ -321,6 +327,8 @@ export const sessionMutations = {
           undefined, // initialQueue
           null, // initialCurrentClimb
           input.discoverable ? undefined : input.name,
+          undefined, // participantId: always resolved server-side
+          isPublic,
         );
         if (DEBUG)
           logger.info(`[createSession] Joined session - clientId: ${result.clientId}, isLeader: ${result.isLeader}`);
@@ -346,7 +354,7 @@ export const sessionMutations = {
           clientId: result.clientId,
           participantId: result.participantId,
           goal: input.goal || null,
-          isPublic: true,
+          isPublic,
           startedAt: new Date().toISOString(),
           endedAt: null,
           isPermanent: input.isPermanent || false,
@@ -358,6 +366,23 @@ export const sessionMutations = {
 
       // HTTP path: session membership is handled by joinSession when the client connects via WebSocket.
       if (DEBUG) logger.info(`[createSession] HTTP request - returning session metadata without joining`);
+
+      // A private session must be private from its FIRST insert. On this path
+      // the row is otherwise written by the creator's later WebSocket join
+      // (ensureSessionRecordExists), which knows nothing about this input — so
+      // write it now. ON CONFLICT DO NOTHING there means that join cannot flip
+      // it back to public. A discoverable session already has its row
+      // (createDiscoverableSession above, which carries isPublic itself).
+      //
+      // Seeding is unaffected: the join then restores this row instead of
+      // creating one, and clients seed the queue with setQueue after joining.
+      //
+      // Deliberately not best-effort: if this insert fails it throws, and
+      // createSession fails with it. The client never receives the session id,
+      // so no WebSocket join can go on to create this session as public.
+      if (!isPublic && !input.discoverable) {
+        await ensureSessionRecordExists(sessionId, input.boardPath, ctx.userId ?? null, input.name, false);
+      }
 
       return {
         id: sessionId,
@@ -375,7 +400,7 @@ export const sessionMutations = {
         clientId: '',
         participantId: ctx.participantId || ctx.connectionId || '',
         goal: input.goal || null,
-        isPublic: true,
+        isPublic,
         startedAt: new Date().toISOString(),
         endedAt: null,
         isPermanent: input.isPermanent || false,

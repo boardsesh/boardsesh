@@ -1218,13 +1218,10 @@ export function useFavoriteStatus(
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_BETA_LINKS,
-  GET_RECENT_BETA_LINKS,
   GET_USER_BETA_LINKS,
   ATTACH_BETA_LINK,
   type GetBetaLinksQueryResponse,
   type GetBetaLinksQueryVariables,
-  type GetRecentBetaLinksQueryResponse,
-  type GetRecentBetaLinksQueryVariables,
   type GetUserBetaLinksQueryResponse,
   type GetUserBetaLinksQueryVariables,
   type RecentBetaLinkGqlRow,
@@ -1238,29 +1235,6 @@ export type RecentBetaVideo = Omit<RecentBetaLinkGqlRow, 'betaLink'> & {
   betaLink: BetaLink;
 };
 
-/**
- * Narrow recent beta-link rows to beta videos, dedupe by stable video identity,
- * and cap the shelf at `limit`. The backend applies the requested board/layout
- * scope before its result limit, so filtering here would reintroduce starvation.
- * Exported for tests; production callers go through `useRecentBetaLinks`.
- */
-export function selectRecentBetaVideos(rows: RecentBetaLinkGqlRow[], limit: number): RecentBetaVideo[] {
-  const seenIdentities = new Set<string>();
-  const videos: RecentBetaVideo[] = [];
-
-  for (const row of rows) {
-    const betaLink = mapBetaLink(row.betaLink);
-    if (!isBetaVideoUrl(betaLink.link)) continue;
-    const identity = betaLinkIdentity(betaLink.link);
-    if (seenIdentities.has(identity)) continue;
-    seenIdentities.add(identity);
-    videos.push({ ...row, betaLink });
-    if (videos.length >= limit) break;
-  }
-
-  return videos;
-}
-
 export function useBetaLinks(boardType: string, climbUuid: string, enabled = true) {
   return useQuery({
     queryKey: ['betaLinks', boardType, climbUuid],
@@ -1270,24 +1244,6 @@ export function useBetaLinks(boardType: string, climbUuid: string, enabled = tru
         climbUuid,
       }),
     select: (data) => dedupeBetaLinks(mapBetaLinks(data.betaLinks)),
-    enabled,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-export function useRecentBetaLinks(limit = 20, boardType?: string | null, layoutId?: number | null, enabled = true) {
-  return useQuery({
-    queryKey: ['recentBetaLinks', limit, boardType ?? null, layoutId ?? null],
-    queryFn: () =>
-      getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
-        GET_RECENT_BETA_LINKS,
-        {
-          limit,
-          boardType,
-          layoutId,
-        },
-      ),
-    select: (data) => selectRecentBetaVideos(data.recentBetaLinks, limit),
     enabled,
     staleTime: 5 * 60 * 1000,
   });
@@ -1538,7 +1494,6 @@ export function useAttachBetaLink() {
       }),
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
-      void queryClient.invalidateQueries({ queryKey: ['recentBetaLinks'] });
     },
   });
 }

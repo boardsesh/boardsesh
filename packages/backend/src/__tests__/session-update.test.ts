@@ -115,7 +115,7 @@ describe('updateSession (real DB)', () => {
       creatorCtx(),
     );
 
-    expect(result).toEqual({ sessionId: 'su-name-only', name: 'New title', notes: 'Keep me' });
+    expect(result).toEqual({ sessionId: 'su-name-only', name: 'New title', notes: 'Keep me', isPublic: true });
     const row = await readRow('su-name-only');
     expect(row.name).toBe('New title');
     expect(row.notes).toBe('Keep me');
@@ -130,7 +130,7 @@ describe('updateSession (real DB)', () => {
       creatorCtx(),
     );
 
-    expect(result).toEqual({ sessionId: 'su-notes-only', name: 'Keep title', notes: 'Great sesh' });
+    expect(result).toEqual({ sessionId: 'su-notes-only', name: 'Keep title', notes: 'Great sesh', isPublic: true });
     const row = await readRow('su-notes-only');
     expect(row.name).toBe('Keep title');
     expect(row.notes).toBe('Great sesh');

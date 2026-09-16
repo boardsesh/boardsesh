@@ -348,6 +348,12 @@
       "lengthPillAria": "Rest length, {{value}}",
       "lengthPillHint": "Adds 30 seconds. Touch and hold to set any rest length."
     },
+    "sessionVisibility": {
+      "title": "Show this session live",
+      "descriptionOn": "Your crew and climbers on this board can see it and join.",
+      "descriptionOff": "Only people with your invite link can join.",
+      "updateError": "Couldn't change who can see this session. Try again."
+    },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",
       "toggleHistory": "Toggle history",

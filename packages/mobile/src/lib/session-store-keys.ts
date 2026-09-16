@@ -14,3 +14,8 @@
 export const SESSION_ID_KEY = 'boardsesh_active_session_id';
 
 export const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
+
+// The creator's last known "Show this session live" value, stored as
+// `{ sessionId, isPublic }` so a value for an old session never answers for a
+// new one.
+export const SESSION_VISIBILITY_KEY = 'boardsesh_session_visibility';

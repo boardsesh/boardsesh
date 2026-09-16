@@ -1,33 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { SessionFeedItem, SessionFeedTickHighlight, SocialEntityType, UserBoard } from '@boardsesh/shared-schema';
-import { betaLinkIdentity, isBetaVideoUrl, isInstagramUrl, isTikTokUrl } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
-import type { IconName } from '../../../src/components/icon-map';
 import { Card } from '../../../src/components/Card';
-import { SectionDisclosureChevron } from '../../../src/components/SectionDisclosureChevron';
 import { Button } from '../../../src/components/Button';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { HomeTopChrome, TOP_ISLAND_BAND } from '../../../src/components/feed/HomeTopChrome';
 import { type AppMenuAction } from '../../../src/components/AppMenu';
-import {
-  useBulkVoteSummaries,
-  useRecentBetaLinks,
-  useSessionGroupedFeed,
-  type RecentBetaVideo,
-} from '../../../src/lib/graphql/hooks';
+import { useBulkVoteSummaries, useSessionGroupedFeed } from '../../../src/lib/graphql/hooks';
+import { FOLLOWED_LIVE_SESSIONS_QUERY_KEY } from '../../../src/lib/graphql/query-keys';
 import { useHomeBoard } from '../../../src/lib/graphql/hooks/use-home-board';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { useToast } from '../../../src/providers/toast-provider';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
@@ -36,21 +28,17 @@ import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
 import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
 import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
-import { openValidatedUrl } from '../../../src/lib/open-external-link';
 import { hapticLight } from '../../../src/lib/haptics';
-import { useBetaShelfCollapse } from '../../../src/lib/beta-shelf-collapse';
 import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
-import { BETA_CARD_HEIGHT, BETA_CARD_WIDTH } from '../../../src/components/play-drawer/BetaVideoCard';
+import { LiveSessionsRail } from '../../../src/components/live-sessions/LiveSessionsRail';
+import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
 
 import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit';
 import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
 import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
 
-const RECENT_BETA_LIMIT = 20;
-const SHELF_GAP = spacing[3];
-const BETA_SKELETON_KEYS = ['beta-skeleton-1', 'beta-skeleton-2', 'beta-skeleton-3'];
 const INITIAL_FEED_SKELETON_KEYS = ['home-feed-skeleton-1', 'home-feed-skeleton-2', 'home-feed-skeleton-3'];
 const NEXT_PAGE_FEED_SKELETON_KEYS = ['home-feed-footer-skeleton-1', 'home-feed-footer-skeleton-2'];
 
@@ -63,16 +51,11 @@ type CommentTarget = {
 // renders (perf playbook rule 3) instead of a fresh inline arrow each pass.
 const keyExtractor = (item: SessionFeedItem) => item.sessionId;
 
-function detectPlatform(url: string): { name: 'instagram' | 'tiktok'; icon: IconName } | null {
-  if (isInstagramUrl(url)) return { name: 'instagram', icon: 'instagram' };
-  if (isTikTokUrl(url)) return { name: 'tiktok', icon: 'tiktok' };
-  return null;
-}
-
 export default function HomeTab() {
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const { systemColors, brandColors } = useTheme();
   const { openPlayDrawer } = useDrawerHost();
@@ -110,28 +93,14 @@ export default function HomeTab() {
   }, [homeBoard, isResolvingHomeBoard]);
 
   const feedInput = useMemo(() => deriveFeedScopeInput(mode, selectedBoard?.uuid ?? null), [mode, selectedBoard]);
-  // The beta shelf rescopes to the selected board's type + layout ("Fresh beta
-  // on this board"); with no board it stays global ("Fresh beta"). Layout
-  // matters — a Kilter Original beta is useless on a Kilter Homewall.
-  const betaBoardType = selectedBoard?.boardType ?? null;
-  const betaLayoutId = selectedBoard?.layoutId ?? null;
+  // "Climbing now" adds the selected board's sessions only when the climber is
+  // looking at that board (gym mode); crew mode is people only.
+  const liveBoardUuid = mode === 'gym' ? (selectedBoard?.uuid ?? null) : null;
 
   // Hold both queries until home-board inference settles, so a cold start never
   // fires the unscoped global feed first (initial state is gym + no board) and
   // then refetches the scoped/crew query — that double-fetch flickered the feed.
   const scopeReady = !isResolvingHomeBoard;
-  // A folded-away shelf costs no request: the header renders unconditionally, so
-  // gating the fetch can't strand the user with no way to unfold it (#4229).
-  // `betaReady` is the persisted-store read; until it lands `betaExpanded` is
-  // only the default guess, so this is the one surface that paints before the
-  // store can load and must not act on a guess it may have to visibly undo.
-  const { expanded: betaExpanded, toggle: toggleBetaShelf, loaded: betaReady } = useBetaShelfCollapse();
-  const betaVideos = useRecentBetaLinks(
-    RECENT_BETA_LIMIT,
-    betaBoardType,
-    betaLayoutId,
-    scopeReady && betaReady && betaExpanded,
-  );
   const feed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady);
   // The feed is network-only and `networkMode: 'offlineFirst'` pauses an offline
   // fetch instead of failing it, so neither `isLoading` nor `isError` ever
@@ -210,11 +179,29 @@ export default function HomeTab() {
   }, [feed]);
 
   const handleRefresh = useCallback(() => {
-    void betaVideos.refetch();
+    // The rail subscribes to its own query, so the screen refreshes it by key.
+    void queryClient.invalidateQueries({ queryKey: FOLLOWED_LIVE_SESSIONS_QUERY_KEY });
     void sessionVoteSummaries.refetch();
     void tickVoteSummaries.refetch();
     if (isAuthenticated) void feed.refetch();
-  }, [betaVideos, feed, isAuthenticated, sessionVoteSummaries, tickVoteSummaries]);
+  }, [queryClient, feed, isAuthenticated, sessionVoteSummaries, tickVoteSummaries]);
+
+  // The invite sheet for the viewer's own solo session on the rail. Mounted on
+  // the first request and kept mounted; opening waits one frame so the native
+  // sheet has committed before the coordinator presents it.
+  const [inviteSessionId, setInviteSessionId] = useState<string | null>(null);
+  const [inviteRequest, setInviteRequest] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const handleOpenInvite = useCallback((sessionId: string) => {
+    setInviteSessionId(sessionId);
+    setInviteRequest((request) => request + 1);
+  }, []);
+  useEffect(() => {
+    if (inviteRequest === 0) return;
+    const frame = requestAnimationFrame(() => setInviteOpen(true));
+    return () => cancelAnimationFrame(frame);
+  }, [inviteRequest]);
+  const handleDismissInvite = useCallback(() => setInviteOpen(false), []);
 
   const handleSelectCrew = useCallback(() => {
     hapticLight();
@@ -330,57 +317,20 @@ export default function HomeTab() {
     handleFindGym,
   ]);
 
-  const handleBetaOpenClimb = useCallback(
-    (video: RecentBetaVideo) => {
-      if (!video.betaLink.climb_uuid || !video.boardType || video.betaLink.angle == null) return;
-      openClimbInPlayDrawer(
-        {
-          kind: 'ref',
-          climbUuid: video.betaLink.climb_uuid,
-          boardType: video.boardType,
-          layoutId: video.layoutId,
-          angle: video.betaLink.angle,
-        },
-        { openPlayDrawer, router },
-      );
-    },
-    [openPlayDrawer, router],
-  );
-
-  const betaHeading = betaBoardType ? t('mobile.home.betaTitleBoard') : t('mobile.home.betaTitle');
   const sessionsHeading = mode === 'gym' ? t('mobile.home.sessionsTitle') : t('mobile.home.feedTitle');
 
+  // No query data in these deps: the rail polls on its own, and a dep that
+  // changed on every poll would rebuild the FlashList header each minute.
   const header = useMemo(
     () => (
       <View style={styles.header}>
-        <RecentBetaShelf
-          heading={betaHeading}
-          videos={betaVideos.data ?? []}
-          isLoading={betaVideos.isLoading}
-          isError={betaVideos.isError}
-          onRetry={() => void betaVideos.refetch()}
-          onOpenClimb={handleBetaOpenClimb}
-          expanded={betaExpanded}
-          onToggleExpanded={toggleBetaShelf}
-          ready={betaReady}
-        />
+        <LiveSessionsRail boardUuid={liveBoardUuid} enabled={scopeReady} onInvite={handleOpenInvite} />
         <Text variant="title3" style={styles.feedHeading}>
           {sessionsHeading}
         </Text>
       </View>
     ),
-    [
-      betaHeading,
-      betaVideos.data,
-      betaVideos.isError,
-      betaVideos.isLoading,
-      betaVideos.refetch,
-      handleBetaOpenClimb,
-      sessionsHeading,
-      betaExpanded,
-      toggleBetaShelf,
-      betaReady,
-    ],
+    [liveBoardUuid, scopeReady, handleOpenInvite, sessionsHeading],
   );
 
   if (!isAuthenticated) {
@@ -421,11 +371,7 @@ export default function HomeTab() {
         onEndReachedThreshold={0.5}
         ListHeaderComponent={header}
         refreshControl={
-          <RefreshControl
-            refreshing={betaVideos.isRefetching || feed.isRefetching}
-            onRefresh={handleRefresh}
-            tintColor={brandColors.primary}
-          />
+          <RefreshControl refreshing={feed.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
         }
         ListEmptyComponent={
           <>
@@ -506,6 +452,9 @@ export default function HomeTab() {
         entityType={commentTarget?.entityType ?? 'tick'}
         onClose={() => setCommentTarget(null)}
       />
+      {inviteSessionId ? (
+        <InviteSheet visible={inviteOpen} onDismiss={handleDismissInvite} sessionId={inviteSessionId} />
+      ) : null}
     </View>
   );
 }
@@ -554,192 +503,6 @@ function ActivityCardSkeleton() {
   );
 }
 
-function RecentBetaShelf({
-  heading,
-  videos,
-  isLoading,
-  isError,
-  onRetry,
-  onOpenClimb,
-  expanded,
-  onToggleExpanded,
-  ready,
-}: {
-  heading: string;
-  videos: RecentBetaVideo[];
-  isLoading: boolean;
-  isError: boolean;
-  onRetry: () => void;
-  onOpenClimb: (video: RecentBetaVideo) => void;
-  expanded: boolean;
-  onToggleExpanded: () => void;
-  ready: boolean;
-}) {
-  const { t } = useTranslation('feed');
-  const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
-
-  return (
-    <View style={styles.shelfSection}>
-      {/* Keeps the home screen's own `title3` heading rather than adopting
-          `SectionHeader`, which would restyle the row to the group caption. */}
-      <Pressable
-        onPress={onToggleExpanded}
-        accessibilityRole="button"
-        accessibilityLabel={heading}
-        accessibilityState={{ expanded }}
-        hitSlop={8}
-        style={styles.sectionHeaderRow}
-      >
-        <Text variant="title3">{heading}</Text>
-        <SectionDisclosureChevron expanded={expanded} size={18} />
-      </Pressable>
-      {/* Nothing until the stored state lands: rendering the default and then
-          correcting it is the cold-start flash this avoids. One AsyncStorage
-          read, so the gap is imperceptible — and it keeps startup off the
-          splash's critical path. */}
-      {!ready || !expanded ? null : isLoading ? (
-        <FlatList
-          horizontal
-          data={BETA_SKELETON_KEYS}
-          renderItem={({ item }) => <View key={item} style={styles.betaSkeleton} />}
-          keyExtractor={(item) => item}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.shelfContent}
-          ItemSeparatorComponent={BetaShelfSeparator}
-          scrollEnabled={false}
-        />
-      ) : isError ? (
-        <View style={[styles.shelfState, { borderColor: systemColors.separator }]}>
-          <Icon name="error" size={20} color={iosSystemColors.systemRed} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.shelfStateText}>
-            {t('mobile.home.betaError')}
-          </Text>
-          <Pressable
-            onPress={onRetry}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.inlineRetry,
-              { borderColor: brandColors.primary },
-              pressed && { backgroundColor: `${brandColors.primary}1A` },
-            ]}
-          >
-            <Text variant="footnote" color={brandColors.primary}>
-              {tCommon('actions.retry')}
-            </Text>
-          </Pressable>
-        </View>
-      ) : videos.length === 0 ? (
-        <View style={[styles.shelfState, { borderColor: systemColors.separator }]}>
-          <Icon name="video" size={20} color={systemColors.tertiaryLabel} />
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {t('mobile.home.betaEmpty')}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          horizontal
-          data={videos}
-          renderItem={({ item }) => <RecentBetaCard video={item} onOpenClimb={onOpenClimb} />}
-          keyExtractor={(video) => betaLinkIdentity(video.betaLink.link)}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.shelfContent}
-          ItemSeparatorComponent={BetaShelfSeparator}
-          snapToInterval={BETA_CARD_WIDTH + SHELF_GAP}
-          decelerationRate="fast"
-          snapToAlignment="start"
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          windowSize={3}
-          removeClippedSubviews
-          getItemLayout={(_data, index) => ({
-            length: BETA_CARD_WIDTH + SHELF_GAP,
-            offset: (BETA_CARD_WIDTH + SHELF_GAP) * index,
-            index,
-          })}
-        />
-      )}
-    </View>
-  );
-}
-
-function BetaShelfSeparator() {
-  return <View style={styles.shelfSeparator} />;
-}
-
-function RecentBetaCard({
-  video,
-  onOpenClimb,
-}: {
-  video: RecentBetaVideo;
-  onOpenClimb: (video: RecentBetaVideo) => void;
-}) {
-  const { t } = useTranslation('feed');
-  const { showToast } = useToast();
-  const [imageFailed, setImageFailed] = useState(false);
-  const platform = detectPlatform(video.betaLink.link);
-  const username = video.betaLink.foreign_username?.trim();
-
-  const handleOpenVideo = useCallback(async () => {
-    hapticLight();
-    const opened = await openValidatedUrl(video.betaLink.link, isBetaVideoUrl);
-    if (!opened) {
-      showToast(t('mobile.home.betaOpenError'), 'error');
-    }
-  }, [showToast, t, video.betaLink.link]);
-
-  return (
-    <View testID="beta-shelf-card" style={styles.betaCard}>
-      <Pressable
-        onPress={handleOpenVideo}
-        accessibilityRole="link"
-        accessibilityLabel={t('mobile.home.betaCardLabel')}
-        style={({ pressed }) => [styles.betaVideoSurface, pressed && styles.pressed]}
-      >
-        {video.betaLink.thumbnail && !imageFailed ? (
-          <Image
-            source={{ uri: video.betaLink.thumbnail }}
-            style={styles.betaThumbnail}
-            contentFit="cover"
-            transition={150}
-            recyclingKey={video.betaLink.thumbnail}
-            onError={() => setImageFailed(true)}
-            accessibilityIgnoresInvertColors
-          />
-        ) : (
-          <View style={[styles.betaThumbnail, styles.thumbnailFallback]}>
-            <Icon name="video" size={28} color={iosSystemColors.systemGray} />
-          </View>
-        )}
-
-        {platform ? (
-          <View style={styles.platformBadge}>
-            <Icon name={platform.icon} size={12} color={iosSystemColors.white} />
-          </View>
-        ) : null}
-      </Pressable>
-
-      <View style={styles.betaCardFooter}>
-        <Pressable
-          onPress={() => onOpenClimb(video)}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.climbPill, pressed && styles.climbPillPressed]}
-          hitSlop={6}
-        >
-          <Text variant="caption1" color={iosSystemColors.white} numberOfLines={1}>
-            {video.climbName ?? t('mobile.home.unknownClimb')}
-          </Text>
-        </Pressable>
-        {username ? (
-          <Text variant="caption2" color={iosSystemColors.white} numberOfLines={1} style={styles.usernameText}>
-            @{username}
-          </Text>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   centered: {
@@ -753,109 +516,6 @@ const styles = StyleSheet.create({
     // A small gap below the floating header band (the list already insets by the
     // band via contentContainerStyle).
     paddingTop: spacing[2],
-  },
-  shelfSection: {
-    paddingBottom: spacing[5],
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    // Full row, not `alignSelf: 'flex-start'` — the whole heading is the tap
-    // target here, matching the disclosure in SectionHeader.
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-  },
-  shelfContent: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[1],
-  },
-  shelfSeparator: {
-    width: SHELF_GAP,
-  },
-  betaCard: {
-    width: BETA_CARD_WIDTH,
-    height: BETA_CARD_HEIGHT,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    backgroundColor: `${iosSystemColors.systemGray}1F`,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
-  },
-  betaSkeleton: {
-    width: BETA_CARD_WIDTH,
-    height: BETA_CARD_HEIGHT,
-    borderRadius: borderRadius.md,
-    backgroundColor: `${iosSystemColors.systemGray}26`,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
-  },
-  betaVideoSurface: {
-    width: '100%',
-    height: '100%',
-  },
-  betaThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  thumbnailFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  platformBadge: {
-    position: 'absolute',
-    top: spacing[1],
-    left: spacing[1],
-    width: 22,
-    height: 22,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  betaCardFooter: {
-    position: 'absolute',
-    bottom: spacing[1],
-    left: spacing[1],
-    right: spacing[1],
-    gap: spacing[1],
-  },
-  climbPill: {
-    alignSelf: 'flex-start',
-    maxWidth: BETA_CARD_WIDTH - spacing[2] * 2,
-    paddingHorizontal: spacing[2],
-    paddingVertical: 3,
-    borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(0,0,0,0.62)',
-  },
-  climbPillPressed: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-  },
-  usernameText: {
-    paddingHorizontal: spacing[1],
-    textShadowColor: 'rgba(0,0,0,0.75)',
-    textShadowRadius: 3,
-  },
-  shelfState: {
-    marginHorizontal: spacing[4],
-    minHeight: 72,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    padding: spacing[3],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  shelfStateText: {
-    flex: 1,
-  },
-  inlineRetry: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   feedHeading: {
     paddingHorizontal: spacing[4],
@@ -943,43 +603,6 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: borderRadius.full,
     opacity: 0.42,
-  },
-  activityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  activityHeaderText: {
-    flex: 1,
-  },
-  activityBody: {
-    flexDirection: 'row',
-    gap: spacing[3],
-    paddingTop: spacing[3],
-  },
-  activityThumbnailFallback: {
-    width: 76,
-    height: 96,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activityDetails: {
-    flex: 1,
-    gap: spacing[2],
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[1],
-  },
-  metaChip: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  quote: {
-    paddingTop: spacing[1],
   },
   feedState: {
     alignItems: 'center',

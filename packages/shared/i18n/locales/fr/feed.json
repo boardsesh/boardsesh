@@ -4,9 +4,6 @@
   },
   "mobile": {
     "home": {
-      "betaTitle": "Beta récente",
-      "betaEmpty": "Aucune vidéo beta pour le moment",
-      "betaError": "Impossible de charger les vidéos beta.",
       "betaOpenError": "Impossible d'ouvrir cette vidéo beta.",
       "betaCardLabel": "Ouvrir la vidéo beta",
       "feedTitle": "De votre crew",
@@ -15,9 +12,7 @@
       "searchAction": "Chercher des grimpeurs",
       "emptyTitle": "Aucune activité pour le moment",
       "emptyBody": "Suivez des grimpeurs et des ouvreurs pour remplir ce fil.",
-      "unknownClimb": "Bloc inconnu",
       "sessionsTitle": "Sessions récentes",
-      "betaTitleBoard": "Beta récente sur cette board",
       "boardEmptyTitle": "Calme sur {{board}} en ce moment",
       "boardEmptyBody": "Sois le premier à enregistrer une session, ou regarde ce que grimpent les autres.",
       "boardEmptyCta": "Voir tout le monde",
@@ -26,6 +21,81 @@
         "everyone": "Tout le monde",
         "findGym": "Trouver une salle près de toi",
         "hint": "Change les voies que vous voyez"
+      }
+    },
+    "liveSessions": {
+      "title": "En train de grimper",
+      "liveCount_one": "{{count}} en direct",
+      "liveCount_other": "{{count}} en direct",
+      "live": "En direct",
+      "quiet": "Calme",
+      "names": {
+        "two": "{{first}} et {{second}}",
+        "you": "Toi",
+        "youAnd": "Toi et {{name}}",
+        "justYou": "Juste toi pour l'instant",
+        "someone": "Quelqu'un"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "Board que tu suis",
+      "onClimb": "Sur {{climb}}",
+      "onClimbGrade": "Sur {{climb}} · {{grade}}",
+      "sends_one": "{{count}} croix",
+      "sends_other": "{{count}} croix",
+      "elapsed": {
+        "minutes": "{{minutes}} min",
+        "hours": "{{hours}} h",
+        "hoursMinutes": "{{hours}} h {{minutes}} min",
+        "justStarted": "Vient de commencer"
+      },
+      "actions": {
+        "join": "Rejoindre",
+        "open": "Ouvrir",
+        "invite": "Inviter"
+      },
+      "start": {
+        "title": "Démarre une session",
+        "body": "Les personnes qui te suivent la voient ici et peuvent la rejoindre.",
+        "cta": "Démarrer une session",
+        "bleTitle": "Tu es sur {{board}}",
+        "bleBody": "Démarre une session pour que ton crew puisse te rejoindre."
+      },
+      "find": {
+        "title": "Ramène ton crew",
+        "body": "Suis des grimpeurs et leurs sessions en direct apparaîtront ici.",
+        "cta": "Chercher des grimpeurs"
+      },
+      "error": "Impossible de charger qui grimpe.",
+      "offline": "Pas de réseau. Les sessions réapparaîtront quand tu seras de nouveau en ligne.",
+      "offlineMode": "Le mode hors ligne est activé. Les sessions réapparaîtront quand tu le désactiveras.",
+      "board": {
+        "header": "En train de grimper ici",
+        "more_one": "{{count}} de plus",
+        "more_other": "{{count}} de plus",
+        "emptyTitle": "Personne n'est en session ici.",
+        "emptyBody": "Démarres-en une et tout le monde à ce mur pourra la rejoindre.",
+        "emptyBodyLitBy": "{{name}} est sur le mur. Démarre une session et {{name}} pourra rejoindre ta file d'attente.",
+        "emptyCta": "Démarrer une session ici"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} et {{count}} autre",
+        "namesOthers_other": "{{name}} et {{count}} autres",
+        "youOthers_one": "Toi et {{count}} autre",
+        "youOthers_other": "Toi et {{count}} autres",
+        "liveOn": "en direct sur {{board}}",
+        "liveNow": "en direct",
+        "quietOn": "calme sur {{board}}",
+        "quietNow": "calme en ce moment",
+        "boardAngle": "{{board}} à {{angle}} degrés",
+        "started": "commencée il y a {{elapsed}}",
+        "minutes_one": "{{count}} minute",
+        "minutes_other": "{{count}} minutes",
+        "hours_one": "{{count}} heure",
+        "hours_other": "{{count}} heures",
+        "hardest": "la plus dure {{grade}}",
+        "hint": "Ouvre la session",
+        "invite": "Inviter des grimpeurs à ta session",
+        "justStarted": "vient de commencer"
       }
     }
   },

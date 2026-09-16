@@ -139,6 +139,13 @@ export type JoinSessionOptions = {
   initialCurrentClimb?: ClimbQueueItem | null;
   sessionName?: string;
   participantId?: string | null;
+  /**
+   * Visibility for the `board_sessions` row this join creates when the session
+   * is brand new (the WS `createSession` path). Ignored for an existing
+   * session: the row is inserted with ON CONFLICT DO NOTHING, so a later join
+   * can never flip a private session public. Defaults to public.
+   */
+  isPublic?: boolean;
 };
 
 /**

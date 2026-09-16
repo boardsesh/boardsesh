@@ -28,6 +28,24 @@ export const queriesTypeDefs = /* GraphQL */ `
     mySessions: [DiscoverableSession!]!
 
     """
+    Sessions climbing right now that the viewer has a reason to care about:
+    started or joined by someone they follow, on a board they follow, on
+    \`boardUuid\` when given, or their own. Private sessions only appear to the
+    people in them. Viewer's own sessions first, then sessions with followed
+    climbers, then bigger crews, then most recent. Requires authentication.
+    \`limit\` defaults to 10, max 20.
+    """
+    followedLiveSessions(boardUuid: ID, limit: Int): [LiveSession!]!
+
+    """
+    Sessions climbing right now on one board. Same access rule as
+    \`boardHistory\`: anonymous callers only reach public and system-shared
+    boards and only see public sessions; followed-climber reasons need
+    authentication.
+    """
+    boardLiveSessions(boardId: Int!): [LiveSession!]!
+
+    """
     Get a session summary (stats, grade distribution, participants).
     Available for ended sessions or active sessions with ticks.
     """

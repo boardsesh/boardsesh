@@ -17,7 +17,7 @@
 //   graph to load for one string.
 //
 // preference-secure-keys.test.ts guards the two ways an entry here can go wrong:
-// it pins the sixteen literals so a rename shows up as a diff, and it reads this
+// it pins the seventeen literals so a rename shows up as a diff, and it reads this
 // file's imports and fails if any of them names a module with a `.web` sibling —
 // the fork hazard above, which no value assertion can see because Vitest and tsc
 // both resolve to the native file.
@@ -57,11 +57,12 @@ import { LOCALE_OVERRIDE_KEY } from './i18n/locale-preference-key';
 import { LAST_GRADE_KEY } from './last-grade-store';
 import { LAST_SEARCH_KEY } from './last-search-store';
 import { RECENT_FILTERS_KEY } from './recent-filter-store';
-import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store-keys';
+import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY, SESSION_VISIBILITY_KEY } from './session-store-keys';
 
 export const PREFERENCE_SECURE_KEYS: readonly string[] = [
   SESSION_ID_KEY,
   CREATED_SESSION_ID_KEY,
+  SESSION_VISIBILITY_KEY,
   LAST_GRADE_KEY,
   RECENT_FILTERS_KEY,
   LAST_SEARCH_KEY,
