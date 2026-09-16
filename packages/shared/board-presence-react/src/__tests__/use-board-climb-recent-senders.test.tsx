@@ -360,7 +360,10 @@ describe('useBoardClimbRecentSenders', () => {
     expect(resultBox.current).toEqual({ senders: [sender('cached')], isLoading: false });
   });
 
-  it('fetches on a negative board angle, and skips one outside the tilt range', async () => {
+  it('fetches on a negative board angle, and skips one no tick could have been written at', async () => {
+    // -5 is the deepest slab any board routes, so it is the last angle the
+    // guard lets through; -6 is the first one it stops. Backend counterpart:
+    // BoardClimbRecentSendersArgsSchema.
     const { client, fetchClimbRecentSenders } = makeClient();
     fetchClimbRecentSenders.mockResolvedValue([sender('tilted')]);
     const resultBox: ResultBox = { current: null };
@@ -385,7 +388,7 @@ describe('useBoardClimbRecentSenders', () => {
         boardId={1}
         client={client}
         feedStats={null}
-        options={{ climbUuid: 'climb-1', angle: -91 }}
+        options={{ climbUuid: 'climb-1', angle: -6 }}
         resultBox={resultBox}
       />,
     );
