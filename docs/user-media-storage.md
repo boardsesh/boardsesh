@@ -1,13 +1,13 @@
 # User media storage
 
-Where avatars, gym images, beta-video thumbnails and user data exports live, and how the backend reaches them.
+Where avatars, gym images, beta-video thumbnails, spray wall photos and user data exports live, and how the backend reaches them.
 
 ## The buckets
 
 | Bucket | Handle | Provider | Access | Contents |
 | --- | --- | --- | --- | --- |
 | `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, `spray-walls/<wall uuid>/<32 hex>.jpg`, and every `@<size>.jpg` resize variant |
-| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `moonboard-ocr-test-data/<ts>-<uuid>/…` |
+| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `spray-walls/<wallUuid>/<photoId>.jpg` (+ its `@<size>.jpg` variant), `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
 | `boardsesh-static-assets` | — (published by CI, not the backend) | Cloudflare R2 | Public through a custom domain — `assets-r2.boardsesh.com` today, `assets.boardsesh.com` after the cutover | `static/v1/<sha256>.<ext>` — repo-owned board art, icons, brand marks; see `docs/static-assets.md` |
 
@@ -120,6 +120,28 @@ The browser adapter reads picker/manipulator `blob:` or `data:` URLs without
 backend credentials and appends a real Blob with an explicit filename. Both
 adapters reject missing or empty images, and leave the multipart boundary to
 fetch. The backend rejects empty avatar and screenshot parts before storage.
+
+### Spray wall photos
+
+The fourth media surface, and the only one that is private by design: a spray wall photo is a picture of the inside of somebody's home. `POST /api/spray-wall-photos` (`packages/backend/src/handlers/spray-wall-photos.ts`) is the one way one enters Boardsesh; `docs/spray-walls.md` has the wall model around it.
+
+| | |
+| --- | --- |
+| Bucket | `private`, never `media` — `media` is world-readable under guessable keys |
+| Key | `spray-walls/<wallUuid>/<photoId>.jpg`, plus the single largest allowed resize variant |
+| Cap | 10 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
+| Accepted | JPEG / PNG / WebP by magic bytes, re-encoded to JPEG at quality 88 |
+| Read | a 15-minute presigned GET, minted per read (`presignGetObject`); nothing persists a URL |
+| `Cache-Control` | `private, no-store` |
+
+Four things differ from every other surface here, and each one comes from that same fact:
+
+- **Every byte is re-encoded through sharp.** `rotate()` bakes in the EXIF orientation and the re-encode drops the metadata block wholesale — including the GPS tags a phone camera writes, which on a home wall is the owner's street address.
+- **No local-dev disk fallback.** The gym image handlers write to a directory and serve it from `/static/…` when S3 is off. Doing that here would put a home photo on an unauthenticated route, so with no private bucket configured this endpoint answers 501 in *every* environment — the `user-data-export` precedent for the same bucket.
+- **`private, no-store`, not the default year-long immutable.** A shared cache on the path would keep serving the photo long past the 15-minute presign that IS the access control, and past the owner flipping the wall private or deleting it. There is no version of "keep a copy for a while" that survives a privacy change.
+- **An upload is not a row.** The object sits unreferenced until `createSprayWallVersion(wallUuid, photoId)` adopts it, so an abandoned upload is a stray object for the SW-17 cleanup job, not something anyone can see.
+
+The one place a long lifetime may ever be set is the public-promotion path: SW-14 (#5447) copies a PUBLIC wall's photo to the `media` bucket under a random key, and that copy is world-readable by intent. Anything writing to `private` uses the rules above.
 
 ### Feedback screenshots
 

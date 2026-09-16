@@ -6,7 +6,7 @@ import { requireAnonReadableBoard } from './shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { assertSprayBoardIsReadable, sprayStreamGate } from '../climbs/spray-read-access';
 
 export const boardPresenceSubscriptions = {
   /**
@@ -58,7 +58,13 @@ export const boardPresenceSubscriptions = {
         `boardNowPlaying:${boardId}`,
       );
 
+      // Re-asked per event, because the check above ran once and the socket outlives
+      // it: a wall going private, or a revoked gym membership, has to end a stream
+      // that is already running. Ending the iterator is the subscription's empty
+      // page — no error naming a wall the caller may no longer see.
+      const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId);
       for await (const event of asyncIterator) {
+        if (gate && !(await gate())) return;
         yield { boardNowPlaying: event };
       }
     },

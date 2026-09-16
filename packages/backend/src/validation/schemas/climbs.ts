@@ -175,6 +175,9 @@ export const ClimbSearchInputSchema = z.object({
   sizeId: z.number().int().positive('Size ID must be positive'),
   setIds: z.string().min(1, 'Set IDs cannot be empty'),
   angle: z.number().int(),
+  // Spray only, and a CAPABILITY rather than a filter: it never reaches the search
+  // predicate, only the read gate (`sprayLayoutIsReadableWithCapability`).
+  sprayWallUuid: UUIDSchema.optional(),
   page: z.number().int().min(0).max(MAX_SEARCH_PAGE, 'Page number too large').optional(),
   pageSize: z.number().int().min(1).max(100, 'Page size cannot exceed 100').optional(),
   gradeAccuracy: z.string().optional(),

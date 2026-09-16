@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   MAX_HOLDS_PER_WALL,
@@ -440,27 +440,65 @@ async function toGraphQLVersion(
   };
 }
 
+/** Every version row for these walls, in one round trip, keyed by wall id. */
+async function loadVersionRowsForWalls(wallIds: number[]): Promise<Map<number, SprayWallVersionRow[]>> {
+  const byWall = new Map<number, SprayWallVersionRow[]>();
+  for (const id of wallIds) byWall.set(id, []);
+  if (wallIds.length === 0) return byWall;
+
+  const rows = await db
+    .select()
+    .from(dbSchema.sprayWallVersions)
+    .where(inArray(dbSchema.sprayWallVersions.wallId, wallIds))
+    .orderBy(desc(dbSchema.sprayWallVersions.versionNumber));
+
+  for (const row of rows) byWall.get(Number(row.wallId))?.push(row);
+  return byWall;
+}
+
 /**
  * Build the `SprayWall` payload.
  *
  * `versions` hides drafts from everyone but an editor: a draft is a photograph
  * the owner has not decided to show yet, and the compare view of a half-finished
  * reset is not something a gym member should see.
+ *
+ * `preloadedVersions` / `preloadedDeltas` are how `mySprayWalls` avoids three
+ * round trips per wall — pass them when the caller already read them in one go.
  */
-async function toGraphQLWall(loaded: LoadedWall, userId: string | null | undefined, canEdit: boolean) {
+async function toGraphQLWall(
+  loaded: LoadedWall,
+  userId: string | null | undefined,
+  canEdit: boolean,
+  preloadedVersions?: SprayWallVersionRow[],
+  preloadedDeltas?: Map<number, { added: number; removed: number }>,
+) {
   const { wall, board } = loaded;
 
-  const versionRows = await db
-    .select()
-    .from(dbSchema.sprayWallVersions)
-    .where(eq(dbSchema.sprayWallVersions.wallId, wall.id))
-    .orderBy(desc(dbSchema.sprayWallVersions.versionNumber));
+  const versionRows =
+    preloadedVersions ??
+    (await db
+      .select()
+      .from(dbSchema.sprayWallVersions)
+      .where(eq(dbSchema.sprayWallVersions.wallId, wall.id))
+      .orderBy(desc(dbSchema.sprayWallVersions.versionNumber)));
 
   const visibleVersions = canEdit ? versionRows : versionRows.filter((version) => version.status !== 'draft');
-  const deltas = await versionHoldDeltas(visibleVersions.map((version) => Number(version.id)));
+  const deltas = preloadedDeltas ?? (await versionHoldDeltas(visibleVersions.map((version) => Number(version.id))));
 
   const [enrichedBoard] = await enrichBoards([{ board }], userId ?? undefined);
-  const currentVersionRow = versionRows.find((version) => Number(version.id) === Number(wall.currentVersionId));
+
+  const versions = await Promise.all(
+    visibleVersions.map((version) => toGraphQLVersion(version, deltas.get(Number(version.id)))),
+  );
+
+  // The SAME object the `versions` list carries, not a second render of the same
+  // row: `toGraphQLVersion` presigns the photo, so building it twice minted two
+  // signatures (and two more for the thumbnail) for one version on every wall read.
+  // The current version is always published, so it is never filtered out of
+  // `visibleVersions` and this find only misses on a wall that has no published
+  // version yet.
+  const currentVersion = versions.find((version) => version.id === String(wall.currentVersionId)) ?? null;
 
   return {
     uuid: board.uuid,
@@ -469,12 +507,8 @@ async function toGraphQLWall(loaded: LoadedWall, userId: string | null | undefin
     sizeId: spraySizeIdForLayout(wall.layoutId),
     referenceWidth: wall.referenceWidth,
     referenceHeight: wall.referenceHeight,
-    currentVersion: currentVersionRow
-      ? await toGraphQLVersion(currentVersionRow, deltas.get(Number(currentVersionRow.id)))
-      : null,
-    versions: await Promise.all(
-      visibleVersions.map((version) => toGraphQLVersion(version, deltas.get(Number(version.id)))),
-    ),
+    currentVersion,
+    versions,
     holdCount: wall.holdCount,
     publicPhotoUrl: publicWallPhotoUrl(board, wall),
     viewerCanEdit: canEdit,
@@ -824,24 +858,37 @@ async function refreshPublicWallPhoto(
  * standing.
  */
 export async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: number): Promise<number> {
-  const result = await tx.execute(sql`
-    DELETE FROM feed_items
-    WHERE (
-      entity_type = 'climb'
-      AND entity_id IN (SELECT uuid FROM board_climbs WHERE board_type = 'spray' AND layout_id = ${layoutId})
-    ) OR (
-      entity_type = 'tick'
-      AND entity_id IN (
-        SELECT t.uuid FROM boardsesh_ticks t
-        WHERE t.board_type = 'spray'
-          AND t.climb_uuid IN (
-            SELECT uuid FROM board_climbs WHERE board_type = 'spray' AND layout_id = ${layoutId}
-          )
-      )
+  const wallClimbUuids = tx
+    .select({ uuid: dbSchema.boardClimbs.uuid })
+    .from(dbSchema.boardClimbs)
+    .where(and(eq(dbSchema.boardClimbs.boardType, 'spray'), eq(dbSchema.boardClimbs.layoutId, layoutId)));
+
+  const wallTickUuids = tx
+    .select({ uuid: dbSchema.boardseshTicks.uuid })
+    .from(dbSchema.boardseshTicks)
+    .where(
+      and(
+        eq(dbSchema.boardseshTicks.boardType, 'spray'),
+        inArray(
+          dbSchema.boardseshTicks.climbUuid,
+          tx
+            .select({ uuid: dbSchema.boardClimbs.uuid })
+            .from(dbSchema.boardClimbs)
+            .where(and(eq(dbSchema.boardClimbs.boardType, 'spray'), eq(dbSchema.boardClimbs.layoutId, layoutId))),
+        ),
+      ),
+    );
+
+  const deleted = await tx
+    .delete(dbSchema.feedItems)
+    .where(
+      or(
+        and(eq(dbSchema.feedItems.entityType, 'climb'), inArray(dbSchema.feedItems.entityId, wallClimbUuids)),
+        and(eq(dbSchema.feedItems.entityType, 'tick'), inArray(dbSchema.feedItems.entityId, wallTickUuids)),
+      ),
     )
-    RETURNING id
-  `);
-  return rowsFromResult<{ id: string }>(result).length;
+    .returning({ id: dbSchema.feedItems.id });
+  return deleted.length;
 }
 
 /**
@@ -924,7 +971,7 @@ async function publishDraftUnderLock(
   // The previous published generation becomes `superseded` — it is still the
   // generation older climbs were set against, so it is never deleted.
   if (wallNow?.currentVersionId != null) {
-    await tx
+    const superseded = await tx
       .update(dbSchema.sprayWallVersions)
       .set({ status: 'superseded', updatedAt: new Date() })
       .where(
@@ -932,7 +979,24 @@ async function publishDraftUnderLock(
           eq(dbSchema.sprayWallVersions.id, wallNow.currentVersionId),
           eq(dbSchema.sprayWallVersions.status, 'published'),
         ),
-      );
+      )
+      .returning({ id: dbSchema.sprayWallVersions.id });
+
+    // The `status = 'published'` half of that WHERE is a guard, and a guard that
+    // matches nothing used to be a silent no-op: the publish below moved
+    // `current_version_id` on anyway and the old generation kept whatever status
+    // it had, so the wall ended with two published versions or with a
+    // `current_version_id` pointing at a superseded row — an inconsistency no
+    // later read can distinguish from the real thing. Fail loudly instead; the
+    // state is not reachable through this API, so it means a hand-edited row.
+    if (superseded.length === 0) {
+      throw new GraphQLError('This wall\u2019s published version is in an unexpected state. Reload and try again.', {
+        extensions: {
+          code: SPRAY_WALL_CODES.versionNotDraft,
+          currentVersionId: String(wallNow.currentVersionId),
+        },
+      });
+    }
   }
 
   const [row] = await tx
@@ -1243,8 +1307,18 @@ export const sprayWallQueries = {
       )
       .orderBy(desc(dbSchema.sprayWalls.createdAt));
 
+    // One version query for the whole list rather than one per wall: a climber with
+    // four walls was paying four round trips for rows that come out of one index.
+    const versionsByWall = await loadVersionRowsForWalls(rows.map((row) => Number(row.wall.id)));
+    // …and one hold-delta pair for every version across every wall, for the same
+    // reason. The caller owns these walls, so no version is filtered out below and
+    // this set is exactly the one each payload needs.
+    const deltas = await versionHoldDeltas([...versionsByWall.values()].flat().map((version) => Number(version.id)));
+
     // The caller owns every row here, so `viewerCanEdit` is true without asking.
-    return Promise.all(rows.map((row) => toGraphQLWall(row, ctx.userId, true)));
+    return Promise.all(
+      rows.map((row) => toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas)),
+    );
   },
 
   proposeSprayWallReset: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -1614,13 +1688,6 @@ export const sprayWallMutations = {
       });
     }
 
-    const geometry = resolveVersionGeometry({
-      anchors: validated.anchors ?? null,
-      photoWidth,
-      photoHeight,
-      existingFrame: { width: wall.referenceWidth, height: wall.referenceHeight },
-    });
-
     const version = await db.transaction(async (tx) => {
       // The wall lock, held for the one-draft check AND the insert. Checking
       // outside the transaction would let two concurrent creates both see no open
@@ -1675,22 +1742,61 @@ export const sprayWallMutations = {
       // wall — so the wall row is the thing two concurrent uploads queue behind,
       // and without that lock both would compute the same `MAX + 1` and one would
       // die on the `(wall_id, version_number)` unique index.
-      await tx
-        .select({ id: dbSchema.sprayWalls.id })
+      //
+      // The same statement re-reads the canonical FRAME, which is why it selects
+      // more than the id: `resolveVersionGeometry` inherits the wall's existing
+      // frame, and a concurrent `discardSprayWallVersion` clears it back to NULL
+      // when it drops version 1. Read before the lock, this version would inherit a
+      // frame that no longer exists and every hold on the recreated version 1 would
+      // land in the discarded generation's coordinates. Inside the lock the frame is
+      // whatever the wall actually has.
+      const [lockedWall] = await tx
+        .select({
+          id: dbSchema.sprayWalls.id,
+          referenceWidth: dbSchema.sprayWalls.referenceWidth,
+          referenceHeight: dbSchema.sprayWalls.referenceHeight,
+        })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
         .for('update');
+      if (!lockedWall) throw notFoundError();
 
       const [{ maxNumber }] = await tx
         .select({ maxNumber: sql<number | null>`MAX(${dbSchema.sprayWallVersions.versionNumber})` })
         .from(dbSchema.sprayWallVersions)
         .where(eq(dbSchema.sprayWallVersions.wallId, wall.id));
 
+      const versionNumber = Number(maxNumber ?? 0) + 1;
+
+      // Anchors are optional on version 1 ONLY, and that is not a convenience: on
+      // version 1 the photo's own pixel box IS the canonical frame, so the identity
+      // homography is correct. Every later version inherits a frame derived from a
+      // DIFFERENT photograph, and without anchors to map this photo onto it the
+      // identity homography silently puts every hold the owner draws at the wrong
+      // place on the wall — and the climbs set on it with them.
+      //
+      // Checked under the lock, against the version number this insert will actually
+      // take, so a concurrent discard of version 1 cannot make a v2 rule apply to a
+      // version that turns out to be v1.
+      if (versionNumber > 1 && !isValidAnchorQuad(validated.anchors ?? null)) {
+        throw new GraphQLError(
+          'Mark the four wall corners on this photo. Later photos need them to line up with the first one.',
+          { extensions: { code: SPRAY_WALL_CODES.anchorsRequired } },
+        );
+      }
+
+      const geometry = resolveVersionGeometry({
+        anchors: validated.anchors ?? null,
+        photoWidth,
+        photoHeight,
+        existingFrame: { width: lockedWall.referenceWidth, height: lockedWall.referenceHeight },
+      });
+
       const [inserted] = await tx
         .insert(dbSchema.sprayWallVersions)
         .values({
           wallId: wall.id,
-          versionNumber: Number(maxNumber ?? 0) + 1,
+          versionNumber,
           status: 'draft',
           photoKey,
           photoWidth,
