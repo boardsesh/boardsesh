@@ -4,7 +4,7 @@
 
 import type { TFunction } from 'i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
-import type { ElapsedParts, LiveCardModel, LiveNamesDescriptor } from './live-session-model';
+import { isQuietSession, type ElapsedParts, type LiveCardModel, type LiveNamesDescriptor } from './live-session-model';
 
 export type LiveNamesCopy = {
   /** The names, ellipsized by the view. */
@@ -102,12 +102,18 @@ export function liveCardSpokenLabel(
 ): string {
   const parts: string[] = [names.spoken];
   const board = liveBoardName(card);
+  // A session nobody is connected to is read as quiet, never as live.
+  const quiet = isQuietSession(card);
   if (board) {
     const spokenBoard =
       card.angle != null ? t('mobile.liveSessions.a11y.boardAngle', { board, angle: card.angle }) : board;
-    parts.push(t('mobile.liveSessions.a11y.liveOn', { board: spokenBoard }));
+    parts.push(
+      quiet
+        ? t('mobile.liveSessions.a11y.quietOn', { board: spokenBoard })
+        : t('mobile.liveSessions.a11y.liveOn', { board: spokenBoard }),
+    );
   } else {
-    parts.push(t('mobile.liveSessions.a11y.liveNow'));
+    parts.push(quiet ? t('mobile.liveSessions.a11y.quietNow') : t('mobile.liveSessions.a11y.liveNow'));
   }
   if (card.gymName) parts.push(card.gymName);
   if (card.currentClimbName) {

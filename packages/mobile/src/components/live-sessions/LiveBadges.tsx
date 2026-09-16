@@ -1,7 +1,7 @@
 // Small visual pieces shared by the rail card and the board-sheet rows.
 
 import { memo, type ReactNode } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { readableTextColor } from '@boardsesh/board-constants/readable-text-color';
@@ -30,19 +30,42 @@ export const LiveGradeChip = memo(function LiveGradeChip({ rawGrade, label }: { 
   );
 });
 
-/** The filled amber "Live" pill with the shared pulsing dot. */
-export const LivePill = memo(function LivePill({ colors }: { colors: LiveSessionColors }) {
-  const { t } = useTranslation('feed');
+/**
+ * The status dot. A quiet session gets the same shape, drawn static: it never
+ * reads the shared pulse value.
+ */
+export const LiveStatusDot = memo(function LiveStatusDot({
+  color,
+  quiet,
+  size = 6,
+}: {
+  color: ColorValue;
+  quiet: boolean;
+  size?: number;
+}) {
+  if (!quiet) return <LiveDot color={color} size={size} />;
   return (
-    <View style={[styles.livePill, { backgroundColor: colors.live }]}>
-      <LiveDot color={colors.liveInk} size={6} />
-      <Text
-        variant="caption1"
-        color={colors.liveInk}
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.bold}
-      >
-        {t('mobile.liveSessions.live')}
+    <View
+      testID="live-status-dot-static"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.staticDot, { width: size, height: size, borderRadius: size / 2, backgroundColor: color }]}
+    />
+  );
+});
+
+/**
+ * The status pill: filled amber "Live" with the pulsing dot, or a muted, static
+ * "Quiet" when nobody is connected to the session right now.
+ */
+export const LivePill = memo(function LivePill({ colors, quiet }: { colors: LiveSessionColors; quiet: boolean }) {
+  const { t } = useTranslation('feed');
+  const ink = quiet ? colors.meta : colors.liveInk;
+  return (
+    <View style={[styles.livePill, { backgroundColor: quiet ? colors.quietFill : colors.live }]}>
+      <LiveStatusDot color={ink} quiet={quiet} />
+      <Text variant="caption1" color={ink} maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE} style={styles.bold}>
+        {quiet ? t('mobile.liveSessions.quiet') : t('mobile.liveSessions.live')}
       </Text>
     </View>
   );
@@ -91,6 +114,7 @@ export function LiveActionLabel({ color, children }: { color: string; children: 
 const styles = StyleSheet.create({
   bold: { fontWeight: '700' },
   semibold: { fontWeight: '600' },
+  staticDot: { flexShrink: 0 },
   gradeChip: {
     paddingHorizontal: 6,
     paddingVertical: 1,

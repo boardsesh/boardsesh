@@ -17,6 +17,7 @@ import {
   describeLiveNames,
   elapsedParts,
   isListedForFollowedBoardOnly,
+  isQuietSession,
   liveCardAction,
   LIVE_TILE_WIDTH,
   type LiveCardModel,
@@ -119,7 +120,7 @@ function LiveSessionCardComponent({
           highlightUserId={card.host?.userId ?? null}
           highlightColor={colors.live}
         />
-        <LivePill colors={colors} />
+        <LivePill colors={colors} quiet={isQuietSession(card)} />
       </View>
 
       <View style={styles.namesRow}>

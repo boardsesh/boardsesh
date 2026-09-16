@@ -28,6 +28,7 @@
       "liveCount_one": "{{count}} live",
       "liveCount_other": "{{count}} live",
       "live": "Live",
+      "quiet": "Quiet",
       "names": {
         "two": "{{first}} and {{second}}",
         "you": "You",
@@ -83,6 +84,8 @@
         "youOthers_other": "You and {{count}} others",
         "liveOn": "live on {{board}}",
         "liveNow": "live now",
+        "quietOn": "quiet on {{board}}",
+        "quietNow": "quiet now",
         "boardAngle": "{{board}} at {{angle}} degrees",
         "started": "started {{elapsed}} ago",
         "minutes_one": "{{count}} minute",

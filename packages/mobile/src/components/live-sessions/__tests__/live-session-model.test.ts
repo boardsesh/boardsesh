@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { LiveSession } from '@boardsesh/shared-schema';
 import {
+  countLiveNow,
   describeLiveNames,
+  isQuietSession,
   elapsedParts,
   isListedForFollowedBoardOnly,
   liveCardAction,
@@ -205,6 +207,58 @@ describe('describeLiveNames', () => {
         'viewer',
       ),
     ).toEqual({ kind: 'you', others: 2 });
+  });
+});
+
+describe('describeLiveNames with a roster shorter than participantCount', () => {
+  // Anonymous connections count toward participantCount but never appear in
+  // participants, so the text must count against the total, not the roster.
+  it('counts the unnamed others in the viewer session', () => {
+    expect(
+      describeLiveNames(
+        card({ viewerIsMember: true, participants: [person('viewer', 'Me Myself')], participantCount: 3 }),
+        'viewer',
+      ),
+    ).toEqual({ kind: 'you', others: 2 });
+    // One named other plus an anonymous one is "You +2", not "You and Priya N.".
+    expect(
+      describeLiveNames(
+        card({
+          viewerIsMember: true,
+          participants: [person('viewer', 'Me Myself'), person('a', 'Priya Nair')],
+          participantCount: 3,
+        }),
+        'viewer',
+      ),
+    ).toEqual({ kind: 'you', others: 2 });
+  });
+
+  it('counts the unnamed others on a stranger session', () => {
+    expect(
+      describeLiveNames(card({ participants: [person('a', 'Priya Nair')], participantCount: 4 }), 'viewer'),
+    ).toEqual({ kind: 'one', name: 'Priya N.', others: 3 });
+    // Two named plus anonymous climbers is "Priya N. +3", never "Priya N. and Tom R.".
+    expect(
+      describeLiveNames(
+        card({ participants: [person('a', 'Priya Nair'), person('b', 'Tom Reed')], participantCount: 4 }),
+        'viewer',
+      ),
+    ).toEqual({ kind: 'one', name: 'Priya N.', others: 3 });
+  });
+});
+
+describe('quiet sessions', () => {
+  it('treats a session nobody is connected to as quiet, and leaves it out of the live count', () => {
+    expect(isQuietSession(card({ participantCount: 0 }))).toBe(true);
+    expect(isQuietSession(card({ participantCount: 1 }))).toBe(false);
+    expect(
+      countLiveNow([card({ participantCount: 0 }), card({ participantCount: 2 }), card({ participantCount: 1 })]),
+    ).toBe(2);
+  });
+
+  it('keeps the Join/Open rules for a quiet session', () => {
+    expect(liveCardAction(card({ participantCount: 0, reasons: ['FOLLOWED_BOARD'] }))).toBe('join');
+    expect(liveCardAction(card({ participantCount: 0, reasons: ['FOLLOWING_USER'] }))).toBe('open');
   });
 });
 

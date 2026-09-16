@@ -22,11 +22,17 @@ import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { LiveDot, useLivePulseDriver } from './LiveDot';
-import { LiveActionPill, LiveGradeChip } from './LiveBadges';
+import { useLivePulseDriver } from './LiveDot';
+import { LiveActionPill, LiveGradeChip, LiveStatusDot } from './LiveBadges';
 import { startedAtKeyFor, useElapsedClock } from './use-elapsed-clock';
 import { useLiveSessionColors } from './use-live-session-colors';
-import { describeLiveNames, elapsedParts, type LiveCardModel } from './live-session-model';
+import {
+  countLiveNow,
+  describeLiveNames,
+  elapsedParts,
+  isQuietSession,
+  type LiveCardModel,
+} from './live-session-model';
 import { elapsedShort, liveNamesCopy, startedSpoken } from './live-session-copy';
 
 /** Rows shown before "N more". A capped `.map`, so no list virtualization needed. */
@@ -67,13 +73,14 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
   const { t } = useTranslation('feed');
   const colors = useLiveSessionColors();
   const names = liveNamesCopy(describeLiveNames(card, viewerUserId), t);
+  const quiet = isQuietSession(card);
   const elapsed = elapsedParts(card.startedAtMs, nowMs);
   const grade = card.hardestSendGrade ? (formatGrade(card.hardestSendGrade) ?? card.hardestSendGrade) : null;
   const sends = card.sendCount > 0 ? t('mobile.liveSessions.sends', { count: card.sendCount }) : null;
   const meta = [elapsedShort(elapsed, t), sends].filter((part): part is string => part != null).join(' · ');
   const spoken = [
     names.spoken,
-    t('mobile.liveSessions.a11y.liveNow'),
+    quiet ? t('mobile.liveSessions.a11y.quietNow') : t('mobile.liveSessions.a11y.liveNow'),
     startedSpoken(elapsed, t),
     sends,
     grade ? t('mobile.liveSessions.a11y.hardest', { grade }) : null,
@@ -114,7 +121,7 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
           ) : null}
         </View>
         <View style={styles.metaRow}>
-          <LiveDot color={colors.live} size={6} />
+          <LiveStatusDot color={quiet ? colors.meta : colors.live} quiet={quiet} />
           <Text variant="footnote" color={colors.meta} numberOfLines={1} style={styles.shrink}>
             {meta}
           </Text>
@@ -154,7 +161,8 @@ function BoardLiveSessionsBlockComponent({
   const viewerInSession = queueSessionId != null || cards.some((card) => card.viewerIsMember);
 
   const nowMs = useElapsedClock(hasRows && !backgrounded, startedAtKeyFor(cards));
-  useLivePulseDriver(hasRows && !backgrounded);
+  // Only sessions with somebody connected pulse; a quiet row's dot is static.
+  useLivePulseDriver(countLiveNow(cards) > 0 && !backgrounded);
 
   // Once per sheet open (the panel unmounts on dismiss), with settled data.
   const viewedRef = useRef(false);

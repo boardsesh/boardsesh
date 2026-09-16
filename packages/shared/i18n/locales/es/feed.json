@@ -28,6 +28,7 @@
       "liveCount_one": "{{count}} en directo",
       "liveCount_other": "{{count}} en directo",
       "live": "En directo",
+      "quiet": "Tranquila",
       "names": {
         "two": "{{first}} y {{second}}",
         "you": "Tú",
@@ -83,6 +84,8 @@
         "youOthers_other": "Tú y {{count}} más",
         "liveOn": "en directo en {{board}}",
         "liveNow": "en directo",
+        "quietOn": "tranquila en {{board}}",
+        "quietNow": "tranquila ahora",
         "boardAngle": "{{board}} a {{angle}} grados",
         "started": "empezó hace {{elapsed}}",
         "minutes_one": "{{count}} minuto",

@@ -64,11 +64,14 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { lg: 12, full: 999 },
 }));
-vi.mock('../LiveDot', () => ({ LiveDot: () => null, useLivePulseDriver: vi.fn() }));
+const pulse = vi.hoisted(() => ({ driver: vi.fn() }));
+vi.mock('../LiveDot', () => ({ useLivePulseDriver: pulse.driver }));
 vi.mock('../use-elapsed-clock', () => ({ useElapsedClock: () => 42 * 60_000, startedAtKeyFor: () => '' }));
 vi.mock('../LiveBadges', () => ({
   LiveActionPill: ({ label }: { label: string }) => createElement('span', null, label),
   LiveGradeChip: ({ label }: { label: string }) => createElement('span', { 'data-testid': 'grade-chip' }, label),
+  LiveStatusDot: ({ quiet }: { quiet: boolean }) =>
+    createElement('span', { 'data-testid': 'status-dot', 'data-quiet': String(quiet) }),
 }));
 vi.mock('../use-live-session-colors', () => ({ useLiveSessionColors: () => ({}) }));
 
@@ -234,6 +237,25 @@ describe('BoardLiveSessionsBlock', () => {
     state.query = success([card('a')]);
     const { getByTestId } = renderBlock();
     expect(getByTestId('grade-chip').textContent).toBe('V5');
+  });
+
+  it('draws a quiet session with a static dot, reads it as quiet, and does not pulse for it', () => {
+    pulse.driver.mockClear();
+    state.query = success([card('a', { participantCount: 0 })]);
+    const { getByTestId } = renderBlock();
+    expect(getByTestId('status-dot').getAttribute('data-quiet')).toBe('true');
+    expect(getByTestId('board-live-session-row').getAttribute('aria-label')).toContain(
+      'mobile.liveSessions.a11y.quietNow',
+    );
+    expect(pulse.driver).toHaveBeenLastCalledWith(false);
+  });
+
+  it('pulses for a session with somebody connected', () => {
+    pulse.driver.mockClear();
+    state.query = success([card('a')]);
+    const { getByTestId } = renderBlock();
+    expect(getByTestId('status-dot').getAttribute('data-quiet')).toBe('false');
+    expect(pulse.driver).toHaveBeenLastCalledWith(true);
   });
 
   it('keeps its rows when a later poll fails', () => {

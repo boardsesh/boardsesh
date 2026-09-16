@@ -127,7 +127,8 @@ vi.mock('../LiveRailStates', () => ({
   LiveRailOfflineRow: ({ offlineMode }: { offlineMode: boolean }) =>
     createElement('div', { 'data-testid': 'offline-row', 'data-offline-mode': String(offlineMode) }),
 }));
-vi.mock('../LiveDot', () => ({ useLivePulseDriver: vi.fn() }));
+const pulse = vi.hoisted(() => ({ driver: vi.fn() }));
+vi.mock('../LiveDot', () => ({ useLivePulseDriver: pulse.driver }));
 vi.mock('../use-elapsed-clock', () => ({ useElapsedClock: () => 1000, startedAtKeyFor: () => '' }));
 vi.mock('../use-live-session-colors', () => ({ useLiveSessionColors: () => ({ live: '#FBBF24' }) }));
 vi.mock('../start-prompt-quiet-days', () => ({
@@ -309,6 +310,24 @@ describe('LiveSessionsRail states', () => {
     expect(tiles).toEqual(['card-a', 'start-tile']);
     expect(container.textContent).not.toContain('mobile.liveSessions.liveCount');
     expect(spies.reset).toHaveBeenCalled();
+  });
+
+  it('counts only sessions with somebody connected, and never pulses for quiet ones', () => {
+    pulse.driver.mockClear();
+    state.query = success([card('a'), card('b', { participantCount: 0 }), card('c', { participantCount: 0 })]);
+    const quietMostly = renderRail();
+    // One live + two quiet: under the two-live threshold, so no count.
+    expect(quietMostly.container.textContent).not.toContain('mobile.liveSessions.liveCount');
+    expect(pulse.driver).toHaveBeenLastCalledWith(true);
+    quietMostly.unmount();
+
+    state.query = success([card('b', { participantCount: 0 }), card('c', { participantCount: 0 })]);
+    renderRail();
+    expect(pulse.driver).toHaveBeenLastCalledWith(false);
+
+    state.query = success([card('a'), card('b'), card('c', { participantCount: 0 })]);
+    const { container } = renderRail();
+    expect(container.textContent).toContain('mobile.liveSessions.liveCount:2');
   });
 
   it('shows many sessions with the live count', () => {

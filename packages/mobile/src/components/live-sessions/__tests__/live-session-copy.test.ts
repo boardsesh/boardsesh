@@ -130,6 +130,21 @@ describe('liveCardSpokenLabel', () => {
     );
   });
 
+  it('reads a session nobody is connected to as quiet, not live', () => {
+    const label = liveCardSpokenLabel(
+      {
+        names: { names: 'Priya N.', extra: null, spoken: 'Priya N.' },
+        card: card({ participantCount: 0, sendCount: 0, hardestSendGrade: null }),
+        elapsed: { hours: 0, minutes: 12 },
+        hardestGrade: null,
+        climbGrade: null,
+      },
+      t,
+    );
+    expect(label).toBe('Priya N., quiet on Kilter Original at 40 degrees, Crux Collective, started 12 minutes ago');
+    expect(label).not.toContain('live');
+  });
+
   it('skips what the card does not show', () => {
     const label = liveCardSpokenLabel(
       {

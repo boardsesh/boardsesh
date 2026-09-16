@@ -185,6 +185,21 @@ describe('LiveSessionCard', () => {
     expect(container.textContent).not.toContain('mobile.liveSessions.elapsed.minutes(0)');
   });
 
+  it('shows a static Quiet pill, not a pulsing Live one, when nobody is connected', () => {
+    const quiet = renderCard(card({ participantCount: 0, participants: [] }));
+    expect(quiet.container.textContent).toContain('mobile.liveSessions.quiet');
+    expect(quiet.container.textContent).not.toContain('mobile.liveSessions.live');
+    expect(quiet.getByTestId('live-status-dot-static')).not.toBeNull();
+    expect(quiet.getByTestId('live-session-card').getAttribute('aria-label')).toContain(
+      'mobile.liveSessions.a11y.quietOn',
+    );
+    quiet.unmount();
+
+    const live = renderCard(card());
+    expect(live.container.textContent).toContain('mobile.liveSessions.live');
+    expect(live.queryByTestId('live-status-dot-static')).toBeNull();
+  });
+
   it('omits the sends segment at zero', () => {
     const { container } = renderCard(card({ sendCount: 0, hardestSendGrade: null }));
     expect(container.textContent).not.toContain('mobile.liveSessions.sends');

@@ -17,6 +17,8 @@ export type LiveSessionColors = {
    */
   meta: ColorValue;
   live: string;
+  /** Muted plate behind the "Quiet" pill of a session nobody is connected to. */
+  quietFill: ColorValue;
   /** Ink on the filled Live pill: #16111F on dark amber (11.09:1), white on light (5.02:1). */
   liveInk: string;
   primary: string;
@@ -44,6 +46,7 @@ export function useLiveSessionColors(): LiveSessionColors {
       label: systemColors.label,
       meta: colorScheme === 'light' ? androidFallbackColors.light.secondaryLabel : systemColors.secondaryLabel,
       live: brandColors.live,
+      quietFill: systemColors.fill,
       liveInk,
       primary: brandColors.primary,
       primaryFill: brandColors.primaryFill,

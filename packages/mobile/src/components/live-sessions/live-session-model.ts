@@ -167,6 +167,19 @@ export function isListedForFollowedBoardOnly(card: Pick<LiveCardModel, 'reasons'
   );
 }
 
+/**
+ * Nobody is connected right now. The backend keeps such a session listed for a
+ * while after recent activity, but it is not live, so it must not pulse.
+ */
+export function isQuietSession(card: Pick<LiveCardModel, 'participantCount'>): boolean {
+  return card.participantCount === 0;
+}
+
+/** Sessions with somebody connected: what the "N live" count and the pulse count. */
+export function countLiveNow(cards: ReadonlyArray<Pick<LiveCardModel, 'participantCount'>>): number {
+  return cards.filter((card) => !isQuietSession(card)).length;
+}
+
 export type ElapsedParts = { hours: number; minutes: number };
 
 export function elapsedParts(startedAtMs: number, nowMs: number): ElapsedParts {

@@ -35,6 +35,7 @@ import {
   LIVE_TILE_GAP,
   LIVE_TILE_WIDTH,
   liveTileLayout,
+  countLiveNow,
   planLiveRail,
   type LiveCardModel,
   type RailEntry,
@@ -154,9 +155,11 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
               : 'loaded';
 
   const hasLiveCards = cards.length > 0;
+  // Quiet sessions (nobody connected) are listed but neither pulse nor count as live.
+  const liveNowCount = countLiveNow(cards);
   const visible = isFocused && !backgrounded && loaded && expanded;
   const nowMs = useElapsedClock(visible && hasLiveCards, startedAtKeyFor(cards));
-  useLivePulseDriver(visible && hasLiveCards);
+  useLivePulseDriver(visible && liveNowCount > 0);
 
   // Quiet-days resets: somebody went live, or the climber connected to a board.
   useEffect(() => {
@@ -271,10 +274,11 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
   );
 
   const title = t('mobile.liveSessions.title');
-  const liveCount = railState === 'loaded' && cards.length >= 2 ? cards.length : 0;
+  const liveCount = railState === 'loaded' && liveNowCount >= 2 ? liveNowCount : 0;
 
   const railList =
     plan.entries.length > 0 ? (
+      // FlatList, not FlashList: a handful of fixed-size tiles snapping on getItemLayout.
       <FlatList
         horizontal
         data={plan.entries}
