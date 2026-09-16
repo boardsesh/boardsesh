@@ -741,11 +741,11 @@ export type BoardPresenceStats = {
  * (user-approved product decision). `is_public` is the ONLY session
  * visibility knob: `discoverable` controls nearby-search listing, not
  * privacy — every session is joinable by anyone with its link, and no
- * invite/approval mechanism exists. Today nothing sets `is_public = false`
- * (`CreateSessionInput` has no such field), so every session on an
- * anon-readable board is previewable after its first wall report; the gate is
- * enforced now so the contract already holds when a session-privacy control
- * ships.
+ * invite/approval mechanism exists. A creator sets `is_public = false`
+ * through `CreateSessionInput.isPublic` or `UpdateSessionInput.isPublic`;
+ * that hides the session's queue here and drops it from the live-sessions
+ * listings (`followedLiveSessions` / `boardLiveSessions`) for everyone
+ * who is not in it.
  *
  * Every item is redacted to climb-catalog fields only (see
  * `BoardQueuePreviewItem`) — no addedBy/tickedBy/user identities ever leave
@@ -1695,6 +1695,8 @@ export type CreateSessionInput = {
   goal?: InputMaybe<Scalars['String']['input']>;
   /** Whether session is exempt from auto-end */
   isPermanent?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** GPS latitude for session discovery */
   latitude: Scalars['Float']['input'];
   /** GPS longitude for session discovery */
@@ -3322,6 +3324,104 @@ export type LinkBoardToGymInput = {
   boardUuid: Scalars['ID']['input'];
   /** Gym UUID (null to unlink) */
   gymUuid?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * A session that is happening right now: explicitly started, not ended, and
+ * with somebody connected (or a dormant session touched in the last 20 minutes).
+ */
+export type LiveSession = {
+  __typename?: 'LiveSession';
+  /** Board angle from the session's board path or board */
+  angle?: Maybe<Scalars['Int']['output']>;
+  /** The session's board, when the viewer may see it */
+  board?: Maybe<LiveSessionBoard>;
+  /** Board type from the session's board path or board */
+  boardType?: Maybe<Scalars['String']['output']>;
+  /** Hex color for multi-session display */
+  color?: Maybe<Scalars['String']['output']>;
+  /** The climb on the wall right now (public sessions only) */
+  currentClimb?: Maybe<LiveSessionClimb>;
+  /** Logged flashes in the session */
+  flashCount: Scalars['Int']['output'];
+  /** User ids on the live roster that the viewer follows */
+  followedParticipantIds: Array<Scalars['ID']['output']>;
+  /** Session goal text */
+  goal?: Maybe<Scalars['String']['output']>;
+  /** Grade of the hardest logged send */
+  hardestSendGrade?: Maybe<Scalars['String']['output']>;
+  /** The climber who started the session */
+  host?: Maybe<LiveSessionUser>;
+  /** Whether the session is public */
+  isPublic: Scalars['Boolean']['output'];
+  /** Last durable activity on the session (ISO 8601) */
+  lastActivity: Scalars['String']['output'];
+  /** Session name */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Distinct participants on the live roster, including anonymous ones */
+  participantCount: Scalars['Int']['output'];
+  /** Signed-in climbers on the live roster, followed climbers first, at most 5 */
+  participants: Array<LiveSessionUser>;
+  /** Why this session was listed */
+  reasons: Array<LiveSessionReason>;
+  /** Logged sends (flash + send) in the session */
+  sendCount: Scalars['Int']['output'];
+  /** Session id — pass to joinSession */
+  sessionId: Scalars['ID']['output'];
+  /** When the session was started (ISO 8601) */
+  startedAt: Scalars['String']['output'];
+  /** Whether the viewer started this session or is on its live roster */
+  viewerIsMember: Scalars['Boolean']['output'];
+};
+
+/**
+ * The board a live session is on. Only returned when the viewer may see the
+ * board: it is not deleted, and it is public or the viewer owns it.
+ */
+export type LiveSessionBoard = {
+  __typename?: 'LiveSessionBoard';
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
+  /** Name of the gym the board belongs to, when it has one and shows its location */
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Board name */
+  name: Scalars['String']['output'];
+  /** Board slug for /b/<slug> links */
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Board uuid (user_boards.uuid) */
+  uuid: Scalars['ID']['output'];
+};
+
+/**
+ * The climb currently on the wall in a live session. Redacted to catalog
+ * fields; only returned for public sessions.
+ */
+export type LiveSessionClimb = {
+  __typename?: 'LiveSessionClimb';
+  /** Grade label */
+  grade?: Maybe<Scalars['String']['output']>;
+  /** Climb name */
+  name: Scalars['String']['output'];
+};
+
+/** Why a live session was listed for this viewer. */
+export type LiveSessionReason =
+  /** The session is on a board the viewer follows */
+  | 'FOLLOWED_BOARD'
+  /** The viewer follows the session's creator or somebody on its live roster */
+  | 'FOLLOWING_USER'
+  /** The session is on the board the viewer asked about */
+  | 'SELECTED_BOARD';
+
+/** A climber shown on a live session card. */
+export type LiveSessionUser = {
+  __typename?: 'LiveSessionUser';
+  /** Profile avatar, falling back to the account image */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Database user id */
+  userId: Scalars['ID']['output'];
 };
 
 export type LocationSyncEntityType = 'BOARD' | 'GYM';
@@ -5482,6 +5582,13 @@ export type Query = {
    */
   boardLeaderboard: BoardLeaderboard;
   /**
+   * Sessions climbing right now on one board. Same access rule as
+   * `boardHistory`: anonymous callers only reach public and system-shared
+   * boards and only see public sessions; followed-climber reasons need
+   * authentication.
+   */
+  boardLiveSessions: Array<LiveSession>;
+  /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
    * Anonymous access is allowed for public and system-shared boards; private
@@ -5621,6 +5728,15 @@ export type Query = {
    * capped at five.
    */
   findSimilarGyms: Array<SimilarGym>;
+  /**
+   * Sessions climbing right now that the viewer has a reason to care about:
+   * started or joined by someone they follow, on a board they follow, on
+   * `boardUuid` when given, or their own. Private sessions only appear to the
+   * people in them. Viewer's own sessions first, then sessions with followed
+   * climbers, then bigger crews, then most recent. Requires authentication.
+   * `limit` defaults to 10, max 20.
+   */
+  followedLiveSessions: Array<LiveSession>;
   /** Get followers of a user. */
   followers: FollowConnection;
   /** Get users that a user is following. */
@@ -6187,6 +6303,11 @@ export type QueryBoardLeaderboardArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryBoardLiveSessionsArgs = {
+  boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryBoardPresenceStatsArgs = {
   boardId: Scalars['Int']['input'];
 };
@@ -6330,6 +6451,12 @@ export type QueryFavoritesArgs = {
 /** Root query type for all read operations. */
 export type QueryFindSimilarGymsArgs = {
   input: FindSimilarGymsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFollowedLiveSessionsArgs = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9268,6 +9395,8 @@ export type UpdateProfileInput = {
  * unchanged; passing null or an empty string clears it.
  */
 export type UpdateSessionInput = {
+  /** New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** New session title. Omit to leave unchanged; null or empty string clears it. */
   name?: InputMaybe<Scalars['String']['input']>;
   /** New end-of-session recap. Omit to leave unchanged; null or empty string clears it. */
@@ -9279,6 +9408,8 @@ export type UpdateSessionInput = {
 /** Result of an updateSession mutation, echoing the canonical post-update values. */
 export type UpdateSessionResult = {
   __typename?: 'UpdateSessionResult';
+  /** Canonical visibility after the update */
+  isPublic: Scalars['Boolean']['output'];
   /** Canonical session title after the update (null when cleared) */
   name?: Maybe<Scalars['String']['output']>;
   /** Canonical session recap after the update (null when cleared) */
@@ -10320,6 +10451,144 @@ export type ReassignGymOwnerMutation = {
     newOwnerId: string;
     syncFrozenAt?: string | null;
   };
+};
+
+export type LiveSessionFieldsFragment = {
+  __typename?: 'LiveSession';
+  sessionId: string;
+  name?: string | null;
+  goal?: string | null;
+  color?: string | null;
+  startedAt: string;
+  lastActivity: string;
+  participantCount: number;
+  followedParticipantIds: Array<string>;
+  viewerIsMember: boolean;
+  isPublic: boolean;
+  boardType?: string | null;
+  angle?: number | null;
+  sendCount: number;
+  flashCount: number;
+  hardestSendGrade?: string | null;
+  reasons: Array<LiveSessionReason>;
+  host?: {
+    __typename?: 'LiveSessionUser';
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+  participants: Array<{
+    __typename?: 'LiveSessionUser';
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }>;
+  board?: {
+    __typename?: 'LiveSessionBoard';
+    uuid: string;
+    name: string;
+    slug?: string | null;
+    boardType: string;
+    gymName?: string | null;
+  } | null;
+  currentClimb?: { __typename?: 'LiveSessionClimb'; name: string; grade?: string | null } | null;
+};
+
+export type FollowedLiveSessionsQueryVariables = Exact<{
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+export type FollowedLiveSessionsQuery = {
+  __typename?: 'Query';
+  followedLiveSessions: Array<{
+    __typename?: 'LiveSession';
+    sessionId: string;
+    name?: string | null;
+    goal?: string | null;
+    color?: string | null;
+    startedAt: string;
+    lastActivity: string;
+    participantCount: number;
+    followedParticipantIds: Array<string>;
+    viewerIsMember: boolean;
+    isPublic: boolean;
+    boardType?: string | null;
+    angle?: number | null;
+    sendCount: number;
+    flashCount: number;
+    hardestSendGrade?: string | null;
+    reasons: Array<LiveSessionReason>;
+    host?: {
+      __typename?: 'LiveSessionUser';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+    participants: Array<{
+      __typename?: 'LiveSessionUser';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    }>;
+    board?: {
+      __typename?: 'LiveSessionBoard';
+      uuid: string;
+      name: string;
+      slug?: string | null;
+      boardType: string;
+      gymName?: string | null;
+    } | null;
+    currentClimb?: { __typename?: 'LiveSessionClimb'; name: string; grade?: string | null } | null;
+  }>;
+};
+
+export type BoardLiveSessionsQueryVariables = Exact<{
+  boardId: Scalars['Int']['input'];
+}>;
+
+export type BoardLiveSessionsQuery = {
+  __typename?: 'Query';
+  boardLiveSessions: Array<{
+    __typename?: 'LiveSession';
+    sessionId: string;
+    name?: string | null;
+    goal?: string | null;
+    color?: string | null;
+    startedAt: string;
+    lastActivity: string;
+    participantCount: number;
+    followedParticipantIds: Array<string>;
+    viewerIsMember: boolean;
+    isPublic: boolean;
+    boardType?: string | null;
+    angle?: number | null;
+    sendCount: number;
+    flashCount: number;
+    hardestSendGrade?: string | null;
+    reasons: Array<LiveSessionReason>;
+    host?: {
+      __typename?: 'LiveSessionUser';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+    participants: Array<{
+      __typename?: 'LiveSessionUser';
+      userId: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    }>;
+    board?: {
+      __typename?: 'LiveSessionBoard';
+      uuid: string;
+      name: string;
+      slug?: string | null;
+      boardType: string;
+      gymName?: string | null;
+    } | null;
+    currentClimb?: { __typename?: 'LiveSessionClimb'; name: string; grade?: string | null } | null;
+  }>;
 };
 
 export type FrozenLocationSyncEntitiesQueryVariables = Exact<{
@@ -12465,6 +12734,86 @@ export type UpdateTickMutation = {
   };
 };
 
+export const LiveSessionFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'LiveSessionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'LiveSession' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastActivity' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'host' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'participantCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followedParticipantIds' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'viewerIsMember' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'board' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'flashCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestSendGrade' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'currentClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'reasons' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<LiveSessionFieldsFragment, unknown>;
 export const PlaylistFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -14413,6 +14762,240 @@ export const ReassignGymOwnerDocument = {
     },
   ],
 } as unknown as DocumentNode<ReassignGymOwnerMutation, ReassignGymOwnerMutationVariables>;
+export const FollowedLiveSessionsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'FollowedLiveSessions' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followedLiveSessions' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'limit' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'LiveSessionFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'LiveSessionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'LiveSession' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastActivity' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'host' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'participantCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followedParticipantIds' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'viewerIsMember' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'board' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'flashCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestSendGrade' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'currentClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'reasons' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<FollowedLiveSessionsQuery, FollowedLiveSessionsQueryVariables>;
+export const BoardLiveSessionsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'BoardLiveSessions' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'boardLiveSessions' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'LiveSessionFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'LiveSessionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'LiveSession' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'startedAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'lastActivity' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'host' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'participants' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'participantCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'followedParticipantIds' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'viewerIsMember' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'board' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'slug' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'sendCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'flashCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'hardestSendGrade' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'currentClimb' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+              ],
+            },
+          },
+          { kind: 'Field', name: { kind: 'Name', value: 'reasons' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<BoardLiveSessionsQuery, BoardLiveSessionsQueryVariables>;
 export const FrozenLocationSyncEntitiesDocument = {
   kind: 'Document',
   definitions: [

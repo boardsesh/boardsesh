@@ -744,11 +744,11 @@ export type BoardPresenceStats = {
  * (user-approved product decision). `is_public` is the ONLY session
  * visibility knob: `discoverable` controls nearby-search listing, not
  * privacy — every session is joinable by anyone with its link, and no
- * invite/approval mechanism exists. Today nothing sets `is_public = false`
- * (`CreateSessionInput` has no such field), so every session on an
- * anon-readable board is previewable after its first wall report; the gate is
- * enforced now so the contract already holds when a session-privacy control
- * ships.
+ * invite/approval mechanism exists. A creator sets `is_public = false`
+ * through `CreateSessionInput.isPublic` or `UpdateSessionInput.isPublic`;
+ * that hides the session's queue here and drops it from the live-sessions
+ * listings (`followedLiveSessions` / `boardLiveSessions`) for everyone
+ * who is not in it.
  *
  * Every item is redacted to climb-catalog fields only (see
  * `BoardQueuePreviewItem`) — no addedBy/tickedBy/user identities ever leave
@@ -1698,6 +1698,8 @@ export type CreateSessionInput = {
   goal?: InputMaybe<Scalars['String']['input']>;
   /** Whether session is exempt from auto-end */
   isPermanent?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** GPS latitude for session discovery */
   latitude: Scalars['Float']['input'];
   /** GPS longitude for session discovery */
@@ -3325,6 +3327,104 @@ export type LinkBoardToGymInput = {
   boardUuid: Scalars['ID']['input'];
   /** Gym UUID (null to unlink) */
   gymUuid?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * A session that is happening right now: explicitly started, not ended, and
+ * with somebody connected (or a dormant session touched in the last 20 minutes).
+ */
+export type LiveSession = {
+  __typename?: 'LiveSession';
+  /** Board angle from the session's board path or board */
+  angle?: Maybe<Scalars['Int']['output']>;
+  /** The session's board, when the viewer may see it */
+  board?: Maybe<LiveSessionBoard>;
+  /** Board type from the session's board path or board */
+  boardType?: Maybe<Scalars['String']['output']>;
+  /** Hex color for multi-session display */
+  color?: Maybe<Scalars['String']['output']>;
+  /** The climb on the wall right now (public sessions only) */
+  currentClimb?: Maybe<LiveSessionClimb>;
+  /** Logged flashes in the session */
+  flashCount: Scalars['Int']['output'];
+  /** User ids on the live roster that the viewer follows */
+  followedParticipantIds: Array<Scalars['ID']['output']>;
+  /** Session goal text */
+  goal?: Maybe<Scalars['String']['output']>;
+  /** Grade of the hardest logged send */
+  hardestSendGrade?: Maybe<Scalars['String']['output']>;
+  /** The climber who started the session */
+  host?: Maybe<LiveSessionUser>;
+  /** Whether the session is public */
+  isPublic: Scalars['Boolean']['output'];
+  /** Last durable activity on the session (ISO 8601) */
+  lastActivity: Scalars['String']['output'];
+  /** Session name */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Distinct participants on the live roster, including anonymous ones */
+  participantCount: Scalars['Int']['output'];
+  /** Signed-in climbers on the live roster, followed climbers first, at most 5 */
+  participants: Array<LiveSessionUser>;
+  /** Why this session was listed */
+  reasons: Array<LiveSessionReason>;
+  /** Logged sends (flash + send) in the session */
+  sendCount: Scalars['Int']['output'];
+  /** Session id — pass to joinSession */
+  sessionId: Scalars['ID']['output'];
+  /** When the session was started (ISO 8601) */
+  startedAt: Scalars['String']['output'];
+  /** Whether the viewer started this session or is on its live roster */
+  viewerIsMember: Scalars['Boolean']['output'];
+};
+
+/**
+ * The board a live session is on. Only returned when the viewer may see the
+ * board: it is not deleted, and it is public or the viewer owns it.
+ */
+export type LiveSessionBoard = {
+  __typename?: 'LiveSessionBoard';
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
+  /** Name of the gym the board belongs to, when it has one and shows its location */
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Board name */
+  name: Scalars['String']['output'];
+  /** Board slug for /b/<slug> links */
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Board uuid (user_boards.uuid) */
+  uuid: Scalars['ID']['output'];
+};
+
+/**
+ * The climb currently on the wall in a live session. Redacted to catalog
+ * fields; only returned for public sessions.
+ */
+export type LiveSessionClimb = {
+  __typename?: 'LiveSessionClimb';
+  /** Grade label */
+  grade?: Maybe<Scalars['String']['output']>;
+  /** Climb name */
+  name: Scalars['String']['output'];
+};
+
+/** Why a live session was listed for this viewer. */
+export type LiveSessionReason =
+  /** The session is on a board the viewer follows */
+  | 'FOLLOWED_BOARD'
+  /** The viewer follows the session's creator or somebody on its live roster */
+  | 'FOLLOWING_USER'
+  /** The session is on the board the viewer asked about */
+  | 'SELECTED_BOARD';
+
+/** A climber shown on a live session card. */
+export type LiveSessionUser = {
+  __typename?: 'LiveSessionUser';
+  /** Profile avatar, falling back to the account image */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Database user id */
+  userId: Scalars['ID']['output'];
 };
 
 export type LocationSyncEntityType = 'BOARD' | 'GYM';
@@ -5485,6 +5585,13 @@ export type Query = {
    */
   boardLeaderboard: BoardLeaderboard;
   /**
+   * Sessions climbing right now on one board. Same access rule as
+   * `boardHistory`: anonymous callers only reach public and system-shared
+   * boards and only see public sessions; followed-climber reasons need
+   * authentication.
+   */
+  boardLiveSessions: Array<LiveSession>;
+  /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
    * Anonymous access is allowed for public and system-shared boards; private
@@ -5624,6 +5731,15 @@ export type Query = {
    * capped at five.
    */
   findSimilarGyms: Array<SimilarGym>;
+  /**
+   * Sessions climbing right now that the viewer has a reason to care about:
+   * started or joined by someone they follow, on a board they follow, on
+   * `boardUuid` when given, or their own. Private sessions only appear to the
+   * people in them. Viewer's own sessions first, then sessions with followed
+   * climbers, then bigger crews, then most recent. Requires authentication.
+   * `limit` defaults to 10, max 20.
+   */
+  followedLiveSessions: Array<LiveSession>;
   /** Get followers of a user. */
   followers: FollowConnection;
   /** Get users that a user is following. */
@@ -6190,6 +6306,11 @@ export type QueryBoardLeaderboardArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryBoardLiveSessionsArgs = {
+  boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryBoardPresenceStatsArgs = {
   boardId: Scalars['Int']['input'];
 };
@@ -6333,6 +6454,12 @@ export type QueryFavoritesArgs = {
 /** Root query type for all read operations. */
 export type QueryFindSimilarGymsArgs = {
   input: FindSimilarGymsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFollowedLiveSessionsArgs = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9271,6 +9398,8 @@ export type UpdateProfileInput = {
  * unchanged; passing null or an empty string clears it.
  */
 export type UpdateSessionInput = {
+  /** New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** New session title. Omit to leave unchanged; null or empty string clears it. */
   name?: InputMaybe<Scalars['String']['input']>;
   /** New end-of-session recap. Omit to leave unchanged; null or empty string clears it. */
@@ -9282,6 +9411,8 @@ export type UpdateSessionInput = {
 /** Result of an updateSession mutation, echoing the canonical post-update values. */
 export type UpdateSessionResult = {
   __typename?: 'UpdateSessionResult';
+  /** Canonical visibility after the update */
+  isPublic: Scalars['Boolean']['output'];
   /** Canonical session title after the update (null when cleared) */
   name?: Maybe<Scalars['String']['output']>;
   /** Canonical session recap after the update (null when cleared) */
@@ -9947,6 +10078,11 @@ export type ResolversTypes = ResolversObject<{
   LedCommandInput: LedCommandInput;
   LedUpdate: ResolverTypeWrapper<LedUpdate>;
   LinkBoardToGymInput: LinkBoardToGymInput;
+  LiveSession: ResolverTypeWrapper<LiveSession>;
+  LiveSessionBoard: ResolverTypeWrapper<LiveSessionBoard>;
+  LiveSessionClimb: ResolverTypeWrapper<LiveSessionClimb>;
+  LiveSessionReason: LiveSessionReason;
+  LiveSessionUser: ResolverTypeWrapper<LiveSessionUser>;
   LocationSyncEntityType: LocationSyncEntityType;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
@@ -10366,6 +10502,10 @@ export type ResolversParentTypes = ResolversObject<{
   LedCommandInput: LedCommandInput;
   LedUpdate: LedUpdate;
   LinkBoardToGymInput: LinkBoardToGymInput;
+  LiveSession: LiveSession;
+  LiveSessionBoard: LiveSessionBoard;
+  LiveSessionClimb: LiveSessionClimb;
+  LiveSessionUser: LiveSessionUser;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: MergeGymsResult;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
@@ -12204,6 +12344,64 @@ export type LedUpdateResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type LiveSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSession'] = ResolversParentTypes['LiveSession'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  board?: Resolver<Maybe<ResolversTypes['LiveSessionBoard']>, ParentType, ContextType>;
+  boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  color?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  currentClimb?: Resolver<Maybe<ResolversTypes['LiveSessionClimb']>, ParentType, ContextType>;
+  flashCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  followedParticipantIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  goal?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hardestSendGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  host?: Resolver<Maybe<ResolversTypes['LiveSessionUser']>, ParentType, ContextType>;
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  lastActivity?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  participantCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  participants?: Resolver<Array<ResolversTypes['LiveSessionUser']>, ParentType, ContextType>;
+  reasons?: Resolver<Array<ResolversTypes['LiveSessionReason']>, ParentType, ContextType>;
+  sendCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  startedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  viewerIsMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionBoard'] = ResolversParentTypes['LiveSessionBoard'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionClimbResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionClimb'] = ResolversParentTypes['LiveSessionClimb'],
+> = ResolversObject<{
+  grade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionUserResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionUser'] = ResolversParentTypes['LiveSessionUser'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type MergeGymsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['MergeGymsResult'] = ResolversParentTypes['MergeGymsResult'],
@@ -13486,6 +13684,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryBoardLeaderboardArgs, 'input'>
   >;
+  boardLiveSessions?: Resolver<
+    Array<ResolversTypes['LiveSession']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardLiveSessionsArgs, 'boardId'>
+  >;
   boardPresenceStats?: Resolver<
     ResolversTypes['BoardPresenceStats'],
     ParentType,
@@ -13637,6 +13841,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryFindSimilarGymsArgs, 'input'>
+  >;
+  followedLiveSessions?: Resolver<
+    Array<ResolversTypes['LiveSession']>,
+    ParentType,
+    ContextType,
+    Partial<QueryFollowedLiveSessionsArgs>
   >;
   followers?: Resolver<
     ResolversTypes['FollowConnection'],
@@ -15281,6 +15491,7 @@ export type UpdateSessionResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UpdateSessionResult'] = ResolversParentTypes['UpdateSessionResult'],
 > = ResolversObject<{
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -15566,6 +15777,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   LeaderChanged?: LeaderChangedResolvers<ContextType>;
   LedCommand?: LedCommandResolvers<ContextType>;
   LedUpdate?: LedUpdateResolvers<ContextType>;
+  LiveSession?: LiveSessionResolvers<ContextType>;
+  LiveSessionBoard?: LiveSessionBoardResolvers<ContextType>;
+  LiveSessionClimb?: LiveSessionClimbResolvers<ContextType>;
+  LiveSessionUser?: LiveSessionUserResolvers<ContextType>;
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;

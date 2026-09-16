@@ -47,6 +47,9 @@ type Documents = {
   '\n  mutation UpdateAppFeedbackStatus($input: UpdateAppFeedbackStatusInput!) {\n    updateAppFeedbackStatus(input: $input) {\n      id\n      source\n      rating\n      comment\n      platform\n      appVersion\n      boardName\n      angle\n      contactConsent\n      createdAt\n      status\n      resolvedAt\n      resolvedBy\n      githubIssueNumber\n      githubIssueUrl\n      reporter {\n        userId\n        email\n        name\n      }\n      context {\n        climbUuid\n        climbName\n        difficulty\n        sessionId\n        sessionName\n        url\n        userAgent\n      }\n    }\n  }\n': typeof types.UpdateAppFeedbackStatusDocument;
   '\n  query GymOwnershipLookup($input: GymOwnershipLookupInput!) {\n    gymOwnershipLookup(input: $input) {\n      gym {\n        gymUuid\n        slug\n        name\n        currentOwnerId\n        currentOwnerLabel\n        currentOwnerIsSystem\n        syncFrozenAt\n        isDeleted\n        isMerged\n      }\n      newOwner {\n        userId\n        label\n        email\n      }\n    }\n  }\n': typeof types.GymOwnershipLookupDocument;
   '\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n': typeof types.ReassignGymOwnerDocument;
+  '\n  fragment LiveSessionFields on LiveSession {\n    sessionId\n    name\n    goal\n    color\n    startedAt\n    lastActivity\n    host {\n      userId\n      displayName\n      avatarUrl\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n    }\n    participantCount\n    followedParticipantIds\n    viewerIsMember\n    isPublic\n    board {\n      uuid\n      name\n      slug\n      boardType\n      gymName\n    }\n    boardType\n    angle\n    sendCount\n    flashCount\n    hardestSendGrade\n    currentClimb {\n      name\n      grade\n    }\n    reasons\n  }\n': typeof types.LiveSessionFieldsFragmentDoc;
+  '\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.FollowedLiveSessionsDocument;
+  '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n': typeof types.BoardLiveSessionsDocument;
   '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.FrozenLocationSyncEntitiesDocument;
   '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n': typeof types.ClearLocationSyncFreezeDocument;
   '\n  query GetNewClimbFeed($input: NewClimbFeedInput!) {\n    newClimbFeed(input: $input) {\n      items {\n        uuid\n        name\n        boardType\n        layoutId\n        setterDisplayName\n        setterAvatarUrl\n        angle\n        frames\n        difficultyName\n        isNoMatch\n        createdAt\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetNewClimbFeedDocument;
@@ -210,6 +213,12 @@ const documents: Documents = {
     types.GymOwnershipLookupDocument,
   '\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n':
     types.ReassignGymOwnerDocument,
+  '\n  fragment LiveSessionFields on LiveSession {\n    sessionId\n    name\n    goal\n    color\n    startedAt\n    lastActivity\n    host {\n      userId\n      displayName\n      avatarUrl\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n    }\n    participantCount\n    followedParticipantIds\n    viewerIsMember\n    isPublic\n    board {\n      uuid\n      name\n      slug\n      boardType\n      gymName\n    }\n    boardType\n    angle\n    sendCount\n    flashCount\n    hardestSendGrade\n    currentClimb {\n      name\n      grade\n    }\n    reasons\n  }\n':
+    types.LiveSessionFieldsFragmentDoc,
+  '\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n':
+    types.FollowedLiveSessionsDocument,
+  '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n':
+    types.BoardLiveSessionsDocument,
   '\n  query FrozenLocationSyncEntities($input: FrozenLocationSyncEntitiesInput!) {\n    frozenLocationSyncEntities(input: $input) {\n      entities {\n        entityType\n        entityUuid\n        slug\n        name\n        boardType\n        isSystemOwned\n        ownerProtected\n        isDeleted\n        deletedAt\n        syncFrozenAt\n        sourceKeys\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.FrozenLocationSyncEntitiesDocument,
   '\n  mutation ClearLocationSyncFreeze($input: ClearLocationSyncFreezeInput!) {\n    clearLocationSyncFreeze(input: $input) {\n      status\n      entityType\n      entityUuid\n      previousSyncFrozenAt\n    }\n  }\n':
@@ -612,6 +621,24 @@ export function graphql(
 export function graphql(
   source: '\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n',
 ): (typeof documents)['\n  mutation ReassignGymOwner($input: ReassignGymOwnerInput!) {\n    reassignGymOwner(input: $input) {\n      gymUuid\n      gymName\n      previousOwnerId\n      newOwnerId\n      syncFrozenAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  fragment LiveSessionFields on LiveSession {\n    sessionId\n    name\n    goal\n    color\n    startedAt\n    lastActivity\n    host {\n      userId\n      displayName\n      avatarUrl\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n    }\n    participantCount\n    followedParticipantIds\n    viewerIsMember\n    isPublic\n    board {\n      uuid\n      name\n      slug\n      boardType\n      gymName\n    }\n    boardType\n    angle\n    sendCount\n    flashCount\n    hardestSendGrade\n    currentClimb {\n      name\n      grade\n    }\n    reasons\n  }\n',
+): (typeof documents)['\n  fragment LiveSessionFields on LiveSession {\n    sessionId\n    name\n    goal\n    color\n    startedAt\n    lastActivity\n    host {\n      userId\n      displayName\n      avatarUrl\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n    }\n    participantCount\n    followedParticipantIds\n    viewerIsMember\n    isPublic\n    board {\n      uuid\n      name\n      slug\n      boardType\n      gymName\n    }\n    boardType\n    angle\n    sendCount\n    flashCount\n    hardestSendGrade\n    currentClimb {\n      name\n      grade\n    }\n    reasons\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  query FollowedLiveSessions($boardUuid: ID, $limit: Int) {\n    followedLiveSessions(boardUuid: $boardUuid, limit: $limit) {\n      ...LiveSessionFields\n    }\n  }\n  \n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  query BoardLiveSessions($boardId: Int!) {\n    boardLiveSessions(boardId: $boardId) {\n      ...LiveSessionFields\n    }\n  }\n  \n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
