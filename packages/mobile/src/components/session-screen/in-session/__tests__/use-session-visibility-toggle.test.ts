@@ -227,6 +227,88 @@ describe('useSessionVisibilityToggle: saving', () => {
   });
 });
 
+describe('useSessionVisibilityToggle: switching sessions while a save is out', () => {
+  // Session A (public) flips to private and its save is still out when the
+  // climber lands in session B (public). A's late result must not reach B.
+  async function flipAThenSwitchToB() {
+    const hook = renderToggle({ sessionId: 'session-1', serverIsPublic: true });
+    await waitFor(() => expect(hook.result.current.isPublic).toBe(true));
+
+    act(() => {
+      hook.result.current.setIsPublic(false);
+    });
+    expect(harness.pending[0].variables).toEqual({ input: { sessionId: 'session-1', isPublic: false } });
+
+    hook.rerender({ sessionId: 'session-2', serverIsPublic: true, rosterResolved: true });
+    await waitFor(() => expect(harness.getStoredSessionVisibility).toHaveBeenCalledWith('session-2'));
+    await waitFor(() => expect(hook.result.current.isPublic).toBe(true));
+    return hook;
+  }
+
+  function expectNothingWrittenOrAnnounced() {
+    expect(harness.setQueryData).not.toHaveBeenCalled();
+    expect(harness.setStoredSessionVisibility).not.toHaveBeenCalled();
+    expect(harness.invalidateQueries).not.toHaveBeenCalled();
+    expect(harness.track).not.toHaveBeenCalled();
+    expect(harness.showToast).not.toHaveBeenCalled();
+  }
+
+  it("ignores A's save when it lands after the switch", async () => {
+    const { result } = await flipAThenSwitchToB();
+
+    await landSave(0, false);
+
+    expect(result.current.isPublic).toBe(true);
+    expectNothingWrittenOrAnnounced();
+    // No follow-up save was chained off A's echo.
+    expect(harness.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores A's save when it fails after the switch", async () => {
+    const { result } = await flipAThenSwitchToB();
+
+    await act(async () => {
+      harness.pending[0].deferred.reject(new Error('Network request failed'));
+    });
+
+    expect(result.current.isPublic).toBe(true);
+    expectNothingWrittenOrAnnounced();
+    expect(harness.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets B save straight away, and A's late result doesn't settle B's switch", async () => {
+    const { result } = await flipAThenSwitchToB();
+
+    act(() => {
+      result.current.setIsPublic(false);
+    });
+    // A's save still being out doesn't queue B's behind it.
+    expect(harness.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(harness.pending[1].variables).toEqual({ input: { sessionId: 'session-2', isPublic: false } });
+
+    // A lands with an echo that disagrees with B's wish: no chained save, and
+    // B's switch keeps showing the value being saved.
+    await act(async () => {
+      harness.pending[0].deferred.resolve({ sessionId: 'session-1', name: null, notes: null, isPublic: true });
+    });
+    expect(harness.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(result.current.isPublic).toBe(false);
+    expectNothingWrittenOrAnnounced();
+
+    await act(async () => {
+      harness.pending[1].deferred.resolve({ sessionId: 'session-2', name: null, notes: null, isPublic: false });
+    });
+    expect(result.current.isPublic).toBe(false);
+    expect(harness.setQueryData).toHaveBeenCalledTimes(1);
+    expect(harness.setQueryData.mock.calls[0][0]).toEqual(['sessionPreview', 'session-2']);
+    expect(harness.setStoredSessionVisibility).toHaveBeenCalledTimes(1);
+    expect(harness.setStoredSessionVisibility).toHaveBeenCalledWith('session-2', false);
+    expect(harness.track.mock.calls).toEqual([
+      ['Session Visibility Changed', { isPublic: false, phase: 'in_session' }],
+    ]);
+  });
+});
+
 describe('isKnownSessionCreator', () => {
   it('trusts this phone having started the session before the roster names us', () => {
     expect(isKnownSessionCreator({ startedOnThisDevice: true, ownerUserId: undefined, selfUserId: null })).toBe(true);
