@@ -1,10 +1,17 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as Device from 'expo-device';
-import { type BenchmarkReport, formatBenchmarkJson, runBenchmark } from '../lib/hold-detection/benchmark';
+import {
+  BENCHMARK_INPUT_SIZES,
+  type BenchmarkReport,
+  formatBenchmarkJson,
+  lowThresholdFor,
+  runBenchmark,
+} from '../lib/hold-detection/benchmark';
+import { clearBenchmark, loadBenchmark, saveBenchmark } from '../lib/hold-detection/benchmark-store';
 import { decodePhotoToRgba } from '../lib/hold-detection/decode-image';
 import { letterboxFitFor } from '../lib/hold-detection/manifest';
 import { DEFAULT_MODEL_VERSION, type ModelHandle, ensureModel } from '../lib/hold-detection/model-store';
@@ -37,7 +44,14 @@ export function HoldDetectionBenchmarkScreen() {
   const [modelHandle, setModelHandle] = useState<ModelHandle | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<BenchmarkReport | null>(null);
+  // Seeded from disk so a run the watchdog killed still shows its numbers on the
+  // next launch. `recovered` keeps the screen honest about which it is.
+  const [restored] = useState(() => loadBenchmark());
+  const [report, setReport] = useState<BenchmarkReport | null>(restored?.report ?? null);
+  const [recovered, setRecovered] = useState(restored?.status === 'partial');
+  // Written by the flush callback, read by nothing else — a ref so persisting a
+  // size never schedules a render in the middle of the sweep.
+  const partialRef = useRef<BenchmarkReport | null>(null);
 
   const runtimeAvailable = useMemo(() => isInferenceRuntimeAvailable(), []);
 
@@ -45,6 +59,7 @@ export function HoldDetectionBenchmarkScreen() {
     hapticLight();
     setBusy(true);
     setReport(null);
+    setRecovered(false);
     setModelHandle(null);
     // i18n-ignore-next-line — tester-only screen
     setStatus('Fetching the manifest…');
@@ -77,6 +92,11 @@ export function HoldDetectionBenchmarkScreen() {
 
     setBusy(true);
     setReport(null);
+    setRecovered(false);
+    // A new sweep invalidates the old partial; leaving it would let a kill during
+    // THIS run resurrect the previous run's numbers as if they were fresh.
+    clearBenchmark();
+    partialRef.current = null;
     let runtime: Awaited<ReturnType<typeof createHoldDetectionRuntime>> = null;
     try {
       // i18n-ignore-next-line — tester-only screen
@@ -123,6 +143,34 @@ export function HoldDetectionBenchmarkScreen() {
         fit: letterboxFitFor(modelHandle.manifest.input),
         mean: modelHandle.manifest.input.normalization.mean,
         std: modelHandle.manifest.input.normalization.std,
+        // Persist each size the moment it lands. 768 is the size that kills the
+        // process on a real device, and a watchdog kill does not unwind — so this
+        // callback, not the return value below, is what preserves the 512 and 640
+        // numbers the on-device-vs-server call actually needs.
+        onSizeComplete: (sizes, failures) => {
+          const partial: BenchmarkReport = {
+            modelVersion: modelHandle.version,
+            modelConfig: modelHandle.manifest.config,
+            requestedExecutionProvider: runtime?.requestedExecutionProvider ?? 'unknown',
+            defaultThreshold: modelHandle.defaultThreshold,
+            lowThreshold: lowThresholdFor(modelHandle.defaultThreshold),
+            preprocessing: {
+              fit: letterboxFitFor(modelHandle.manifest.input),
+              mean: [...modelHandle.manifest.input.normalization.mean],
+              std: [...modelHandle.manifest.input.normalization.std],
+            },
+            photo: {
+              width: image.width,
+              height: image.height,
+              sourceWidth: image.sourceWidth,
+              sourceHeight: image.sourceHeight,
+            },
+            sizes: [...sizes],
+            failures: [...failures],
+          };
+          partialRef.current = partial;
+          saveBenchmark({ status: 'partial', plannedSizes: [...BENCHMARK_INPUT_SIZES], report: partial });
+        },
         // Close this size's session and open a fresh one before the next, larger
         // size: ONNX Runtime's arena only grows, so without this the 768 pass
         // runs on top of 512's and 640's high-water marks. `runtime` is
@@ -141,6 +189,10 @@ export function HoldDetectionBenchmarkScreen() {
         },
       });
       setReport(finished);
+      setRecovered(false);
+      // Overwrite the partials with the finished run so a later mount does not
+      // show a completed sweep under a "did not finish" banner.
+      saveBenchmark({ status: 'complete', plannedSizes: [...BENCHMARK_INPUT_SIZES], report: finished });
       setStatus(null);
     } catch (error) {
       hapticError();
@@ -248,7 +300,7 @@ export function HoldDetectionBenchmarkScreen() {
         // i18n-ignore-next-line — tester-only screen
         title: 'Benchmark',
         // i18n-ignore-next-line — tester-only screen
-        intro: 'Pick a wall photo. Three passes at each of 768, 640 and 512 px.',
+        intro: 'Pick a wall photo. Three passes at each of 512, 640 and 768 px, smallest first.',
         rows: [
           {
             kind: 'action',
@@ -262,6 +314,21 @@ export function HoldDetectionBenchmarkScreen() {
         ],
       },
     ];
+
+    if (recovered && report) {
+      const missing = BENCHMARK_INPUT_SIZES.filter((size) => !report.sizes.some((row) => row.size === size));
+      sections.push({
+        key: 'recovered',
+        // i18n-ignore-next-line — tester-only screen
+        title: 'Recovered run',
+        // i18n-ignore-next-line — tester-only screen
+        intro:
+          missing.length > 0
+            ? `This run did not finish — ${missing.join(', ')} px never reported. The OS most likely killed the app for memory on the first missing size. The results below are the sizes that did complete, read back from disk.`
+            : 'Read back from disk after a run that did not finish cleanly.',
+        rows: [],
+      });
+    }
 
     if (report) {
       for (const size of report.sizes) {
@@ -367,7 +434,18 @@ export function HoldDetectionBenchmarkScreen() {
     }
 
     return { sections };
-  }, [busy, copyResults, loadModel, modelHandle, report, runOnPickedPhoto, runtimeAvailable, status, version]);
+  }, [
+    busy,
+    copyResults,
+    loadModel,
+    modelHandle,
+    recovered,
+    report,
+    runOnPickedPhoto,
+    runtimeAvailable,
+    status,
+    version,
+  ]);
 
   if (!__DEV__) {
     if (profileLoading) {

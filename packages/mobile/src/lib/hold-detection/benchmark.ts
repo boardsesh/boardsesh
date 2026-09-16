@@ -170,6 +170,20 @@ export interface BenchmarkInput {
    * the sizes already measured rather than throwing them away.
    */
   recycleRuntime?: () => Promise<DetectionRuntime | null>;
+  /**
+   * One size finished — called with the run so far, before the next size starts.
+   *
+   * This is the only chance to keep a result. A watchdog termination is not an
+   * exception: it does not unwind, so nothing after the sweep runs and no React
+   * state survives. The largest size is the one that triggers it, so without a
+   * flush here the sizes that DID fit are lost along with the one that did not.
+   * Flush to disk from this callback.
+   *
+   * Intentionally synchronous. An `await` here would hand control back to the
+   * runtime between sizes with the partial unwritten, which is precisely the
+   * window being closed.
+   */
+  onSizeComplete?: (sizes: readonly BenchmarkSizeResult[], failures: readonly BenchmarkSizeFailure[]) => void;
   /** Progress for the screen: which size, which pass. */
   onProgress?: (size: number, run: number, totalRuns: number) => void;
   /** Injected in tests so a fake clock is possible; defaults to `Date.now`. */
@@ -202,6 +216,7 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     mean,
     std,
     recycleRuntime,
+    onSizeComplete,
     onProgress,
     now = Date.now,
   } = input;
@@ -244,6 +259,11 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
       detectionsAtLow: lastCandidates.length,
       jsHeapDeltaBytes: heapBefore !== null && heapAfter !== null ? heapAfter - heapBefore : null,
     });
+
+    // Flush before the next size opens its arena. On the device that reported
+    // this, 512 completes and 768 kills the process — so this call is what
+    // decides whether the tester ends up with a 512 number or with nothing.
+    onSizeComplete?.(results, failures);
 
     // Drop this size's arena before the next, larger one opens. Skipped after
     // the final size: the caller's `finally` releases the session it owns, and
