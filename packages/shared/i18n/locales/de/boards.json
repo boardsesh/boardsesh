@@ -685,5 +685,73 @@
     "sent": "Danke, wir schauen es uns an und führen sie zusammen.",
     "alreadyReported": "Du hast dieses Paar schon gemeldet. Wir sind dran.",
     "errorGeneric": "Da ging etwas schief. Versuch es nochmal."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "Was dein Finger macht",
+      "pan": "Schwenken",
+      "add": "Hinzufügen",
+      "move": "Verschieben",
+      "draw": "Zeichnen"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Konfidenz-Schwelle",
+      "value": "Zeigt Funde über {{percent}} %"
+    },
+    "counts": {
+      "alive_one": "{{count}} Griff",
+      "alive_other": "{{count}} Griffe",
+      "pending": "{{value}} zu prüfen",
+      "hidden": "{{value}} ausgeblendet",
+      "unsaved": "{{value}} nicht gespeichert"
+    },
+    "actions": {
+      "merge": "Zusammenführen",
+      "delete": "Löschen",
+      "undo": "Rückgängig",
+      "redo": "Wiederherstellen",
+      "accept": "Behalten",
+      "reject": "Verwerfen",
+      "acceptAll": "Alle behalten",
+      "save": "Wand speichern"
+    },
+    "status": {
+      "readOnly": "Diese Wand gehört dir nicht, du kannst sie nicht bearbeiten.",
+      "pan": "Zieh, um das Foto zu bewegen. Tippe einen Griff an, um ihn zu wählen.",
+      "add": "Tippe auf nackte Wand für einen Griff, oder zeichne um einen herum.",
+      "move": "Zieh einen Griff dahin, wo er wirklich ist.",
+      "draw": "Wähle einen Griff und zeichne seine Kante nach.",
+      "oneSelected": "Griff Nr. {{id}} ist gewählt.",
+      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus.",
+      "oneSelectedNew": "Dein neuer Griff ist ausgewählt.",
+      "manySelected": "{{value}} Griffe ausgewählt. Löschen entfernt sie alle."
+    },
+    "errors": {
+      "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",
+      "pickOneToRedraw": "Wähle genau einen Griff und zeichne seine Kante nach.",
+      "mergeNeedsTwo": "Wähle zwei Griffe, um sie zusammenzuführen.",
+      "tooManyHolds": "Das sind mehr Griffe, als eine Wand tragen kann. Verwirf ein paar und speichere erneut.",
+      "saveFailed": "Die Wand konnte nicht gespeichert werden.",
+      "strokeNotClosed": "Diese Schlaufe verfehlt den Griff. Zeichne einmal ganz herum.",
+      "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
+      "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
+      "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
+      "allHoldsOffWall": "Diese Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto und speichere erneut.",
+      "someHoldsOffWall_one": "{{count}} Griff lag außerhalb der Wand und wurde nicht gespeichert.",
+      "someHoldsOffWall_other": "{{count}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
+    },
+    "toast": {
+      "saved_one": "{{count}} Griff gespeichert",
+      "saved_other": "{{count}} Griffe gespeichert"
+    },
+    "empty": {
+      "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
+    }
   }
 }

@@ -15,12 +15,14 @@ import { OUTLINE_EDITOR_COLORS } from './OutlineSvgLayer';
 // catalog keys, so `check:i18n:orphans` has nothing to chase.
 
 // i18n-ignore-next-line — admin-only screen
-const KIND_OPTIONS: { key: HoldOutlineKind; label: string }[] = [
-  { key: 'SILHOUETTE', label: 'Silhouette' },
-  { key: 'LED_INNER', label: 'LED ring' },
-];
+const KIND_LABELS: Record<HoldOutlineKind, string> = {
+  SILHOUETTE: 'Silhouette',
+  LED_INNER: 'LED ring',
+};
 
 type EditToolbarProps = {
+  /** Which boundaries this target can store, from `editorTargetCapabilities`. */
+  outlineKinds: readonly HoldOutlineKind[];
   editKind: HoldOutlineKind;
   onEditKindChange: (kind: HoldOutlineKind) => void;
   /** One line saying what the selected placement currently carries. */
@@ -56,6 +58,7 @@ type EditToolbarProps = {
  * throw it away, drop the stored override).
  */
 export const EditToolbar = React.memo(function EditToolbar({
+  outlineKinds,
   editKind,
   onEditKindChange,
   statusLine,
@@ -77,6 +80,11 @@ export const EditToolbar = React.memo(function EditToolbar({
 }: EditToolbarProps) {
   const { systemColors } = useTheme();
 
+  const kindOptions = useMemo(
+    () => outlineKinds.map((kind) => ({ key: kind, label: KIND_LABELS[kind] })),
+    [outlineKinds],
+  );
+
   // Reverting a LED_INNER row removes an annotation; there is no traced version
   // to fall back to, so the label has to say something different.
   const revertLabel = editKind === 'LED_INNER' ? 'Remove ring annotation' : 'Revert to traced';
@@ -93,7 +101,7 @@ export const EditToolbar = React.memo(function EditToolbar({
   return (
     <View style={[styles.root, { backgroundColor: systemColors.groupedBackground }]}>
       <SegmentedControl
-        options={KIND_OPTIONS}
+        options={kindOptions}
         selectedKey={editKind}
         onSelect={onEditKindChange}
         // i18n-ignore-next-line — admin-only screen

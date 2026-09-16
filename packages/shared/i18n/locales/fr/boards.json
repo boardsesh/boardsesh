@@ -685,5 +685,73 @@
     "sent": "Merci, on regarde ça et on les fusionne.",
     "alreadyReported": "Vous avez déjà signalé cette paire. On s'en occupe.",
     "errorGeneric": "Une erreur s'est produite. Réessayez."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "Ce que fait ton doigt",
+      "pan": "Déplacer",
+      "add": "Ajouter",
+      "move": "Replacer",
+      "draw": "Dessiner"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Seuil de confiance",
+      "value": "Détections au-dessus de {{percent}} %"
+    },
+    "counts": {
+      "alive_one": "{{count}} prise",
+      "alive_other": "{{count}} prises",
+      "pending": "{{value}} à vérifier",
+      "hidden": "{{value}} masquées",
+      "unsaved": "{{value}} non enregistrées"
+    },
+    "actions": {
+      "merge": "Fusionner",
+      "delete": "Supprimer",
+      "undo": "Annuler",
+      "redo": "Rétablir",
+      "accept": "Garder",
+      "reject": "Écarter",
+      "acceptAll": "Tout garder",
+      "save": "Enregistrer le mur"
+    },
+    "status": {
+      "readOnly": "Ce mur n'est pas à toi, tu ne peux pas le modifier.",
+      "pan": "Fais glisser pour déplacer la photo. Touche une prise pour la choisir.",
+      "add": "Touche le mur nu pour créer une prise, ou dessine autour d'une prise.",
+      "move": "Fais glisser une prise là où elle est vraiment.",
+      "draw": "Choisis une prise, puis dessine son contour.",
+      "oneSelected": "Prise n° {{id}} choisie.",
+      "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une.",
+      "oneSelectedNew": "Ta nouvelle prise est sélectionnée.",
+      "manySelected": "{{value}} prises sélectionnées. Supprimer les retire toutes."
+    },
+    "errors": {
+      "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
+      "pickOneToRedraw": "Choisis une seule prise, puis dessine son contour.",
+      "mergeNeedsTwo": "Choisis deux prises pour les fusionner.",
+      "tooManyHolds": "Ça fait plus de prises qu'un mur peut porter. Écarte-en quelques-unes et enregistre à nouveau.",
+      "saveFailed": "L'enregistrement du mur a échoué.",
+      "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
+      "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
+      "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
+      "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
+      "allHoldsOffWall": "Ces prises tombent en dehors du mur. Remets-les sur la photo puis enregistre à nouveau.",
+      "someHoldsOffWall_one": "{{count}} prise est tombée en dehors du mur et n'a pas été enregistrée.",
+      "someHoldsOffWall_other": "{{count}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
+    },
+    "toast": {
+      "saved_one": "{{count}} prise enregistrée",
+      "saved_other": "{{count}} prises enregistrées"
+    },
+    "empty": {
+      "noPhoto": "Ce mur n'a pas encore de photo à modifier."
+    }
   }
 }

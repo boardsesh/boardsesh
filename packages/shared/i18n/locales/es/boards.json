@@ -685,5 +685,73 @@
     "sent": "Gracias, le echamos un vistazo y los fusionamos.",
     "alreadyReported": "Ya has señalado este par. Estamos en ello.",
     "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "Qué hace tu dedo",
+      "pan": "Desplazar",
+      "add": "Añadir",
+      "move": "Mover",
+      "draw": "Dibujar"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Umbral de confianza",
+      "value": "Mostrando hallazgos por encima del {{percent}} %"
+    },
+    "counts": {
+      "alive_one": "{{count}} presa",
+      "alive_other": "{{count}} presas",
+      "pending": "{{value}} por revisar",
+      "hidden": "{{value}} ocultas",
+      "unsaved": "{{value}} sin guardar"
+    },
+    "actions": {
+      "merge": "Fusionar",
+      "delete": "Eliminar",
+      "undo": "Deshacer",
+      "redo": "Rehacer",
+      "accept": "Conservar",
+      "reject": "Descartar",
+      "acceptAll": "Conservar todas",
+      "save": "Guardar el muro"
+    },
+    "status": {
+      "readOnly": "Este muro no es tuyo, no puedes editarlo.",
+      "pan": "Arrastra para mover la foto. Toca una presa para elegirla.",
+      "add": "Toca el muro vacío para crear una presa, o dibuja alrededor de una.",
+      "move": "Arrastra una presa hasta donde está de verdad.",
+      "draw": "Elige una presa y dibuja su contorno.",
+      "oneSelected": "Presa n.º {{id}} elegida.",
+      "twoSelected": "Dos elegidas. Fusionar las convierte en una.",
+      "oneSelectedNew": "Tu presa nueva está seleccionada.",
+      "manySelected": "{{value}} presas seleccionadas. Al eliminar se quitan todas."
+    },
+    "errors": {
+      "nothingToMove": "Elige primero una presa y luego arrástrala.",
+      "pickOneToRedraw": "Elige una sola presa y dibuja su contorno.",
+      "mergeNeedsTwo": "Elige dos presas para fusionarlas.",
+      "tooManyHolds": "Son más presas de las que caben en un muro. Descarta algunas y vuelve a guardar.",
+      "saveFailed": "No se pudo guardar el muro.",
+      "strokeNotClosed": "Ese trazo no rodea la presa. Dibuja la vuelta entera a su alrededor.",
+      "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
+      "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
+      "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
+      "allHoldsOffWall": "Esas presas caen fuera del muro. Vuelve a colocarlas sobre la foto y guarda otra vez.",
+      "someHoldsOffWall_one": "{{count}} presa cayó fuera del muro y no se guardó.",
+      "someHoldsOffWall_other": "{{count}} presas cayeron fuera del muro y no se guardaron."
+    },
+    "toast": {
+      "saved_one": "{{count}} presa guardada",
+      "saved_other": "{{count}} presas guardadas"
+    },
+    "empty": {
+      "noPhoto": "Este muro todavía no tiene foto que editar."
+    }
   }
 }

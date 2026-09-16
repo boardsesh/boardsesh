@@ -493,6 +493,108 @@ hold id is alive on the version being edited. It never asks whether a hold "look
 like" a hold. Owner decision 2026-09-14: it is the owner's wall, and trash in is
 their call.
 
+## The hold editor
+
+SW-08 (#5441) is not a second editor. It is the catalogue outline editor
+(`packages/mobile/src/components/outline-editor/`) pointed at a wall through a
+target adapter, because the stroke → ring chain that editor owns IS the
+`@boardsesh/board-art-geometry` ring contract, and a second polygon editor would
+be a second contract. The full split is in `docs/board-art-geometry.md`, "The
+editor that writes them"; what belongs here is what it means for a wall.
+
+`SprayHoldEditorScreen` is the entry point, and its props are the contract:
+`wallUuid`, `layoutId`, the draft's `versionId` AND its `versionNumber`,
+`viewerCanEdit`, and an optional `candidates` list. There is no route yet — SW-09
+and SW-11 wire the entry points.
+
+Both version fields are needed, and the reason is the one bug this screen could
+not survive. The mutations take the `id`; `sprayWallRenderData(uuid, version)`
+takes the `number`, and asked WITHOUT one it answers the **published**
+generation. An editor seeded that way would show none of the work a previous
+session already saved to the draft, would map holds drawn on the draft's
+photograph through a homography solved for the published one, and could never
+open at all on a wall whose version 1 is still a draft — which is the manual,
+zero-detection first pass.
+
+So `useSprayWallDraft` asks for the version by number and puts THAT payload in
+the registry under the wall's layout id, through the loader's own
+`registerRenderData`. Registering rather than holding it privately is the point:
+`InteractiveFilterBoard` draws the wall through `getBoardRenderData`, which reads
+the registry synchronously and has no way to be handed a payload — so with the
+draft registered, the board under the editor is the draft's photograph. Every
+cache key folds in the version (`sprayCacheToken`) and a draft's number is one
+past the published one, so nothing the draft writes can be served back for the
+published wall; on unmount `refreshSprayWall` pulls the published generation back
+for whatever outlives the screen (`invalidateSprayWallRenderData`, which drops the
+cached payload and re-registers through `refreshSprayWall`).
+
+The editor re-seeds itself only for a real reason — a different wall, a new
+version, a new detector run, or a save of its own. Not "the registry
+re-registered the wall", which happens whenever a presigned photo signature
+expires: re-seeding on that would throw away the holds somebody is halfway
+through drawing.
+
+"A save of its own" is the subtle half, and `spray-hold-seed.ts` states it:
+**`invalidateQueries` is not the refetch.** A save that re-seeded the moment the
+mutation resolved would re-read the payload from BEFORE the write — the holds it
+had just added would vanish, the ones it had just deleted would come back, and
+the ids it carried forward would be the superseded ones, so every later save in
+that session would be refused for the whole batch. So a save ARMS a latch, and
+the re-seed fires on the arrival of a payload that is not the one already seeded,
+which is the only evidence the refetch actually happened. The mutation's own
+`onSuccess` also RETURNS the invalidation rather than firing it and forgetting,
+so React Query awaits the refetch before the caller's `onSuccess` runs.
+
+What the editor does with a wall is decided by this document rather than by taste:
+
+- **It edits THE draft.** One draft per wall, so there is no version to choose:
+  the `versionId` handed in is the open one, and publishing or discarding are the
+  two ways out (see "One open draft per wall").
+- **Review controls only ever reach candidates.** Keep and Drop act on the
+  selected holds whose review state is `pending`, never on the selection as a
+  whole — a review control that reached a persisted hold would take it off the
+  wall.
+- **Provenance survives a round trip.** The render payload carries each stored
+  hold's `source` and `confidence`, the registry carries them into photo space,
+  and the seed reads them back; without that, an accepted detector hold is
+  re-submitted as MANUAL the first time it is nudged, overwriting what the wall
+  records about where its holds came from.
+- **A candidate is drawn and never written.** Detector output arrives as
+  `source: AUTO` holds with a confidence, and Save skips every one nobody has
+  ruled on. A confidence slider hides the ones below its cut-off and "Keep all"
+  takes the rest; a rejected candidate is simply deleted, because it never became
+  a hold. Accepting is what marks it for the upsert — so a candidate cannot
+  become a hold on somebody's wall as a side effect of saving something else.
+- **A save clears the dirty flags of the holds it actually wrote**
+  (`MARK_SAVED` takes the ids), rather than waiting for the refetch. Until they
+  are clear, a second press of Save re-sends holds the server has already applied
+  — and a correction re-sent names an id the resolver has just superseded, which
+  fails the whole batch. Named rather than "everything", because a plan can
+  SUCCEED while leaving holds out of it: one the homography sends off the wall,
+  one drawn while the request was in flight. The screen says so, and clearing
+  those too would let the next re-seed delete the work it had just promised was
+  still there — so they stay dirty and ride over the re-seed
+  (`holdsToCarryOver`).
+- **The removal half reports separately** (`MARK_REMOVED`), the moment
+  `removeSprayWallHolds` comes back and before the upsert runs. It also strips those
+  ids from every snapshot in the undo stack: the removal has LANDED, and undoing
+  past a merge whose upsert then failed would otherwise restore the victim as a
+  clean live hold, so the next save would name an id the server has already
+  stamped off. History is rewritten rather than cleared — losing an hour of
+  corrections because one hold came off would be its own bug. The two calls are
+  the two halves of one Save and the second can fail on its own — a rate limit, a
+  dropped connection — and without that hop the editor would still be holding ids
+  the server had already stamped off, so every retry for the rest of the session
+  would be refused with "Hold N is not on this wall".
+- **Removals are sent BEFORE upserts.** A merge takes two holds off and puts one
+  back; the other order would leave the wall carrying both the merged hold and
+  the one it swallowed if the session died between the two calls. Holds missing
+  is a visible, fixable failure; duplicates nobody can tell apart is not.
+
+Editing follows ownership (epic decision 2026-09-15): the gate is
+`SprayWall.viewerCanEdit`, which is `requireBoardEditAccess` unchanged — no
+gym-editor extension, and nothing wall-specific to drift from it.
+
 ## The mobile render path
 
 Every catalogue board's background is a `.webp` inside the IPA/APK and every hold

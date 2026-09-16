@@ -685,5 +685,73 @@
     "sent": "Thanks, we'll take a look and merge them.",
     "alreadyReported": "You've already flagged this pair. We're on it.",
     "errorGeneric": "Something went wrong. Try again."
+  },
+  "sprayEditor": {
+    "tools": {
+      "label": "What your finger does",
+      "pan": "Pan",
+      "add": "Add",
+      "move": "Move",
+      "draw": "Draw"
+    },
+    "size": {
+      "s": "S",
+      "m": "M",
+      "l": "L",
+      "xl": "XL"
+    },
+    "threshold": {
+      "label": "Confidence cut-off",
+      "value": "Showing finds above {{percent}}%"
+    },
+    "counts": {
+      "alive_one": "{{count}} hold",
+      "alive_other": "{{count}} holds",
+      "pending": "{{value}} to review",
+      "hidden": "{{value}} hidden",
+      "unsaved": "{{value}} unsaved"
+    },
+    "actions": {
+      "merge": "Merge",
+      "delete": "Delete",
+      "undo": "Undo",
+      "redo": "Redo",
+      "accept": "Keep",
+      "reject": "Drop",
+      "acceptAll": "Keep all",
+      "save": "Save the wall"
+    },
+    "status": {
+      "readOnly": "This wall isn't yours to edit.",
+      "pan": "Drag to move the photo. Tap a hold to pick it.",
+      "add": "Tap bare wall for a hold, or draw round one.",
+      "move": "Drag a hold to where it really is.",
+      "draw": "Pick a hold, then draw its edge.",
+      "oneSelected": "Hold #{{id}} is picked.",
+      "twoSelected": "Two picked. Merge makes them one.",
+      "oneSelectedNew": "Your new hold is picked.",
+      "manySelected": "{{value}} holds picked. Delete takes them all off."
+    },
+    "errors": {
+      "nothingToMove": "Pick a hold first, then drag it.",
+      "pickOneToRedraw": "Pick one hold, then draw its edge.",
+      "mergeNeedsTwo": "Pick two holds to merge them.",
+      "tooManyHolds": "That is more holds than a wall can carry. Drop a few and save again.",
+      "saveFailed": "Saving the wall failed.",
+      "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
+      "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
+      "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
+      "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
+      "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
+      "someHoldsOffWall_one": "{{count}} hold landed off the wall and wasn't saved.",
+      "someHoldsOffWall_other": "{{count}} holds landed off the wall and weren't saved."
+    },
+    "toast": {
+      "saved_one": "Saved {{count}} hold",
+      "saved_other": "Saved {{count}} holds"
+    },
+    "empty": {
+      "noPhoto": "This wall has no photo to edit yet."
+    }
   }
 }

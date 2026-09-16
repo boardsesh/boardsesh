@@ -756,6 +756,63 @@ A revert deletes the row immediately, but the deployed shard keeps its old trace
 until the next export, so what a corrected hold renders as in the meantime is the shard's
 version. The toolbar says so.
 
+#### The same editor, pointed at a spray wall
+
+SW-08 (#5441) gave the editor a second **target**. `outline-editor/editor-target.ts` names
+the two and what each may do — and it is one pure function, `editorTargetCapabilities`,
+because the gate, the toolbar, the SVG layer and the write path all branch on the same
+answer and a capability computed twice is a capability that will disagree with itself.
+
+| | `catalogue` | `sprayWall` |
+| --- | --- | --- |
+| Who | admin (`OutlineEditorGate`) | the wall's own edit rule (`SprayWall.viewerCanEdit`) |
+| Writes | `hold_outline_overrides` | `upsertSprayWallHolds` / `removeSprayWallHolds` on the draft version |
+| Kinds | silhouette + LED inner | silhouette only — a wall has no LEDs to annotate |
+| Holds | the manufacturer's; only the boundary is editable | the work itself: add, move, resize, delete, merge |
+| Finger draws | off (an iPad and a Pencil are the point) | on (a phone in a garage has no Pencil) |
+| Strings | hardcoded admin English | the i18n catalogs, all four locales |
+
+The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
+`OutlineSvgLayer` and `OutlineCanvasScreen` are the same files they were, which is what
+keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
+drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
+mounts the *same* `DrawStrokeOverlay`, and reads what a stroke MEANT through the active tool
+instead of changing what a stroke IS.
+
+That reading is `spray-hold-tools.ts`, and it is pure. `classifyStroke` answers tap or drag
+on the stroke's BOUNDING BOX rather than its endpoints — a loop drawn around a hold ends
+roughly where it began, and judging it by its endpoints would call every traced outline a
+tap. A tap places a circle at the wall's median hold radius; a loop goes through
+`buildOutlineRing` unchanged, so a wall gets exactly the ring a board would, with the centre
+at the polygon centroid and the radius the equivalent-area one. A merge is the convex hull
+of the two silhouettes — a real polygon union is a clipping library this app will not grow
+for one tool, and a hull always contains both holds, is always simple, and always contains
+its own centroid, so the ring contract is always satisfiable.
+
+State is one reducer with undo (`spray-hold-editor-reducer.ts`), modelled on `framesReducer`
+in `@boardsesh/create-climb-react`: a present, a capped past, a future, snapshot-based
+because a merge is not trivially invertible. Two rules in it are load-bearing rather than
+stylistic. A hold this session DREW is dropped outright on delete while one the wall already
+had is recorded for `removeSprayWallHolds` — the server's own split, because a climb set on
+an inherited hold has to stay findable. And a merge keeps the STORED hold as the survivor
+even when it is the second id selected, so the merge is a correction of a hold with history
+rather than a delete-plus-add that orphans every climb on it.
+
+The ring contract is imported, never restated. `outline-editor/ring-contract.ts` calls
+`isValidOutlineRing` — the same function the backend's `SprayOutlineRingSchema` refines on —
+and its test asserts sample-for-sample agreement rather than re-deriving the bounds, so a
+client cannot draw a silhouette its own validator accepts and the server refuses. A ring
+that does not survive a merge or a homography is dropped to `outline: null`, which is a hold
+with no traced silhouette rather than a hold with a broken one; losing the hold over its
+silhouette would be the worse answer.
+
+The one coordinate hop the catalogue target does not have is canonical: a wall's holds are
+stored once in the wall's own frame, while the editor draws on the untouched photograph.
+`lib/spray/spray-hold-canonical.ts` is the write half and `spray-hold-geometry.ts` (SW-07)
+the read half, and they are exact mirrors — the test that matters is the round trip, because
+the failure mode is a hold saved at the top of the wall coming back a hand's width to the
+left.
+
 ## Regenerating
 
 ```bash
