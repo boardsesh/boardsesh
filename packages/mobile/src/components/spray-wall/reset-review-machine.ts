@@ -370,11 +370,36 @@ export function climbsAffectedIsStale(state: ResetReviewState): boolean {
 /** How one of today's holds is drawn. */
 export type HoldRingRole = 'kept' | 'removed' | 'lowConfidence';
 
+/**
+ * `lowConfidenceHoldIds` as an O(1) Set, cached on the array's own identity.
+ *
+ * `holdRingRole` runs once per hold inside two per-hold loops — the SVG layer's
+ * bucketing and `buildResetRingTargets` — so an `includes` scan makes a verdict
+ * toggle O(holds x lowConfidence), and a capped wall puts 1,500 holds through it
+ * twice. `SprayHoldSvgLayer` reaches for a Set at the same scale and for the same
+ * reason.
+ *
+ * Keyed on the ARRAY rather than memoised by the callers because the role is a
+ * pure function of state, not a hook, and three call sites would each need their
+ * own copy. A `WeakMap` fits it exactly: the array is built once per proposal
+ * (`initResetReview`) and no transition replaces it, so the Set is built once per
+ * review and released with the state that owns it.
+ */
+const lowConfidenceSetsByArray = new WeakMap<readonly number[], ReadonlySet<number>>();
+
+function lowConfidenceSet(holdIds: readonly number[]): ReadonlySet<number> {
+  const cached = lowConfidenceSetsByArray.get(holdIds);
+  if (cached) return cached;
+  const built: ReadonlySet<number> = new Set(holdIds);
+  lowConfidenceSetsByArray.set(holdIds, built);
+  return built;
+}
+
 export function holdRingRole(state: ResetReviewState, holdId: number): HoldRingRole | null {
   const verdict = state.holdVerdicts[holdId];
   if (!verdict) return null;
   if (verdict === 'removed') return 'removed';
-  return state.lowConfidenceHoldIds.includes(holdId) ? 'lowConfidence' : 'kept';
+  return lowConfidenceSet(state.lowConfidenceHoldIds).has(holdId) ? 'lowConfidence' : 'kept';
 }
 
 /** Whether a ring is on screen at the current filter. */

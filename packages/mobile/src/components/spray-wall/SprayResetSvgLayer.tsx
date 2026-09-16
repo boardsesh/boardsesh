@@ -109,6 +109,33 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
     return byId;
   }, [holds]);
 
+  /**
+   * Every ring's path string, built once per wall rather than once per tap.
+   *
+   * Ring geometry depends only on where the holds and detections ARE — a verdict
+   * never moves one. Built inside the bucketing memo (which has to list `review`,
+   * since that is what decides the bucket) each `[...outline]` copy,
+   * `radiusRingToBoardPx` and `ringToPathData` re-ran for all ~3,000 rings on
+   * every toggle, pairing and filter change. Split out, a toggle only concatenates
+   * strings that already exist.
+   */
+  const holdPathById = useMemo(() => {
+    const byId = new Map<number, string>();
+    for (const hold of holds) byId.set(hold.id, ringPath(hold, hold.outline));
+    return byId;
+  }, [holds]);
+
+  const detectionPaths = useMemo(
+    () =>
+      detections.map((detection, index) =>
+        ringPath(
+          { id: index, cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r },
+          detection.photo.outline,
+        ),
+      ),
+    [detections],
+  );
+
   const buckets = useMemo(() => {
     const kept: string[] = [];
     const removed: string[] = [];
@@ -120,7 +147,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
       if (!holdPassesFilter(review, hold.id)) continue;
       const role = holdRingRole(review, hold.id);
       if (!role) continue;
-      const path = ringPath(hold, hold.outline);
+      const path = holdPathById.get(hold.id) ?? '';
       if (role === 'removed') removed.push(path);
       else if (role === 'lowConfidence') lowConfidence.push(path);
       else kept.push(path);
@@ -130,7 +157,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
     detections.forEach((detection, index) => {
       if (!detectionPassesFilter(review, index)) return;
       const circle: Circle = { id: index, cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r };
-      const path = ringPath(circle, detection.photo.outline);
+      const path = detectionPaths[index];
       if (review.detectionVerdicts[index] === 'added') added.push(path);
       else rejected.push(path);
 
@@ -152,26 +179,37 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
       rejected: rejected.join(''),
       leaders: leaders.join(''),
     };
-  }, [holds, holdById, detections, review]);
+  }, [holds, holdById, holdPathById, detections, detectionPaths, review]);
 
   // Drawn again on top in white so the selection reads over whichever role colour
   // it already carries. A detection is keyed `-(index + 1)` so one number can
   // name either side without a tagged union in a hot path.
   const selectedPath = useMemo(() => {
     if (selectedKey == null) return '';
-    if (selectedKey >= 0) {
-      const hold = holdById.get(selectedKey);
-      return hold ? ringPath(hold, hold.outline) : '';
-    }
-    const detection = detections[-selectedKey - 1];
-    if (!detection) return '';
-    return ringPath(
-      { id: 0, cx: detection.photo.cx, cy: detection.photo.cy, r: detection.photo.r },
-      detection.photo.outline,
-    );
-  }, [selectedKey, holdById, detections]);
+    if (selectedKey >= 0) return holdPathById.get(selectedKey) ?? '';
+    return detectionPaths[-selectedKey - 1] ?? '';
+  }, [selectedKey, holdPathById, detectionPaths]);
 
-  const dash = Math.max(2, boardWidth / 300);
+  /**
+   * Dash patterns, memoised on the board width.
+   *
+   * `strokeDasharray` takes an ARRAY, and a fresh literal is a new prop identity
+   * for react-native-svg to diff on every one of these paths — on a component
+   * that re-renders on every single tap, because `selectedKey` moves.
+   * `SprayHoldSvgLayer` memoises its two for the same reason. Scaled off the
+   * board's own size so the dashes read the same on a 1,000 px photo and a
+   * 4,000 px one.
+   */
+  const dashes = useMemo(() => {
+    const dash = Math.max(2, boardWidth / 300);
+    return {
+      rejected: [dash, dash] as const,
+      lowConfidence: [dash * 0.5, dash * 1.5] as const,
+      removed: [dash * 3, dash * 1.5] as const,
+      added: [dash * 1.5, dash] as const,
+      leaders: [dash, dash] as const,
+    };
+  }, [boardWidth]);
 
   if (renderWidth <= 0 || renderHeight <= 0) return null;
 
@@ -189,7 +227,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
         stroke={SPRAY_RESET_COLORS.rejected}
         strokeWidth={STROKE_WIDTH.rejected}
         strokeOpacity={0.5}
-        strokeDasharray={[dash, dash]}
+        strokeDasharray={dashes.rejected}
         vectorEffect="non-scaling-stroke"
       />
       <Path
@@ -204,7 +242,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
         fill="none"
         stroke={SPRAY_RESET_COLORS.lowConfidence}
         strokeWidth={STROKE_WIDTH.lowConfidence}
-        strokeDasharray={[dash * 0.5, dash * 1.5]}
+        strokeDasharray={dashes.lowConfidence}
         vectorEffect="non-scaling-stroke"
       />
       <Path
@@ -212,7 +250,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
         fill="none"
         stroke={SPRAY_RESET_COLORS.removed}
         strokeWidth={STROKE_WIDTH.removed}
-        strokeDasharray={[dash * 3, dash * 1.5]}
+        strokeDasharray={dashes.removed}
         vectorEffect="non-scaling-stroke"
       />
       <Path
@@ -220,7 +258,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
         fill="none"
         stroke={SPRAY_RESET_COLORS.added}
         strokeWidth={STROKE_WIDTH.added}
-        strokeDasharray={[dash * 1.5, dash]}
+        strokeDasharray={dashes.added}
         vectorEffect="non-scaling-stroke"
       />
       <Path
@@ -228,7 +266,7 @@ export const SprayResetSvgLayer = React.memo(function SprayResetSvgLayer({
         fill="none"
         stroke={SPRAY_RESET_COLORS.move}
         strokeWidth={STROKE_WIDTH.move}
-        strokeDasharray={[dash, dash]}
+        strokeDasharray={dashes.leaders}
         vectorEffect="non-scaling-stroke"
       />
       <Path

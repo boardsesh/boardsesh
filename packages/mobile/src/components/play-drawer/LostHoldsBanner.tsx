@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -32,8 +32,6 @@ export const LostHoldsBanner = React.memo(function LostHoldsBanner({ count, onRe
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
 
-  const handleRemix = useCallback(() => onRemix?.(), [onRemix]);
-
   if (!(count > 0)) return null;
 
   return (
@@ -51,9 +49,7 @@ export const LostHoldsBanner = React.memo(function LostHoldsBanner({ count, onRe
           </Text>
         ) : null}
       </View>
-      {onRemix ? (
-        <Button title={t('mobile.lostHolds.remix')} variant="tonal" size="small" onPress={handleRemix} />
-      ) : null}
+      {onRemix ? <Button title={t('mobile.lostHolds.remix')} variant="tonal" size="small" onPress={onRemix} /> : null}
     </View>
   );
 });
