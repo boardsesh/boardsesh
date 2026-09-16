@@ -634,10 +634,20 @@ void describe('anchorAngles', () => {
 });
 
 void describe('boardSupportsCrossAngleEstimate', () => {
-  void test('covers the crowd-mean boards and never MoonBoard', () => {
+  // MoonBoard is a CROWD_MEAN_BOARDS member (real userGrade-derived
+  // difficulty_average gives confirmed/provisional grades at its two real
+  // angles), so this is true. It still never actually PRODUCES a cross-angle projection —
+  // CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS (2) requires evidence at 3+ angles per
+  // climb, and MoonBoard structurally maxes out at 2 — see
+  // moonboard-wide-angle-model.ts for how that gap is covered instead.
+  void test('covers every crowd-mean board, MoonBoard included', () => {
     assert.equal(boardSupportsCrossAngleEstimate('kilter'), true);
     assert.equal(boardSupportsCrossAngleEstimate('tension'), true);
-    assert.equal(boardSupportsCrossAngleEstimate('moonboard'), false);
+    assert.equal(boardSupportsCrossAngleEstimate('moonboard'), true);
+  });
+
+  void test('is false for a board with no crowd mean at all', () => {
+    assert.equal(boardSupportsCrossAngleEstimate('woods'), false);
   });
 });
 

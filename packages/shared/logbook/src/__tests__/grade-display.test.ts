@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLogbookGradeDisplay, resolveCrowdDifficulty } from '../grade-display';
+import {
+  deriveLogbookGradeDisplay,
+  resolveCrowdDifficulty,
+  isMoonboardWideAngleEstimate,
+  isEstimatedGrade,
+} from '../grade-display';
 
 describe('deriveLogbookGradeDisplay', () => {
   it('shows no consensus secondary when the logged grade matches the consensus', () => {
@@ -90,5 +95,30 @@ describe('resolveCrowdDifficulty', () => {
     // surfaces the grade instead of being silently dropped. See the comment
     // on the guard in grade-display.ts.
     expect(resolveCrowdDifficulty({ boardseshDifficulty: 18, boardseshConfidence: undefined }, true)).toBe(18);
+  });
+});
+
+describe('isMoonboardWideAngleEstimate', () => {
+  it('is true only for the wide-angle tier', () => {
+    expect(isMoonboardWideAngleEstimate('moonboard_wide_angle_estimate')).toBe(true);
+    expect(isMoonboardWideAngleEstimate('moonboard_angle_estimate')).toBe(false);
+    expect(isMoonboardWideAngleEstimate('cross_angle_estimate')).toBe(false);
+    expect(isMoonboardWideAngleEstimate(null)).toBe(false);
+    expect(isMoonboardWideAngleEstimate(undefined)).toBe(false);
+  });
+});
+
+describe('isEstimatedGrade', () => {
+  it('covers all three estimate tiers', () => {
+    expect(isEstimatedGrade('cross_angle_estimate')).toBe(true);
+    expect(isEstimatedGrade('moonboard_angle_estimate')).toBe(true);
+    expect(isEstimatedGrade('moonboard_wide_angle_estimate')).toBe(true);
+  });
+
+  it('is false for non-estimate tiers', () => {
+    expect(isEstimatedGrade('confirmed')).toBe(false);
+    expect(isEstimatedGrade('provisional')).toBe(false);
+    expect(isEstimatedGrade('setter_only')).toBe(false);
+    expect(isEstimatedGrade(null)).toBe(false);
   });
 });

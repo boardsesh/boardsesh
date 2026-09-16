@@ -378,7 +378,11 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
         // recompute later adds boardsesh_ascensionist_count on top of upstream.
         upstreamAscensionistCount: stat.ascensionistCount,
         ascensionistCount: stat.ascensionistCount,
-        difficultyAverage: stat.difficultyId ?? null,
+        // Sources difficulty_average from the community's userGrade instead of
+        // duplicating the setter's grade, so MoonBoard gets a genuine (if
+        // catalog-snapshot) crowd-mean-like signal. See userDifficultyId's
+        // doc comment in moonboard-catalog-helpers.ts.
+        difficultyAverage: stat.userDifficultyId ?? stat.difficultyId ?? null,
         qualityAverage: stat.qualityAverage,
         // The manufacturer average also seeds upstream_quality_average (the
         // blend's upstream term). On a fresh INSERT quality_average == this

@@ -39,7 +39,7 @@ function target(overrides: Partial<MoonboardSingleAngleTarget> = {}): MoonboardS
 void test('the target query only picks problems graded at exactly one of the two angles', () => {
   const text = sqlText(buildMoonboardSingleAngleTargetSql('', 500));
   assert.match(text, /HAVING COUNT\(\*\) = 1/);
-  assert.match(text, /display_difficulty IS NOT NULL/);
+  assert.match(text, /difficulty_average IS NOT NULL/);
   assert.match(text, /ascensionist_count > 0/);
   assert.match(text, /is_listed = true/);
   // Keyset pagination, one climb per output row.

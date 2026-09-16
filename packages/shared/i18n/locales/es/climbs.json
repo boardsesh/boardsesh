@@ -143,6 +143,11 @@
       "body": "Nadie lo ha encadenado en este ángulo todavía: el grado sale de cómo va en el otro ángulo.",
       "bodyRange": "Nadie lo ha encadenado en este ángulo todavía: probablemente {{low}}–{{high}}, según cómo va en el otro ángulo."
     },
+    "moonboardWideAngle": {
+      "label": "Aproximado",
+      "body": "Todavía nadie ha encadenado este ángulo: es una estimación aproximada, basada en cómo cambian otros plafones según el ángulo.",
+      "bodyRange": "Todavía nadie ha encadenado este ángulo: probablemente {{low}}–{{high}}, una estimación aproximada basada en cómo cambian otros plafones según el ángulo."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grado Boardsesh",
       "legendCrowd": "Grado anterior",

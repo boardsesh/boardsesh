@@ -673,6 +673,68 @@ void describe('createClimbFilters: onlyBenchmarks', () => {
   });
 });
 
+void describe('createClimbFilters: grade range', () => {
+  void it('produces no grade-range condition by default', () => {
+    const f = createClimbFilters(params, baseSearch);
+    assert.equal(f.gradeRangeConditions.length, 0);
+  });
+
+  void it('keeps grade range out of climbStatsConditions, so it never forces the INNER JOIN path', () => {
+    // A climb at a MoonBoard wide angle (or an unclimbed angle with a published
+    // cross-angle estimate) has a board_climb_grades row but no board_climb_stats
+    // row — hasRequiredStatsFilters() must stay false so search-climbs.ts doesn't
+    // route through the stats-driven INNER JOIN and drop it before the WHERE
+    // clause's Boardsesh-grade fallback ever runs.
+    const f = createClimbFilters(params, { minGrade: 10, maxGrade: 20 });
+    assert.equal(f.climbStatsConditions.length, 0);
+    assert.equal(f.hasRequiredStatsFilters(), false);
+    assert.equal(f.gradeRangeConditions.length, 1);
+  });
+
+  void it('falls back to the Boardsesh grade when display_difficulty is NULL', () => {
+    const f = createClimbFilters(params, { minGrade: 10, maxGrade: 20 });
+    const rendered = sqlToString(f.gradeRangeConditions[0]);
+    assert.match(rendered, /display_difficulty/);
+    assert.match(rendered, /COALESCE/i);
+    assert.match(rendered, /universal_grade/);
+    assert.match(rendered, /local_grade/);
+    assert.match(rendered, /BETWEEN/);
+  });
+
+  void it('emits >= only when just minGrade is set', () => {
+    const f = createClimbFilters(params, { minGrade: 15 });
+    assert.equal(f.gradeRangeConditions.length, 1);
+    const rendered = sqlToString(f.gradeRangeConditions[0]);
+    assert.match(rendered, />=/);
+    assert.doesNotMatch(rendered, /BETWEEN/);
+  });
+
+  void it('emits <= only when just maxGrade is set', () => {
+    const f = createClimbFilters(params, { maxGrade: 15 });
+    assert.equal(f.gradeRangeConditions.length, 1);
+    const rendered = sqlToString(f.gradeRangeConditions[0]);
+    assert.match(rendered, /<=/);
+    assert.doesNotMatch(rendered, /BETWEEN/);
+  });
+
+  void it('getClimbStatsConditions() still includes the grade-range condition for the WHERE clause', () => {
+    const f = createClimbFilters(params, { minGrade: 10, maxGrade: 20, minAscents: 5 });
+    // Both buckets show up in the combined WHERE list...
+    assert.equal(f.getClimbStatsConditions().length, 2);
+    // ...but only the real-stats one counts toward the INNER JOIN routing decision.
+    assert.equal(f.hasRequiredStatsFilters(), true);
+    assert.equal(f.climbStatsConditions.length, 1);
+  });
+
+  void it('exposes ON conditions for a board_climb_grades join keyed on board/climb/angle', () => {
+    const f = createClimbFilters(params, baseSearch);
+    const rendered = f.getClimbGradesJoinConditions().map(sqlToString).join(' && ');
+    assert.match(rendered, /board_type/);
+    assert.match(rendered, /climb_uuid/);
+    assert.match(rendered, /angle/);
+  });
+});
+
 void describe('createClimbFilters: community-hidden climbs', () => {
   // Rendered through the same sqlToString the rest of this file uses, so the
   // assertions read the SQL the builder actually emits rather than restating it.
@@ -793,6 +855,22 @@ void describe('cross-angle stats conditions', () => {
   void it('turns itself on for an angle-bound board without an explicit opt-in', () => {
     assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: true }).isCrossAngleStats, true);
     assert.equal(createClimbFilters(params, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
+  });
+
+  // count-climbs.ts and search-climbs.ts's runStandardSearch must resolve a
+  // climb's Boardsesh grade at the SAME angle under cross-angle, or a climb
+  // whose grade only exists at its set angle (not the browsed one) could be
+  // found by one query and missed by the other.
+  void it('resolves the grades join at the effective (COALESCE) angle under cross-angle', () => {
+    const rendered = render(createClimbFilters(woodsParams, {}, undefined, crossAngle).getClimbGradesJoinConditions());
+    assert.match(rendered, /COALESCE/i);
+    assert.match(rendered, /stats_set_angle/);
+  });
+
+  void it('resolves the grades join at the literal browsed angle without the opt-in', () => {
+    const rendered = render(createClimbFilters(woodsParams, {}).getClimbGradesJoinConditions());
+    assert.doesNotMatch(rendered, /COALESCE/i);
+    assert.doesNotMatch(rendered, /stats_set_angle/);
   });
 });
 

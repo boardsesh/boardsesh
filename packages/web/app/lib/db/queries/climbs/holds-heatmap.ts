@@ -3,6 +3,7 @@ import { dbzRead as db, executeRows } from '@/app/lib/db/db';
 import type { ParsedBoardRouteParameters, SearchRequestPagination } from '@/app/lib/types';
 import { UNIFIED_TABLES } from '@/lib/db/queries/util/table-select';
 import { createClimbFilters } from '@boardsesh/db/queries';
+import { boardClimbGrades } from '@boardsesh/db/schema';
 import { boardseshTicks } from '@/app/lib/db/schema';
 
 export type HoldHeatmapData = {
@@ -59,22 +60,29 @@ export const getHoldHeatmapData = async (
     const runHeatmapAggregate = (totalAscents: SQL<number>) =>
       db.transaction(async (tx) => {
         await tx.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-        return tx
-          .select({
-            holdId: climbHolds.holdId,
-            totalUses: sql<number>`COUNT(DISTINCT ${climbHolds.climbUuid})`,
-            totalAscents,
-            startingUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'STARTING' THEN 1 ELSE 0 END)`,
-            handUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'HAND' THEN 1 ELSE 0 END)`,
-            footUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'FOOT' THEN 1 ELSE 0 END)`,
-            finishUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'FINISH' THEN 1 ELSE 0 END)`,
-            averageDifficulty: sql<number>`AVG(${climbStats.displayDifficulty})`,
-          })
-          .from(climbHolds)
-          .innerJoin(climbs, and(...filters.getClimbHoldsJoinConditions()))
-          .leftJoin(climbStats, and(...filters.getHoldHeatmapClimbStatsConditions()))
-          .where(heatmapWhere)
-          .groupBy(climbHolds.holdId);
+        return (
+          tx
+            .select({
+              holdId: climbHolds.holdId,
+              totalUses: sql<number>`COUNT(DISTINCT ${climbHolds.climbUuid})`,
+              totalAscents,
+              startingUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'STARTING' THEN 1 ELSE 0 END)`,
+              handUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'HAND' THEN 1 ELSE 0 END)`,
+              footUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'FOOT' THEN 1 ELSE 0 END)`,
+              finishUses: sql<number>`SUM(CASE WHEN ${climbHolds.holdState} = 'FINISH' THEN 1 ELSE 0 END)`,
+              averageDifficulty: sql<number>`AVG(${climbStats.displayDifficulty})`,
+            })
+            .from(climbHolds)
+            .innerJoin(climbs, and(...filters.getClimbHoldsJoinConditions()))
+            .leftJoin(climbStats, and(...filters.getHoldHeatmapClimbStatsConditions()))
+            // heatmapWhere's getClimbStatsConditions() can reference board_climb_grades
+            // as a Boardsesh-grade fallback for a stats-less climb's grade-range filter
+            // (see create-climb-filters.ts's gradeRangeConditions) — must be joined here
+            // too or that reference has no FROM-clause entry.
+            .leftJoin(boardClimbGrades, and(...filters.getClimbGradesJoinConditions()))
+            .where(heatmapWhere)
+            .groupBy(climbHolds.holdId)
+        );
       });
 
     if (personalProgressFiltersEnabled && userId) {

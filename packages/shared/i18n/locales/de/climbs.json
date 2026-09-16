@@ -143,6 +143,11 @@
       "body": "In diesem Winkel hat es noch niemand getoppt – der Grad kommt daher, wie es im anderen Winkel geht.",
       "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, abgeleitet vom anderen Winkel."
     },
+    "moonboardWideAngle": {
+      "label": "Grobe Schätzung",
+      "body": "In diesem Winkel hat es noch niemand getoppt – das ist eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern.",
+      "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh-Grad",
       "legendCrowd": "Alter Grad",

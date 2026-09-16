@@ -314,6 +314,24 @@ describe('searchClimbsLocal', () => {
     expect(uuids(result).sort()).toEqual(['v3', 'v5']);
   });
 
+  it('falls back to the Boardsesh grade for the range filter when there is no stats row at all', async () => {
+    // A MoonBoard wide angle (or an unclimbed angle with a published cross-angle
+    // estimate) has a board_climb_grades row but no board_climb_stats row —
+    // display_difficulty is NULL there, so the range filter must fall back to
+    // the joined Boardsesh grade instead of silently excluding the climb.
+    await insertClimb(db, { uuid: 'wide-angle-only' });
+    await insertGrade(db, { climbUuid: 'wide-angle-only', universalGrade: 18.0 });
+    // A climb with real stats in range stays included; one with real stats out
+    // of range stays excluded — the fallback must not loosen those.
+    await insertClimb(db, { uuid: 'real-stats-in-range' });
+    await insertStat(db, { climbUuid: 'real-stats-in-range', displayDifficulty: 17.0, ascensionistCount: 1 });
+    await insertClimb(db, { uuid: 'real-stats-out-of-range' });
+    await insertStat(db, { climbUuid: 'real-stats-out-of-range', displayDifficulty: 5.0, ascensionistCount: 1 });
+
+    const result = await searchClimbsLocal(db, makeInput({ minGrade: 16, maxGrade: 21 }));
+    expect(uuids(result).sort()).toEqual(['real-stats-in-range', 'wide-angle-only']);
+  });
+
   it('orders by ascents desc with a uuid tiebreak and pages with hasMore', async () => {
     await insertClimb(db, { uuid: 'a' });
     await insertClimb(db, { uuid: 'b' });
