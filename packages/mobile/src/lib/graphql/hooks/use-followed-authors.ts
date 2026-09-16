@@ -32,11 +32,13 @@ export const AUTHOR_QUERY_KEYS = [
   'infiniteSearchClimbs',
   'searchClimbsCount',
 ] as const;
+let latestSnapshotRequest = 0;
 export function invalidateAuthorQueries(queryClient: QueryClient) {
   for (const key of AUTHOR_QUERY_KEYS) void queryClient.invalidateQueries({ queryKey: [key] });
 }
 
 export async function loadFollowedAuthors(userId: string): Promise<FollowedAuthors> {
+  const requestVersion = ++latestSnapshotRequest;
   const { getDatabaseHandle } = await import('../../../db');
   const db = isOfflineEngineEnabled() ? getDatabaseHandle() : null;
   const cached = db ? await readAuthorSnapshot(db, userId) : null;
@@ -62,7 +64,11 @@ export async function loadFollowedAuthors(userId: string): Promise<FollowedAutho
           "SELECT COUNT(*) AS count FROM pending_mutations WHERE table_name IN ('setter_follows', 'user_follows') AND status = 'pending'",
         );
         const latest = await readAuthorSnapshot(txn, userId);
-        if ((pending && pending.count > 0) || JSON.stringify(latest) !== JSON.stringify(cached)) {
+        if (
+          requestVersion !== latestSnapshotRequest ||
+          (pending && pending.count > 0) ||
+          JSON.stringify(latest) !== JSON.stringify(cached)
+        ) {
           result.saved = latest;
           return;
         }

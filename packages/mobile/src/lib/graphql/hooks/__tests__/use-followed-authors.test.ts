@@ -49,6 +49,22 @@ describe('followed author snapshot refresh', () => {
     });
     expect((await loadFollowedAuthors('viewer')).setterUsernames).toEqual(['latest-toggle']);
   });
+  it('ignores an older response even when the newer snapshot equals the optimistic cache', async () => {
+    let resolveOlder!: (response: { followedAuthors: typeof newAuthors }) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOlder = resolve;
+        }),
+    );
+    request.mockResolvedValueOnce({ followedAuthors: oldAuthors });
+    const older = loadFollowedAuthors('viewer');
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await loadFollowedAuthors('viewer');
+    resolveOlder({ followedAuthors: newAuthors });
+    expect(await older).toEqual(oldAuthors);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual(oldAuthors);
+  });
   it('does not resurrect another account’s snapshot after sign-out', async () => {
     request.mockImplementation(async () => {
       await stampLocalUserId(db, 'other');
