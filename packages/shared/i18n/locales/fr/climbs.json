@@ -334,6 +334,11 @@
         "title": "Aucun bloc trouvé",
         "subtitle": "Essayez d'ajuster les paramètres de votre board"
       },
+      "unsetWall": {
+        "title": "Personne n’a encore ouvert sur ce mur",
+        "subtitle": "Choisis tes prises, donne-lui un nom, et le mur a son premier bloc.",
+        "cta": "Ouvrir le premier bloc"
+      },
       "noMatches": {
         "title": "Aucun résultat",
         "description": "Rien ne correspond à \"{{query}}\""

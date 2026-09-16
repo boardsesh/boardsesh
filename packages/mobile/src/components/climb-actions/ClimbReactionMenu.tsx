@@ -28,6 +28,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { InlinePlaylistPicker } from '../playlist/InlinePlaylistPicker';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
@@ -299,6 +300,10 @@ export function ClimbReactionMenu({
     };
   }, []);
 
+  // The long-press art is rendered conditionally on this value, so a spray climb
+  // whose wall the session has not got would show the menu with no board at all —
+  // reachable from a playlist row, which hands this a foreign render board.
+  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const boardRenderData = useMemo(() => {
     const setIdValues = boardConfig.setIds
       .split(',')
@@ -311,7 +316,8 @@ export function ClimbReactionMenu({
       sizeId: boardConfig.sizeId,
       setIds: setIdValues,
     });
-  }, [boardConfig]);
+    // `sprayToken` moves when the wall arrives or is reset.
+  }, [boardConfig, sprayToken]);
 
   // Board aspect (w/h), read once for the sizing math + the worklet below. Sanitised
   // to 1 for degenerate dims so the worklet can't collapse the art to a zero edge.

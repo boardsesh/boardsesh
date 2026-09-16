@@ -20,13 +20,17 @@ import { useDeviceLocation } from '../../lib/use-device-location';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
 import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
+import type { LockedConfigReason } from './locked-config-reason';
 import { BoardConfigChips } from './BoardConfigChips';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -51,6 +55,13 @@ type BoardFormProps = {
    * ticks — the server rejects config changes on those). Shows a hint.
    */
   lockedConfig?: boolean;
+  /**
+   * WHY they are locked, which decides what the hint says. Defaults to
+   * `permission`, the only reason that existed before spray walls. A wall is
+   * locked for its own owner too, and telling them they lack permission is false
+   * twice over — see `lockedConfigReason`.
+   */
+  lockedConfigReason?: LockedConfigReason;
   /**
    * A submit failure, rendered inline above the action. The create/edit screens
    * are `presentation: 'modal'` routes and the toast overlay draws behind those,
@@ -78,6 +89,7 @@ export function BoardForm({
   onSubmit,
   submitLabel,
   lockedConfig = false,
+  lockedConfigReason = 'permission',
   errorMessage = null,
   currentBoardUuid,
 }: BoardFormProps) {
@@ -164,6 +176,34 @@ export function BoardForm({
     [builder.sets, builder.setIds],
   );
 
+  // Editing a wall. `SUPPORTED_BOARDS` drops spray, so a wall can never be PICKED
+  // here — this branch is only reached by opening an existing wall for editing,
+  // and each thing it hides is a question a wall has no answer to: there is no
+  // other board type it could become, its angle is fixed at creation (the server
+  // rejects a climb set at any other one), and it has no light kit, no serial and
+  // no timer because it has no hardware at all. Leaving the Lights toggle on
+  // screen was the sharp edge: flipping it would put a Bluetooth scan and a
+  // device picker on a photograph.
+  const isSprayWall = builder.boardName === 'spray';
+  const sprayVisibility = sprayWallVisibility(builder);
+  const { setIsPublic, setIsUnlisted } = builder;
+  // One control, two flags. Public wins over unlisted on read (`sprayWallVisibility`),
+  // so writing the pair exclusively is what keeps the round trip honest.
+  const onSelectVisibility = useCallback(
+    (next: SprayWallVisibility) => {
+      setIsPublic(next === 'public');
+      setIsUnlisted(next === 'unlisted');
+    },
+    [setIsPublic, setIsUnlisted],
+  );
+  const visibilityOptions = useMemo(
+    () => [
+      { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
+      { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
+      { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
+    ],
+    [t],
+  );
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding.
@@ -200,19 +240,28 @@ export function BoardForm({
         {lockedConfig ? (
           <View style={[styles.lockedHint, { backgroundColor: systemColors.secondaryBackground }]}>
             <Icon name="info" size={16} color={systemColors.secondaryLabel} />
+            {/* Literal keys per branch — the i18n linter rejects a computed one,
+                and a computed key hides the string from the catalogue scanners
+                either way. */}
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.lockedHintText}>
-              {t('mobile.edit.configLockedHint')}
+              {lockedConfigReason === 'spray'
+                ? t('mobile.edit.configLockedHintSpray')
+                : t('mobile.edit.configLockedHint')}
             </Text>
           </View>
         ) : null}
 
-        <SectionLabel>{t('mobile.custom.board')}</SectionLabel>
-        <BoardConfigChips
-          groupLabel={t('mobile.custom.board')}
-          options={boardOptions}
-          onSelect={builder.selectBoard}
-          disabled={lockedConfig}
-        />
+        {isSprayWall ? null : (
+          <>
+            <SectionLabel>{t('mobile.custom.board')}</SectionLabel>
+            <BoardConfigChips
+              groupLabel={t('mobile.custom.board')}
+              options={boardOptions}
+              onSelect={builder.selectBoard}
+              disabled={lockedConfig}
+            />
+          </>
+        )}
 
         {/* Gated the way the size and set rows below already are. Spray cannot be
             PICKED here, but an existing wall can still be opened for editing, and
@@ -242,7 +291,7 @@ export function BoardForm({
           </>
         ) : null}
 
-        {builder.angles.length > 0 ? (
+        {builder.angles.length > 0 && !isSprayWall ? (
           <>
             <SectionLabel>{t('mobile.custom.angle')}</SectionLabel>
             {/* Teaching diagram: tilts the wall to the angle (+ degree readout),
@@ -304,6 +353,33 @@ export function BoardForm({
               </Text>
               <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
             </Pressable>
+
+            {/* Visibility on a WALL lives in the main form, beside the name and
+                the gym, because on a wall it is not an advanced setting — it is
+                the difference between a private notebook and a wall the gym
+                climbs on, and it is the only thing standing between the
+                climber's photograph and the open web. The two switches that
+                carry it on a catalogue board are hidden below for spray: three
+                states expressed as two independent booleans made "unlisted and
+                public" reachable, which is a state nobody meant to pick. */}
+            {isSprayWall ? (
+              <>
+                <SectionLabel>{t('mobile.sprayVisibility.label')}</SectionLabel>
+                <SegmentedControl<SprayWallVisibility>
+                  options={visibilityOptions}
+                  selectedKey={sprayVisibility}
+                  onSelect={onSelectVisibility}
+                  accessibilityLabel={t('mobile.sprayVisibility.label')}
+                />
+                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
+                  {sprayVisibility === 'public'
+                    ? t('mobile.sprayVisibility.publicHint')
+                    : sprayVisibility === 'unlisted'
+                      ? t('mobile.sprayVisibility.unlistedHint')
+                      : t('mobile.sprayVisibility.privateHint')}
+                </Text>
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -333,17 +409,24 @@ export function BoardForm({
             ) : null}
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
-            <SwitchRow
-              label={t('mobile.create.public')}
-              description={t('mobile.create.publicHint')}
-              value={builder.isPublic}
-              onValueChange={builder.setIsPublic}
-            />
-            <SwitchRow
-              label={t('mobile.create.unlisted')}
-              value={builder.isUnlisted}
-              onValueChange={builder.setIsUnlisted}
-            />
+            {/* Spray reads these two through the segmented control in the main
+                form above — leaving the switches here too would give one wall two
+                controls that can disagree. */}
+            {isSprayWall ? null : (
+              <>
+                <SwitchRow
+                  label={t('mobile.create.public')}
+                  description={t('mobile.create.publicHint')}
+                  value={builder.isPublic}
+                  onValueChange={builder.setIsPublic}
+                />
+                <SwitchRow
+                  label={t('mobile.create.unlisted')}
+                  value={builder.isUnlisted}
+                  onValueChange={builder.setIsUnlisted}
+                />
+              </>
+            )}
             <SwitchRow
               label={t('mobile.create.hideLocation')}
               value={builder.hideLocation}
@@ -376,59 +459,68 @@ export function BoardForm({
                 goes off: buildUpdateInput submits the serial and timer from
                 retained state either way, so hiding a field would be a silent
                 submit trap, and the Rogue workout timer isn't an LED device. */}
-            <SectionLabel>{t('mobile.create.lights')}</SectionLabel>
-            <SwitchRow
-              label={t('mobile.create.hasLeds')}
-              description={t('mobile.create.hasLedsHint')}
-              value={builder.hasLeds}
-              onValueChange={builder.setHasLeds}
-            />
-
-            <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
-            <BuilderTextInput
-              value={builder.serialNumber}
-              onChangeText={builder.setSerialNumber}
-              placeholder={t('mobile.create.serialPlaceholder')}
-              accessibilityLabel={t('mobile.create.serial')}
-              autoCapitalize="characters"
-              maxLength={100}
-            />
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
-              {t('mobile.create.serialHint')}
-            </Text>
-
-            <SectionLabel>{t('mobile.create.timer')}</SectionLabel>
-            <View style={[styles.timerRow, { borderColor: systemColors.separator }]}>
-              <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
-              <Text
-                variant="body"
-                color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
-                numberOfLines={1}
-                style={styles.timerName}
-              >
-                {builder.timerName || t('mobile.create.timerNone')}
-              </Text>
-            </View>
-            <View style={styles.timerActions}>
-              <Button
-                title={builder.timerName ? t('mobile.create.timerChangeCta') : t('mobile.create.timerPairCta')}
-                variant="text"
-                onPress={() => setTimerPairingOpen(true)}
-              />
-              {builder.timerName ? (
-                <Button
-                  title={t('mobile.create.timerRemoveCta')}
-                  variant="text"
-                  role="destructive"
-                  onPress={() => builder.setTimerName('')}
+            {isSprayWall ? null : (
+              <>
+                <SectionLabel>{t('mobile.create.lights')}</SectionLabel>
+                <SwitchRow
+                  label={t('mobile.create.hasLeds')}
+                  description={t('mobile.create.hasLedsHint')}
+                  value={builder.hasLeds}
+                  onValueChange={builder.setHasLeds}
                 />
-              ) : null}
-            </View>
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
-              {t('mobile.create.timerHint')}
-            </Text>
 
-            {foreignSerialDisclosure ? (
+                <SectionLabel>{t('mobile.create.serial')}</SectionLabel>
+                <BuilderTextInput
+                  value={builder.serialNumber}
+                  onChangeText={builder.setSerialNumber}
+                  placeholder={t('mobile.create.serialPlaceholder')}
+                  accessibilityLabel={t('mobile.create.serial')}
+                  autoCapitalize="characters"
+                  maxLength={100}
+                />
+                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                  {t('mobile.create.serialHint')}
+                </Text>
+
+                <SectionLabel>{t('mobile.create.timer')}</SectionLabel>
+                <View style={[styles.timerRow, { borderColor: systemColors.separator }]}>
+                  <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
+                  <Text
+                    variant="body"
+                    color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
+                    numberOfLines={1}
+                    style={styles.timerName}
+                  >
+                    {builder.timerName || t('mobile.create.timerNone')}
+                  </Text>
+                </View>
+                <View style={styles.timerActions}>
+                  <Button
+                    title={builder.timerName ? t('mobile.create.timerChangeCta') : t('mobile.create.timerPairCta')}
+                    variant="text"
+                    onPress={() => setTimerPairingOpen(true)}
+                  />
+                  {builder.timerName ? (
+                    <Button
+                      title={t('mobile.create.timerRemoveCta')}
+                      variant="text"
+                      role="destructive"
+                      onPress={() => builder.setTimerName('')}
+                    />
+                  ) : null}
+                </View>
+                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                  {t('mobile.create.timerHint')}
+                </Text>
+              </>
+            )}
+
+            {/* Not on a wall. A wall has no serial to collide with — the field
+                above is not even rendered for one — so `useForeignSerialBoard`
+                never fires and this is null in practice. Saying so with the guard
+                rather than relying on that keeps the whole hardware group
+                answering to one condition. */}
+            {foreignSerialDisclosure && !isSprayWall ? (
               <View style={[styles.serialWarning, { borderColor: iosSystemColors.systemOrange }]}>
                 <Icon name="info" size={16} color={iosSystemColors.systemOrange} />
                 <Text variant="footnote" color={systemColors.label} style={styles.serialWarningText}>
@@ -548,11 +640,17 @@ function BoardConfigPreview({
   setIds: string;
   maxWidth: number;
 }) {
+  // A wall's "board art" is the climber's own photograph, and it arrives at
+  // runtime — so on spray this is what turns the preview tile from an empty
+  // placeholder into the wall. Above the early return, for the usual reason: the
+  // null branch below never mounts anything that would subscribe.
+  const sprayToken = useSprayWallToken(boardName, layoutId);
   const renderData = useMemo(() => {
     const setIdValues = setIds.split(',').map(Number).filter(Number.isFinite);
     if (setIdValues.length === 0) return null;
     return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
-  }, [boardName, layoutId, sizeId, setIds]);
+    // `sprayToken` moves when the wall lands or is reset, and recomputes this.
+  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
 
   if (!renderData) return null;
 
@@ -645,6 +743,10 @@ const styles = StyleSheet.create({
   },
   serialHint: {
     marginTop: spacing[1],
+  },
+  visibilityHint: {
+    marginTop: spacing[2],
+    lineHeight: 18,
   },
   timerRow: {
     flexDirection: 'row',

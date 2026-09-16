@@ -91,6 +91,7 @@ import {
 import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-selection';
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
+import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import {
@@ -1597,6 +1598,18 @@ function ClimbListInner() {
   // with the search query gated off, nothing is loading and nothing has arrived,
   // which is indistinguishable from an empty result unless you ask.
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData && !isBoardResolving;
+  // Whether the climber may set a climb on the active board at all. Hoisted out
+  // of the chrome below so the wall's empty state offers exactly the same door.
+  const canCreateClimb = isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation;
+  // A wall nobody has set on yet is a different fact from "no climbs found":
+  // nothing is wrong with the search, the wall is simply new. The query/filter
+  // gates inside are the honest part — see `shouldShowUnsetWallEmptyState`.
+  const isUnsetWall = shouldShowUnsetWallEmptyState({
+    boardType: boardName,
+    isEmpty,
+    query: name,
+    activeFilterCount,
+  });
   // A failed search counts as no connection, the same test the boards picker
   // makes (`isLocalOnly`, app/boards/index.tsx): on a captive portal or gym wifi
   // with a dead upstream `useIsOffline()` reads ONLINE, and offlineAwareRequest
@@ -1725,6 +1738,24 @@ function ClimbListInner() {
                   {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
                 </Text>
               </View>
+            ) : isUnsetWall ? (
+              <View style={styles.emptyContainer}>
+                <Icon name="add" size={48} color={iosSystemColors.systemGray4} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.emptyState.unsetWall.title')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptyState.unsetWall.subtitle')}
+                </Text>
+                {canCreateClimb ? (
+                  <Button
+                    title={t('mobile.emptyState.unsetWall.cta')}
+                    variant="outlined"
+                    onPress={handleCreateClimb}
+                    style={styles.emptyCta}
+                  />
+                ) : null}
+              </View>
             ) : isEmpty ? (
               <View style={styles.emptyContainer}>
                 <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
@@ -1751,7 +1782,7 @@ function ClimbListInner() {
         // tab itself names the screen, so the centre title is dropped entirely —
         // the redundant "All climbs" label added nothing.
         title={showFilterChips ? undefined : searchTitle}
-        canCreate={isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation}
+        canCreate={canCreateClimb}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
         showBoardBadge={showRevealTip}

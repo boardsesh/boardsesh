@@ -4,6 +4,7 @@ import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { useInfiniteSearchClimbs } from '../lib/graphql/hooks/use-infinite-search-climbs';
 import { getBoardRenderData } from '../lib/board-details';
+import { useSprayWallToken } from '../lib/spray/use-spray-wall-token';
 
 /**
  * A real climb on the climber's own board, for any surface that needs to SHOW
@@ -74,6 +75,17 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
   });
   const exampleClimbFrames = exampleClimbData?.pages?.[0]?.climbs?.[0]?.frames ?? null;
 
+  // A spray wall's geometry is runtime data, and the memo below reports
+  // `unavailable` — "don't wait, there will never be anything to draw" — the
+  // moment `getBoardRenderData` misses. That is the wrong answer for a wall this
+  // session simply has not fetched yet, and no caller would ask again. This asks
+  // for it and re-renders when it lands.
+  //
+  // Through `toBoardName` like every other read of `boardType` in this file: the
+  // raw column and the canonical name happen to be the same string for spray
+  // today, so passing the column worked — by coincidence, not by rule.
+  const sprayToken = useSprayWallToken(toBoardName(activeBoard?.boardType), activeBoard?.layoutId);
+
   return useMemo<BoardPreviewClimb>(() => {
     // `undefined` is the AsyncStorage read still in flight; `null` is a climber
     // who has not bound a board at all, which no amount of waiting fixes.
@@ -108,5 +120,6 @@ export function useBoardPreviewClimb(enabled = true): BoardPreviewClimb {
         boardHeight: renderData.boardHeight,
       },
     };
-  }, [activeBoard, enabled, exampleClimbFrames, isPending]);
+    // `sprayToken` moves when the wall arrives or is reset.
+  }, [activeBoard, enabled, exampleClimbFrames, isPending, sprayToken]);
 }
