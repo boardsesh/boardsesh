@@ -803,6 +803,97 @@ registration epoch subscribed as a background-effect-only dependency; it must no
 reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
 revalidation. Costs nothing before SW-09 makes a wall reachable.
 
+### Asking is not the same as subscribing (SW-11)
+
+`useSprayWall` asks for exactly one wall: the active board's. Every other surface
+only SUBSCRIBED to the registry, and a subscription on a wall nobody asked for is
+a subscription nothing will ever wake — so a logbook row, a feed card, a shared
+ascent or a playlist thumbnail showing a climb from a wall that is not the active
+board drew a placeholder for the rest of the session.
+
+The ask therefore lives in `use-native-climb-render.ts`, the one hook every
+board-drawing surface already goes through: on `spray` it calls
+`ensureSprayWallLoaded(layoutId)` in an effect keyed on the wall token, which
+costs a `Map` lookup off spray and at most one request per wall. `Board Render
+Failed` would never have reported this, because nothing failed — nothing was
+asked.
+
+That fixes every surface that mounts the board. The ones that **early-return on a
+null `getBoardRenderData`**, before mounting anything that subscribes, need their
+own line: `useSprayWallToken(boardName, layoutId)` ABOVE the early return, which
+both asks and subscribes. `BoardManageRow`, `AccessoryClimbThumbnail`,
+`BoardDiscoveryCard`, `BoardConfigPreview`, `PlayDrawer`, `WallKioskScreen`, the
+hold filter and `ClimbReactionMenu` all do this. Adding a new synchronous board
+surface means adding that call; forgetting it is a permanent placeholder, not a
+crash.
+
+## What a wall looks like in the app (SW-11)
+
+Three rules the rest of the app reads off the board type, none of which needed a
+new screen: **the Climbs tab is a wall's home** once the wall is the active board.
+
+**The subtitle leads with the kind, not the place.** Every other board is
+recognisable from its name — "Kilter 12×14" says what it is — but a wall is named
+by its owner ("Garage", "Main wall"), and its layout and size have no catalogue
+rows to name, so `boardConfigLabel` answers null for spray by design. A row
+reading just "Bergen Klatresenter" under a name like "Main wall" therefore hid the
+one fact that separates it from the Kilter on the row above. So
+`boardRowSubtitle` inverts for spray only: `Spray wall`, or `Spray wall ·
+<place>`. Within one gym's list the place is dropped as redundant and the KIND
+survives, which is the opposite of every other board type and is the whole point.
+The word itself comes from the caller (`BoardLabelOptions.sprayKindLabel`, fed by
+mobile's `useSprayLabelOptions`): `formatBoardDisplayName` is deliberately English
+because it spells brand names, and "Spray wall" is the one value it returns that
+is not a brand. www passes nothing and keeps the English default.
+
+**An empty wall is not an empty search.** `shouldShowUnsetWallEmptyState` puts
+"No one's set on this wall yet" and the door to the first climb on the Climbs tab
+— but only with no query and no filters on. A wall with forty climbs, filtered to
+V8+, is empty for a reason that has nothing to do with the wall being new, and
+saying so to its owner would be false.
+
+**The config lock has two reasons and they need two sentences.**
+`lockedConfigReason` tells them apart: `permission` (the server's `canEdit` said
+no) and `spray` (a wall's configuration IS its photograph — the layout row was
+created when it was shot, its size id is that same number, and every climb on the
+wall points at that partition). Telling a wall's own owner they lacked permission
+was false twice over. Permission is checked FIRST: on a wall the viewer may not
+edit both hold, and only one is actionable, since "shoot the wall again" is advice
+for the owner. The edit screen also drops the light-kit, serial and timer rows for
+a wall — see the Bluetooth note below.
+
+**No Bluetooth, and the flag it rests on.** Every "take the wall instead of
+connecting" affordance keys on `user_boards.has_leds === false`, which
+`createSprayWall` hard-codes and its input schema has no key for. So a wall
+inherits the whole LED-less path from #4585 with no spray branch: the bulb means
+"I'm on it", the device picker is never mounted, and `SPRAY_CAPABILITIES`
+`nativeBoardControl: false` keeps the native BLE adapter out. That is why the edit
+form must not render the Lights toggle on a wall — one tap would have put a
+Bluetooth scan on a photograph. `updateBoard` still ACCEPTS `hasLeds` for a spray
+board, which is the remaining hole (#5486).
+
+### The owner rows, and the sheet that is not mounted
+
+`sprayDetailRows(board)` is the gate behind the wall-maintenance rows ("Edit
+holds", "New photo"): two rows on a spray wall whose `canEdit` is true, none
+anywhere else. It reads `canEdit` rather than `isOwned` because that is the field
+the spray API gates every version mutation on, so the affordance and the
+permission cannot drift.
+
+The rows are **not rendered** (`SPRAY_DETAIL_ROWS_ENABLED = false`), for two
+reasons that both have to be fixed before the flag flips (#5491):
+
+1. Neither route exists yet — `/boards/spray/holds` is SW-08 and
+   `/boards/spray/reset` is SW-13 — and Expo Router sends a prefix-less miss to
+   `+not-found`, which redirects to Home. A row that lands somewhere wrong is
+   worse than no row.
+2. **`BoardDetailSheet` is not mounted by anything.** The live board sheet is
+   `board-presence/BoardSheet`, hosted by `drawer-host-provider`;
+   `BoardDetailSheet` has no production importer at all. So these rows — and
+   SW-14's `BoardShareSheet`, whose only mount is that same file — are
+   unreachable regardless of the flag. Whatever wires them up has to put them on
+   the sheet climbers actually open.
+
 ## Resets
 
 A reset is what happens when someone takes holds off the wall and puts others on.
@@ -1275,6 +1366,115 @@ the right direction, which is what a rollout gate needs.
 
 Step back at any point by setting the flag false — nothing the flag gates writes
 anything a rollback has to undo, and a wall already created stays created.
+
+### The one public copy (SW-14)
+
+A **public** wall is the single exception, and it is a copy rather than a move.
+`updateSprayWall` promoting a wall to public copies the current published photo
+from `private` into the world-readable `media` bucket under
+`spray-walls/<wall uuid>/<128 random bits>.jpg`
+(`sprayWallPublicPhotoKey`) and stores the key in `spray_walls.public_photo_key`;
+`SprayWall.publicPhotoUrl` serves it and is null for every wall that is not
+public. That copy exists because a public wall has to render on a web gym page a
+logged-out climber and a crawler read, and neither can hold a 15-minute signature.
+
+Three properties of the copy are load-bearing:
+
+- **The key is random, not derived.** `media` is world-readable under guessable
+  keys, so a key anybody could rebuild from the wall uuid would keep resolving in
+  every cache and screenshot after the owner made the wall private again. 128 bits
+  means the demotion is real, and a re-promotion is a URL nobody has seen.
+- **Demotion deletes the object and nulls the key**, in the same transaction that
+  flips the flag, alongside the feed retraction below. A delete that fails is
+  logged and left to the SW-17 sweep — the row has already stopped handing the URL
+  out, which is what "private" actually rests on.
+- **A publish re-points it.** `publishSprayWallVersion` on a public wall copies the
+  newly published photo and sweeps the old object, or the gym page would show last
+  year's wall forever.
+
+The copy is made BEFORE the transaction — object storage is a network round trip
+and the wall's advisory lock must not be held across one — and is deleted again if
+the transaction then fails. **Unlisted walls get no copy**: they are read by uuid,
+through presigned URLs, like a private one.
+
+### Who may flip the switch
+
+Every other field on `updateSprayWall` follows `requireBoardEditAccess`, which a
+gym owner/admin and a community leader also pass. Visibility does not: **both**
+`isPublic` and `isUnlisted` are owner-only
+(`SPRAY_WALL_VISIBILITY_OWNER_ONLY`). Putting a photograph of somebody's wall on
+the open web, and starting to announce their climbs, is the photographer's call.
+
+`isUnlisted` is in that guard for a reason that is easy to miss: on a wall it is
+not the lesser flag, it IS the share link. `viewerCanSeeSprayWall` and
+`viewerCanWriteSprayClimbs` both honour a presented uuid the moment it is set, so
+a guard that watched only `isPublic` would let a gym admin flip a member's private
+wall to unlisted and mint a capability over the photograph of their garage —
+quieter than making it public, and exactly as far from private.
+
+`updateBoard` refuses a CHANGE to either flag on a spray board outright
+(`SPRAY_WALL_VISIBILITY_ELSEWHERE`) so there is exactly one door — the ordinary
+board path would set the flag and copy nothing. It refuses `hasLeds` and
+`isAngleAdjustable` there too (`SPRAY_WALL_HAS_NO_HARDWARE`, #5486): both are
+pinned false at creation, `has_leds` is the whole of the "no Bluetooth on a wall"
+contract, and a wall does not adjust. All four refuse a change rather than the
+field's presence, so a client echoing the board back on a rename is not blocked.
+
+### The two senses of "unlisted"
+
+An ordinary board is unlisted when it is `is_public AND is_unlisted` — public
+enough to open by link, withheld from search. A wall is unlisted when it is
+`NOT is_public AND is_unlisted`: it is private to the world and reachable by the
+uuid its owner sent. That is why the public photo copy is keyed to `is_public`
+alone and survives a public wall ALSO being marked unlisted: the copy tracks
+"world-readable", and unlisted does not take that away.
+
+### A gym's walls
+
+`gymSprayWalls(gymUuid)` lists a gym's walls for the mobile gym screen and the web
+gym page. It gates on **`viewerCanSeeSprayWallByLayout`**, not
+`viewerCanSeeSprayWall`: a listing is enumerable, so the unlisted exemption must
+not apply — appearing in a public list is the one thing "unlisted" promises not to
+do. Gym members see the gym's walls including the private ones; everybody else,
+logged out included, sees only the public ones. An unknown gym is an empty list.
+
+The web gym page lists walls in their own section and filters `boardType ===
+'spray'` out of the boards section so the same wall is not listed twice — but
+**only when the wall query actually answered**. `fetchGymSprayWalls` returns
+`null`, not `[]`, when the ask failed, which is the deploy window where web is
+ahead of backend and `gymSprayWalls` is not a field yet. On `null` the filter is
+skipped and the walls keep their old row in the boards section, so neither deploy
+order makes a gym's walls disappear from its page.
+
+### An unpublished wall is listed to nobody but its owner
+
+`is_public` and the first publish are two separate moments: the API lets a caller
+create a wall public and photograph it afterwards, and in between the row is a
+public board with no photo, no holds and no climbs. So every listing that can
+return a spray wall carries one more rule — a wall whose
+`spray_walls.current_version_id` is NULL is listed only to its owner.
+
+`listableSprayWallCondition(viewerId)`
+(`resolvers/board/spray-wall-listing.ts`) is that rule as SQL, and it is applied
+in `searchBoards` (both the proximity and the text path), `gymBoards` and
+`myBoards`; `gymSprayWalls` applies the row-level twin `sprayWallIsListable`,
+having already joined the wall. SQL rather than a post-filter because
+`searchBoards` and `myBoards` each run a COUNT beside the page: a filter that
+dropped rows from the page alone would leave the count promising results the last
+page does not have.
+
+The app creates walls private and shares them after the first publish (SW-09), but
+the API is public and a server rule must not rest on a client convention.
+
+### Android deep links to a share URL
+
+A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
+`?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
+host-wide `applinks:` entitlement. **Android does not yet**: the intent filters in
+`packages/mobile/app.config.ts` cover `/join`, `/preview` and
+`/auth/reset-password` only, so a `/b/` link opens the website instead. Adding the
+filter moves the native fingerprint, so it rides the next native train rather than
+an OTA (SW-14b).
 
 ## Climb writes on a wall
 

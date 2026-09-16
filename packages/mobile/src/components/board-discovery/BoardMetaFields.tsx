@@ -166,10 +166,21 @@ export function BoardIdentityFields({
 export function BoardVisibilityFields({
   builder,
   publicHint,
+  hideVisibilitySwitches = false,
 }: {
   builder: BoardVisibilityBuilder;
   /** Overrides the default "public" caption — a wall is private by default and says so. */
   publicHint?: string;
+  /**
+   * Drop the public / unlisted switches, leaving only the location rows.
+   *
+   * For a caller that expresses the same three states through one control: two
+   * independent booleans make "unlisted AND public" reachable, which is a state
+   * nobody means to pick, and two controls for it can disagree with each other.
+   * `BoardForm` uses this on a spray wall, where a segmented control sits up in
+   * the main form beside the name and the gym.
+   */
+  hideVisibilitySwitches?: boolean;
 }) {
   const { t } = useTranslation('boards');
   const { setCoords } = builder;
@@ -184,13 +195,21 @@ export function BoardVisibilityFields({
 
   return (
     <>
-      <SwitchRow
-        label={t('mobile.create.public')}
-        description={publicHint ?? t('mobile.create.publicHint')}
-        value={builder.isPublic}
-        onValueChange={builder.setIsPublic}
-      />
-      <SwitchRow label={t('mobile.create.unlisted')} value={builder.isUnlisted} onValueChange={builder.setIsUnlisted} />
+      {hideVisibilitySwitches ? null : (
+        <>
+          <SwitchRow
+            label={t('mobile.create.public')}
+            description={publicHint ?? t('mobile.create.publicHint')}
+            value={builder.isPublic}
+            onValueChange={builder.setIsPublic}
+          />
+          <SwitchRow
+            label={t('mobile.create.unlisted')}
+            value={builder.isUnlisted}
+            onValueChange={builder.setIsUnlisted}
+          />
+        </>
+      )}
       <SwitchRow
         label={t('mobile.create.hideLocation')}
         value={builder.hideLocation}

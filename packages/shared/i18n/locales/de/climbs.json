@@ -334,6 +334,11 @@
         "title": "Keine Boulder gefunden",
         "subtitle": "Pass deine Board-Einstellungen an"
       },
+      "unsetWall": {
+        "title": "Hier hat noch niemand geschraubt",
+        "subtitle": "Wähl deine Griffe, gib dem Boulder einen Namen — fertig ist der erste.",
+        "cta": "Ersten Boulder schrauben"
+      },
       "noMatches": {
         "title": "Keine Treffer",
         "description": "Nichts passt zu „{{query}}“"

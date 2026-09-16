@@ -775,6 +775,16 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
 
+    """
+    Every spray wall attached to a gym that the caller may see, by wall name.
+
+    NOT the same rule as \`sprayWall\`: a listing is enumerable, so the unlisted
+    exemption does not apply. Gym members see the gym's walls including private
+    ones; everyone else — logged out included, which is how the web gym page reads
+    this — sees only public walls. An unknown gym is an empty list, not an error.
+    """
+    gymSprayWalls(gymUuid: ID!): [SprayWall!]!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

@@ -334,6 +334,11 @@
         "title": "No se encontraron bloques",
         "subtitle": "Intenta ajustar la configuración de tu plafón"
       },
+      "unsetWall": {
+        "title": "Nadie ha montado nada en este plafón",
+        "subtitle": "Elige tus presas, ponle nombre y el plafón ya tiene su primer bloque.",
+        "cta": "Monta el primer bloque"
+      },
       "noMatches": {
         "title": "Sin resultados",
         "description": "Nada coincide con \"{{query}}\""

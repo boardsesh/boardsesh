@@ -99,7 +99,7 @@ describe('userBoardsToItems', () => {
   });
 
   it('passes each board its own offline state', () => {
-    const items = userBoardsToItems([bergen], 'bergen-1', () => 'downloaded');
+    const items = userBoardsToItems([bergen], { activeUuid: 'bergen-1', offlineStateFor: () => 'downloaded' });
     expect(items[0]).toMatchObject({ isActive: true, offlineState: 'downloaded' });
   });
 });
@@ -228,12 +228,12 @@ describe('pin state', () => {
 
   it('lets an optimistic override win over the server answer', () => {
     const overrides = new Map([['b-1', true]]);
-    const [item] = userBoardsToItems([board], null, undefined, undefined, overrides);
+    const [item] = userBoardsToItems([board], { activeUuid: null, pinnedOverrides: overrides });
     expect(item.isPinned).toBe(true);
 
     const unpinning = new Map([['b-1', false]]);
     const pinnedBoard = { ...board, isPinnedByMe: true } as unknown as UserBoard;
-    const [flipped] = userBoardsToItems([pinnedBoard], null, undefined, undefined, unpinning);
+    const [flipped] = userBoardsToItems([pinnedBoard], { activeUuid: null, pinnedOverrides: unpinning });
     expect(flipped.isPinned).toBe(false);
   });
 });

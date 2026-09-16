@@ -135,7 +135,13 @@
       "independence": "Boardsesh es una app independiente. No está afiliada ni respaldada por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones.",
       "printAction": "Imprimir este póster",
       "backToGym": "Volver al rocódromo"
-    }
+    },
+    "sprayWallsHeading": "Plafones spray",
+    "sprayWallCount_one": "{{count}} plafón",
+    "sprayWallCount_other": "{{count}} plafones",
+    "sprayWallsIntro": "Los plafones spray de este centro, presa a presa. Abre uno para ver lo que se ha montado en él.",
+    "sprayWallPhotoAlt": "Foto de {{wallName}}",
+    "sprayWallMeta": "{{angle}}° · {{holds}} presas"
   },
   "manage": {
     "welcome": {

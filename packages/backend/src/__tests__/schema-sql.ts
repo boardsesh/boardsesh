@@ -1692,6 +1692,9 @@ export const schemaSQL = `
     "reference_height" integer,
     "current_version_id" bigint,
     "hold_count" integer DEFAULT 0 NOT NULL,
+    -- The key of this wall's photo copy in the PUBLIC media bucket, non-null
+    -- exactly while the wall is public (migration 0229, SW-14).
+    "public_photo_key" text,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp,

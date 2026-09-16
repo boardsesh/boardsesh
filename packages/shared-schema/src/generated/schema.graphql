@@ -5617,6 +5617,19 @@ type SprayWall {
   "Holds alive on the current version."
   holdCount: Int!
   """
+  A stable, unsigned URL for the wall photo — public walls only, null for every
+  other wall.
+
+  A public wall has to show up on a web gym page that a logged-out climber
+  reads, and nobody there can hold a fifteen-minute signature. So going public
+  COPIES the current photo into the world-readable `media` bucket under an
+  unguessable random key and serves that; going private deletes the object and
+  nulls this. Null on a public wall means nothing has been published yet, or the
+  copy has not been made.
+  """
+  publicPhotoUrl: String
+
+  """
   Whether the viewer may edit this wall's holds and photos.
 
   True for the owner, and — because the rule is `requireBoardEditAccess`
@@ -6772,6 +6785,16 @@ type Query {
   2026-09-14): a climb that lost three holds is exactly the one worth remixing.
   """
   remixClimb(parentUuid: ID!, sprayWallUuid: ID): SprayRemixSeed
+
+  """
+  Every spray wall attached to a gym that the caller may see, by wall name.
+
+  NOT the same rule as `sprayWall`: a listing is enumerable, so the unlisted
+  exemption does not apply. Gym members see the gym's walls including private
+  ones; everyone else — logged out included, which is how the web gym page reads
+  this — sees only public walls. An unknown gym is an empty list, not an error.
+  """
+  gymSprayWalls(gymUuid: ID!): [SprayWall!]!
 
   # ============================================
   # Gym Kiosk Queries

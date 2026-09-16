@@ -9,6 +9,7 @@ import type { BoardDownloadNotice, BoardDownloadProgress, BoardDownloadState } f
 import { OfflineDownloadProgressBar } from './OfflineDownloadProgressBar';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
+import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -113,7 +114,10 @@ function BoardManageRowComponent({
   // Followed: whose board it is — the group header only says "Following", it
   // names nobody, and the picker's cards never show an owner either, so this is
   // the one place in the app that answers "whose board is this".
-  const subtitle = isOwned ? boardRowSubtitle(board) : (board.ownerDisplayName ?? boardRowSubtitle(board));
+  const labelOptions = useSprayLabelOptions();
+  const subtitle = isOwned
+    ? boardRowSubtitle(board, labelOptions)
+    : (board.ownerDisplayName ?? boardRowSubtitle(board, labelOptions));
 
   // Live bootstrap always wins over persisted history: the engine may retry a
   // scope whose previous run selected a paged fallback, and showing both would

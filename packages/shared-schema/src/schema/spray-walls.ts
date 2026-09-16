@@ -123,6 +123,19 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     "Holds alive on the current version."
     holdCount: Int!
     """
+    A stable, unsigned URL for the wall photo — public walls only, null for every
+    other wall.
+
+    A public wall has to show up on a web gym page that a logged-out climber
+    reads, and nobody there can hold a fifteen-minute signature. So going public
+    COPIES the current photo into the world-readable \`media\` bucket under an
+    unguessable random key and serves that; going private deletes the object and
+    nulls this. Null on a public wall means nothing has been published yet, or the
+    copy has not been made.
+    """
+    publicPhotoUrl: String
+
+    """
     Whether the viewer may edit this wall's holds and photos.
 
     True for the owner, and — because the rule is \`requireBoardEditAccess\`
