@@ -691,17 +691,16 @@ describe('isOfflineSearchSupported', () => {
     expect(isOfflineSearchSupported(makeInput({ holdsFilter: { hold_5: { STARTING: 'include' } } }))).toBe(false);
   });
 
-  // SW-13/SW-12: the device has no `missing_hold_count` until SW-15 (#5448)
-  // syncs it. Declining IS the faithful mirror — answering locally would report
-  // every climb on a wall that was just reset as intact, the one answer this
-  // filter exists to contradict. Pin it so a later "just answer it locally"
-  // shortcut has to delete this test on purpose.
-  it('declines a spray-wall hold-integrity search rather than answering from a column it lacks', () => {
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'INTACT' }))).toBe(false);
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'BROKEN' }))).toBe(false);
-    // ANY carries no predicate on either side, so it is still served locally.
-    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'ANY' }))).toBe(true);
-  });
+  // Deleted on purpose, which is what SW-13's pin asked for. That test asserted
+  // `isOfflineSearchSupported` DECLINES a spray-wall hold-integrity search,
+  // because the device had no `missing_hold_count` to answer from. SW-15 (#5448)
+  // is what changes that: the column lands at on-device migration v7 and
+  // `buildJoinAndWhere` carries the server's own `COALESCE(...) = 0` predicate,
+  // so answering locally is now the faithful mirror rather than a shortcut.
+  //
+  // The three cases it pinned are covered in the "spray-wall hold integrity"
+  // block below against real rows — INTACT, BROKEN and the NULL rule, which is
+  // the half a support flag could never express.
 
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
