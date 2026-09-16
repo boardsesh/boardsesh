@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ClimbSearchInput, ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
  * The spray wall API end to end, against the real database.
@@ -3475,7 +3475,7 @@ describe('activityFeed and a wall that went private after the fan-out', () => {
 });
 
 describe('the wall UUID is a capability for LISTING, not only for setting', () => {
-  const searchInput = (wall: CreatedWall, extra: Record<string, unknown> = {}) => ({
+  const searchInput = (wall: CreatedWall, extra: Partial<ClimbSearchInput> = {}): ClimbSearchInput => ({
     boardName: 'spray',
     layoutId: wall.layoutId,
     sizeId: wall.sizeId,
@@ -3485,7 +3485,7 @@ describe('the wall UUID is a capability for LISTING, not only for setting', () =
   });
 
   /** Did this call get the pre-baked empty page, or a real search context? */
-  const listed = async (input: Record<string, unknown>, viewer: string | null) => {
+  const listed = async (input: ClimbSearchInput, viewer: string | null) => {
     const context = (await climbQueries.searchClimbs({}, { input }, ctxFor(viewer))) as {
       _cachedClimbs?: unknown[];
     };
