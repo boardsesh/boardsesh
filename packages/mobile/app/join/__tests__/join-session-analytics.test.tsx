@@ -12,6 +12,10 @@ const queue = vi.hoisted(() => ({
 }));
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), back: vi.fn() }));
+// The route's search params. `source` is set by a live-session card.
+const searchParams = vi.hoisted(() => ({
+  current: { sessionId: 'session-42' } as { sessionId: string; source?: string | string[] },
+}));
 
 // A loaded, active session preview so the screen renders the confirmation card.
 const preview = vi.hoisted(() => ({
@@ -50,7 +54,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ sessionId: 'session-42' }),
+  useLocalSearchParams: () => searchParams.current,
   useRouter: () => router,
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -110,6 +114,7 @@ beforeEach(() => {
   queue.joinSession.mockClear();
   router.replace.mockClear();
   buttons.joinPress = null;
+  searchParams.current = { sessionId: 'session-42' };
   preview.data.boardPath = '/kilter/1/10/1,2/40';
   boardConfig.parseBoardPath.mockReturnValue({ boardName: 'kilter', layoutId: 1, angle: 40 });
   boardConfig.parseNamedBoardPath.mockReturnValue(null);
@@ -166,5 +171,61 @@ describe('JoinSessionScreen analytics', () => {
 
     expect(queue.joinSession).toHaveBeenCalledTimes(1);
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/record');
+  });
+});
+
+describe('JoinSessionScreen live-session funnel', () => {
+  async function pressJoin() {
+    render(createElement(JoinSessionScreen));
+    expect(buttons.joinPress).not.toBeNull();
+    await act(async () => {
+      buttons.joinPress?.();
+    });
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/record'));
+  }
+
+  it('fires "Live Session Joined" with the source a live-session card sent, alongside "Session Joined"', async () => {
+    searchParams.current = { sessionId: 'session-42', source: 'home_rail' };
+
+    await pressJoin();
+
+    expect(analytics.track).toHaveBeenCalledWith('Live Session Joined', { source: 'home_rail' });
+    expect(analytics.track).toHaveBeenCalledWith('Session Joined', expect.anything());
+  });
+
+  it('reads the first value when the source param repeats', async () => {
+    searchParams.current = { sessionId: 'session-42', source: ['board_sheet', 'home_rail'] };
+
+    await pressJoin();
+
+    expect(analytics.track).toHaveBeenCalledWith('Live Session Joined', { source: 'board_sheet' });
+  });
+
+  it('stays quiet for an invite link with no source', async () => {
+    await pressJoin();
+
+    expect(analytics.track).toHaveBeenCalledWith('Session Joined', expect.anything());
+    expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
+  });
+
+  it('stays quiet for a source no live-session card sends', async () => {
+    searchParams.current = { sessionId: 'session-42', source: 'somewhere-else' };
+
+    await pressJoin();
+
+    expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
+  });
+
+  it('does not fire when the join fails', async () => {
+    searchParams.current = { sessionId: 'session-42', source: 'home_rail' };
+    queue.joinSession.mockRejectedValueOnce(new Error('join failed'));
+
+    render(createElement(JoinSessionScreen));
+    await act(async () => {
+      buttons.joinPress?.();
+    });
+    await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
+
+    expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
   });
 });

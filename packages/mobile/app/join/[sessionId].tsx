@@ -34,8 +34,20 @@ function boardLabelFromPath(boardPath: string): string {
   return parsed.angle != null ? `${name} · ${parsed.angle}°` : name;
 }
 
+// Where a live-session card sent the climber (`/join/{id}?source=home_rail`).
+// Only the known surfaces count: the join screen is also a deep-link target,
+// and a hand-edited link must not add new values to the funnel.
+const LIVE_SESSION_JOIN_SOURCES = ['home_rail', 'board_sheet'] as const;
+type LiveSessionJoinSource = (typeof LIVE_SESSION_JOIN_SOURCES)[number];
+
+function parseLiveSessionJoinSource(source: string | string[] | undefined): LiveSessionJoinSource | null {
+  const value = Array.isArray(source) ? source[0] : source;
+  return LIVE_SESSION_JOIN_SOURCES.find((known) => known === value) ?? null;
+}
+
 export default function JoinSessionScreen() {
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, source } = useLocalSearchParams<{ sessionId: string; source?: string }>();
+  const liveSessionSource = parseLiveSessionJoinSource(source);
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -105,6 +117,12 @@ export default function JoinSessionScreen() {
         board_name: parsedBoard?.boardName ?? userBoard.boardType,
         layout_id: parsedBoard?.layoutId ?? userBoard.layoutId,
       });
+      // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
+      // Live Session Joined). Only joins that started on a live-session card
+      // carry a source; invite links don't.
+      if (liveSessionSource) {
+        track(SHARED_EVENTS.LiveSessionJoined, { source: liveSessionSource });
+      }
       // Land on the Record tab so the user drops straight into the joined session.
       router.replace('/(tabs)/record');
     } catch (error) {
@@ -112,7 +130,7 @@ export default function JoinSessionScreen() {
       showToast(t('mobileJoin.joinError'), 'error');
       setIsJoining(false);
     }
-  }, [session, myBoards, createBoard, joinSession, router, showToast, t]);
+  }, [session, myBoards, createBoard, joinSession, liveSessionSource, router, showToast, t]);
 
   const handleJoinPress = useCallback(() => {
     if (!session) return;
