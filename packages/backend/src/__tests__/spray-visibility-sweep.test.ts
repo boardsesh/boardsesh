@@ -651,6 +651,19 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.gymKiosks': 'kiosk configuration, and the seed creates none',
   'Query.holdOutlines': 'community-admin only, and it reads the hold catalogue rather than climbs',
 
+  // --- moderation queue -------------------------------------------------------
+  // Two independent reasons, either of which would be enough on its own.
+  // `requireAdmin(ctx, 'spray')` is the first statement in the resolver, so the
+  // sweep's OWNER — who is not an admin — is rejected before a single row is
+  // read. That is what makes the owner half vacuous here rather than meaningful:
+  // it sees nothing because nobody but an admin ever does, not because a gate
+  // held. And the rows are report records — id, wall uuid, layout id, reason,
+  // hidden, createdAt — so there is no climb name or frame in the answer to
+  // leak. The admin path is deliberately all-seeing and is pinned instead by
+  // spray-wall-moderation.test.ts, which asserts the non-admin rejection.
+  'Query.sprayWallReports':
+    'admin-only — requireAdmin runs before any read, so the non-admin owner is rejected — and it answers with report rows (wall uuid, layout id, reason), never a climb name or frames',
+
   // --- beta links -------------------------------------------------------------
   // The seeded link is not an Instagram or TikTok URL, because those enrich
   // through a live outbound fetch that CI cannot answer; the unknown-platform
