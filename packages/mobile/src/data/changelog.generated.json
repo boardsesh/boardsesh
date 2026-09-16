@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-16T08:45:31.456Z",
+  "generatedAt": "2026-09-16T09:09:02.296Z",
   "entries": [
+    {
+      "prNumber": 5499,
+      "category": "new",
+      "title": "Share a climb from your spray wall and the link opens a real page: your wall photo with the holds lit up.",
+      "mergedAt": "2026-09-16T09:03:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5499",
+      "body": "Shared links unfurl with a picture of the wall in chats and feeds, for walls you have made public.\nPrivate walls stay private. A link to one just doesn't open, for anyone."
+    },
     {
       "prNumber": 5483,
       "category": "new",
