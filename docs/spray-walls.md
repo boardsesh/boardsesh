@@ -506,7 +506,7 @@ beside it.
 | --- | --- |
 | `spray-wall-loader.ts` | The two round trips: `sprayWallByLayout` for the uuid (cached hard; a wall's uuid never moves), then `sprayWallRenderData` for the payload (10-minute stale time, bounded by the photo signature, not by how often a wall changes). Injected into the registry with `setSprayWallLoader`, so the draw path can ASK for a wall without being able to reach the network itself. |
 | `use-spray-wall.ts` | `useSprayWall(layoutId)` — the active board's wall, called once from `drawer-host-provider`, and the hook a surface reads `isUnrenderable` off. |
-| `use-spray-wall-token.ts` | `useSprayWallToken(boardName, layoutId)` — the one line a SYNCHRONOUS surface needs above its early return, because a component that gates on `getBoardRenderData() === null` returns before it mounts anything that subscribes. Requests the wall and subscribes to it in one call; `BoardManageRow` and `AccessoryClimbThumbnail` use it. |
+| `use-spray-wall-token.ts` | `useSprayWallToken(boardName, layoutId)` — the one line a SYNCHRONOUS surface needs above its early return, because a component that gates on `getBoardRenderData() === null` returns before it mounts anything that subscribes. Requests the wall and subscribes to it in one call. Every synchronous board surface calls it — the play drawer, both board rows, the kiosk, the board-look preview, the reaction menu, the accessory thumbnail — and `spray-render-surfaces-subscribe.test.ts` fails a new one that does not. |
 | `spray-hold-geometry.ts` | Canonical pixels -> this version's photo pixels, through `invert()` of the stored matrix. Centres via `mapPoint`, radii via `mapRadius`, silhouettes point by point via `mapRing` and back into radius units of the MAPPED radius. |
 | `spray-wall-registry.ts` | The map every downstream reader consults synchronously, plus `sprayCacheToken`. Registering also publishes the wall's silhouettes as runtime board-art geometry. |
 | `spray-photo-cache.ts` | The photograph on disk at `{cache}/spray-walls/<layoutId>-<version>.jpg`. The presigned URL is never the cache key — it changes on every read. |
@@ -548,10 +548,18 @@ for fifteen minutes; the photo it points at is named `<layoutId>-<version>.jpg`
 and outlives it. So `ensureSprayPhotoCached` checks `photoExpiresAt` before it
 fetches, and a lapsed one calls `refreshSprayWall` — which invalidates the render
 query rather than re-requesting a dead URL — and answers "no photo yet". Minting
-a fresh signature is something only `sprayWallRenderData` can do, and the
-re-registration that follows re-runs the download with a live one. Retrying the
+a fresh signature is something only `sprayWallRenderData` can do. Retrying the
 expired URL instead would 403 on every pass for the rest of the session while the
 board sat on a placeholder.
+
+**Known gap, for SW-08.** A fresh signature alone does not restart the download.
+The background pass re-runs on the render hook's board key, and `sprayCacheToken`
+carries the version — so a refresh that re-registers the SAME version leaves
+every dep byte-identical and the photo is not re-fetched until the wall resets or
+the surface remounts. Same for a download that simply failed. The fix is a
+registration epoch subscribed as a background-effect-only dependency; it must not
+reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
+revalidation. Costs nothing before SW-09 makes a wall reachable.
 
 ## Photo privacy
 
