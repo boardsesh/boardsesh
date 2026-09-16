@@ -49,6 +49,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
+import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -628,6 +629,17 @@ function NowOnTheWallPanelComponent(
             gradeColor={heroGrade.color}
           />
         )}
+        {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
+            where a passer-by's "Join" or "Start" would act on the kiosk's
+            account. */}
+        {variant === 'sheet' ? (
+          <BoardLiveSessionsBlock
+            boardId={boardPresenceBoardId}
+            litByName={currentClimb?.sentByDisplayName?.trim() || null}
+            litByUserId={currentClimb?.sentByUserId ?? null}
+            onBeforeNavigate={handleClose}
+          />
+        ) : null}
         {stats ? (
           // testID anchors the store-screenshot flow: the stats only exist once the
           // wall history has landed, and this block is on screen at the top of the
@@ -709,6 +721,8 @@ function NowOnTheWallPanelComponent(
     onSelectGymWall,
     canSwitchGymWall,
     gymWallsExpanded,
+    boardPresenceBoardId,
+    handleClose,
   ]);
 
   const listEmpty = useMemo(
