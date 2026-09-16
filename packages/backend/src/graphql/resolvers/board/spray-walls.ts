@@ -1218,7 +1218,7 @@ export const sprayWallQueries = {
       // and only its owner sees it so they can go and finish it. The visibility
       // gate then asks who it is finished FOR.
       if (!sprayWallIsListable(row.wall, row.board, ctx.userId)) continue;
-      if (await viewerCanSeeSprayWallByLayout(row.board, ctx.userId, isGymMember)) visible.push(row);
+      if (await viewerCanSeeSprayWallByLayout(row.wall, row.board, ctx.userId, isGymMember)) visible.push(row);
     }
 
     return Promise.all(
