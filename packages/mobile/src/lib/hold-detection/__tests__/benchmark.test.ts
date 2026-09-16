@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DetectionRuntime, RfDetrOutputs } from '@boardsesh/hold-detection';
-import { formatBenchmarkJson, lowThresholdFor, median, runBenchmark } from '../benchmark';
+import { BENCHMARK_INPUT_SIZES, formatBenchmarkJson, lowThresholdFor, median, runBenchmark } from '../benchmark';
 
 /** A grey photo — the pixels never matter, the fake runtime ignores them. */
 function greyPhoto(width: number, height: number) {
@@ -331,5 +331,87 @@ describe('formatBenchmarkJson', () => {
       modelVersion: '2026-09-15',
       requestedExecutionProvider: 'coreml',
     });
+  });
+});
+
+describe('sweep order', () => {
+  it('runs the cheapest size first so a kill during the largest still leaves numbers', () => {
+    // Load-bearing, not cosmetic: 768 is the size SW-01 measured at 987 MB
+    // against a 500 MB phone budget, so it is the one that gets the process
+    // killed — and a watchdog kill takes the whole report with it. Ascending
+    // order means 512 and 640 are already in hand by then.
+    expect([...BENCHMARK_INPUT_SIZES]).toEqual([512, 640, 768]);
+    expect(Math.max(...BENCHMARK_INPUT_SIZES)).toBe(BENCHMARK_INPUT_SIZES[BENCHMARK_INPUT_SIZES.length - 1]);
+  });
+});
+
+describe('runBenchmark runtime recycling', () => {
+  const baseInput = {
+    image: greyPhoto(64, 48),
+    modelVersion: '2026-09-15',
+    modelConfig: 'nano-untiled-1024',
+    requestedExecutionProvider: 'coreml',
+    defaultThreshold: 0.6,
+    fit: 'stretch' as const,
+    mean: [0.485, 0.456, 0.406] as readonly [number, number, number],
+    std: [0.229, 0.224, 0.225] as readonly [number, number, number],
+    runsPerSize: 1,
+  };
+
+  it('recycles between sizes but not after the last one', async () => {
+    let recycles = 0;
+    const report = await runBenchmark({
+      ...baseInput,
+      runtime: fakeRuntime([0.9]),
+      sizes: [512, 640, 768],
+      recycleRuntime: async () => {
+        recycles += 1;
+        return fakeRuntime([0.9]);
+      },
+    });
+
+    // Three sizes, two gaps between them. A third call would open a session
+    // the caller's `finally` immediately releases.
+    expect(recycles).toBe(2);
+    expect(report.sizes.map((size) => size.size)).toEqual([512, 640, 768]);
+  });
+
+  it('routes each size to the runtime that was live for it', async () => {
+    const first = fakeRuntime([0.9]);
+    const second = fakeRuntime([0.9]);
+    await runBenchmark({
+      ...baseInput,
+      runtime: first,
+      sizes: [512, 640],
+      recycleRuntime: async () => second,
+    });
+
+    // Without the reassignment in runBenchmark the original runtime would have
+    // served both sizes and the recycled session would sit idle.
+    expect(first.sizes).toEqual([512]);
+    expect(second.sizes).toEqual([640]);
+  });
+
+  it('keeps the sizes already measured when the model will not reopen', async () => {
+    const report = await runBenchmark({
+      ...baseInput,
+      runtime: fakeRuntime([0.9]),
+      sizes: [512, 640, 768],
+      recycleRuntime: async () => null,
+    });
+
+    // The point of the whole change: a device that cannot carry on still hands
+    // back the number it did get, rather than an empty report.
+    expect(report.sizes.map((size) => size.size)).toEqual([512]);
+    expect(report.failures).toHaveLength(1);
+    expect(report.failures[0].error).toContain('remaining sizes were not run');
+  });
+
+  it('works without a recycler, so a single-session caller is unaffected', async () => {
+    const runtime = fakeRuntime([0.9]);
+    const report = await runBenchmark({ ...baseInput, runtime, sizes: [512, 640] });
+
+    expect(runtime.sizes).toEqual([512, 640]);
+    expect(report.sizes).toHaveLength(2);
   });
 });

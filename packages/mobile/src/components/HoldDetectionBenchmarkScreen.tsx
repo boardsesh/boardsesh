@@ -81,19 +81,28 @@ export function HoldDetectionBenchmarkScreen() {
     try {
       // i18n-ignore-next-line — tester-only screen
       setStatus('Decoding the photo…');
-      const image = await decodePhotoToRgba(picked.assets[0].uri);
+      // The picker already reports the asset's dimensions, so the decode never
+      // has to render the full-resolution file to find them out. It reports 0
+      // when the system would not say, which `decodePhotoToRgba` handles.
+      const asset = picked.assets[0];
+      const image = await decodePhotoToRgba(asset.uri, {
+        sourceWidth: asset.width,
+        sourceHeight: asset.height,
+      });
 
       // i18n-ignore-next-line — tester-only screen
       setStatus('Opening the ONNX session…');
-      runtime = await createHoldDetectionRuntime(modelHandle.uri, {
-        classes: modelHandle.manifest.outputs.logits.classes,
-        // The manifest parses both output names; hand them over so a four-class
-        // export is not resolved by ONNX Runtime's key order.
-        outputNames: {
-          boxes: modelHandle.manifest.outputs.boxes.name,
-          logits: modelHandle.manifest.outputs.logits.name,
-        },
-      });
+      const openSession = () =>
+        createHoldDetectionRuntime(modelHandle.uri, {
+          classes: modelHandle.manifest.outputs.logits.classes,
+          // The manifest parses both output names; hand them over so a four-class
+          // export is not resolved by ONNX Runtime's key order.
+          outputNames: {
+            boxes: modelHandle.manifest.outputs.boxes.name,
+            logits: modelHandle.manifest.outputs.logits.name,
+          },
+        });
+      runtime = await openSession();
       if (!runtime) {
         // i18n-ignore-next-line — tester-only screen
         setStatus('ONNX Runtime would not open the model on this device.');
@@ -114,6 +123,18 @@ export function HoldDetectionBenchmarkScreen() {
         fit: letterboxFitFor(modelHandle.manifest.input),
         mean: modelHandle.manifest.input.normalization.mean,
         std: modelHandle.manifest.input.normalization.std,
+        // Close this size's session and open a fresh one before the next, larger
+        // size: ONNX Runtime's arena only grows, so without this the 768 pass
+        // runs on top of 512's and 640's high-water marks. `runtime` is
+        // reassigned so the `finally` below always releases the live session.
+        recycleRuntime: async () => {
+          await runtime?.release();
+          runtime = null;
+          // i18n-ignore-next-line — tester-only screen
+          setStatus('Reopening the ONNX session…');
+          runtime = await openSession();
+          return runtime;
+        },
         onProgress: (size, run, totalRuns) => {
           // i18n-ignore-next-line — tester-only screen
           setStatus(`${size} px — pass ${run} of ${totalRuns}…`);

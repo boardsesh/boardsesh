@@ -26,8 +26,16 @@ import { runDetection } from '@boardsesh/hold-detection';
  * buy memory and latency if the top one does not fit. The letterbox in the
  * shared package stretches the frame to whatever size it is handed, so a smaller
  * input needs no re-export — it is the same graph fed a smaller tensor.
+ *
+ * ASCENDING, cheapest first, and that order is load-bearing. The 987 MB figure
+ * above is for 768, against a 500 MB budget, so 768 is the size most likely to
+ * get the process killed — and a watchdog kill takes the whole report with it,
+ * including the 512 and 640 numbers that were already measured. Running upwards
+ * means a device that cannot survive the top size still reports the two below
+ * it, which is most of what #5451 needs. Descending order produced nothing at
+ * all on a 48 MP phone.
  */
-export const BENCHMARK_INPUT_SIZES = [768, 640, 512] as const;
+export const BENCHMARK_INPUT_SIZES = [512, 640, 768] as const;
 
 /**
  * Nominal floor for the second detection count, for the confidence slider (#5441).
@@ -147,6 +155,21 @@ export interface BenchmarkInput {
   std: readonly [number, number, number];
   sizes?: readonly number[];
   runsPerSize?: number;
+  /**
+   * Close the current session and open a fresh one, called between sizes.
+   *
+   * ONNX Runtime's arena lives in native memory and only ever grows: a session
+   * that has run 512 and 640 carries both of their high-water marks into 768,
+   * which is the size already known to sit near the budget. Recycling means each
+   * size is measured on its own arena rather than on the previous sizes'
+   * leftovers — more honest numbers, and the difference between reporting 768
+   * and being killed during it.
+   *
+   * Optional: tests pass a single fake runtime and omit this. Returning null is
+   * taken as "the device could not reopen the model", which ends the sweep with
+   * the sizes already measured rather than throwing them away.
+   */
+  recycleRuntime?: () => Promise<DetectionRuntime | null>;
   /** Progress for the screen: which size, which pass. */
   onProgress?: (size: number, run: number, totalRuns: number) => void;
   /** Injected in tests so a fake clock is possible; defaults to `Date.now`. */
@@ -170,7 +193,7 @@ export interface BenchmarkInput {
  */
 export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkReport> {
   const {
-    runtime,
+    runtime: initialRuntime,
     image,
     sizes = BENCHMARK_INPUT_SIZES,
     runsPerSize = BENCHMARK_RUNS_PER_SIZE,
@@ -178,9 +201,11 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     fit,
     mean,
     std,
+    recycleRuntime,
     onProgress,
     now = Date.now,
   } = input;
+  let runtime = initialRuntime;
 
   const lowThreshold = lowThresholdFor(defaultThreshold);
   const results: BenchmarkSizeResult[] = [];
@@ -219,6 +244,25 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
       detectionsAtLow: lastCandidates.length,
       jsHeapDeltaBytes: heapBefore !== null && heapAfter !== null ? heapAfter - heapBefore : null,
     });
+
+    // Drop this size's arena before the next, larger one opens. Skipped after
+    // the final size: the caller's `finally` releases the session it owns, and
+    // reopening one here only to throw it away would add a second or two to
+    // every run for nothing.
+    if (recycleRuntime && size !== sizes[sizes.length - 1]) {
+      const reopened = await recycleRuntime();
+      if (!reopened) {
+        failures.push({
+          size,
+          // Not the size's own failure — it succeeded. This records why the
+          // sizes after it were never attempted, so a short report is not read
+          // as a clean sweep.
+          error: 'Could not reopen the model after this size; remaining sizes were not run.',
+        });
+        break;
+      }
+      runtime = reopened;
+    }
   }
 
   return {
