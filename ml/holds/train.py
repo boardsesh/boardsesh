@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-from common import DEFAULT_THREADS, HOLDS_DIR, cap_threads, load_config
+from common import DEFAULT_THREADS, HOLDS_DIR, DetectorConfig, cap_threads, load_config
 
 RFDETR_VARIANTS = {
     "nano": "RFDETRNano",
@@ -127,7 +127,7 @@ def cap_train_split(dataset_dir: Path, limit: int) -> Path:
 TILE_SOURCE_FILENAME = "source.json"
 
 
-def tiled_dataset_dir(config, dataset_dir: Path) -> Path:
+def tiled_dataset_dir(config: DetectorConfig, dataset_dir: Path) -> Path:
     """Where the tiles cut from `dataset_dir` for `config` live.
 
     The SOURCE dataset's name is part of the directory name, not just the tiling
@@ -144,7 +144,7 @@ def tiled_dataset_dir(config, dataset_dir: Path) -> Path:
     )
 
 
-def tile_source_record(config, dataset_dir: Path) -> dict[str, object]:
+def tile_source_record(config: DetectorConfig, dataset_dir: Path) -> dict[str, object]:
     """The provenance stamp written beside a tiled dataset and checked before reuse."""
     grid = config.tiles
     return {
@@ -156,7 +156,7 @@ def tile_source_record(config, dataset_dir: Path) -> dict[str, object]:
     }
 
 
-def prepare_dataset(config, dataset_dir: Path) -> Path:
+def prepare_dataset(config: DetectorConfig, dataset_dir: Path) -> Path:
     """Return the directory the trainer should read, tiling it first when needed."""
     if config.tiles.untiled:
         return dataset_dir

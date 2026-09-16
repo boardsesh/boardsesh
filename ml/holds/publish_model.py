@@ -351,19 +351,29 @@ def check_eval_provenance(
     at the shipped default - an easy file-selection mistake that silently corrupts
     published experiment results, so each recorded field must match.
     """
-    recorded_config = loaded.get("config")
-    recorded_model = loaded.get("model")
-    recorded_threshold = loaded.get("score_threshold")
+    recorded_config = loaded.get("config", _ABSENT)
+    recorded_model = loaded.get("model", _ABSENT)
+    recorded_threshold = loaded.get("score_threshold", _ABSENT)
 
-    missing = [
-        name
-        for name, value in (("config", recorded_config), ("model", recorded_model), ("score_threshold", recorded_threshold))
-        if value is None
-    ]
-    if missing:
+    recorded_fields = (
+        ("config", recorded_config),
+        ("model", recorded_model),
+        ("score_threshold", recorded_threshold),
+    )
+    # A key that is there but null is a different failure from a key that is not
+    # there at all: the first is a run that recorded nothing for it, the second an
+    # older or hand-made file. Say which.
+    absent = [name for name, value in recorded_fields if value is _ABSENT]
+    null = [name for name, value in recorded_fields if value is None]
+    if absent or null:
+        problems: list[str] = []
+        if absent:
+            problems.append(f"does not record {', '.join(absent)}")
+        if null:
+            problems.append(f"has {', '.join(null)} set to null")
         raise SystemExit(
-            f"--eval-json {eval_json_path} looks like an eval.py results file but does not record "
-            + ", ".join(missing)
+            f"--eval-json {eval_json_path} looks like an eval.py results file but "
+            + " and ".join(problems)
             + ". Re-run eval.py to regenerate it, or pass a manifest-shaped eval JSON instead."
         )
 
@@ -383,7 +393,15 @@ def check_eval_provenance(
             "shifts score calibration, so the numbers must come from the artifact that ships."
         )
 
-    if float(recorded_threshold) != float(threshold):
+    try:
+        recorded_threshold_value = float(recorded_threshold)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise SystemExit(
+            f"--eval-json {eval_json_path} records score_threshold {recorded_threshold!r}, which is "
+            "not a number. eval.py writes the float it scored at; re-run it to regenerate the file."
+        ) from None
+
+    if recorded_threshold_value != float(threshold):
         raise SystemExit(
             f"--eval-json {eval_json_path} was measured at score threshold {recorded_threshold}, "
             f"but this manifest ships {threshold} as its default. Re-score at the shipped threshold, "

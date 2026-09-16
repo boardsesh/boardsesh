@@ -232,8 +232,9 @@ the same sha256 is skipped and one with different bytes stops the publish and
 asks for a new `--version` — a cached client would otherwise keep bytes that no
 longer match the manifest's checksum. A weight file published before this script
 stamped checksums is hashed in place first, and an identical one has its metadata
-stamped (bytes untouched) so the repair path stays open for older versions. Credentials are never printed or logged by
-either mode.
+stamped (bytes untouched) so the repair path stays open for older versions.
+
+Credentials are never printed or logged by either mode.
 
 `--eval-json` takes an `eval.py` results file (`.data/artifacts/<config>/eval.json`)
 as well as a manifest-shaped one: `box.f1` and `correction_rate_micro` are read

@@ -287,6 +287,20 @@ def test_an_eval_py_file_missing_its_provenance_is_refused(tmp_path: Path, sampl
         _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
 
 
+def test_a_null_provenance_field_says_null_not_missing(tmp_path: Path, sample_model: Path) -> None:
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(config=None)))
+    with pytest.raises(SystemExit, match="has config set to null"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
+def test_a_non_numeric_score_threshold_is_a_clear_error(tmp_path: Path, sample_model: Path) -> None:
+    eval_json_path = tmp_path / "eval.json"
+    eval_json_path.write_text(json.dumps(_eval_py_results(score_threshold="low")))
+    with pytest.raises(SystemExit, match="score_threshold 'low', which is not a number"):
+        _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
+
+
 def test_a_null_correction_rate_is_refused_rather_than_dropped(tmp_path: Path, sample_model: Path) -> None:
     """eval.py writes null when it had no holds to score; publishing that is a lie."""
     eval_json_path = tmp_path / "eval.json"
