@@ -12,6 +12,7 @@ A new version shipped to the App Store.
 
 ### New
 
+- There is no way into a spray wall until SW-09 ships the add-a-wall flow, so nothing here is reachable by a user yet. ([#5483](https://github.com/boardsesh/boardsesh/pull/5483))
 - The app now tells you a wall's limits up front instead of after you hit them: ten walls each, 1,500 holds on a wall, fifty resets. If a wall of yours ever gets taken out of everyone else's view, you'll see why on it — it stays yours, your climbs stay on it, and nothing is deleted. Delete a wall yourself and its photos come off our disks a month later. ([#5498](https://github.com/boardsesh/boardsesh/pull/5498))
 - Reset your spray wall from your phone: take a new photo, mark the corners, and check what the app thinks came off before anything changes. ([#5492](https://github.com/boardsesh/boardsesh/pull/5492))
   Every ring is yours to argue with — put a hold back, reject a false one, or say "same hold, moved here".

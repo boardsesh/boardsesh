@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-16T02:53:30.768Z",
+  "generatedAt": "2026-09-16T08:45:31.456Z",
   "entries": [
+    {
+      "prNumber": 5483,
+      "category": "new",
+      "title": "There is no way into a spray wall until SW-09 ships the add-a-wall flow, so nothing here is reachable by a user yet.",
+      "mergedAt": "2026-09-16T08:44:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5483"
+    },
     {
       "prNumber": 5498,
       "category": "new",
