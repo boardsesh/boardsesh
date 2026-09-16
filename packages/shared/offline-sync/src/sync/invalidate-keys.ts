@@ -51,6 +51,10 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   overwritten by a network refetch that raced the drain.
   user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
 
+  // Follow changes affect Following searches on every board. This platform-neutral
+  // table map knows query prefixes, not each client's filter-bearing key shape,
+  // so it deliberately invalidates unfiltered searches too. Only active queries
+  // refetch; inactive searches are marked stale until the next visit.
   user_follows: [
     ['publicProfile'],
     ['searchUsers'],

@@ -21,14 +21,15 @@ import { useIsSharedSession } from '../../../../src/providers/queue-provider';
 import { createAbortError } from '../../../../src/lib/graphql/request-timeout';
 import { spacing } from '../../../../src/theme/tokens';
 
-const EMPTY_BOARD = { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 };
+// Hooks still need an input while no board is selected; both queries stay disabled.
+const PLACEHOLDER_BOARD = { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 };
 
 export default function SetterPlaylist() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const { t } = useTranslation('climbs');
   const router = useRouter();
   const { renderBoard } = usePlaylistRenderBoard(null);
-  const input = useMemo(() => setterPlaylistInput(username, renderBoard ?? EMPTY_BOARD), [username, renderBoard]);
+  const input = useMemo(() => setterPlaylistInput(username, renderBoard ?? PLACEHOLDER_BOARD), [username, renderBoard]);
   const query = useInfiniteSearchClimbs(input, !!renderBoard && !!username);
   const count = useSearchClimbsCount(input, !!renderBoard && !!username);
   const allClimbs = useMemo(() => toQueueClimbs(query.data?.pages.flatMap((page) => page.climbs) ?? []), [query.data]);

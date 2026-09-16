@@ -32,6 +32,9 @@ export const AUTHOR_QUERY_KEYS = [
   'infiniteSearchClimbs',
   'searchClimbsCount',
 ] as const;
+// One local database has one active owner. A newer load (including an account
+// switch) supersedes older loads across hook instances. Real-SQLite race tests
+// exercise overlapping requests explicitly; independent test cases run serially.
 let latestSnapshotRequest = 0;
 export function invalidateAuthorQueries(queryClient: QueryClient) {
   for (const key of AUTHOR_QUERY_KEYS) void queryClient.invalidateQueries({ queryKey: [key] });
