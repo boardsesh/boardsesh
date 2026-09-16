@@ -1494,7 +1494,6 @@ export function useAttachBetaLink() {
       }),
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
-      void queryClient.invalidateQueries({ queryKey: ['recentBetaLinks'] });
     },
   });
 }

@@ -4,7 +4,16 @@ import { fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveCardModel } from '../live-session-model';
 
-const spies = vi.hoisted(() => ({ press: vi.fn(), invite: vi.fn(), avatarGroup: vi.fn() }));
+const spies = vi.hoisted(() => ({
+  press: vi.fn(),
+  invite: vi.fn(),
+  avatarGroup: vi.fn(),
+  surfaces: [] as Array<{
+    testID?: string;
+    accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }>,
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
@@ -20,37 +29,38 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({
-    title,
-    onPress,
-    accessibilityLabel,
-  }: {
-    title: string;
-    onPress: () => void;
-    accessibilityLabel?: string;
-  }) =>
-    createElement(
-      'button',
-      { 'data-testid': 'invite-button', onClick: onPress, 'aria-label': accessibilityLabel },
-      title,
-    ),
-}));
 vi.mock('../../PressableSurface', () => ({
+  // React Native presses don't bubble to an enclosing pressable; stop the DOM
+  // click here so the nested Invite behaves the same way in jsdom.
   PressableSurface: ({
     children,
     onPress,
+    testID,
     accessibilityLabel,
+    accessibilityActions,
+    onAccessibilityAction,
   }: {
     children?: ReactNode;
     onPress?: () => void;
+    testID?: string;
     accessibilityLabel?: string;
-  }) =>
-    createElement(
+    accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) => {
+    spies.surfaces.push({ testID, accessibilityActions, onAccessibilityAction });
+    return createElement(
       'button',
-      { 'data-testid': 'card-press', onClick: onPress, 'aria-label': accessibilityLabel },
+      {
+        'data-testid': testID,
+        'aria-label': accessibilityLabel,
+        onClick: (event: { stopPropagation: () => void }) => {
+          event.stopPropagation();
+          onPress?.();
+        },
+      },
       children,
-    ),
+    );
+  },
 }));
 vi.mock('../../you/AvatarGroup', () => ({
   AvatarGroup: (props: Record<string, unknown>) => {
@@ -94,7 +104,7 @@ function renderCard(model: LiveCardModel) {
   return render(
     createElement(LiveSessionCard, {
       card: model,
-      nowMinute: 42,
+      nowMs: 42 * 60_000 + 30_000,
       viewerUserId: 'viewer',
       height: 192,
       stacked: false,
@@ -109,12 +119,13 @@ beforeEach(() => {
   spies.press.mockReset();
   spies.invite.mockReset();
   spies.avatarGroup.mockReset();
+  spies.surfaces = [];
 });
 
 describe('LiveSessionCard', () => {
   it('is one pressable element with a spoken label, and hands the card to onPress', () => {
     const { getByTestId } = renderCard(card());
-    const surface = getByTestId('card-press');
+    const surface = getByTestId('live-session-card');
     expect(surface.getAttribute('aria-label')).toContain('mobile.liveSessions.a11y.namesOthers(Priya N.|3)');
     expect(surface.getAttribute('aria-label')).toContain('mobile.liveSessions.a11y.hardest(V6)');
     fireEvent.click(surface);
@@ -139,7 +150,7 @@ describe('LiveSessionCard', () => {
     expect(opened.queryByTestId('invite-button')).toBeNull();
   });
 
-  it('gives the viewer solo session a separate Invite button', () => {
+  it('gives the viewer solo session an Invite pill in the footer, reachable as a card action', () => {
     const { getByTestId, container } = renderCard(
       card({
         viewerIsMember: true,
@@ -148,12 +159,30 @@ describe('LiveSessionCard', () => {
       }),
     );
     expect(container.textContent).toContain('mobile.liveSessions.names.justYou');
-    const invite = getByTestId('invite-button');
-    // Its own element, not a child of the card's press target.
-    expect(getByTestId('card-press').contains(invite)).toBe(false);
+    const invite = getByTestId('live-session-invite');
+    expect(invite.textContent).toBe('mobile.liveSessions.actions.invite');
+    expect(invite.getAttribute('aria-label')).toBe('mobile.liveSessions.a11y.invite');
     fireEvent.click(invite);
     expect(spies.invite).toHaveBeenCalledWith('s1');
     expect(spies.press).not.toHaveBeenCalled();
+
+    // VoiceOver / TalkBack: the card is one element, so Invite is its custom action.
+    const cardSurface = spies.surfaces.find((surface) => surface.testID === 'live-session-card');
+    expect(cardSurface?.accessibilityActions).toEqual([{ name: 'invite', label: 'mobile.liveSessions.a11y.invite' }]);
+    cardSurface?.onAccessibilityAction?.({ nativeEvent: { actionName: 'invite' } });
+    expect(spies.invite).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers no custom action on a card without Invite', () => {
+    renderCard(card());
+    const cardSurface = spies.surfaces.find((surface) => surface.testID === 'live-session-card');
+    expect(cardSurface?.accessibilityActions).toBeUndefined();
+  });
+
+  it('says "Just started" instead of 0m inside the first minute', () => {
+    const { container } = renderCard(card({ startedAtMs: 42 * 60_000 }));
+    expect(container.textContent).toContain('mobile.liveSessions.elapsed.justStarted');
+    expect(container.textContent).not.toContain('mobile.liveSessions.elapsed.minutes(0)');
   });
 
   it('omits the sends segment at zero', () => {

@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   impressions: { days: [] as string[], loaded: true },
   queueSessionId: null as string | null,
   followingCount: 5 as number | undefined,
+  followCountFetching: false,
   hookArgs: [] as Array<[string | null, boolean]>,
 }));
 const spies = vi.hoisted(() => ({
@@ -89,11 +90,12 @@ vi.mock('../../../lib/graphql/hooks/use-live-sessions', () => ({
   },
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'viewer', displayName: 'Vic Viewer', avatarUrl: null } }),
+  useProfile: () => ({ data: { id: 'viewer', displayName: 'Vic Viewer', avatarUrl: null }, fetchStatus: 'idle' }),
 }));
 vi.mock('../../../lib/graphql/hooks/use-social', () => ({
   usePublicProfile: () => ({
     data: state.followingCount == null ? undefined : { followingCount: state.followingCount },
+    fetchStatus: state.followCountFetching ? 'fetching' : 'idle',
   }),
 }));
 vi.mock('../../../hooks/use-offline-query-state', () => ({ useOfflineQueryState: () => state.offline }));
@@ -122,10 +124,11 @@ vi.mock('../LiveRailStates', () => ({
   LiveRailSkeleton: () => createElement('div', { 'data-testid': 'skeleton' }),
   LiveRailErrorRow: ({ onRetry }: { onRetry: () => void }) =>
     createElement('button', { 'data-testid': 'error-row', onClick: onRetry }),
-  LiveRailOfflineRow: () => createElement('div', { 'data-testid': 'offline-row' }),
+  LiveRailOfflineRow: ({ offlineMode }: { offlineMode: boolean }) =>
+    createElement('div', { 'data-testid': 'offline-row', 'data-offline-mode': String(offlineMode) }),
 }));
 vi.mock('../LiveDot', () => ({ useLivePulseDriver: vi.fn() }));
-vi.mock('../use-minute-tick', () => ({ useMinuteTick: () => 1000 }));
+vi.mock('../use-elapsed-clock', () => ({ useElapsedClock: () => 1000, startedAtKeyFor: () => '' }));
 vi.mock('../use-live-session-colors', () => ({ useLiveSessionColors: () => ({ live: '#FBBF24' }) }));
 vi.mock('../start-prompt-quiet-days', () => ({
   isStartPromptCollapsed: (days: string[]) => days.length >= 3,
@@ -181,6 +184,7 @@ beforeEach(() => {
   state.impressions = { days: [], loaded: true };
   state.queueSessionId = null;
   state.followingCount = 5;
+  state.followCountFetching = false;
   state.hookArgs = [];
 });
 
@@ -209,10 +213,49 @@ describe('LiveSessionsRail states', () => {
     };
     state.offline = { isOffline: true, isBlocked: true, reason: 'offline' };
     const { queryByTestId } = renderRail();
-    expect(queryByTestId('offline-row')).not.toBeNull();
+    expect(queryByTestId('offline-row')?.getAttribute('data-offline-mode')).toBe('false');
     expect(queryByTestId('start-tile')).toBeNull();
     expect(shelfViewedCalls()[0]?.[1]).toEqual({ surface: 'home_rail', count: 0, state: 'offline' });
     expect(spies.record).not.toHaveBeenCalled();
+  });
+
+  it('says Offline mode is on when the climber switched it on, not "No signal"', () => {
+    state.query = {
+      status: 'pending',
+      fetchStatus: 'paused',
+      isSuccess: false,
+      data: undefined,
+      refetch: spies.refetch,
+    };
+    state.offline = { isOffline: true, isBlocked: true, reason: 'offline_mode' };
+    const { getByTestId } = renderRail();
+    expect(getByTestId('offline-row').getAttribute('data-offline-mode')).toBe('true');
+  });
+
+  it('keeps the skeleton until the follow count lands, so Start and Find never swap', () => {
+    state.followingCount = undefined;
+    state.followCountFetching = true;
+    const loading = renderRail();
+    expect(loading.queryByTestId('skeleton')).not.toBeNull();
+    expect(loading.queryByTestId('rail-list')).toBeNull();
+    expect(shelfViewedCalls()).toHaveLength(0);
+    loading.unmount();
+
+    state.followingCount = 0;
+    state.followCountFetching = false;
+    const { getByTestId } = renderRail();
+    const tiles = Array.from(getByTestId('rail-list').querySelectorAll('[data-testid]')).map((node) =>
+      node.getAttribute('data-testid'),
+    );
+    expect(tiles).toEqual(['find-tile', 'start-tile']);
+  });
+
+  it('does not wait on a follow count that failed to load', () => {
+    state.followingCount = undefined;
+    state.followCountFetching = false;
+    const { queryByTestId } = renderRail();
+    expect(queryByTestId('skeleton')).toBeNull();
+    expect(queryByTestId('start-tile')).not.toBeNull();
   });
 
   it('shows the error row with Start after it, and retries', () => {

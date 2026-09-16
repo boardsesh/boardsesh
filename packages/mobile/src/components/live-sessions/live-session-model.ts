@@ -185,17 +185,25 @@ export type RailPlan = {
   compactStart: boolean;
   /** The full Start tile is in `entries` (drives the quiet-days impression). */
   showsStartTile: boolean;
+  /**
+   * Where a prompt goes is not known yet. Rendering a guess would move tiles
+   * once the answer lands (Find climbers jumping ahead of Start, or Start
+   * shrinking to a row), so the rail keeps its skeleton until then.
+   */
+  pending: boolean;
 };
 
 export type RailPlanInput = {
   cards: readonly LiveCardModel[];
   /** The local queue holds a session (it may be private, so not in `cards`). */
   viewerInSession: boolean;
-  /** True only once we KNOW the viewer follows nobody; unknown is false. */
-  followsNobody: boolean;
-  /** Quiet-days verdict from the impression store. */
-  startCollapsed: boolean;
+  /** Whether the viewer follows nobody; null until the follow count is known. */
+  followsNobody: boolean | null;
+  /** Quiet-days verdict; null until the impression store has been read. */
+  startCollapsed: boolean | null;
 };
+
+const EMPTY_PLAN_ENTRIES: RailEntry[] = [];
 
 export function planLiveRail({ cards, viewerInSession, followsNobody, startCollapsed }: RailPlanInput): RailPlan {
   const inSession = viewerInSession || cards.some((card) => card.viewerIsMember);
@@ -203,9 +211,18 @@ export function planLiveRail({ cards, viewerInSession, followsNobody, startColla
   // wall is the outcome the rail exists to prevent.
   const liveOnSelectedBoard = cards.some((card) => !card.viewerIsMember && card.reasons.includes('SELECTED_BOARD'));
   const showStart = !inSession && !liveOnSelectedBoard;
-  const compactStart = showStart && startCollapsed && cards.length === 0;
-  const showFind = !inSession && (followsNobody || cards.length === 0) && !(compactStart && !followsNobody);
-  const findLeads = showFind && followsNobody;
+  // Find climbers can lead the rail, so its position matters whenever it can show.
+  const findCouldShow = !inSession && (followsNobody !== false || cards.length === 0);
+  // The Start row only replaces the tile on an empty rail.
+  const collapseMatters = showStart && cards.length === 0;
+  if ((findCouldShow && followsNobody === null) || (collapseMatters && startCollapsed === null)) {
+    return { entries: EMPTY_PLAN_ENTRIES, compactStart: false, showsStartTile: false, pending: true };
+  }
+
+  const knowsNobody = followsNobody === true;
+  const compactStart = collapseMatters && startCollapsed === true;
+  const showFind = !inSession && (knowsNobody || cards.length === 0) && !(compactStart && !knowsNobody);
+  const findLeads = showFind && knowsNobody;
 
   const entries: RailEntry[] = [];
   if (findLeads) entries.push({ kind: 'find', key: 'find' });
@@ -214,7 +231,7 @@ export function planLiveRail({ cards, viewerInSession, followsNobody, startColla
   if (showsStartTile) entries.push({ kind: 'start', key: 'start' });
   if (showFind && !findLeads) entries.push({ kind: 'find', key: 'find' });
 
-  return { entries, compactStart, showsStartTile };
+  return { entries, compactStart, showsStartTile, pending: false };
 }
 
 /** Rail tile geometry. Width is fixed; height follows Dynamic Type. */

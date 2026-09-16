@@ -44,7 +44,8 @@
       "elapsed": {
         "minutes": "{{minutes}} min",
         "hours": "{{hours}} h",
-        "hoursMinutes": "{{hours}} h {{minutes}} min"
+        "hoursMinutes": "{{hours}} h {{minutes}} min",
+        "justStarted": "Recién empezada"
       },
       "actions": {
         "join": "Unirse",
@@ -65,6 +66,7 @@
       },
       "error": "No se pudo cargar quién está escalando.",
       "offline": "Sin conexión. Las sesiones vuelven a aparecer cuando recuperes la conexión.",
+      "offlineMode": "El modo sin conexión está activado. Las sesiones vuelven a aparecer cuando lo desactives.",
       "board": {
         "header": "Escalando aquí ahora",
         "more_one": "{{count}} más",
@@ -89,7 +91,8 @@
         "hours_other": "{{count}} horas",
         "hardest": "grado máximo {{grade}}",
         "hint": "Abre la sesión",
-        "invite": "Invitar escaladores a tu sesión"
+        "invite": "Invitar escaladores a tu sesión",
+        "justStarted": "recién empezada"
       }
     }
   },

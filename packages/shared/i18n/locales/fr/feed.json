@@ -44,7 +44,8 @@
       "elapsed": {
         "minutes": "{{minutes}} min",
         "hours": "{{hours}} h",
-        "hoursMinutes": "{{hours}} h {{minutes}} min"
+        "hoursMinutes": "{{hours}} h {{minutes}} min",
+        "justStarted": "Vient de commencer"
       },
       "actions": {
         "join": "Rejoindre",
@@ -65,6 +66,7 @@
       },
       "error": "Impossible de charger qui grimpe.",
       "offline": "Pas de réseau. Les sessions réapparaîtront quand tu seras de nouveau en ligne.",
+      "offlineMode": "Le mode hors ligne est activé. Les sessions réapparaîtront quand tu le désactiveras.",
       "board": {
         "header": "En train de grimper ici",
         "more_one": "{{count}} de plus",
@@ -89,7 +91,8 @@
         "hours_other": "{{count}} heures",
         "hardest": "la plus dure {{grade}}",
         "hint": "Ouvre la session",
-        "invite": "Inviter des grimpeurs à ta session"
+        "invite": "Inviter des grimpeurs à ta session",
+        "justStarted": "vient de commencer"
       }
     }
   },

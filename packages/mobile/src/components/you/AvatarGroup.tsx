@@ -62,8 +62,10 @@ export function AvatarGroup({
       <Avatar uri={participant?.avatarUrl} name={participant?.displayName} size={size} />
     );
 
+  const isHighlighted = (participant: Participant | undefined): boolean =>
+    Boolean(highlightColor && highlightUserId && participant?.userId === highlightUserId);
   const ringFor = (participant: Participant | undefined): ColorValue =>
-    highlightColor && highlightUserId && participant?.userId === highlightUserId ? highlightColor : separatorRing;
+    isHighlighted(participant) && highlightColor ? highlightColor : separatorRing;
 
   if (participants.length <= 1 && overflow === 0) {
     const only = participants[0];
@@ -82,6 +84,9 @@ export function AvatarGroup({
           key={participant.userId ?? `anon-${index}`}
           style={[
             styles.ring,
+            // The highlight ring sits above its neighbours so the next avatar's
+            // overlap can't cut through it.
+            isHighlighted(participant) && styles.onTop,
             {
               borderColor: ringFor(participant),
               marginLeft: index === 0 ? 0 : -overlap,
@@ -118,6 +123,7 @@ export function AvatarGroup({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   ring: { borderWidth: 2 },
+  onTop: { zIndex: 1 },
   overflow: {
     backgroundColor: brandColors.primary,
     alignItems: 'center',

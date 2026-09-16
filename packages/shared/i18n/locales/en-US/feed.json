@@ -44,7 +44,8 @@
       "elapsed": {
         "minutes": "{{minutes}}m",
         "hours": "{{hours}}h",
-        "hoursMinutes": "{{hours}}h {{minutes}}m"
+        "hoursMinutes": "{{hours}}h {{minutes}}m",
+        "justStarted": "Just started"
       },
       "actions": {
         "join": "Join",
@@ -65,6 +66,7 @@
       },
       "error": "Couldn't load who's climbing.",
       "offline": "No signal. Sessions show up again when you're back online.",
+      "offlineMode": "Offline mode is on. Sessions show up again when you turn it off.",
       "board": {
         "header": "Climbing here now",
         "more_one": "{{count}} more",
@@ -89,7 +91,8 @@
         "hours_other": "{{count}} hours",
         "hardest": "hardest {{grade}}",
         "hint": "Opens the session",
-        "invite": "Invite climbers to your session"
+        "invite": "Invite climbers to your session",
+        "justStarted": "just started"
       }
     }
   },

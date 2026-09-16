@@ -93,6 +93,15 @@ describe('impression store', () => {
     await waitFor(() => expect(storage.__read(START_PROMPT_STORAGE_KEY)).toBe('[]'));
   });
 
+  it('treats a failed storage read as no impressions, so the rail never waits on it forever', async () => {
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      getItem: { mockRejectedValueOnce: (error: Error) => void };
+    };
+    AsyncStorage.getItem.mockRejectedValueOnce(new Error('storage locked'));
+    const { getByTestId } = render(createElement(Probe));
+    await waitFor(() => expect(getByTestId('probe').textContent).toBe('loaded:'));
+  });
+
   it('ignores a corrupt stored value', async () => {
     const storage = await getMockStorage();
     storage.__setRaw(START_PROMPT_STORAGE_KEY, JSON.stringify({ nope: true }));

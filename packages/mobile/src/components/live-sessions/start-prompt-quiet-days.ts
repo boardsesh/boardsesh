@@ -41,17 +41,16 @@ let loadPromise: Promise<void> | null = null;
 function ensureLoaded(): Promise<void> {
   if (hasLoaded) return Promise.resolve();
   if (!loadPromise) {
+    // A failed read (storage locked on a background launch, full disk) counts as
+    // "no impressions yet", like `section-expand-store`: the worst case is the
+    // full Start tile for one more day, never a rail stuck waiting on storage.
     loadPromise = getPreference<unknown>(START_PROMPT_STORAGE_KEY)
+      .catch(() => null)
       .then((stored) => {
         if (hasLoaded) return;
         days = isDayList(stored) ? stored.slice(-MAX_STORED_DAYS) : [];
         hasLoaded = true;
         notify();
-      })
-      .catch(() => {
-        // A failed read (locked keychain-backed storage on a background launch)
-        // must be retryable, not cached as "no impressions".
-        loadPromise = null;
       });
   }
   return loadPromise;

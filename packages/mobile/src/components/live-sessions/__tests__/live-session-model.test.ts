@@ -292,6 +292,31 @@ describe('planLiveRail', () => {
     expect(plan.compactStart).toBe(true);
     expect(plan.entries.map((entry) => entry.kind)).toEqual(['find']);
   });
+
+  it('waits for the follow count while Find climbers could still lead, so Start and Find never swap', () => {
+    const empty = planLiveRail({ ...base, followsNobody: null });
+    expect(empty.pending).toBe(true);
+    expect(empty.entries).toEqual([]);
+
+    // Sessions from a followed board only: Find might still lead.
+    expect(planLiveRail({ ...base, followsNobody: null, cards: [card({ reasons: ['FOLLOWED_BOARD'] })] }).pending).toBe(
+      true,
+    );
+  });
+
+  it('does not wait on the follow count when no prompt can show', () => {
+    const inSession = planLiveRail({ ...base, followsNobody: null, viewerInSession: true });
+    expect(inSession.pending).toBe(false);
+  });
+
+  it('waits for quiet days only while the Start tile could still shrink', () => {
+    expect(planLiveRail({ ...base, startCollapsed: null }).pending).toBe(true);
+
+    // With sessions live the row never replaces the tile, so there is nothing to wait for.
+    const busy = planLiveRail({ ...base, startCollapsed: null, cards: [card()] });
+    expect(busy.pending).toBe(false);
+    expect(busy.entries.map((entry) => entry.kind)).toEqual(['session', 'start']);
+  });
 });
 
 describe('liveTileLayout', () => {

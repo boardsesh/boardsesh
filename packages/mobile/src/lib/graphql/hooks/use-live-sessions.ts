@@ -74,7 +74,12 @@ export function useFollowedLiveSessions(boardUuid: string | null, enabled: boole
         limit: FOLLOWED_LIVE_SESSIONS_LIMIT,
       }),
     select,
-    enabled,
+    // Focus is part of `enabled`, not just the poll: tabs stay mounted, and a
+    // refetchInterval flipping false→60s on refocus waits a full minute before
+    // its first fetch, so ended sessions would still read "Live". Re-enabling a
+    // query with stale data refetches at once, and the cached cards stay on
+    // screen meanwhile.
+    enabled: enabled && isFocused,
     staleTime: LIVE_SESSIONS_STALE_TIME_MS,
     refetchInterval: liveSessionsRefetchInterval(isFocused, isOffline),
   });

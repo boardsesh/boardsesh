@@ -47,8 +47,9 @@ export function liveNamesCopy(descriptor: LiveNamesDescriptor, t: TFunction<'fee
   }
 }
 
-/** "12m", "1h", "1h 5m". */
+/** "Just started", "12m", "1h", "1h 5m". A bare "0m" reads like a broken timer. */
 export function elapsedShort({ hours, minutes }: ElapsedParts, t: TFunction<'feed'>): string {
+  if (hours === 0 && minutes === 0) return t('mobile.liveSessions.elapsed.justStarted');
   if (hours === 0) return t('mobile.liveSessions.elapsed.minutes', { minutes });
   if (minutes === 0) return t('mobile.liveSessions.elapsed.hours', { hours });
   return t('mobile.liveSessions.elapsed.hoursMinutes', { hours, minutes });
@@ -60,6 +61,12 @@ export function elapsedSpoken({ hours, minutes }: ElapsedParts, t: TFunction<'fe
   if (hours > 0) parts.push(t('mobile.liveSessions.a11y.hours', { count: hours }));
   if (minutes > 0 || hours === 0) parts.push(t('mobile.liveSessions.a11y.minutes', { count: minutes }));
   return parts.join(' ');
+}
+
+/** "started 12 minutes ago", or "just started" inside the first minute. */
+export function startedSpoken(elapsed: ElapsedParts, t: TFunction<'feed'>): string {
+  if (elapsed.hours === 0 && elapsed.minutes === 0) return t('mobile.liveSessions.a11y.justStarted');
+  return t('mobile.liveSessions.a11y.started', { elapsed: elapsedSpoken(elapsed, t) });
 }
 
 /** The board's own name, else the board type's display name ("Kilter"). */
@@ -110,7 +117,7 @@ export function liveCardSpokenLabel(
         : t('mobile.liveSessions.onClimb', { climb: card.currentClimbName }),
     );
   }
-  parts.push(t('mobile.liveSessions.a11y.started', { elapsed: elapsedSpoken(elapsed, t) }));
+  parts.push(startedSpoken(elapsed, t));
   if (card.sendCount > 0) parts.push(t('mobile.liveSessions.sends', { count: card.sendCount }));
   if (hardestGrade) parts.push(t('mobile.liveSessions.a11y.hardest', { grade: hardestGrade }));
   return parts.join(', ');

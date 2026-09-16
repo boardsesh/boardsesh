@@ -44,7 +44,8 @@
       "elapsed": {
         "minutes": "{{minutes}} Min.",
         "hours": "{{hours}} Std.",
-        "hoursMinutes": "{{hours}} Std. {{minutes}} Min."
+        "hoursMinutes": "{{hours}} Std. {{minutes}} Min.",
+        "justStarted": "Gerade gestartet"
       },
       "actions": {
         "join": "Beitreten",
@@ -65,6 +66,7 @@
       },
       "error": "Konnte nicht laden, wer gerade klettert.",
       "offline": "Kein Netz. Sessions tauchen wieder auf, sobald du online bist.",
+      "offlineMode": "Offline-Modus ist an. Sessions tauchen wieder auf, sobald du ihn ausschaltest.",
       "board": {
         "header": "Gerade hier am Klettern",
         "more_one": "{{count}} weitere",
@@ -89,7 +91,8 @@
         "hours_other": "{{count}} Stunden",
         "hardest": "schwerste Begehung {{grade}}",
         "hint": "Öffnet die Session",
-        "invite": "Kletterer*innen zu deiner Session einladen"
+        "invite": "Kletterer*innen zu deiner Session einladen",
+        "justStarted": "gerade gestartet"
       }
     }
   },

@@ -1,7 +1,14 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import i18next, { type TFunction } from 'i18next';
 import feedEnUs from '@boardsesh/i18n/locales/en-US/feed.json';
-import { elapsedShort, elapsedSpoken, liveBoardLine, liveCardSpokenLabel, liveNamesCopy } from '../live-session-copy';
+import {
+  elapsedShort,
+  elapsedSpoken,
+  liveBoardLine,
+  liveCardSpokenLabel,
+  liveNamesCopy,
+  startedSpoken,
+} from '../live-session-copy';
 import type { LiveCardModel } from '../live-session-model';
 
 // The real en-US catalog through a real i18next instance, so plurals and
@@ -78,6 +85,12 @@ describe('elapsed copy', () => {
     expect(elapsedShort({ hours: 0, minutes: 12 }, t)).toBe('12m');
     expect(elapsedShort({ hours: 1, minutes: 5 }, t)).toBe('1h 5m');
     expect(elapsedShort({ hours: 2, minutes: 0 }, t)).toBe('2h');
+  });
+
+  it('says "Just started" inside the first minute instead of a bare 0m', () => {
+    expect(elapsedShort({ hours: 0, minutes: 0 }, t)).toBe('Just started');
+    expect(startedSpoken({ hours: 0, minutes: 0 }, t)).toBe('just started');
+    expect(startedSpoken({ hours: 0, minutes: 3 }, t)).toBe('started 3 minutes ago');
   });
 
   it('spells units out for VoiceOver', () => {

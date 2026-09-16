@@ -29,7 +29,7 @@ import { FindClimbersTile } from './FindClimbersTile';
 import { StartSessionRow, StartSessionTile, type StartPromptVariant } from './StartSessionTile';
 import { LiveRailErrorRow, LiveRailOfflineRow, LiveRailSkeleton } from './LiveRailStates';
 import { useLivePulseDriver } from './LiveDot';
-import { useMinuteTick } from './use-minute-tick';
+import { startedAtKeyFor, useElapsedClock } from './use-elapsed-clock';
 import { useLiveSessionColors } from './use-live-session-colors';
 import {
   LIVE_TILE_GAP,
@@ -100,20 +100,36 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
   const queueSessionIdRef = useRef(queueSessionId);
   queueSessionIdRef.current = queueSessionId;
 
-  const { data: profile } = useProfile();
+  const profileQuery = useProfile();
+  const profile = profileQuery.data;
   const viewerUserId = profile?.id ?? null;
   const bleConnected = useBluetoothConnectedStatus();
   const { data: activeBoard } = useActiveBoard();
   const activeBoardName = activeBoard?.name ?? null;
 
-  // Follow count only matters when the rail has nobody the viewer follows on
-  // it; a card listed for FOLLOWING_USER already proves they follow someone.
+  // Whether Find climbers leads the rail hangs on the follow count. A card
+  // listed for FOLLOWING_USER already proves the viewer follows someone;
+  // otherwise the count loads alongside the sessions (not after them), and the
+  // plan holds the skeleton until it lands so Start and Find never swap places.
+  // A failed or offline read falls back to "follows someone": it must not
+  // strand the rail.
   const followsSomeoneLive = cards.some((card) => card.reasons.includes('FOLLOWING_USER'));
-  const publicProfile = usePublicProfile(viewerUserId ?? undefined, query.isSuccess && !followsSomeoneLive);
-  const followsNobody = !followsSomeoneLive && publicProfile.data?.followingCount === 0;
+  const publicProfile = usePublicProfile(
+    viewerUserId ?? undefined,
+    enabled && loaded && expanded && !followsSomeoneLive,
+  );
+  const followCountLoading =
+    publicProfile.fetchStatus === 'fetching' || (viewerUserId == null && profileQuery.fetchStatus === 'fetching');
+  const followsNobody: boolean | null = followsSomeoneLive
+    ? false
+    : publicProfile.data !== undefined
+      ? publicProfile.data?.followingCount === 0
+      : followCountLoading
+        ? null
+        : false;
 
   const impressions = useStartPromptImpressions();
-  const startCollapsed = impressions.loaded && isStartPromptCollapsed(impressions.days, localDayKey(nowDate()));
+  const startCollapsed = impressions.loaded ? isStartPromptCollapsed(impressions.days, localDayKey(nowDate())) : null;
 
   const plan = useMemo(
     () => planLiveRail({ cards, viewerInSession: queueSessionId != null, followsNobody, startCollapsed }),
@@ -123,7 +139,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
   const blockedOffline = offline.isBlocked && (offline.reason === 'offline' || offline.reason === 'offline_mode');
   // Our server being down is not "no signal": it gets the retryable error row.
   const blockedError = offline.isBlocked && !blockedOffline;
-  const isPending = !blockedError && !blockedOffline && (query.status === 'pending' || !impressions.loaded);
+  const isPending = !blockedError && !blockedOffline && (query.status === 'pending' || plan.pending);
   const railState: LiveRailState | null =
     !loaded || !expanded
       ? null
@@ -139,7 +155,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
 
   const hasLiveCards = cards.length > 0;
   const visible = isFocused && !backgrounded && loaded && expanded;
-  const nowMinute = useMinuteTick(visible && hasLiveCards);
+  const nowMs = useElapsedClock(visible && hasLiveCards, startedAtKeyFor(cards));
   useLivePulseDriver(visible && hasLiveCards);
 
   // Quiet-days resets: somebody went live, or the climber connected to a board.
@@ -213,7 +229,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
           return (
             <LiveSessionCard
               card={item.card}
-              nowMinute={nowMinute}
+              nowMs={nowMs}
               viewerUserId={viewerUserId}
               height={tileHeight}
               stacked={stacked}
@@ -238,7 +254,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
       }
     },
     [
-      nowMinute,
+      nowMs,
       viewerUserId,
       tileHeight,
       stacked,
@@ -300,7 +316,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
       {/* Nothing until the stored collapse state lands: rendering the default
           and then correcting it is the cold-start flash this avoids. */}
       {!loaded || !expanded ? null : blockedOffline ? (
-        <LiveRailOfflineRow />
+        <LiveRailOfflineRow offlineMode={offline.reason === 'offline_mode'} />
       ) : isPending ? (
         <LiveRailSkeleton height={tileHeight} />
       ) : (

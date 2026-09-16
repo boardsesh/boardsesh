@@ -75,15 +75,19 @@ export const LiveRailErrorRow = memo(function LiveRailErrorRow({ onRetry }: { on
   );
 });
 
-/** No action: the rail refills on its own once the phone is back online. */
-export const LiveRailOfflineRow = memo(function LiveRailOfflineRow() {
+/**
+ * No action: the rail refills on its own once the phone is back online. When
+ * the climber switched Offline mode on themselves, say that rather than blame
+ * their signal.
+ */
+export const LiveRailOfflineRow = memo(function LiveRailOfflineRow({ offlineMode }: { offlineMode: boolean }) {
   const { t } = useTranslation('feed');
   const { systemColors } = useTheme();
   return (
     <View testID="live-sessions-offline" style={[styles.stateRow, { borderColor: systemColors.separator }]}>
       <Icon name="offline.unavailable" size={20} color={systemColors.secondaryLabel} />
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flex}>
-        {t('mobile.liveSessions.offline')}
+        {offlineMode ? t('mobile.liveSessions.offlineMode') : t('mobile.liveSessions.offline')}
       </Text>
     </View>
   );

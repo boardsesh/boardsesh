@@ -85,6 +85,31 @@ describe('useFollowedLiveSessions', () => {
     expect(result.current.data?.[0]).not.toHaveProperty('lastActivity');
   });
 
+  it('does not fetch while Home is out of focus, and refetches stale cards the moment it returns', async () => {
+    nav.focused = false;
+    const { queryClient, wrapper } = makeWrapper();
+    // Cards cached from an earlier visit, older than the stale time.
+    queryClient.setQueryData(
+      followedLiveSessionsQueryKey(null),
+      { followedLiveSessions: [session('ended')] },
+      {
+        updatedAt: Date.now() - 5 * 60_000,
+      },
+    );
+    requestMock.mockResolvedValue({ followedLiveSessions: [] });
+    const { result, rerender } = renderHook(() => useFollowedLiveSessions(null, true), { wrapper });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requestMock).not.toHaveBeenCalled();
+    // The cached cards stay readable while blurred.
+    expect(result.current.data?.map((card) => card.sessionId)).toEqual(['ended']);
+
+    nav.focused = true;
+    rerender();
+    // No waiting out the 60s poll: the ended session is gone on the next fetch.
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.data).toEqual([]));
+  });
+
   it('fires no request while disabled', async () => {
     const { wrapper } = makeWrapper();
     const { result } = renderHook(() => useFollowedLiveSessions(null, false), { wrapper });
