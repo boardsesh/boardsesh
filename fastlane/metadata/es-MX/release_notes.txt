@@ -2,7 +2,7 @@ Novedades de 2.6:
 
 LOS DEMÁS PLAFONES DE TU ROCÓDROMO, A UN TOQUE
 
-¿Un Kilter junto a un Tension, o dos muros del mismo plafón a ángulos distintos? El panel del muro ahora lista los demás plafones de tu rocódromo, así que saltas al que tienes delante con un toque, sin pasar por plafones de otras ciudades. El Bluetooth se va contigo, una cola montada entre dos muros se reproduce en orden y cada plafón conserva su nombre y su ángulo.
+¿Un Kilter Board junto a un Tension Board, o dos muros del mismo plafón a ángulos distintos? El panel del muro ahora lista los demás plafones de tu rocódromo, así que saltas al que tienes delante con un toque, sin pasar por plafones de otras ciudades. El Bluetooth se va contigo, una cola montada entre dos muros se reproduce en orden y cada plafón conserva su nombre y su ángulo.
 
 UN TEMPORIZADOR DE DESCANSO QUE MUEVE LA COLA
 

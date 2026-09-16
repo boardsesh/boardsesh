@@ -26,19 +26,46 @@ export function toSessionPath(uri: string): string {
   return decodeURI(uri.slice('file://'.length));
 }
 
-/** Pick the boxes (`…, 4`) and logits (`…, classes`) tensors out of a result. */
-export function selectRfDetrOutputs(outputs: Record<string, OrtTensorLike>, classes: number): RfDetrOutputs | null {
-  let boxes: OrtTensorLike | null = null;
-  let logits: OrtTensorLike | null = null;
-  for (const tensor of Object.values(outputs)) {
+/** The manifest's `outputs.*.name`, either of which may be null (schema allows it). */
+export interface RfDetrOutputNames {
+  boxes?: string | null;
+  logits?: string | null;
+}
+
+/**
+ * Pick the boxes (`…, 4`) and logits (`…, classes`) tensors out of a result.
+ *
+ * NAME FIRST, shape as the fallback. The shape rule is unambiguous for every
+ * shipped config (`classes` is 1), but a four-class export makes "last dimension
+ * 4" describe both tensors, and the tie-break it falls back on is
+ * `Object.keys` order — which ONNX Runtime does not promise. So when the manifest
+ * published a name for a tensor and the result carries that key, that is the
+ * tensor; the manifest parses both names already and discarding them here was the
+ * defect. A name that is absent from the result is ignored rather than fatal:
+ * RF-DETR's exporter renames outputs between runs, which is why the schema allows
+ * null in the first place.
+ */
+export function selectRfDetrOutputs(
+  outputs: Record<string, OrtTensorLike>,
+  classes: number,
+  names: RfDetrOutputNames = {},
+): RfDetrOutputs | null {
+  const named = (name: string | null | undefined): OrtTensorLike | null =>
+    typeof name === 'string' && name.length > 0 ? (outputs[name] ?? null) : null;
+
+  let boxes = named(names.boxes);
+  let logits = named(names.logits);
+  // Both names resolving to ONE tensor is not a pair — decoding it as both would
+  // read box coordinates as scores. The manifest parser rejects duplicate names
+  // too; this is the half that also covers a hand-built options object.
+  if (boxes !== null && boxes === logits) return null;
+  for (const [key, tensor] of Object.entries(outputs)) {
+    // Never let the shape pass re-use the tensor the other name already claimed.
+    if (key === names.boxes || key === names.logits) continue;
     const last = tensor.dims[tensor.dims.length - 1];
     if (last === 4 && !boxes) boxes = tensor;
     else if (last === classes && !logits) logits = tensor;
   }
-  // `classes` is 1 for every shipped config, so a `[1, queries, 1]` logits
-  // tensor and a `[1, queries, 4]` boxes tensor are unambiguous. The guard
-  // matters for the pathological export where both are 4: the first match wins
-  // as boxes and the second as logits, which is the order RF-DETR emits them in.
   if (!boxes || !logits) return null;
   return { boxes: boxes.data, boxesShape: boxes.dims, logits: logits.data, logitsShape: logits.dims };
 }

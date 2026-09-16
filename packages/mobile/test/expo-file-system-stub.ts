@@ -21,9 +21,21 @@ export type SeededFile = { size?: number; lastModified?: number | null };
 /** Seeded tree: directory path -> file name -> file. Directories are the keys. */
 export type SeededFileSystem = Record<string, Record<string, SeededFile>>;
 
-const seed: { tree: SeededFileSystem; availableDiskSpace: number | null } = {
+/** What a suite's fake transfer is handed. `options.signal` is what cancels it. */
+export type DownloadHandler = (
+  url: string,
+  destination: File,
+  options?: { signal?: AbortSignal },
+) => Promise<void> | void;
+
+const seed: {
+  tree: SeededFileSystem;
+  availableDiskSpace: number | null;
+  downloadHandler: DownloadHandler | null;
+} = {
   tree: {},
   availableDiskSpace: null,
+  downloadHandler: null,
 };
 
 /**
@@ -36,9 +48,19 @@ export function __seedFileSystem(tree: SeededFileSystem, options?: { availableDi
   if (options && 'availableDiskSpace' in options) seed.availableDiskSpace = options.availableDiskSpace ?? null;
 }
 
+/**
+ * Opt in to `File.downloadFileAsync`. Unregistered it throws, so a suite that
+ * forgets to wire a transfer fails loudly instead of passing on a silent no-op.
+ * Reset with `__resetFileSystem()` like the tree.
+ */
+export function __setDownloadHandler(handler: DownloadHandler): void {
+  seed.downloadHandler = handler;
+}
+
 export function __resetFileSystem(): void {
   seed.tree = {};
   seed.availableDiskSpace = null;
+  seed.downloadHandler = null;
 }
 
 function joinPath(parts: unknown[]): string {
@@ -86,6 +108,10 @@ export class Directory {
     return children;
   }
 
+  create(): void {
+    seed.tree[this.path] ??= {};
+  }
+
   delete(): void {
     delete seed.tree[this.path];
   }
@@ -129,6 +155,15 @@ export class File {
   delete(): void {
     const entries = seed.tree[parentPathOf(this.path)];
     if (entries) delete entries[this.name];
+  }
+
+  /** Real signature, minus the `Directory` destination nothing here downloads to. */
+  static async downloadFileAsync(url: string, destination: File, options?: { signal?: AbortSignal }): Promise<File> {
+    if (!seed.downloadHandler) {
+      throw new Error(`expo-file-system stub: no download handler registered for ${url}`);
+    }
+    await seed.downloadHandler(url, destination, options);
+    return destination;
   }
 }
 

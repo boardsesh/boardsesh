@@ -1,10 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { __resetFileSystem, __setDownloadHandler } from '../../../../test/expo-file-system-stub';
 import type { ModelStoreIo } from '../model-store';
 import {
+  DOWNLOAD_TIMEOUT_MS,
+  MANIFEST_TIMEOUT_MS,
   MAX_CACHED_VERSIONS,
   MEDIA_BASE_URL,
+  MODEL_CACHE_DIR,
   ensureModel,
+  expoModelStoreIo,
   resetVerifiedModelCache,
   sweepModelVersions,
 } from '../model-store';
@@ -266,5 +271,101 @@ describe('sweepModelVersions', () => {
     const io = fakeIo({ cached: [VERSION] });
 
     expect(sweepModelVersions(io, VERSION)).toEqual([]);
+  });
+});
+
+describe('expoModelStoreIo.fetchJson', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The stall this exists for: a connection that is open and silent. It never
+  // rejects on its own, and the benchmark screen shows a spinner with no cancel,
+  // so before the deadline the only way out was to kill the app.
+  it('resolves null once the deadline passes on a fetch that never settles', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise(() => {
+            // Deliberately never settles, and ignores the abort signal the way a
+            // platform fetch that drops signal support would.
+          }),
+      ),
+    );
+
+    const pending = expoModelStoreIo.fetchJson(`${MEDIA_BASE_URL}/models/hold-detector/x/manifest.json`);
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it('passes an abort signal so the socket is actually torn down', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: { signal?: unknown }) => ({
+      ok: true,
+      json: async () => ({ schemaVersion: 1 }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expoModelStoreIo.fetchJson('https://example.test/manifest.json');
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('still returns a parsed body well inside the deadline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ schemaVersion: 1 }) })),
+    );
+
+    await expect(expoModelStoreIo.fetchJson('https://example.test/manifest.json')).resolves.toEqual({
+      schemaVersion: 1,
+    });
+  });
+
+  // Headers in a second, body never. The deadline has to cover the body read too,
+  // or it has already cleared its timer by the time the stall starts.
+  it('resolves null once the deadline passes on a body that never arrives', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: () => new Promise(() => {}) })),
+    );
+
+    const pending = expoModelStoreIo.fetchJson('https://example.test/manifest.json');
+    await vi.advanceTimersByTimeAsync(MANIFEST_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
+  });
+});
+
+describe('expoModelStoreIo.download', () => {
+  afterEach(() => {
+    __resetFileSystem();
+    vi.useRealTimers();
+  });
+
+  it('hands the native transfer an abort signal, so a timeout cancels the bytes too', async () => {
+    let handed: AbortSignal | undefined;
+    __setDownloadHandler((_url, _destination, options) => {
+      handed = options?.signal;
+    });
+
+    const uri = await expoModelStoreIo.download('https://example.test/model-int8.onnx', VERSION, 'model-int8.onnx');
+
+    expect(uri).toBe(`cache/${MODEL_CACHE_DIR}/${VERSION}/model-int8.onnx`);
+    expect(handed).toBeInstanceOf(AbortSignal);
+  });
+
+  it('resolves null once the deadline passes on a transfer that never settles', async () => {
+    vi.useFakeTimers();
+    __setDownloadHandler(() => new Promise(() => {}));
+
+    const pending = expoModelStoreIo.download('https://example.test/model-int8.onnx', VERSION, 'model-int8.onnx');
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_TIMEOUT_MS + 1);
+
+    await expect(pending).resolves.toBeNull();
   });
 });

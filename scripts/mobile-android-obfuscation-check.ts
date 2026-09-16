@@ -66,6 +66,10 @@ export const NAME_INVARIANTS: { className: string; why: string }[] = [
     className: 'com.swmansion.rnscreens.ScreenStackFragment',
     why: '@sentry/react-native compares this name as a string; a rename silently stops time-to-initial-display instrumentation',
   },
+  {
+    className: 'com.swmansion.rnscreens.events.ScreenAppearEvent',
+    why: 'the second string @sentry/react-native compares in RNSentryReactFragmentLifecycleTracer; with-android-minify.js keeps it, and only this entry proves that rule reached R8 — the ScreenStackFragment invariant above passes while this one is silently renamed',
+  },
 ];
 
 /** A mapping.txt class line: `<original> -> <obfuscated>:` at column 0. */

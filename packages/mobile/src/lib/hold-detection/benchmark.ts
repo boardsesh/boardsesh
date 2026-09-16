@@ -10,7 +10,8 @@
  *
  * So this runs the published model at three input sizes on one real photo and
  * reports, per size, the median of three passes, the detection count at the
- * manifest's own default threshold and at 0.3, and what the JS heap did. It is
+ * manifest's own default threshold and at the low threshold, and what the JS heap
+ * did. It is
  * an instrument, not a feature: keep it boring.
  */
 
@@ -28,8 +29,19 @@ import { runDetection } from '@boardsesh/hold-detection';
  */
 export const BENCHMARK_INPUT_SIZES = [768, 640, 512] as const;
 
-/** Second threshold every size is also counted at, for the confidence slider (#5441). */
+/**
+ * Nominal floor for the second detection count, for the confidence slider (#5441).
+ *
+ * A FLOOR, not the threshold that is used: `lowThresholdFor` takes the smaller of
+ * this and the manifest default, because a manifest shipping a default below 0.3
+ * would otherwise make the two counts identical and the "@ 0.30" column dead.
+ */
 export const BENCHMARK_LOW_THRESHOLD = 0.3;
+
+/** The low threshold actually decoded at, given a manifest default. */
+export function lowThresholdFor(defaultThreshold: number): number {
+  return Math.min(BENCHMARK_LOW_THRESHOLD, defaultThreshold);
+}
 
 /** Passes per size. Three is enough for a median and cheap enough to sit through. */
 export const BENCHMARK_RUNS_PER_SIZE = 3;
@@ -42,7 +54,7 @@ export interface BenchmarkSizeResult {
   runsMs: number[];
   /** Candidates at the manifest's shipped default threshold. */
   detectionsAtDefault: number;
-  /** Candidates at `BENCHMARK_LOW_THRESHOLD`. */
+  /** Candidates at the report's `lowThreshold`. */
   detectionsAtLow: number;
   /**
    * Change in the Hermes JS heap across the size's passes, bytes, or null when
@@ -57,15 +69,32 @@ export interface BenchmarkSizeResult {
   jsHeapDeltaBytes: number | null;
 }
 
+/** A size the runtime refused, kept so one rejection does not lose the sweep. */
+export interface BenchmarkSizeFailure {
+  size: number;
+  /** The runtime's own message — an ORT shape-mismatch names the static axis. */
+  error: string;
+}
+
 export interface BenchmarkReport {
   modelVersion: string;
   modelConfig: string;
-  executionProvider: string;
+  /**
+   * The execution provider the session was ASKED for, not necessarily the one
+   * that ran the graph: ONNX Runtime silently falls back to CPU for any subgraph
+   * a provider cannot take, and nothing in the JS API reports which kernels went
+   * where. Read it as "the most accelerated provider that would open the model".
+   */
+  requestedExecutionProvider: string;
   defaultThreshold: number;
+  /** The second threshold these counts were taken at — see `lowThresholdFor`. */
+  lowThreshold: number;
   /** What the frame was actually put through — copied into the JSON blob. */
   preprocessing: { fit: 'stretch' | 'contain'; mean: number[]; std: number[] };
   photo: { width: number; height: number; sourceWidth: number; sourceHeight: number };
   sizes: BenchmarkSizeResult[];
+  /** Sizes that threw, in sweep order. Empty on a clean run. */
+  failures: BenchmarkSizeFailure[];
 }
 
 /** Median of a small sample. Even counts take the mean of the middle pair. */
@@ -100,7 +129,8 @@ export interface BenchmarkInput {
   image: { width: number; height: number; rgba: Uint8ClampedArray; sourceWidth: number; sourceHeight: number };
   modelVersion: string;
   modelConfig: string;
-  executionProvider: string;
+  /** What `createHoldDetectionRuntime` asked for; see the field on the report. */
+  requestedExecutionProvider: string;
   defaultThreshold: number;
   /**
    * Preprocessing, straight off the manifest — `letterboxFitFor(manifest.input)`
@@ -128,8 +158,15 @@ export interface BenchmarkInput {
  *
  * Detections are counted from ONE pass per threshold pair rather than re-running
  * the model: the threshold is applied when the queries are decoded, so a second
- * pass at 0.3 would be the same tensors filtered differently. The timed passes
- * use the manifest default, so a latency number is never the cheaper of the two.
+ * pass at the low threshold would be the same tensors filtered differently. The
+ * timed passes use the low threshold, so a latency number is never the cheaper of
+ * the two.
+ *
+ * A size that throws is RECORDED and the sweep continues. `ml/holds/export.py`
+ * exports at a fixed `shape=(resolution, resolution)` with no `dynamic_axes`, so
+ * ONNX Runtime rejects every size below the trained 768 until the graph is
+ * re-exported — and aborting on the first rejection would throw away the 768
+ * numbers that #5451 is actually decided from.
  */
 export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkReport> {
   const {
@@ -145,23 +182,30 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
     now = Date.now,
   } = input;
 
+  const lowThreshold = lowThresholdFor(defaultThreshold);
   const results: BenchmarkSizeResult[] = [];
+  const failures: BenchmarkSizeFailure[] = [];
   for (const size of sizes) {
     const heapBefore = readJsHeapBytes();
     const runsMs: number[] = [];
     let lastCandidates: HoldCandidate[] = [];
-    for (let run = 0; run < runsPerSize; run += 1) {
-      onProgress?.(size, run + 1, runsPerSize);
-      const startedAt = now();
-      const { candidates } = await runDetection(runtime, image, {
-        size,
-        scoreThreshold: BENCHMARK_LOW_THRESHOLD,
-        fit,
-        mean,
-        std,
-      });
-      runsMs.push(now() - startedAt);
-      lastCandidates = candidates;
+    try {
+      for (let run = 0; run < runsPerSize; run += 1) {
+        onProgress?.(size, run + 1, runsPerSize);
+        const startedAt = now();
+        const { candidates } = await runDetection(runtime, image, {
+          size,
+          scoreThreshold: lowThreshold,
+          fit,
+          mean,
+          std,
+        });
+        runsMs.push(now() - startedAt);
+        lastCandidates = candidates;
+      }
+    } catch (error) {
+      failures.push({ size, error: error instanceof Error ? error.message : String(error) });
+      continue;
     }
     const heapAfter = readJsHeapBytes();
     results.push({
@@ -180,8 +224,9 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
   return {
     modelVersion: input.modelVersion,
     modelConfig: input.modelConfig,
-    executionProvider: input.executionProvider,
+    requestedExecutionProvider: input.requestedExecutionProvider,
     defaultThreshold,
+    lowThreshold,
     preprocessing: { fit, mean: [...mean], std: [...std] },
     photo: {
       width: image.width,
@@ -190,6 +235,7 @@ export async function runBenchmark(input: BenchmarkInput): Promise<BenchmarkRepo
       sourceHeight: image.sourceHeight,
     },
     sizes: results,
+    failures,
   };
 }
 

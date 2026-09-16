@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DetectionRuntime, RfDetrOutputs } from '@boardsesh/hold-detection';
-import { formatBenchmarkJson, median, runBenchmark } from '../benchmark';
+import { formatBenchmarkJson, lowThresholdFor, median, runBenchmark } from '../benchmark';
 
 /** A grey photo — the pixels never matter, the fake runtime ignores them. */
 function greyPhoto(width: number, height: number) {
@@ -61,7 +61,7 @@ describe('runBenchmark', () => {
       image: greyPhoto(64, 48),
       modelVersion: '2026-09-15',
       modelConfig: 'nano-untiled-1024',
-      executionProvider: 'xnnpack',
+      requestedExecutionProvider: 'xnnpack',
       defaultThreshold: 0.6,
       fit: 'stretch',
       mean: [0.485, 0.456, 0.406],
@@ -84,7 +84,7 @@ describe('runBenchmark', () => {
       image: greyPhoto(64, 48),
       modelVersion: 'v',
       modelConfig: 'c',
-      executionProvider: 'cpu',
+      requestedExecutionProvider: 'cpu',
       defaultThreshold: 0.6,
       fit: 'stretch',
       mean: [0.485, 0.456, 0.406],
@@ -112,7 +112,7 @@ describe('runBenchmark', () => {
       image: greyPhoto(64, 48),
       modelVersion: 'v',
       modelConfig: 'c',
-      executionProvider: 'cpu',
+      requestedExecutionProvider: 'cpu',
       defaultThreshold: 0.6,
       fit: 'stretch',
       mean: [0.485, 0.456, 0.406],
@@ -156,7 +156,7 @@ describe('runBenchmark', () => {
       image: white,
       modelVersion: 'v',
       modelConfig: 'c',
-      executionProvider: 'cpu',
+      requestedExecutionProvider: 'cpu',
       defaultThreshold: 0.6,
       fit: 'contain',
       mean: [0, 0, 0],
@@ -177,7 +177,7 @@ describe('runBenchmark', () => {
       image: greyPhoto(64, 48),
       modelVersion: 'v',
       modelConfig: 'c',
-      executionProvider: 'cpu',
+      requestedExecutionProvider: 'cpu',
       defaultThreshold: 0.6,
       fit: 'stretch',
       mean: [0.485, 0.456, 0.406],
@@ -189,6 +189,118 @@ describe('runBenchmark', () => {
 
     expect(seen).toEqual(['640:1/2', '640:2/2']);
   });
+
+  it('keeps the sizes that ran when one size is refused by the runtime', async () => {
+    // The shipped graph is exported at a fixed 768 with no dynamic axes, so ONNX
+    // Runtime rejects 640 — and the 768 numbers the decision rests on must not go
+    // down with it.
+    const seen: number[] = [];
+    const good = fakeRuntime([0.9, 0.4]);
+    const runtime = {
+      run(input: Float32Array, size: number): RfDetrOutputs | Promise<RfDetrOutputs> {
+        seen.push(size);
+        if (size === 640) throw new Error('Got invalid dimensions for input: input for the following indices');
+        return good.run(input, size);
+      },
+    };
+
+    const report = await runBenchmark({
+      runtime,
+      image: greyPhoto(64, 48),
+      modelVersion: 'v',
+      modelConfig: 'c',
+      requestedExecutionProvider: 'cpu',
+      defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
+      sizes: [768, 640, 512],
+      runsPerSize: 2,
+    });
+
+    expect(report.sizes.map((size) => size.size)).toEqual([768, 512]);
+    expect(report.failures).toEqual([
+      { size: 640, error: 'Got invalid dimensions for input: input for the following indices' },
+    ]);
+    // It stopped that size on the first throw rather than burning two more passes.
+    expect(seen).toEqual([768, 768, 640, 512, 512]);
+  });
+
+  it('reports every size as a failure when the runtime refuses all of them', async () => {
+    const report = await runBenchmark({
+      runtime: {
+        run(): RfDetrOutputs {
+          throw new Error('no kernel');
+        },
+      },
+      image: greyPhoto(64, 48),
+      modelVersion: 'v',
+      modelConfig: 'c',
+      requestedExecutionProvider: 'cpu',
+      defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
+      sizes: [768, 512],
+      runsPerSize: 1,
+    });
+
+    expect(report.sizes).toEqual([]);
+    expect(report.failures.map((failure) => failure.size)).toEqual([768, 512]);
+  });
+
+  it('decodes at the manifest default when it is below the 0.3 floor', async () => {
+    // A manifest shipping 0.1 used to make both columns the same number, because
+    // the low pass was pinned at 0.3 and the "default" count filtered a set that
+    // had already been cut at 0.3.
+    const runtime = fakeRuntime([0.9, 0.2, 0.15]);
+
+    const report = await runBenchmark({
+      runtime,
+      image: greyPhoto(64, 48),
+      modelVersion: 'v',
+      modelConfig: 'c',
+      requestedExecutionProvider: 'cpu',
+      defaultThreshold: 0.1,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
+      sizes: [512],
+      runsPerSize: 1,
+    });
+
+    expect(report.lowThreshold).toBe(0.1);
+    expect(report.sizes[0].detectionsAtLow).toBe(3);
+    expect(report.sizes[0].detectionsAtDefault).toBe(3);
+  });
+
+  it('keeps the 0.3 floor when the manifest default is above it', async () => {
+    const report = await runBenchmark({
+      runtime: fakeRuntime([0.9]),
+      image: greyPhoto(64, 48),
+      modelVersion: 'v',
+      modelConfig: 'c',
+      requestedExecutionProvider: 'cpu',
+      defaultThreshold: 0.6,
+      fit: 'stretch',
+      mean: [0.485, 0.456, 0.406],
+      std: [0.229, 0.224, 0.225],
+      sizes: [512],
+      runsPerSize: 1,
+    });
+
+    expect(report.lowThreshold).toBe(0.3);
+  });
+});
+
+describe('lowThresholdFor', () => {
+  it.each([
+    [0.6, 0.3],
+    [0.3, 0.3],
+    [0.1, 0.1],
+  ])('takes the smaller of 0.3 and a %d default', (defaultThreshold, expected) => {
+    expect(lowThresholdFor(defaultThreshold)).toBe(expected);
+  });
 });
 
 describe('formatBenchmarkJson', () => {
@@ -198,7 +310,7 @@ describe('formatBenchmarkJson', () => {
       image: greyPhoto(64, 48),
       modelVersion: '2026-09-15',
       modelConfig: 'nano-untiled-1024',
-      executionProvider: 'coreml',
+      requestedExecutionProvider: 'coreml',
       defaultThreshold: 0.6,
       fit: 'stretch',
       mean: [0.485, 0.456, 0.406],
@@ -217,7 +329,7 @@ describe('formatBenchmarkJson', () => {
       decides: 5451,
       device: { platform: 'ios', modelName: 'iPhone 14' },
       modelVersion: '2026-09-15',
-      executionProvider: 'coreml',
+      requestedExecutionProvider: 'coreml',
     });
   });
 });

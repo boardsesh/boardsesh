@@ -1,7 +1,22 @@
 /// <reference types="node" />
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { findFlagOverrideProblems } from '../assert-ios-flag-override-compiled.mjs';
+import {
+  EXPO_FACTORY_PATH,
+  OVERRIDE_SOURCE_PATH,
+  findFlagOverrideProblems,
+  findOverrideSourceProblems,
+  stripDebugBlocks,
+} from '../assert-ios-flag-override-compiled.mjs';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+function repoSource(relativePath: string): string {
+  return readFileSync(resolve(REPO_ROOT, relativePath), 'utf8');
+}
 
 const COMPILE_LINE =
   'CompileC /Users/runner/work/boardsesh/boardsesh/packages/mobile/ios/build/Build/Intermediates.noindex/Pods.build/' +
@@ -75,5 +90,83 @@ describe('findFlagOverrideProblems', () => {
     });
 
     expect(problems).toEqual([expect.stringContaining('does not "import BoardseshReactFlagOverrides"')]);
+  });
+});
+
+describe('stripDebugBlocks', () => {
+  it('drops a DEBUG-only region and keeps the rest', () => {
+    const stripped = stripDebugBlocks(
+      ['shipped();', '#if DEBUG', '  debugOnly();', '#endif', 'alsoShipped();'].join('\n'),
+    );
+
+    expect(stripped).toContain('shipped();');
+    expect(stripped).toContain('alsoShipped();');
+    expect(stripped).not.toContain('debugOnly();');
+  });
+
+  it('leaves a non-DEBUG conditional alone', () => {
+    const stripped = stripDebugBlocks(['#if TARGET_OS_IOS', '  always();', '#endif'].join('\n'));
+
+    expect(stripped).toContain('always();');
+  });
+
+  it('skips a nested conditional inside a DEBUG region without eating what follows', () => {
+    const stripped = stripDebugBlocks(
+      ['#if DEBUG', '#if TARGET_OS_IOS', '  inner();', '#endif', '#endif', 'after();'].join('\n'),
+    );
+
+    expect(stripped).not.toContain('inner();');
+    expect(stripped).toContain('after();');
+  });
+});
+
+describe('findOverrideSourceProblems', () => {
+  // The two files as they really are: this is what turns the assertions below
+  // into a guard on the shipped source rather than on two fixture strings.
+  const overrideSource = repoSource(OVERRIDE_SOURCE_PATH);
+  const expoFactorySource = repoSource(EXPO_FACTORY_PATH);
+
+  it('passes against the sources in this checkout', () => {
+    expect(findOverrideSourceProblems({ overrideSource, expoFactorySource })).toEqual([]);
+  });
+
+  it('fails when Expo renames the Info.plist release-level key', () => {
+    const problems = findOverrideSourceProblems({
+      overrideSource,
+      expoFactorySource: expoFactorySource.replaceAll('ReactNativeReleaseLevel', 'RCTReleaseLevelKey'),
+    });
+
+    expect(problems).toEqual([expect.stringContaining('no longer mentions "ReactNativeReleaseLevel"')]);
+  });
+
+  it('fails when Expo drops one of the release-level names our provider mirrors', () => {
+    const problems = findOverrideSourceProblems({
+      overrideSource,
+      expoFactorySource: expoFactorySource.replaceAll('canary', 'nightly'),
+    });
+
+    expect(problems).toEqual([expect.stringContaining('no longer mentions "canary"')]);
+  });
+
+  it('fails when the readBeforeSwap log goes back under #if DEBUG', () => {
+    // The #5361 regression exactly: the log still exists, still compiles, and is
+    // invisible in every build where the timing violation can happen.
+    const debugOnly = overrideSource.replace(
+      '    NSLog(\n        @"[BoardseshReactFlagOverrides] enableSchedulerDelegateInvalidation',
+      '#if DEBUG\n    NSLog(\n        @"[BoardseshReactFlagOverrides] enableSchedulerDelegateInvalidation',
+    );
+
+    const problems = findOverrideSourceProblems({ overrideSource: debugOnly, expoFactorySource });
+
+    expect(problems).toEqual([expect.stringContaining('only under #if DEBUG')]);
+  });
+
+  it('fails when the log is deleted outright', () => {
+    const problems = findOverrideSourceProblems({
+      overrideSource: overrideSource.replaceAll('flags read before the swap', 'flags read'),
+      expoFactorySource,
+    });
+
+    expect(problems).toEqual([expect.stringContaining('only under #if DEBUG')]);
   });
 });

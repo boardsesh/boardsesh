@@ -37,6 +37,47 @@ function validManifest(): Record<string, unknown> {
 }
 
 describe('parseModelManifest', () => {
+  // std divides in the letterbox. A zero would make every pixel Infinity or NaN
+  // and the model would "detect" from noise, so the manifest — a remote, mutable
+  // file — is refused rather than divided by.
+  it.each([
+    ['a zero entry', [0.229, 0, 0.225]],
+    ['all zeroes', [0, 0, 0]],
+    ['a negative entry', [0.229, -0.224, 0.225]],
+  ])('rejects a std with %s', (_label, std) => {
+    const body = validManifest();
+    body.input = { ...VALID_INPUT, normalization: { mean: [0.485, 0.456, 0.406], std } };
+
+    expect(parseModelManifest(body)).toBeNull();
+  });
+
+  it('rejects one output name published for both tensors', () => {
+    const body = validManifest();
+    body.outputs = {
+      boxes: { name: 'dets', format: 'cxcywh-normalized' },
+      logits: { name: 'dets', activation: 'sigmoid', classes: 1 },
+    };
+
+    expect(parseModelManifest(body)).toBeNull();
+  });
+
+  it('accepts two distinct output names', () => {
+    const body = validManifest();
+    body.outputs = {
+      boxes: { name: 'dets', format: 'cxcywh-normalized' },
+      logits: { name: 'pred', activation: 'sigmoid', classes: 1 },
+    };
+
+    expect(parseModelManifest(body)?.outputs.boxes.name).toBe('dets');
+  });
+
+  it('still accepts a mean of zero, which is a legal normalization', () => {
+    const body = validManifest();
+    body.input = { ...VALID_INPUT, normalization: { mean: [0, 0, 0], std: [1, 1, 1] } };
+
+    expect(parseModelManifest(body)?.input.normalization).toEqual({ mean: [0, 0, 0], std: [1, 1, 1] });
+  });
+
   it('accepts a published manifest and keeps the fields the app reads', () => {
     const manifest = parseModelManifest(validManifest());
 
