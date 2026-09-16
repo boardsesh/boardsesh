@@ -104,6 +104,9 @@ export default function JoinSessionScreen() {
         createBoard: (input) => createBoard.mutateAsync(input),
         fetchBoardBySlug,
       });
+      // joinSession returns early when we're already in this session, and that
+      // isn't a join the live-sessions funnel should count.
+      const alreadyInSession = activeSessionId === session.id;
       await joinSession(session.id, { boardPath: session.boardPath, userBoard });
       // Web fires `Session Joined` on a genuine new-session entry (board-session-
       // bridge). The mobile equivalent is a successful deep-link join — the
@@ -120,7 +123,7 @@ export default function JoinSessionScreen() {
       // The last step of the live-sessions funnel (Shelf Viewed → Card Tapped →
       // Live Session Joined). Only joins that started on a live-session card
       // carry a source; invite links don't.
-      if (liveSessionSource) {
+      if (liveSessionSource && !alreadyInSession) {
         track(SHARED_EVENTS.LiveSessionJoined, { source: liveSessionSource });
       }
       // Land on the Record tab so the user drops straight into the joined session.
@@ -130,7 +133,7 @@ export default function JoinSessionScreen() {
       showToast(t('mobileJoin.joinError'), 'error');
       setIsJoining(false);
     }
-  }, [session, myBoards, createBoard, joinSession, liveSessionSource, router, showToast, t]);
+  }, [session, activeSessionId, myBoards, createBoard, joinSession, liveSessionSource, router, showToast, t]);
 
   const handleJoinPress = useCallback(() => {
     if (!session) return;

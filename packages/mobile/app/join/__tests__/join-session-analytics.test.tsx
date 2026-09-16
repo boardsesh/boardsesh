@@ -216,6 +216,16 @@ describe('JoinSessionScreen live-session funnel', () => {
     expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
   });
 
+  it('does not count a join into the session you are already in', async () => {
+    // joinSession returns early for the active session, so nothing was joined.
+    queue.sessionId = 'session-42';
+    searchParams.current = { sessionId: 'session-42', source: 'board_sheet' };
+
+    await pressJoin();
+
+    expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
+  });
+
   it('does not fire when the join fails', async () => {
     searchParams.current = { sessionId: 'session-42', source: 'home_rail' };
     queue.joinSession.mockRejectedValueOnce(new Error('join failed'));
