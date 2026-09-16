@@ -39,6 +39,22 @@ export const userBoards = pgTable(
     isUnlisted: boolean('is_unlisted').default(false).notNull(),
     hideLocation: boolean('hide_location').default(false).notNull(),
     isOwned: boolean('is_owned').default(true).notNull(),
+    // System-owned catch-all rows ("<X> Board Shared Feed") that collect ticks
+    // for a board config nobody has claimed a physical wall for. They are not
+    // walls and must never appear in a ranking — 39 of them absorb ~7,780 ticks
+    // and would otherwise hold the top slots by climber count, ahead of every
+    // real board (the largest of which has 17 climbers in 30 days).
+    //
+    // DEFERRED ON PURPOSE: nothing reads this column yet. `boardLeaderboard`
+    // ranks within a single board, so a Shared Feed row can only inflate a
+    // ranking once climbers are compared ACROSS boards — which is Phase 1, and
+    // Phase 1 adds the filter. Landing the column and the backfill now means
+    // the flag is already correct when that query arrives, instead of the
+    // ranked surface and its exclusion rule shipping in the same change. Until
+    // then, querying a Shared Feed board's own leaderboard behaves exactly as
+    // it does today; this is not an unwired guard, it is a guard with no
+    // surface to guard yet.
+    isVirtual: boolean('is_virtual').default(false).notNull(),
     angle: bigint('angle', { mode: 'number' }).notNull().default(40),
     isAngleAdjustable: boolean('is_angle_adjustable').notNull().default(true),
     hasLeds: boolean('has_leds').notNull().default(true),

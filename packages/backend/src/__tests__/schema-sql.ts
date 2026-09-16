@@ -18,6 +18,7 @@ export const schemaSQL = `
     "email" text NOT NULL,
     "emailVerified" timestamp,
     "image" text,
+    "is_internal" boolean DEFAULT false NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
@@ -777,6 +778,8 @@ export const schemaSQL = `
     "display_name" text,
     "avatar_url" text,
     "instagram_url" text,
+    "leaderboard_visibility" text DEFAULT 'public' NOT NULL,
+    "gym_screen_visibility" text DEFAULT 'public' NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL
   );
@@ -835,6 +838,7 @@ export const schemaSQL = `
     "is_unlisted" boolean DEFAULT false NOT NULL,
     "hide_location" boolean DEFAULT false NOT NULL,
     "is_owned" boolean DEFAULT true NOT NULL,
+    "is_virtual" boolean DEFAULT false NOT NULL,
     "angle" bigint DEFAULT 40 NOT NULL,
     "is_angle_adjustable" boolean DEFAULT true NOT NULL,
     "has_leds" boolean DEFAULT true NOT NULL,
