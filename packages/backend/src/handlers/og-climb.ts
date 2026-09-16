@@ -205,8 +205,21 @@ async function serveSprayOgCard(
   try {
     result = await renderSprayOgCard(params, getSprayOgCardDeps());
   } catch (error) {
-    // A photo fetch or a sharp decode that blew up is ours, not the caller's,
-    // and it must not leak whether the wall existed.
+    // Same shape the catalogue path answers with: the spray branch shares the
+    // render cap, so it saturates the same way and owes callers the same
+    // backpressure rather than a 500.
+    if (error instanceof RenderQueueSaturatedError) {
+      res.writeHead(503, {
+        'Content-Type': 'application/json',
+        'Retry-After': '5',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ error: error.message }));
+      return;
+    }
+    // What is left is a genuine server fault — a database error, a bug. An
+    // unreadable photograph is NOT here: `renderSprayOgCard` degrades that to
+    // `not-found` so a link somebody posted answers 404 rather than 500.
     logger.error('[OGClimb] spray render failed:', error);
     res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error: 'Render failed' }));

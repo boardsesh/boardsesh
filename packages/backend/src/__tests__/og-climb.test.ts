@@ -386,6 +386,17 @@ describe('handleOgClimb', () => {
       expect(res.statusCode).toBe(500);
       expect(res.headers['Cache-Control']).toBe('no-store');
     });
+
+    it('answers 503 with Retry-After when the shared render queue is saturated', async () => {
+      // The spray branch runs under the SAME cap as the catalogue path, so it
+      // saturates the same way and owes callers backpressure, not a 500 — an
+      // unfurler that retries is the whole point of the header.
+      vi.mocked(renderSprayOgCard).mockRejectedValueOnce(new RenderQueueSaturatedError());
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+    });
   });
 });
 

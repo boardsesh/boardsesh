@@ -5,6 +5,7 @@ import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
 import { sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import { aliveHolds } from '@boardsesh/db/queries';
+import { runOnRenderSemaphore } from './board-render';
 import { db } from '../db/client';
 import { getPublicUrl, isS3Configured } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -80,6 +81,33 @@ export type SprayOgCardDeps = {
   fetchPhotoBytes: (photoUrl: string) => Promise<Buffer>;
   publicPhotoUrl: (photoKey: string) => string | null;
 };
+
+/**
+ * The wall's photograph could not be read, and that is not the server's fault.
+ *
+ * A promoted wall can lose its public object: `deletePublicWallPhoto` is
+ * best-effort, a demote-then-re-promote mints a new key, and
+ * `refreshPublicWallPhoto` has a catch path that leaves the row pointing at an
+ * object that is no longer there. The bucket then answers 404/403, or hands back
+ * bytes sharp cannot decode.
+ *
+ * None of that is a server fault, and a 500 is the wrong answer on a link
+ * somebody already posted — the same argument this module's header makes about
+ * a singular matrix. It degrades to the ordinary `not-found` instead, which is
+ * also the only answer that keeps this endpoint from becoming an enumeration
+ * oracle: a distinct "the wall is real but its photo is missing" status would
+ * confirm the wall exists. A genuine server fault — a database error, a bug —
+ * is NOT this error and still propagates to a 500.
+ */
+export class SprayPhotoUnavailableError extends Error {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'SprayPhotoUnavailableError';
+  }
+}
 
 export type SprayOgCardResult =
   | { kind: 'card'; buffer: Buffer; contentType: string; timings: { photoMs: number; composeMs: number } }
@@ -315,63 +343,105 @@ export async function renderSprayOgCard(
     };
   }
 
-  const photoT0 = performance.now();
-  const [photoBytes, holds] = await Promise.all([deps.fetchPhotoBytes(photoUrl), deps.loadAliveHolds(wall.wallId)]);
-  const photoMs = performance.now() - photoT0;
-
-  const composeT0 = performance.now();
-  // `fit: 'inside'` and a centred placement: a spray wall is photographed at
-  // whatever aspect ratio the climber's phone produced, and cropping to 1200x630
-  // would cut the top or the bottom off the wall the card is supposed to show.
+  // Everything past this point is the expensive half — an outbound object read
+  // plus a full sharp decode and composite — and it runs under the SHARED render
+  // cap. The cache lookup and the visibility gates above are deliberately
+  // OUTSIDE it: a cache hit must never queue behind a cold render, and a private
+  // wall must be refused without spending a slot.
   //
-  // One `sharp` instance for both the resize and the source dimensions. The
-  // fallback below needs the photo's own width when the version row has none,
-  // and asking a second instance for it would decode the same JPEG twice.
-  const source = sharp(photoBytes);
-  const [sourceMetadata, placed] = await Promise.all([
-    source.metadata(),
-    source.clone().resize({ width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, fit: 'inside' }).toBuffer({
-      resolveWithObject: true,
-    }),
-  ]);
-  const placedWidth = placed.info.width;
-  const placedHeight = placed.info.height;
-  const left = Math.round((OG_IMAGE_WIDTH - placedWidth) / 2);
-  const top = Math.round((OG_IMAGE_HEIGHT - placedHeight) / 2);
+  // Throws `RenderQueueSaturatedError` synchronously when the queue is full,
+  // which the handler turns into the same 503 + `Retry-After` the catalogue path
+  // answers with.
+  return runOnRenderSemaphore(async () => {
+    const photoT0 = performance.now();
+    let photoBytes: Buffer;
+    let holds: SprayOgHold[];
+    try {
+      [photoBytes, holds] = await Promise.all([deps.fetchPhotoBytes(photoUrl), deps.loadAliveHolds(wall.wallId)]);
+    } catch (error) {
+      // Only an unreadable object degrades. A database error from
+      // `loadAliveHolds` is a genuine server fault and still propagates.
+      if (error instanceof SprayPhotoUnavailableError) {
+        logger.warn('[spray-og] wall photo unavailable; answering not-found', {
+          layoutId,
+          reason: error.message,
+        });
+        return { kind: 'not-found' };
+      }
+      throw error;
+    }
+    const photoMs = performance.now() - photoT0;
 
-  // The version row is the source of truth: it records the dimensions of the
-  // object as stored, after sharp baked the EXIF rotation in. The decoded
-  // metadata is the fallback for a row written before that column existed.
-  const photoWidth = version.photoWidth ?? sourceMetadata.width ?? placedWidth;
-  const photoToPlaced = photoWidth > 0 ? placedWidth / photoWidth : 1;
+    const composeT0 = performance.now();
+    // `fit: 'inside'` and a centred placement: a spray wall is photographed at
+    // whatever aspect ratio the climber's phone produced, and cropping to
+    // 1200x630 would cut the top or the bottom off the wall the card is supposed
+    // to show.
+    //
+    // One `sharp` instance for both the resize and the source dimensions. The
+    // fallback below needs the photo's own width when the version row has none,
+    // and asking a second instance for it would decode the same JPEG twice.
+    //
+    // Decode failures degrade rather than 500: the bytes are a photograph
+    // somebody uploaded, so "sharp cannot read this" is the object being
+    // unreadable, which is the same answer as the object being gone.
+    let sourceMetadata: sharp.Metadata;
+    let placed: { data: Buffer; info: sharp.OutputInfo };
+    try {
+      const source = sharp(photoBytes);
+      [sourceMetadata, placed] = await Promise.all([
+        source.metadata(),
+        source.clone().resize({ width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, fit: 'inside' }).toBuffer({
+          resolveWithObject: true,
+        }),
+      ]);
+    } catch (error) {
+      logger.warn('[spray-og] wall photo could not be decoded; answering not-found', {
+        layoutId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { kind: 'not-found' };
+    }
 
-  const overlaySvg = buildOverlayForWall({
-    wall,
-    holds,
-    frames,
-    homography: version.homography,
-    placedWidth,
-    placedHeight,
-    photoToPlaced,
+    const placedWidth = placed.info.width;
+    const placedHeight = placed.info.height;
+    const left = Math.round((OG_IMAGE_WIDTH - placedWidth) / 2);
+    const top = Math.round((OG_IMAGE_HEIGHT - placedHeight) / 2);
+
+    // The version row is the source of truth: it records the dimensions of the
+    // object as stored, after sharp baked the EXIF rotation in. The decoded
+    // metadata is the fallback for a row written before that column existed.
+    const photoWidth = version.photoWidth ?? sourceMetadata.width ?? placedWidth;
+    const photoToPlaced = photoWidth > 0 ? placedWidth / photoWidth : 1;
+
+    const overlaySvg = buildOverlayForWall({
+      wall,
+      holds,
+      frames,
+      homography: version.homography,
+      placedWidth,
+      placedHeight,
+      photoToPlaced,
+    });
+
+    const composites: sharp.OverlayOptions[] = [{ input: placed.data, left, top }];
+    if (overlaySvg !== null) composites.push({ input: Buffer.from(overlaySvg), left, top });
+
+    const canvas = sharp({
+      create: {
+        width: OG_IMAGE_WIDTH,
+        height: OG_IMAGE_HEIGHT,
+        channels: 4,
+        background: OG_FIELD_COLOR,
+      },
+    }).composite(composites);
+
+    const { buffer, contentType } = await encodeCard(canvas, format);
+    const composeMs = performance.now() - composeT0;
+
+    cardCache.set(cacheKey, { buffer, contentType });
+    return { kind: 'card', buffer, contentType, timings: { photoMs, composeMs } };
   });
-
-  const composites: sharp.OverlayOptions[] = [{ input: placed.data, left, top }];
-  if (overlaySvg !== null) composites.push({ input: Buffer.from(overlaySvg), left, top });
-
-  const canvas = sharp({
-    create: {
-      width: OG_IMAGE_WIDTH,
-      height: OG_IMAGE_HEIGHT,
-      channels: 4,
-      background: OG_FIELD_COLOR,
-    },
-  }).composite(composites);
-
-  const { buffer, contentType } = await encodeCard(canvas, format);
-  const composeMs = performance.now() - composeT0;
-
-  cardCache.set(cacheKey, { buffer, contentType });
-  return { kind: 'card', buffer, contentType, timings: { photoMs, composeMs } };
 }
 
 /**
@@ -471,20 +541,44 @@ export function createSprayOgCardDeps(): SprayOgCardDeps {
     // `Content-Length` is a claim, so it is checked first as a cheap refusal and
     // the decoded length is checked again afterwards, which is the one that
     // binds. 12MB leaves room above the 10MB upload cap for the JPEG re-encode.
+    //
+    // Every refusal here is a `SprayPhotoUnavailableError`, so the caller answers
+    // the ordinary 404 rather than a 500: a missing object, a bucket brownout and
+    // an oversize upload are all "there is no card to draw", and none of them is
+    // worth a 500 on a link somebody already posted.
     fetchPhotoBytes: async (photoUrl) => {
-      const response = await fetch(photoUrl, { signal: AbortSignal.timeout(PHOTO_FETCH_TIMEOUT_MS) });
+      let response: Response;
+      try {
+        response = await fetch(photoUrl, { signal: AbortSignal.timeout(PHOTO_FETCH_TIMEOUT_MS) });
+      } catch (error) {
+        // A timeout (`AbortSignal.timeout`) or a transport failure. Both mean the
+        // object did not arrive inside the budget an unfurler is waiting on.
+        throw new SprayPhotoUnavailableError('spray wall photo fetch did not complete', error);
+      }
+
       if (!response.ok) {
-        throw new Error(`spray wall photo fetch failed with ${response.status}`);
+        throw new SprayPhotoUnavailableError(`spray wall photo fetch failed with ${response.status}`);
       }
 
       const declaredLength = Number(response.headers.get('content-length'));
       if (Number.isFinite(declaredLength) && declaredLength > MAX_PHOTO_BYTES) {
-        throw new Error(`spray wall photo declares ${declaredLength} bytes, over the ${MAX_PHOTO_BYTES} ceiling`);
+        throw new SprayPhotoUnavailableError(
+          `spray wall photo declares ${declaredLength} bytes, over the ${MAX_PHOTO_BYTES} ceiling`,
+        );
       }
 
-      const photoBytes = Buffer.from(await response.arrayBuffer());
+      let photoBytes: Buffer;
+      try {
+        photoBytes = Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        // The body stalled or the connection dropped mid-read.
+        throw new SprayPhotoUnavailableError('spray wall photo body could not be read', error);
+      }
+
       if (photoBytes.length > MAX_PHOTO_BYTES) {
-        throw new Error(`spray wall photo is ${photoBytes.length} bytes, over the ${MAX_PHOTO_BYTES} ceiling`);
+        throw new SprayPhotoUnavailableError(
+          `spray wall photo is ${photoBytes.length} bytes, over the ${MAX_PHOTO_BYTES} ceiling`,
+        );
       }
       return photoBytes;
     },

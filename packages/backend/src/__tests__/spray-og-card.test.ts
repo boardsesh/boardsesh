@@ -1,10 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
+
+/**
+ * The spray card runs its expensive half under the SHARED render cap
+ * (`runOnRenderSemaphore`). Mocked here so a test can see that the guard was
+ * entered at all, and can make it saturate without standing up 40 real
+ * concurrent renders.
+ */
+const { renderGuard, FakeRenderQueueSaturatedError } = vi.hoisted(() => {
+  class FakeRenderQueueSaturatedError extends Error {
+    constructor() {
+      super('Render queue is saturated');
+      this.name = 'RenderQueueSaturatedError';
+    }
+  }
+  return { renderGuard: { calls: 0, saturated: false }, FakeRenderQueueSaturatedError };
+});
+
+vi.mock('../services/board-render', () => ({
+  RenderQueueSaturatedError: FakeRenderQueueSaturatedError,
+  runOnRenderSemaphore: <T>(fn: () => Promise<T>): Promise<T> => {
+    renderGuard.calls += 1;
+    // Synchronous throw, exactly like the real one: the saturation check and
+    // the enqueue must not be separated by an await.
+    if (renderGuard.saturated) throw new FakeRenderQueueSaturatedError();
+    return fn();
+  },
+}));
+
 import {
   buildSprayOverlayMarks,
   buildSprayOverlaySvg,
   renderSprayOgCard,
   resetSprayOgCardCache,
+  SprayPhotoUnavailableError,
   type SprayOgCardDeps,
   type SprayOgHold,
   type SprayOgWallRow,
@@ -318,5 +347,106 @@ describe('buildSprayOverlayMarks / buildSprayOverlaySvg', () => {
     const svg = buildSprayOverlaySvg({ width: 900, height: 1200, marks });
     expect(svg).not.toContain('<script');
     expect(svg).toMatch(/stroke="#[0-9a-fA-F]{3,6}"/);
+  });
+});
+
+/**
+ * Two review follow-ups on SW-16: the endpoint must not be a free DoS, and a
+ * wall whose public object has gone missing must not 500 a link people posted.
+ */
+describe('renderSprayOgCard — backpressure and an unreadable photo', () => {
+  beforeEach(() => {
+    resetSprayOgCardCache();
+    renderGuard.calls = 0;
+    renderGuard.saturated = false;
+  });
+
+  it('runs the fetch-and-compose half under the shared render cap', async () => {
+    const photo = await makePhotoJpeg();
+    const result = await renderSprayOgCard(
+      { layoutId: 90001, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+      makeDeps({}, photo),
+    );
+
+    expect(result.kind).toBe('card');
+    expect(renderGuard.calls).toBe(1);
+  });
+
+  it('refuses a saturated queue before fetching a single photo byte', async () => {
+    renderGuard.saturated = true;
+    const fetchPhotoBytes = vi.fn(async () => Buffer.alloc(0));
+
+    await expect(
+      renderSprayOgCard(
+        { layoutId: 90001, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+        makeDeps({ fetchPhotoBytes }),
+      ),
+    ).rejects.toThrow('Render queue is saturated');
+
+    expect(fetchPhotoBytes).not.toHaveBeenCalled();
+  });
+
+  it('serves a cached card without entering the queue at all', async () => {
+    const photo = await makePhotoJpeg();
+    const frames = uniqueFrames('p501r1');
+    const deps = makeDeps({}, photo);
+
+    const first = await renderSprayOgCard({ layoutId: 90001, frames, format: 'jpeg' }, deps);
+    expect(first.kind).toBe('card');
+    expect(renderGuard.calls).toBe(1);
+
+    // A hot card must never queue behind a cold render — that is the difference
+    // between an unfurl storm being free and it being a render each.
+    renderGuard.saturated = true;
+    const second = await renderSprayOgCard({ layoutId: 90001, frames, format: 'jpeg' }, deps);
+    expect(second.kind).toBe('card');
+    expect(renderGuard.calls).toBe(1);
+  });
+
+  it.each([
+    ['the bucket answers 404', new SprayPhotoUnavailableError('spray wall photo fetch failed with 404')],
+    ['the read times out', new SprayPhotoUnavailableError('spray wall photo fetch did not complete')],
+    ['the object is over the byte ceiling', new SprayPhotoUnavailableError('spray wall photo is 99999999 bytes')],
+  ])('answers not-found, not 500, when %s', async (_label, thrown) => {
+    const result = await renderSprayOgCard(
+      { layoutId: 90001, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+      makeDeps({
+        fetchPhotoBytes: vi.fn(async () => {
+          throw thrown;
+        }),
+      }),
+    );
+
+    // The same `not-found` every visibility gate answers with, so a wall whose
+    // photo vanished is still indistinguishable from one that never existed.
+    expect(result.kind).toBe('not-found');
+  });
+
+  it('answers not-found when the bytes are not a decodable image', async () => {
+    const result = await renderSprayOgCard(
+      { layoutId: 90001, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+      makeDeps({ fetchPhotoBytes: vi.fn(async () => Buffer.from('this is not a jpeg')) }),
+    );
+
+    expect(result.kind).toBe('not-found');
+  });
+
+  it('still throws a genuine server fault rather than hiding it as not-found', async () => {
+    const photo = await makePhotoJpeg();
+    // A database error is NOT an unreadable photo, and swallowing it would turn
+    // an outage into a wall of 404s on cards that should have rendered.
+    await expect(
+      renderSprayOgCard(
+        { layoutId: 90001, frames: uniqueFrames('p501r1'), format: 'jpeg' },
+        makeDeps(
+          {
+            loadAliveHolds: vi.fn(async () => {
+              throw new Error('connection terminated unexpectedly');
+            }),
+          },
+          photo,
+        ),
+      ),
+    ).rejects.toThrow('connection terminated unexpectedly');
   });
 });

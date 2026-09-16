@@ -165,6 +165,27 @@ privacy"). An unfurler cannot hold a signature and this card is cached for a day
 so the only thing this path will fetch is the world-readable `media` copy SW-14
 writes when a wall is promoted to public.
 
+**It shares the render cap.** `BOARD_RENDER_CONCURRENCY` is the cap for "OG and
+board-image misses", and a wall's card is another miss: sharp decoding and
+compositing a phone photograph is the same kind of work as the WASM overlay, so
+it queues in the same semaphore (`runOnRenderSemaphore`) rather than a second
+one that would double the real concurrency. A saturated queue answers the same
+`503` + `Retry-After: 5` the catalogue path does. The guard wraps only the
+expensive half — the visibility gates and the byte-cache lookup run outside it,
+so a private wall is refused without spending a slot and a hot card never queues
+behind a cold render.
+
+**A missing object is a 404, not a 500.** A promoted wall can lose its public
+copy: `deletePublicWallPhoto` is best-effort, a demote-then-re-promote mints a
+new key, and `refreshPublicWallPhoto` has a catch path that leaves the row
+pointing at an object that is gone. A non-2xx from the bucket, a fetch that
+misses the 8s deadline, an object over the 12MB ceiling, and bytes sharp cannot
+decode all become the ordinary `not-found` (`SprayPhotoUnavailableError`) — a
+500 on a link somebody already posted is the worse answer, and a distinct "the
+wall is real but its photo is missing" status would confirm the wall exists. A
+genuine server fault — a database error, a bug — is not that error and still
+answers 500.
+
 **The drawing is sharp + SVG, not the WASM overlay.** The shared pipeline's image
 resolver is synchronous and reads the local filesystem, which a photograph
 fetched over HTTP can never satisfy, and its overlay draws a catalogue board's
