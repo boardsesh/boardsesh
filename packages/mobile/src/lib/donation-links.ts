@@ -65,7 +65,7 @@ let resolvedStorefrontCountry: string | null = null;
  * present but StoreKit unhappy) resolves to null — unknown, therefore not
  * allowed.
  */
-export function readStorefrontCountry(): Promise<string | null> {
+function readStorefrontCountry(): Promise<string | null> {
   if (!storefrontNative) return Promise.resolve(null);
   storefrontCountryPromise ??= storefrontNative
     .getCountryCode()

@@ -133,7 +133,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'donation-links',
     label: 'Donation links',
     description:
-      'Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. Region-gated: app stores treat an external donation link as a rejection risk outside the iOS US storefront (and, from 30 Sept 2026, Android in AU), so target this flag by country in PostHog. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On iOS the app additionally requires an App Store storefront of USA, read natively.',
+      'Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. An external donation link is a store-policy violation outside two narrow windows, and ONLY ONE OF THEM IS ENFORCED IN THE APP: iOS additionally requires an App Store storefront of USA, read natively, so an over-broad rollout cannot reach a non-US iPhone. Android has no such client guard — Play exposes no storefront to the app — so the PostHog targeting IS the guard, and it must be exactly: platform = Android AND country = AU AND date >= 2026-09-30. Rolling this out to Android by percentage, or to any other country, ships a policy violation.',
   },
   {
     key: 'climb-moderation-kill',

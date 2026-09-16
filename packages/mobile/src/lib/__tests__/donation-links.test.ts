@@ -146,6 +146,6 @@ describe('useDonationLinksAllowed', () => {
 
     expect(SUPPORT_URL).toBe('https://www.boardsesh.com/support');
     // The displayed form is the same address, bare enough to type off a screen.
-    expect(SUPPORT_URL).toContain(SUPPORT_URL_DISPLAY.replace('boardsesh.com', 'www.boardsesh.com'));
+    expect(SUPPORT_URL_DISPLAY).toBe('boardsesh.com/support');
   });
 });
