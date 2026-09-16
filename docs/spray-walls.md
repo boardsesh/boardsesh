@@ -9,8 +9,10 @@ types with no rows and no UI behind them, the tables
 [SW-04 (#5437)](https://github.com/boardsesh/boardsesh/issues/5437) added
 underneath it, and the API
 [SW-05 (#5438)](https://github.com/boardsesh/boardsesh/issues/5438) put on top —
-which is where the first real rows come from. There is still no UI: the add-a-wall
-flow is SW-09 (#5442).
+which is where the first real rows come from, and the add-a-wall flow
+[SW-09 (#5442)](https://github.com/boardsesh/boardsesh/issues/5442) built on the
+front of all of it — the route a climber actually walks (see "Adding a wall"
+below).
 
 ## Identity mapping
 
@@ -241,6 +243,39 @@ the whole-photo detection count moves from 44 to 49. Dynamic
 int8 quantisation puts a build-specific QGemm kernel in the hot path. The app's
 runtime will not reproduce the harness's numbers hold for hold either, which is
 one more reason the score threshold is a slider rather than a shipped constant.
+
+## Adding a wall
+
+`packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
+#5442). One route, seven steps, behind the mobile flag `spray-walls`:
+
+| Step | What it does |
+| --- | --- |
+| `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over. |
+| `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
+| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
+| `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
+| `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
+| `detect` | The registered on-device detector, if this binary has one. No detector, or a failure, lands in the editor with nothing to review. |
+| `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
+
+Three rules in that flow are not obvious from the API and are easy to undo:
+
+- **A wall is created PRIVATE whatever the climber chose.** The row exists from
+  the moment `createSprayWall` returns — the photo handler authorises against it —
+  but it has no version, no photo and no holds, and `searchBoards` filters on
+  `is_public` / `is_unlisted` alone. A wall created public is therefore listed as
+  an unusable board for as long as the flow takes, and forever if it is abandoned.
+  The chosen visibility is applied by `updateSprayWall` straight after the first
+  publish.
+- **An unfinished wall is resumed, never duplicated.** Because the row is real, an
+  abandoned run counts against `MAX_SPRAY_WALLS_PER_USER`. The resume check has to
+  read a list fetched AFTER the screen mounted: React Query serves the cached
+  pre-creation list while it refetches, and deciding on that creates a second
+  orphan beside the first.
+- **Publishing and binding the board are latched apart.** They sit behind one
+  button, and `publishSprayWallVersion` refuses a version that has already
+  published — so a shared retry would turn a failed board bind into a dead end.
 
 ## Caps
 
@@ -567,8 +602,8 @@ editor that writes them"; what belongs here is what it means for a wall.
 
 `SprayHoldEditorScreen` is the entry point, and its props are the contract:
 `wallUuid`, `layoutId`, the draft's `versionId` AND its `versionNumber`,
-`viewerCanEdit`, and an optional `candidates` list. There is no route yet — SW-09
-and SW-11 wire the entry points.
+`viewerCanEdit`, and an optional `candidates` list. SW-09 hosts it as the review
+step of `/boards/spray/new`; SW-11 wires the owner's later entry points.
 
 Both version fields are needed, and the reason is the one bug this screen could
 not survive. The mutations take the `id`; `sprayWallRenderData(uuid, version)`
@@ -892,8 +927,8 @@ property rather than a catalogue:
 1. **Board pickers.** `SUPPORTED_BOARDS` in
    `packages/shared/board-config/src/board-data.ts` — the display-filter list,
    not the schema's — drops `spray` outright. No generic picker, board builder or
-   wall finder offers it; a wall is created through the add-a-wall flow (SW-09)
-   and reached at its own `/b/{slug}`.
+   wall finder offers it; a wall is created through the add-a-wall flow
+   (`/boards/spray/new`, below) and reached at its own `/b/{slug}`.
 2. **The popular-config rail.** `getPopularConfigs`
    (`packages/backend/src/graphql/resolvers/social/boards.ts`) feeds the www
    homepage board rail and the mobile Boards tab, and neither consults the

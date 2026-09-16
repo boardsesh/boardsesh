@@ -124,6 +124,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
   },
   {
+    key: 'spray-walls',
+    label: 'Spray walls',
+    description:
+      'The "Add a spray wall" tile on the boards picker and the /boards/spray/* routes behind it: photograph a wall, mark its corners, let the phone suggest holds, correct them, publish. A POSITIVE rollout flag — unresolved reads as off, so the tile never flickers in for the first frames of a cold open.',
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:
@@ -138,6 +144,32 @@ export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
+/**
+ * Whether the live flag values have had their chance to arrive.
+ *
+ * Separate from the values themselves, because "off" and "not known yet" are the
+ * same bag to a consumer and are very different things to a gate. A screen that
+ * REDIRECTS on a flag — rather than just hiding a tile — cannot act on the empty
+ * first frame: an enabled climber opening a deep link would be bounced to the
+ * picker before PostHog answered, and resolving the flag a moment later cannot
+ * bring the discarded route back.
+ *
+ * A second context rather than a field on the first, so nothing that reads flag
+ * VALUES re-renders when this flips.
+ */
+const FeatureFlagsResolvedContext = createContext<boolean>(false);
+
+/**
+ * How long a consumer waits for PostHog before treating the bag as final.
+ *
+ * There has to be a ceiling. PostHog may be unreachable, disabled in this build,
+ * or never initialised at all, and none of those ever fires `onFeatureFlags` —
+ * so without a timeout a gated route would spin forever on exactly the fleets
+ * where the flag is off anyway. Two seconds is longer than a warm flag read and
+ * short enough that a cold, offline deep link is not left staring at nothing.
+ */
+export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
+
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
   children,
@@ -146,6 +178,7 @@ export function FeatureFlagsProvider({
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const [resolved, setResolved] = useState(false);
   const { overrides } = useFeatureFlagOverrides();
 
   useEffect(() => {
@@ -157,12 +190,25 @@ export function FeatureFlagsProvider({
     };
 
     refreshFlags();
-    const unsubscribe = subscribePosthogFeatureFlags(refreshFlags);
+    const unsubscribe = subscribePosthogFeatureFlags(() => {
+      refreshFlags();
+      // PostHog has answered. Whatever it said, the bag is now the real one.
+      if (mounted) setResolved(true);
+    });
+    // And the backstop, for every fleet where it never answers at all.
+    const timer = setTimeout(() => {
+      if (mounted) setResolved(true);
+    }, FEATURE_FLAG_RESOLUTION_TIMEOUT_MS);
     return () => {
       mounted = false;
+      clearTimeout(timer);
       unsubscribe();
     };
   }, []);
+
+  // A statically supplied bag — the env override, and every test — is already
+  // final: there is nothing on its way that could change it.
+  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS;
 
   const value = useMemo<FeatureFlags>(() => {
     const hasOverrides = Object.keys(overrides).length > 0;
@@ -174,7 +220,24 @@ export function FeatureFlagsProvider({
     return { ...posthogFlags, ...flags, ...overrides };
   }, [posthogFlags, flags, overrides]);
 
-  return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
+  return (
+    <FeatureFlagsContext.Provider value={value}>
+      <FeatureFlagsResolvedContext.Provider value={resolved || hasStaticFlags}>
+        {children}
+      </FeatureFlagsResolvedContext.Provider>
+    </FeatureFlagsContext.Provider>
+  );
+}
+
+/**
+ * Whether the flag bag is final.
+ *
+ * Read this before acting IRREVERSIBLY on a flag — a redirect, a navigation
+ * reset. A surface that merely shows or hides something does not need it: the
+ * value re-renders when it lands.
+ */
+export function useFeatureFlagsResolved(): boolean {
+  return useContext(FeatureFlagsResolvedContext);
 }
 
 export function useFeatureFlags(): FeatureFlags {
@@ -289,6 +352,21 @@ export function useInteractiveRequestDeadlineEnabled(): boolean {
  */
 export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
+}
+
+/**
+ * Gate for the spray-wall front door (epic #5346, SW-09): the picker tile and
+ * every `/boards/spray/*` route behind it.
+ *
+ * A POSITIVE rollout flag, and `=== true` is the whole contract: PostHog
+ * resolves asynchronously, so anything looser (`!== false`) would show the tile
+ * for the first frames of every cold open and let a deep link walk into the flow
+ * on a fleet the feature is not enabled for. Unresolved, absent and explicitly
+ * off all read the same — hidden — which is the only safe reading while a
+ * feature is dark.
+ */
+export function useSprayWallsEnabled(): boolean {
+  return useFeatureFlag('spray-walls') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

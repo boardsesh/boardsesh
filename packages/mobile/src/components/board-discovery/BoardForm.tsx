@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   ScrollView,
-  TextInput,
   StyleSheet,
   Pressable,
   KeyboardAvoidingView,
@@ -16,7 +15,6 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDeviceLocation } from '../../lib/use-device-location';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
 import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
@@ -33,6 +31,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
 import { GymPickerSheet } from './GymPickerSheet';
+import { BoardIdentityFields, BoardVisibilityFields, BuilderTextInput, SectionLabel } from './BoardMetaFields';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
@@ -107,17 +106,6 @@ export function BoardForm({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
-
-  const { setCoords } = builder;
-  const location = useDeviceLocation();
-  const requestLocation = location.request;
-  const onUseMyLocation = useCallback(() => void requestLocation(), [requestLocation]);
-  const onClearLocation = useCallback(() => setCoords(null), [setCoords]);
-  useEffect(() => {
-    // location.coords stays null until the user taps "Use my location" (request
-    // is explicit), so this only stamps coords once they've opted in.
-    if (location.coords) setCoords(location.coords);
-  }, [location.coords, setCoords]);
 
   // Chip options — memoised so the per-snap angle re-render doesn't rebuild them
   // (they don't depend on angle), letting the memoised chip rows bail out.
@@ -268,44 +256,11 @@ export function BoardForm({
         ) : null}
 
         {builder.layoutId != null ? (
-          <>
-            <SectionLabel>{t('mobile.custom.name')}</SectionLabel>
-            <BuilderTextInput
-              value={builder.name}
-              onChangeText={builder.setName}
-              placeholder={defaultName}
-              accessibilityLabel={t('mobile.custom.name')}
-              maxLength={100}
-              returnKeyType="done"
-            />
-
-            {/* Gym lives in the MAIN form, not behind "More options": attaching
-                the board to its gym is what puts it on the map under that gym,
-                and burying it is how boards ended up as lone pins (#4166). */}
-            <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
-            <Pressable
-              onPress={() => setGymPickerOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.create.gym')}
-              style={({ pressed }) => [
-                styles.gymRow,
-                {
-                  backgroundColor: pressed ? systemColors.tertiaryBackground : systemColors.secondaryBackground,
-                  borderColor: systemColors.separator,
-                },
-              ]}
-            >
-              <Text
-                variant="body"
-                color={builder.selectedGym ? systemColors.label : systemColors.secondaryLabel}
-                numberOfLines={1}
-                style={styles.gymRowLabel}
-              >
-                {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
-              </Text>
-              <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-            </Pressable>
-          </>
+          <BoardIdentityFields
+            builder={builder}
+            namePlaceholder={defaultName}
+            onOpenGymPicker={() => setGymPickerOpen(true)}
+          />
         ) : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
@@ -334,43 +289,7 @@ export function BoardForm({
             ) : null}
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
-            <SwitchRow
-              label={t('mobile.create.public')}
-              description={t('mobile.create.publicHint')}
-              value={builder.isPublic}
-              onValueChange={builder.setIsPublic}
-            />
-            <SwitchRow
-              label={t('mobile.create.unlisted')}
-              value={builder.isUnlisted}
-              onValueChange={builder.setIsUnlisted}
-            />
-            <SwitchRow
-              label={t('mobile.create.hideLocation')}
-              value={builder.hideLocation}
-              onValueChange={builder.setHideLocation}
-            />
-
-            <SectionLabel>{t('mobile.create.location')}</SectionLabel>
-            <BuilderTextInput
-              value={builder.locationName}
-              onChangeText={builder.setLocationName}
-              placeholder={t('mobile.create.locationPlaceholder')}
-              accessibilityLabel={t('mobile.create.location')}
-              maxLength={120}
-            />
-            {/* Stamping coordinates used to be one-way — the button simply went
-                disabled, leaving no way to undo a wrong location. */}
-            {builder.coords ? (
-              <Button
-                title={t('mobile.create.clearLocation')}
-                variant="text"
-                onPress={onClearLocation}
-                role="destructive"
-              />
-            ) : (
-              <Button title={t('mobile.create.useMyLocation')} variant="text" onPress={onUseMyLocation} />
-            )}
+            <BoardVisibilityFields builder={builder} />
 
             {/* Lights heads the group the serial belongs to — both describe the
                 LED hardware on the wall. Nothing below is hidden when the toggle
@@ -454,7 +373,8 @@ export function BoardForm({
       ) : null}
 
       {/* Presence-driven, like TimerPairingSheet — the two are never open at
-          once and the sheet coordinator serialises them. */}
+          once and the sheet coordinator serialises them. A SIBLING of the
+          ScrollView, never a child of it. */}
       {gymPickerOpen ? (
         <GymPickerSheet
           selectedUuid={builder.selectedGym?.uuid ?? null}
@@ -503,35 +423,6 @@ export function BoardForm({
         />
       </View>
     </KeyboardAvoidingView>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  const { systemColors } = useTheme();
-  return (
-    <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionLabel}>
-      {children}
-    </Text>
-  );
-}
-
-/** Themed text input for the builder's form fields (name / location / serial). */
-function BuilderTextInput({ style, ...props }: ComponentProps<typeof TextInput>) {
-  const { systemColors } = useTheme();
-  return (
-    <TextInput
-      placeholderTextColor={systemColors.tertiaryLabel}
-      {...props}
-      style={[
-        styles.input,
-        {
-          color: systemColors.label,
-          borderColor: systemColors.separator,
-          backgroundColor: systemColors.secondaryBackground,
-        },
-        style,
-      ]}
-    />
   );
 }
 
@@ -622,21 +513,9 @@ const styles = StyleSheet.create({
   lockedHintText: {
     flex: 1,
   },
-  sectionLabel: {
-    marginTop: spacing[3],
-    marginBottom: spacing[1],
-    textTransform: 'uppercase',
-  },
   angleDiagram: {
     alignItems: 'center',
     paddingVertical: spacing[2],
-  },
-  input: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 17,
   },
   advancedHeader: {
     flexDirection: 'row',
@@ -688,17 +567,5 @@ const styles = StyleSheet.create({
   errorMessage: {
     marginBottom: spacing[2],
     textAlign: 'center',
-  },
-  gymRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  gymRowLabel: {
-    flex: 1,
   },
 });
