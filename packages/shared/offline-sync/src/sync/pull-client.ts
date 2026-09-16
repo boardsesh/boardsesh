@@ -533,9 +533,19 @@ export type DocumentsPulledSink = (info: {
    * Handed over so a sink can ask what the device holds NOW rather than only what
    * this page carried — the spray photo store needs every live `photo_key` to
    * know which files on disk no wall claims any more, and a page only ever names
-   * one. Read-only by contract: the pull's own writes are done, and a sink that
-   * wrote here would be doing it outside the transaction that made the page
-   * atomic.
+   * one.
+   *
+   * **Read-only for DATA.** The page's transaction has already committed, so a
+   * sink writing a synced column would be writing outside the atomicity the pull
+   * just established — and the next delta, arriving on a cursor that has moved
+   * past it, would overwrite it with the server's value anyway.
+   *
+   * The one permitted exception is **`sync_meta` bookkeeping about what the sink
+   * itself did**, written after the commit: the spray photo sink records a
+   * pending-photo marker and rewinds its own table's checkpoint when a download
+   * fails (`recordSprayPhotoFailure` / `clearSprayPhotoPending`). That is the
+   * sink reporting its own outcome, not editing synced data, and it has to be
+   * durable for the retry to survive a relaunch.
    */
   db: OfflineDatabase;
 }) => void | Promise<void>;

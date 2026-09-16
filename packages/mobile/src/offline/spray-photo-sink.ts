@@ -45,6 +45,19 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     // bucket configured sends the key and no URL. Both are "nothing to fetch",
     // not an error — the wall still syncs its holds.
     if (typeof photoKey !== 'string' || !photoKey) continue;
+
+    // NO RETRY MARKER HERE, deliberately, and it is not the same case as a
+    // failed download. A missing `photo_url` means the SERVER could not produce
+    // a signature — `isS3Configured('private')` is false, or `presignGetObject`
+    // threw and the resolver logged and nulled it. Rewinding the cursor would
+    // re-ask the same backend for the same impossible signature every cycle,
+    // which is a pull per 30 seconds for as long as the bucket stays
+    // misconfigured. So the cursor stays advanced and the photograph stays
+    // missing until `spray_walls.updated_at` moves server-side (a publish, a
+    // hold edit, a wall rename), which is also when a fixed bucket would start
+    // producing URLs again. A download that fails with a URL in hand is the
+    // opposite case — the signature was real and a fresh one is worth asking
+    // for — and that one goes through `recordSprayPhotoFailure` below.
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
     if (await storeSprayPhoto(photoKey, photoUrl)) {
