@@ -26,11 +26,20 @@ import { buildGradeDistributionFromTicks, computeSessionAggregates } from './ses
 
 type SessionFeedFilterOptions = {
   boardIdFilter: number | null;
+  snapshotAt?: string;
   // Single-climber scope ("your sessions" surfaces): aggregates count only this
   // climber's ticks. null on social/following feeds (whole-session). participants[]
   // stays whole-session regardless; it is the leaderboard, not the viewer's stats.
   userIdFilter: string | null;
 };
+
+function tickSnapshotFilter(snapshotAt?: string): SQL {
+  return snapshotAt ? sql`AND t.climbed_at <= ${snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``;
+}
+
+function tickScopeFilter(boardIdFilter: number | null, snapshotAt?: string): SQL {
+  return sql`${boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``} ${tickSnapshotFilter(snapshotAt)}`;
+}
 
 export type SessionFeedRow = {
   candidate_time?: string;
@@ -419,7 +428,11 @@ export async function getSessionFeed(
   const dailyHighlightTickUuids = resultRows
     .filter((row) => row.session_type === 'daily_highlight' && !!row.highlight_tick_uuid)
     .map((row) => row.highlight_tick_uuid as string);
-  const filterOptions: SessionFeedFilterOptions = { boardIdFilter, userIdFilter: userId };
+  const filterOptions: SessionFeedFilterOptions = {
+    boardIdFilter,
+    userIdFilter: userId,
+    snapshotAt: pagination?.snapshotAt,
+  };
 
   const [
     participantMap,
@@ -437,7 +450,7 @@ export async function getSessionFeed(
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
     fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
-    fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId),
+    fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId, pagination?.snapshotAt),
     fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
   ]);
 
@@ -980,11 +993,11 @@ async function fetchDailyDetailParticipants(
  */
 async function fetchParticipantsBatch(
   sessionIds: string[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<Map<string, SessionFeedParticipant[]>> {
   if (sessionIds.length === 0) return new Map();
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
 
   const result = await dbRead.execute(sql`
     SELECT
@@ -1005,7 +1018,7 @@ async function fetchParticipantsBatch(
       sessionIds.map((id) => sql`${id}`),
       sql`, `,
     )})`}
-      ${batchBoardFilter}
+      ${batchTickFilter}
     GROUP BY t.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
     ORDER BY sends DESC
   `);
@@ -1042,11 +1055,11 @@ async function fetchParticipantsBatch(
  */
 async function fetchGradeDistributionBatch(
   sessionIds: string[],
-  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (sessionIds.length === 0) return new Map();
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
   const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
@@ -1068,7 +1081,7 @@ async function fetchGradeDistributionBatch(
       sessionIds.map((id) => sql`${id}`),
       sql`, `,
     )})`}
-      ${batchBoardFilter}
+      ${batchTickFilter}
       ${batchUserFilter}
       AND COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
     GROUP BY t.session_id, diff_num
@@ -1134,11 +1147,11 @@ async function fetchSessionMetaBatch(
  */
 async function fetchBoardTypesBatch(
   sessionIds: string[],
-  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<Map<string, string[]>> {
   if (sessionIds.length === 0) return new Map();
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
   const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
@@ -1150,7 +1163,7 @@ async function fetchBoardTypesBatch(
       sessionIds.map((id) => sql`${id}`),
       sql`, `,
     )})`}
-      ${batchBoardFilter}
+      ${batchTickFilter}
       ${batchUserFilter}
     GROUP BY t.session_id
   `);
@@ -1298,6 +1311,7 @@ function tickHighlightSelectSql(groupIdExpression: SQL = sql`NULL::text`) {
 async function fetchTickHighlightsByUuid(
   tickUuids: string[],
   viewerUserId: string | null | undefined,
+  snapshotAt?: string,
 ): Promise<Map<string, SessionFeedTickHighlight>> {
   if (tickUuids.length === 0) return new Map();
 
@@ -1331,6 +1345,7 @@ async function fetchTickHighlightsByUuid(
       tickUuids.map((uuid) => sql`${uuid}`),
       sql`, `,
     )})`}
+    ${tickSnapshotFilter(snapshotAt)}
   `);
 
   const rows = rowsFromResult<TickHighlightRow>(result);
@@ -1340,12 +1355,12 @@ async function fetchTickHighlightsByUuid(
 
 async function fetchHardestSendsBatch(
   sessionIds: string[],
-  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
   viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionFeedTickHighlight>> {
   if (sessionIds.length === 0) return new Map();
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
   const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
@@ -1367,7 +1382,7 @@ async function fetchHardestSendsBatch(
         sessionIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        ${batchBoardFilter}
+        ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
     )
@@ -1412,11 +1427,11 @@ async function fetchHardestSendsBatch(
 
 async function fetchDailyGradeDistributionBatch(
   dailyHighlightKeys: DailyHighlightKey[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (dailyHighlightKeys.length === 0) return new Map();
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
 
   const valuesSql = sql.join(
     dailyHighlightKeys.map((key) => sql`(${key.sessionId}, ${key.userId}, ${key.day}::date)`),
@@ -1447,7 +1462,7 @@ async function fetchDailyGradeDistributionBatch(
       AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
     WHERE COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
-      ${batchBoardFilter}
+      ${batchTickFilter}
     GROUP BY keys.session_id, diff_num
     ORDER BY diff_num DESC
   `);
@@ -1562,6 +1577,7 @@ async function fetchFeaturedBetaBatch(
   const tickHighlights = await fetchTickHighlightsByUuid(
     [...new Set(betaRows.map((row) => row.tickUuid))],
     viewerUserId,
+    filterOptions.snapshotAt,
   );
   const map = new Map<string, SessionFeedBetaHighlight>();
   for (const row of betaRows) {
@@ -1609,11 +1625,11 @@ function betaCandidateRankSql(partitionExpression: SQL) {
 
 async function fetchSessionFeaturedBetaRows(
   sessionIds: string[],
-  { boardIdFilter, userIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, userIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<FeaturedBetaRow[]> {
   if (sessionIds.length === 0) return [];
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
   const batchUserFilter = userIdFilter !== null ? sql`AND t.user_id = ${userIdFilter}` : sql``;
 
   const result = await dbRead.execute(sql`
@@ -1642,7 +1658,7 @@ async function fetchSessionFeaturedBetaRows(
         sessionIds.map((id) => sql`${id}`),
         sql`, `,
       )})`}
-        ${batchBoardFilter}
+        ${batchTickFilter}
         ${batchUserFilter}
         AND t.status IN ('flash', 'send')
     )
@@ -1656,11 +1672,11 @@ async function fetchSessionFeaturedBetaRows(
 
 async function fetchDailyFeaturedBetaRows(
   dailyHighlightKeys: DailyHighlightKey[],
-  { boardIdFilter }: SessionFeedFilterOptions,
+  { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
 ): Promise<FeaturedBetaRow[]> {
   if (dailyHighlightKeys.length === 0) return [];
 
-  const batchBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
+  const batchTickFilter = tickScopeFilter(boardIdFilter, snapshotAt);
   const valuesSql = sql.join(
     dailyHighlightKeys.map((key) => sql`(${key.sessionId}, ${key.userId}, ${key.day}::date)`),
     sql`, `,
@@ -1696,7 +1712,7 @@ async function fetchDailyFeaturedBetaRows(
         AND bcs_beta.board_type = t.board_type
         AND bcs_beta.angle = t.angle
       WHERE t.status IN ('flash', 'send')
-        ${batchBoardFilter}
+        ${batchTickFilter}
     )
     SELECT *
     FROM ranked

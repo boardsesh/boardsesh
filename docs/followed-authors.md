@@ -27,7 +27,9 @@ spray walls are excluded. New-climb metadata is checked again during enrichment.
 Both sources supply at most `limit + 1` candidates to one backend merge. Only
 selected candidates are enriched. The opaque cursor carries the viewer, initial
 snapshot time, exact ordering timestamp, and stable prefixed ID. Session candidate
-selection excludes ticks newer than the snapshot. Existing `sessionGroupedFeed`
+selection and every tick-backed enrichment query exclude ticks newer than the
+snapshot, keeping totals, participants, grades, board types, and highlights aligned.
+Existing `sessionGroupedFeed`
 callers keep offset pagination and their current result shape.
 
 A page can contain fewer than `limit` items after the visibility recheck, while
