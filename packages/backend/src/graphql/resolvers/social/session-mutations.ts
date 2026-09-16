@@ -6,8 +6,13 @@ import { requireAuthenticated, validateInput, applyRateLimit, RATE_LIMIT_SESSION
 import { UpdateSessionInputSchema } from '../../../validation/schemas';
 import { pubsub } from '../../../pubsub/index';
 import type { ConnectionContext, UpdateSessionResult } from '@boardsesh/shared-schema';
+import {
+  publishBoardQueuePreviewForSession,
+  publishBoardQueuePreviewTombstoneForSession,
+} from '../../../services/board-queue-preview';
+import { logger } from '../../../utils/logger';
 
-type UpdateSessionInput = { sessionId: string; name?: string | null; notes?: string | null };
+type UpdateSessionInput = { sessionId: string; name?: string | null; notes?: string | null; isPublic?: boolean | null };
 
 const SetHealthKitWorkoutIdSchema = z.object({
   sessionId: z.string().min(1),
@@ -82,12 +87,19 @@ export const sessionEditMutations = {
   },
 
   /**
-   * Update a session's title and/or recap notes. Creator only; works on both
-   * active and ended sessions. Partial-update semantics: only a field whose key
-   * is present on the input is touched (GraphQL distinguishes an absent field
-   * from an explicit null). A trimmed-empty value or null clears the field.
+   * Update a session's title, recap notes and/or visibility. Creator only;
+   * works on both active and ended sessions. Partial-update semantics: only a
+   * field whose key is present on the input is touched (GraphQL distinguishes
+   * an absent field from an explicit null). A trimmed-empty value or null
+   * clears a text field; a null `isPublic` leaves visibility unchanged.
    * Publishes SessionNameChanged to live participants when the title actually
    * changes on an active session.
+   *
+   * Visibility (`isPublic`) gates exactly two surfaces: the live-sessions
+   * listings (`followedLiveSessions` / `boardLiveSessions`) and the anonymous
+   * board queue preview. Joining by invite link is unaffected. A flip on an
+   * active session re-drives the preview so kiosks follow it: private clears
+   * them (tombstone), public re-seeds them.
    */
   updateSession: async (
     _: unknown,
@@ -106,6 +118,7 @@ export const sessionEditMutations = {
         name: dbSchema.boardSessions.name,
         notes: dbSchema.boardSessions.notes,
         status: dbSchema.boardSessions.status,
+        isPublic: dbSchema.boardSessions.isPublic,
       })
       .from(dbSchema.boardSessions)
       .where(eq(dbSchema.boardSessions.id, validated.sessionId))
@@ -122,15 +135,33 @@ export const sessionEditMutations = {
     // presence of the key on the validated input, not its value.
     const hasName = 'name' in validated;
     const hasNotes = 'notes' in validated;
+    // A boolean has no "cleared" state, so an explicit null is a no-op too.
+    const hasIsPublic = typeof validated.isPublic === 'boolean';
 
     const nextName = hasName ? normalizeSessionText(validated.name) : session.name;
     const nextNotes = hasNotes ? normalizeSessionText(validated.notes) : session.notes;
+    const nextIsPublic = typeof validated.isPublic === 'boolean' ? validated.isPublic : session.isPublic;
 
-    if (hasName || hasNotes) {
+    if (hasName || hasNotes || hasIsPublic) {
       const updates: Partial<typeof dbSchema.boardSessions.$inferInsert> = { lastActivity: new Date() };
       if (hasName) updates.name = nextName;
       if (hasNotes) updates.notes = nextNotes;
+      if (hasIsPublic) updates.isPublic = nextIsPublic;
       await db.update(dbSchema.boardSessions).set(updates).where(eq(dbSchema.boardSessions.id, validated.sessionId));
+    }
+
+    // Kiosks showing this session's queue must follow a visibility flip: the
+    // preview producer only re-gates on queue events, and a flip is not one.
+    // Both helpers re-check every gate (board binding, anon-readable board,
+    // public active session) themselves. Best-effort: a failed kiosk update
+    // must not fail the edit the creator asked for.
+    if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
+      const republish = nextIsPublic
+        ? publishBoardQueuePreviewForSession(validated.sessionId)
+        : publishBoardQueuePreviewTombstoneForSession(validated.sessionId);
+      await republish.catch((error: unknown) => {
+        logger.error(`[updateSession] board-queue-preview update failed for ${validated.sessionId}:`, error);
+      });
     }
 
     // Broadcast a title change to live participants. Only when the name key was
@@ -144,6 +175,6 @@ export const sessionEditMutations = {
       });
     }
 
-    return { sessionId: validated.sessionId, name: nextName, notes: nextNotes };
+    return { sessionId: validated.sessionId, name: nextName, notes: nextNotes, isPublic: nextIsPublic };
   },
 };

@@ -5,6 +5,7 @@ import { eq, and, gt, gte, lt, lte, ne, isNull, sql } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
 import { logger } from '../../utils/logger';
+import { hasLiveConnectionsOrSessionKey, readSessionLiveness } from './session-liveness';
 
 /**
  * Rows that back a live session — party mode, presence, queue, the lot.
@@ -96,6 +97,7 @@ export async function createDiscoverableSession(
   goal?: string,
   isPermanent?: boolean,
   color?: string,
+  isPublic: boolean = true,
 ): Promise<Session> {
   const now = new Date();
 
@@ -129,6 +131,7 @@ export async function createDiscoverableSession(
       color: color || null,
       startedAt: now,
       boardId,
+      isPublic,
     })
     .onConflictDoUpdate({
       target: sessions.id,
@@ -145,6 +148,7 @@ export async function createDiscoverableSession(
         color: color || null,
         startedAt: now,
         boardId,
+        isPublic,
       },
     })
     .returning();
@@ -162,7 +166,6 @@ export async function findNearbySessions(
   longitude: number,
   radiusMeters: number = DEFAULT_SEARCH_RADIUS_METERS,
 ): Promise<DiscoverableSession[]> {
-  const { sessions: sessionsMap, redisStore, distributedState } = deps;
   const box = getBoundingBox(latitude, longitude, radiusMeters);
 
   const candidates = await db
@@ -190,46 +193,18 @@ export async function findNearbySessions(
     .filter((item: { session: SessionWithCoords; distance: number }) => item.distance <= radiusMeters)
     .sort((a: { distance: number }, b: { distance: number }) => a.distance - b.distance);
 
-  const sessionIds = sessionsWithDistance.map(({ session }) => session.id);
-
-  // Batch check Redis existence to avoid N+1 queries
-  let redisExistsMap = new Map<string, boolean>();
-  if (redisStore && sessionIds.length > 0) {
-    redisExistsMap = await redisStore.batchExists(sessionIds);
-  }
+  const livenessBySession = await readSessionLiveness(
+    deps,
+    sessionsWithDistance.map(({ session }) => session.id),
+  );
 
   const result: DiscoverableSession[] = [];
   for (const { session, distance } of sessionsWithDistance) {
-    // Liveness and the displayed head-count come from two different counters.
-    // `getSessionMemberCount` counts live *connections* — its `0 ⟺ no live
-    // connections` contract is what liveness depends on. `getSessionParticipantCount`
-    // counts distinct *participants* (deduped), and deliberately still includes
-    // an authenticated user parked in their RECONNECTING grace window (0 live
-    // connections). Gating visibility on the participant count would advertise a
-    // solo climber's session as active while they're mid-reconnect with nobody
-    // actually connected, so liveness uses the connection count and the deduped
-    // participant count is display-only.
-    let liveConnectionCount: number;
-    let participantCount: number;
-    if (distributedState) {
-      liveConnectionCount = await distributedState.getSessionMemberCount(session.id);
-      participantCount = await distributedState.getSessionParticipantCount(session.id);
-    } else {
-      // Non-distributed fallback: the local session map holds connection ids and
-      // has no participant/connection split, so use it for both to keep liveness
-      // and display consistent.
-      liveConnectionCount = sessionsMap.get(session.id)?.size || 0;
-      participantCount = liveConnectionCount;
-    }
-
-    let isActive = liveConnectionCount > 0;
-    if (!isActive && redisStore) {
-      isActive = redisExistsMap.get(session.id) || false;
-    }
-
-    if (!isActive) {
+    const liveness = livenessBySession.get(session.id);
+    if (!liveness || !hasLiveConnectionsOrSessionKey(liveness)) {
       continue;
     }
+    const { participantCount } = liveness;
 
     result.push({
       id: session.id,

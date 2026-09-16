@@ -51,6 +51,7 @@ import {
   endStaleInactiveSessions,
   updateSessionBoardPathIfChanged as updateSessionBoardPathIfChangedFn,
 } from './session-discovery';
+import { readSessionLiveness as readSessionLivenessFn, type SessionLiveness } from './session-liveness';
 
 const INACTIVITY_THRESHOLD_MS = 60 * 60 * 1000;
 const INACTIVITY_SWEEP_INTERVAL_MS = 60 * 1000;
@@ -314,6 +315,7 @@ class RoomManager {
     initialCurrentClimb?: ClimbQueueItem | null,
     sessionName?: string,
     participantId?: string | null,
+    isPublic?: boolean,
   ): Promise<{
     clientId: string;
     users: SessionUser[];
@@ -348,6 +350,7 @@ class RoomManager {
         initialCurrentClimb,
         sessionName,
         participantId,
+        isPublic,
       },
     );
   }
@@ -614,6 +617,7 @@ class RoomManager {
     goal?: string,
     isPermanent?: boolean,
     color?: string,
+    isPublic?: boolean,
   ): Promise<Session> {
     return createDiscoverableSessionFn(
       sessionId,
@@ -625,11 +629,29 @@ class RoomManager {
       goal,
       isPermanent,
       color,
+      isPublic,
     );
   }
 
   async findNearbySessions(latitude: number, longitude: number, radiusMeters?: number): Promise<DiscoverableSession[]> {
     return findNearbySessionsFn(this.deps(), latitude, longitude, radiusMeters);
+  }
+
+  /**
+   * Batch liveness (live connection count, display participant count, Redis
+   * session-key existence) for a set of sessions — the same reading
+   * `findNearbySessions` gates on. Pass `includeRoster` to also get each
+   * session's live roster from the same read.
+   */
+  async getSessionLiveness(
+    sessionIds: readonly string[],
+    options: { includeRoster?: boolean } = {},
+  ): Promise<Map<string, SessionLiveness>> {
+    return readSessionLivenessFn(
+      this.deps(),
+      sessionIds,
+      options.includeRoster ? { readRoster: (sessionId) => this.getSessionUsers(sessionId) } : {},
+    );
   }
 
   async getUserSessions(userId: string): Promise<LiveSession[]> {

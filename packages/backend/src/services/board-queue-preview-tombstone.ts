@@ -43,7 +43,7 @@ export async function isPublicActiveSession(sessionId: string): Promise<boolean>
 
 /**
  * An empty preview snapshot — the tombstone published when a board's bound
- * session stops being publicly previewable (ended, or a future `is_public`
+ * session stops being publicly previewable (ended, or an `is_public`
  * flip), so kiosks clear instead of showing the last queue forever.
  */
 export function buildEmptyBoardQueuePreview(boardId: number): BoardQueuePreview {
@@ -64,9 +64,10 @@ export function buildEmptyBoardQueuePreview(boardId: number): BoardQueuePreview 
  * snapshot would sit on public displays indefinitely.
  *
  * Called from every session-end path (`RoomManager.endSession` behind the
- * explicit `endSession` mutation, and the inactivity sweep). There is
- * currently no mutation that flips `board_sessions.is_public` after creation
- * — if one is ever added, it MUST call this too when flipping to private.
+ * explicit `endSession` mutation, and the inactivity sweep), and from
+ * `updateSession` when the creator flips an active session private. Any other
+ * writer of `board_sessions.is_public` MUST call this too when flipping to
+ * private.
  * The board-level equivalent (`user_boards.is_public` flipped private, or the
  * board soft-deleted) goes through `publishBoardQueuePreviewTombstoneForBoard`
  * below, which `updateBoard`/`deleteBoard` call.
