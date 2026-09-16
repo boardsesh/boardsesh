@@ -13,8 +13,24 @@
 import { invert, mapPoint, mapRadius, mapRing, type Homography } from '@boardsesh/spray-wall-geometry';
 import { MAX_RING_COORDINATE, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 
+/** Where a hold's geometry came from, in the wire's own spelling. */
+export type SprayHoldProvenance = {
+  /**
+   * Whether a detector or a human put this hold on the wall.
+   *
+   * Optional because it is not geometry: nothing on the render path reads it, and
+   * a payload written before it existed simply does not carry it. The EDITOR
+   * reads it (#5441) — without it, an accepted detector hold is re-submitted as
+   * MANUAL the first time it is nudged, overwriting the provenance the server
+   * stored.
+   */
+  source?: 'MANUAL' | 'AUTO';
+  /** Detector confidence 0–1 for an AUTO hold; absent when a human drew it. */
+  confidence?: number | null;
+};
+
 /** One hold as the server stores it: centre, radius and silhouette in canonical pixels. */
-export type CanonicalSprayHold = {
+export type CanonicalSprayHold = SprayHoldProvenance & {
   id: number;
   cx: number;
   cy: number;
@@ -28,7 +44,7 @@ export type CanonicalSprayHold = {
 };
 
 /** The same hold in photo pixels, ready for `HoldPlacement` + the geometry table. */
-export type SprayPhotoHold = {
+export type SprayPhotoHold = SprayHoldProvenance & {
   id: number;
   cx: number;
   cy: number;
@@ -125,7 +141,12 @@ export function mapCanonicalHoldsToPhoto(
     if (!Number.isFinite(r) || r < MIN_MAPPED_RADIUS_PX) continue;
 
     const outline = mapHoldOutline(inverse, hold, cx, cy, r);
-    mapped.push(outline ? { id: hold.id, cx, cy, r, outline } : { id: hold.id, cx, cy, r });
+    // Provenance rides along unchanged — it is not geometry, and the homography
+    // has no opinion about who drew the hold.
+    const provenance = { source: hold.source, confidence: hold.confidence };
+    mapped.push(
+      outline ? { id: hold.id, cx, cy, r, outline, ...provenance } : { id: hold.id, cx, cy, r, ...provenance },
+    );
   }
   return mapped;
 }

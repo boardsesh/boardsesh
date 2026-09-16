@@ -65,6 +65,11 @@ function toCanonicalHolds(renderData: SprayWallRenderData): CanonicalSprayHold[]
     cy: hold.cy,
     r: hold.r,
     outline: hold.outline ?? null,
+    // Not geometry, and nothing on the render path reads it — but the editor
+    // does, and a hold seeded without it is re-submitted as MANUAL the first
+    // time it is nudged (#5441).
+    source: hold.source === 'AUTO' ? 'AUTO' : 'MANUAL',
+    confidence: hold.confidence ?? null,
   }));
 }
 
@@ -234,9 +239,9 @@ export async function loadSprayWall(
  * and the wall re-registers under its new version, which moves every spray cache
  * key with it.
  *
- * No call sites on this branch — the mutations that would call it belong to SW-08
- * and SW-12 — so this is the seam they plug into, not dead code waiting for a
- * purpose.
+ * SW-08's editor calls it on unmount, to put the published generation back for
+ * whatever outlives the screen (`use-spray-wall-draft.ts`). SW-12's
+ * `commitSprayWallVersion` is the other caller, once it lands.
  */
 export async function invalidateSprayWallRenderData(
   queryClient: QueryClient,

@@ -22,6 +22,7 @@ import { EditToolbar } from './EditToolbar';
 import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale, type StrokeRejection } from './stroke';
 import { spatialPlacementOrder, stepPlacement, zoomTargetForHold } from './hold-navigation';
 import { withUnsavedDraftGuard } from './draft-guard';
+import { editorTargetCapabilities, type CatalogueEditorTarget } from './editor-target';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
@@ -72,9 +73,17 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
+  // The same adapter the spray target reads (`editor-target.ts`), so "who may
+  // write, which boundaries exist, and whether a finger draws" is answered once
+  // for both targets rather than decided again in each screen.
+  const capabilities = useMemo(() => {
+    const target: CatalogueEditorTarget = { kind: 'catalogue', boardName, layoutId, sizeId, setIds };
+    return editorTargetCapabilities(target);
+  }, [boardName, layoutId, sizeId, setIds]);
+
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
   const [editKind, setEditKind] = useState<HoldOutlineKind>('SILHOUETTE');
-  const [fingerDraw, setFingerDraw] = useState(false);
+  const [fingerDraw, setFingerDraw] = useState(capabilities.fingerDrawDefault);
   const [draftOutline, setDraftOutline] = useState<number[] | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
 
@@ -489,6 +498,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
       <ScrollView keyboardShouldPersistTaps="handled" style={styles.toolbarScroll}>
         <EditToolbar
+          outlineKinds={capabilities.outlineKinds}
           editKind={editKind}
           onEditKindChange={handleEditKindChange}
           statusLine={statusLine}
