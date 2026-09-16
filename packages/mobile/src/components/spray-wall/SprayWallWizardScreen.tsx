@@ -164,7 +164,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // dead weight, and refetching it mid-flow could offer to resume the very wall
   // this run just created.
   const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' });
-  const { isFetching: wallsFetching, dataUpdatedAt, errorUpdatedAt } = mySprayWalls;
+  // `refetch` comes out with the rest of the fields on purpose. React Query keeps
+  // it stable for the query's life, where the RESULT object is a fresh reference
+  // on every render — so a callback closing over the whole thing would be rebuilt
+  // on every commit, including each one an upload progress tick causes.
+  const { isFetching: wallsFetching, dataUpdatedAt, errorUpdatedAt, refetch: refetchMySprayWalls } = mySprayWalls;
   const walls = mySprayWalls.data;
   /**
    * When this screen opened.
@@ -253,8 +257,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     setResumeError(null);
     resumeAskedRef.current = false;
     mountedAtRef.current = Date.now();
-    void mySprayWalls.refetch();
-  }, [mySprayWalls]);
+    void refetchMySprayWalls();
+  }, [refetchMySprayWalls]);
 
   // ============================================
   // Step 2 — the photo
