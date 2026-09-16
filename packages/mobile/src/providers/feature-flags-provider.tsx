@@ -130,6 +130,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'The "Add a spray wall" tile on the boards picker and the /boards/spray/* routes behind it: photograph a wall, mark its corners, let the phone suggest holds, correct them, publish. A POSITIVE rollout flag — unresolved reads as off, so the tile never flickers in for the first frames of a cold open.',
   },
   {
+    key: 'donation-links',
+    label: 'Donation links',
+    description:
+      'Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. Region-gated: app stores treat an external donation link as a rejection risk outside the iOS US storefront (and, from 30 Sept 2026, Android in AU), so target this flag by country in PostHog. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On iOS the app additionally requires an App Store storefront of USA, read natively.',
+  },
+  {
     key: 'climb-moderation-kill',
     label: 'Disable climb reporting + moderation',
     description:

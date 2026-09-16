@@ -32,9 +32,6 @@ export const sponsors: Sponsor[] = data.sponsors;
 /** Sponsors who chose to stay private — shown only as an anonymous count. */
 export const privateSponsorCount: number = data.privateSponsorCount;
 
-/** Where the "Become a sponsor" empty-state CTA points. */
-export const SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
-
 /** The OTA server behind our releases — Mercure Technologies gave us an enterprise license. */
 export const XPREM_URL = 'https://github.com/mercuretechnologies/xprem';
 
