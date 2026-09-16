@@ -14,6 +14,7 @@
       "noAccess": "No tienes permiso para editar este plafón",
       "back": "Volver",
       "configLockedHint": "No tienes permiso para cambiar el layout, el tamaño ni los sets de este plafón.",
+      "configLockedHintSpray": "La configuración de un plafón es su foto. Vuelve a fotografiarlo para cambiar las presas.",
       "duplicate": {
         "title": "Ya tienes esta configuración",
         "body": "Con este cambio el plafón queda igual que «{{name}}»: mismo layout, tamaño y sets de presas.",
@@ -172,6 +173,16 @@
         "sets": "Sets",
         "angle": "Ángulo",
         "adjustable": "ajustable"
+      },
+      "spray": {
+        "kind": "Plafón de presas",
+        "editHolds": "Editar presas",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
+        "newPhoto": "Nueva foto",
+        "newPhotoHint": "Fotografía el plafón otra vez después de un cambio de presas.",
+        "shareLink": "Compartir enlace",
+        "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
+        "shareLinkUnlistedHint": "Solo quien reciba el enlace."
       }
     },
     "disambiguation": {
@@ -349,6 +360,26 @@
       "empty": "No hay rocódromos cerca",
       "sharedEditHint": "El personal de este rocódromo podrá editar los datos de este plafón.",
       "linkError": "No se pudo vincular ese rocódromo. Puede estar demasiado lejos de tu plafón. El resto de cambios sí se guardaron."
+    },
+    "sprayShare": {
+      "title": "Comparte este plafón",
+      "publicBody": "Este plafón es público: cualquiera puede abrirlo, aparece en la página del rocódromo y sus bloques salen en el feed.",
+      "unlistedBody": "Solo quien reciba este enlace puede abrir el plafón. No aparece en ninguna lista.",
+      "copyLink": "Copiar enlace",
+      "share": "Compartir",
+      "copied": "Enlace copiado",
+      "qrLabel": "Código QR de {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Quién puede verlo",
+      "private": "Privado",
+      "unlisted": "Solo con enlace",
+      "public": "Público",
+      "privateHint": "Solo tú. La foto de tu plafón se queda en tu cuenta.",
+      "unlistedHint": "Cualquiera con el enlace entra. El plafón no aparece en la página del rocódromo y su foto no sale a la web abierta.",
+      "publicHint": "Cualquiera puede encontrar el plafón. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
+      "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
+      "updateError": "No se pudo cambiar quién ve este plafón. Inténtalo de nuevo."
     }
   },
   "boardEntity": {

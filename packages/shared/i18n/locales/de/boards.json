@@ -14,6 +14,7 @@
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
       "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
+      "configLockedHintSpray": "Das Layout eines Boards ist sein Foto. Fotografiere es neu, um die Griffe zu ändern.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
@@ -172,6 +173,16 @@
         "sets": "Sets",
         "angle": "Winkel",
         "adjustable": "verstellbar"
+      },
+      "spray": {
+        "kind": "Spraywall",
+        "editHolds": "Griffe bearbeiten",
+        "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
+        "newPhoto": "Neues Foto",
+        "newPhotoHint": "Fotografiere dein Board nach einem Umbau neu.",
+        "shareLink": "Link teilen",
+        "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
+        "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
       }
     },
     "disambiguation": {
@@ -349,6 +360,26 @@
       "empty": "Keine Hallen in der Nähe",
       "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
+    },
+    "sprayShare": {
+      "title": "Teil dieses Board",
+      "publicBody": "Dieses Board ist öffentlich: Jede*r kann es öffnen, es steht auf der Seite der Halle und seine Boulder landen im Feed.",
+      "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
+      "copyLink": "Link kopieren",
+      "share": "Teilen",
+      "copied": "Link kopiert",
+      "qrLabel": "QR-Code für {{name}}"
+    },
+    "sprayVisibility": {
+      "label": "Wer es sehen kann",
+      "private": "Privat",
+      "unlisted": "Nur mit Link",
+      "public": "Öffentlich",
+      "privateHint": "Nur du. Das Foto von deinem Board bleibt in deinem Account.",
+      "unlistedHint": "Wer den Link hat, kommt rein. Das Board steht nicht auf der Seite der Halle und sein Foto bleibt aus dem offenen Web.",
+      "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
+      "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
+      "updateError": "Konnte nicht ändern, wer dieses Board sieht. Versuch es nochmal."
     }
   },
   "boardEntity": {

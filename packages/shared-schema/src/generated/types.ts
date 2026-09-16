@@ -5704,6 +5704,15 @@ export type Query = {
    */
   gymOwnershipLookup: GymOwnershipLookupResult;
   /**
+   * Every spray wall attached to a gym that the caller may see, by wall name.
+   *
+   * NOT the same rule as `sprayWall`: a listing is enumerable, so the unlisted
+   * exemption does not apply. Gym members see the gym's walls including private
+   * ones; everyone else — logged out included, which is how the web gym page reads
+   * this — sees only public walls. An unknown gym is an empty list, not an error.
+   */
+  gymSprayWalls: Array<SprayWall>;
+  /**
    * A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
    * busiest weekdays for the current window plus the equally-long window before
    * it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -6388,6 +6397,11 @@ export type QueryGymMembersArgs = {
 /** Root query type for all read operations. */
 export type QueryGymOwnershipLookupArgs = {
   input: GymOwnershipLookupInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryGymSprayWallsArgs = {
+  gymUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8289,6 +8303,18 @@ export type SprayWall = {
   holdCount: Scalars['Int']['output'];
   /** The wall's board_layouts id. Also its board_product_sizes id: a wall has exactly one size, itself. */
   layoutId: Scalars['Int']['output'];
+  /**
+   * A stable, unsigned URL for the wall photo — public walls only, null for every
+   * other wall.
+   *
+   * A public wall has to show up on a web gym page that a logged-out climber
+   * reads, and nobody there can hold a fifteen-minute signature. So going public
+   * COPIES the current photo into the world-readable `media` bucket under an
+   * unguessable random key and serves that; going private deletes the object and
+   * nulls this. Null on a public wall means nothing has been published yet, or the
+   * copy has not been made.
+   */
+  publicPhotoUrl?: Maybe<Scalars['String']['output']>;
   referenceHeight?: Maybe<Scalars['Int']['output']>;
   /** The canonical frame in pixels, derived from the version-1 photo. Null until the first photo lands. */
   referenceWidth?: Maybe<Scalars['Int']['output']>;
@@ -13676,6 +13702,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryGymOwnershipLookupArgs, 'input'>
   >;
+  gymSprayWalls?: Resolver<
+    Array<ResolversTypes['SprayWall']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryGymSprayWallsArgs, 'gymUuid'>
+  >;
   gymStats?: Resolver<ResolversTypes['GymStats'], ParentType, ContextType, RequireFields<QueryGymStatsArgs, 'input'>>;
   holdOutlines?: Resolver<
     ResolversTypes['BoardHoldOutlines'],
@@ -14853,6 +14885,7 @@ export type SprayWallResolvers<
   hiddenAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   holdCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  publicPhotoUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   referenceHeight?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   referenceWidth?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;

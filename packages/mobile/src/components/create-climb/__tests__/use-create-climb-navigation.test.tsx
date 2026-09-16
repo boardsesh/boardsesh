@@ -171,6 +171,29 @@ describe('useCreateClimbNavigation params', () => {
     });
   });
 
+  it('openRemix carries the source grade as the CANONICAL scale name', () => {
+    // `Climb.difficulty` is what `getGradeLabel` produced server-side — "6b/V4",
+    // not the "V4" a display preference renders. The fork seed resolves it back
+    // to a difficulty id by that exact name, so a shorthand here would silently
+    // open every remix ungraded.
+    const { result } = renderHook(() => useCreateClimbNavigation());
+
+    result.current.openRemix({ ...climb, difficulty: '6b/V4' } as unknown as Climb, board);
+
+    expect(router.push).toHaveBeenCalledWith(
+      expect.objectContaining({ params: expect.objectContaining({ forkDifficulty: '6b/V4' }) }),
+    );
+  });
+
+  it('openRemix omits the grade for an ungraded source', () => {
+    const { result } = renderHook(() => useCreateClimbNavigation());
+
+    result.current.openRemix(climb, board);
+
+    const pushed = router.push.mock.calls[0][0] as { params: Record<string, string> };
+    expect(pushed.params).not.toHaveProperty('forkDifficulty');
+  });
+
   it('openRemix sends an empty string for a description-less climb', () => {
     const { result } = renderHook(() => useCreateClimbNavigation());
 

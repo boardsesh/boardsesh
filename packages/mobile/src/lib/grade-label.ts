@@ -17,6 +17,25 @@ export function getGradeLabel(difficultyId: number | null | undefined): string {
   return GRADE_MAP[difficultyId] ?? '';
 }
 
+const ID_BY_GRADE_NAME: Record<string, number> = Object.fromEntries(
+  BOULDER_GRADES.map((grade) => [grade.difficulty_name.toLowerCase(), grade.difficulty_id]),
+);
+
+/**
+ * The inverse of {@link getGradeLabel}: a stored grade name ("6a/V3") back to its
+ * difficulty id, or null when the string is not a grade on the shared scale.
+ *
+ * Matched on the whole canonical name, case-insensitively — the same string the
+ * server stores in `board_difficulty_grades.boulder_name`. A display label the
+ * user's grade-format preference produced ("V3", "6A") deliberately does NOT
+ * match: several names collapse onto one V grade, so guessing which one a climb
+ * carries would re-grade it.
+ */
+export function getDifficultyIdForGradeName(gradeName: string | null | undefined): number | null {
+  if (!gradeName) return null;
+  return ID_BY_GRADE_NAME[gradeName.trim().toLowerCase()] ?? null;
+}
+
 const MAX_CLIMB_STARS = 5;
 
 /** Quality average (canonical 1-5) → integer 0-5 star count. Unrated → 0. */

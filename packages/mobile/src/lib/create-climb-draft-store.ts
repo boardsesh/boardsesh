@@ -45,6 +45,13 @@ export type CreateClimbDraft = {
    *  board's default (feet on the marked holds). */
   anyFeet?: boolean;
   /**
+   * The setter's own grade as a difficulty id on the shared Boardsesh scale, on
+   * a board that publishes with one (a spray wall). Optional for the same
+   * back-compat reason as the flags above, and absent is the honest value: a
+   * draft may sit ungraded, because the grade is the last thing a setter decides.
+   */
+  setterGradeDifficultyId?: number | null;
+  /**
    * Whether the setter has switched this climb into route mode. Route-ness is
    * otherwise inferred from `frames.length > 1`, which cannot express the state
    * a setter is in right after choosing "Make it a route" and before adding the

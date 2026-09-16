@@ -67,6 +67,7 @@ const SPRAY_WALL_FIELDS = `
   referenceWidth
   referenceHeight
   holdCount
+  publicPhotoUrl
   viewerCanEdit
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
@@ -141,6 +142,67 @@ export const GET_SPRAY_WALL_RENDER_DATA = gql`
     }
   }
 `;
+
+/**
+ * What a LISTING row needs, and nothing that costs a signature.
+ *
+ * No `currentVersion`: its photo is a presigned URL over the private bucket, and
+ * a gym page is server-rendered for a logged-out reader who cannot hold one.
+ * `publicPhotoUrl` is the field that answers for a public wall — a stable URL
+ * over the public copy — and is null for every wall that is not public, which is
+ * exactly the "name only" row the gym page falls back to.
+ */
+const SPRAY_WALL_LISTING_FIELDS = `
+  uuid
+  layoutId
+  holdCount
+  publicPhotoUrl
+  board {
+    uuid
+    slug
+    name
+    angle
+    isPublic
+    isUnlisted
+    gymUuid
+    gymName
+  }
+`;
+
+/** Every spray wall on a gym that the caller may see, gym members included. */
+export const GET_GYM_SPRAY_WALLS = gql`
+  query GetGymSprayWalls($gymUuid: ID!) {
+    gymSprayWalls(gymUuid: $gymUuid) {
+      ${SPRAY_WALL_LISTING_FIELDS}
+    }
+  }
+`;
+
+/** One row of `GET_GYM_SPRAY_WALLS` — narrower than `SprayWall` by what it does not select. */
+export type GymSprayWallListing = {
+  uuid: string;
+  layoutId: number;
+  holdCount: number;
+  publicPhotoUrl: string | null;
+  board: {
+    uuid: string;
+    slug: string | null;
+    name: string;
+    angle: number;
+    isPublic: boolean;
+    isUnlisted: boolean;
+    gymUuid: string | null;
+    gymName: string | null;
+  };
+};
+
+export type GetGymSprayWallsQueryVariables = {
+  gymUuid: string;
+};
+
+export type GetGymSprayWallsQueryResponse = {
+  gymSprayWalls: GymSprayWallListing[];
+};
 
 export const GET_MY_SPRAY_WALLS = gql`
   query GetMySprayWalls {

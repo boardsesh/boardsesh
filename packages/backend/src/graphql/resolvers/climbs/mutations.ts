@@ -827,6 +827,26 @@ export const climbMutations = {
       }
     }
 
+    // A grade EDIT, as opposed to the publish transition above.
+    //
+    // `saveClimb` seeds the setter's grade and the transition re-seeds it, but
+    // neither covers what the editor's picker actually offers most of the time:
+    // reopening a climb inside the edit window and moving the grade. Without this
+    // the mutation returned success, the client showed a "published" toast and
+    // updated its saved baseline, and the stats row kept the old grade — the
+    // climb re-read as whatever it was graded the first time.
+    //
+    // No extra authorization: `updateClimb` has already refused anyone but
+    // `existing.userId`, and on a spray wall the owner of the climb IS its setter.
+    if (sprayTarget && sprayGradeToSeed === null && validated.userGrade != null) {
+      sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
+      if (sprayGradeToSeed === null) {
+        throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
+          extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
+        });
+      }
+    }
+
     // Atomicity envelope: the gate check, the UPDATE on board_climbs, the
     // denorm column refresh, the holds DELETE+INSERT, and the stats seed all
     // run inside one transaction. Without this a partial failure mid-sequence
@@ -1113,11 +1133,12 @@ export const climbMutations = {
       // because search filters by exact angle, and removing it would race with concurrent ticks.
       // The combined check also re-narrows `resolvedAngle` to non-null for TS — we threw
       // above on (shouldSeedStats && null) so the second clause is the only path through.
-      // The grade this call supplied, on the row the publish is about to make
-      // searchable. `onConflictDoUpdate` rather than `DoNothing`: a draft created
-      // without a grade may already HAVE a barebones stats row (a previous angle
-      // edit seeds one), and leaving it ungraded would publish a spray climb with
-      // no grade after the check above said there was one.
+      // The grade this call supplied — either the one the publish needs, or a
+      // plain grade edit. `onConflictDoUpdate` rather than `DoNothing`: a draft
+      // created without a grade may already HAVE a barebones stats row (a previous
+      // angle edit seeds one), and leaving it ungraded would publish a spray climb
+      // with no grade after the check above said there was one. The same update is
+      // what lets a setter MOVE the grade of a climb that already has stats.
       if (sprayGradeToSeed !== null && resolvedAngle !== null) {
         await tx
           .insert(dbSchema.boardClimbStats)

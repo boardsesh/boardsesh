@@ -26,10 +26,12 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  * rows.
  */
 
-const { presignedUrls, storedPhotoMetadata, publishedEvents } = vi.hoisted(() => ({
+const { presignedUrls, storedPhotoMetadata, publishedEvents, publicBucketObjects } = vi.hoisted(() => ({
   presignedUrls: [] as string[],
   storedPhotoMetadata: new Map<string, { width: string; height: string }>(),
   publishedEvents: [] as Array<{ type: string; metadata?: Record<string, unknown> }>,
+  /** destination key → source key, for the public-promotion path (SW-14). */
+  publicBucketObjects: new Map<string, string>(),
 }));
 
 vi.mock('../storage/s3', () => ({
@@ -44,6 +46,21 @@ vi.mock('../storage/s3', () => ({
     return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
   }),
   uploadToS3: vi.fn(async (_bucket: string, _body: Buffer, key: string) => ({ key })),
+  // The public-promotion path a wall takes when it is made public. Reached from
+  // here because `remixClimb`'s visibility case flips a PRIVATE wall to public
+  // mid-test; `storedPhotoMetadata` is what exists in the private bucket, so a
+  // copy of a key nothing uploaded answers null exactly like the real one does.
+  copyObjectBetweenBuckets: vi.fn(
+    async (_source: string, sourceKey: string, _destination: string, destinationKey: string) => {
+      if (!storedPhotoMetadata.has(sourceKey)) return null;
+      publicBucketObjects.set(destinationKey, sourceKey);
+      return { key: destinationKey };
+    },
+  ),
+  deleteFromS3: vi.fn(async (_bucket: string, key: string) => {
+    publicBucketObjects.delete(key);
+  }),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://media.example/${key}`),
 }));
 
 vi.mock('../events', () => ({
@@ -235,6 +252,7 @@ beforeEach(async () => {
   presignedUrls.length = 0;
   publishedEvents.length = 0;
   storedPhotoMetadata.clear();
+  publicBucketObjects.clear();
 
   const storage = await import('../storage/s3');
   vi.mocked(storage.isS3Configured).mockReset();

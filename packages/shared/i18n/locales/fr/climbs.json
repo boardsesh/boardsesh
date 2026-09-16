@@ -334,6 +334,11 @@
         "title": "Aucun bloc trouvé",
         "subtitle": "Essayez d'ajuster les paramètres de votre board"
       },
+      "unsetWall": {
+        "title": "Personne n’a encore ouvert sur ce mur",
+        "subtitle": "Choisis tes prises, donne-lui un nom, et le mur a son premier bloc.",
+        "cta": "Ouvrir le premier bloc"
+      },
       "noMatches": {
         "title": "Aucun résultat",
         "description": "Rien ne correspond à \"{{query}}\""
@@ -715,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
+        "blocked": "Ajoute une prise de départ et une prise d'arrivée pour publier",
+        "gradeBlocked": "Choisis ta cotation pour publier"
       },
       "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer.",
       "routeMenu": {
@@ -723,6 +729,11 @@
         "makeRoute": "Convertir en voie",
         "makeBoulder": "Convertir en bloc",
         "makeBoulderBlocked": "Convertir en bloc — supprime d'abord les images"
+      },
+      "grade": {
+        "label": "Ta cotation",
+        "required": "Nécessaire pour publier",
+        "optional": "Facultatif sur un brouillon"
       }
     },
     "holdFilter": {

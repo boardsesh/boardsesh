@@ -334,6 +334,11 @@
         "title": "Keine Boulder gefunden",
         "subtitle": "Pass deine Board-Einstellungen an"
       },
+      "unsetWall": {
+        "title": "Hier hat noch niemand geschraubt",
+        "subtitle": "Wähl deine Griffe, gib dem Boulder einen Namen — fertig ist der erste.",
+        "cta": "Ersten Boulder schrauben"
+      },
       "noMatches": {
         "title": "Keine Treffer",
         "description": "Nichts passt zu „{{query}}“"
@@ -715,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
+        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen",
+        "gradeBlocked": "Wähle deine Schwierigkeit zum Veröffentlichen"
       },
       "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten.",
       "routeMenu": {
@@ -723,6 +729,11 @@
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
         "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
+      },
+      "grade": {
+        "label": "Deine Schwierigkeit",
+        "required": "Zum Veröffentlichen nötig",
+        "optional": "Bei einem Entwurf optional"
       }
     },
     "holdFilter": {

@@ -45,6 +45,7 @@ import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { REDISLESS_FALLBACK_TTL_MS, singleFlight } from '../../../utils/single-flight';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
+import { listableSprayWallCondition } from '../board/spray-wall-listing';
 
 // ============================================
 // Helpers
@@ -1184,7 +1185,14 @@ export const socialBoardQueries = {
       throw new GraphQLError('Gym not found', { extensions: { code: 'NOT_FOUND' } });
     }
 
-    const conditions = [eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt)];
+    const conditions = [
+      eq(dbSchema.userBoards.gymId, gym.id),
+      isNull(dbSchema.userBoards.deletedAt),
+      // A spray wall with nothing published yet is a board nobody can climb on —
+      // not even for the gym's admins, who do see the private rows below. Its
+      // owner sees it, so they can go and finish it (SW-14).
+      listableSprayWallCondition(viewerId),
+    ];
     // Non-editors (including anonymous) only see the gym's publicly LISTED
     // boards — isPublic AND NOT isUnlisted, mirroring searchBoards (unlisted =
     // reachable by direct link only, never enumerated). The leaderboard embed
@@ -1396,7 +1404,11 @@ export const socialBoardQueries = {
     const ownerCondition = eq(dbSchema.userBoards.ownerId, userId);
     const followedCondition = followedUuids.length > 0 ? inArray(dbSchema.userBoards.uuid, followedUuids) : undefined;
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
-    const whereClause = and(matchCondition, isNull(dbSchema.userBoards.deletedAt));
+    // In the WHERE the COUNT and the paged read share, never a post-filter:
+    // dropping rows from the page alone would leave the count promising results
+    // the last page does not have. `userId` is the owner escape, so the caller's
+    // own half-built walls stay in their list (SW-14).
+    const whereClause = and(matchCondition, isNull(dbSchema.userBoards.deletedAt), listableSprayWallCondition(userId));
 
     const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
 
@@ -1495,6 +1507,10 @@ export const socialBoardQueries = {
         eq(dbSchema.userBoards.isPublic, true),
         eq(dbSchema.userBoards.isUnlisted, false),
         isNull(dbSchema.userBoards.deletedAt),
+        // A wall can carry `is_public` before it has a published photo — the flag
+        // and the first publish are two separate moments — and search must not
+        // offer a board with no holds on it (SW-14).
+        listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
         sql`${locationCol} IS NOT NULL`,
         sql`ST_DWithin(${locationCol}, ${userPoint}, ${radiusMeters})`,
         // Hide boards with hideLocation=true unless the board owner follows the searching user
@@ -1565,6 +1581,9 @@ export const socialBoardQueries = {
       eq(dbSchema.userBoards.isPublic, true),
       eq(dbSchema.userBoards.isUnlisted, false),
       isNull(dbSchema.userBoards.deletedAt),
+      // Same rule as the proximity path above: a public wall with nothing
+      // published is not a result (SW-14).
+      listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
     ];
 
     if (boardType) {
@@ -2332,6 +2351,44 @@ export const socialBoardMutations = {
     if (validatedInput.locationName !== undefined) updateValues.locationName = validatedInput.locationName;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
+    // A spray wall's visibility is not an ordinary board flag: flipping it public
+    // copies the wall photo into the world-readable bucket, and flipping it back
+    // deletes that copy and retracts the climbs already fanned out to feeds
+    // (`updateSprayWall`, SW-14). Letting it through here would set the flag and
+    // do none of that — a private wall whose photo is still on the open web, or a
+    // public one that has no photo to show. One door, and this is not it.
+    //
+    // Only a CHANGE is refused: the edit screen sends the board's current flags
+    // back unchanged with every rename, and failing those would make a wall
+    // unrenameable.
+    const changingVisibility =
+      (validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
+      (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted);
+    if (board.boardType === 'spray' && changingVisibility) {
+      throw new GraphQLError("Change a spray wall's visibility on the wall itself", {
+        extensions: { code: 'SPRAY_WALL_VISIBILITY_ELSEWHERE' },
+      });
+    }
+
+    // The other two flags `createSprayWall` pins and this mutation would happily
+    // unpin (#5486). `has_leds` is the whole of the "no Bluetooth on a wall"
+    // contract: it routes the bulb down the take-the-wall path, keeps the device
+    // picker unmounted and the LED controls hidden, so a wall with it set offers a
+    // climber a Bluetooth scan for a photograph. `is_angle_adjustable` is the same
+    // shape of lie — a wall does not adjust, and every climb on it is recorded at
+    // the one angle it was photographed at.
+    //
+    // A CHANGE again, not the field's presence: a client that echoes the board
+    // back unchanged on a rename must not be refused.
+    const changingWallHardware =
+      (validatedInput.hasLeds !== undefined && validatedInput.hasLeds !== board.hasLeds) ||
+      (validatedInput.isAngleAdjustable !== undefined && validatedInput.isAngleAdjustable !== board.isAngleAdjustable);
+    if (board.boardType === 'spray' && changingWallHardware) {
+      throw new GraphQLError('A spray wall is a photograph — it has no lights and it does not adjust', {
+        extensions: { code: 'SPRAY_WALL_HAS_NO_HARDWARE' },
+      });
+    }
+
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
     if (validatedInput.isUnlisted !== undefined) updateValues.isUnlisted = validatedInput.isUnlisted;
     if (validatedInput.hideLocation !== undefined) updateValues.hideLocation = validatedInput.hideLocation;

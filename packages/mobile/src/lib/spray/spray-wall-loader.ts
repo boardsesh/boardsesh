@@ -14,7 +14,11 @@
 // expire in fifteen minutes and holds that change on every reset.
 
 import type { QueryClient } from '@tanstack/react-query';
-import { GET_SPRAY_WALL_BY_LAYOUT, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
+import {
+  GET_SPRAY_WALL,
+  GET_SPRAY_WALL_BY_LAYOUT,
+  GET_SPRAY_WALL_RENDER_DATA,
+} from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import {
@@ -143,6 +147,11 @@ export function registerRenderData(layoutId: number, renderData: SprayWallRender
 
   registerSprayWall(layoutId, {
     wallUuid: renderData.wall.uuid,
+    // The wall's own angle, not the caller's. Every climb set on the wall has to
+    // carry it or the server refuses the write. Optional-chained because
+    // `SprayWall.board` is only non-null by schema contract — see the field's note
+    // on `RegisteredSprayWall` for why a missing angle registers anyway.
+    angle: renderData.wall.board?.angle ?? null,
     version: renderData.versionNumber,
     photoWidth: dimensions.width,
     photoHeight: dimensions.height,
@@ -265,4 +274,51 @@ export function installSprayWallLoader(queryClient: QueryClient): () => void {
   return () => {
     setSprayWallLoader(null);
   };
+}
+
+type SprayWallResponse = { sprayWall: SprayWall | null };
+
+/**
+ * Take up the capability in a share link: resolve one wall BY UUID and seed the
+ * by-layout cache with it.
+ *
+ * This is the whole reason an unlisted share link carries `?wall=<uuid>`.
+ * `sprayWallByLayout` refuses an unlisted wall to anyone who is not its owner or
+ * a member of its gym — a layout id is a sequence number, so answering there
+ * would make every unlisted wall enumerable — while `sprayWall(uuid)` resolves
+ * it, because holding the uuid IS the proof you were handed the link.
+ *
+ * So the link's recipient asks the question they can answer, and the answer is
+ * written into `sprayWallByLayoutQueryKey(layoutId)`. Every later reader —
+ * `fetchSprayWallUuid`, and through it the whole render path — then finds the
+ * wall in cache and never asks the query that would refuse it.
+ *
+ * Seeding is not enough on its own, and that was a real bug: the handoff that
+ * navigates to the board runs CONCURRENTLY with this, so `ensureSprayWallLoaded`
+ * can get there first. On an unlisted wall it then resolves `sprayWallByLayout`
+ * to null — correctly, the recipient is not a member — which caches null for an
+ * hour, marks the wall `unavailable` in the registry and starts a 30-second retry
+ * cooldown. Writing the right answer into the cache afterwards fixes nothing by
+ * itself: nothing asks again, so a climber holding a perfectly good link lands on
+ * a blank placeholder. So adoption ENDS by forcing a registration, which skips
+ * both the cooldown and the stale window and now finds the seeded wall in cache.
+ * Whichever of the two got there first, the wall ends up registered.
+ *
+ * Returns the wall's layout id, or `null` when it does not resolve (deleted, a
+ * bad uuid, or a private wall the viewer may not see), in which case nothing is
+ * written.
+ */
+export async function adoptSprayWallFromLink(queryClient: QueryClient, wallUuid: string): Promise<number | null> {
+  const response = await queryClient.fetchQuery({
+    queryKey: ['sprayWall', wallUuid] as const,
+    queryFn: () => getHttpClient().request<SprayWallResponse>(GET_SPRAY_WALL, { uuid: wallUuid }),
+    staleTime: WALL_IDENTITY_STALE_TIME_MS,
+  });
+
+  const wall = response.sprayWall;
+  if (!wall) return null;
+
+  queryClient.setQueryData(sprayWallByLayoutQueryKey(wall.layoutId), { sprayWallByLayout: wall });
+  refreshSprayWall(wall.layoutId);
+  return wall.layoutId;
 }

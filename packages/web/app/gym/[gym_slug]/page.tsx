@@ -17,8 +17,11 @@ import {
   GET_GYM_PENDING_CLAIM,
   GET_GYM_BOARDS_FOR_LISTING,
   GET_GYM_KIOSK,
+  GET_GYM_SPRAY_WALLS,
   type GetGymPendingClaimQueryResponse,
   type GetGymBoardsQueryResponse,
+  type GetGymSprayWallsQueryResponse,
+  type GymSprayWallListing,
   type GetGymKioskQueryResponse,
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
@@ -113,6 +116,61 @@ async function fetchGymBoards(gymUuid: string, token: string | undefined): Promi
 }
 
 /**
+ * The gym's spray walls, as its members and the open web respectively may see them.
+ *
+ * Its own query and its own catch, like every other section on this page: a
+ * backend that has not deployed `gymSprayWalls` yet must cost this page its wall
+ * list and nothing else. Folding the selection into `fetchGymBySlug` would 404
+ * the whole gym.
+ *
+ * `null` — not `[]` — when the ask itself failed, and the difference matters for
+ * exactly one window: web deploys ahead of backend, `gymSprayWalls` is not a
+ * field yet, and the caller is about to strip every spray wall out of the boards
+ * section on the promise that the section below shows them instead. An empty
+ * list makes that promise and breaks it, so a gym's walls disappear from the page
+ * altogether until the backend catches up. `null` says "could not ask", and the
+ * caller leaves the walls where they already were.
+ */
+async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): Promise<GymSprayWallListing[] | null> {
+  try {
+    const response = await executeAuthenticatedGraphQL<GetGymSprayWallsQueryResponse>(
+      GET_GYM_SPRAY_WALLS,
+      { gymUuid },
+      token,
+    );
+    return response.gymSprayWalls ?? [];
+  } catch (error) {
+    console.error('fetchGymSprayWalls failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Where a gym's spray-wall row links.
+ *
+ * `createSprayWall` mints a slug for every wall, so a null one is a data-integrity
+ * problem rather than a case to design for — but the row still renders: a gym
+ * member can see this wall, and dropping it would be a worse answer than a link to
+ * the gym they are already on. The dev-only warning is the whole point of the
+ * branch, so the broken row gets found instead of quietly degrading in production.
+ *
+ * No `?wall=` capability param, and none is needed: `gymSprayWalls` gates on
+ * `viewerCanSeeSprayWallByLayout`, which has no unlisted exemption, so an unlisted
+ * wall is never in this list. Every wall here is public — `/b/{slug}` resolves it
+ * for anybody — or private to a gym member, whom the server recognises by their
+ * session. The param is for the share link `buildSprayWallShareUrl` produces
+ * (`packages/mobile/src/lib/spray/spray-share.ts`), which is the one place an
+ * unlisted wall is handed out.
+ */
+function sprayWallHref(sprayWall: GymSprayWallListing, gymSlug: Gym['slug']): string {
+  if (sprayWall.board.slug) return `/b/${sprayWall.board.slug}`;
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`gym spray wall ${sprayWall.uuid} has no board slug; linking to the gym instead`);
+  }
+  return `/gym/${gymSlug}`;
+}
+
+/**
  * Absolute, http(s)-only URL for the owner-uploaded gym photo, or null.
  *
  * Two guards, both load-bearing. safeExternalHref keeps a legacy row holding a
@@ -199,7 +257,25 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, boards] = await Promise.all([fetchDefaultKiosk(gym_slug, token), fetchGymBoards(gym.uuid, token)]);
+  const [kiosk, allBoards, gymSprayWalls] = await Promise.all([
+    fetchDefaultKiosk(gym_slug, token),
+    fetchGymBoards(gym.uuid, token),
+    fetchGymSprayWalls(gym.uuid, token),
+  ]);
+  const sprayWalls = gymSprayWalls ?? [];
+
+  // Spray walls come back in `gymBoards` too — they are ordinary `user_boards`
+  // rows under the ninth board type — and they get their own section below, with
+  // the photo and the hold count a wall is actually recognised by. Filtered out
+  // here so the same wall is not listed twice, and BEFORE the subtitles are
+  // built: those are index-aligned with the list they describe.
+  //
+  // Only when the wall list actually answered. `gymSprayWalls` returning null
+  // means the question could not be asked at all — the deploy window where web
+  // is ahead of backend — and filtering on that would take the walls out of the
+  // boards section without the section below putting them back, which is worse
+  // than listing them the old way for a few minutes.
+  const boards = gymSprayWalls ? allBoards.filter((board) => board.boardType !== 'spray') : allBoards;
 
   // Two boards run by the same gym used to read identically here — "Kilter ·
   // 40°" twice, under two rows the setter had also named the same thing (issue
@@ -511,6 +587,72 @@ export default async function GymPage(props: GymRouteProps) {
               </Box>
             ))}
           </Box>
+        )}
+
+        {sprayWalls.length > 0 && (
+          <>
+            <Divider sx={{ my: 4 }} />
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <Typography variant="h5" component="h2" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
+                {t('gymPage.sprayWallsHeading')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('gymPage.sprayWallCount', { count: sprayWalls.length })}
+              </Typography>
+            </Box>
+
+            <Typography variant="body2" sx={{ mb: 2, color: themeTokens.neutral[700] }}>
+              {t('gymPage.sprayWallsIntro')}
+            </Typography>
+
+            <Box
+              component="ul"
+              sx={{ listStyle: 'none', p: 0, m: 0, display: 'flex', flexDirection: 'column', gap: 2 }}
+            >
+              {sprayWalls.map((sprayWall) => (
+                <Box component="li" key={sprayWall.uuid} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {/* Only a PUBLIC wall has a photo here: `publicPhotoUrl` is the
+                      copy in the world-readable bucket, and it is null for every
+                      other wall. A gym member reading their gym's private wall
+                      gets the name and the hold count, which is the row this
+                      page is allowed to render for a photograph nobody outside
+                      the gym may see. */}
+                  {sprayWall.publicPhotoUrl && (
+                    <Box
+                      component="img"
+                      src={sprayWall.publicPhotoUrl}
+                      alt={t('gymPage.sprayWallPhotoAlt', { wallName: sprayWall.board.name })}
+                      sx={{
+                        width: 96,
+                        height: 72,
+                        objectFit: 'cover',
+                        borderRadius: 1,
+                        display: 'block',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                  <Box>
+                    <MuiLink
+                      component={LocaleLink}
+                      href={sprayWallHref(sprayWall, gym.slug)}
+                      underline="hover"
+                      sx={{ color: 'var(--color-primary)', fontWeight: themeTokens.typography.fontWeight.semibold }}
+                    >
+                      {stripGymNamePrefix(sprayWall.board.name, gym.name)}
+                    </MuiLink>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('gymPage.sprayWallMeta', {
+                        angle: sprayWall.board.angle,
+                        holds: sprayWall.holdCount,
+                      })}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </>
         )}
 
         <Divider sx={{ my: 4 }} />

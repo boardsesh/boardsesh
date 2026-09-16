@@ -334,6 +334,11 @@
         "title": "No se encontraron bloques",
         "subtitle": "Intenta ajustar la configuración de tu plafón"
       },
+      "unsetWall": {
+        "title": "Nadie ha montado nada en este plafón",
+        "subtitle": "Elige tus presas, ponle nombre y el plafón ya tiene su primer bloque.",
+        "cta": "Monta el primer bloque"
+      },
       "noMatches": {
         "title": "Sin resultados",
         "description": "Nada coincide con \"{{query}}\""
@@ -715,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Añade una presa de salida y una de final para publicar"
+        "blocked": "Añade una presa de salida y una de final para publicar",
+        "gradeBlocked": "Elige tu grado para publicar"
       },
       "wallSizeMismatch": "Cambia tu plafón activo a este tamaño de Woods para iluminarlo.",
       "routeMenu": {
@@ -723,6 +729,11 @@
         "makeRoute": "Convertir en vía",
         "makeBoulder": "Convertir en bloque",
         "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas"
+      },
+      "grade": {
+        "label": "Tu grado",
+        "required": "Necesario para publicar",
+        "optional": "Opcional en un borrador"
       }
     },
     "holdFilter": {

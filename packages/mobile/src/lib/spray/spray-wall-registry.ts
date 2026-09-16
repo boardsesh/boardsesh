@@ -48,6 +48,26 @@ export const SPRAY_BOARD_NAME = 'spray';
 export type RegisteredSprayWall = {
   layoutId: number;
   wallUuid: string;
+  /**
+   * The wall's fixed angle, from its `user_boards` row, or `null` when the payload
+   * did not carry one.
+   *
+   * A wall does not adjust (`is_angle_adjustable` is false), so this is the one
+   * angle its climbs may be set at — and the server rejects any other
+   * (`assertSprayAngleMatchesWall`). The create-climb editor reads it from here
+   * rather than from the route params, which can carry a stale or hand-edited
+   * angle from a deep link.
+   *
+   * Nullable on purpose, and it is NOT the same choice `photoDimensions` makes
+   * next door. A wall whose photo will not say its size cannot be DRAWN, so it is
+   * refused outright; a wall that will not say its angle draws perfectly well, and
+   * blanking the board over a field only the authoring path reads would trade a
+   * working wall for a placeholder. Fabricating a number would be worse than
+   * either: `authoringAngle` falls back to the caller's angle for a null, whereas
+   * a plausible-looking 0 would make every publish fail the server's angle check
+   * with nothing the setter could do about it.
+   */
+  angle: number | null;
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
   photoWidth: number;
