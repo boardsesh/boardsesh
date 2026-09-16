@@ -8,6 +8,8 @@ import {
 } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { HoldPlacement } from '../components/board-renderer/types';
+import { getSprayWall, sprayCacheToken } from './spray/spray-wall-registry';
+import { sprayBackgroundKey } from './spray/spray-photo-keys';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -45,7 +47,12 @@ export function getBoardRenderData(params: {
 }): BoardRenderData | null {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}`;
+  // The spray token is `''` for every catalogue board, so no existing key moves
+  // by a byte; for a wall it carries the version, which is the only thing that
+  // changes when a reset replaces the photo and the hold generation under an
+  // unchanged (layoutId, sizeId). Without it a reset would be served the
+  // previous generation's holds out of this memo forever.
+  const cacheKey = `${boardName}-${layoutId}-${sizeId}-${setIds.join(',')}${sprayCacheToken(boardName, layoutId)}`;
   const cached = renderDataCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -81,6 +88,10 @@ function computeBoardRenderData(params: {
 
   if (boardName === 'woods') {
     return getWoodsRenderData({ layoutId, sizeId });
+  }
+
+  if (boardName === 'spray') {
+    return getSprayRenderData({ layoutId, sizeId });
   }
 
   const sizeData = getProductSize(boardName, sizeId);
@@ -222,6 +233,59 @@ function getWoodsRenderData(params: { layoutId: number; sizeId: number }): Board
   }
 }
 
+/**
+ * Spray wall render data, straight off the runtime registry.
+ *
+ * The frame is the photograph: `boardWidth` / `boardHeight` are the photo's own
+ * pixels and the edges are the whole of it, because a wall has no playing-surface
+ * inset to trim (the owner decision of 2026-09-14 is that there are no wall
+ * dimensions at all — we just render the photo). Holds are already in photo
+ * pixels by the time they reach the registry; `useSprayWall` pushes them through
+ * the version's inverse homography.
+ *
+ * `null` — the same answer an unknown Aurora config gives — for a wall that has
+ * not been registered yet, for a size id that is not the layout id (a wall's size
+ * IS its layout, so a mismatch means the caller resolved this config against some
+ * other board), and for a photo with no usable pixel dimensions. Every one of
+ * those draws a placeholder rather than a plausible-looking wrong wall.
+ *
+ * Holds are alive-only by construction: `sprayWallRenderData` returns the
+ * generation alive AT the requested version, so there is no equivalent of the
+ * Woods occupied-slot filter to apply here.
+ */
+function getSprayRenderData(params: { layoutId: number; sizeId: number }): BoardRenderData | null {
+  const { layoutId, sizeId } = params;
+  if (sizeId !== layoutId) return null;
+
+  const wall = getSprayWall(layoutId);
+  if (!wall) return null;
+
+  const boardWidth = wall.photoWidth;
+  const boardHeight = wall.photoHeight;
+  if (!(boardWidth > 0) || !(boardHeight > 0)) return null;
+
+  const holdsData: HoldPlacement[] = wall.holds.map((hold) => ({
+    id: hold.id,
+    // A wall is one photograph of one physical wall: there is no mirror geometry
+    // to reflect a hold onto, so every placement is unmirrored.
+    mirroredHoldId: null,
+    cx: hold.cx,
+    cy: hold.cy,
+    r: hold.r,
+  }));
+
+  return {
+    boardWidth,
+    boardHeight,
+    edgeLeft: 0,
+    edgeRight: boardWidth,
+    edgeBottom: 0,
+    edgeTop: boardHeight,
+    backgroundImageKeys: [sprayBackgroundKey(layoutId, wall.version)],
+    holdsData,
+  };
+}
+
 export function getBoardAspectRatio(params: {
   boardName: BoardName;
   layoutId: number;
@@ -230,9 +294,10 @@ export function getBoardAspectRatio(params: {
 }): number {
   const { boardName, layoutId, sizeId, setIds } = params;
 
-  // Code-driven boards have no `board_images` row to read dimensions from, so
-  // their aspect ratio comes off the render data (which is memoized anyway).
-  if (boardName === 'moonboard' || boardName === 'woods') {
+  // Code-driven boards have no `board_images` row to read dimensions from, and a
+  // spray wall's dimensions are its photograph's, so both take their aspect ratio
+  // off the render data (which is memoized anyway).
+  if (boardName === 'moonboard' || boardName === 'woods' || boardName === 'spray') {
     const renderData = getBoardRenderData(params);
     return renderData ? renderData.boardWidth / renderData.boardHeight : 1080 / 1920;
   }

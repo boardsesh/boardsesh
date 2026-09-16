@@ -100,6 +100,7 @@ import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticSuccess } from '../../lib/haptics';
 import { nextMirrorIntentAction, resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
@@ -590,6 +591,12 @@ export function PlayDrawer({
 
   usePlayDrawerWakeLock(isSheetOpen);
 
+  // The drawer's first render always beats the wall: `DrawerHostProvider` asks
+  // for it from an effect. Without a registry subscription this memo would hold
+  // the `null` it computed then, and the play surface — the one place a wall is
+  // actually climbed on — would sit on `BoardRenderUnavailable` until the
+  // climber switched board and back.
+  const sprayToken = useSprayWallToken(boardName, layoutId);
   const boardRenderData = useMemo(() => {
     const parsedSetIds = setIds.split(',').map(Number);
     return getBoardRenderData({
@@ -598,7 +605,8 @@ export function PlayDrawer({
       sizeId,
       setIds: parsedSetIds,
     });
-  }, [boardName, layoutId, sizeId, setIds]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
 
   // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.

@@ -556,6 +556,74 @@ hold id is alive on the version being edited. It never asks whether a hold "look
 like" a hold. Owner decision 2026-09-14: it is the owner's wall, and trash in is
 their call.
 
+## The mobile render path
+
+Every catalogue board's background is a `.webp` inside the IPA/APK and every hold
+position comes from generated constants. A wall has neither, so SW-07 (#5440) put
+a **runtime registry** in front of the same draw path rather than a second one
+beside it.
+
+`packages/mobile/src/lib/spray/`:
+
+| Module | What it does |
+| --- | --- |
+| `spray-wall-loader.ts` | The two round trips: `sprayWallByLayout` for the uuid (cached hard; a wall's uuid never moves), then `sprayWallRenderData` for the payload (10-minute stale time, bounded by the photo signature, not by how often a wall changes). Injected into the registry with `setSprayWallLoader`, so the draw path can ASK for a wall without being able to reach the network itself. |
+| `use-spray-wall.ts` | `useSprayWall(layoutId)` — the active board's wall, called once from `drawer-host-provider`, and the hook a surface reads `isUnrenderable` off. |
+| `use-spray-wall-token.ts` | `useSprayWallToken(boardName, layoutId)` — the one line a SYNCHRONOUS surface needs above its early return, because a component that gates on `getBoardRenderData() === null` returns before it mounts anything that subscribes. Requests the wall and subscribes to it in one call. Every synchronous board surface calls it — the play drawer, both board rows, the kiosk, the board-look preview, the reaction menu, the accessory thumbnail — and `spray-render-surfaces-subscribe.test.ts` fails a new one that does not. |
+| `spray-hold-geometry.ts` | Canonical pixels -> this version's photo pixels, through `invert()` of the stored matrix. Centres via `mapPoint`, radii via `mapRadius`, silhouettes point by point via `mapRing` and back into radius units of the MAPPED radius. |
+| `spray-wall-registry.ts` | The map every downstream reader consults synchronously, plus `sprayCacheToken`. Registering also publishes the wall's silhouettes as runtime board-art geometry. |
+| `spray-photo-cache.ts` | The photograph on disk at `{cache}/spray-walls/<layoutId>-<version>.jpg`. The presigned URL is never the cache key — it changes on every read. |
+| `spray-photo-keys.ts` | The names, with no imports, so the render path and the sweeper can use them without pulling `expo-file-system` in. |
+
+Four things are worth stating plainly.
+
+**No Rust change.** `HoldData.outline` already accepts a per-hold polygon in
+radius units, so the wall's real hold shapes reach the renderer through
+`@boardsesh/board-art-geometry`'s new `registerRuntimeGeometry(key, geometry)`,
+consulted BEFORE the shards in `loader.ts`. The key is
+`spray/<layoutId>-<layoutId>` — a wall's size id is its layout id — which is
+exactly what `boardArtGeometryKey` already produces, so
+`use-native-climb-render.ts` and the backend's `board-geometry.ts` needed no
+branch at all. Aura draws true silhouettes, classic draws rings, and a hold with
+no `spray_wall_holds.outline` falls back to a ring like any untraced placement.
+
+**The version is in every cache key.** A reset writes new versions and a new hold
+generation under an UNCHANGED `(layout_id, size_id)`, and encoding it in `sizeId`
+was rejected (it would leak into `compatible_size_ids`, the offline key,
+`board_sessions.board_path` and share URLs). So `sprayCacheToken(boardName,
+layoutId)` — empty for every catalogue board, `-sv<version>` for a wall — is
+folded into all ten: the render-data memo, the create-climb hold memo,
+`buildCacheKey`, `buildBoardKey`, the board `configKey`, `boardHoldIdsCache`, the
+playlist render-board target cache, `overlayRetainIdentity`,
+`createClimbDraftKey` and `createClimbScreenKey`. Each one has a test that
+registers version 1, takes the key, registers version 2 and asserts it moved;
+drop the token from any of them and that test fails.
+
+**The photo is protected while it is in use.** The sweeper reaps
+`{cache}/spray-walls` on age (a fortnight), minus every wall this session has
+registered — an mtime-only rule would happily delete the photograph underneath a
+climber who is looking at it. A half-written `.part` is protected too, whatever
+its age: Clear sweeps with `maxAgeMs: 0`, and deleting one mid-transfer would
+`ENOENT` the `moveSync` that was about to finish it.
+
+**A presigned URL is never retried once it has lapsed.** The signature is good
+for fifteen minutes; the photo it points at is named `<layoutId>-<version>.jpg`
+and outlives it. So `ensureSprayPhotoCached` checks `photoExpiresAt` before it
+fetches, and a lapsed one calls `refreshSprayWall` — which invalidates the render
+query rather than re-requesting a dead URL — and answers "no photo yet". Minting
+a fresh signature is something only `sprayWallRenderData` can do. Retrying the
+expired URL instead would 403 on every pass for the rest of the session while the
+board sat on a placeholder.
+
+**Known gap, for SW-08.** A fresh signature alone does not restart the download.
+The background pass re-runs on the render hook's board key, and `sprayCacheToken`
+carries the version — so a refresh that re-registers the SAME version leaves
+every dep byte-identical and the photo is not re-fetched until the wall resets or
+the surface remounts. Same for a download that simply failed. The fix is a
+registration epoch subscribed as a background-effect-only dependency; it must not
+reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
+revalidation. Costs nothing before SW-09 makes a wall reachable.
+
 ## Photo privacy
 
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute

@@ -243,6 +243,63 @@ export function planStaleArtifactSweep(params: {
   return { deleteNames, freedBytes };
 }
 
+/**
+ * How long a spray-wall photo survives after the last time anything touched it
+ * (issue #5440).
+ *
+ * Longer than a snapshot artifact's day, because the two leak differently. A
+ * leaked snapshot is a 271 MB accident nobody wants; a wall photo is a couple of
+ * megabytes the climber's own board needs on the NEXT session too, and
+ * re-downloading it costs a presigned round trip before the wall can be drawn at
+ * all. A fortnight reaps the photos of walls the climber has stopped visiting and
+ * the superseded generations a reset left behind, and keeps the ones they use.
+ */
+export const SPRAY_PHOTO_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Suffix a spray-wall photo download stages under. Mirrors `partialPhotoFile` in
+ * `spray-photo-cache.ts`; a plan must never delete one (see
+ * {@link planSprayPhotoSweep}).
+ */
+export const SPRAY_PARTIAL_SUFFIX = '.part';
+
+/**
+ * Which wall photos to reap: the stale ones, minus anything a live wall is using.
+ *
+ * `protectedNames` is the load-bearing half. Superseded versions age out on their
+ * own, but a wall registered in THIS session is one somebody is looking at, and
+ * an mtime-only rule would happily delete the photo underneath them — the board
+ * would blank until the download ran again, which is the opposite of what a cache
+ * sweep is for. An undateable entry is left alone for the same reason
+ * `planStaleArtifactSweep` leaves one alone: guessing "old" is the wrong way to be
+ * wrong about a file somebody may need in a second.
+ */
+export function planSprayPhotoSweep(params: {
+  entries: readonly CacheDirEntry[];
+  nowMs: number;
+  maxAgeMs: number;
+  protectedNames: ReadonlySet<string>;
+}): { deleteNames: string[]; freedBytes: number } {
+  const deleteNames: string[] = [];
+  let freedBytes = 0;
+  for (const entry of params.entries) {
+    // A `.part` is a download in flight. Its mtime is NOW, so the age rule alone
+    // protects it from an ordinary sweep — but the Clear button passes
+    // `maxAgeMs: 0`, and the live-wall protection is keyed on the finished `.jpg`
+    // name, so without this the Clear action deletes the staging file underneath
+    // a running download: `moveSync` then fails with ENOENT and the wall shows a
+    // placeholder until something asks again. Never ours to reclaim mid-write —
+    // the same rule the overlay cache applies to its own managed temps.
+    if (entry.name.endsWith(SPRAY_PARTIAL_SUFFIX)) continue;
+    if (params.protectedNames.has(entry.name)) continue;
+    if (entry.modifiedAtMs === null) continue;
+    if (params.nowMs - entry.modifiedAtMs < params.maxAgeMs) continue;
+    deleteNames.push(entry.name);
+    freedBytes += entry.sizeBytes;
+  }
+  return { deleteNames, freedBytes };
+}
+
 /** The cache key a PNG name encodes (i.e. the name without its `.png`). */
 export function cacheKeyForOverlayName(name: string): string {
   return name.endsWith(CACHE_ENTRY_SUFFIX) ? name.slice(0, -CACHE_ENTRY_SUFFIX.length) : name;
@@ -252,10 +309,12 @@ export function cacheKeyForOverlayName(name: string): string {
  * Whether an overlay PNG belongs to one downloaded board scope.
  *
  * `buildCacheKey` (use-native-climb-render.ts) lays the identity out as
- * `v{version}_{style}_w{width}_{boardName}_{layoutId}_{sizeId}_{setIds}_{hash}`,
+ * `v{version}_{style}_w{width}_{boardName}_{layoutId}_{sizeId}_{setIds}[-sv{n}]_{hash}`,
  * so the scope is an underscore-delimited run inside the name. The delimiters on
  * BOTH sides are load-bearing: without the trailing one, layout 1 also matches
- * layout 12, and size 7 also matches size 70.
+ * layout 12, and size 7 also matches size 70. A spray wall's version rides on the
+ * set-ids segment for exactly that reason — putting it between `sizeId` and its
+ * trailing underscore would split the run this matches on.
  */
 export function overlayNameMatchesScope(
   name: string,
