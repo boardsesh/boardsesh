@@ -390,13 +390,18 @@ export const buildSprayOgImageUrl = (layoutId: number, frames: string): string |
   const backendOrigin = getPublicBackendHttpUrl();
   if (!backendOrigin) return null;
 
+  // `ogClimbQuerySchema` requires `frames`, so a climb with none would publish an
+  // `og:image` that answers 400. No card at all is the better share sheet.
+  const flatFrames = toFlatFrames(frames, 'spray');
+  if (!flatFrames) return null;
+
   const backendParams = new URLSearchParams({
     board_name: 'spray',
     layout_id: String(layoutId),
     // A wall's size id IS its layout id, and its one synthetic hold set is 1.
     size_id: String(layoutId),
     set_ids: '1',
-    frames: toFlatFrames(frames, 'spray'),
+    frames: flatFrames,
     format: 'jpeg',
   });
   return `${backendOrigin}/og/climb?${backendParams}`;

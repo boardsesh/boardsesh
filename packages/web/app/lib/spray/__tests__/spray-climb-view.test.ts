@@ -85,6 +85,15 @@ describe('buildSprayLitHoldMarks', () => {
   it('has nothing to draw for a climb with no frames', () => {
     expect(buildSprayLitHoldMarks({ holds: HOLDS, homography: IDENTITY, frames: '' })).toEqual([]);
   });
+
+  it('draws every frame of a multi-frame climb, not just the first', () => {
+    // Frame 0 lights 101, frame 1 lights 102. A static render owes the reader
+    // the union of both — one frame is a fragment of the climb — and it is what
+    // this climb's own OG card draws, so the page and the card must agree.
+    const marks = buildSprayLitHoldMarks({ holds: HOLDS, homography: IDENTITY, frames: 'p101r1,p102r3' });
+
+    expect(marks.map((mark) => mark.id)).toEqual([101, 102]);
+  });
 });
 
 describe('resolveSprayPhotoFrame', () => {
