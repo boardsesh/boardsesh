@@ -148,6 +148,9 @@ export type ClimbSearchInput = {
   sizeId: number;
   setIds: string;
   angle: number;
+  // A spray wall's uuid as a CAPABILITY: an unlisted wall's climbs are listable by
+  // a caller holding it. Ignored on every other board type.
+  sprayWallUuid?: string;
   // Pagination
   page?: number;
   pageSize?: number;

@@ -154,7 +154,9 @@ export const integrationMutations = {
       throw new Error('Session has no start time');
     }
 
-    const summary = await generateSessionSummary(sessionId);
+    // The export is this user's own workout, so it is generated as them: a send on
+    // their own wall belongs in the Strava activity they are uploading.
+    const summary = await generateSessionSummary(sessionId, userId);
     if (!summary) {
       throw new Error('Session has no recorded activity');
     }

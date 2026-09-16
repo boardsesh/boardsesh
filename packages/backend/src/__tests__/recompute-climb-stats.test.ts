@@ -218,16 +218,24 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(/AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)\s+AS avg_quality/);
     expect(sql).toMatch(/AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)\s+AS avg_difficulty/);
 
-    // difficulty/display are CASE-guarded on `owned OR derive_from_ticks`
+    // difficulty/display are CASE-guarded on `graded OR derive_from_ticks`
     // (#4798): Aurora's averages survive untouched on a synced climb, while a
     // row we have never graded — or one we graded ourselves and upstream has not
     // stamped since — takes the tick average.
+    //
+    // `boardsesh_graded`, not `boardsesh_owned`: the owned leg answers TWO
+    // questions and only the quality/FA half is `user_id IS NOT NULL`. The grade
+    // half additionally fences spray walls out (SW-05c), whose setter grade is
+    // seeded and authoritative — see `ownedGradeIsOursSql`.
     expect(sql).toMatch(
-      /difficulty_average\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/,
+      /difficulty_average\s*=\s*CASE[\s\S]+?boardsesh_graded FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/,
     );
     expect(sql).toMatch(
-      /display_difficulty\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/,
+      /display_difficulty\s*=\s*CASE[\s\S]+?boardsesh_graded FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/,
     );
+    // …and that fence is in the owner CTE, beside the unfenced `boardsesh_owned`
+    // the quality and FA branches still use.
+    expect(sql).toMatch(/owner AS \([\s\S]+?bc\.board_type <> 'spray'[\s\S]+?AS boardsesh_graded/);
     // The marker column is written on the same branch, stamped now() when the
     // derive produced a grade and NULLed when it did not (last graded tick gone).
     expect(sql).toMatch(

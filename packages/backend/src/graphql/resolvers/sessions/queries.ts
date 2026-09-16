@@ -160,7 +160,7 @@ export const sessionQueries = {
   sessionSummary: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
-    return generateSessionSummary(sessionId);
+    return generateSessionSummary(sessionId, ctx.userId ?? null);
   },
 
   /**
