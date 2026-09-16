@@ -28,3 +28,10 @@ av==18.1.0              # BSD-3 — decodes The Way Up clips into frames, no ffm
 boto3==1.43.94           # Apache-2.0 — S3-compatible upload to the media R2 bucket
 jsonschema==4.26.0       # MIT — validates the built manifest against model-manifest.schema.json
 pytest==9.1.1            # MIT — test_publish_model.py
+
+# Not pinned here, installed on demand: `roboflow` (Apache-2.0), the SDK
+# data/fetch.py uses to download the CC BY Roboflow corpus. Nothing in the
+# train/export/eval/publish path imports it, and a corpus is downloaded once, so
+# it stays out of the pinned set. data/fetch.py prints the install line if it is
+# missing:
+#   pip install roboflow

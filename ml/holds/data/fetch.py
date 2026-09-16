@@ -105,7 +105,17 @@ def fetch_roboflow(entry: dict, target: Path) -> None:
     training and hosted inference do — this repo trains locally, so neither is
     ever called from here.
     """
-    from roboflow import Roboflow
+    try:
+        from roboflow import Roboflow
+    except ImportError as error:
+        # Deliberately not in requirements.txt: the Roboflow SDK is only needed for
+        # this one-off dataset download, never by train/export/eval, so the pinned
+        # set stays the training set. Say so instead of dying on a bare traceback.
+        raise SystemExit(
+            "the Roboflow SDK is not installed, so this dataset cannot be downloaded.\n"
+            "  pip install roboflow\n"
+            f"(import error: {error})"
+        ) from error
 
     workspace, project, version = entry["workspace"], entry["project"], int(entry["version"])
     if (target / "train" / "_annotations.coco.json").exists():
