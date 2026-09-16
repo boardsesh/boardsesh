@@ -208,6 +208,8 @@ export default function HomeTab() {
 
   const loadNextPage = useCallback(() => {
     if (!feed.hasNextPage || feed.isFetchingNextPage || !pageGateRef.current.claim(pageSource)) return;
+    // Promise cleanup still runs after unmount. A remount owns a fresh ref, so
+    // this completion can only release the old instance's gate.
     void feed.fetchNextPage().finally(() => {
       pageGateRef.current.release(pageSource);
     });

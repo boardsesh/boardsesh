@@ -55,6 +55,7 @@ export function OfflineEngineFlagSync() {
  * host app — offline sync is best-effort and must not take the UI down with it.
  */
 export function OfflineSyncBridge() {
+  // Warm the owner-scoped author snapshot on app boot for offline Following searches.
   useFollowedAuthors();
   // Not `useSQLiteContext()` directly: a dead-handle recovery opens a REPLACEMENT
   // connection without the provider ever re-rendering, so the context value would

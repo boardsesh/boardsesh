@@ -27,7 +27,17 @@ afterEach(() => {
   onlineManager.setOnline(true);
 });
 
-describe('followed author snapshot refresh', () => {
+// These cases own one mutable database fixture; overlap is introduced explicitly
+// inside the race tests, not by running separate fixtures concurrently.
+describe.sequential('followed author snapshot refresh', () => {
+  it('persists successive snapshots without resetting the request generation', async () => {
+    for (const setter of ['first', 'second', 'third']) {
+      const authors = { setterUsernames: [setter], users: [] };
+      request.mockResolvedValueOnce({ followedAuthors: authors });
+      expect(await loadFollowedAuthors('viewer')).toEqual(authors);
+      expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual(authors);
+    }
+  });
   it('caches complete board-account metadata and serves it offline', async () => {
     expect(await loadFollowedAuthors('viewer')).toEqual(newAuthors);
     onlineManager.setOnline(false);
