@@ -71,8 +71,11 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// See SprayWallResetScreen.test.tsx: the builders return `{ name, properties }`
+// and `trackSprayEvent` unpacks the pair, so the stubs have to return it too.
 vi.mock('@boardsesh/analytics', () => ({
-  SHARED_EVENTS: { SprayWallResetPreviewed: 'p', SprayWallResetApplied: 'a' },
+  sprayWallResetPreviewed: (properties: Record<string, unknown>) => ({ name: 'p', properties }),
+  sprayWallResetApplied: (properties: Record<string, unknown>) => ({ name: 'a', properties }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
