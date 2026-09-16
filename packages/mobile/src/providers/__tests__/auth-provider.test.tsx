@@ -293,7 +293,7 @@ vi.mock('../../lib/spray/spray-photo-store', () => ({
   clearStoredSprayPhotos: clearStoredSprayPhotosMock,
 }));
 
-const clearUserDataMock = vi.hoisted(() => vi.fn(async (): Promise<string[]> => []));
+const clearUserDataMock = vi.hoisted(() => vi.fn(async (): Promise<void> => {}));
 const purgeLocalDataForSignOutMock = vi.hoisted(() =>
   vi.fn(async () => ({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false, vacuumed: true })),
 );
@@ -1179,7 +1179,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     authSignOutMock.mockReset();
     getDatabaseHandleMock.mockReset();
     clearUserDataMock.mockClear();
-    clearUserDataMock.mockResolvedValue([]);
+    clearUserDataMock.mockResolvedValue(undefined);
     clearStoredSprayPhotosMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({

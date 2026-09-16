@@ -44,7 +44,8 @@ export { DATABASE_NAME } from './database-name';
 // next account on the device never sees the previous user's ticks, playlists,
 // follows, or not-yet-synced writes. Board reference data (board_climbs,
 // board_climb_stats) is deliberately excluded — it is the expensive shared
-// cache and is identical regardless of who is logged in.
+// cache and is identical regardless of who is logged in. Except for spray: see
+// SPRAY_SCOPED_BOARD_TABLES below, which clears those tables' spray rows only.
 //
 // `spray_walls` is the ONE piece of board reference data that is cleared here
 // (issue #5448), because the sentence above is false for it: a wall is not
@@ -65,6 +66,18 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'pending_mutations',
   'spray_walls',
 ] as const;
+
+/** The wire value for the spray board type, as every scope key and resolver spells it. */
+const SPRAY_BOARD_TYPE = 'spray';
+
+// The per-board reference tables whose SPRAY rows are cleared on sign-out too
+// (#5448). The wall row is not the only private thing a mirrored wall leaves
+// behind: these three hold its climbs' names, descriptions, frames, grades and
+// stats, and `searchClimbsLocal` serves board reference data with no owner stamp
+// — deliberately, because a Kilter catalogue is shared. So the rows for the one
+// board type where that is false have to go with the wall. Only `board_type =
+// 'spray'` is touched; the catalogue download the wipe exists to protect is not.
+const SPRAY_SCOPED_BOARD_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;
 
@@ -817,54 +830,66 @@ export function resetDatabaseInitializationForTests(): void {
  * on this device" signal, so dropping unsynced writes is the documented behaviour
  * rather than a data-loss bug.
  *
- * `spray_walls` is the exception the docblock above has to make room for (#5448):
- * its rows ARE deleted, so the markers describing them cannot be kept. A cursor
- * that outlived its row is worse than no cursor at all — `syncSprayWalls` pages
- * on a strict `>`, so it would resume PAST the deleted wall and an unchanged
- * wall would never be offered again. The wall would be missing until its owner
- * next touched it on the server. So each deleted wall's whole scope goes with
- * it, in the same transaction; the next sign-in re-downloads one wall, which is
- * a page, not a catalogue.
+ * Spray is the exception the docblock above has to make room for (#5448): a wall
+ * is not "identical regardless of who is logged in", so its rows ARE deleted —
+ * the `spray_walls` row AND that wall's climbs, stats and grades, which carry
+ * the wall's climb names, descriptions, frames and grades. Leaving those behind
+ * would hand them to the next account straight out of SQLite: `searchClimbsLocal`
+ * reads board reference data, so no owner stamp gates it, and the offline engine
+ * serves it ahead of the network. Only spray rows go; the catalogue download this
+ * wipe exists to protect is untouched.
  *
- * Returns the photo keys of the walls it removed, so the caller can delete the
- * files. They are read in the same transaction as the DELETE because afterwards
- * nothing on the device names them.
+ * The markers describing them cannot be kept either. A cursor that outlived its
+ * row is worse than no cursor at all — the sync resolvers page on a strict `>`,
+ * so one would resume PAST the deleted rows and an unchanged wall would never be
+ * offered again. The wall would be missing until its owner next touched it on the
+ * server. So each spray scope goes whole, in the same transaction; the next
+ * sign-in re-downloads one wall, which is a page, not a catalogue.
+ *
+ * The photographs are the caller's half: `clearStoredSprayPhotos` wipes the whole
+ * store next to this call, which is strictly more than these rows name and so
+ * also reclaims a file some earlier failed wipe orphaned.
  */
-export async function clearUserData(db: SQLiteDatabase): Promise<string[]> {
-  const removedPhotoKeys: string[] = [];
+export async function clearUserData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
     // Sign-out teardown runs on its own connection concurrently with in-flight sync
     // reads/writes; wait for the lock instead of failing instantly (BOARDSESH-A9).
     await applyBusyTimeout(txn);
 
-    // Read BEFORE the deletes: both the keys the caller needs and the scopes
-    // whose markers must not outlive their rows.
-    const walls = await txn.getAllAsync<{ layout_id: number; photo_key: string | null }>(
-      'SELECT layout_id, photo_key FROM spray_walls',
+    // Read BEFORE the deletes: the spray scopes whose markers must not outlive
+    // their rows. A layout with climbs but no wall row is real — a download
+    // interrupted between the two tables — so the climbs decide too, not just
+    // the wall.
+    const sprayLayouts = await txn.getAllAsync<{ layout_id: number }>(
+      `SELECT layout_id FROM spray_walls
+       UNION
+       SELECT DISTINCT layout_id FROM board_climbs WHERE board_type = ? AND layout_id IS NOT NULL`,
+      [SPRAY_BOARD_TYPE],
     );
 
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
+    for (const table of SPRAY_SCOPED_BOARD_TABLES) {
+      await txn.runAsync(`DELETE FROM ${table} WHERE board_type = ?`, [SPRAY_BOARD_TYPE]);
+    }
     await deleteUserCheckpoints(txn);
 
-    for (const wall of walls) {
-      if (wall.photo_key) removedPhotoKeys.push(wall.photo_key);
+    for (const { layout_id: layoutId } of sprayLayouts) {
       // A wall's scope key is `spray:<layoutId>:<layoutId>` — a wall is its own
       // size (`spraySizeIdForLayout`). `scopeSyncMetaKeys` is the same list
       // `removeBoardScopeData` clears, so the two cannot drift: checkpoints for
       // every per-board table, the refresh state, and every lifecycle marker.
       const scopeKey = offlineBoardKey({
-        boardType: 'spray',
-        layoutId: wall.layout_id,
-        sizeId: spraySizeIdForLayout(wall.layout_id),
+        boardType: SPRAY_BOARD_TYPE,
+        layoutId,
+        sizeId: spraySizeIdForLayout(layoutId),
       });
       for (const key of scopeSyncMetaKeys(scopeKey)) {
         await txn.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
       }
     }
   });
-  return removedPhotoKeys;
 }
 
 /** What an explicit sign-out's wipe actually removed, for telemetry. */

@@ -149,6 +149,24 @@ describe('clearUserData', () => {
       ['kilter', 'climb-1', 40, 12],
     );
 
+    // The wall's CLIMBS are as private as the wall: names, descriptions and
+    // frames of somebody's garage, served by `searchClimbsLocal` with no owner
+    // stamp because board reference data is a shared cache everywhere else.
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES (?, ?, ?)`, [
+      'spray-climb-1',
+      'spray',
+      4,
+    ]);
+    await db.runAsync(
+      `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`,
+      ['spray', 'spray-climb-1', 40, 3],
+    );
+    await db.runAsync(`INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES (?, ?, ?)`, [
+      'spray',
+      'spray-climb-1',
+      40,
+    ]);
+
     await clearUserData(db);
 
     expect(await countRows('boardsesh_ticks')).toBe(0);
@@ -159,25 +177,42 @@ describe('clearUserData', () => {
     expect(await countRows('setter_follows')).toBe(0);
     expect(await countRows('playlist_follows')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
-    // The next account on this device must not read the previous one's wall.
+    // The next account on this device must not read the previous one's wall —
+    // neither the wall row nor the climbs on it.
     expect(await countRows('spray_walls')).toBe(0);
+    expect(await countRows('board_climb_grades')).toBe(0);
     expect(await getCheckpoint(db, getCheckpointKey('boardsesh_ticks'))).toBeNull();
 
-    // The expensive shared cache is deliberately retained.
+    // The expensive shared cache is deliberately retained — the kilter rows only.
     expect(await countRows('board_climbs')).toBe(1);
     expect(await countRows('board_climb_stats')).toBe(1);
+    expect((await db.getFirstAsync<{ board_type: string }>('SELECT board_type FROM board_climbs'))?.board_type).toBe(
+      'kilter',
+    );
   });
 
   // The cursor must never outlive the row it describes. `syncSprayWalls` pages on
   // a strict `>`, so a checkpoint left behind for a wall this wipe deleted would
   // resume PAST that wall: an unchanged wall is never offered again, and its
   // holds and photograph stay missing until the owner edits it on the server.
-  it('clears each deleted wall\u2019s scope markers, and returns its photo key', async () => {
+  it('clears each deleted wall\u2019s scope markers, including a layout with climbs but no wall row', async () => {
     await db.runAsync(`INSERT INTO spray_walls (layout_id, board_uuid, photo_key) VALUES (?, ?, ?)`, [
       4,
       'board-4',
       'spray-walls/wall-4/photo-2.jpg',
     ]);
+    // A download interrupted between the two tables: climbs on disk, no wall row.
+    // Its markers have to go too, or the next sign-in resumes past rows that are
+    // no longer there.
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES (?, ?, ?)`, [
+      'spray-climb-7',
+      'spray',
+      7,
+    ]);
+    const orphanScopeKeys = scopeSyncMetaKeys('spray:7:7');
+    for (const key of orphanScopeKeys) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
+    }
     const wallScopeKeys = scopeSyncMetaKeys('spray:4:4');
     for (const key of wallScopeKeys) {
       await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
@@ -188,13 +223,13 @@ describe('clearUserData', () => {
       syncSeq: '5',
     });
 
-    const removedPhotoKeys = await clearUserData(db);
+    await clearUserData(db);
 
-    expect(removedPhotoKeys).toEqual(['spray-walls/wall-4/photo-2.jpg']);
-    for (const key of wallScopeKeys) {
+    for (const key of [...wallScopeKeys, ...orphanScopeKeys]) {
       const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
       expect(row, `${key} should be gone with the wall`).toBeNull();
     }
+    expect(await countRows('board_climbs')).toBe(0);
     expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'))).not.toBeNull();
   });
   it('is a no-op on an already-empty database', async () => {
