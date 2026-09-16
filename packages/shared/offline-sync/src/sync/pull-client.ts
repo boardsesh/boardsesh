@@ -511,9 +511,70 @@ export type BootstrapPathRecoveredInfo = {
 };
 export type BootstrapPathRecoveredReporter = (info: BootstrapPathRecoveredInfo) => void;
 
+/**
+ * A committed page of documents, handed to the platform for the side effects a
+ * row cannot carry.
+ *
+ * The one caller today is the spray-wall photo store: `syncSprayWalls` emits a
+ * short-lived presigned URL as a transient field (`TableSyncConfig.transientColumns`),
+ * and the device turns it into bytes on disk keyed by `photo_key`. Injected
+ * rather than imported because the engine has no filesystem and must not grow
+ * one — same rule as every other platform I/O in this package.
+ *
+ * Contract: bounded work (it runs inside the page loop), and it may throw —
+ * `syncTable` swallows it so an asset failure cannot end a cycle.
+ */
+export type DocumentsPulledSink = (info: {
+  tableName: string;
+  documents: Record<string, unknown>[];
+  /**
+   * The database the page was just committed to.
+   *
+   * Handed over so a sink can ask what the device holds NOW rather than only what
+   * this page carried — the spray photo store needs every live `photo_key` to
+   * know which files on disk no wall claims any more, and a page only ever names
+   * one.
+   *
+   * **Read-only for DATA.** The page's transaction has already committed, so a
+   * sink writing a synced column would be writing outside the atomicity the pull
+   * just established — and the next delta, arriving on a cursor that has moved
+   * past it, would overwrite it with the server's value anyway.
+   *
+   * The one permitted exception is **`sync_meta` bookkeeping about what the sink
+   * itself did**, written after the commit: the spray photo sink records a
+   * pending-photo marker and rewinds its own table's checkpoint when a download
+   * fails (`recordSprayPhotoFailure` / `clearSprayPhotoPending`). That is the
+   * sink reporting its own outcome, not editing synced data, and it has to be
+   * durable for the retry to survive a relaunch.
+   */
+  db: OfflineDatabase;
+}) => void | Promise<void>;
+
+/**
+ * Rows a tombstone has just removed, with the columns their table asked to keep
+ * (`TableSyncConfig.captureOnDelete`).
+ *
+ * The deletion processor deletes by primary key and owns no filesystem, so this
+ * is how a platform learns that a wall's photograph is now unreferenced. Fired
+ * AFTER the page commits, for the same reason `onDocumentsPulled` is: a row the
+ * transaction rolled back still has its file.
+ *
+ * May throw; the caller swallows it, because an orphaned file is not a reason to
+ * stop applying tombstones.
+ */
+export type RowsDeletedSink = (info: {
+  tableName: string;
+  rows: Record<string, unknown>[];
+  db: OfflineDatabase;
+}) => void | Promise<void>;
+
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
+  /** Per-page side-effect sink for board reference data. See DocumentsPulledSink. */
+  onDocumentsPulled?: DocumentsPulledSink;
+  /** Per-page side-effect sink for applied tombstones. See RowsDeletedSink. */
+  onRowsDeleted?: RowsDeletedSink;
   /**
    * Connectivity probe, mirroring `DrainOptions.isOnline` (drainer.ts). A pull
    * that starts with no connection can only fail every request it makes, and
@@ -771,6 +832,12 @@ async function upsertDocuments(
   tableName: string,
   documents: Record<string, unknown>[],
   allowedColumns: readonly string[],
+  /**
+   * Fields the resolver emits on purpose and this table does not store — see
+   * `TableSyncConfig.transientColumns`. Skipped like any other unknown column,
+   * but WITHOUT a drift report: they are the contract, not a drift from it.
+   */
+  transientColumns: readonly string[],
   onSchemaDrift?: SchemaDriftReporter,
   page?: {
     canWrite: () => boolean;
@@ -787,8 +854,11 @@ async function upsertDocuments(
   // Drift still surfaces in telemetry (once per table+column per app launch),
   // so a resolver emitting a misnamed column stays observable.
   const allowedColumnSet = new Set(allowedColumns);
+  const transientColumnSet = new Set(transientColumns);
   for (const document of documents) {
-    const unknownColumns = Object.keys(document).filter((column) => !allowedColumnSet.has(column));
+    const unknownColumns = Object.keys(document).filter(
+      (column) => !allowedColumnSet.has(column) && !transientColumnSet.has(column),
+    );
     for (const unknownColumn of unknownColumns) {
       reportExtraColumn(onSchemaDrift, { origin: 'pull', tableName, column: unknownColumn });
     }
@@ -876,6 +946,8 @@ async function syncTable(
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
   refresh?: { state: SchemaRefreshState; shouldContinue: () => Promise<boolean> },
+  /** Per-page side-effect sink; see DocumentsPulledSink. */
+  onDocumentsPulled?: DocumentsPulledSink,
 ): Promise<{ reachedTail: boolean; rowsProcessed: number; resumedFromCheckpoint: boolean }> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
@@ -961,39 +1033,67 @@ async function syncTable(
       const clearDownloadCoverage = !refresh && missingRefreshColumns.length > 0;
       if (clearDownloadCoverage) fullDownload = false;
 
-      const committed = await upsertDocuments(db, tableName, result.documents, config.localColumns, onSchemaDrift, {
-        canWrite,
-        preserveNewerRows: !!refresh,
-        afterUpsert: async (transaction) => {
-          if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
-          if (clearDownloadCoverage && boardScope) {
-            await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
-              schemaRefreshKey(tableName, boardScope.scopeKey),
-            ]);
-          }
-          if (revision && boardScope && (refresh || fullDownload)) {
-            if (!result.hasMore) {
-              await markSchemaRefreshComplete(
-                transaction,
-                tableName,
-                boardScope.scopeKey,
-                result.cursor,
-                refresh ? 'refresh' : 'download',
-              );
-              completedAtTail = true;
-            } else {
-              await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
-                ...result.cursor,
-                revision,
-                complete: false,
-                mode: refresh ? 'refresh' : 'download',
-              });
+      const committed = await upsertDocuments(
+        db,
+        tableName,
+        result.documents,
+        config.localColumns,
+        config.transientColumns ?? [],
+        onSchemaDrift,
+        {
+          canWrite,
+          preserveNewerRows: !!refresh,
+          afterUpsert: async (transaction) => {
+            if (!refresh) await setCheckpoint(transaction, checkpointKey, result.cursor);
+            if (clearDownloadCoverage && boardScope) {
+              await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [
+                schemaRefreshKey(tableName, boardScope.scopeKey),
+              ]);
             }
-          }
+            if (revision && boardScope && (refresh || fullDownload)) {
+              if (!result.hasMore) {
+                await markSchemaRefreshComplete(
+                  transaction,
+                  tableName,
+                  boardScope.scopeKey,
+                  result.cursor,
+                  refresh ? 'refresh' : 'download',
+                );
+                completedAtTail = true;
+              } else {
+                await writeSchemaRefreshState(transaction, tableName, boardScope.scopeKey, {
+                  ...result.cursor,
+                  revision,
+                  complete: false,
+                  mode: refresh ? 'refresh' : 'download',
+                });
+              }
+            }
+          },
         },
-      });
+      );
       if (!committed) return finish(false);
       lastCursor = result.cursor;
+
+      // Side effects that belong to the page but not to the row — today only the
+      // spray-wall photo, fetched with the presigned URL the page carried and
+      // stored on the filesystem rather than in SQLite. Deliberately AFTER the
+      // commit: a sink that runs for rows the write rolled back would download a
+      // photo for a wall the device does not have.
+      //
+      // Never fatal. A photo is an asset, and a download that failed (or a
+      // platform with no photo store at all) must not end a sync cycle that has
+      // already written its rows and advanced its checkpoint.
+      if (onDocumentsPulled) {
+        try {
+          await onDocumentsPulled({ tableName, documents: result.documents, db });
+        } catch {
+          // Bounded and best-effort by contract. The checkpoint has moved, so this
+          // page is not re-offered — a photo that failed here is picked up by the
+          // renderer's own on-demand fetch instead, and by the next pull that
+          // touches the wall's row.
+        }
+      }
 
       totalProcessed += result.documents.length;
       onProgress?.(totalProcessed);
@@ -1042,6 +1142,7 @@ async function processDeletions(
   /** The purge token pullSync captured at CYCLE start — see `cycleAborted` there. */
   purgeToken: PurgeToken,
   onProgress?: (documentsProcessed: number) => void,
+  onRowsDeleted?: RowsDeletedSink,
 ): Promise<{ reachedTail: boolean }> {
   const checkpointKey = DELETIONS_CHECKPOINT_KEY;
   const checkpoint = await getCheckpoint(db, checkpointKey);
@@ -1083,6 +1184,9 @@ async function processDeletions(
     // exclusive transaction gives SQLite one lock/commit per page and ensures a
     // failed tombstone rolls the entire page back for a clean retry.
     const pageInvalidatedKeys = new Set<string>();
+    // Rows the page actually removed, per table, with the columns that table
+    // asked to keep. Filled inside the transaction, used after it commits.
+    const pageDeletedRows = new Map<string, Record<string, unknown>[]>();
     try {
       await runPullWrite(db, async (transaction) => {
         // Expo opens this wrapper with deferred BEGIN: entering the callback is
@@ -1116,6 +1220,17 @@ async function processDeletions(
           const guardParams = hasUpdatedAt ? [deletion.deletedAt] : [];
 
           if (pkColumns.length === 1) {
+            // Read what the platform will need once the row is gone. Only the
+            // single-key branch: `captureOnDelete` exists for `spray_walls`,
+            // whose key is one column, and a composite-key table would need the
+            // same split the DELETE below does — add it there when one asks.
+            let captured: Record<string, unknown> | null = null;
+            if (config.captureOnDelete && config.captureOnDelete.length > 0) {
+              captured = await transaction.getFirstAsync<Record<string, unknown>>(
+                `SELECT ${config.captureOnDelete.join(', ')} FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?`,
+                [deletion.recordId],
+              );
+            }
             const deleteResult = await transaction.runAsync(
               `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
               [deletion.recordId, ...guardParams],
@@ -1129,6 +1244,14 @@ async function processDeletions(
             // tombstone doesn't strip a live playlist's climbs.
             if (deletion.tableName === 'playlists' && (deleteResult?.changes ?? 0) > 0) {
               await transaction.runAsync(`DELETE FROM playlist_climbs WHERE playlist_uuid = ?`, [deletion.recordId]);
+            }
+            // Only when the row really went: a resurrection-guarded tombstone
+            // leaves a live row behind, and deleting its photograph would blank
+            // a wall the device still has.
+            if (captured && (deleteResult?.changes ?? 0) > 0) {
+              const rows = pageDeletedRows.get(deletion.tableName) ?? [];
+              rows.push(captured);
+              pageDeletedRows.set(deletion.tableName, rows);
             }
           } else {
             // Backend encodes composite PKs as exactly N colon-separated segments
@@ -1167,6 +1290,19 @@ async function processDeletions(
     } catch (error) {
       if (error instanceof DeletionPageAbortedError) return { reachedTail: false };
       throw error;
+    }
+
+    // The rows this page removed, handed over now that the delete is durable.
+    // Never fatal: an orphaned file is a wasted megabyte, and refusing to apply
+    // the rest of the tombstone stream over one would be far worse.
+    if (onRowsDeleted) {
+      for (const [tableName, rows] of pageDeletedRows) {
+        try {
+          await onRowsDeleted({ tableName, rows, db });
+        } catch {
+          // The next prune reclaims it.
+        }
+      }
     }
 
     // Invalidate immediately after this page commits. Deferring all keys until
@@ -3052,10 +3188,17 @@ export async function pullSync(
   // never fetch it again.
   if (cycleAborted()) return reportInterruptedCycle();
   onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
-  const deletionsResult = await processDeletions(db, queryClient, graphqlFetch, purgeToken, (deletionsProcessed) => {
-    totalDocuments = deletionsProcessed;
-    onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: totalDocuments });
-  });
+  const deletionsResult = await processDeletions(
+    db,
+    queryClient,
+    graphqlFetch,
+    purgeToken,
+    (deletionsProcessed) => {
+      totalDocuments = deletionsProcessed;
+      onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: totalDocuments });
+    },
+    options?.onRowsDeleted,
+  );
   // The coverage marker advances ONLY on a completed pass. An aborted one (sign-out,
   // purge, backgrounding) consumed an unknown prefix of the stream, so claiming a
   // fresh retention window off it would hide a real gap. See deletions-coverage.ts.
@@ -3179,6 +3322,8 @@ export async function pullSync(
           });
         },
         options?.onSchemaDrift,
+        undefined,
+        options?.onDocumentsPulled,
       );
       const tableMs = Date.now() - tableStartedAt;
       if (tableName === 'board_climbs') phases.climbsPullMs += tableMs;

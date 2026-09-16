@@ -143,15 +143,10 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   if (input.onlyDrafts) return false;
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
-  // Spray-wall hold integrity (SW-12). The server predicate is
-  // `holdIntegrityCondition` in packages/db/src/queries/climbs/create-climb-filters.ts,
-  // reading `board_climbs.missing_hold_count` — a column the on-device schema does
-  // not have and the pull client does not send until SW-15 (#5448). Declining IS the
-  // mirror here: answering from a column the device lacks would report every climb
-  // on a wall that has just been reset as intact, which is the one answer this
-  // filter exists to contradict. ANY carries no predicate on either side, so it is
-  // still served locally.
-  if (input.holdIntegrity === 'INTACT' || input.holdIntegrity === 'BROKEN') return false;
+  // Spray-wall hold integrity (SW-12) IS expressible now: SW-15 (#5448) mirrors
+  // `board_climbs.missing_hold_count` into the on-device schema at migration v7,
+  // and `buildJoinAndWhere` carries the same COALESCE predicate the server's
+  // `holdIntegrityCondition` uses. No fall-back clause here on purpose.
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
   return true;
@@ -278,6 +273,23 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   // are NULL — an unknown flag reads as visible, which is the safe direction for
   // a column the sync will refresh.
   if (!input.name) push('COALESCE(c.is_hidden, 0) = 0');
+
+  // Spray-wall hold integrity, mirroring `holdIntegrityCondition` in
+  // packages/db/src/queries/climbs/create-climb-filters.ts character for
+  // character — including the COALESCE, which is the whole of the NULL rule.
+  //
+  // `missing_hold_count` is NULL for every climb on the eight catalogue boards
+  // (holds do not come off a Kilter), for a spray climb written before the server
+  // materialised the column, and for any row pulled before on-device migration
+  // v7 added it — and the column is synced WITHOUT a refresh revision, so those
+  // pre-v7 rows are real and stay NULL until the climb is next touched. The
+  // honest reading of "unknown" is INTACT: a climb is presumed whole until a
+  // reset says otherwise. So INTACT keeps NULLs and BROKEN drops them. Reversed,
+  // one un-backfilled row would badge every Kilter climb on the device as broken.
+  //
+  // ANY (and an absent filter) carries no predicate on either side.
+  if (input.holdIntegrity === 'INTACT') push('COALESCE(c.missing_hold_count, 0) = 0');
+  if (input.holdIntegrity === 'BROKEN') push('COALESCE(c.missing_hold_count, 0) > 0');
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
   const wantsBoulders = !!input.boulders;
@@ -475,6 +487,10 @@ export type LocalClimbRow = {
   /** SQLite integer mirror of `board_climbs.is_hidden`; NULL on rows pulled
    *  before the column existed (migration v5), read as visible. */
   is_hidden: number | null;
+  /** SQLite integer mirror of `board_climbs.missing_hold_count` (migration v7).
+   *  NULL on every catalogue-board climb and on rows pulled before the column
+   *  existed; read as 0 — "no reset has taken anything off this climb". */
+  missing_hold_count: number | null;
   characteristics: string | null;
   created_at: string | null;
   published_at: string | null;
@@ -561,6 +577,10 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     benchmark_difficulty: bench !== null && bench > 0 ? String(bench) : null,
     is_draft: !!row.is_draft,
     is_hidden: !!row.is_hidden,
+    // Left NULL rather than coalesced to 0: the server's Climb.missingHoldCount
+    // is nullable for exactly the same rows, and a badge that reads "0 holds
+    // lost" is not the same statement as "this is not a spray climb".
+    missingHoldCount: row.missing_hold_count ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
     published_at: row.published_at,
@@ -629,7 +649,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.characteristics,
+      c.missing_hold_count, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,

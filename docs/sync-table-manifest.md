@@ -23,12 +23,21 @@ It exists because `pull-client.ts:upsertDocuments` does `INSERT OR REPLACE INTO 
 the resolver's JSON keys **are** the local column names. And `processDeletions` splits `record_id` on `:`
 into `primaryKeyColumns`-many parts. So resolver output, local DDL, and table-config PKs must agree to the character.
 
+One kind of field escapes that equivalence. `TableSyncConfig.transientColumns` lists keys a resolver emits on
+purpose and the table deliberately does not store: the pull client skips them like any other unknown column, but
+**without** reporting schema drift, and the committed page is handed to `onDocumentsPulled` first so the platform
+can use the value before it is dropped. Exactly one exists today — `spray_walls.photo_url`, the presigned photo
+URL described in that table's section below. Anything else a resolver emits that is not in a table's **Columns**
+list is drift, and is reported as such.
+
 ## Casing & types
 
 Schema changes must cover already-downloaded rows as well as DDL: when adding a reference-data field,
 bump the table's `refreshRevision` and add the field to its cumulative `refreshColumns` list in
 `table-config.ts` so old checkpoints cannot skip its backfill or certify an incomplete response.
 See [snapshot compatibility and catalog refresh](board-snapshots.md#refreshing-fields-skipped-by-older-apps).
+There is one documented exception — `board_climbs.missing_hold_count`, whose reasoning is in that table's section
+below and turns on the new field being NULL for every row that was already downloaded.
 The client tolerates additive columns from newer producers; tests enforce exact column/PK parity for the
 current migration, configuration, resolver, and export contracts.
 
@@ -99,6 +108,13 @@ type Query {
     limit: Int! = 500
   ): SyncResult!
   syncClimbGrades(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
+  syncSprayWalls(
     boardType: String!
     layoutId: Int
     sizeId: Int
@@ -261,7 +277,19 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
   `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
-  `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`, `updated_at`, `sync_seq`.
+  `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`,
+  `missing_hold_count` (schema v7), `updated_at`, `sync_seq`.
+- `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall — and is
+  spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
+  Kilter. It is what lets `search-climbs-local.ts` answer the Intact / Lost-holds filter (SW-12) offline instead
+  of declining it.
+- It was added **without** bumping `refreshRevision`, the exception noted in "Casing & types". A bump means every
+  already-downloaded scope must re-crawl to backfill the field, which is every enabled Kilter and Tension
+  catalogue — tens of thousands of rows each — replayed to fill in a column that is NULL on all of them. Spray
+  scopes are new in this release, so no checkpoint predating the column can exist for one, and the reader's
+  predicate is NULL-safe (`COALESCE(missing_hold_count, 0)`, the same "unknown reads as intact" rule the server's
+  `holdIntegrityCondition` applies), so a row pulled before v7 reads as intact rather than as wrong. Both
+  conditions a bump exists to protect are therefore already met.
 - LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
   download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. Climb
   **search + detail** are **local-first**: whenever a scope is downloaded they read these tables
@@ -305,6 +333,47 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   `boardsesh_confidence`. The `boardseshGrade` / `boardseshGradesForAngles` GraphQL ops are served local-first from
   it (mobile `get-boardsesh-grade-local.ts` + the `offline-request.ts` registrations); those ops carry no
   layout/size, so they gate on the board TYPE being downloaded and treat a single-row miss as a network-retry.
+
+### `spray_walls` — `syncSprayWalls(boardType, layoutId?, sizeId?)` (board data, per-board)
+
+- The wall behind a spray board (issue #5448): its canonical frame, its published version, the holds alive at that
+  version, that version's homography, and the private-bucket photo. Scope: the by-layout visibility rule — owner,
+  gym member, or a PUBLIC wall — through the same `sprayLayoutIsReadable` gate `syncClimbs`, `syncClimbStats` and
+  `syncClimbGrades` carry. Seq: **`spray_walls.id`** (the page selects it once, as `sync_seq`). Cursor timestamp:
+  `updated_at`. Hook: no.
+- **Unlisted is not an exemption on this key.** Unlisted means "reachable by uuid", and a layout id is not a uuid:
+  it comes out of `spray_wall_catalog_id_seq`, so 1, 2, 3. Honouring unlisted here would let one authenticated
+  account walk the sequence and collect a live presigned photograph of every unlisted home wall in the database.
+  The uuid path that does honour unlisted is `sprayWall(uuid:)` / `sprayWallRenderData`, where the uuid itself is
+  the capability. An unreadable, unscoped or non-spray request is an ordinary empty page — never an error and never
+  a different shape — so nothing tells a caller which layout ids are private walls, and a page carries at most the
+  one wall its scope key resolves to.
+- Local PK: **`layout_id`**. table-config: `['layout_id']`.
+- Del: migration `0228`. A wall is only ever SOFT-deleted (deleting the row would strand every climb set on it), so
+  the trigger fires on `deleted_at` going NULL → NOT NULL and emits `record_id = OLD.layout_id::text` (1 seg) — the
+  layout id, not the server bigserial, because `(board_type, layout_id)` is the only wall identity a phone can match
+  a local row against. `user_id` is the wall's OWNER, not NULL: a NULL-scoped tombstone means "reference data, every
+  client sees it", which is exactly what a private wall must never be. When the owner cannot be resolved the function
+  warns and emits nothing rather than fall back to the global scope.
+- Columns: `layout_id` (PK), `board_uuid`, `name` (read from the wall's `user_boards` row, where a wall's name,
+  angle, visibility and gym all live), `reference_width`, `reference_height`, `current_version_number`, `photo_key`,
+  `holds` (JSON text), `homography` (JSON text), `updated_at`, `sync_seq`.
+- `holds` carries the holds alive at the published version (`aliveHolds`), fetched in a second round trip rather than
+  re-expressed as a JSON aggregate in the page query: "which holds are on the wall right now" is a three-way range
+  test over version status, and a second copy of it in SQL would be a second chance to draw holds that are not there.
+  Hold edits land in a draft version and are invisible here until that draft publishes — and publishing bumps
+  `spray_walls.updated_at`, so the cursor covers hold changes at the moment they become visible.
+- **Transient: `photo_url`.** A 15-minute presigned URL over the PRIVATE bucket, emitted by the resolver, declared in
+  `transientColumns`, and never stored. The pull client hands the committed page to `onDocumentsPulled`; the mobile
+  sink fetches the bytes into a durable store under `Paths.document`, named after `photo_key`, and the URL is dropped.
+  `photo_key` is the identity that survives — a stored signature would be stale, useless, and briefly live. Declaring
+  it is not cosmetic: without it every pulled page would report schema drift for a column the resolver emits on
+  purpose.
+- Snapshots stay excluded. `SNAPSHOT_EXCLUDED_BOARD_TYPES` in `export-board-snapshots.ts` withholds `spray`, so no
+  wall is ever baked into a nightly artifact and a manifest miss falls through to the paged crawl.
+- Sign-out clears this table: `spray_walls` is the one entry in `USER_DATA_TABLES_TO_CLEAR` that is board reference
+  data, and the photographs are wiped with it. See the spray-wall subsection of the auth-scoping contract in
+  [`offline-reads.md`](offline-reads.md).
 
 ### `user_playlist_pins` — NOT synced
 

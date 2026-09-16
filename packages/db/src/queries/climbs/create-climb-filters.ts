@@ -71,10 +71,10 @@ export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
  * the database as broken.
  *
  * The offline mirror of this rule lives in
- * packages/mobile/src/db/queries/search-climbs-local.ts — which cannot express it,
- * because `missing_hold_count` is not synced to the device until SW-15 (#5448), so
- * it declines the search instead. Declining is the mirror: answering from a column
- * the device does not have would show broken climbs as intact.
+ * packages/mobile/src/db/queries/search-climbs-local.ts and is the same two
+ * COALESCE clauses: SW-15 (#5448) added `missing_hold_count` to the on-device
+ * schema and to the `syncClimbs` payload, so the phone answers the filter rather
+ * than declining it. Change the NULL rule here and you must change it there.
  */
 export function holdIntegrityCondition(searchParams: ClimbSearchParams): SQL[] {
   if (searchParams.holdIntegrity === 'intact') {

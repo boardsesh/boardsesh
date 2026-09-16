@@ -222,6 +222,10 @@ async function seedEverything(db: TestSqliteDb): Promise<void> {
     "INSERT INTO board_climb_grades (board_type, climb_uuid, angle) VALUES ('kilter', 'climb-1', 40)",
     [],
   );
+  // The one board table whose tombstones ARE user-scoped (#5448). It is still
+  // board data and still survives this reset; the reasoning, and the bounded
+  // gap it leaves, are in resetUserDataForLostCoverage's docblock.
+  await db.runAsync("INSERT INTO spray_walls (layout_id, board_uuid) VALUES (1, 'board-1')", []);
 
   const cursor = JSON.stringify({ updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' });
   for (const tableName of USER_DATA_TABLES) {
