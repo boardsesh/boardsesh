@@ -4,6 +4,7 @@ import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockPressableAvatar = vi.hoisted(() => vi.fn());
+const mockAvatar = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -16,6 +17,12 @@ vi.mock('../../PressableAvatar', () => ({
   PressableAvatar: (props: Record<string, unknown>) => {
     mockPressableAvatar(props);
     return createElement('div', { 'data-testid': 'pressable-avatar' });
+  },
+}));
+vi.mock('../../Avatar', () => ({
+  Avatar: (props: Record<string, unknown>) => {
+    mockAvatar(props);
+    return createElement('div', { 'data-testid': 'plain-avatar' });
   },
 }));
 vi.mock('../../Text', () => ({
@@ -37,6 +44,7 @@ function participant(userId: string): Participant {
 
 beforeEach(() => {
   mockPressableAvatar.mockClear();
+  mockAvatar.mockClear();
 });
 
 describe('AvatarGroup', () => {
@@ -103,5 +111,33 @@ describe('AvatarGroup', () => {
     expect(mockPressableAvatar).toHaveBeenCalledTimes(3);
     expect(container.querySelectorAll('[data-testid="pressable-avatar"]').length).toBe(3);
     expect(container.textContent).toContain('+2');
+  });
+
+  it('counts "+N" against total when the participant list is a capped sample', () => {
+    const { container } = render(
+      createElement(AvatarGroup, { participants: ['u1', 'u2', 'u3', 'u4', 'u5'].map(participant), total: 9 }),
+    );
+    expect(container.textContent).toContain('+6');
+  });
+
+  it('shows "+N" for unnamed climbers even when only one participant is named', () => {
+    const { container } = render(createElement(AvatarGroup, { participants: [participant('u1')], total: 3 }));
+    expect(container.textContent).toContain('+2');
+    expect(mockPressableAvatar).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders plain, non-navigating avatars when not interactive', () => {
+    const { container } = render(
+      createElement(AvatarGroup, { participants: ['u1', 'u2'].map(participant), interactive: false }),
+    );
+    expect(mockPressableAvatar).not.toHaveBeenCalled();
+    expect(mockAvatar).toHaveBeenCalledTimes(2);
+    expect(container.querySelectorAll('[data-testid="plain-avatar"]').length).toBe(2);
+  });
+
+  it('renders a lone non-interactive avatar without a profile link', () => {
+    render(createElement(AvatarGroup, { participants: [participant('u1')], interactive: false }));
+    expect(mockPressableAvatar).not.toHaveBeenCalled();
+    expect(mockAvatar).toHaveBeenCalledWith(expect.objectContaining({ name: 'U1' }));
   });
 });
