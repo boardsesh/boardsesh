@@ -28,6 +28,19 @@ export const STATUS_FILTER_VALUES = ['any', 'drafts', 'established', 'projects']
 export type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
 
 /**
+ * Whether a climb still has every hold it was set on — the spray-wall reset
+ * filter (SW-12).
+ *
+ * 'any' is the default and sends nothing. 'intact' and 'broken' map onto
+ * `ClimbSearchInput.holdIntegrity`, whose SQL lives in @boardsesh/db
+ * create-climb-filters.ts (`holdIntegrityCondition`) and reads the materialised
+ * `board_climbs.missing_hold_count`. Only a spray wall ever has a broken climb;
+ * on a catalogue board 'broken' is an honest empty list.
+ */
+export const HOLD_INTEGRITY_VALUES = ['any', 'intact', 'broken'] as const;
+export type HoldIntegrityFilterValue = (typeof HOLD_INTEGRITY_VALUES)[number];
+
+/**
  * In-app climb filter state, shared between web and mobile.
  *
  * This is a subset of {@link ClimbSearchInput} that excludes board-renderer
@@ -68,6 +81,9 @@ export type ClimbFilterState = {
   // those. Both are auth-gated backend-side, like the four tick flags above.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  // Spray-wall hold integrity. Undefined and 'any' both mean no filter, so the
+  // default state carries neither.
+  holdIntegrity?: HoldIntegrityFilterValue;
 };
 
 export const DEFAULT_CLIMB_FILTER_STATE: ClimbFilterState = {
@@ -101,6 +117,7 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.showOnlyCompleted) return true;
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
+  if (state.holdIntegrity != null && state.holdIntegrity !== 'any') return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
   if ((state.routes ?? false) !== false) return true;
@@ -201,6 +218,11 @@ export function toClimbSearchInput(
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
+  // 'any' is the absence of a filter, so it is omitted rather than sent — the
+  // backend treats an absent value and ANY identically, and omitting keeps the
+  // search-cache key stable for the overwhelmingly common unfiltered search.
+  if (state.holdIntegrity === 'intact') input.holdIntegrity = 'INTACT';
+  if (state.holdIntegrity === 'broken') input.holdIntegrity = 'BROKEN';
 
   // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
   // the frames_count constraint, but they must NOT be handled the same way:

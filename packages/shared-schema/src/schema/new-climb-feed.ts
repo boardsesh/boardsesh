@@ -104,6 +104,16 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     caller is a principal.
     """
     sprayWallUuid: String
+    """
+    The spray wall climb this one was remixed from.
+
+    Writes a \`spray_climb_lineage\` row alongside the child, which is what the
+    child's screen reads to link back to the parent's ticks and grade history.
+    Only meaningful for \`boardType: "spray"\`, and the parent has to be a climb
+    on the SAME wall. The parent is kept even when it is no longer climbable —
+    that is usually why it was remixed.
+    """
+    remixOfClimbUuid: ID
   }
 
   """

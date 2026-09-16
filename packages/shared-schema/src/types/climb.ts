@@ -81,6 +81,10 @@ export type Climb = {
   // their own origins, so hold-id containment alone can't tell them apart
   // (canAddClimbToBoard rule 5).
   compatibleSizeIds?: number[] | null;
+  // `board_climbs.missing_hold_count` — how many of this climb's holds have come
+  // off the wall. Spray walls only: null/undefined on every catalogue board, and
+  // on any spray row a reset has never touched. Both mean intact.
+  missingHoldCount?: number | null;
 };
 
 // Input type for Climb (matches GraphQL ClimbInput)
@@ -182,6 +186,10 @@ export type ClimbSearchInput = {
   onlyRatedByMe?: boolean;
   onlyDrafts?: boolean;
   projectsOnly?: boolean;
+  // Spray-wall hold integrity: INTACT keeps climbs that have lost no holds,
+  // BROKEN keeps only the ones that have, ANY (and an absent value) adds no
+  // filter. Reads the materialised `board_climbs.missing_hold_count`.
+  holdIntegrity?: 'ANY' | 'INTACT' | 'BROKEN';
   // Resolve stats through the climb's own set angle when the browsed angle has
   // none. Always on for Woods and MoonBoard; opt-in elsewhere. See #5405.
   crossAngleStats?: boolean;

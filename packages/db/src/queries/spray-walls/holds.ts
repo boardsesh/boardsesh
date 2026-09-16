@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { alias } from 'drizzle-orm/pg-core';
 import { sprayWallHolds, sprayWallVersions, sprayWalls } from '../../schema/app/spray-walls';
@@ -95,6 +95,30 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
 }
 
 /**
+ * How many of one climb's holds are no longer on the wall, as a scalar subquery.
+ *
+ * The single definition of "a hold this climb has lost", shared by the wall-wide
+ * recompute and the per-climb one so the two cannot drift on it. A removal only
+ * counts once the version that made it LANDED (`rv.status <> 'draft'`) — the same
+ * rule `aliveHolds` applies. An abandoned draft owns a version number and can
+ * stamp `removed_version_id`, so a bare NOT NULL would badge every climb on the
+ * wall as broken the moment an owner started a reset and walked away, and the
+ * number would never come back on its own.
+ */
+function missingHoldCountFor(wallId: number, climbUuid: SQL): SQL {
+  return sql`(
+    SELECT count(*)
+    FROM board_climb_holds h
+    JOIN spray_wall_holds s ON s.hold_id = h.hold_id AND s.wall_id = ${wallId}
+    JOIN spray_wall_versions rv ON rv.id = s.removed_version_id
+    WHERE h.climb_uuid = ${climbUuid}
+      AND h.board_type = 'spray'
+      AND s.removed_version_id IS NOT NULL
+      AND rv.status <> 'draft'
+  )::integer`;
+}
+
+/**
  * Re-materialise `board_climbs.missing_hold_count` for every climb on a wall.
  *
  * Run it after a reset commits. A climb's count is how many of its holds now
@@ -130,17 +154,7 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
     SET missing_hold_count = m.missing_hold_count,
         updated_at = now()
     FROM (
-      SELECT c.uuid,
-             (
-               SELECT count(*)
-               FROM board_climb_holds h
-               JOIN spray_wall_holds s ON s.hold_id = h.hold_id AND s.wall_id = ${wallId}
-               JOIN spray_wall_versions rv ON rv.id = s.removed_version_id
-               WHERE h.climb_uuid = c.uuid
-                 AND h.board_type = 'spray'
-                 AND s.removed_version_id IS NOT NULL
-                 AND rv.status <> 'draft'
-             )::integer AS missing_hold_count
+      SELECT c.uuid, ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count
       FROM board_climbs c
       WHERE c.board_type = 'spray'
         AND c.layout_id = (SELECT layout_id FROM spray_walls WHERE id = ${wallId})
@@ -151,4 +165,50 @@ export async function recomputeMissingHoldCounts(db: DrizzleDb, wallId: number):
   `);
 
   return rowsOf<{ uuid: string }>(updated).length;
+}
+
+/**
+ * Re-materialise `missing_hold_count` for ONE climb on a wall.
+ *
+ * The wall-wide recompute runs when a reset lands, which is when the WALL moves
+ * under the climbs. This is the other direction: the climb moves under the wall.
+ * A climber whose problem lost two holds edits it to use two that are still
+ * there, and `updateClimb` rewrites `board_climb_holds` — at which point the
+ * stored number describes holds the climb no longer uses. Nothing else would ever
+ * correct it: the wall-wide recompute only runs on the next publish, so until
+ * somebody reset that wall again the climb would sit in `BROKEN` searches wearing
+ * a badge for a problem its setter had already fixed.
+ *
+ * Same count, same landed-generation rule, same `IS DISTINCT FROM` guard and the
+ * same `updated_at` stamp as the wall-wide version — they share
+ * `missingHoldCountFor` so the two cannot drift on what "removed" means.
+ *
+ * Returns true when the number actually moved.
+ */
+export async function recomputeMissingHoldCountForClimb(
+  db: DrizzleDb,
+  wallId: number,
+  climbUuid: string,
+): Promise<boolean> {
+  // The count is computed ONCE, in a `FROM (…) AS m` derived table, for the same
+  // reason the wall-wide version uses one: written as two copies of the same
+  // correlated subquery — one for the SET and one for the `IS DISTINCT FROM`
+  // guard — Postgres evaluates it twice.
+  const updated = await db.execute(sql`
+    UPDATE board_climbs
+    SET missing_hold_count = m.missing_hold_count,
+        updated_at = now()
+    FROM (
+      SELECT c.uuid, ${missingHoldCountFor(wallId, sql`c.uuid`)} AS missing_hold_count
+      FROM board_climbs c
+      WHERE c.uuid = ${climbUuid}
+        AND c.board_type = 'spray'
+    ) AS m
+    WHERE board_climbs.uuid = m.uuid
+      AND board_climbs.board_type = 'spray'
+      AND board_climbs.missing_hold_count IS DISTINCT FROM m.missing_hold_count
+    RETURNING board_climbs.uuid
+  `);
+
+  return rowsOf<{ uuid: string }>(updated).length > 0;
 }
