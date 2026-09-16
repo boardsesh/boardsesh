@@ -1,0 +1,7 @@
+{
+  "name": "@boardsesh/storefront-module",
+  "version": "0.1.0",
+  "description": "iOS-native bridge that reports the App Store storefront country the running app is signed in to, so surfaces that are only allowed in some storefronts can gate themselves.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}
