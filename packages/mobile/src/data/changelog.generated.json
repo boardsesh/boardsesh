@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-15T14:08:18.893Z",
+  "generatedAt": "2026-09-16T02:45:09.527Z",
   "entries": [
+    {
+      "prNumber": 5479,
+      "category": "new",
+      "title": "No user can reach a spray wall until SW-09 ships the front door.",
+      "mergedAt": "2026-09-16T02:43:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5479"
+    },
     {
       "prNumber": 5391,
       "category": "fixed",
@@ -5157,6 +5164,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-16T11:38:10+10:00",
+      "sha": "07ba2951012d9433db265a2abdf11fdc97f3dc5b",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "c44370001bfec373347c8cd4adb7659cd456f34a"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-08T16:00:49+10:00",
