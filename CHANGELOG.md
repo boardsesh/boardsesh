@@ -12,6 +12,8 @@ A new version shipped to the App Store.
 
 ### New
 
+- Chip in for the server bills: a new support page explains what Boardsesh costs to run and how to help, through GitHub Sponsors or a one-off donation. ([#5521](https://github.com/boardsesh/boardsesh/pull/5521))
+- No user-facing surface; the only code path near the limit is a tester-only screen. ([#5524](https://github.com/boardsesh/boardsesh/pull/5524))
 - See who's climbing right now on Home and jump into their session. ([#5518](https://github.com/boardsesh/boardsesh/pull/5518))
   The board sheet shows sessions happening on that wall, ready to join.
   Keep a session to yourself: turn off "Show this session live" when you start.
@@ -27,8 +29,17 @@ A new version shipped to the App Store.
 - Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out. ([#5484](https://github.com/boardsesh/boardsesh/pull/5484))
 - No user can reach a spray wall until SW-09 ships the front door. ([#5479](https://github.com/boardsesh/boardsesh/pull/5479))
 
+### Improved
+
+- The filter sheet and the Help page now explain why Kilter's app shows more climbs than Boardsesh: it counts each climb once per angle. ([#5506](https://github.com/boardsesh/boardsesh/pull/5506))
+
 ### Fixed
 
+- MoonBoard climbs now get a Boardsesh grade estimate at every angle, ([#5465](https://github.com/boardsesh/boardsesh/pull/5465))
+  including angles beyond the board's usual 25°/40°.
+  Filtering by grade range now works at angles nobody's climbed yet, instead
+  of coming back empty.
+- A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout. ([#5507](https://github.com/boardsesh/boardsesh/pull/5507))
 - Tester-only screen behind Development; never reaches a climber. ([#5519](https://github.com/boardsesh/boardsesh/pull/5519))
 - Board art on the web now fills in once a slow load finishes, instead of leaving you with rings. ([#5502](https://github.com/boardsesh/boardsesh/pull/5502))
 - Tester-only screen behind Development; never reaches a climber. ([#5517](https://github.com/boardsesh/boardsesh/pull/5517))

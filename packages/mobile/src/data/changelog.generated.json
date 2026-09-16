@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-09-16T11:32:10.647Z",
+  "generatedAt": "2026-09-16T11:56:35.165Z",
   "entries": [
+    {
+      "prNumber": 5521,
+      "category": "new",
+      "title": "Chip in for the server bills: a new support page explains what Boardsesh costs to run and how to help, through GitHub Sponsors or a one-off donation.",
+      "mergedAt": "2026-09-16T11:40:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5521"
+    },
+    {
+      "prNumber": 5506,
+      "category": "improved",
+      "title": "The filter sheet and the Help page now explain why Kilter's app shows more climbs than Boardsesh: it counts each climb once per angle.",
+      "mergedAt": "2026-09-16T11:39:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5506"
+    },
+    {
+      "prNumber": 5465,
+      "category": "fixed",
+      "title": "MoonBoard climbs now get a Boardsesh grade estimate at every angle,",
+      "mergedAt": "2026-09-16T11:38:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5465",
+      "body": "including angles beyond the board's usual 25°/40°.\nFiltering by grade range now works at angles nobody's climbed yet, instead\nof coming back empty."
+    },
+    {
+      "prNumber": 5524,
+      "category": "new",
+      "title": "No user-facing surface; the only code path near the limit is a tester-only screen.",
+      "mergedAt": "2026-09-16T11:37:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5524"
+    },
+    {
+      "prNumber": 5507,
+      "category": "fixed",
+      "title": "A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout.",
+      "mergedAt": "2026-09-16T11:36:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5507"
+    },
     {
       "prNumber": 5518,
       "category": "new",
