@@ -97,6 +97,21 @@ export function tryGetStoredSprayPhotoPathSync(photoKey: string | null | undefin
 }
 
 /**
+ * Downloads that have not settled yet, keyed by `photo_key`.
+ *
+ * Two calls for the same key would otherwise both pass the `exists` check, both
+ * stream into the same `.part`, and then race on the move: the loser's
+ * `moveSync` throws (the file it wants is already gone) and its catch deletes
+ * the destination the winner just wrote — erasing a photograph that downloaded
+ * fine. Overlap is not theoretical: a manual `triggerSync` can run alongside a
+ * scheduled cycle, and a rewound cursor re-offers the same wall.
+ *
+ * Joining the in-flight promise makes the second caller wait for the first
+ * rather than fight it, which is also what it wanted: the same bytes.
+ */
+const downloadsInFlight = new Map<string, Promise<string | null>>();
+
+/**
  * Download a wall photo into the durable store, unless it is already there.
  *
  * Returns the path on success and `null` on every failure — a dead signature, a
@@ -105,11 +120,12 @@ export function tryGetStoredSprayPhotoPathSync(photoKey: string | null | undefin
  *
  * Idempotent and cheap to call on every pull: a photo already on disk costs one
  * `stat`. The key changes only when the wall's published version changes, so a
- * reset fetches exactly one new file.
+ * reset fetches exactly one new file. Concurrent calls for one key share a
+ * single download — see `downloadsInFlight`.
  */
-export async function storeSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
+export function storeSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
   const existing = tryGetStoredSprayPhotoPathSync(photoKey);
-  if (existing) return existing;
+  if (existing) return Promise.resolve(existing);
 
   // Defence in depth on a URL we did not build. It arrives over the
   // authenticated GraphQL channel and is a presigned https URL every time, but
@@ -117,8 +133,21 @@ export async function storeSprayPhoto(photoKey: string, photoUrl: string): Promi
   // compromise upstream could copy an arbitrary local file into the photo store
   // and render it as somebody's wall. An https scheme is the whole contract, and
   // there is no legitimate payload this rejects.
-  if (!photoUrl.startsWith('https://')) return null;
+  if (!photoUrl.startsWith('https://')) return Promise.resolve(null);
 
+  const inFlight = downloadsInFlight.get(photoKey);
+  // The URL is deliberately not compared: two signatures over the same key are
+  // the same picture, and the newer caller wants the bytes, not its own request.
+  if (inFlight) return inFlight;
+
+  const download = downloadSprayPhoto(photoKey, photoUrl).finally(() => {
+    downloadsInFlight.delete(photoKey);
+  });
+  downloadsInFlight.set(photoKey, download);
+  return download;
+}
+
+async function downloadSprayPhoto(photoKey: string, photoUrl: string): Promise<string | null> {
   const destination = storeFile(photoKey);
   const partial = partialFile(photoKey);
   try {

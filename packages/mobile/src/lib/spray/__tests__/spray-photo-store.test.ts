@@ -127,6 +127,23 @@ describe('storeSprayPhoto', () => {
     expect(names().some((name) => name.endsWith('.part'))).toBe(false);
   });
 
+  // A manual `triggerSync` can run alongside a scheduled cycle, and a rewound
+  // cursor re-offers the same wall — so two calls for one key do overlap in the
+  // field. Unguarded, both pass the `exists` check, both stream into the one
+  // `.part`, and the loser's `moveSync` throws into a catch that deletes the
+  // destination the winner had just written: a download that worked, erased.
+  it('shares one download between concurrent calls for the same key', async () => {
+    const [first, second] = await Promise.all([
+      storeSprayPhoto(KEY_V1, 'https://private.example/photo?sig=1'),
+      storeSprayPhoto(KEY_V1, 'https://private.example/photo?sig=2'),
+    ]);
+
+    expect(downloadedUrls).toHaveLength(1);
+    expect(first).toBe(pathFor(KEY_V1).replace('file://', ''));
+    expect(second).toBe(first);
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V1)]);
+  });
+
   it('is a no-op when the key is already on disk', async () => {
     await storeSprayPhoto(KEY_V1, 'https://private.example/photo?sig=1');
     await storeSprayPhoto(KEY_V1, 'https://private.example/photo?sig=2');

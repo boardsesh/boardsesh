@@ -25,6 +25,7 @@ import {
   offlineBoardKey,
 } from '@boardsesh/offline-sync';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
+import { SPRAY_PHOTO_PENDING_PREFIX } from '../offline/spray-photo-retry';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
@@ -889,6 +890,13 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
         await txn.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
       }
     }
+
+    // The pending-photo markers, which `scopeSyncMetaKeys` does not know about —
+    // it is derived from the scope key and this one is keyed by layout id. Every
+    // wall row is gone by now, so every marker describes a wall that is not here;
+    // a stale attempt count would otherwise carry into the next download of the
+    // same wall and could spend its retry budget before the first try.
+    await txn.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`${SPRAY_PHOTO_PENDING_PREFIX}%`]);
   });
 }
 
