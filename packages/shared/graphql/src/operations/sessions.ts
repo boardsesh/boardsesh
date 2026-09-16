@@ -61,6 +61,7 @@ export const UPDATE_SESSION = gql`
       sessionId
       name
       notes
+      isPublic
     }
   }
 `;
@@ -105,7 +106,7 @@ export type UpdateSessionVariables = {
 };
 
 export type UpdateSessionResponse = {
-  updateSession: { sessionId: string; name: string | null; notes: string | null };
+  updateSession: { sessionId: string; name: string | null; notes: string | null; isPublic: boolean };
 };
 
 export type GetSessionSummaryVariables = {

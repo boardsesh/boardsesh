@@ -143,10 +143,15 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   // "Show this session live". Public by default and not remembered between
   // sessions: every Start opens on, and turning it off is a per-session choice.
   const [isPublic, setIsPublic] = useState(true);
-  const handleVisibilityChange = useCallback((next: boolean) => {
-    setIsPublic(next);
-    track(SHARED_EVENTS.SessionVisibilityChanged, { isPublic: next, phase: 'pre_session' });
-  }, []);
+  const handleVisibilityChange = useCallback(
+    (next: boolean) => {
+      // Start has already read the choice; a flip now would change nothing.
+      if (isStarting) return;
+      setIsPublic(next);
+      track(SHARED_EVENTS.SessionVisibilityChanged, { isPublic: next, phase: 'pre_session' });
+    },
+    [isStarting],
+  );
   const [activePreviewUuid, setActivePreviewUuid] = useState<string | null>(null);
   // Measured height of the Start capsule's container, so the list reserves exactly
   // its real height (+ the bottom offset) instead of a hardcoded clearance. Seeded
@@ -331,7 +336,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
         {/* Whether the session you're about to start shows up live for your
             crew and climbers on this board. Sent with Start. */}
         <View style={styles.cardInset}>
-          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} />
+          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStarting} />
         </View>
 
         <GeneratorPickerCard
@@ -366,6 +371,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       handleOpenBoardSwitcher,
       handleVisibilityChange,
       isPublic,
+      isStarting,
       previewStateMessage,
       selection,
       setSelection,

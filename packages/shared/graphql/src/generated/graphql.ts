@@ -12022,7 +12022,13 @@ export type UpdateSessionMutationVariables = Exact<{
 
 export type UpdateSessionMutation = {
   __typename?: 'Mutation';
-  updateSession: { __typename?: 'UpdateSessionResult'; sessionId: string; name?: string | null; notes?: string | null };
+  updateSession: {
+    __typename?: 'UpdateSessionResult';
+    sessionId: string;
+    name?: string | null;
+    notes?: string | null;
+    isPublic: boolean;
+  };
 };
 
 export type GetSessionSummaryQueryVariables = Exact<{
@@ -18549,6 +18555,7 @@ export const UpdateSessionDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'name' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPublic' } },
               ],
             },
           },

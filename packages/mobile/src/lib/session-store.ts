@@ -1,5 +1,6 @@
 import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
-import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store-keys';
+import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY, SESSION_VISIBILITY_KEY } from './session-store-keys';
+import { parseStoredSessionVisibility, serializeSessionVisibility } from './session-visibility-value';
 import type { UserStorageOwner } from './user-storage-owner';
 
 export async function getStoredSessionId(_owner?: UserStorageOwner | null): Promise<string | null> {
@@ -60,4 +61,29 @@ export async function setStoredCreatedSessionId(sessionId: string): Promise<void
 
 export async function clearStoredCreatedSessionId(): Promise<void> {
   await deleteSecureValue(CREATED_SESSION_ID_KEY);
+}
+
+/**
+ * The creator's last known "Show this session live" value for `sessionId`, or
+ * null when this device doesn't know it. Written when this device starts a
+ * session and after every save the server confirms.
+ *
+ * It exists because the server can't always say: the `session` query returns
+ * null while the live roster is empty (right after Start, or mid-reconnect), and
+ * a switch that guesses "on" then would tell the creator of a private session
+ * that it is live.
+ *
+ * One slot keyed by session id, so it needs no teardown: a value left over from
+ * an earlier session never matches the next one.
+ */
+export async function getStoredSessionVisibility(sessionId: string): Promise<boolean | null> {
+  try {
+    return parseStoredSessionVisibility(await readSecureValue(SESSION_VISIBILITY_KEY), sessionId);
+  } catch {
+    return null;
+  }
+}
+
+export async function setStoredSessionVisibility(sessionId: string, isPublic: boolean): Promise<void> {
+  await writeSecureValue(SESSION_VISIBILITY_KEY, serializeSessionVisibility(sessionId, isPublic));
 }

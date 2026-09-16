@@ -20,6 +20,7 @@ import {
   clearStoredSessionId,
   setStoredCreatedSessionId,
   setStoredSessionId,
+  setStoredSessionVisibility,
 } from '../../lib/session-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { track } from '../../lib/analytics';
@@ -141,6 +142,15 @@ export function useSessionCommands({
             await setStoredCreatedSessionId(newId);
           } catch (provenanceError) {
             if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
+          }
+          // What the creator chose, so the in-session switch can show it while
+          // the `session` query still returns null (empty roster right after
+          // Start). Best-effort like the provenance above: losing it only hides
+          // the switch until the server can answer.
+          try {
+            await setStoredSessionVisibility(newId, config?.isPublic !== false);
+          } catch (visibilityError) {
+            if (__DEV__) console.warn('[queue] session visibility write failed', visibilityError);
           }
           // Seed the session with the locally-built queue BEFORE setSessionId
           // mounts the queueUpdates subscription — the subscription's FullSync

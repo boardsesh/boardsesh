@@ -18,6 +18,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 const mocks = vi.hoisted(() => ({
   storedActiveBoard: null as UserBoard | null,
   request: vi.fn(),
+  setStoredSessionVisibility: vi.fn((_sessionId: string, _isPublic: boolean) => Promise.resolve()),
 }));
 
 vi.mock('../../../lib/active-board-store', () => ({
@@ -35,6 +36,7 @@ vi.mock('../../../lib/session-store', () => ({
   clearStoredSessionId: () => Promise.resolve(),
   setStoredCreatedSessionId: () => Promise.resolve(),
   setStoredSessionId: () => Promise.resolve(),
+  setStoredSessionVisibility: mocks.setStoredSessionVisibility,
 }));
 vi.mock('../../../lib/queue-snapshot-store', () => ({ clearStoredQueueSnapshot: () => Promise.resolve() }));
 vi.mock('../../../lib/device-timezone', () => ({ getDeviceTimezone: () => 'UTC' }));
@@ -172,6 +174,7 @@ describe('useSessionCommands — createSessionWithConfig visibility', () => {
   beforeEach(() => {
     mocks.storedActiveBoard = homeBoard();
     mocks.request.mockReset().mockResolvedValue({ createSession: { id: 'session-1' } });
+    mocks.setStoredSessionVisibility.mockClear();
   });
 
   function lastCreateInput(): Record<string, unknown> | undefined {
@@ -186,7 +189,11 @@ describe('useSessionCommands — createSessionWithConfig visibility', () => {
       await result.current.createSessionWithConfig({ isPublic: false });
     });
 
+    expect(mocks.request).toHaveBeenCalledTimes(1);
     expect(lastCreateInput()).toMatchObject({ isPublic: false });
+    // Remembered on the device so the in-session switch can show it while the
+    // server's session query is still empty.
+    expect(mocks.setStoredSessionVisibility).toHaveBeenCalledWith('session-1', false);
   });
 
   it('leaves isPublic out for a live session, since absent means public server-side', async () => {
@@ -195,12 +202,16 @@ describe('useSessionCommands — createSessionWithConfig visibility', () => {
     await act(async () => {
       await result.current.createSessionWithConfig({ isPublic: true });
     });
+    expect(mocks.request).toHaveBeenCalledTimes(1);
     expect(lastCreateInput()).not.toHaveProperty('isPublic');
+    expect(mocks.setStoredSessionVisibility).toHaveBeenLastCalledWith('session-1', true);
 
     const unconfigured = renderSessionCommands();
     await act(async () => {
       await unconfigured.result.current.createSessionWithConfig();
     });
+    expect(mocks.request).toHaveBeenCalledTimes(2);
     expect(lastCreateInput()).not.toHaveProperty('isPublic');
+    expect(mocks.setStoredSessionVisibility).toHaveBeenLastCalledWith('session-1', true);
   });
 });

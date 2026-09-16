@@ -56,13 +56,23 @@ const startButton = vi.hoisted(() => ({ onPress: null as (() => void) | null }))
 // Surfaces the "Show this session live" switch so the test can read and flip it.
 const visibilityRow = vi.hoisted(() => ({
   isPublic: null as boolean | null,
+  disabled: false,
   onChange: null as ((next: boolean) => void) | null,
 }));
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../../SessionVisibilityRow', () => ({
-  SessionVisibilityRow: ({ isPublic, onChange }: { isPublic: boolean; onChange: (next: boolean) => void }) => {
+  SessionVisibilityRow: ({
+    isPublic,
+    onChange,
+    disabled,
+  }: {
+    isPublic: boolean;
+    onChange: (next: boolean) => void;
+    disabled?: boolean;
+  }) => {
     visibilityRow.isPublic = isPublic;
+    visibilityRow.disabled = disabled ?? false;
     visibilityRow.onChange = onChange;
     return null;
   },
@@ -193,6 +203,7 @@ beforeEach(() => {
   picker.onChange = null;
   startButton.onPress = null;
   visibilityRow.isPublic = null;
+  visibilityRow.disabled = false;
   visibilityRow.onChange = null;
 });
 
@@ -323,5 +334,24 @@ describe('PreSessionView "Show this session live" switch', () => {
       startButton.onPress?.();
     });
     await waitFor(() => expect(queue.startSession).toHaveBeenCalledWith({ isPublic: false }));
+  });
+
+  it('locks the switch while the session is starting and fires nothing if it is flipped anyway', async () => {
+    // Start never settles, so the screen stays in its starting state.
+    queue.startSession.mockImplementation(() => new Promise<string | null>(() => {}));
+    render(createElement(PreSessionView));
+    expect(visibilityRow.disabled).toBe(false);
+
+    await act(async () => {
+      startButton.onPress?.();
+    });
+    await waitFor(() => expect(visibilityRow.disabled).toBe(true));
+
+    act(() => {
+      visibilityRow.onChange?.(false);
+    });
+
+    expect(visibilityRow.isPublic).toBe(true);
+    expect(analytics.track).not.toHaveBeenCalledWith('Session Visibility Changed', expect.anything());
   });
 });
