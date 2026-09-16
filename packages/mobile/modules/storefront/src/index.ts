@@ -14,6 +14,15 @@ export type StorefrontNativeModule = {
 // linked into the running binary — Android (this module is iOS-only), Expo Go,
 // or a binary built before this module existed — so callers never need a
 // platform/linked check before calling.
+//
+// The donation-link gating on `main` (feat/mobile-donation-link-gating) repeats
+// this requireOptionalNativeModule('Storefront') call rather than importing this
+// wrapper. That duplication is deliberate and temporary: this module ships on
+// the release/next train, so it does not exist on main until the next store
+// release merges back. Once both are on main, move that call site onto
+// getStorefrontCountryCode() and delete its local copy. The 'Storefront' string
+// is the contract between the two until then — it must keep matching
+// Name("Storefront") in ios/StorefrontModule.swift.
 export const storefrontNative = requireOptionalNativeModule<StorefrontNativeModule>('Storefront');
 
 /**
