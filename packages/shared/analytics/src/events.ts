@@ -379,6 +379,15 @@ export const SHARED_EVENTS = {
   // — that one carries the ACTIVE board's gym, and a board being created has not
   // become active yet. Read them together to see a climber adding a second wall
   // at a venue they already use.
+  //
+  // Spray walls add `resumed` (SW-09) and are the only board type that sets it.
+  // A wall can be built across two sittings, and a resumed run rejoins the flow
+  // past its meta step, so `hasLocationName` and `hasCoords` are ABSENT on those
+  // events rather than defaulted to false — the wall's board payload does not
+  // select the location fields, so the flow genuinely cannot answer. Split on
+  // `resumed` before reading either one, or the denominator silently drops the
+  // resumed population instead of being wrong about it. Every other property is
+  // read off the `user_boards` row and is correct on both paths.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the

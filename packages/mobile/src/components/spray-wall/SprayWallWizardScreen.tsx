@@ -61,6 +61,7 @@ import {
   useUpdateSprayWallVisibility,
 } from '../../lib/spray/use-create-spray-wall';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
+import { wallCreatedEventProperties } from './wall-created-event';
 import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
@@ -142,6 +143,19 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
    * resume check already fetched.
    */
   const boardRef = useRef<UserBoard | null>(null);
+
+  /**
+   * Whether the meta step ran in THIS run — i.e. whether `builder` was ever
+   * filled in.
+   *
+   * A resumed wall rejoins at the photo or at the editor and skips `meta`
+   * entirely, so the builder still holds its constructor defaults. They look
+   * exactly like real answers (40 degrees, no gym, private), which is why the
+   * analytics payload is told explicitly rather than left to guess: see
+   * `wall-created-event.ts`. Set where the wall is actually created, so the
+   * mid-flow `adopt` path — a wall this run DID create — keeps its real answers.
+   */
+  const metaRanHereRef = useRef(false);
 
   // A board the climber just built is theirs by construction, so `isLocalOnly`
   // skips the follow-and-download pass; `rethrow` keeps the failure in this
@@ -367,6 +381,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         const created = await createWallAsync(input!);
         wall = { wallUuid: created.uuid, layoutId: created.layoutId, viewerCanEdit: created.viewerCanEdit };
         boardRef.current = created.board;
+        metaRanHereRef.current = true;
         // Recorded BEFORE the upload, so a failure here still leaves the flow
         // pointing at the wall that exists rather than minting another on retry.
         dispatch({ type: 'WALL_CREATED', wall });
@@ -459,6 +474,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       // the wall as the active board are two writes behind one button, and
       // `publishSprayWallVersion` refuses a version that has already landed — so
       // a retry that re-ran both would turn a failed bind into a dead end.
+      // The visibility the climber chose, applied below rather than at creation:
+      // a wall is created private so an unfinished one is never discoverable as
+      // an unusable board. Read up here because the analytics payload needs it
+      // too — it is what the wall is ABOUT to be, where the row still says
+      // private.
+      const visibility = builder.pendingVisibility();
+
       if (!published) {
         await publishVersionAsync(draft.versionId);
         dispatch({ type: 'PUBLISHED' });
@@ -467,29 +489,30 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         // already knows the version moved — and until it re-registers, every
         // spray cache key still names the draft the climber was editing.
         await invalidateSprayWallRenderData(queryClient, draft.wallUuid, draft.layoutId);
-        track(SHARED_EVENTS.BoardCreated, {
-          boardType: 'spray',
-          layoutId: wall.layoutId,
-          // A wall's size id EQUALS its layout id by construction — it has
-          // exactly one size, itself (`spraySizeIdForLayout`).
-          sizeId: wall.layoutId,
-          setCount: 1,
-          angle: builder.angle ?? 0,
-          isOwned: true,
-          isPublic: builder.isPublic,
-          hasLocationName: builder.locationName.trim().length > 0,
-          hasCoords: builder.coords != null,
-          hasGym: builder.selectedGym != null,
-          gymUuid: builder.selectedGym?.uuid ?? undefined,
-          source: 'spray_wizard',
-        });
+        // Built from the wall itself, not from `builder`: a resumed run never ran
+        // the meta step, so the builder's fields are its constructor defaults and
+        // reporting them would bias this funnel for every wall finished on a
+        // second sitting. `wall-created-event.ts` carries the whole rule.
+        track(
+          SHARED_EVENTS.BoardCreated,
+          wallCreatedEventProperties({
+            layoutId: wall.layoutId,
+            board,
+            meta: metaRanHereRef.current
+              ? {
+                  angle: builder.angle,
+                  hasLocationName: builder.locationName.trim().length > 0,
+                  hasCoords: builder.coords != null,
+                  gymUuid: builder.selectedGym?.uuid ?? null,
+                }
+              : null,
+            pendingVisibility: visibility,
+          }),
+        );
       }
 
-      // The visibility the climber chose, applied now rather than at creation:
-      // a wall is created private so an unfinished one is never discoverable as
-      // an unusable board. Idempotent, and after the latch above, so a retry of
-      // a failed bind re-applies it rather than re-publishing.
-      const visibility = builder.pendingVisibility();
+      // Idempotent, and after the latch above, so a retry of a failed bind
+      // re-applies it rather than re-publishing.
       if (visibility) {
         await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
       }
