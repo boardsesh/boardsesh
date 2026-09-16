@@ -38,6 +38,12 @@ export default function BoardsLayout() {
           unfollowing live on the picker's cards (#4623). */}
       <Stack.Screen name="manage" options={{ title: t('myBoards.title') }} />
       <Stack.Screen name="edit" options={{ title: tBoards('mobile.edit.screenTitle') }} />
+      {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
+          sheet: two of its steps (the corner markers and the hold editor) are
+          full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
+          rule 3 keeps off a sheet's own drag. Flag-gated inside the screen — the
+          route existing is not the same as the feature being reachable. */}
+      <Stack.Screen name="spray/new" options={{ title: tBoards('sprayWizard.screenTitle') }} />
     </Stack>
   );
 }
