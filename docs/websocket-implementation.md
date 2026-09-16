@@ -726,9 +726,10 @@ Two queries list sessions happening right now: Home's "Climbing now" rail (`foll
 1. newest `boardsesh_ticks.board_id`;
 2. `board_sessions.board_id` (almost always null: `ensureSessionRecordExists` never sets it);
 3. a `/b/<slug>/<angle>` board path, matched to `user_boards.slug`;
-4. the Redis session→board binding written by `commitBoardClimb`.
+4. the Redis session→board binding written by `commitBoardClimb`;
+5. a config path (`/<type>/<layout>/<size>/<sets>/<angle>`), matched to a live board the session creator owns with the same type, layout, size and normalised set ids. Mobile's `buildSessionBoardPath` gives a personal LED board this path shape, so without step 5 the session names no board until the first tick or wall send. When the creator owns several identical boards, it picks the one they ticked on most recently. With no single most recent board, the session stays unresolved, and another climber's board is never chosen. Step 5 comes after Redis because it is a guess: someone climbing on a friend's identical wall is placed correctly by the binding once they send a climb.
 
-Steps 1–3 take two batched queries. Redis is asked only about sessions they left unresolved. `board_climb_events` is not a source: it has a `session_id` column, but `reportBoardClimb` writes null there today. Once it carries the session, its newest event belongs first in this list.
+Steps 1–3 take two batched queries. Redis is asked only about sessions they left unresolved, and step 5 is one more query covering everything Redis left. A second batched query runs only when a creator owns several identical boards. The candidate query's board filter includes the step-5 shape too (creator = board owner, and type, layout and size taken from the path), so a followed board's owner's session makes the 50-row cap before its first tick. `board_climb_events` is not a source: it has a `session_id` column, but `reportBoardClimb` writes null there today. Once it carries the session, its newest event belongs first in this list.
 
 **What a card shows.** `board` is null unless the board is not deleted and is public or system-shared (`isRowAnonReadable`) or owned by the viewer. On top of that:
 

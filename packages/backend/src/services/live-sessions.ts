@@ -7,6 +7,7 @@ import type {
   LiveSessionUser,
   SessionUser,
 } from '@boardsesh/shared-schema';
+import { normaliseSetIds, parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
@@ -102,39 +103,57 @@ type BoardRow = {
   gymName: string | null;
 };
 
-type ArmBoard = { id: number; slug: string };
+/** A board that can put sessions in the board arm, with what every resolution step matches on. */
+type ArmBoard = {
+  id: number;
+  slug: string;
+  ownerId: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+};
 
 // ---------------------------------------------------------------------------
 // Board paths
 // ---------------------------------------------------------------------------
 
 export type ParsedSessionBoardPath = {
-  /** `/b/<slug>/<angle>` — gym and LED-less boards */
+  /** `/b/<slug>/<angle>`: gym and LED-less boards */
   slug: string | null;
-  /** `/<boardType>/<layout>/<size>/<sets>/<angle>` */
+  /** `/<boardType>/<layout>/<size>/<sets>/<angle>`: every other board, personal LED boards included */
+  config: { boardType: string; layoutId: number; sizeId: number; setIds: string } | null;
   boardType: string | null;
   angle: number | null;
 };
 
-function parseAngle(segment: string | undefined): number | null {
-  if (!segment || !/^-?\d{1,2}$/.test(segment)) return null;
-  const angle = Number(segment);
-  return angle >= -90 && angle <= 90 ? angle : null;
+function toAngle(angle: number | null): number | null {
+  return angle !== null && Number.isInteger(angle) && angle >= -90 && angle <= 90 ? angle : null;
 }
 
 /**
- * Pull what a board path says about its board. Tolerates a missing leading
- * slash, which older rows (and tests) carry.
+ * Pull what a board path says about its board, through the shared board-path
+ * parsers (`parseNamedBoardPath` for `/b/<slug>`, `parseBoardPath` for a config
+ * path). Both tolerate a missing leading slash, which older rows carry.
  */
 export function parseSessionBoardPath(boardPath: string | null | undefined): ParsedSessionBoardPath {
-  const parts = (boardPath ?? '').replace(/^\/+/, '').split('/');
-  if (parts[0] === 'b') {
-    return { slug: parts[1] || null, boardType: null, angle: parseAngle(parts[2]) };
+  const path = boardPath ?? '';
+  const named = parseNamedBoardPath(path);
+  if (named) return { slug: named.slug, config: null, boardType: null, angle: toAngle(named.angle) };
+  const parsed = parseBoardPath(path);
+  if (parsed && Number.isSafeInteger(parsed.layoutId) && Number.isSafeInteger(parsed.sizeId)) {
+    return {
+      slug: null,
+      config: {
+        boardType: parsed.boardName,
+        layoutId: parsed.layoutId,
+        sizeId: parsed.sizeId,
+        setIds: normaliseSetIds(parsed.setIds),
+      },
+      boardType: parsed.boardName,
+      angle: toAngle(parsed.angle),
+    };
   }
-  if (parts.length >= 2 && /^[a-z][a-z0-9_-]*$/.test(parts[0])) {
-    return { slug: null, boardType: parts[0], angle: parseAngle(parts[4]) };
-  }
-  return { slug: null, boardType: null, angle: null };
+  return { slug: null, config: null, boardType: null, angle: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -152,18 +171,33 @@ function toBoardId(value: number | string | null | undefined): number | null {
  * 1. its newest `boardsesh_ticks` row with a board,
  * 2. the `board_sessions.board_id` column,
  * 3. a `/b/<slug>/…` board path → `user_boards.slug`,
- * 4. the Redis session→board binding stamped by `reportBoardClimb`.
+ * 4. the Redis session→board binding stamped by `reportBoardClimb`,
+ * 5. a config path (`/<type>/<layout>/<size>/<sets>/<angle>`, what mobile
+ *    builds for a personal LED board) → the session CREATOR's own live board
+ *    with that exact config (set ids normalised). Several identical boards
+ *    resolve to the one the creator most recently ticked on; if that does not
+ *    single one out, the session stays unresolved. Another climber's board is
+ *    never picked. It comes after Redis because it is an inference: a creator
+ *    climbing on a friend's identical wall is placed correctly by the binding
+ *    once a climb has been sent, and wrongly by this step.
  *
  * `board_climb_events` is deliberately absent: it has a `session_id` column,
  * but `reportBoardClimb` writes null there today, so it cannot place a session.
  * Once that write carries the session, its newest event belongs first here and
  * in `boardArmPrefilter`.
  *
- * Two batched SQL reads regardless of how many sessions come in; Redis is only
- * asked about sessions neither resolved.
+ * At most three batched SQL reads regardless of how many sessions come in;
+ * Redis is only asked about sessions the first three steps left unresolved,
+ * and step 5 runs one query for whatever Redis left (plus one tie-break
+ * query when a creator owns several identical boards).
  */
 export async function resolveLiveSessionBoards(
-  sessions: ReadonlyArray<{ id: string; boardId: number | null; boardPath: string | null }>,
+  sessions: ReadonlyArray<{
+    id: string;
+    boardId: number | null;
+    boardPath: string | null;
+    createdByUserId: string | null;
+  }>,
 ): Promise<Map<string, number>> {
   const resolved = new Map<string, number>();
   if (sessions.length === 0) return resolved;
@@ -224,6 +258,120 @@ export async function resolveLiveSessionBoards(
     if (boardId) resolved.set(sessionId, boardId);
   }
 
+  const configBoards = await resolveCreatorConfigBoards(sessions.filter((session) => !resolved.has(session.id)));
+  for (const [sessionId, boardId] of configBoards) resolved.set(sessionId, boardId);
+
+  return resolved;
+}
+
+/**
+ * Step 5 of `resolveLiveSessionBoards`: a config path matched against the
+ * creator's own boards. One query for every session; a second, also batched,
+ * only when some creator owns several identical boards, reading each tied
+ * board's newest tick by its owner (`boardsesh_ticks_board_user_idx`).
+ */
+async function resolveCreatorConfigBoards(
+  sessions: ReadonlyArray<{ id: string; boardPath: string | null; createdByUserId: string | null }>,
+): Promise<Map<string, number>> {
+  const resolved = new Map<string, number>();
+  const lookups = sessions.flatMap((session) => {
+    const { config } = parseSessionBoardPath(session.boardPath);
+    return config && session.createdByUserId
+      ? [{ sessionId: session.id, ownerId: session.createdByUserId, config }]
+      : [];
+  });
+  if (lookups.length === 0) return resolved;
+
+  const userBoards = dbSchema.userBoards;
+  const ticks = dbSchema.boardseshTicks;
+  const lookupKey = (ownerId: string, boardType: string, layoutId: number, sizeId: number) =>
+    `${ownerId}|${boardType}|${layoutId}|${sizeId}`;
+  const distinctLookups = new Map(
+    lookups.map((lookup) => [
+      lookupKey(lookup.ownerId, lookup.config.boardType, lookup.config.layoutId, lookup.config.sizeId),
+      lookup,
+    ]),
+  );
+
+  const rows = await db
+    .select({
+      id: userBoards.id,
+      ownerId: userBoards.ownerId,
+      boardType: userBoards.boardType,
+      layoutId: userBoards.layoutId,
+      sizeId: userBoards.sizeId,
+      setIds: userBoards.setIds,
+    })
+    .from(userBoards)
+    .where(
+      and(
+        isNull(userBoards.deletedAt),
+        or(
+          ...[...distinctLookups.values()].map(({ ownerId, config }) =>
+            and(
+              eq(userBoards.ownerId, ownerId),
+              eq(userBoards.boardType, config.boardType),
+              eq(userBoards.layoutId, config.layoutId),
+              eq(userBoards.sizeId, config.sizeId),
+            ),
+          ),
+        ),
+      ),
+    );
+
+  const matchesBySession = new Map(
+    lookups.map(({ sessionId, ownerId, config }) => [
+      sessionId,
+      rows.filter(
+        (row) =>
+          row.ownerId === ownerId &&
+          row.boardType === config.boardType &&
+          Number(row.layoutId) === config.layoutId &&
+          Number(row.sizeId) === config.sizeId &&
+          normaliseSetIds(row.setIds) === config.setIds,
+      ),
+    ]),
+  );
+
+  // Several identical boards: the one the creator ticked on last.
+  const tiedRows = [...matchesBySession.values()].filter((matches) => matches.length > 1).flat();
+  const ownerLastTickedAt = new Map<string, number>();
+  if (tiedRows.length > 0) {
+    const tickRows = await db
+      .select({
+        boardId: ticks.boardId,
+        userId: ticks.userId,
+        // Epoch seconds, so the comparison never depends on how the driver renders a timestamp.
+        lastTickedAt: sql<number>`EXTRACT(EPOCH FROM MAX(${ticks.climbedAt}))`.mapWith(Number),
+      })
+      .from(ticks)
+      .where(
+        and(
+          inArray(ticks.boardId, [...new Set(tiedRows.map((row) => Number(row.id)))]),
+          inArray(ticks.userId, [...new Set(tiedRows.map((row) => row.ownerId))]),
+        ),
+      )
+      .groupBy(ticks.boardId, ticks.userId);
+    for (const row of tickRows) {
+      ownerLastTickedAt.set(`${row.boardId}|${row.userId}`, row.lastTickedAt);
+    }
+  }
+
+  for (const [sessionId, matches] of matchesBySession) {
+    if (matches.length === 1) {
+      resolved.set(sessionId, Number(matches[0].id));
+      continue;
+    }
+    // Only the owner's own ticks count, and only a single newest board is a
+    // choice: never ticked on any, or a tie, leaves the session unresolved.
+    const ticked = matches.flatMap((row) => {
+      const lastTickedAt = ownerLastTickedAt.get(`${Number(row.id)}|${row.ownerId}`);
+      return lastTickedAt === undefined || !Number.isFinite(lastTickedAt) ? [] : [{ row, lastTickedAt }];
+    });
+    const newest = Math.max(...ticked.map(({ lastTickedAt }) => lastTickedAt));
+    const newestBoards = ticked.filter(({ lastTickedAt }) => lastTickedAt === newest);
+    if (newestBoards.length === 1) resolved.set(sessionId, Number(newestBoards[0].row.id));
+  }
   return resolved;
 }
 
@@ -354,6 +502,17 @@ function boardArmPrefilter(boards: readonly ArmBoard[], redisBoundSessionIds: re
   const slugs = [...new Set(boards.map((board) => board.slug))];
   const ticks = dbSchema.boardseshTicks;
   const trimmedPath = sql`ltrim(${boardSessions.boardPath}, '/')`;
+  // Step 5's shape: the board's own owner started the session on a config path
+  // naming its type, layout and size. Set ids are left to the resolver, which
+  // normalises them; the prefilter only has to be a superset.
+  const creatorConfigPaths = boards.map((board) =>
+    and(
+      eq(boardSessions.createdByUserId, board.ownerId),
+      sql`split_part(${trimmedPath}, '/', 1) = ${board.boardType}`,
+      sql`split_part(${trimmedPath}, '/', 2) = ${String(board.layoutId)}`,
+      sql`split_part(${trimmedPath}, '/', 3) = ${String(board.sizeId)}`,
+    ),
+  );
   return or(
     exists(
       db
@@ -364,6 +523,7 @@ function boardArmPrefilter(boards: readonly ArmBoard[], redisBoundSessionIds: re
     inArray(boardSessions.boardId, boardIds),
     and(like(trimmedPath, 'b/%'), inArray(sql`split_part(${trimmedPath}, '/', 2)`, slugs)),
     redisBoundSessionIds.length > 0 ? inArray(boardSessions.id, [...redisBoundSessionIds]) : undefined,
+    ...creatorConfigPaths,
   );
 }
 
@@ -717,6 +877,24 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
 // Entry points
 // ---------------------------------------------------------------------------
 
+function toArmBoard(row: {
+  id: number;
+  slug: string;
+  ownerId: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+}): ArmBoard {
+  return {
+    id: Number(row.id),
+    slug: row.slug,
+    ownerId: row.ownerId,
+    boardType: row.boardType,
+    layoutId: Number(row.layoutId),
+    sizeId: Number(row.sizeId),
+  };
+}
+
 async function loadFollowedBoards(viewerId: string): Promise<ArmBoard[]> {
   const rows = await db
     .select({
@@ -724,13 +902,14 @@ async function loadFollowedBoards(viewerId: string): Promise<ArmBoard[]> {
       slug: dbSchema.userBoards.slug,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
+      sizeId: dbSchema.userBoards.sizeId,
       ownerId: dbSchema.userBoards.ownerId,
     })
     .from(dbSchema.boardFollows)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.boardFollows.boardUuid))
     .where(and(eq(dbSchema.boardFollows.userId, viewerId), isNull(dbSchema.userBoards.deletedAt)));
   const usable = await Promise.all(rows.map((row) => viewerMayUseBoardArm(row, viewerId)));
-  return rows.filter((_, index) => usable[index]).map((row) => ({ id: Number(row.id), slug: row.slug }));
+  return rows.filter((_, index) => usable[index]).map(toArmBoard);
 }
 
 /**
@@ -746,13 +925,14 @@ async function loadSelectedBoard(boardUuid: string, viewerId: string): Promise<A
       slug: dbSchema.userBoards.slug,
       boardType: dbSchema.userBoards.boardType,
       layoutId: dbSchema.userBoards.layoutId,
+      sizeId: dbSchema.userBoards.sizeId,
       ownerId: dbSchema.userBoards.ownerId,
     })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   if (!row || !(await viewerMayUseBoardArm(row, viewerId))) return null;
-  return { id: Number(row.id), slug: row.slug };
+  return toArmBoard(row);
 }
 
 /**
@@ -828,12 +1008,19 @@ export async function findFollowedLiveSessions(
 export async function findBoardLiveSessions(boardId: number, viewerId: string | null): Promise<LiveSession[]> {
   const now = new Date();
   const [boardRow] = await db
-    .select({ id: dbSchema.userBoards.id, slug: dbSchema.userBoards.slug })
+    .select({
+      id: dbSchema.userBoards.id,
+      slug: dbSchema.userBoards.slug,
+      boardType: dbSchema.userBoards.boardType,
+      layoutId: dbSchema.userBoards.layoutId,
+      sizeId: dbSchema.userBoards.sizeId,
+      ownerId: dbSchema.userBoards.ownerId,
+    })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   if (!boardRow) return [];
-  const board: ArmBoard = { id: Number(boardRow.id), slug: boardRow.slug };
+  const board = toArmBoard(boardRow);
 
   const redisBoundSessionIds = await readBoardBoundSessionIds([board.id]);
   const candidates = await loadCandidates(

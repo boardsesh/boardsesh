@@ -79,6 +79,9 @@ async function follow(followerId: string, followingId: string): Promise<void> {
 
 type BoardOptions = {
   ownerId?: string;
+  layoutId?: number;
+  sizeId?: number;
+  setIds?: string;
   isPublic?: boolean;
   isUnlisted?: boolean;
   hideLocation?: boolean;
@@ -87,7 +90,7 @@ type BoardOptions = {
 };
 
 async function makeBoard(
-  options: BoardOptions & { boardType?: string; layoutId?: number } = {},
+  options: BoardOptions & { boardType?: string } = {},
 ): Promise<{ id: number; uuid: string; slug: string; name: string }> {
   const uuid = uuidv4();
   const slug = `ls-board-${Date.now().toString(36)}-${slugCounter++}`;
@@ -100,8 +103,8 @@ async function makeBoard(
       ownerId: options.ownerId ?? BOARD_OWNER,
       boardType: options.boardType ?? 'kilter',
       layoutId: options.layoutId ?? 1,
-      sizeId: options.layoutId ?? 10,
-      setIds: options.boardType === 'spray' ? '1' : '1,2',
+      sizeId: options.sizeId ?? (options.boardType === 'spray' ? options.layoutId : undefined) ?? 10,
+      setIds: options.setIds ?? (options.boardType === 'spray' ? '1' : '1,2'),
       name,
       isPublic: options.isPublic ?? true,
       isUnlisted: options.isUnlisted ?? false,
@@ -254,12 +257,22 @@ afterEach(() => {
 
 describe('parseSessionBoardPath', () => {
   it('reads board type and angle from a config path, with or without the leading slash', () => {
-    expect(parseSessionBoardPath('/kilter/1/10/1,2/40')).toEqual({ slug: null, boardType: 'kilter', angle: 40 });
-    expect(parseSessionBoardPath('tension/9/1/8/25')).toEqual({ slug: null, boardType: 'tension', angle: 25 });
+    expect(parseSessionBoardPath('/kilter/1/10/2,1/40')).toEqual({
+      slug: null,
+      config: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' },
+      boardType: 'kilter',
+      angle: 40,
+    });
+    expect(parseSessionBoardPath('tension/9/1/8/25')).toMatchObject({ slug: null, boardType: 'tension', angle: 25 });
   });
 
   it('reads the slug and angle from a /b/ path', () => {
-    expect(parseSessionBoardPath('/b/my-wall/35')).toEqual({ slug: 'my-wall', boardType: null, angle: 35 });
+    expect(parseSessionBoardPath('/b/my-wall/35')).toEqual({
+      slug: 'my-wall',
+      config: null,
+      boardType: null,
+      angle: 35,
+    });
   });
 });
 
@@ -405,13 +418,73 @@ describe('followedLiveSessions — board arm', () => {
     const slugOnly = await makeSession({ boardPath: slugPath });
 
     const resolved = await resolveLiveSessionBoards([
-      { id: ticked, boardId: columnBoard.id, boardPath: slugPath },
-      { id: columnOnly, boardId: columnBoard.id, boardPath: slugPath },
-      { id: slugOnly, boardId: null, boardPath: slugPath },
+      { id: ticked, boardId: columnBoard.id, boardPath: slugPath, createdByUserId: STRANGER },
+      { id: columnOnly, boardId: columnBoard.id, boardPath: slugPath, createdByUserId: STRANGER },
+      { id: slugOnly, boardId: null, boardPath: slugPath, createdByUserId: STRANGER },
     ]);
     expect(resolved.get(ticked)).toBe(newerTickBoard.id);
     expect(resolved.get(columnOnly)).toBe(columnBoard.id);
     expect(resolved.get(slugOnly)).toBe(slugBoard.id);
+  });
+});
+
+describe('config-path sessions (personal LED boards)', () => {
+  // Mobile's buildSessionBoardPath uses /b/<slug> only for gym and LED-less
+  // boards; a personal LED board gets a config path, so until the first tick or
+  // wall send the session names no board at all.
+  const PROJ_PATH = '/kilter/8/21/3,1,2/40';
+  const projBoard = (options: BoardOptions = {}) =>
+    makeBoard({ ownerId: FRIEND, layoutId: 8, sizeId: 21, setIds: '1,2,3', ...options });
+
+  it("resolves to the creator's own board with that config, and lists it for the board's followers", async () => {
+    const proj = await projBoard({ name: 'The Proj Wall' });
+    await followBoard(VIEWER, proj.uuid);
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+    await goLive(sessionId, FRIEND, PROJ_PATH);
+
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.sessionId).toBe(sessionId);
+    expect(session.reasons).toEqual(['FOLLOWED_BOARD']);
+    expect(session.board?.name).toBe('The Proj Wall');
+    expect(session.angle).toBe(40);
+  });
+
+  it('never picks another climber’s identical board', async () => {
+    await projBoard({ ownerId: BOARD_OWNER, name: 'Somebody Else’s Wall' });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+
+    const resolved = await resolveLiveSessionBoards([
+      { id: sessionId, boardId: null, boardPath: PROJ_PATH, createdByUserId: FRIEND },
+    ]);
+    expect(resolved.has(sessionId)).toBe(false);
+  });
+
+  it('breaks a tie between identical boards by the creator’s newest tick, and gives up without one', async () => {
+    const home = await projBoard({ name: 'Home Wall' });
+    const garage = await projBoard({ name: 'Garage Wall' });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: PROJ_PATH });
+    const session = { id: sessionId, boardId: null, boardPath: PROJ_PATH, createdByUserId: FRIEND };
+
+    expect((await resolveLiveSessionBoards([session])).has(sessionId)).toBe(false);
+
+    // Ticks from an earlier session, so they place the boards, not this session.
+    const earlier = await makeSession({ createdBy: FRIEND, status: 'ended' });
+    await addTick({
+      sessionId: earlier,
+      userId: FRIEND,
+      boardId: home.id,
+      climbedAt: new Date(Date.now() - 86_400_000),
+    });
+    await addTick({
+      sessionId: earlier,
+      userId: FRIEND,
+      boardId: garage.id,
+      climbedAt: new Date(Date.now() - 3_600_000),
+    });
+    // Somebody else's newer tick on the home wall does not count.
+    await addTick({ sessionId: earlier, userId: STRANGER, boardId: home.id });
+
+    expect((await resolveLiveSessionBoards([session])).get(sessionId)).toBe(garage.id);
   });
 });
 
