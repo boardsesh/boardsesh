@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-16T10:21:00.195Z",
+  "generatedAt": "2026-09-16T11:32:10.647Z",
   "entries": [
+    {
+      "prNumber": 5518,
+      "category": "new",
+      "title": "See who's climbing right now on Home and jump into their session.",
+      "mergedAt": "2026-09-16T11:30:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5518",
+      "body": "The board sheet shows sessions happening on that wall, ready to join.\nKeep a session to yourself: turn off \"Show this session live\" when you start."
+    },
     {
       "prNumber": 5519,
       "category": "fixed",

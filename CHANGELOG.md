@@ -12,6 +12,9 @@ A new version shipped to the App Store.
 
 ### New
 
+- See who's climbing right now on Home and jump into their session. ([#5518](https://github.com/boardsesh/boardsesh/pull/5518))
+  The board sheet shows sessions happening on that wall, ready to join.
+  Keep a session to yourself: turn off "Show this session live" when you start.
 - Share a climb from your spray wall and the link opens a real page: your wall photo with the holds lit up. ([#5499](https://github.com/boardsesh/boardsesh/pull/5499))
   Shared links unfurl with a picture of the wall in chats and feeds, for walls you have made public.
   Private walls stay private. A link to one just doesn't open, for anyone.
