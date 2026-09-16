@@ -3,7 +3,13 @@
 // per-shape branching.
 
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { boardRowSubtitle, disambiguateBoardSubtitles, normaliseSetIds, toBoardName } from '@boardsesh/board-config';
+import {
+  boardRowSubtitle,
+  disambiguateBoardSubtitles,
+  normaliseSetIds,
+  toBoardName,
+  type BoardLabelOptions,
+} from '@boardsesh/board-config';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCard';
 import { boardTypeLabel } from './board-builder-labels';
 import { boardIsOwnedBy } from './manage-items';
@@ -35,6 +41,13 @@ export function userBoardToItem(
    * so a just-tapped pin flips instantly without waiting for a refetch.
    */
   isPinnedOverride?: boolean,
+  /**
+   * Label options for the subtitle. The one thing a caller passes here is the
+   * translated word for a spray wall, which this module cannot resolve — it is
+   * pure, and the catalogue lives behind a React hook. Omitted everywhere a wall
+   * cannot appear, and the subtitle then reads exactly as it did before.
+   */
+  labelOptions?: BoardLabelOptions,
 ): DiscoveryBoardItem | null {
   const boardName = toBoardName(board.boardType);
   if (boardName === null) return null;
@@ -45,7 +58,7 @@ export function userBoardToItem(
     sizeId: board.sizeId,
     setIds: board.setIds,
     title: board.name,
-    subtitle: boardRowSubtitle(board),
+    subtitle: boardRowSubtitle(board, labelOptions),
     distanceMeters: board.distanceMeters ?? undefined,
     isActive: activeUuid != null && board.uuid === activeUuid,
     isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
@@ -55,18 +68,34 @@ export function userBoardToItem(
 }
 
 /**
+ * Everything the list builder may be told, named.
+ *
+ * Named rather than positional because the callers are asymmetric: the "Your
+ * boards" carousel passes all five, while Near you and the offline rows pass one
+ * or two. Positionally that read as `(rows, uuid, undefined, undefined,
+ * undefined, labelOptions)` — six arguments and three holes, where miscounting is
+ * silent and the compiler cannot help (every optional slot is a different type
+ * only by luck).
+ */
+export type UserBoardItemsOptions = {
+  /** The active board's uuid, for the `isActive` flag. */
+  activeUuid?: string | null;
+  offlineStateFor?: (board: UserBoard) => BoardDownloadState;
+  /** See `userBoardToItem` — resolves `isViewerOwner` once per list build. */
+  currentUserId?: string;
+  /** Uuids the user just toggled, pending the next fetch. See `userBoardToItem`. */
+  pinnedOverrides?: ReadonlyMap<string, boolean>;
+  /** See `userBoardToItem`. */
+  labelOptions?: BoardLabelOptions;
+};
+
+/**
  * The whole carousel's items in one pass, with same-subtitle boards pulled apart
  * (see `disambiguateBoardSubtitles`). Disambiguation is scoped to the one list
  * the user is looking at, and runs here — at the list level — never per row.
  */
-export function userBoardsToItems(
-  boards: UserBoard[],
-  activeUuid?: string | null,
-  offlineStateFor?: (board: UserBoard) => BoardDownloadState,
-  currentUserId?: string,
-  /** Uuids the user just toggled, pending the next fetch. See `userBoardToItem`. */
-  pinnedOverrides?: ReadonlyMap<string, boolean>,
-): DiscoveryBoardItem[] {
+export function userBoardsToItems(boards: UserBoard[], options: UserBoardItemsOptions = {}): DiscoveryBoardItem[] {
+  const { activeUuid, offlineStateFor, currentUserId, pinnedOverrides, labelOptions } = options;
   // Only boards that actually render take part: a board dropped for an
   // unsupported type must not push its neighbour into a disambiguation the user
   // can see no reason for.
@@ -78,10 +107,14 @@ export function userBoardsToItems(
       offlineStateFor?.(board),
       currentUserId,
       pinnedOverrides?.get(board.uuid),
+      labelOptions,
     );
     if (item !== null) rendered.push({ item, board });
   }
-  const subtitles = disambiguateBoardSubtitles(rendered.map((entry) => entry.board));
+  const subtitles = disambiguateBoardSubtitles(
+    rendered.map((entry) => entry.board),
+    labelOptions,
+  );
   return rendered.map((entry, index) => ({ ...entry.item, subtitle: subtitles[index] }));
 }
 

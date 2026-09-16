@@ -1,5 +1,6 @@
 import { triggerWebCron } from './trigger-web-cron';
 import { refreshGymActivityStats } from './refresh-gym-activity-stats';
+import { purgeSprayWallPhotos } from './purge-spray-wall-photos';
 import type { JobDefinition } from './types';
 
 /**
@@ -50,6 +51,24 @@ const WEEKLY_WARMUP_TIMEOUT_MS = 900_000;
  */
 const SITEMAP_REFRESH_TIMEOUT_MS = 900_000;
 const GYM_ACTIVITY_REFRESH_TIMEOUT_MS = 900_000;
+
+/**
+ * The spray wall photo purge lists and deletes object-storage keys for up to 200
+ * walls per run, one round trip per object. Nothing here scans a large table —
+ * the candidate query is an index read on `spray_walls_deleted_at_idx`, the
+ * partial index on `deleted_at IS NOT NULL` — so the bound is R2's latency, not
+ * the database's. Ten minutes is well past a realistic batch — the whole run is a
+ * few hundred DELETEs against R2 — and short enough that a wedged storage
+ * endpoint cannot hold a worker until the next day's tick.
+ *
+ * The deletes inside one wall's prefix are serial on purpose: a wall is a handful
+ * of objects (one photo plus one variant per version), 200 of them is still only
+ * hundreds of round trips, and fanning them out would trade a bounded run for R2
+ * rate-limit retries. A run that does not finish its batch is not a data loss —
+ * nothing was cleared for the walls it did not reach, so tomorrow's run takes
+ * them.
+ */
+const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
 
 export const JOBS: readonly JobDefinition[] = [
   {
@@ -162,6 +181,26 @@ export const JOBS: readonly JobDefinition[] = [
     timezone: 'UTC',
     timeoutMs: GYM_ACTIVITY_REFRESH_TIMEOUT_MS,
     run: refreshGymActivityStats,
+  },
+
+  // Storage retention for deleted spray walls (epic #5346 / SW-17): 30 days after
+  // an owner deletes a wall, its photographs go. Daily, because the window is
+  // measured in days and there is nothing to gain from checking more often.
+  //
+  // Overlap-safe, which JobDefinition requires: the mutation deletes objects and
+  // then clears `photo_key`, so a second run meeting a first re-lists prefixes
+  // that are already empty, deletes nothing twice, and never fails on a missing
+  // object.
+  {
+    name: 'purge-spray-wall-photos',
+    // 07:00 UTC — after the 06:30 gym activity rebuild rather than alongside it,
+    // so the two daily jobs never share a tick.
+    schedule: '0 7 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC.
+    timezone: 'UTC',
+    timeoutMs: SPRAY_PHOTO_PURGE_TIMEOUT_MS,
+    run: purgeSprayWallPhotos,
   },
 ];
 

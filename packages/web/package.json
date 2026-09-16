@@ -61,6 +61,7 @@
     "@boardsesh/queue-react": "workspace:*",
     "@boardsesh/queue-runtime": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
+    "@boardsesh/spray-wall-geometry": "workspace:*",
     "@boardsesh/static-assets": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",

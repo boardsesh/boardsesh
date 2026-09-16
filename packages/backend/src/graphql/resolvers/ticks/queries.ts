@@ -9,7 +9,7 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -376,8 +376,15 @@ export const tickQueries = {
   /**
    * Get ticks for a specific user (public query, no authentication required)
    */
-  userTicks: async (_: unknown, { userId, boardType }: { userId: string; boardType: string }): Promise<unknown[]> => {
+  userTicks: async (
+    _: unknown,
+    { userId, boardType }: { userId: string; boardType: string },
+    ctx?: ConnectionContext,
+  ): Promise<unknown[]> => {
     validateInput(BoardNameSchema, boardType, 'boardType');
+    // Public query, no authentication required — so an absent context is an
+    // ANONYMOUS reader, never a hopeful value.
+    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
 
     const conditions = [
       eq(dbSchema.boardseshTicks.userId, userId),
@@ -386,6 +393,15 @@ export const tickQueries = {
       // the You page's send totals and grade charts via deriveProfileViewModel,
       // so a twin left in here inflates every one of those numbers.
       notAuroraTwinDuplicate(dbSchema.boardseshTicks),
+      // This is a stranger's logbook, read without signing in, and it carries the
+      // climb uuid, the tick's own comment and the climb's layout id. A spray
+      // climb is an ordinary `board_climbs` row, so without this a private wall's
+      // send log was public. Column form because `board_climbs` is LEFT JOINed
+      // below, and `IS DISTINCT FROM` keeps a tick whose climb row is missing.
+      sprayClimbVisibilityCondition(
+        { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+        viewerUserId,
+      ),
     ];
 
     // Fetch ticks with layoutId from unified board_climbs table. We surface
@@ -1351,6 +1367,7 @@ export const tickQueries = {
   userProfileStats: async (
     _: unknown,
     { userId }: { userId: string },
+    ctx?: ConnectionContext,
   ): Promise<{
     totalDistinctClimbs: number;
     layoutStats: Array<{
@@ -1365,6 +1382,11 @@ export const tickQueries = {
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       return { totalDistinctClimbs: 0, layoutStats: [] };
     }
+
+    // Same rule as `userTicks`: a profile is readable without signing in, and
+    // `layoutStats` names a LAYOUT ID — which is exactly the enumerable key every
+    // other spray gate protects.
+    const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
 
     const boardTypes = SUPPORTED_BOARDS;
     const layoutStatsMap: Record<
@@ -1391,6 +1413,13 @@ export const tickQueries = {
         eq(dbSchema.boardseshTicks.userId, userId),
         eq(dbSchema.boardseshTicks.boardType, boardType),
         ne(dbSchema.boardseshTicks.status, 'attempt'),
+        // REFERENCE form, not the column form: `baseConditions` is shared with the
+        // third query below, which selects distinct climb uuids straight off
+        // `boardsesh_ticks` and joins `board_climbs` not at all.
+        sprayReferenceVisibilityCondition(
+          { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+          viewerUserId,
+        ),
       );
 
       // Run three queries for this board type:

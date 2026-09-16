@@ -31,7 +31,7 @@ import { syncTypeDefs } from './sync';
 import { locationSyncAdminTypeDefs } from './location-sync-admin';
 import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
-import { sprayWallsTypeDefs } from './spray-walls';
+import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -60,6 +60,8 @@ export const typeDefs = [
   gymOwnerReassignTypeDefs,
   holdOutlineOverridesTypeDefs,
   sprayWallsTypeDefs,
+  sprayWallResetTypeDefs,
+  sprayWallModerationTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

@@ -28,6 +28,7 @@ import { BoardCarousel } from '../../src/components/board-discovery/BoardCarouse
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
+import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
 import {
   boardCardAction,
   hoistActiveBoard,
@@ -44,7 +45,7 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled, useSprayWallsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
@@ -195,6 +196,10 @@ export default function BoardSelection() {
 
   // Only the user's OWN boards carry a download state.
   const boardOfflineState = useBoardOfflineState();
+  // The translated word a spray-wall row leads with. One object for every list
+  // on this screen, so none of their memos churn.
+  const labelOptions = useSprayLabelOptions();
+
   const myBoardItems = useMemo(
     // The server now orders these: pinned first, then by when you last opened
     // the board, then never-opened by when you added it (#4884). All this adds
@@ -202,22 +207,22 @@ export default function BoardSelection() {
     // AsyncStorage on this device. `currentUserId` stamps `isViewerOwner` once
     // per list build so no row ever scans back into `myBoards` for it.
     () =>
-      userBoardsToItems(
-        hoistActiveBoard(myBoards, activeBoard?.uuid),
-        activeBoard?.uuid,
-        boardOfflineState,
+      userBoardsToItems(hoistActiveBoard(myBoards, activeBoard?.uuid), {
+        activeUuid: activeBoard?.uuid,
+        offlineStateFor: boardOfflineState,
         currentUserId,
         pinnedOverrides,
-      ),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides],
+        labelOptions,
+      }),
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
   );
   const nearbyItems = useMemo(
-    () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
-    [nearby?.boards, activeBoard?.uuid],
+    () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
+    [nearby?.boards, activeBoard?.uuid, labelOptions],
   );
   const offlineItems = useMemo(
-    () => userBoardsToItems(offlineRows, activeBoard?.uuid),
-    [offlineRows, activeBoard?.uuid],
+    () => userBoardsToItems(offlineRows, { activeUuid: activeBoard?.uuid, labelOptions }),
+    [offlineRows, activeBoard?.uuid, labelOptions],
   );
   const popularItems = useMemo(
     () => (popular?.configs ?? []).map(popularConfigToItem).filter((item): item is DiscoveryBoardItem => item !== null),
@@ -535,6 +540,14 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
+  // The wall front door (epic #5346, SW-09). Flag-gated, and unresolved reads as
+  // off, so the tile never flickers into the row for the first frames of a cold
+  // open on a fleet the feature is dark for.
+  const sprayWallsEnabled = useSprayWallsEnabled();
+  const onModeAddWall = useCallback(() => {
+    router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
+  }, [router, boardReturnTo]);
+
   const onModeFindGym = useCallback(() => {
     router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
@@ -718,6 +731,12 @@ export default function BoardSelection() {
               en-US and in all three other locales. The `+` glyph and the row's
               context carry the noun here; the full-width CTAs keep it. */}
           <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
+          {/* Next to "Create board", because that is the question it answers: the
+              other tile is for a catalogue board you pick a layout for, this one
+              is for a wall you photograph. */}
+          {sprayWallsEnabled ? (
+            <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
+          ) : null}
         </View>
 
         {nearbySection}

@@ -33,6 +33,13 @@ function buildOgImageUrl(args: {
   setIds: string;
   frames: string | null | undefined;
 }): string | null {
+  // A spray wall's holds and photo live in `spray_wall_holds` and the private
+  // bucket, and the backend's OG renderer only knows the bundled catalogue
+  // geometry — so `/og/climb` cannot draw a wall today, and warming it would
+  // cache a blank card under the very URL the unfurler is about to ask for.
+  // Teaching the renderer the wall is SW-16's job (the public-wall share card);
+  // until then the link still shares, it just unfurls without a picture.
+  if (args.boardName === 'spray') return null;
   const flatFrames = toFlatFrames(args.frames, args.boardName as BoardName);
   // The backend rejects an empty frames string (a blank board would cache as a
   // real card), so there is nothing to warm without frames.

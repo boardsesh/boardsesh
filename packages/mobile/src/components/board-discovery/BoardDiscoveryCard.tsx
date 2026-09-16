@@ -11,6 +11,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticHeavy, hapticLight } from '../../lib/haptics';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
 import { springs } from '../../theme/animations';
@@ -169,6 +170,10 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
+  // Same reason as `BoardManageRow`: the carousel reads the same `myBoards` list,
+  // so a wall that is not the active board would draw the generic fallback and
+  // never ask for its photo or hear about its arrival.
+  const sprayToken = useSprayWallToken(item.boardName, item.layoutId);
   const render = useMemo(
     () =>
       getBoardRenderData({
@@ -177,7 +182,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         sizeId: item.sizeId,
         setIds: item.setIds.split(',').map(Number).filter(Number.isFinite),
       }),
-    [item.boardName, item.layoutId, item.sizeId, item.setIds],
+    // `sprayToken` recomputes this when the wall lands or is reset.
+    [item.boardName, item.layoutId, item.sizeId, item.setIds, sprayToken],
   );
 
   const thumbStyle = {

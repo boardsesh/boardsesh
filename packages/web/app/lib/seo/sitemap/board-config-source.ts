@@ -7,6 +7,9 @@ import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbs } from '@/app/lib/db/schema';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from '@/app/lib/moonboard-config';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
+import { withTimeout } from './with-timeout';
+import type { SitemapClimbConfig } from './climb-entries';
+import { getPublicSprayWallConfigs } from './spray-wall-configs';
 
 /**
  * The board configurations the SITEMAP builds URLs from — deliberately a
@@ -106,18 +109,6 @@ async function fetchMoonBoardClimbCounts(): Promise<Map<number, number>> {
     countsByLayout.set(row.layoutId, Number(row.climbCount));
   }
   return countsByLayout;
-}
-
-function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([
-    work.finally(() => {
-      if (timer) clearTimeout(timer);
-    }),
-    new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} exceeded its ${ms}ms budget`)), ms);
-    }),
-  ]);
 }
 
 /** Data Cache stores plain JSON, so the Map is rebuilt on the way out. */
@@ -231,10 +222,21 @@ function buildMoonBoardConfigs(countsByLayout: Map<number, number>): PopularBoar
  * crawler keeps its last good copy, which is what `getAllBoardConfigsOrThrow`
  * already does for the same reason.
  */
-export async function getSitemapClimbConfigsOrThrow(): Promise<PopularBoardConfig[]> {
-  const [listedConfigs, moonBoardCounts] = await Promise.all([getAllBoardConfigsOrThrow(), getMoonBoardClimbCounts()]);
+export async function getSitemapClimbConfigsOrThrow(): Promise<SitemapClimbConfig[]> {
+  const [listedConfigs, moonBoardCounts, sprayWallConfigs] = await Promise.all([
+    getAllBoardConfigsOrThrow(),
+    getMoonBoardClimbCounts(),
+    // Strict for exactly the reason above, and its own cache makes it more
+    // likely rather than less: the walls sit behind a separate `unstable_cache`
+    // entry with its own revalidate clock, so the summary pass and the item pass
+    // can land on different sides of one expiry. Swallowing a failure here would
+    // turn that into a silently shorter sitemap on one pass and "cache epochs
+    // disagree" on the next; throwing turns it into a 503 and the crawler keeps
+    // its last good copy.
+    getPublicSprayWallConfigs(),
+  ]);
 
-  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts)];
+  return [...listedConfigs, ...buildMoonBoardConfigs(moonBoardCounts), ...sprayWallConfigs];
 }
 
 /**
@@ -252,6 +254,10 @@ export async function getSitemapClimbConfigsOrThrow(): Promise<PopularBoardConfi
  *
  * A failed listed fetch still throws. That is the leg whose loss would tell
  * Google the boards were deleted.
+ *
+ * No spray leg at all, and that is not an oversight: a spray wall has no
+ * `/b/{slug}/{angle}/list` surface on www, so there is no boards-shard URL to
+ * emit for one. SW-16 made a wall's CLIMBS indexable, not the wall's own page.
  */
 export async function getBoardsShardConfigsOrThrow(): Promise<PopularBoardConfig[]> {
   const [listedConfigs, moonBoardCounts] = await Promise.all([

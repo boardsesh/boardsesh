@@ -28,6 +28,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { InlinePlaylistPicker } from '../playlist/InlinePlaylistPicker';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
@@ -299,6 +300,9 @@ export function ClimbReactionMenu({
     };
   }, []);
 
+  // Subscribed above the memo, because this reads the registry synchronously and
+  // a spray climb opened before its wall landed would keep the `null` it saw.
+  const sprayToken = useSprayWallToken(boardConfig.boardName, boardConfig.layoutId);
   const boardRenderData = useMemo(() => {
     const setIdValues = boardConfig.setIds
       .split(',')
@@ -311,7 +315,8 @@ export function ClimbReactionMenu({
       sizeId: boardConfig.sizeId,
       setIds: setIdValues,
     });
-  }, [boardConfig]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardConfig, sprayToken]);
 
   // Board aspect (w/h), read once for the sizing math + the worklet below. Sanitised
   // to 1 for degenerate dims so the worklet can't collapse the art to a zero edge.

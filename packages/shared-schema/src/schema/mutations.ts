@@ -695,6 +695,20 @@ export const mutationsTypeDefs = /* GraphQL */ `
     removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
 
     """
+    Land a reviewed reset: apply the decisions and publish the draft, in ONE
+    transaction under the wall lock.
+
+    Removed holds are stamped, never deleted — the climbs set on them stay
+    findable and countable. Added holds get a fresh catalogue pair and, where the
+    review confirmed a move, a \`movedFromHoldId\` back to the hold they replaced.
+    Kept holds keep their published position and take only a fresher silhouette.
+    The previous generation is superseded and every climb on the wall has its
+    \`missingHoldCount\` re-materialised, which is what makes the badge, the
+    Intact / Lost holds filter and the remix prompt agree. Owner only.
+    """
+    commitSprayWallVersion(input: CommitSprayWallVersionInput!): SprayWallResetResult!
+
+    """
     Publish a draft version: it becomes the generation climbers set against, the
     previous published version is superseded, and the wall's hold count and
     catalogue image are refreshed. Owner only.
@@ -718,6 +732,35 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Owner only.
     """
     deleteSprayWall(uuid: ID!): Boolean!
+
+    """
+    Report a spray wall. Any signed-in climber who can see it, once per wall.
+
+    Nothing is hidden automatically — the outcome of a report is an admin reading
+    it. A second report from the same climber answers \`ALREADY_REPORTED\` and
+    writes nothing, and a wall the caller cannot see answers "not found", exactly
+    like a uuid that is not a wall.
+    """
+    reportSprayWall(input: ReportSprayWallInput!): SprayWallReportResult!
+
+    """
+    Hide or unhide a wall. Community admins only (\`spray\`-scoped or global).
+
+    A hidden wall reads exactly like a PRIVATE one for everybody but its owner,
+    who keeps seeing it with a notice. Reversible, and it destroys nothing: the
+    photographs, the holds and every climb set on the wall stay where they are.
+    """
+    setSprayWallHidden(input: SetSprayWallHiddenInput!): SprayWallModerationResult!
+
+    """
+    Delete the photographs of walls soft-deleted more than 30 days ago
+    (\`SPRAY_WALL_PHOTO_RETENTION_DAYS\`). Cron-authenticated; the scheduler's
+    \`purge-spray-wall-photos\` job is the only caller.
+
+    Photographs only. The catalogue rows and every climb ever set on the wall stay
+    behind, because other people's ticks point at them.
+    """
+    purgeDeletedSprayWallPhotos(limit: Int): SprayWallPhotoPurgeResult!
 
     """
     Report that two gym listings are the same gym (any signed-in user). Surfaces the

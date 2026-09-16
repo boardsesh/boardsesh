@@ -188,7 +188,12 @@ const confirmAndDownloadMock = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
-vi.mock('../../../src/providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => true }));
+vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useOfflineDownloadsEnabled: () => true,
+  // The spray-wall tile is behind its own flag (epic #5346, SW-09). Off here so
+  // these cases keep describing the board row they were written for.
+  useSprayWallsEnabled: () => false,
+}));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({
   useDownloadedScopeKeys: () => ({ data: state.downloadedScopeKeys }),
 }));

@@ -334,6 +334,11 @@
         "title": "No se encontraron bloques",
         "subtitle": "Intenta ajustar la configuración de tu plafón"
       },
+      "unsetWall": {
+        "title": "Nadie ha montado nada en este plafón",
+        "subtitle": "Elige tus presas, ponle nombre y el plafón ya tiene su primer bloque.",
+        "cta": "Monta el primer bloque"
+      },
       "noMatches": {
         "title": "Sin resultados",
         "description": "Nada coincide con \"{{query}}\""
@@ -424,6 +429,12 @@
       "collection": {
         "label": "Colección",
         "any": "Cualquiera"
+      },
+      "holdIntegrity": {
+        "label": "Presas",
+        "any": "Todas",
+        "intact": "Solo intactos",
+        "broken": "Presas perdidas"
       },
       "pin": "Fijar como atajo",
       "unpin": "Quitar de los atajos",
@@ -590,6 +601,16 @@
       "chip": "Oculto",
       "banner": "Oculto por la comunidad"
     },
+    "lostHolds": {
+      "chip_one": "Falta {{count}} presa",
+      "chip_other": "Faltan {{count}} presas",
+      "chipAria_one": "{{count}} presa ya no está en el muro",
+      "chipAria_other": "{{count}} presas ya no están en el muro",
+      "banner_one": "Falta {{count}} presa de este bloque",
+      "banner_other": "Faltan {{count}} presas de este bloque",
+      "bannerBody": "Remézclalo con lo que hay ahora en el muro.",
+      "remix": "Remezclar"
+    },
     "climbActions": {
       "preview": "Vista previa",
       "copyLink": "Copiar enlace",
@@ -699,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Añade una presa de salida y una de final para publicar"
+        "blocked": "Añade una presa de salida y una de final para publicar",
+        "gradeBlocked": "Elige tu grado para publicar"
       },
       "wallSizeMismatch": "Cambia tu plafón activo a este tamaño de Woods para iluminarlo.",
       "routeMenu": {
@@ -707,6 +729,11 @@
         "makeRoute": "Convertir en vía",
         "makeBoulder": "Convertir en bloque",
         "makeBoulderBlocked": "Convertir en bloque — elimina primero los fotogramas"
+      },
+      "grade": {
+        "label": "Tu grado",
+        "required": "Necesario para publicar",
+        "optional": "Opcional en un borrador"
       }
     },
     "holdFilter": {
@@ -806,6 +833,34 @@
       "climbThis": "Escala este bloque",
       "ariaLabel": "Abre {{climbName}} en la app de Boardsesh",
       "helper": "Abre la app, ilumina las presas y registra el encadene."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Sin grado",
+    "unknownSetter": "un equipador desconocido",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "En {{wallName}}, un plafón de spray a {{angle}}° con {{holdCount}} presas.",
+    "setterLine": "Equipado por {{setter}}. {{ascents}} ascensiones registradas.",
+    "ascentsLine": "{{ascents}} ascensiones registradas.",
+    "setterNotesHeading": "Notas del equipador",
+    "keepLookingHeading": "Sigue buscando",
+    "setterLink": "Más bloques de {{setter}}",
+    "gymsLink": "Encuentra un rocódromo con plafones",
+    "homeLink": "Inicio de Boardsesh",
+    "photoAlt": "{{climbName}}, {{grade}}, iluminado en el plafón de spray {{wallName}}",
+    "noPhoto": "Este plafón aún no tiene foto que mostrar.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} en {{wallName}} | Plafón de spray",
+      "description": "{{climbName}}, {{grade}}, en el plafón de spray {{wallName}} a {{angle}}°, equipado por {{setter}}. Mira las presas sobre la foto del plafón."
+    },
+    "wall": {
+      "summary": "Un plafón de spray a {{angle}}° con {{holdCount}} presas.",
+      "photoAlt": "El plafón de spray {{wallName}}",
+      "openInApp": "Abre este plafón en la app de Boardsesh para ver sus bloques, equipar los tuyos y registrar tus ascensiones.",
+      "metadata": {
+        "title": "{{wallName}} | Plafón de spray",
+        "description": "{{wallName}}, un plafón de spray a {{angle}}°. Mira el plafón y ábrelo en la app de Boardsesh."
+      }
     }
   }
 }

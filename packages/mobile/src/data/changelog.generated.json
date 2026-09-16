@@ -1,6 +1,64 @@
 {
-  "generatedAt": "2026-09-15T03:43:53.049Z",
+  "generatedAt": "2026-09-16T09:09:02.296Z",
   "entries": [
+    {
+      "prNumber": 5499,
+      "category": "new",
+      "title": "Share a climb from your spray wall and the link opens a real page: your wall photo with the holds lit up.",
+      "mergedAt": "2026-09-16T09:03:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5499",
+      "body": "Shared links unfurl with a picture of the wall in chats and feeds, for walls you have made public.\nPrivate walls stay private. A link to one just doesn't open, for anyone."
+    },
+    {
+      "prNumber": 5483,
+      "category": "new",
+      "title": "There is no way into a spray wall until SW-09 ships the add-a-wall flow, so nothing here is reachable by a user yet.",
+      "mergedAt": "2026-09-16T08:44:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5483"
+    },
+    {
+      "prNumber": 5498,
+      "category": "new",
+      "title": "The app now tells you a wall's limits up front instead of after you hit them: ten walls each, 1,500 holds on a wall, fifty resets. If a wall of yours ever gets taken out of everyone else's view, you'll see why on it — it stays yours, your climbs stay on it, and nothing is deleted. Delete a wall yourself and its photos come off our disks a month later.",
+      "mergedAt": "2026-09-16T02:49:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5498"
+    },
+    {
+      "prNumber": 5492,
+      "category": "new",
+      "title": "Reset your spray wall from your phone: take a new photo, mark the corners, and check what the app thinks came off before anything changes.",
+      "mergedAt": "2026-09-16T02:48:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5492",
+      "body": "Every ring is yours to argue with — put a hold back, reject a false one, or say \"same hold, moved here\".\nClimbs that lost holds stay in your list with a badge instead of vanishing, and there's a new Holds filter when you only want the intact ones.\nOpened a climb that lost holds? One tap to remix it, and the editor opens with only the holds still on the wall — the missing ones are gone from the copy, not carried into it."
+    },
+    {
+      "prNumber": 5484,
+      "category": "new",
+      "title": "Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out.",
+      "mergedAt": "2026-09-16T02:48:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5484"
+    },
+    {
+      "prNumber": 5479,
+      "category": "new",
+      "title": "No user can reach a spray wall until SW-09 ships the front door.",
+      "mergedAt": "2026-09-16T02:43:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5479"
+    },
+    {
+      "prNumber": 5391,
+      "category": "fixed",
+      "title": "Mirror a climb from the lock screen and the wall flips with it, straight away.",
+      "mergedAt": "2026-09-15T14:05:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5391"
+    },
+    {
+      "prNumber": 5361,
+      "category": "fixed",
+      "title": "Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix.",
+      "mergedAt": "2026-09-15T14:05:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5361"
+    },
     {
       "prNumber": 5467,
       "category": "improved",
@@ -869,14 +927,6 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4980"
     },
     {
-      "prNumber": 4845,
-      "category": "improved",
-      "title": "MoonBoard: light a dimmer LED above each start and hand hold when your controller supports it (Light Control → \"Light the hold above\").",
-      "mergedAt": "2026-09-01T01:07:43Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4845",
-      "body": "Android: sheets now close reliably when the native close handler is temporarily unavailable.\niOS: Board photos and hold overlays load without an extra pause.\nAndroid: shared files stay inside Boardsesh's cache even when another app supplies an unsafe filename."
-    },
-    {
       "prNumber": 4877,
       "category": "new",
       "title": "Gym boards on the map show the layout, hold sets and angle the gym actually set, instead of a default guess",
@@ -892,6 +942,36 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4820"
     },
     {
+      "prNumber": 4973,
+      "category": "fixed",
+      "title": "See the angle on Grasshopper's -5° slab setting in the session notification.",
+      "mergedAt": "2026-08-31T23:02:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4973"
+    },
+    {
+      "prNumber": 4972,
+      "category": "new",
+      "title": "Meet Boardsesh Aura, the new board glow: light that behaves like light — neighbouring holds' glows melt together, colours blend cleanly where they meet, and every climb reads at a glance. It's on for everyone; the old flat glow lives on under Board look → Custom → Glow style.",
+      "mergedAt": "2026-08-31T23:01:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4972"
+    },
+    {
+      "prNumber": 4967,
+      "category": "new",
+      "title": "Pick your board look now shows your wall big enough to actually judge. Each look",
+      "mergedAt": "2026-08-31T19:56:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4967",
+      "body": "fills the screen, edge to edge, with a hint of the next one either side — swipe\nthrough them and the one you land on is the one the button applies, by name.\nBoard look is easier to get around too. Picking a look is the whole first screen\n— your board, drawn each way — with everything you can tune one tap away under\nCustom look or Accessibility, each showing what you've got set.\nResetting your board look no longer clears the hold colours and shapes you set\nyourself. Those have their own reset, on the screen that shows them.\nFixed: turning on role glyphs, tuning a look, then trying a preset no longer\nloses the glyph setting when you come back."
+    },
+    {
+      "prNumber": 4960,
+      "category": "new",
+      "title": "Pick how your board looks — Boardsesh, Subtle, High contrast, or the classic markers — with a live preview of each on your own wall.",
+      "mergedAt": "2026-08-31T19:49:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4960",
+      "body": "Lit holds now glow in their own shape by default. Not for you? Switch back to the classic markers any time under More → Board look.\nBoard look now previews every preset on your board, in your own hold colours."
+    },
+    {
       "prNumber": 4888,
       "category": "fixed",
       "title": "Tapping a hold in the climb editor now paints it directly with your selected role. Tap the same hold again to cycle through the other roles, and the cycle skips roles that are already full (two starts, two finishes, or feet on a campus climb).",
@@ -899,11 +979,25 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4888"
     },
     {
+      "prNumber": 4958,
+      "category": "improved",
+      "title": "Store listing copy, not an app change — the in-app What's New screen is not affected.",
+      "mergedAt": "2026-08-31T01:58:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4958"
+    },
+    {
       "prNumber": 4638,
       "category": "new",
       "title": "See estimated grades at unclimbed wall angles, clearly marked with `≈` and hollow chart diamonds.",
       "mergedAt": "2026-08-31T00:07:54Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4638"
+    },
+    {
+      "prNumber": 4890,
+      "category": "fixed",
+      "title": "Lit holds are back to the clean outlined look from the last build.",
+      "mergedAt": "2026-08-31T00:06:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4890"
     },
     {
       "prNumber": 4728,
@@ -921,11 +1015,33 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4881"
     },
     {
+      "prNumber": 4865,
+      "category": "new",
+      "title": "Woods boards now show real hold outlines in the Boardsesh board look — every hold glows its actual shape instead of a plain circle.",
+      "mergedAt": "2026-08-30T05:05:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4865"
+    },
+    {
       "prNumber": 4821,
       "category": "new",
       "title": "Board previews now load without waiting on the old image-function cold start.",
       "mergedAt": "2026-08-30T04:33:13Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4821"
+    },
+    {
+      "prNumber": 4869,
+      "category": "new",
+      "title": "On boards with LED ring data, lit holds now light up from their LED base plate,",
+      "mergedAt": "2026-08-30T04:23:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4869",
+      "body": "with the glow radiating off the rim — the hold itself stays readable inside."
+    },
+    {
+      "prNumber": 4871,
+      "category": "new",
+      "title": "The user-facing note rides the renderer PR #4869 — the data and the renderer ship together on the train, and a shard table nothing reads yet changes nothing anyone can see.",
+      "mergedAt": "2026-08-30T04:23:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4871"
     },
     {
       "prNumber": 4770,
@@ -975,12 +1091,34 @@
       "body": "straight on the dark background, in the app and on the site."
     },
     {
+      "prNumber": 4851,
+      "category": "fixed",
+      "title": "The new Boardsesh board look now works in TestFlight on iPhone and iPad.",
+      "mergedAt": "2026-08-29T06:19:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4851",
+      "body": "Long dev QA notes no longer block the Board look controls."
+    },
+    {
       "prNumber": 4846,
       "category": "fixed",
       "title": "Email sign-in now works when your account email contains uppercase letters.",
       "mergedAt": "2026-08-29T04:03:47Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4846",
       "body": "The old Android split-screen sign-in warning is gone."
+    },
+    {
+      "prNumber": 4848,
+      "category": "fixed",
+      "title": "Fixed the TestFlight build crashing the moment you opened it.",
+      "mergedAt": "2026-08-28T23:27:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4848"
+    },
+    {
+      "prNumber": 4843,
+      "category": "new",
+      "title": "Pick how your board is drawn: glowing hold silhouettes or classic rings, with presets, glow controls, and colour-vision palettes under More → Board look.",
+      "mergedAt": "2026-08-28T20:31:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4843"
     },
     {
       "prNumber": 4830,
@@ -5063,6 +5201,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-16T11:38:10+10:00",
+      "sha": "07ba2951012d9433db265a2abdf11fdc97f3dc5b",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "c44370001bfec373347c8cd4adb7659cd456f34a"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-08T16:00:49+10:00",

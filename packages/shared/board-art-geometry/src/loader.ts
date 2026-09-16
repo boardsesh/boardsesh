@@ -1,4 +1,10 @@
-import type { BoardArtGeometry, BoardArtGeometryQuery, OutlineCountsTable, WallLightness } from './types';
+import type {
+  BoardArtGeometry,
+  BoardArtGeometryKey,
+  BoardArtGeometryQuery,
+  OutlineCountsTable,
+  WallLightness,
+} from './types';
 import { boardArtGeometryKey } from './types';
 import { BOARD_ART_GEOMETRY_SHARDS, WALL_LIGHTNESS, loadOutlineCounts } from './generated/shards';
 import { BOARD_ART_GEOMETRY_SHARDS_ASYNC } from './shards-async';
@@ -38,11 +44,75 @@ import { BOARD_ART_GEOMETRY_SHARDS_ASYNC } from './shards-async';
  * renderer acts on by falling back to a ring. A key that is merely *not loaded
  * yet* must never be written here, or that fallback becomes permanent for the
  * session. Pending loads live in `pendingShards` instead.
+ *
+ * One exception, and it is deliberate: a chunk whose download has failed
+ * `MAX_SHARD_DOWNLOAD_ATTEMPTS` times is written as `null` so the answer becomes
+ * final. See `MAX_SHARD_DOWNLOAD_ATTEMPTS`.
  */
 const shardCache = new Map<string, BoardArtGeometry | null>();
 
 /** In-flight `import()` calls, so N concurrent rows fetch one chunk, not N. */
 const pendingShards = new Map<string, Promise<BoardArtGeometry | null>>();
+
+/**
+ * Geometry handed in at RUNTIME rather than shipped as a shard, consulted before
+ * anything else (issue #5440).
+ *
+ * A spray wall is photographed by its owner and its holds arrive from the
+ * server, so there is no build-time shard for it and there never can be: the
+ * board did not exist when the tables were generated. The mobile spray registry
+ * maps a wall's canonical holds into the version's photo and registers the
+ * resulting silhouettes here, under the same `spray/<layoutId>-<sizeId>` key
+ * `boardArtGeometryKey` produces for every other board. Existing consumers —
+ * `use-native-climb-render.ts`, the backend's `board-geometry.ts` — then read a
+ * wall's true hold shapes through the call they already make.
+ *
+ * Checked FIRST, and kept out of `shardCache`, for two reasons. A wall reset
+ * replaces the whole table (new photo, new hold generation), and a re-register
+ * has to take effect at once rather than sit behind an entry the shard cache has
+ * already memoised. And nothing may overwrite a shipped shard by accident: a
+ * runtime key colliding with a catalogue one would silently repaint a real
+ * board, so registering is the caller's explicit act and
+ * `unregisterRuntimeGeometry` puts the catalogue answer back.
+ */
+const runtimeGeometry = new Map<string, BoardArtGeometry>();
+
+/**
+ * Publish geometry for a config the shards do not cover, replacing whatever was
+ * registered under the same key.
+ *
+ * Replacement is the point: a spray wall's version-2 holds must never be drawn
+ * alongside version-1's leftovers.
+ */
+export function registerRuntimeGeometry(key: BoardArtGeometryKey, geometry: BoardArtGeometry): void {
+  runtimeGeometry.set(key, geometry);
+}
+
+/** Withdraw runtime geometry, so the key falls back to the shards (for a wall: to nothing). */
+export function unregisterRuntimeGeometry(key: BoardArtGeometryKey): void {
+  runtimeGeometry.delete(key);
+}
+
+/** What is registered under a key right now, or `null`. */
+export function getRuntimeGeometry(key: BoardArtGeometryKey): BoardArtGeometry | null {
+  return runtimeGeometry.get(key) ?? null;
+}
+
+/**
+ * How many times one key's chunk may be fetched before a persistent failure is
+ * answered as "no art for this board".
+ *
+ * Without a cap, "the download failed" and "the download has not finished" are
+ * the same observable state — `boardArtGeometryPending` stays `true` — so a
+ * caller that re-renders on the pending flag and asks again gets an unbounded
+ * import loop off one offline board. Three attempts covers the transient drop
+ * this retry exists for; past that the ring fallback is the honest answer, and
+ * it costs the silhouettes of one board until the page is reloaded.
+ */
+const MAX_SHARD_DOWNLOAD_ATTEMPTS = 3;
+
+/** Failed `import()` count per key, cleared as soon as one succeeds. */
+const shardFailureCounts = new Map<string, number>();
 
 /**
  * The traced silhouettes, silhouette lightness and painted-LED offsets for one
@@ -58,6 +128,11 @@ const pendingShards = new Map<string, Promise<BoardArtGeometry | null>>();
  */
 export function loadBoardArtGeometry(query: BoardArtGeometryQuery): BoardArtGeometry | null {
   const key = boardArtGeometryKey(query);
+  // Runtime geometry outranks everything, including a memoised `null` — see
+  // `runtimeGeometry`.
+  const runtime = runtimeGeometry.get(key);
+  if (runtime) return runtime;
+
   const cached = shardCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -89,6 +164,8 @@ export function loadBoardArtGeometry(query: BoardArtGeometryQuery): BoardArtGeom
  */
 export function boardArtGeometryPending(query: BoardArtGeometryQuery): boolean {
   const key = boardArtGeometryKey(query);
+  // Registered runtime geometry is already in hand, so nothing is in flight.
+  if (runtimeGeometry.has(key)) return false;
   if (shardCache.has(key)) return false;
   return Boolean(BOARD_ART_GEOMETRY_SHARDS_ASYNC?.[key]);
 }
@@ -103,10 +180,15 @@ export function boardArtGeometryPending(query: BoardArtGeometryQuery): boolean {
  *
  * Never rejects. A chunk that fails to download resolves as `null`, which is the
  * same ring fallback the renderer already draws for an untraced board — a
- * transient network error should cost the silhouettes, not the board.
+ * transient network error should cost the silhouettes, not the board. After
+ * `MAX_SHARD_DOWNLOAD_ATTEMPTS` failures that `null` becomes the cached answer,
+ * so a caller polling on `boardArtGeometryPending` cannot loop forever.
  */
 export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Promise<BoardArtGeometry | null> {
   const key = boardArtGeometryKey(query);
+  const runtime = runtimeGeometry.get(key);
+  if (runtime) return runtime;
+
   const cached = shardCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -118,12 +200,26 @@ export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Pr
 
   const loading = asyncShard()
     .then((geometry) => {
+      shardFailureCounts.delete(key);
       shardCache.set(key, geometry);
       return geometry;
     })
     .catch(() => {
-      // Deliberately not cached: a failed download is not evidence the shard is
-      // absent, and the next board view should be free to try again.
+      const failures = (shardFailureCounts.get(key) ?? 0) + 1;
+      // Not cached while retries remain: a failed download is not evidence the
+      // shard is absent, and the next board view should be free to try again.
+      // Once they run out it IS cached, as `null` — that stops
+      // `boardArtGeometryPending` reporting the key as still in flight, which is
+      // what a caller re-asking on every render is reading. The tally has done
+      // its job by then, and that cached `null` short-circuits every later call
+      // before this handler, so drop the count rather than hold it for the rest
+      // of the session.
+      if (failures >= MAX_SHARD_DOWNLOAD_ATTEMPTS) {
+        shardCache.set(key, null);
+        shardFailureCounts.delete(key);
+      } else {
+        shardFailureCounts.set(key, failures);
+      }
       return null;
     })
     .finally(() => {
@@ -167,8 +263,13 @@ export function getOutlineCounts(): OutlineCountsTable {
   return loadOutlineCounts();
 }
 
-/** Drop the memoised shards. Tests only; the tables behind a key never change at runtime. */
+/**
+ * Drop the memoised shards AND every runtime registration. Tests only; the
+ * tables behind a catalogue key never change at runtime, and a wall's
+ * registration is withdrawn by name (`unregisterRuntimeGeometry`) in production.
+ */
 export function clearBoardArtGeometryCache(): void {
   shardCache.clear();
   pendingShards.clear();
+  runtimeGeometry.clear();
 }

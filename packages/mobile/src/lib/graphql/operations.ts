@@ -109,6 +109,7 @@ const CLIMB_SEARCH_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 const CLIMB_DETAIL_FIELDS = `
@@ -142,6 +143,7 @@ const CLIMB_DETAIL_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 // ============================================
@@ -1258,6 +1260,7 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  missingHoldCount
 `;
 
 // The item-level fields that cross the wire alongside the climb. This client now

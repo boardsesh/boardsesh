@@ -1,4 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import { sprayCacheToken } from './spray/spray-wall-registry';
 
 type CreateClimbKeyBoard = {
   boardName: BoardName;
@@ -20,6 +21,11 @@ type CreateClimbKeyBoard = {
  * `angle` is deliberately EXCLUDED: WebSocket session sync updates the active
  * board's angle, and an angle-only remount would wipe an in-progress paint.
  * Angle does not affect which holds are valid.
+ *
+ * The spray wall VERSION is INCLUDED, for the same reason the rest of the tuple
+ * is: a reset changes which holds exist under an unchanged layout and size, so a
+ * create screen left open across one has to remount and drop the holds that came
+ * off the wall. `sprayCacheToken` is empty for every catalogue board.
  */
 export function createClimbScreenKey(
   editClimbUuid: string | undefined,
@@ -28,5 +34,6 @@ export function createClimbScreenKey(
 ): string {
   const authoringIdentity =
     editClimbUuid && editClimbUuid !== 'new' ? `edit:${editClimbUuid}` : forkFrames ? 'fork' : 'new';
-  return `${authoringIdentity}:${board.boardName}:${board.layoutId}:${board.sizeId}:${board.setIds}`;
+  const spray = sprayCacheToken(board.boardName, board.layoutId);
+  return `${authoringIdentity}:${board.boardName}:${board.layoutId}:${board.sizeId}${spray}:${board.setIds}`;
 }

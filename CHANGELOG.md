@@ -4,6 +4,26 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-16
+
+### App update
+
+A new version shipped to the App Store.
+
+### New
+
+- Share a climb from your spray wall and the link opens a real page: your wall photo with the holds lit up. ([#5499](https://github.com/boardsesh/boardsesh/pull/5499))
+  Shared links unfurl with a picture of the wall in chats and feeds, for walls you have made public.
+  Private walls stay private. A link to one just doesn't open, for anyone.
+- There is no way into a spray wall until SW-09 ships the add-a-wall flow, so nothing here is reachable by a user yet. ([#5483](https://github.com/boardsesh/boardsesh/pull/5483))
+- The app now tells you a wall's limits up front instead of after you hit them: ten walls each, 1,500 holds on a wall, fifty resets. If a wall of yours ever gets taken out of everyone else's view, you'll see why on it — it stays yours, your climbs stay on it, and nothing is deleted. Delete a wall yourself and its photos come off our disks a month later. ([#5498](https://github.com/boardsesh/boardsesh/pull/5498))
+- Reset your spray wall from your phone: take a new photo, mark the corners, and check what the app thinks came off before anything changes. ([#5492](https://github.com/boardsesh/boardsesh/pull/5492))
+  Every ring is yours to argue with — put a hold back, reject a false one, or say "same hold, moved here".
+  Climbs that lost holds stay in your list with a badge instead of vanishing, and there's a new Holds filter when you only want the intact ones.
+  Opened a climb that lost holds? One tap to remix it, and the editor opens with only the holds still on the wall — the missing ones are gone from the copy, not carried into it.
+- Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out. ([#5484](https://github.com/boardsesh/boardsesh/pull/5484))
+- No user can reach a spray wall until SW-09 ships the front door. ([#5479](https://github.com/boardsesh/boardsesh/pull/5479))
+
 ## 2026-09-15
 
 ### Improved
@@ -12,6 +32,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Mirror a climb from the lock screen and the wall flips with it, straight away. ([#5391](https://github.com/boardsesh/boardsesh/pull/5391))
+- Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix. ([#5361](https://github.com/boardsesh/boardsesh/pull/5361))
 - The Climbs tab no longer crashes when you pick a board ([#5459](https://github.com/boardsesh/boardsesh/pull/5459))
 
 ## 2026-09-14
@@ -302,13 +324,6 @@ A new version shipped to the App Store and Play Store.
 - Gym boards on the map show the layout, hold sets and angle the gym actually set, instead of a default guess ([#4877](https://github.com/boardsesh/boardsesh/pull/4877))
   Gyms with more than one board now list each one separately
 
-### Improved
-
-- MoonBoard: light a dimmer LED above each start and hand hold when your controller supports it (Light Control → "Light the hold above"). ([#4845](https://github.com/boardsesh/boardsesh/pull/4845))
-  Android: sheets now close reliably when the native close handler is temporarily unavailable.
-  iOS: Board photos and hold overlays load without an extra pause.
-  Android: shared files stay inside Boardsesh's cache even when another app supplies an unsafe filename.
-
 ### Fixed
 
 - The Live badge in the play drawer now only shows when a board is actually connected — yours or a session mate's ([#4872](https://github.com/boardsesh/boardsesh/pull/4872))
@@ -325,12 +340,32 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Meet Boardsesh Aura, the new board glow: light that behaves like light — neighbouring holds' glows melt together, colours blend cleanly where they meet, and every climb reads at a glance. It's on for everyone; the old flat glow lives on under Board look → Custom → Glow style. ([#4972](https://github.com/boardsesh/boardsesh/pull/4972))
+- Pick your board look now shows your wall big enough to actually judge. Each look ([#4967](https://github.com/boardsesh/boardsesh/pull/4967))
+  fills the screen, edge to edge, with a hint of the next one either side — swipe
+  through them and the one you land on is the one the button applies, by name.
+  Board look is easier to get around too. Picking a look is the whole first screen
+  — your board, drawn each way — with everything you can tune one tap away under
+  Custom look or Accessibility, each showing what you've got set.
+  Resetting your board look no longer clears the hold colours and shapes you set
+  yourself. Those have their own reset, on the screen that shows them.
+  Fixed: turning on role glyphs, tuning a look, then trying a preset no longer
+  loses the glyph setting when you come back.
+- Pick how your board looks — Boardsesh, Subtle, High contrast, or the classic markers — with a live preview of each on your own wall. ([#4960](https://github.com/boardsesh/boardsesh/pull/4960))
+  Lit holds now glow in their own shape by default. Not for you? Switch back to the classic markers any time under More → Board look.
+  Board look now previews every preset on your board, in your own hold colours.
 - See estimated grades at unclimbed wall angles, clearly marked with `≈` and hollow chart diamonds. ([#4638](https://github.com/boardsesh/boardsesh/pull/4638))
+
+### Improved
+
+- Store listing copy, not an app change — the in-app What's New screen is not affected. ([#4958](https://github.com/boardsesh/boardsesh/pull/4958))
 
 ### Fixed
 
 - Climb and log Grasshopper problems at the real -5° slab setting. ([#4820](https://github.com/boardsesh/boardsesh/pull/4820))
+- See the angle on Grasshopper's -5° slab setting in the session notification. ([#4973](https://github.com/boardsesh/boardsesh/pull/4973))
 - Tapping a hold in the climb editor now paints it directly with your selected role. Tap the same hold again to cycle through the other roles, and the cycle skips roles that are already full (two starts, two finishes, or feet on a campus climb). ([#4888](https://github.com/boardsesh/boardsesh/pull/4888))
+- Lit holds are back to the clean outlined look from the last build. ([#4890](https://github.com/boardsesh/boardsesh/pull/4890))
 
 ## 2026-08-30
 
@@ -340,7 +375,11 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Woods boards now show real hold outlines in the Boardsesh board look — every hold glows its actual shape instead of a plain circle. ([#4865](https://github.com/boardsesh/boardsesh/pull/4865))
 - Board previews now load without waiting on the old image-function cold start. ([#4821](https://github.com/boardsesh/boardsesh/pull/4821))
+- On boards with LED ring data, lit holds now light up from their LED base plate, ([#4869](https://github.com/boardsesh/boardsesh/pull/4869))
+  with the glow radiating off the rim — the hold itself stays readable inside.
+- The user-facing note rides the renderer PR #4869 — the data and the renderer ship together on the train, and a shard table nothing reads yet changes nothing anyone can see. ([#4871](https://github.com/boardsesh/boardsesh/pull/4871))
 - Your work in the climb creator is kept on your phone now, in every mode — editing a draft, remixing a climb, or picking up after you've already saved once. Kill the app mid-build and it's all still there when you come back. ([#4770](https://github.com/boardsesh/boardsesh/pull/4770))
   A line under the Save button always tells you where your climb is: on this phone, in your account, or waiting on edits you haven't saved yet.
   The trash button clears holds and nothing else. Starting a fresh climb is its own button, and it asks first if the one you're on isn't saved anywhere.
@@ -373,6 +412,8 @@ A new version shipped to the App Store and Play Store.
 - Filter the gym map by Woods and MoonBoard boards for real — picking Woods now offers Original plus the 8×10 and 12×12 sizes instead of an empty row ([#4775](https://github.com/boardsesh/boardsesh/pull/4775))
 - Filter Woods climbs by board region — draw a box on the wall and keep only the climbs that stay inside it, or the ones that reach into it ([#4777](https://github.com/boardsesh/boardsesh/pull/4777))
   Search Woods climbs by hold, including the bottom row that used to be ignored
+- The new Boardsesh board look now works in TestFlight on iPhone and iPad. ([#4851](https://github.com/boardsesh/boardsesh/pull/4851))
+  Long dev QA notes no longer block the Board look controls.
 - Email sign-in now works when your account email contains uppercase letters. ([#4846](https://github.com/boardsesh/boardsesh/pull/4846))
   The old Android split-screen sign-in warning is gone.
 
@@ -381,6 +422,14 @@ A new version shipped to the App Store and Play Store.
 ### App update
 
 A new version shipped to the App Store and Play Store.
+
+### New
+
+- Pick how your board is drawn: glowing hold silhouettes or classic rings, with presets, glow controls, and colour-vision palettes under More → Board look. ([#4843](https://github.com/boardsesh/boardsesh/pull/4843))
+
+### Fixed
+
+- Fixed the TestFlight build crashing the moment you opened it. ([#4848](https://github.com/boardsesh/boardsesh/pull/4848))
 
 ## 2026-08-27
 

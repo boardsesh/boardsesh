@@ -125,4 +125,38 @@ describe('loader on an async shard index', () => {
     await expect(loader.prefetchBoardArtGeometry(PENDING_KEY)).resolves.toBe(FAKE_SHARD);
     expect(loader.loadBoardArtGeometry(PENDING_KEY)).toBe(FAKE_SHARD);
   });
+
+  it('stops re-downloading a chunk that keeps failing', async () => {
+    const shard = vi.fn(() => Promise.reject(new Error('offline')));
+    const loader = await loadWebLoader(shard as unknown as () => Promise<BoardArtGeometry>);
+
+    // A caller that bounces its render on `boardArtGeometryPending` asks again
+    // every time it re-renders. Without a cap, "failed" and "not finished yet"
+    // are the same state, so this is an unbounded import loop off one board.
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await expect(loader.prefetchBoardArtGeometry(PENDING_KEY)).resolves.toBeNull();
+    }
+
+    expect(shard).toHaveBeenCalledTimes(3);
+    // The ring fallback is the final answer now, which is what makes the caller
+    // stop asking.
+    expect(loader.boardArtGeometryPending(PENDING_KEY)).toBe(false);
+    expect(loader.loadBoardArtGeometry(PENDING_KEY)).toBeNull();
+  });
+
+  it('forgets earlier failures once a download lands', async () => {
+    let attempt = 0;
+    const loader = await loadWebLoader(() => {
+      attempt += 1;
+      // Fail, fail, succeed: two failures is one short of the cap, so the third
+      // try must still happen — and the count must not carry into a later key's
+      // budget by surviving the success.
+      return attempt <= 2 ? Promise.reject(new Error('offline')) : Promise.resolve(FAKE_SHARD);
+    });
+
+    await expect(loader.prefetchBoardArtGeometry(PENDING_KEY)).resolves.toBeNull();
+    await expect(loader.prefetchBoardArtGeometry(PENDING_KEY)).resolves.toBeNull();
+    expect(loader.boardArtGeometryPending(PENDING_KEY)).toBe(true);
+    await expect(loader.prefetchBoardArtGeometry(PENDING_KEY)).resolves.toBe(FAKE_SHARD);
+  });
 });

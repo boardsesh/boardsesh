@@ -43,6 +43,7 @@ import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
+import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
@@ -484,6 +485,21 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     () => boardConfigOverride ?? storedActiveBoardConfig,
     [boardConfigOverride, storedActiveBoardConfig],
   );
+
+  // A spray wall's photo and holds are runtime data, not bundled assets, so
+  // something has to fetch them before any surface can draw the wall.
+  //
+  // `useSprayWallLoader` gives the registry its network seam, which is what lets
+  // a wall resolved anywhere BELOW this provider — a queue item set on another
+  // wall, a playlist row, `resolveClimbRenderBoard` falling a climb back onto its
+  // own board — pull itself in through `ensureSprayWallLoaded`. The active board
+  // is then just the first customer, asked for eagerly so the drawer does not
+  // wait for a row to scroll past. Every board surface reads the result
+  // synchronously (`getBoardRenderData`, the background cache,
+  // `use-native-climb-render`) with no branch of its own.
+  useSprayWallLoader();
+  const activeSprayLayoutId = activeBoardConfig?.boardName === 'spray' ? activeBoardConfig.layoutId : null;
+  useSprayWall(activeSprayLayoutId);
 
   const selectedBoardPresenceBoard = useMemo<ResolveBoardUuidArgs | null>(() => {
     if (!activeBoard) return null;

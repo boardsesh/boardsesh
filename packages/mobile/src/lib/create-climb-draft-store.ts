@@ -8,6 +8,7 @@
 // Backed by AsyncStorage (non-secret UI state) via the shared preference store.
 
 import { getPreference, setPreference, removePreference, removePreferencesMatching } from './preference-store';
+import { sprayCacheToken } from './spray/spray-wall-registry';
 import type { UserStorageOwner } from './user-storage-owner';
 
 /** Which authoring mode wrote this slot. Diagnostic only — the key decides. */
@@ -43,6 +44,13 @@ export type CreateClimbDraft = {
    *  back-compat reason: a slot written before this rule existed restores with the
    *  board's default (feet on the marked holds). */
   anyFeet?: boolean;
+  /**
+   * The setter's own grade as a difficulty id on the shared Boardsesh scale, on
+   * a board that publishes with one (a spray wall). Optional for the same
+   * back-compat reason as the flags above, and absent is the honest value: a
+   * draft may sit ungraded, because the grade is the last thing a setter decides.
+   */
+  setterGradeDifficultyId?: number | null;
   /**
    * Whether the setter has switched this climb into route mode. Route-ness is
    * otherwise inferred from `frames.length > 1`, which cannot express the state
@@ -87,6 +95,11 @@ const KEY_PREFIX = 'boardsesh_create_climb_draft:';
  * because Kilter/Tension share a layout/size/angle across "original" vs
  * "commercial" (bolt-on) hold sets — leaving it out lets a draft from one set
  * restore hold IDs that don't exist in the current set.
+ *
+ * A spray wall folds its VERSION in through `sprayCacheToken` (empty for every
+ * catalogue board). A reset replaces the wall's holds under an unchanged
+ * layout/size, so without it a draft painted on the old generation would restore
+ * onto the new photo with hold ids that are no longer on the wall.
  */
 export function createClimbDraftKey(config: {
   boardName: string;
@@ -95,7 +108,8 @@ export function createClimbDraftKey(config: {
   setIds: string;
   angle: number;
 }): string {
-  return `${config.boardName}:${config.layoutId}:${config.sizeId}:${config.setIds}:${config.angle}`;
+  const spray = sprayCacheToken(config.boardName, config.layoutId);
+  return `${config.boardName}:${config.layoutId}:${config.sizeId}${spray}:${config.setIds}:${config.angle}`;
 }
 
 /**
@@ -163,6 +177,26 @@ export async function saveDraft(
 /** Drops the working draft for this board (after save, clear, or empty form). */
 export async function clearDraft(boardKey: string, _owner?: UserStorageOwner | null): Promise<void> {
   await removePreference(storageKey(boardKey));
+}
+
+/**
+ * Drops the working drafts a spray wall left behind at earlier versions.
+ *
+ * `createClimbDraftKey` folds the wall version in, so a reset moves the slot and
+ * the old one is orphaned: a payload of holds that are no longer on the wall,
+ * sitting in AsyncStorage with nothing that would ever read or remove it. Keyed
+ * on the wall's layout id, so this never touches another wall or a catalogue
+ * board — the prefix ends at the layout, and `-sv<version>` is what varies after
+ * it.
+ *
+ * Best-effort: losing the sweep costs a few kilobytes, so it is never awaited on
+ * a path the climber is waiting for.
+ */
+export function clearSupersededSprayDrafts(layoutId: number, currentVersionToken: string): Promise<void> {
+  const wallPrefix = `${KEY_PREFIX}spray:${layoutId}:${layoutId}`;
+  return removePreferencesMatching(
+    (key) => key.startsWith(wallPrefix) && !key.startsWith(`${wallPrefix}${currentVersionToken}:`),
+  );
 }
 
 /** Drops every locally saved create-climb draft for the departing account. */

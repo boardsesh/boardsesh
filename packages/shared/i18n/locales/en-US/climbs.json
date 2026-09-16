@@ -334,6 +334,11 @@
         "title": "No climbs found",
         "subtitle": "Try adjusting your board settings"
       },
+      "unsetWall": {
+        "title": "No one's set on this wall yet",
+        "subtitle": "Pick your holds, name it, and the wall has its first climb.",
+        "cta": "Set the first climb"
+      },
       "noMatches": {
         "title": "No matches",
         "description": "Nothing matches \"{{query}}\""
@@ -424,6 +429,12 @@
       "collection": {
         "label": "Collection",
         "any": "Any"
+      },
+      "holdIntegrity": {
+        "label": "Holds",
+        "any": "All",
+        "intact": "Intact only",
+        "broken": "Lost holds"
       },
       "pin": "Pin to shortcuts",
       "unpin": "Remove from shortcuts",
@@ -590,6 +601,16 @@
       "chip": "Hidden",
       "banner": "Hidden by the community"
     },
+    "lostHolds": {
+      "chip_one": "{{count}} hold gone",
+      "chip_other": "{{count}} holds gone",
+      "chipAria_one": "{{count}} hold is no longer on the wall",
+      "chipAria_other": "{{count}} holds are no longer on the wall",
+      "banner_one": "{{count}} hold on this climb is gone",
+      "banner_other": "{{count}} holds on this climb are gone",
+      "bannerBody": "Remix it onto what's on the wall now.",
+      "remix": "Remix it"
+    },
     "climbActions": {
       "preview": "Preview",
       "copyLink": "Copy link",
@@ -699,7 +720,8 @@
         }
       },
       "publish": {
-        "blocked": "Add a start and a finish hold to publish"
+        "blocked": "Add a start and a finish hold to publish",
+        "gradeBlocked": "Pick your grade to publish"
       },
       "wallSizeMismatch": "Switch your active board to this Woods size to light it.",
       "routeMenu": {
@@ -707,6 +729,11 @@
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
         "makeBoulderBlocked": "Make it a boulder — delete frames first"
+      },
+      "grade": {
+        "label": "Your grade",
+        "required": "Needed to publish",
+        "optional": "Optional on a draft"
       }
     },
     "holdFilter": {
@@ -806,6 +833,34 @@
       "climbThis": "Climb this",
       "ariaLabel": "Open {{climbName}} in the Boardsesh app",
       "helper": "Opens the app, lights the holds, logs the send."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Ungraded",
+    "unknownSetter": "an unknown setter",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "On {{wallName}}, a spray wall at {{angle}}° with {{holdCount}} holds.",
+    "setterLine": "Set by {{setter}}. {{ascents}} ascents logged.",
+    "ascentsLine": "{{ascents}} ascents logged.",
+    "setterNotesHeading": "Setter notes",
+    "keepLookingHeading": "Keep looking",
+    "setterLink": "More climbs by {{setter}}",
+    "gymsLink": "Find a gym with boards",
+    "homeLink": "Boardsesh home",
+    "photoAlt": "{{climbName}}, {{grade}}, lit up on the {{wallName}} spray wall",
+    "noPhoto": "This wall has no photo to show yet.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} on {{wallName}} | Spray Wall",
+      "description": "{{climbName}}, {{grade}}, on the {{wallName}} spray wall at {{angle}}°, set by {{setter}}. See the holds on the wall photo."
+    },
+    "wall": {
+      "summary": "A spray wall at {{angle}}° with {{holdCount}} holds.",
+      "photoAlt": "The {{wallName}} spray wall",
+      "openInApp": "Open this wall in the Boardsesh app to browse its climbs, set your own and log your sends.",
+      "metadata": {
+        "title": "{{wallName}} | Spray Wall",
+        "description": "{{wallName}}, a spray wall at {{angle}}°. See the wall and open it in the Boardsesh app."
+      }
     }
   }
 }

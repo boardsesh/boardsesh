@@ -12,10 +12,13 @@ export {
   boardArtGeometryPending,
   clearBoardArtGeometryCache,
   getOutlineCounts,
+  getRuntimeGeometry,
   getWallLightness,
   listBoardArtGeometryKeys,
   loadBoardArtGeometry,
   prefetchBoardArtGeometry,
+  registerRuntimeGeometry,
+  unregisterRuntimeGeometry,
 } from './loader';
 export type { VeilInput } from './veil';
 export { VEIL_TUNING, oklabLightness, veilOpacityFor } from './veil';

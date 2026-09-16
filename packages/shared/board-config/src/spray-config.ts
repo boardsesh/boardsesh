@@ -88,6 +88,23 @@ export const MAX_HOLDS_PER_WALL = 1500;
 export const MAX_VERSIONS_PER_WALL = 50;
 
 /**
+ * How long a deleted wall's photographs survive the delete, in days.
+ *
+ * Deleting a wall is a soft delete — the catalogue rows and every climb ever set
+ * on it stay behind, because a deleted wall stops being reachable and does not
+ * un-set anybody's climbs. The PHOTOGRAPHS are the part that must not linger:
+ * they are the inside of somebody's home, and once the wall is gone nothing reads
+ * them again.
+ *
+ * Thirty days is the undo window, not a retention policy: long enough that an
+ * accidental delete can still be walked back by hand, short enough that a
+ * climber who deleted a wall to get the photo off our disks is not waiting a
+ * quarter for it. The scheduler's `purge-spray-wall-photos` job is what acts on
+ * it (`docs/scheduler.md`).
+ */
+export const SPRAY_WALL_PHOTO_RETENTION_DAYS = 30;
+
+/**
  * What a spray wall is called in prose. `formatBoardDisplayName('spray')`
  * returns this, so a board-type label anywhere in the app reads "Spray wall"
  * rather than "Spray".

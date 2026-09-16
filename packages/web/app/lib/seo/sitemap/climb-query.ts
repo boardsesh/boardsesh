@@ -2,7 +2,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { and, asc, eq, gte, inArray, ne, notExists, sql } from 'drizzle-orm';
 import { toBoardName } from '@boardsesh/board-config';
-import { withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
+import { sprayClimbVisibilityCondition, withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
 import { dbzRead } from '@/app/lib/db/db';
 import { boardClimbAliases, boardClimbStats, boardClimbs } from '@/app/lib/db/schema';
 import { getSitemapClimbConfigsOrThrow } from './board-config-source';
@@ -90,6 +90,20 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         // Never submit a community-hidden climb for crawling: the /list page it
         // would be indexed from no longer carries it.
         eq(boardClimbs.isHidden, false),
+        // Defence in depth, not the primary gate. What decides whether a wall
+        // is in the sitemap at all is `getPublicSprayWallConfigs()` — only a
+        // public, published, slugged wall gets a config, and only a config with
+        // a slug survives `isIndexableClimbConfig`. This is the belt underneath
+        // that: if a private wall's layout ever reached a group — a hand-built
+        // config, a future source that forgets the rule — the query returns no
+        // rows rather than the wall's whole catalogue.
+        //
+        // `null` for the viewer because the sitemap has no viewer: it is read by
+        // crawlers, so the only walls it may name are the ones an anonymous
+        // reader could already see. Note that `is_unlisted` is deliberately NOT
+        // an exemption in that predicate — unlisted means "reachable if you have
+        // the link", and a sitemap is the opposite of being handed a link.
+        sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, null),
         gte(boardClimbStats.ascensionistCount, TIER_2_MIN_ASCENTS),
         // Never publish an angle the route tables don't carry — that URL 404s.
         // `publishableAngles` is the same list the setter front door's angle
