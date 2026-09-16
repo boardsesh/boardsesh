@@ -85,10 +85,19 @@ function sprayWall(name: string, publicPhotoUrl: string | null): SprayWallRow {
  * The page fires four of them concurrently, so a single `mockResolvedValue`
  * would hand the gym's shape to the board list and the wall list alike.
  */
-function respondWith(options: { gym: Gym; boards?: unknown[]; sprayWalls?: SprayWallRow[] }): void {
+function respondWith(options: {
+  gym: Gym;
+  boards?: unknown[];
+  sprayWalls?: SprayWallRow[];
+  /** Stand in for a backend that has no `gymSprayWalls` field yet. */
+  sprayWallsFail?: boolean;
+}): void {
   executeAuthenticatedGraphQL.mockImplementation(async (document: unknown) => {
     const text = String(document);
-    if (text.includes('gymSprayWalls')) return { gymSprayWalls: options.sprayWalls ?? [] };
+    if (text.includes('gymSprayWalls')) {
+      if (options.sprayWallsFail) throw new Error('Cannot query field "gymSprayWalls" on type "Query"');
+      return { gymSprayWalls: options.sprayWalls ?? [] };
+    }
     if (text.includes('gymBoards')) return { gymBoards: options.boards ?? [] };
     if (text.includes('gymBySlug')) return { gymBySlug: options.gym };
     return {};
@@ -194,5 +203,23 @@ describe("a gym page's spray walls", () => {
     respondWith({ gym: gym('walls-none'), sprayWalls: [] });
 
     expect(allText(await renderPage('walls-none'))).not.toContain('gymPage.sprayWallsHeading');
+  });
+
+  it('leaves the walls in the boards section when the wall query cannot be asked', async () => {
+    // The deploy window where web is ahead of backend and `gymSprayWalls` is not
+    // a field yet. The dedup filter above only runs when the wall list answered,
+    // so the gym's walls keep their old row instead of vanishing off the page.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    respondWith({
+      gym: gym('walls-backend-behind'),
+      boards: [{ uuid: 'board-The Cave', slug: 'slug-The Cave', name: 'The Cave', boardType: 'spray', angle: 40 }],
+      sprayWallsFail: true,
+    });
+
+    const tree = await renderPage('walls-backend-behind');
+
+    expect(linkHrefs(tree).filter((href) => href === '/b/slug-The Cave')).toHaveLength(1);
+    expect(allText(tree)).not.toContain('gymPage.sprayWallsHeading');
+    consoleError.mockRestore();
   });
 });

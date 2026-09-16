@@ -758,6 +758,14 @@ not apply — appearing in a public list is the one thing "unlisted" promises no
 do. Gym members see the gym's walls including the private ones; everybody else,
 logged out included, sees only the public ones. An unknown gym is an empty list.
 
+The web gym page lists walls in their own section and filters `boardType ===
+'spray'` out of the boards section so the same wall is not listed twice — but
+**only when the wall query actually answered**. `fetchGymSprayWalls` returns
+`null`, not `[]`, when the ask failed, which is the deploy window where web is
+ahead of backend and `gymSprayWalls` is not a field yet. On `null` the filter is
+skipped and the walls keep their old row in the boards section, so neither deploy
+order makes a gym's walls disappear from its page.
+
 ### An unpublished wall is listed to nobody but its owner
 
 `is_public` and the first publish are two separate moments: the API lets a caller

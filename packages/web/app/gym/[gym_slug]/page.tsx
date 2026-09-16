@@ -122,8 +122,16 @@ async function fetchGymBoards(gymUuid: string, token: string | undefined): Promi
  * backend that has not deployed `gymSprayWalls` yet must cost this page its wall
  * list and nothing else. Folding the selection into `fetchGymBySlug` would 404
  * the whole gym.
+ *
+ * `null` — not `[]` — when the ask itself failed, and the difference matters for
+ * exactly one window: web deploys ahead of backend, `gymSprayWalls` is not a
+ * field yet, and the caller is about to strip every spray wall out of the boards
+ * section on the promise that the section below shows them instead. An empty
+ * list makes that promise and breaks it, so a gym's walls disappear from the page
+ * altogether until the backend catches up. `null` says "could not ask", and the
+ * caller leaves the walls where they already were.
  */
-async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): Promise<GymSprayWallListing[]> {
+async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): Promise<GymSprayWallListing[] | null> {
   try {
     const response = await executeAuthenticatedGraphQL<GetGymSprayWallsQueryResponse>(
       GET_GYM_SPRAY_WALLS,
@@ -133,7 +141,7 @@ async function fetchGymSprayWalls(gymUuid: string, token: string | undefined): P
     return response.gymSprayWalls ?? [];
   } catch (error) {
     console.error('fetchGymSprayWalls failed:', error);
-    return [];
+    return null;
   }
 }
 
@@ -249,18 +257,25 @@ export default async function GymPage(props: GymRouteProps) {
 
   const locale = await getLocale();
   const [{ t }, { t: tBoards }] = await Promise.all([getServerTranslation('kiosk'), getServerTranslation('boards')]);
-  const [kiosk, allBoards, sprayWalls] = await Promise.all([
+  const [kiosk, allBoards, gymSprayWalls] = await Promise.all([
     fetchDefaultKiosk(gym_slug, token),
     fetchGymBoards(gym.uuid, token),
     fetchGymSprayWalls(gym.uuid, token),
   ]);
+  const sprayWalls = gymSprayWalls ?? [];
 
   // Spray walls come back in `gymBoards` too — they are ordinary `user_boards`
   // rows under the ninth board type — and they get their own section below, with
   // the photo and the hold count a wall is actually recognised by. Filtered out
   // here so the same wall is not listed twice, and BEFORE the subtitles are
   // built: those are index-aligned with the list they describe.
-  const boards = allBoards.filter((board) => board.boardType !== 'spray');
+  //
+  // Only when the wall list actually answered. `gymSprayWalls` returning null
+  // means the question could not be asked at all — the deploy window where web
+  // is ahead of backend — and filtering on that would take the walls out of the
+  // boards section without the section below putting them back, which is worse
+  // than listing them the old way for a few minutes.
+  const boards = gymSprayWalls ? allBoards.filter((board) => board.boardType !== 'spray') : allBoards;
 
   // Two boards run by the same gym used to read identically here — "Kilter ·
   // 40°" twice, under two rows the setter had also named the same thing (issue
