@@ -239,6 +239,8 @@ input ClimbSearchInput {
   name: String
   "Filter by setter usernames"
   setter: [String!]
+  "Only climbs by followed setters or followed users, including linked board accounts. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Filter by setter ID"
   setterId: Int
   "Only show benchmark climbs"
@@ -298,6 +300,8 @@ Input for fetching setter usernames with their climb counts.
 Used to power the setter filter autocomplete in the search drawer.
 """
 input SetterStatsInput {
+  "Restrict counts and usernames to followed authors. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Board type (e.g., 'kilter', 'tension')"
   boardName: String!
   "Layout ID"
@@ -1329,6 +1333,31 @@ input AttachBetaLinkInput {
   angle: Int
   "Optional tick UUID this beta video belongs to"
   tickUuid: ID
+}
+
+input CrewFeedInput {
+  cursor: String
+  limit: Int
+}
+
+type CrewSessionItem {
+  id: ID!
+  occurredAt: String!
+  session: SessionFeedItem!
+}
+
+type CrewClimbItem {
+  id: ID!
+  occurredAt: String!
+  climb: ActivityFeedItem!
+}
+
+union CrewFeedItem = CrewSessionItem | CrewClimbItem
+
+type CrewFeedResult {
+  items: [CrewFeedItem!]!
+  cursor: String
+  hasMore: Boolean!
 }
 
 # ============================================
@@ -4445,6 +4474,22 @@ type ReportClimbResult {
   proposal: Proposal!
 }
 
+type FollowedBoardAccount {
+  boardType: String!
+  username: String!
+}
+
+type FollowedAuthorUser {
+  userId: ID!
+  boardAccounts: [FollowedBoardAccount!]!
+}
+
+"Complete snapshot of the authenticated viewer's followed authors."
+type FollowedAuthors {
+  setterUsernames: [String!]!
+  users: [FollowedAuthorUser!]!
+}
+
 # ============================================
 # Social Enums
 # ============================================
@@ -6564,6 +6609,10 @@ type Query {
   Requires authentication.
   """
   activityFeed(input: ActivityFeedInput): ActivityFeedResult!
+  "Complete followed-author snapshot for the authenticated viewer."
+  followedAuthors: FollowedAuthors!
+  "Sessions and the last 30 days of published climbs from followed authors."
+  crewFeed(input: CrewFeedInput): CrewFeedResult!
 
   """
   Get trending feed of recent activity (public, no auth required).

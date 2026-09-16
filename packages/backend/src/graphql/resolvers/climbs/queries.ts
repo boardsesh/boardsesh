@@ -224,6 +224,7 @@ export const climbQueries = {
     // Build search parameters via the shared mapper — same falsy-collapse
     // rules as the web SSR path. Don't inline the field-by-field copy here.
     const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
+    if (parsedInput.onlyFollowedAuthors) requireAuthenticated(ctx);
 
     if (DEBUG) {
       logger.info(
@@ -321,6 +322,7 @@ export const climbQueries = {
   ): Promise<SetterStat[]> => {
     await applyRateLimit(ctx, 60, 'setter-stats');
     const validated = validateInput(SetterStatsInputSchema, input, 'input');
+    if (validated.onlyFollowedAuthors) requireAuthenticated(ctx);
 
     if (!isValidBoardName(validated.boardName)) {
       throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
@@ -349,7 +351,12 @@ export const climbQueries = {
       return [];
     }
 
-    const rows = await getSetterStats(dbRead, params, validated.search);
+    const rows = await getSetterStats(
+      dbRead,
+      params,
+      validated.search,
+      validated.onlyFollowedAuthors ? ctx.userId! : undefined,
+    );
 
     return rows.map((row) => ({
       setterUsername: row.setter_username,

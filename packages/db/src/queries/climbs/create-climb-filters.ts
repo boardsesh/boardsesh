@@ -12,6 +12,7 @@ import {
   boardBetaLinks,
 } from '../../schema/index';
 import type { BoardRouteParams, ClimbSearchParams } from './types';
+import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
   effectiveStatsColumn,
@@ -770,6 +771,7 @@ export const createClimbFilters = (
       ...baseConditions,
       ...nameCondition,
       ...setterNameCondition,
+      ...(searchParams.onlyFollowedAuthors ? [followedAuthorCondition(userId)] : []),
       ...holdConditions,
       ...holdStateConditions,
       ...tallClimbsConditions,

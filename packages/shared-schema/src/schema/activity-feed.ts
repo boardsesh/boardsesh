@@ -1,4 +1,29 @@
 export const activityFeedTypeDefs = /* GraphQL */ `
+  input CrewFeedInput {
+    cursor: String
+    limit: Int
+  }
+
+  type CrewSessionItem {
+    id: ID!
+    occurredAt: String!
+    session: SessionFeedItem!
+  }
+
+  type CrewClimbItem {
+    id: ID!
+    occurredAt: String!
+    climb: ActivityFeedItem!
+  }
+
+  union CrewFeedItem = CrewSessionItem | CrewClimbItem
+
+  type CrewFeedResult {
+    items: [CrewFeedItem!]!
+    cursor: String
+    hasMore: Boolean!
+  }
+
   # ============================================
   # Activity Feed Types
   # ============================================

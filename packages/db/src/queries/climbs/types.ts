@@ -46,6 +46,7 @@ export type ClimbSearchParams = {
   minAscents?: number;
   name?: string;
   settername?: string[];
+  onlyFollowedAuthors?: boolean;
   setternameSuggestion?: string;
   onlyBenchmarks?: boolean;
   onlyTallClimbs?: boolean;
@@ -118,6 +119,7 @@ export type ClimbSearchInputLike = {
   // mapper picks `settername` if present, otherwise `setter`.
   setter?: string[] | null;
   settername?: string[] | null;
+  onlyFollowedAuthors?: boolean | null;
   onlyBenchmarks?: boolean | null;
   onlyTallClimbs?: boolean | null;
   onlyWideClimbs?: boolean | null;
@@ -206,6 +208,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     sortSeed: input.sortSeed || undefined,
     name: input.name || undefined,
     settername: setter && setter.length > 0 ? setter : undefined,
+    onlyFollowedAuthors: input.onlyFollowedAuthors ?? undefined,
     onlyBenchmarks: input.onlyBenchmarks ?? undefined,
     onlyTallClimbs: input.onlyTallClimbs ?? undefined,
     onlyWideClimbs: input.onlyWideClimbs ?? undefined,

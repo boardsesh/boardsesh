@@ -32,7 +32,8 @@ type SessionFeedFilterOptions = {
   userIdFilter: string | null;
 };
 
-type SessionFeedRow = {
+export type SessionFeedRow = {
+  candidate_time?: string;
   session_id: string;
   session_type: string;
   session_first_tick: string | Date;
@@ -89,63 +90,75 @@ function parseDailySessionId(sessionId: string): DailySessionId | null {
   return { userId: match[1], day: match[2] };
 }
 
-export const sessionFeedQueries = {
-  /**
-   * Session-grouped activity feed (public, no auth required).
-   * Groups ticks by explicitly-created board sessions, with optional daily
-   * fallback highlights for users who did not climb in a session that day.
-   * Always chronological (newest first). Uses offset pagination.
-   */
-  sessionGroupedFeed: async (_: unknown, { input }: { input?: Record<string, unknown> }, ctx?: ConnectionContext) => {
-    const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
-    const limit = validatedInput.limit ?? 20;
-    const userId = validatedInput.userId || null;
-    const followingOnly = validatedInput.followingOnly === true;
-    const includeDailyHighlights = validatedInput.includeDailyHighlights === true;
-    const participantFilterEnabled = !!userId || followingOnly;
+export type SessionFeedPagination = {
+  snapshotAt: string;
+  before?: { occurredAt: string; id: string } | null;
+  selectRows: (rows: SessionFeedRow[]) => SessionFeedRow[];
+};
 
-    if (followingOnly) {
-      if (!ctx) throw new Error('Authentication required to perform this operation');
-      requireAuthenticated(ctx);
+/**
+ * Session-grouped activity feed (public, no auth required).
+ * Groups ticks by explicitly-created board sessions, with optional daily
+ * fallback highlights for users who did not climb in a session that day.
+ * Always chronological (newest first). Uses offset pagination.
+ */
+export async function getSessionFeed(
+  input: Record<string, unknown> | undefined,
+  ctx?: ConnectionContext,
+  pagination?: SessionFeedPagination,
+) {
+  const validatedInput = validateInput(ActivityFeedInputSchema, input || {}, 'input');
+  const limit = validatedInput.limit ?? 20;
+  const userId = validatedInput.userId || null;
+  const followingOnly = validatedInput.followingOnly === true;
+  const includeDailyHighlights = validatedInput.includeDailyHighlights === true;
+  const participantFilterEnabled = !!userId || followingOnly;
+
+  if (followingOnly) {
+    if (!ctx) throw new Error('Authentication required to perform this operation');
+    requireAuthenticated(ctx);
+  }
+  const viewerUserId = followingOnly ? (ctx?.userId ?? null) : null;
+
+  const offset = validatedInput.cursor ? (decodeOffsetCursor(validatedInput.cursor) ?? 0) : 0;
+
+  // Board filter — scope to the EXACT board (user_boards.id), not the board
+  // type + layout. A layout is shared by 1,000+ gyms, so the old type+layout
+  // filter surfaced every gym on that layout. boardsesh_ticks.board_id points
+  // at the specific board, and the (board_id, climbed_at) / (board_id, user_id)
+  // indexes back the filter.
+  let boardIdFilter: number | null = null;
+  if (validatedInput.boardUuid) {
+    const board = await dbRead
+      .select({ id: dbSchema.userBoards.id })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (board) {
+      boardIdFilter = board.id;
     }
-    const viewerUserId = followingOnly ? (ctx?.userId ?? null) : null;
+  }
 
-    const offset = validatedInput.cursor ? (decodeOffsetCursor(validatedInput.cursor) ?? 0) : 0;
-
-    // Board filter — scope to the EXACT board (user_boards.id), not the board
-    // type + layout. A layout is shared by 1,000+ gyms, so the old type+layout
-    // filter surfaced every gym on that layout. boardsesh_ticks.board_id points
-    // at the specific board, and the (board_id, climbed_at) / (board_id, user_id)
-    // indexes back the filter.
-    let boardIdFilter: number | null = null;
-    if (validatedInput.boardUuid) {
-      const board = await dbRead
-        .select({ id: dbSchema.userBoards.id })
-        .from(dbSchema.userBoards)
-        .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
-        .limit(1)
-        .then((rows) => rows[0]);
-
-      if (board) {
-        boardIdFilter = board.id;
-      }
-    }
-
-    let sessionRows;
-    try {
-      const sessionBoardFilter = boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``;
-      // Per-user scope: a single userId ("your sessions") counts only that
-      // climber's ticks per session. Empty on social/home/following feeds, which
-      // keep whole-session aggregates. Mirrors boardIdFilter's null guard.
-      const sessionUserFilter = userId !== null ? sql`AND t.user_id = ${userId}` : sql``;
-      const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
-      const eligibleUsersCte = userId
-        ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
-        : followingOnly
-          ? sql`eligible_users AS (SELECT following_id AS user_id FROM user_follows WHERE follower_id = ${viewerUserId}),`
-          : sql``;
-      const eligibleSessionsCte = participantFilterEnabled
-        ? sql`
+  let sessionRows;
+  try {
+    const sessionBoardFilter = sql`
+        ${boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``}
+        ${pagination ? sql`AND t.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
+      `;
+    // Per-user scope: a single userId ("your sessions") counts only that
+    // climber's ticks per session. Empty on social/home/following feeds, which
+    // keep whole-session aggregates. Mirrors boardIdFilter's null guard.
+    const sessionUserFilter = userId !== null ? sql`AND t.user_id = ${userId}` : sql``;
+    const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
+    const eligibleUsersCte = userId
+      ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
+      : followingOnly
+        ? sql`eligible_users AS (SELECT following_id AS user_id FROM user_follows WHERE follower_id = ${viewerUserId}),`
+        : sql``;
+    const eligibleSessionsCte = participantFilterEnabled
+      ? sql`
         eligible_sessions AS (
           SELECT DISTINCT t.session_id
           FROM boardsesh_ticks t
@@ -154,9 +167,9 @@ export const sessionFeedQueries = {
             ${sessionBoardFilter}
         ),
         `
-        : sql``;
-      const dailyHighlightCtes = shouldIncludeDailyHighlights
-        ? sql`
+      : sql``;
+    const dailyHighlightCtes = shouldIncludeDailyHighlights
+      ? sql`
         daily_ticks AS (
           SELECT
             t.*,
@@ -177,6 +190,7 @@ export const sessionFeedQueries = {
               WHERE session_tick.user_id = t.user_id
                 AND session_tick.session_id IS NOT NULL
                 AND session_tick.climbed_at::date = t.climbed_at::date
+                ${pagination ? sql`AND session_tick.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
             )
         ),
         daily_base AS (
@@ -251,9 +265,9 @@ export const sessionFeedQueries = {
           ) cc ON cc.entity_id = dh.uuid
         ),
         `
-        : sql``;
-      const combinedCte = shouldIncludeDailyHighlights
-        ? sql`
+      : sql``;
+    const combinedCte = shouldIncludeDailyHighlights
+      ? sql`
         combined AS (
           SELECT
             session_id,
@@ -300,7 +314,7 @@ export const sessionFeedQueries = {
           FROM daily_scored
         )
         `
-        : sql`
+      : sql`
         combined AS (
           SELECT
             session_id,
@@ -326,13 +340,13 @@ export const sessionFeedQueries = {
         )
         `;
 
-      // session_base hash-aggregates the ENTIRE boardsesh_ticks table by
-      // session_id whenever no user/board filter is set — i.e. the public home
-      // feed — and with daily highlights adds a second pass plus a window
-      // function. That is exactly the parallel-hash shape that exhausts /dev/shm,
-      // on an unauthenticated endpoint with no rate limit (#4105).
-      sessionRows = await withSerialPlan(dbRead, (tx) =>
-        tx.execute(sql`
+    // session_base hash-aggregates the ENTIRE boardsesh_ticks table by
+    // session_id whenever no user/board filter is set — i.e. the public home
+    // feed — and with daily highlights adds a second pass plus a window
+    // function. That is exactly the parallel-hash shape that exhausts /dev/shm,
+    // on an unauthenticated endpoint with no rate limit (#4105).
+    sessionRows = await withSerialPlan(dbRead, (tx) =>
+      tx.execute(sql`
         WITH
         ${eligibleUsersCte}
         ${eligibleSessionsCte}
@@ -375,118 +389,123 @@ export const sessionFeedQueries = {
         ),
         ${dailyHighlightCtes}
         ${combinedCte}
-        SELECT *
+        SELECT * ${pagination ? sql`, to_char(session_last_tick, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS candidate_time` : sql``}
         FROM combined
-        ORDER BY session_last_tick DESC
+        ${pagination?.before ? sql`WHERE (session_last_tick, ('session:' || session_id) COLLATE "C") < (${pagination.before.occurredAt}::timestamptz AT TIME ZONE 'UTC', ${pagination.before.id} COLLATE "C")` : sql``}
+        ORDER BY session_last_tick DESC, session_id COLLATE "C" DESC
         OFFSET ${offset}
         LIMIT ${limit + 1}
       `),
-      );
-    } catch (err) {
-      logger.error('[sessionGroupedFeed] SQL error:', err);
-      throw err;
-    }
+    );
+  } catch (err) {
+    logger.error('[sessionGroupedFeed] SQL error:', err);
+    throw err;
+  }
 
-    const rows = rowsFromResult<SessionFeedRow>(sessionRows);
+  const rows = rowsFromResult<SessionFeedRow>(sessionRows);
 
-    const hasMore = rows.length > limit;
-    const resultRows = hasMore ? rows.slice(0, limit) : rows;
+  const hasMore = rows.length > limit;
+  const resultRows = pagination ? pagination.selectRows(rows) : hasMore ? rows.slice(0, limit) : rows;
 
-    // Batch enrichment keeps session cards to a fixed number of follow-up
-    // queries instead of scanning ticks once per feed row.
-    const sessionIds = resultRows.filter((r) => r.session_type === 'party').map((r) => r.session_id);
-    const dailyHighlightKeys: DailyHighlightKey[] = resultRows
-      .filter(
-        (row): row is SessionFeedRow & { daily_user_id: string; daily_date: string } =>
-          row.session_type === 'daily_highlight' && !!row.daily_user_id && !!row.daily_date,
-      )
-      .map((row) => ({ sessionId: row.session_id, userId: row.daily_user_id, day: row.daily_date }));
-    const dailyHighlightTickUuids = resultRows
-      .filter((row) => row.session_type === 'daily_highlight' && !!row.highlight_tick_uuid)
-      .map((row) => row.highlight_tick_uuid as string);
-    const filterOptions: SessionFeedFilterOptions = { boardIdFilter, userIdFilter: userId };
+  // Batch enrichment keeps session cards to a fixed number of follow-up
+  // queries instead of scanning ticks once per feed row.
+  const sessionIds = resultRows.filter((r) => r.session_type === 'party').map((r) => r.session_id);
+  const dailyHighlightKeys: DailyHighlightKey[] = resultRows
+    .filter(
+      (row): row is SessionFeedRow & { daily_user_id: string; daily_date: string } =>
+        row.session_type === 'daily_highlight' && !!row.daily_user_id && !!row.daily_date,
+    )
+    .map((row) => ({ sessionId: row.session_id, userId: row.daily_user_id, day: row.daily_date }));
+  const dailyHighlightTickUuids = resultRows
+    .filter((row) => row.session_type === 'daily_highlight' && !!row.highlight_tick_uuid)
+    .map((row) => row.highlight_tick_uuid as string);
+  const filterOptions: SessionFeedFilterOptions = { boardIdFilter, userIdFilter: userId };
 
-    const [
-      participantMap,
-      gradeDistMap,
-      dailyGradeDistMap,
-      metaMap,
-      boardTypesMap,
-      hardestSendMap,
-      dailyHardestSendMap,
-      featuredBetaMap,
-    ] = await Promise.all([
-      fetchParticipantsBatch(sessionIds, filterOptions),
-      fetchGradeDistributionBatch(sessionIds, filterOptions),
-      fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
-      fetchSessionMetaBatch(sessionIds),
-      fetchBoardTypesBatch(sessionIds, filterOptions),
-      fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
-      fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId),
-      fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
-    ]);
+  const [
+    participantMap,
+    gradeDistMap,
+    dailyGradeDistMap,
+    metaMap,
+    boardTypesMap,
+    hardestSendMap,
+    dailyHardestSendMap,
+    featuredBetaMap,
+  ] = await Promise.all([
+    fetchParticipantsBatch(sessionIds, filterOptions),
+    fetchGradeDistributionBatch(sessionIds, filterOptions),
+    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
+    fetchSessionMetaBatch(sessionIds),
+    fetchBoardTypesBatch(sessionIds, filterOptions),
+    fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
+    fetchTickHighlightsByUuid(dailyHighlightTickUuids, ctx?.userId),
+    fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
+  ]);
 
-    const sessions: SessionFeedItem[] = resultRows.map((row) => {
-      const isDailyHighlight = row.session_type === 'daily_highlight';
-      const participants = isDailyHighlight ? buildDailyParticipants(row) : (participantMap.get(row.session_id) ?? []);
-      const gradeDistribution = isDailyHighlight
-        ? (dailyGradeDistMap.get(row.session_id) ?? [])
-        : (gradeDistMap.get(row.session_id) ?? []);
-      const sessionMeta = metaMap.get(row.session_id) ?? null;
-      const boardTypes = isDailyHighlight ? (row.daily_board_types ?? []) : (boardTypesMap.get(row.session_id) ?? []);
-      const hardestSend = isDailyHighlight
-        ? // The highlight is only a *send* when something was sent. On a day spent
-          // projecting it is the hardest attempt, which anchors the card's votes and
-          // comments but must not be reported as an ascent.
-          row.highlight_is_send
-          ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
-          : null
-        : (hardestSendMap.get(row.session_id) ?? null);
-      const featuredBeta = featuredBetaMap.get(row.session_id) ?? null;
+  const sessions: SessionFeedItem[] = resultRows.map((row) => {
+    const isDailyHighlight = row.session_type === 'daily_highlight';
+    const participants = isDailyHighlight ? buildDailyParticipants(row) : (participantMap.get(row.session_id) ?? []);
+    const gradeDistribution = isDailyHighlight
+      ? (dailyGradeDistMap.get(row.session_id) ?? [])
+      : (gradeDistMap.get(row.session_id) ?? []);
+    const sessionMeta = metaMap.get(row.session_id) ?? null;
+    const boardTypes = isDailyHighlight ? (row.daily_board_types ?? []) : (boardTypesMap.get(row.session_id) ?? []);
+    const hardestSend = isDailyHighlight
+      ? // The highlight is only a *send* when something was sent. On a day spent
+        // projecting it is the hardest attempt, which anchors the card's votes and
+        // comments but must not be reported as an ascent.
+        row.highlight_is_send
+        ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
+        : null
+      : (hardestSendMap.get(row.session_id) ?? null);
+    const featuredBeta = featuredBetaMap.get(row.session_id) ?? null;
 
-      const firstTime = new Date(row.session_first_tick).getTime();
-      const lastTime = new Date(row.session_last_tick).getTime();
-      const durationMinutes = Math.round((lastTime - firstTime) / 60000) || null;
+    const firstTime = new Date(row.session_first_tick).getTime();
+    const lastTime = new Date(row.session_last_tick).getTime();
+    const durationMinutes = Math.round((lastTime - firstTime) / 60000) || null;
 
-      return {
-        sessionId: row.session_id,
-        sessionType: isDailyHighlight ? 'daily_highlight' : 'party',
-        sessionName: isDailyHighlight ? null : sessionMeta?.name || null,
-        ownerUserId: isDailyHighlight ? row.daily_user_id : sessionMeta?.ownerUserId || null,
-        participants,
-        totalSends: Number(row.total_sends),
-        totalFlashes: Number(row.total_flashes),
-        totalAttempts: Number(row.total_attempts),
-        tickCount: Number(row.tick_count),
-        gradeDistribution,
-        boardTypes,
-        hardestGrade: hardestSend?.difficultyName ?? (gradeDistribution.length > 0 ? gradeDistribution[0].grade : null),
-        hardestSend,
-        featuredBeta,
-        socialEntityType: isDailyHighlight ? 'tick' : 'session',
-        socialEntityId: isDailyHighlight ? (row.highlight_tick_uuid ?? row.session_id) : row.session_id,
-        firstTickAt:
-          typeof row.session_first_tick === 'object'
-            ? (row.session_first_tick as unknown as Date).toISOString()
-            : String(row.session_first_tick),
-        lastTickAt:
-          typeof row.session_last_tick === 'object'
-            ? (row.session_last_tick as unknown as Date).toISOString()
-            : String(row.session_last_tick),
-        durationMinutes,
-        goal: isDailyHighlight ? null : sessionMeta?.goal || null,
-        notes: isDailyHighlight ? null : sessionMeta?.notes || null,
-        upvotes: Number(row.vote_up),
-        downvotes: Number(row.vote_down),
-        voteScore: Number(row.vote_score),
-        commentCount: Number(row.comment_count),
-      };
-    });
+    return {
+      sessionId: row.session_id,
+      sessionType: isDailyHighlight ? 'daily_highlight' : 'party',
+      sessionName: isDailyHighlight ? null : sessionMeta?.name || null,
+      ownerUserId: isDailyHighlight ? row.daily_user_id : sessionMeta?.ownerUserId || null,
+      participants,
+      totalSends: Number(row.total_sends),
+      totalFlashes: Number(row.total_flashes),
+      totalAttempts: Number(row.total_attempts),
+      tickCount: Number(row.tick_count),
+      gradeDistribution,
+      boardTypes,
+      hardestGrade: hardestSend?.difficultyName ?? (gradeDistribution.length > 0 ? gradeDistribution[0].grade : null),
+      hardestSend,
+      featuredBeta,
+      socialEntityType: isDailyHighlight ? 'tick' : 'session',
+      socialEntityId: isDailyHighlight ? (row.highlight_tick_uuid ?? row.session_id) : row.session_id,
+      firstTickAt:
+        typeof row.session_first_tick === 'object'
+          ? (row.session_first_tick as unknown as Date).toISOString()
+          : String(row.session_first_tick),
+      lastTickAt:
+        typeof row.session_last_tick === 'object'
+          ? (row.session_last_tick as unknown as Date).toISOString()
+          : String(row.session_last_tick),
+      durationMinutes,
+      goal: isDailyHighlight ? null : sessionMeta?.goal || null,
+      notes: isDailyHighlight ? null : sessionMeta?.notes || null,
+      upvotes: Number(row.vote_up),
+      downvotes: Number(row.vote_down),
+      voteScore: Number(row.vote_score),
+      commentCount: Number(row.comment_count),
+    };
+  });
 
-    const nextCursor = hasMore ? encodeOffsetCursor(offset + limit) : null;
+  const nextCursor = hasMore ? encodeOffsetCursor(offset + limit) : null;
 
-    return { sessions, cursor: nextCursor, hasMore };
-  },
+  return { sessions, cursor: nextCursor, hasMore };
+}
+
+export const sessionFeedQueries = {
+  sessionGroupedFeed: async (_: unknown, { input }: { input?: Record<string, unknown> }, ctx?: ConnectionContext) =>
+    getSessionFeed(input, ctx),
 
   /**
    * Get full detail for a single session.

@@ -1227,6 +1227,8 @@ export type ClimbSearchInput = {
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
   onlyDrafts?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs by followed setters or followed users, including linked board accounts. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show climbs the user has rated at this angle (requires auth) */
   onlyRatedByMe?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show tall/steep climbs */
@@ -1734,6 +1736,34 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type CrewClimbItem = {
+  __typename?: 'CrewClimbItem';
+  climb: ActivityFeedItem;
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+};
+
+export type CrewFeedInput = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type CrewFeedItem = CrewClimbItem | CrewSessionItem;
+
+export type CrewFeedResult = {
+  __typename?: 'CrewFeedResult';
+  cursor?: Maybe<Scalars['String']['output']>;
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<CrewFeedItem>;
+};
+
+export type CrewSessionItem = {
+  __typename?: 'CrewSessionItem';
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+  session: SessionFeedItem;
+};
+
 /** Event when the current climb changes. */
 export type CurrentClimbChanged = {
   __typename?: 'CurrentClimbChanged';
@@ -2115,6 +2145,25 @@ export type FollowPlaylistInput = {
 export type FollowSetterInput = {
   /** The setter's Aurora username */
   setterUsername: Scalars['String']['input'];
+};
+
+export type FollowedAuthorUser = {
+  __typename?: 'FollowedAuthorUser';
+  boardAccounts: Array<FollowedBoardAccount>;
+  userId: Scalars['ID']['output'];
+};
+
+/** Complete snapshot of the authenticated viewer's followed authors. */
+export type FollowedAuthors = {
+  __typename?: 'FollowedAuthors';
+  setterUsernames: Array<Scalars['String']['output']>;
+  users: Array<FollowedAuthorUser>;
+};
+
+export type FollowedBoardAccount = {
+  __typename?: 'FollowedBoardAccount';
+  boardType: Scalars['String']['output'];
+  username: Scalars['String']['output'];
 };
 
 /** An ascent from a followed user, enriched with user and climb data. */
@@ -5698,6 +5747,8 @@ export type Query = {
   communityRoles: Array<CommunityRoleAssignment>;
   /** Get community settings for a scope. */
   communitySettings: Array<CommunitySetting>;
+  /** Sessions and the last 30 days of published climbs from followed authors. */
+  crewFeed: CrewFeedResult;
   /**
    * Get the user's default board (first owned, then most used).
    * Requires authentication.
@@ -5734,6 +5785,8 @@ export type Query = {
    * capped at five.
    */
   findSimilarGyms: Array<SimilarGym>;
+  /** Complete followed-author snapshot for the authenticated viewer. */
+  followedAuthors: FollowedAuthors;
   /**
    * Sessions climbing right now that the viewer has a reason to care about:
    * started or joined by someone they follow, on a board they follow, on
@@ -6429,6 +6482,11 @@ export type QueryCommunityRolesArgs = {
 export type QueryCommunitySettingsArgs = {
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCrewFeedArgs = {
+  input?: InputMaybe<CrewFeedInput>;
 };
 
 /** Root query type for all read operations. */
@@ -8207,6 +8265,8 @@ export type SetterStatsInput = {
   boardName: Scalars['String']['input'];
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  /** Restrict counts and usernames to followed authors. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Case-insensitive substring filter on setter username (for autocomplete) */
   search?: InputMaybe<Scalars['String']['input']>;
   /** Comma-separated set IDs */
@@ -9841,6 +9901,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
   BoardPresenceEvent: BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
+  CrewFeedItem: CrewClimbItem | CrewSessionItem;
   QueueEvent:
     | ClimbMirrored
     | CurrentClimbChanged
@@ -9962,6 +10023,11 @@ export type ResolversTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbItem: ResolverTypeWrapper<CrewClimbItem>;
+  CrewFeedInput: CrewFeedInput;
+  CrewFeedItem: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CrewFeedItem']>;
+  CrewFeedResult: ResolverTypeWrapper<Omit<CrewFeedResult, 'items'> & { items: Array<ResolversTypes['CrewFeedItem']> }>;
+  CrewSessionItem: ResolverTypeWrapper<CrewSessionItem>;
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
@@ -9995,6 +10061,9 @@ export type ResolversTypes = ResolversObject<{
   FollowListInput: FollowListInput;
   FollowPlaylistInput: FollowPlaylistInput;
   FollowSetterInput: FollowSetterInput;
+  FollowedAuthorUser: ResolverTypeWrapper<FollowedAuthorUser>;
+  FollowedAuthors: ResolverTypeWrapper<FollowedAuthors>;
+  FollowedBoardAccount: ResolverTypeWrapper<FollowedBoardAccount>;
   FollowingAscentFeedItem: ResolverTypeWrapper<FollowingAscentFeedItem>;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: ResolverTypeWrapper<FollowingAscentsFeedResult>;
@@ -10401,6 +10470,11 @@ export type ResolversParentTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbItem: CrewClimbItem;
+  CrewFeedInput: CrewFeedInput;
+  CrewFeedItem: ResolversUnionTypes<ResolversParentTypes>['CrewFeedItem'];
+  CrewFeedResult: Omit<CrewFeedResult, 'items'> & { items: Array<ResolversParentTypes['CrewFeedItem']> };
+  CrewSessionItem: CrewSessionItem;
   CurrentClimbChanged: CurrentClimbChanged;
   DeleteAccountInfo: DeleteAccountInfo;
   DeleteAccountInput: DeleteAccountInput;
@@ -10430,6 +10504,9 @@ export type ResolversParentTypes = ResolversObject<{
   FollowListInput: FollowListInput;
   FollowPlaylistInput: FollowPlaylistInput;
   FollowSetterInput: FollowSetterInput;
+  FollowedAuthorUser: FollowedAuthorUser;
+  FollowedAuthors: FollowedAuthors;
+  FollowedBoardAccount: FollowedBoardAccount;
   FollowingAscentFeedItem: FollowingAscentFeedItem;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: FollowingAscentsFeedResult;
@@ -11559,6 +11636,43 @@ export type ControllerRegistrationResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type CrewClimbItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewClimbItem'] = ResolversParentTypes['CrewClimbItem'],
+> = ResolversObject<{
+  climb?: Resolver<ResolversTypes['ActivityFeedItem'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewFeedItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewFeedItem'] = ResolversParentTypes['CrewFeedItem'],
+> = ResolversObject<{
+  __resolveType: TypeResolveFn<'CrewClimbItem' | 'CrewSessionItem', ParentType, ContextType>;
+}>;
+
+export type CrewFeedResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewFeedResult'] = ResolversParentTypes['CrewFeedResult'],
+> = ResolversObject<{
+  cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['CrewFeedItem']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewSessionItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewSessionItem'] = ResolversParentTypes['CrewSessionItem'],
+> = ResolversObject<{
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  session?: Resolver<ResolversTypes['SessionFeedItem'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type CurrentClimbChangedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['CurrentClimbChanged'] = ResolversParentTypes['CurrentClimbChanged'],
@@ -11714,6 +11828,33 @@ export type FollowConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   users?: Resolver<Array<ResolversTypes['PublicUserProfile']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedAuthorUserResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedAuthorUser'] = ResolversParentTypes['FollowedAuthorUser'],
+> = ResolversObject<{
+  boardAccounts?: Resolver<Array<ResolversTypes['FollowedBoardAccount']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedAuthorsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedAuthors'] = ResolversParentTypes['FollowedAuthors'],
+> = ResolversObject<{
+  setterUsernames?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  users?: Resolver<Array<ResolversTypes['FollowedAuthorUser']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedBoardAccountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedBoardAccount'] = ResolversParentTypes['FollowedBoardAccount'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13813,6 +13954,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
+  crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
   discoverPlaylists?: Resolver<
@@ -13845,6 +13987,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryFindSimilarGymsArgs, 'input'>
   >;
+  followedAuthors?: Resolver<ResolversTypes['FollowedAuthors'], ParentType, ContextType>;
   followedLiveSessions?: Resolver<
     Array<ResolversTypes['LiveSession']>,
     ParentType,
@@ -15722,6 +15865,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
+  CrewClimbItem?: CrewClimbItemResolvers<ContextType>;
+  CrewFeedItem?: CrewFeedItemResolvers<ContextType>;
+  CrewFeedResult?: CrewFeedResultResolvers<ContextType>;
+  CrewSessionItem?: CrewSessionItemResolvers<ContextType>;
   CurrentClimbChanged?: CurrentClimbChangedResolvers<ContextType>;
   DeleteAccountInfo?: DeleteAccountInfoResolvers<ContextType>;
   DiscoverPlaylistsResult?: DiscoverPlaylistsResultResolvers<ContextType>;
@@ -15734,6 +15881,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
   FavoritesCount?: FavoritesCountResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
+  FollowedAuthorUser?: FollowedAuthorUserResolvers<ContextType>;
+  FollowedAuthors?: FollowedAuthorsResolvers<ContextType>;
+  FollowedBoardAccount?: FollowedBoardAccountResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;

@@ -171,6 +171,32 @@ export const GET_SESSION_GROUPED_FEED = gql`
   }
 `;
 
+export const GET_CREW_FEED = gql`
+  query GetCrewFeed($input: CrewFeedInput) {
+    crewFeed(input: $input) {
+      items {
+        __typename
+        ... on CrewSessionItem {
+          id
+          occurredAt
+          session { ${SESSION_FEED_ITEM_FIELDS} }
+        }
+        ... on CrewClimbItem {
+          id
+          occurredAt
+          climb {
+            id type entityType entityId actorId actorDisplayName actorAvatarUrl
+            climbUuid climbName boardType layoutId setterUsername frames angle
+            difficultyName isNoMatch createdAt
+          }
+        }
+      }
+      cursor
+      hasMore
+    }
+  }
+`;
+
 export const GET_SESSION_DETAIL = gql`
   query GetSessionDetail($sessionId: ID!) {
     sessionDetail(sessionId: $sessionId) {

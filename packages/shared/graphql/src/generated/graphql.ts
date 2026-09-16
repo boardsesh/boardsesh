@@ -1224,6 +1224,8 @@ export type ClimbSearchInput = {
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
   onlyDrafts?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs by followed setters or followed users, including linked board accounts. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show climbs the user has rated at this angle (requires auth) */
   onlyRatedByMe?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show tall/steep climbs */
@@ -1731,6 +1733,34 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type CrewClimbItem = {
+  __typename?: 'CrewClimbItem';
+  climb: ActivityFeedItem;
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+};
+
+export type CrewFeedInput = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type CrewFeedItem = CrewClimbItem | CrewSessionItem;
+
+export type CrewFeedResult = {
+  __typename?: 'CrewFeedResult';
+  cursor?: Maybe<Scalars['String']['output']>;
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<CrewFeedItem>;
+};
+
+export type CrewSessionItem = {
+  __typename?: 'CrewSessionItem';
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+  session: SessionFeedItem;
+};
+
 /** Event when the current climb changes. */
 export type CurrentClimbChanged = {
   __typename?: 'CurrentClimbChanged';
@@ -2112,6 +2142,25 @@ export type FollowPlaylistInput = {
 export type FollowSetterInput = {
   /** The setter's Aurora username */
   setterUsername: Scalars['String']['input'];
+};
+
+export type FollowedAuthorUser = {
+  __typename?: 'FollowedAuthorUser';
+  boardAccounts: Array<FollowedBoardAccount>;
+  userId: Scalars['ID']['output'];
+};
+
+/** Complete snapshot of the authenticated viewer's followed authors. */
+export type FollowedAuthors = {
+  __typename?: 'FollowedAuthors';
+  setterUsernames: Array<Scalars['String']['output']>;
+  users: Array<FollowedAuthorUser>;
+};
+
+export type FollowedBoardAccount = {
+  __typename?: 'FollowedBoardAccount';
+  boardType: Scalars['String']['output'];
+  username: Scalars['String']['output'];
 };
 
 /** An ascent from a followed user, enriched with user and climb data. */
@@ -5695,6 +5744,8 @@ export type Query = {
   communityRoles: Array<CommunityRoleAssignment>;
   /** Get community settings for a scope. */
   communitySettings: Array<CommunitySetting>;
+  /** Sessions and the last 30 days of published climbs from followed authors. */
+  crewFeed: CrewFeedResult;
   /**
    * Get the user's default board (first owned, then most used).
    * Requires authentication.
@@ -5731,6 +5782,8 @@ export type Query = {
    * capped at five.
    */
   findSimilarGyms: Array<SimilarGym>;
+  /** Complete followed-author snapshot for the authenticated viewer. */
+  followedAuthors: FollowedAuthors;
   /**
    * Sessions climbing right now that the viewer has a reason to care about:
    * started or joined by someone they follow, on a board they follow, on
@@ -6426,6 +6479,11 @@ export type QueryCommunityRolesArgs = {
 export type QueryCommunitySettingsArgs = {
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCrewFeedArgs = {
+  input?: InputMaybe<CrewFeedInput>;
 };
 
 /** Root query type for all read operations. */
@@ -8204,6 +8262,8 @@ export type SetterStatsInput = {
   boardName: Scalars['String']['input'];
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  /** Restrict counts and usernames to followed authors. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Case-insensitive substring filter on setter username (for autocomplete) */
   search?: InputMaybe<Scalars['String']['input']>;
   /** Comma-separated set IDs */
@@ -12431,6 +12491,21 @@ export type SearchUsersAndSettersQuery = {
         boardTypes: Array<string>;
         isFollowedByMe: boolean;
       } | null;
+    }>;
+  };
+};
+
+export type GetFollowedAuthorsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetFollowedAuthorsQuery = {
+  __typename?: 'Query';
+  followedAuthors: {
+    __typename?: 'FollowedAuthors';
+    setterUsernames: Array<string>;
+    users: Array<{
+      __typename?: 'FollowedAuthorUser';
+      userId: string;
+      boardAccounts: Array<{ __typename?: 'FollowedBoardAccount'; boardType: string; username: string }>;
     }>;
   };
 };
@@ -19547,6 +19622,52 @@ export const SearchUsersAndSettersDocument = {
     },
   ],
 } as unknown as DocumentNode<SearchUsersAndSettersQuery, SearchUsersAndSettersQueryVariables>;
+export const GetFollowedAuthorsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetFollowedAuthors' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'followedAuthors' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsernames' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'users' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'boardAccounts' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'username' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetFollowedAuthorsQuery, GetFollowedAuthorsQueryVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

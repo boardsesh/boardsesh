@@ -1,0 +1,33 @@
+# Followed authors and Crew
+
+Setter follows keep their existing global username identity. A setter does not
+need a Boardsesh account. Following a linked Boardsesh user also includes that
+user's native climbs and imported climbs matched by board type and board username.
+The same predicate serves `searchClimbs`, `setterStats`, and `crewFeed`.
+
+`onlyFollowedAuthors` is optional on search and setter inputs and requires an
+authenticated viewer when true. It intersects with other filters and is applied
+before counts and pagination. These searches bypass the shared Redis cache.
+
+`followedAuthors` returns a complete, authenticated snapshot: `setterUsernames`
+and `users { userId, boardAccounts { boardType, username } }`. A user with no
+linked accounts is returned with an empty array. Reads use a repeatable-read
+transaction so the snapshot cannot mix two versions of the follow list.
+
+`crewFeed(input: { limit, cursor })` returns a union of `CrewSessionItem` and
+`CrewClimbItem`, newest first. It includes existing session highlights and the
+last 30 days of canonical published climbs from currently followed authors.
+Publication time wins over creation time, so publishing an old draft is new
+activity. Imports use the source creation date; an old catalogue import is not
+new activity. Invalid timestamps, drafts, hidden/unlisted climbs, and inaccessible
+spray walls are excluded. New-climb metadata is checked again during enrichment.
+
+Both sources supply at most `limit + 1` candidates to one backend merge. Only
+selected candidates are enriched. The opaque cursor carries the viewer, initial
+snapshot time, exact ordering timestamp, and stable prefixed ID. Session candidate
+selection excludes ticks newer than the snapshot. Existing `sessionGroupedFeed`
+callers keep offset pagination and their current result shape.
+
+These APIs are additive. Deploy the backend before releasing the mobile client
+that consumes them. Notification delivery and existing website follows retain
+their current behavior.
