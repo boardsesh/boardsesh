@@ -1,8 +1,19 @@
-import type { SessionUser } from '@boardsesh/shared-schema';
 import type { RoomManagerDeps } from './types';
 
 /**
- * What the live-presence stores say about one session right now.
+ * The two presence signals every liveness rule is built from, and nothing
+ * more — cheap enough to read for a whole candidate list before deciding which
+ * sessions deserve a roster fetch.
+ */
+export type SessionConnectionLiveness = {
+  /** Live connections across every instance. `0 ⟺ no live connections`. */
+  liveConnectionCount: number;
+  /** Whether the Redis session key still exists. Always false without Redis. */
+  redisKeyExists: boolean;
+};
+
+/**
+ * Connection liveness plus the display head-count.
  *
  * Liveness and the displayed head-count come from two different counters.
  * `liveConnectionCount` counts live *connections* — its `0 ⟺ no live
@@ -14,39 +25,29 @@ import type { RoomManagerDeps } from './types';
  * actually connected, so liveness uses the connection count and the deduped
  * participant count is display-only.
  */
-export type SessionLiveness = {
-  /** Live connections across every instance. Liveness reads this. */
-  liveConnectionCount: number;
+export type SessionLiveness = SessionConnectionLiveness & {
   /** Distinct participants, for display. Includes RECONNECTING participants. */
   participantCount: number;
-  /** Whether the Redis session key still exists. Always false without Redis. */
-  redisKeyExists: boolean;
-  /** The live roster, when the caller asked for it; null otherwise. */
-  roster: SessionUser[] | null;
 };
 
 export type SessionLivenessDeps = Pick<RoomManagerDeps, 'sessions' | 'redisStore' | 'distributedState'>;
 
-export type ReadSessionLivenessOptions = {
-  /**
-   * Read the live roster too. When given, `participantCount` is the roster's
-   * length, so a caller that needs both pays for one roster read, not two
-   * (`getSessionParticipantCount` is itself a full roster fetch).
-   */
-  readRoster?: (sessionId: string) => Promise<SessionUser[]>;
-};
-
 /**
- * Batch-read liveness for a set of sessions: one Redis pipeline for the
- * session-key existence check, then the per-session connection / participant
- * counters in parallel. Shared by `findNearbySessions` and the live-sessions
- * listing so the two surfaces can never disagree about what "live" means.
+ * Batch-read the connection signals: one Redis pipeline for session-key
+ * existence, then each session's live connection count in parallel. No roster
+ * or participant read — `getSessionParticipantCount` is a full roster fetch, so
+ * callers that filter first should read rosters only for what survives.
+ *
+ * Both `findNearbySessions` and the live-sessions listing read presence
+ * through here, so they agree on the signals. They do NOT apply the same rule
+ * to them: nearby counts a session live while its Redis key exists at all,
+ * while the live-sessions listing also caps a connection-less session to 20
+ * minutes since its last durable activity.
  */
-export async function readSessionLiveness(
+export async function readSessionConnectionLiveness(
   deps: SessionLivenessDeps,
   sessionIds: readonly string[],
-  options: ReadSessionLivenessOptions = {},
-): Promise<Map<string, SessionLiveness>> {
+): Promise<Map<string, SessionConnectionLiveness>> {
   const { sessions: sessionsMap, redisStore, distributedState } = deps;
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return new Map();
@@ -55,40 +56,37 @@ export async function readSessionLiveness(
   const redisExistsMap = redisStore ? await redisStore.batchExists(uniqueSessionIds) : new Map<string, boolean>();
 
   const entries = await Promise.all(
-    uniqueSessionIds.map(async (sessionId): Promise<[string, SessionLiveness]> => {
-      let liveConnectionCount: number;
-      let participantCount: number;
-      let roster: SessionUser[] | null = null;
-      if (distributedState) {
-        liveConnectionCount = await distributedState.getSessionMemberCount(sessionId);
-        if (options.readRoster) {
-          roster = await options.readRoster(sessionId);
-          participantCount = roster.length;
-        } else {
-          participantCount = await distributedState.getSessionParticipantCount(sessionId);
-        }
-      } else {
-        // Non-distributed fallback: the local session map holds connection ids
-        // and has no participant/connection split, so use it for both unless a
-        // roster (which IS deduped by participant) was read.
-        liveConnectionCount = sessionsMap.get(sessionId)?.size || 0;
-        if (options.readRoster) {
-          roster = await options.readRoster(sessionId);
-          participantCount = roster.length;
-        } else {
-          participantCount = liveConnectionCount;
-        }
-      }
+    uniqueSessionIds.map(async (sessionId): Promise<[string, SessionConnectionLiveness]> => {
+      // Non-distributed fallback: the local session map holds connection ids.
+      const liveConnectionCount = distributedState
+        ? await distributedState.getSessionMemberCount(sessionId)
+        : sessionsMap.get(sessionId)?.size || 0;
+      return [sessionId, { liveConnectionCount, redisKeyExists: redisExistsMap.get(sessionId) || false }];
+    }),
+  );
 
-      return [
-        sessionId,
-        {
-          liveConnectionCount,
-          participantCount,
-          redisKeyExists: redisExistsMap.get(sessionId) || false,
-          roster,
-        },
-      ];
+  return new Map(entries);
+}
+
+/**
+ * `readSessionConnectionLiveness` plus each session's display participant
+ * count. Without distributed state the local session map has no
+ * participant/connection split, so the connection count doubles as the
+ * participant count there.
+ */
+export async function readSessionLiveness(
+  deps: SessionLivenessDeps,
+  sessionIds: readonly string[],
+): Promise<Map<string, SessionLiveness>> {
+  const connectionLiveness = await readSessionConnectionLiveness(deps, sessionIds);
+  const { distributedState } = deps;
+
+  const entries = await Promise.all(
+    [...connectionLiveness].map(async ([sessionId, liveness]): Promise<[string, SessionLiveness]> => {
+      const participantCount = distributedState
+        ? await distributedState.getSessionParticipantCount(sessionId)
+        : liveness.liveConnectionCount;
+      return [sessionId, { ...liveness, participantCount }];
     }),
   );
 
@@ -99,6 +97,6 @@ export async function readSessionLiveness(
  * The discovery liveness rule: somebody is connected, or the Redis session key
  * has not expired yet (a dormant session inside its TTL).
  */
-export function hasLiveConnectionsOrSessionKey(liveness: SessionLiveness): boolean {
+export function hasLiveConnectionsOrSessionKey(liveness: SessionConnectionLiveness): boolean {
   return liveness.liveConnectionCount > 0 || liveness.redisKeyExists;
 }

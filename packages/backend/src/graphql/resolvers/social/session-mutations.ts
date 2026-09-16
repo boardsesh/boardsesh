@@ -6,10 +6,7 @@ import { requireAuthenticated, validateInput, applyRateLimit, RATE_LIMIT_SESSION
 import { UpdateSessionInputSchema } from '../../../validation/schemas';
 import { pubsub } from '../../../pubsub/index';
 import type { ConnectionContext, UpdateSessionResult } from '@boardsesh/shared-schema';
-import {
-  publishBoardQueuePreviewForSession,
-  publishBoardQueuePreviewTombstoneForSession,
-} from '../../../services/board-queue-preview';
+import { republishBoardQueuePreviewsForSession } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 
 type UpdateSessionInput = { sessionId: string; name?: string | null; notes?: string | null; isPublic?: boolean | null };
@@ -100,6 +97,10 @@ export const sessionEditMutations = {
    * board queue preview. Joining by invite link is unaffected. A flip on an
    * active session re-drives the preview so kiosks follow it: private clears
    * them (tombstone), public re-seeds them.
+   *
+   * `lastActivity` moves only when the title or notes change. It is the
+   * live-sessions dormancy clock, so a visibility-only edit on a dormant
+   * session must not advertise it as climbing right now.
    */
   updateSession: async (
     _: unknown,
@@ -119,6 +120,7 @@ export const sessionEditMutations = {
         notes: dbSchema.boardSessions.notes,
         status: dbSchema.boardSessions.status,
         isPublic: dbSchema.boardSessions.isPublic,
+        boardId: dbSchema.boardSessions.boardId,
       })
       .from(dbSchema.boardSessions)
       .where(eq(dbSchema.boardSessions.id, validated.sessionId))
@@ -143,7 +145,8 @@ export const sessionEditMutations = {
     const nextIsPublic = typeof validated.isPublic === 'boolean' ? validated.isPublic : session.isPublic;
 
     if (hasName || hasNotes || hasIsPublic) {
-      const updates: Partial<typeof dbSchema.boardSessions.$inferInsert> = { lastActivity: new Date() };
+      const updates: Partial<typeof dbSchema.boardSessions.$inferInsert> = {};
+      if (hasName || hasNotes) updates.lastActivity = new Date();
       if (hasName) updates.name = nextName;
       if (hasNotes) updates.notes = nextNotes;
       if (hasIsPublic) updates.isPublic = nextIsPublic;
@@ -152,14 +155,12 @@ export const sessionEditMutations = {
 
     // Kiosks showing this session's queue must follow a visibility flip: the
     // preview producer only re-gates on queue events, and a flip is not one.
-    // Both helpers re-check every gate (board binding, anon-readable board,
-    // public active session) themselves. Best-effort: a failed kiosk update
+    // Re-resolve every board the session can be previewed on — the Redis
+    // binding AND the durable board_id fallback — so each kiosk ends up on
+    // whatever the preview gates now allow. Best-effort: a failed kiosk update
     // must not fail the edit the creator asked for.
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
-      const republish = nextIsPublic
-        ? publishBoardQueuePreviewForSession(validated.sessionId)
-        : publishBoardQueuePreviewTombstoneForSession(validated.sessionId);
-      await republish.catch((error: unknown) => {
+      await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
         logger.error(`[updateSession] board-queue-preview update failed for ${validated.sessionId}:`, error);
       });
     }

@@ -7,19 +7,19 @@
  * "live" means a registered connection joined to the session — exactly what a
  * climber's phone does. The one liveness rule that needs Redis (a dormant
  * session whose Redis key survives) is driven through a spy on
- * `roomManager.getSessionLiveness`.
+ * `roomManager.getSessionConnectionLiveness`.
  *
  * `applyRateLimit` is stubbed to a no-op, matching session-update.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import type { ClimbQueueItem, ConnectionContext, LiveSession } from '@boardsesh/shared-schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub/index';
-import { roomManager, type SessionLiveness } from '../services/room-manager';
+import { roomManager, type SessionConnectionLiveness } from '../services/room-manager';
 import { resolveLiveSessionBoards, parseSessionBoardPath } from '../services/live-sessions';
 import { liveSessionQueries } from '../graphql/resolvers/sessions/live-sessions';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
@@ -77,8 +77,17 @@ async function follow(followerId: string, followingId: string): Promise<void> {
   await db.insert(dbSchema.userFollows).values({ followerId, followingId }).onConflictDoNothing();
 }
 
+type BoardOptions = {
+  ownerId?: string;
+  isPublic?: boolean;
+  isUnlisted?: boolean;
+  hideLocation?: boolean;
+  gymId?: number | null;
+  name?: string;
+};
+
 async function makeBoard(
-  options: { ownerId?: string; isPublic?: boolean; name?: string } = {},
+  options: BoardOptions & { boardType?: string; layoutId?: number } = {},
 ): Promise<{ id: number; uuid: string; slug: string; name: string }> {
   const uuid = uuidv4();
   const slug = `ls-board-${Date.now().toString(36)}-${slugCounter++}`;
@@ -89,15 +98,41 @@ async function makeBoard(
       uuid,
       slug,
       ownerId: options.ownerId ?? BOARD_OWNER,
-      boardType: 'kilter',
-      layoutId: 1,
-      sizeId: 10,
-      setIds: '1,2',
+      boardType: options.boardType ?? 'kilter',
+      layoutId: options.layoutId ?? 1,
+      sizeId: options.layoutId ?? 10,
+      setIds: options.boardType === 'spray' ? '1' : '1,2',
       name,
       isPublic: options.isPublic ?? true,
+      isUnlisted: options.isUnlisted ?? false,
+      hideLocation: options.hideLocation ?? false,
+      hasLeds: options.boardType !== 'spray',
+      gymId: options.gymId ?? null,
     })
     .returning({ id: dbSchema.userBoards.id });
   return { id: Number(row.id), uuid, slug, name };
+}
+
+/** A spray wall: its `user_boards` row plus the `spray_walls` row the visibility rules read. */
+async function makeSprayWall(
+  options: BoardOptions & { hidden?: boolean } = {},
+): Promise<{ id: number; uuid: string; slug: string; name: string; layoutId: number; path: string }> {
+  const layoutId = 900_000 + Math.floor(Math.random() * 90_000);
+  const board = await makeBoard({ ...options, boardType: 'spray', layoutId });
+  await db.insert(dbSchema.sprayWalls).values({
+    boardUuid: board.uuid,
+    layoutId,
+    hiddenAt: options.hidden ? new Date() : null,
+  });
+  return { ...board, layoutId, path: `spray/${layoutId}/${layoutId}/1/40` };
+}
+
+async function makeGym(name: string): Promise<number> {
+  const [row] = await db
+    .insert(dbSchema.gyms)
+    .values({ uuid: uuidv4(), name, ownerId: BOARD_OWNER })
+    .returning({ id: dbSchema.gyms.id });
+  return Number(row.id);
 }
 
 async function followBoard(userId: string, boardUuid: string): Promise<void> {
@@ -148,6 +183,7 @@ async function addTick(options: {
   boardId?: number | null;
   status?: 'flash' | 'send' | 'attempt';
   difficulty?: number | null;
+  climbUuid?: string;
   climbedAt?: Date;
 }): Promise<void> {
   const climbedAt = (options.climbedAt ?? new Date()).toISOString();
@@ -155,27 +191,13 @@ async function addTick(options: {
     uuid: uuidv4(),
     userId: options.userId ?? STRANGER,
     boardType: 'kilter',
-    climbUuid: `ls-climb-${uuidv4()}`,
+    climbUuid: options.climbUuid ?? `ls-climb-${uuidv4()}`,
     angle: 40,
     status: options.status ?? 'send',
     difficulty: options.difficulty ?? null,
     climbedAt,
     sessionId: options.sessionId,
     boardId: options.boardId ?? null,
-  });
-}
-
-let eventSeq = 1;
-async function addBoardEvent(sessionId: string, boardId: number, confirmedAt = new Date()): Promise<void> {
-  await db.insert(dbSchema.boardClimbEvents).values({
-    boardId,
-    boardType: 'kilter',
-    climbUuid: `ls-climb-${uuidv4()}`,
-    angle: 40,
-    userId: STRANGER,
-    sessionId,
-    seq: eventSeq++,
-    confirmedAt: confirmedAt.toISOString(),
   });
 }
 
@@ -211,7 +233,17 @@ const ids = (sessions: LiveSession[]) => sessions.map((session) => session.sessi
 
 beforeEach(async () => {
   // board_sessions (and everything referencing it: ticks, events, participants)
-  // is truncated by setup.ts; users cascade to follows, boards and board follows.
+  // is truncated by setup.ts; users cascade to follows, boards, gyms and board
+  // follows. spray_walls restricts its board's delete, so it goes first.
+  await db.delete(dbSchema.sprayWalls).where(
+    inArray(
+      dbSchema.sprayWalls.boardUuid,
+      db
+        .select({ uuid: dbSchema.userBoards.uuid })
+        .from(dbSchema.userBoards)
+        .where(like(dbSchema.userBoards.ownerId, `${USER_PREFIX}%`)),
+    ),
+  );
   await db.delete(dbSchema.users).where(like(dbSchema.users.id, `${USER_PREFIX}%`));
   await seedUsers();
 });
@@ -294,27 +326,8 @@ describe('followedLiveSessions — social arm', () => {
 });
 
 describe('followedLiveSessions — board arm', () => {
-  it('lists a session on a followed board resolved through board_climb_events', async () => {
-    const board = await makeBoard({ name: 'Events Wall' });
-    await followBoard(VIEWER, board.uuid);
-    const sessionId = await makeSession();
-    await goLive(sessionId, STRANGER);
-    await addBoardEvent(sessionId, board.id);
-
-    const [session] = await followedLiveSessions(VIEWER);
-    expect(session.sessionId).toBe(sessionId);
-    expect(session.reasons).toEqual(['FOLLOWED_BOARD']);
-    expect(session.board).toEqual({
-      uuid: board.uuid,
-      name: 'Events Wall',
-      slug: board.slug,
-      boardType: 'kilter',
-      gymName: null,
-    });
-  });
-
   it('lists a session on a followed board resolved through its ticks', async () => {
-    const board = await makeBoard();
+    const board = await makeBoard({ name: 'Ticked Wall' });
     await followBoard(VIEWER, board.uuid);
     const sessionId = await makeSession();
     await goLive(sessionId, STRANGER);
@@ -323,6 +336,13 @@ describe('followedLiveSessions — board arm', () => {
     const sessions = await followedLiveSessions(VIEWER);
     expect(ids(sessions)).toEqual([sessionId]);
     expect(sessions[0].reasons).toEqual(['FOLLOWED_BOARD']);
+    expect(sessions[0].board).toEqual({
+      uuid: board.uuid,
+      name: 'Ticked Wall',
+      slug: board.slug,
+      boardType: 'kilter',
+      gymName: null,
+    });
   });
 
   it('lists a session on a followed board resolved through a /b/<slug> path', async () => {
@@ -370,22 +390,28 @@ describe('followedLiveSessions — board arm', () => {
     expect(sessions[0].reasons).toEqual(['SELECTED_BOARD']);
   });
 
-  it('resolves events before ticks before the board_id column', async () => {
-    const [eventBoard, tickBoard, columnBoard] = [await makeBoard(), await makeBoard(), await makeBoard()];
-    const sessionId = await makeSession({ boardId: columnBoard.id });
-    await addTick({ sessionId, boardId: tickBoard.id });
-    const columnOnly = await makeSession({ boardId: columnBoard.id });
+  it('resolves the newest ticked board before the board_id column before a /b/ slug', async () => {
+    const [olderTickBoard, newerTickBoard, columnBoard, slugBoard] = [
+      await makeBoard(),
+      await makeBoard(),
+      await makeBoard(),
+      await makeBoard(),
+    ];
+    const slugPath = `/b/${slugBoard.slug}/40`;
+    const ticked = await makeSession({ boardId: columnBoard.id, boardPath: slugPath });
+    await addTick({ sessionId: ticked, boardId: olderTickBoard.id, climbedAt: new Date(Date.now() - 60_000) });
+    await addTick({ sessionId: ticked, boardId: newerTickBoard.id });
+    const columnOnly = await makeSession({ boardId: columnBoard.id, boardPath: slugPath });
+    const slugOnly = await makeSession({ boardPath: slugPath });
 
-    let resolved = await resolveLiveSessionBoards([
-      { id: sessionId, boardId: columnBoard.id, boardPath: KILTER_PATH },
-      { id: columnOnly, boardId: columnBoard.id, boardPath: KILTER_PATH },
+    const resolved = await resolveLiveSessionBoards([
+      { id: ticked, boardId: columnBoard.id, boardPath: slugPath },
+      { id: columnOnly, boardId: columnBoard.id, boardPath: slugPath },
+      { id: slugOnly, boardId: null, boardPath: slugPath },
     ]);
-    expect(resolved.get(sessionId)).toBe(tickBoard.id);
+    expect(resolved.get(ticked)).toBe(newerTickBoard.id);
     expect(resolved.get(columnOnly)).toBe(columnBoard.id);
-
-    await addBoardEvent(sessionId, eventBoard.id);
-    resolved = await resolveLiveSessionBoards([{ id: sessionId, boardId: columnBoard.id, boardPath: KILTER_PATH }]);
-    expect(resolved.get(sessionId)).toBe(eventBoard.id);
+    expect(resolved.get(slugOnly)).toBe(slugBoard.id);
   });
 });
 
@@ -425,12 +451,12 @@ describe('followedLiveSessions — exclusions', () => {
     const recent = await makeSession({ createdBy: FRIEND, lastActivity: new Date(Date.now() - 10 * 60 * 1000) });
     const old = await makeSession({ createdBy: FRIEND, lastActivity: new Date(Date.now() - 30 * 60 * 1000) });
     // Nobody connected, but the Redis session key is still there.
-    vi.spyOn(roomManager, 'getSessionLiveness').mockImplementation(
+    vi.spyOn(roomManager, 'getSessionConnectionLiveness').mockImplementation(
       async (sessionIds) =>
-        new Map<string, SessionLiveness>(
-          sessionIds.map((sessionId): [string, SessionLiveness] => [
+        new Map<string, SessionConnectionLiveness>(
+          sessionIds.map((sessionId): [string, SessionConnectionLiveness] => [
             sessionId,
-            { liveConnectionCount: 0, participantCount: 0, redisKeyExists: true, roster: [] },
+            { liveConnectionCount: 0, redisKeyExists: true },
           ]),
         ),
     );
@@ -493,6 +519,113 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(forOwner.board?.name).toBe('Secret Garage Wall');
   });
 
+  it('names an unlisted board only to viewers who already hold it', async () => {
+    await follow(VIEWER, FRIEND);
+    const unlisted = await makeBoard({ isUnlisted: true, name: 'Link Only Wall' });
+    const sessionId = await makeSession({ createdBy: FRIEND });
+    await goLive(sessionId, FRIEND);
+    await addTick({ sessionId, userId: FRIEND, boardId: unlisted.id });
+
+    // Follows the climber, not the board: the board is not theirs to discover.
+    const [forFollower] = await followedLiveSessions(VIEWER);
+    expect(forFollower.reasons).toEqual(['FOLLOWING_USER']);
+    expect(forFollower.board).toBeNull();
+    expect(JSON.stringify(forFollower)).not.toContain('Link Only Wall');
+    expect(JSON.stringify(forFollower)).not.toContain(unlisted.uuid);
+
+    // Selected it by uuid: already holds it.
+    const [selected] = await followedLiveSessions(VIEWER, { boardUuid: unlisted.uuid });
+    expect(selected.reasons).toEqual(['FOLLOWING_USER', 'SELECTED_BOARD']);
+    expect(selected.board?.name).toBe('Link Only Wall');
+
+    // Follows the board: already holds it.
+    await followBoard(OTHER_STRANGER, unlisted.uuid);
+    const [boardFollower] = await followedLiveSessions(OTHER_STRANGER);
+    expect(boardFollower.reasons).toEqual(['FOLLOWED_BOARD']);
+    expect(boardFollower.board?.name).toBe('Link Only Wall');
+
+    // Reading that board's own sheet: already holds it.
+    const [onSheet] = await liveSessionQueries.boardLiveSessions(undefined, { boardId: unlisted.id }, anonCtx());
+    expect(onSheet.board?.name).toBe('Link Only Wall');
+  });
+
+  it('hides a gym name behind hideLocation from everyone but the board owner', async () => {
+    await follow(VIEWER, FRIEND);
+    await follow(BOARD_OWNER, FRIEND);
+    const gymId = await makeGym('Crag Cave Gym');
+    const privateLocation = await makeBoard({ gymId, hideLocation: true, name: 'Quiet Location Wall' });
+    const openLocation = await makeBoard({ gymId, name: 'Open Location Wall' });
+
+    for (const board of [privateLocation, openLocation]) {
+      const sessionId = await makeSession({ createdBy: FRIEND });
+      await goLive(sessionId, FRIEND);
+      await addTick({ sessionId, userId: FRIEND, boardId: board.id });
+    }
+
+    const gymNameByBoard = (sessions: LiveSession[]) =>
+      new Map(sessions.map((session) => [session.board?.name, session.board?.gymName]));
+
+    const forViewer = gymNameByBoard(await followedLiveSessions(VIEWER));
+    expect(forViewer.get('Quiet Location Wall')).toBeNull();
+    expect(forViewer.get('Open Location Wall')).toBe('Crag Cave Gym');
+
+    const forOwner = gymNameByBoard(await followedLiveSessions(BOARD_OWNER));
+    expect(forOwner.get('Quiet Location Wall')).toBe('Crag Cave Gym');
+  });
+
+  it('keeps followed climbers’ old participant rows from crowding the candidate cap', async () => {
+    await follow(VIEWER, FRIEND);
+    // More sessions than the cap, all newer than the friend's own session, each
+    // holding a participant row the friend wrote five hours ago and never
+    // removed (rows are permanent).
+    const crowdIds = Array.from({ length: 55 }, () => uuidv4());
+    await db.insert(dbSchema.boardSessions).values(
+      crowdIds.map((id) => ({
+        id,
+        boardPath: KILTER_PATH,
+        createdByUserId: STRANGER,
+        lastActivity: new Date(),
+        startedAt: new Date(),
+      })),
+    );
+    await db.insert(dbSchema.boardSessionParticipants).values(
+      crowdIds.map((sessionId) => ({
+        sessionId,
+        userId: FRIEND,
+        joinedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      })),
+    );
+
+    const friendSession = await makeSession({ createdBy: FRIEND, lastActivity: new Date(Date.now() - 10 * 60 * 1000) });
+    await goLive(friendSession, FRIEND);
+
+    expect(ids(await followedLiveSessions(VIEWER))).toEqual([friendSession]);
+  });
+
+  it('names the hardest send with the board’s own grade, from the consensus grade when the tick has none', async () => {
+    await follow(VIEWER, FRIEND);
+    const consensusClimb = `ls-climb-${uuidv4()}`;
+    await db
+      .insert(dbSchema.boardDifficultyGrades)
+      .values({ boardType: 'kilter', difficulty: 22, boulderName: 'Board Grade Twenty-Two' })
+      .onConflictDoNothing();
+    await db
+      .insert(dbSchema.boardClimbStats)
+      .values({ boardType: 'kilter', climbUuid: consensusClimb, angle: 40, displayDifficulty: 22.2 });
+
+    try {
+      const sessionId = await makeSession({ createdBy: FRIEND });
+      await goLive(sessionId, FRIEND);
+      await addTick({ sessionId, userId: FRIEND, status: 'send', difficulty: 18 });
+      await addTick({ sessionId, userId: FRIEND, status: 'send', difficulty: null, climbUuid: consensusClimb });
+
+      const [session] = await followedLiveSessions(VIEWER);
+      expect(session.hardestSendGrade).toBe('Board Grade Twenty-Two');
+    } finally {
+      await db.delete(dbSchema.boardClimbStats).where(eq(dbSchema.boardClimbStats.climbUuid, consensusClimb));
+    }
+  });
+
   it('orders own sessions, then followed climbers, then bigger crews, then most recent — and applies the limit', async () => {
     await follow(VIEWER, FRIEND);
     const board = await makeBoard();
@@ -527,6 +660,73 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     await expect(liveSessionQueries.followedLiveSessions(undefined, {}, anonCtx())).rejects.toThrow(
       /Authentication required/,
     );
+  });
+});
+
+describe('followedLiveSessions — spray walls', () => {
+  it('lists a session on a followed public spray wall without the climb on the wall', async () => {
+    const wall = await makeSprayWall({ name: 'Garage Spray Wall' });
+    await followBoard(VIEWER, wall.uuid);
+    const sessionId = await makeSession({ boardPath: wall.path });
+    await goLive(sessionId, STRANGER, wall.path);
+    await addTick({ sessionId, boardId: wall.id });
+    const current = makeQueueItem('Secret Spray Problem');
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.sessionId).toBe(sessionId);
+    expect(session.reasons).toEqual(['FOLLOWED_BOARD']);
+    expect(session.board?.name).toBe('Garage Spray Wall');
+    expect(session.boardType).toBe('spray');
+    expect(session.currentClimb).toBeNull();
+    expect(JSON.stringify(session)).not.toContain('Secret Spray Problem');
+  });
+
+  it('stops listing a followed spray wall once it goes private or is hidden, except to its owner', async () => {
+    const wall = await makeSprayWall({ name: 'Shed Spray Wall' });
+    await followBoard(VIEWER, wall.uuid);
+    await followBoard(BOARD_OWNER, wall.uuid);
+    const sessionId = await makeSession({ boardPath: wall.path });
+    await goLive(sessionId, STRANGER, wall.path);
+    await addTick({ sessionId, boardId: wall.id });
+    expect(ids(await followedLiveSessions(VIEWER))).toEqual([sessionId]);
+
+    await db.update(dbSchema.userBoards).set({ isPublic: false }).where(eq(dbSchema.userBoards.id, wall.id));
+    expect(await followedLiveSessions(VIEWER)).toEqual([]);
+
+    await db.update(dbSchema.userBoards).set({ isPublic: true }).where(eq(dbSchema.userBoards.id, wall.id));
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, wall.uuid));
+    expect(await followedLiveSessions(VIEWER)).toEqual([]);
+
+    const [forOwner] = await followedLiveSessions(BOARD_OWNER);
+    expect(forOwner.sessionId).toBe(sessionId);
+    expect(forOwner.board?.name).toBe('Shed Spray Wall');
+  });
+
+  it('refuses an admin-hidden spray wall as the selected board, even an unlisted one', async () => {
+    const wall = await makeSprayWall({ isUnlisted: true, hidden: true });
+    const sessionId = await makeSession({ boardPath: wall.path });
+    await goLive(sessionId, STRANGER, wall.path);
+    await addTick({ sessionId, boardId: wall.id });
+
+    expect(await followedLiveSessions(VIEWER, { boardUuid: wall.uuid })).toEqual([]);
+  });
+
+  it('lists a followed climber on a hidden spray wall without naming the wall', async () => {
+    await follow(VIEWER, FRIEND);
+    const wall = await makeSprayWall({ name: 'Hidden Spray Wall', hidden: true });
+    const sessionId = await makeSession({ createdBy: FRIEND, boardPath: wall.path });
+    await goLive(sessionId, FRIEND, wall.path);
+    await addTick({ sessionId, userId: FRIEND, boardId: wall.id });
+
+    const [session] = await followedLiveSessions(VIEWER);
+    expect(session.reasons).toEqual(['FOLLOWING_USER']);
+    expect(session.board).toBeNull();
+    expect(session.currentClimb).toBeNull();
+    expect(JSON.stringify(session)).not.toContain('Hidden Spray Wall');
   });
 });
 
@@ -664,6 +864,44 @@ describe('session privacy switch', () => {
 
     await sessionEditMutations.updateSession(undefined, { input: { sessionId, isPublic: true } }, authCtx(VIEWER));
     expect(await readIsPublic(sessionId)).toBe(true);
+  });
+
+  it('does not touch lastActivity for a visibility-only edit, so a dormant session is not re-advertised', async () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const sessionId = await makeSession({ createdBy: VIEWER, lastActivity: hourAgo });
+    const readLastActivity = async () => {
+      const [row] = await db
+        .select({ lastActivity: dbSchema.boardSessions.lastActivity })
+        .from(dbSchema.boardSessions)
+        .where(eq(dbSchema.boardSessions.id, sessionId));
+      return row.lastActivity.getTime();
+    };
+
+    await sessionEditMutations.updateSession(undefined, { input: { sessionId, isPublic: false } }, authCtx(VIEWER));
+    expect(await readLastActivity()).toBe(hourAgo.getTime());
+
+    await sessionEditMutations.updateSession(undefined, { input: { sessionId, name: 'Renamed' } }, authCtx(VIEWER));
+    expect(await readLastActivity()).toBeGreaterThan(hourAgo.getTime());
+  });
+
+  it('clears and re-seeds a kiosk that shows the session through the durable board_id fallback', async () => {
+    const board = await makeBoard();
+    const sessionId = await makeSession({ createdBy: VIEWER, boardId: board.id });
+    const current = makeQueueItem('Kiosk Climb');
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    const publishSpy = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {});
+    const lastPreviewFor = (boardId: number) =>
+      publishSpy.mock.calls.filter(([channelBoardId]) => channelBoardId === String(boardId)).at(-1)?.[1];
+
+    await sessionEditMutations.updateSession(undefined, { input: { sessionId, isPublic: false } }, authCtx(VIEWER));
+    expect(lastPreviewFor(board.id)).toMatchObject({ boardId: board.id, current: null, upNext: [], queueLength: 0 });
+
+    await sessionEditMutations.updateSession(undefined, { input: { sessionId, isPublic: true } }, authCtx(VIEWER));
+    expect(lastPreviewFor(board.id)).toMatchObject({
+      boardId: board.id,
+      current: { queueItemUuid: current.uuid, name: 'Kiosk Climb' },
+      queueLength: 1,
+    });
   });
 
   it('a session made private drops out of its followers’ rail', async () => {

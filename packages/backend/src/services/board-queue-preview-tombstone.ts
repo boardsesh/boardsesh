@@ -64,10 +64,11 @@ export function buildEmptyBoardQueuePreview(boardId: number): BoardQueuePreview 
  * snapshot would sit on public displays indefinitely.
  *
  * Called from every session-end path (`RoomManager.endSession` behind the
- * explicit `endSession` mutation, and the inactivity sweep), and from
- * `updateSession` when the creator flips an active session private. Any other
- * writer of `board_sessions.is_public` MUST call this too when flipping to
- * private.
+ * explicit `endSession` mutation, and the inactivity sweep). A writer of
+ * `board_sessions.is_public` needs more than this, because a kiosk can also
+ * show a session through the durable `board_id` fallback, which this function
+ * does not look at: `updateSession` calls `republishBoardQueuePreviewsForSession`
+ * (board-queue-preview.ts), and any other writer of that column MUST too.
  * The board-level equivalent (`user_boards.is_public` flipped private, or the
  * board soft-deleted) goes through `publishBoardQueuePreviewTombstoneForBoard`
  * below, which `updateBoard`/`deleteBoard` call.

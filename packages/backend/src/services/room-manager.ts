@@ -4,5 +4,6 @@ export type {
   DiscoverableSession,
   QueueState,
   PendingWrite,
+  SessionConnectionLiveness,
   SessionLiveness,
 } from './room-manager/index';

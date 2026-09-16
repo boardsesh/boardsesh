@@ -713,30 +713,35 @@ Two queries list sessions happening right now: Home's "Climbing now" rail (`foll
 
 **Candidates.** One Drizzle query: `origin = 'explicit'`, `status = 'active'`, `endedAt IS NULL`, `lastActivity` within 4 hours, newest 50. The arm filters go into the same `WHERE`, so 50 unrelated sessions can never push a relevant one past the cap:
 
-- social arm (Home only): the viewer or someone they follow created the session, or has a `board_session_participants` row in it;
-- board arm: the session points at a followed board, the `boardUuid` board, or `boardId` through any source in the resolution order below;
+- social arm (Home only): the viewer or someone they follow created the session, or has a `board_session_participants` row in it. A followed climber's row only counts when its `joined_at` falls inside the same 4-hour window. Participant rows are never deleted, so without that limit sessions they left long ago could fill the 50-row cap;
+- board arm: the session points at a followed board, the `boardUuid` board, or `boardId` through any source in the resolution order below. A followed or selected spray wall only counts while the viewer can still read it, so a wall that goes private or is hidden by an admin stops listing sessions for anyone but its owner;
 - visibility: `isPublic`, or the viewer created it or has a participant row. Anonymous callers get `isPublic` only.
 
-**Liveness.** `roomManager.getSessionLiveness` (`room-manager/session-liveness.ts`, shared with `findNearbySessions`) reads live connections, the deduped roster and Redis key existence in one pass. A session stays when it has at least 1 live connection, or when `lastActivity` is under 20 minutes old and its Redis session key still exists.
+**Liveness.** `roomManager.getSessionConnectionLiveness` (`room-manager/session-liveness.ts`, whose signals `findNearbySessions` reads too) reads live connection counts and Redis key existence for every candidate, without touching a roster. A session stays when it has at least 1 live connection, or when `lastActivity` is under 20 minutes old and its Redis session key still exists. `nearbySessions` applies no 20-minute limit. Rosters (`getSessionUsers`) are read only for the sessions that pass this check, and on the board sheet only for sessions on that board. `participantCount` is the roster length.
 
 **Membership and reasons.** `viewerIsMember` means the viewer created the session or is on the live roster. Participant rows are permanent, so the live roster decides: a followed climber who left no longer lists the session (`FOLLOWING_USER`), and a private session drops out for a viewer who left it. `FOLLOWED_BOARD` and `SELECTED_BOARD` come from the resolved board. Home also lists the viewer's own live sessions with no reason. Sort: member first, then sessions with followed climbers on the roster, then bigger rosters, then newest `lastActivity`.
 
 **Board resolution** (`resolveLiveSessionBoards`), first hit wins:
 
-1. newest `board_climb_events.board_id` for the session (`reportBoardClimb` still writes `session_id = null`, so this is future-proofing);
-2. newest `boardsesh_ticks.board_id`;
-3. `board_sessions.board_id` (almost always null: `ensureSessionRecordExists` never sets it);
-4. a `/b/<slug>/<angle>` board path, matched to `user_boards.slug`;
-5. the Redis session→board binding written by `commitBoardClimb`.
+1. newest `boardsesh_ticks.board_id`;
+2. `board_sessions.board_id` (almost always null: `ensureSessionRecordExists` never sets it);
+3. a `/b/<slug>/<angle>` board path, matched to `user_boards.slug`;
+4. the Redis session→board binding written by `commitBoardClimb`.
 
-Steps 1–4 are three batched queries. Redis is asked only about sessions they left unresolved.
+Steps 1–3 take two batched queries. Redis is asked only about sessions they left unresolved. `board_climb_events` is not a source: it has a `session_id` column, but `reportBoardClimb` writes null there today. Once it carries the session, its newest event belongs first in this list.
 
-**What a card shows.** `board` is null unless the board is not deleted and is public or system-shared (`isRowAnonReadable`) or owned by the viewer. A spray wall also has to pass its own read rule. A private board's name never leaves the server. `boardType` and `angle` come from the board path, then the board row. `sendCount`, `flashCount` and `hardestSendGrade` come from one grouped ticks query that ranks sends the same way as the session feed. `currentClimb` goes through the board queue preview redaction (`toBoardQueuePreviewItem`). Only public sessions with a known board type that is not spray get one. `boardLiveSessions` uses the same gate as `boardHistory`: anonymous callers only reach public or system-shared boards, and a private board is masked as NOT_FOUND.
+**What a card shows.** `board` is null unless the board is not deleted and is public or system-shared (`isRowAnonReadable`) or owned by the viewer. On top of that:
+
+- an unlisted board is only named to a viewer who already holds it: they follow it, selected it, or are on its `boardLiveSessions` sheet;
+- a spray wall has to pass its own read rule;
+- `gymName` is null when the board hides its location, unless the viewer owns it.
+
+A private board's name never leaves the server. `boardType` and `angle` come from the board path, then the board row. `sendCount`, `flashCount` and `hardestSendGrade` come from one grouped ticks query that ranks sends the same way as the session feed. The grade uses the board's own grade name, for the logged difficulty or else the consensus grade (`difficultyNameWithFallbackExpr`), and only falls back to the shared labels when the board has no row for that grade. `currentClimb` goes through the board queue preview redaction (`toBoardQueuePreviewItem`). Only public sessions with a known board type that is not spray get one. `boardLiveSessions` uses the same gate as `boardHistory`: anonymous callers only reach public or system-shared boards, and a private board is masked as NOT_FOUND.
 
 **Privacy switch.** `CreateSessionInput.isPublic` and `UpdateSessionInput.isPublic` (creator only; absent or null leaves it unchanged). A private session:
 
 - is hidden from both live listings for anyone not in it;
-- is hidden from the board queue preview (`resolvePublicPreviewSessionForBoard`). Flipping an active session triggers a tombstone (private) or a re-seed (public) for kiosks;
+- is hidden from the board queue preview (`resolvePublicPreviewSessionForBoard`). Flipping an active session re-resolves the preview (`republishBoardQueuePreviewsForSession`) for its Redis-bound board and its `board_id` column, the preview's durable fallback. Kiosks then clear or move to another public session when the session goes private, and re-seed when it goes public. A visibility-only edit leaves `lastActivity` alone, so a dormant session is not listed as climbing again;
 - can still be joined by invite link: `joinSession` never reads `is_public`, and the `session` query returns its invite preview as before.
 
 Nothing else reads `board_sessions.is_public`. `nearbySessions` filters on `discoverable`, and the session feed shows ended private sessions like any other. The row has to be private from its first insert, because `ensureSessionRecordExists` uses `ON CONFLICT DO NOTHING`. On the WebSocket path, `createSession` passes `isPublic` into the creator's join. On the HTTP path (mobile), which otherwise writes no row until the WebSocket join, `createSession` inserts the row up front when `isPublic` is false. That join then restores the row instead of creating it, and mobile seeds its queue with `setQueue` after joining, so seeding still works.

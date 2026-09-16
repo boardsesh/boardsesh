@@ -623,7 +623,7 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.eventsReplay': 'the event buffer requires Redis, which the sweep does not run',
   'Query.sessionStatus': 'one enum: whether the session is active',
   'Query.followedLiveSessions':
-    'lists only LIVE sessions (a live connection, or a Redis session key), and the sweep opens neither; board names are gated by toVisibleBoard, pinned in live-sessions.test.ts',
+    'lists only LIVE sessions (a live connection, or a Redis session key), and the sweep opens neither; the spray gates (followed/selected wall, board name, current climb) are pinned by the spray-wall block in live-sessions.test.ts',
   'Query.boardLiveSessions':
     'same: lists only live sessions, and the sweep opens no connection; the board gate mirrors boardHistory (assertSprayBoardIsReadable)',
 
