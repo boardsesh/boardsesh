@@ -736,7 +736,7 @@
       "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
       "pickOneToRedraw": "Choisis une seule prise, puis dessine son contour.",
       "mergeNeedsTwo": "Choisis deux prises pour les fusionner.",
-      "tooManyHolds": "Ça fait plus de prises qu'un mur peut porter. Écarte-en quelques-unes et enregistre à nouveau.",
+      "tooManyHolds": "Un mur porte jusqu'à {{max}} prises. Écarte-en quelques-unes et enregistre à nouveau.",
       "saveFailed": "L'enregistrement du mur a échoué.",
       "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
@@ -791,9 +791,9 @@
       "clear": "Recommencer les coins"
     },
     "upload": {
-      "title": "Envoi de ta photo",
-      "working": "Envoi de ta photo…",
-      "percent": "Envoyé à {{percent}} %",
+      "title": "Téléversement de ta photo",
+      "working": "Téléversement de ta photo…",
+      "percent": "Téléversé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
       "retry": "Réessayer",
       "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
@@ -911,5 +911,15 @@
     "done": {
       "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
     }
+  },
+  "sprayCaps": {
+    "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
+    "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",
+    "walls": "Tu peux garder {{max}} murs. Supprimes-en un pour faire de la place.",
+    "wallsHint": "Tu peux garder jusqu’à {{max}} murs."
+  },
+  "sprayHidden": {
+    "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
+    "title": "Ce mur est masqué"
   }
 }

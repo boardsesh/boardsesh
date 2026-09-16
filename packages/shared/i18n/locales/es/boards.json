@@ -736,7 +736,7 @@
       "nothingToMove": "Elige primero una presa y luego arrástrala.",
       "pickOneToRedraw": "Elige una sola presa y dibuja su contorno.",
       "mergeNeedsTwo": "Elige dos presas para fusionarlas.",
-      "tooManyHolds": "Son más presas de las que caben en un muro. Descarta algunas y vuelve a guardar.",
+      "tooManyHolds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
       "saveFailed": "No se pudo guardar el muro.",
       "strokeNotClosed": "Ese trazo no rodea la presa. Dibuja la vuelta entera a su alrededor.",
       "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
@@ -791,9 +791,9 @@
       "clear": "Empezar las esquinas de nuevo"
     },
     "upload": {
-      "title": "Enviando tu foto",
-      "working": "Enviando tu foto…",
-      "percent": "Enviado {{percent}} %",
+      "title": "Subiendo tu foto",
+      "working": "Subiendo tu foto…",
+      "percent": "Subido {{percent}} %",
       "failed": "La foto no llegó a subirse.",
       "retry": "Reintentar",
       "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
@@ -911,5 +911,15 @@
     "done": {
       "toast": "{{removed}} fuera, {{added}} nuevas, {{climbs}} bloques cambiados"
     }
+  },
+  "sprayCaps": {
+    "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
+    "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",
+    "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
+    "wallsHint": "Puedes tener hasta {{max}} muros."
+  },
+  "sprayHidden": {
+    "body": "Alguien lo reportó y lo hemos quitado de la vista de los demás. Para ti sigue aquí, y no se ha borrado nada.",
+    "title": "Este muro está oculto"
   }
 }

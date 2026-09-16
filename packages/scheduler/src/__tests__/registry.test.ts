@@ -4,6 +4,7 @@ import { isValidCronExpression } from '../cron/expression';
 import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
+import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -113,6 +114,20 @@ describe('job registry', () => {
       run: refreshGymActivityStats,
     });
     expect(findJob('refresh-gym-activity-stats')?.webPath).toBeUndefined();
+  });
+
+  it('runs the spray wall photo purge directly against GraphQL at 07:00 UTC', () => {
+    // Pinned as data, like every row above: the 30-day retention window is only
+    // as real as the job that acts on it, and a purge silently dropped from the
+    // registry would leave photographs of people's homes in the bucket forever.
+    // 07:00, not 06:30, so it never shares a tick with the gym activity rebuild.
+    expect(findJob('purge-spray-wall-photos')).toMatchObject({
+      schedule: '0 7 * * *',
+      timezone: 'UTC',
+      timeoutMs: 600_000,
+      run: purgeSprayWallPhotos,
+    });
+    expect(findJob('purge-spray-wall-photos')?.webPath).toBeUndefined();
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {

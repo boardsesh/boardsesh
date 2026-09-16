@@ -736,7 +736,7 @@
       "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",
       "pickOneToRedraw": "Wähle genau einen Griff und zeichne seine Kante nach.",
       "mergeNeedsTwo": "Wähle zwei Griffe, um sie zusammenzuführen.",
-      "tooManyHolds": "Das sind mehr Griffe, als eine Wand tragen kann. Verwirf ein paar und speichere erneut.",
+      "tooManyHolds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
       "saveFailed": "Die Wand konnte nicht gespeichert werden.",
       "strokeNotClosed": "Diese Schlaufe verfehlt den Griff. Zeichne einmal ganz herum.",
       "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
@@ -791,9 +791,9 @@
       "clear": "Ecken neu setzen"
     },
     "upload": {
-      "title": "Dein Foto geht raus",
-      "working": "Dein Foto geht raus…",
-      "percent": "{{percent}} % gesendet",
+      "title": "Dein Foto wird hochgeladen",
+      "working": "Dein Foto wird hochgeladen…",
+      "percent": "{{percent}} % hochgeladen",
       "failed": "Das Foto ist nicht durchgekommen.",
       "retry": "Nochmal versuchen",
       "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
@@ -911,5 +911,15 @@
     "done": {
       "toast": "{{removed}} weg, {{added}} neu, {{climbs}} Boulder geändert"
     }
+  },
+  "sprayCaps": {
+    "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
+    "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",
+    "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
+    "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
+  },
+  "sprayHidden": {
+    "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
+    "title": "Diese Wand ist ausgeblendet"
   }
 }

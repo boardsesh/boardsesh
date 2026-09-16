@@ -54,6 +54,31 @@ export {
   type BoardRenderFailureFields,
   type BoardRenderFailedInput,
 } from './board-render-events';
+// Spray wall telemetry (epic #5346). Cross-platform names, mobile-only call
+// sites today — www has no wall surface. Outcomes only: one event per wall per
+// step, and nothing that identifies a wall or what is on it.
+export {
+  sprayWallPhotoPicked,
+  sprayWallUploadFinished,
+  sprayWallDetectionFinished,
+  sprayHoldsReviewed,
+  sprayWallResetPreviewed,
+  sprayWallResetApplied,
+  climbRemixedFromBroken,
+  SPRAY_ROLLOUT_GATES,
+  type SprayWallPayload,
+  type SprayPhotoSource,
+  type SprayUploadOutcome,
+  type SprayDetectionOutcome,
+  type SprayRemixSurface,
+  type SprayWallPhotoPickedProps,
+  type SprayWallUploadFinishedProps,
+  type SprayWallDetectionFinishedProps,
+  type SprayHoldsReviewedProps,
+  type SprayWallResetPreviewedProps,
+  type SprayWallResetAppliedProps,
+  type ClimbRemixedFromBrokenProps,
+} from './spray-wall-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,
