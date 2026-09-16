@@ -2,13 +2,14 @@ import { and, eq, exists, or, sql, type SQL } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { boardClimbs, setterFollows, userFollows, userBoardMappings } from '../../schema/index';
 
+const queryBuilder = new QueryBuilder();
+
 /** Shared membership rule for search, setter counts, and the Crew feed. */
 export function followedAuthorCondition(followerId: string | undefined): SQL {
   if (!followerId) return sql`false`;
-  const db = new QueryBuilder();
   return or(
     exists(
-      db
+      queryBuilder
         .select({ present: sql`1` })
         .from(setterFollows)
         .where(
@@ -16,13 +17,13 @@ export function followedAuthorCondition(followerId: string | undefined): SQL {
         ),
     ),
     exists(
-      db
+      queryBuilder
         .select({ present: sql`1` })
         .from(userFollows)
         .where(and(eq(userFollows.followerId, followerId), eq(userFollows.followingId, boardClimbs.userId))),
     ),
     exists(
-      db
+      queryBuilder
         .select({ present: sql`1` })
         .from(userFollows)
         .innerJoin(userBoardMappings, eq(userBoardMappings.userId, userFollows.followingId))

@@ -8,6 +8,7 @@ import {
   decodeCrewCursor,
   encodeCrewCursor,
   selectCrewCandidates,
+  type CrewCandidate,
 } from '../graphql/resolvers/social/crew-feed-pagination';
 
 const viewerId = 'crew-feed-viewer';
@@ -118,6 +119,38 @@ describe('Crew feed', () => {
     );
     expect(selected.selected[0].id).toBe('session:xyz');
     expect(selected.hasMore).toBe(true);
+  });
+
+  it('terminates pagination when both sources initially supply limit plus one candidates', () => {
+    const limit = 2;
+    const candidates: CrewCandidate[] = ['climb', 'session'].flatMap((kind) =>
+      Array.from({ length: limit + 1 }, (_, index) => ({
+        id: `${kind}:${index}`,
+        sourceId: `${index}`,
+        kind: kind as CrewCandidate['kind'],
+        occurredAt: `2026-09-01T12:00:0${index}.000000Z`,
+      })),
+    );
+    const first = selectCrewCandidates(candidates, limit);
+    expect(first.selected).toHaveLength(limit);
+    expect(first.hasMore).toBe(true);
+    const remainingAfter = (page: typeof first) => {
+      const last = page.selected.at(-1)!;
+      return candidates.filter(
+        (candidate) =>
+          candidate.occurredAt < last.occurredAt ||
+          (candidate.occurredAt === last.occurredAt && candidate.id < last.id),
+      );
+    };
+    const second = selectCrewCandidates(remainingAfter(first), limit);
+    expect(second.selected).toHaveLength(limit);
+    expect(second.hasMore).toBe(true);
+    const third = selectCrewCandidates(remainingAfter(second), limit);
+    expect(third.selected).toHaveLength(limit);
+    expect(third.hasMore).toBe(false);
+    expect(
+      new Set([...first.selected, ...second.selected, ...third.selected].map((candidate) => candidate.id)).size,
+    ).toBe(6);
   });
 
   it.each([

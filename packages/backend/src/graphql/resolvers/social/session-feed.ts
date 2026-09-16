@@ -498,7 +498,7 @@ export async function getSessionFeed(
     };
   });
 
-  const nextCursor = hasMore ? encodeOffsetCursor(offset + limit) : null;
+  const nextCursor = !pagination && hasMore ? encodeOffsetCursor(offset + limit) : null;
 
   return { sessions, cursor: nextCursor, hasMore };
 }

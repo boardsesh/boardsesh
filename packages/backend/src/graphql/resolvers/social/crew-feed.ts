@@ -159,12 +159,15 @@ export const crewFeedQueries = {
         selection = selectCrewCandidates(
           [
             ...climbCandidates,
-            ...sessionRows.map((row): CrewCandidate => ({
-              id: `session:${row.session_id}`,
-              sourceId: row.session_id,
-              occurredAt: row.candidate_time!,
-              kind: 'session',
-            })),
+            ...sessionRows.map((row): CrewCandidate => {
+              if (!row.candidate_time) throw new Error('Missing Crew session timestamp');
+              return {
+                id: `session:${row.session_id}`,
+                sourceId: row.session_id,
+                occurredAt: row.candidate_time,
+                kind: 'session',
+              };
+            }),
           ],
           limit,
         );

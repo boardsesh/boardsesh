@@ -105,4 +105,17 @@ describe('followed authors', () => {
       .where(and(inArray(boardClimbs.uuid, ['fa-accountless', 'fa-linked']), followedAuthorCondition(undefined)));
     expect(nobody).toEqual([]);
   });
+
+  it('leaves unfiltered setter results accessible without following or authentication', async () => {
+    const anonymous = { ...ctx, isAuthenticated: false, userId: undefined };
+    const input = { ...boardInput, onlyFollowedAuthors: false };
+    await expect(climbQueries.searchClimbs(null, { input }, anonymous)).resolves.toBeDefined();
+    const setters = await climbQueries.setterStats(null, { input }, anonymous);
+    expect(setters.map((setter) => setter.setterUsername).sort()).toEqual([
+      'accountless-setter',
+      'linked-setter',
+      'native-display-name',
+      'other-setter',
+    ]);
+  });
 });
