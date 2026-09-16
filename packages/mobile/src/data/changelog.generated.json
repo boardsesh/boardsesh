@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-09-16T02:45:09.527Z",
+  "generatedAt": "2026-09-16T02:53:30.768Z",
   "entries": [
+    {
+      "prNumber": 5498,
+      "category": "new",
+      "title": "The app now tells you a wall's limits up front instead of after you hit them: ten walls each, 1,500 holds on a wall, fifty resets. If a wall of yours ever gets taken out of everyone else's view, you'll see why on it — it stays yours, your climbs stay on it, and nothing is deleted. Delete a wall yourself and its photos come off our disks a month later.",
+      "mergedAt": "2026-09-16T02:49:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5498"
+    },
+    {
+      "prNumber": 5492,
+      "category": "new",
+      "title": "Reset your spray wall from your phone: take a new photo, mark the corners, and check what the app thinks came off before anything changes.",
+      "mergedAt": "2026-09-16T02:48:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5492",
+      "body": "Every ring is yours to argue with — put a hold back, reject a false one, or say \"same hold, moved here\".\nClimbs that lost holds stay in your list with a badge instead of vanishing, and there's a new Holds filter when you only want the intact ones.\nOpened a climb that lost holds? One tap to remix it, and the editor opens with only the holds still on the wall — the missing ones are gone from the copy, not carried into it."
+    },
+    {
+      "prNumber": 5484,
+      "category": "new",
+      "title": "Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out.",
+      "mergedAt": "2026-09-16T02:48:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5484"
+    },
     {
       "prNumber": 5479,
       "category": "new",

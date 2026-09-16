@@ -12,6 +12,12 @@ A new version shipped to the App Store.
 
 ### New
 
+- The app now tells you a wall's limits up front instead of after you hit them: ten walls each, 1,500 holds on a wall, fifty resets. If a wall of yours ever gets taken out of everyone else's view, you'll see why on it — it stays yours, your climbs stay on it, and nothing is deleted. Delete a wall yourself and its photos come off our disks a month later. ([#5498](https://github.com/boardsesh/boardsesh/pull/5498))
+- Reset your spray wall from your phone: take a new photo, mark the corners, and check what the app thinks came off before anything changes. ([#5492](https://github.com/boardsesh/boardsesh/pull/5492))
+  Every ring is yours to argue with — put a hold back, reject a false one, or say "same hold, moved here".
+  Climbs that lost holds stay in your list with a badge instead of vanishing, and there's a new Holds filter when you only want the intact ones.
+  Opened a climb that lost holds? One tap to remix it, and the editor opens with only the holds still on the wall — the missing ones are gone from the copy, not carried into it.
+- Photograph your spray wall, let the app find the holds, fix what it missed, and start setting. Name the wall, mark its corners if you shot it off-square, and it lands in your boards ready for the first climb. Behind a flag while we roll it out. ([#5484](https://github.com/boardsesh/boardsesh/pull/5484))
 - No user can reach a spray wall until SW-09 ships the front door. ([#5479](https://github.com/boardsesh/boardsesh/pull/5479))
 
 ## 2026-09-15
