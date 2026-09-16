@@ -17,6 +17,8 @@ transaction so the snapshot cannot mix two versions of the follow list.
 `crewFeed(input: { limit, cursor })` returns a union of `CrewSessionItem` and
 `CrewClimbItem`, newest first. It includes existing session highlights and the
 last 30 days of canonical published climbs from currently followed authors.
+New-climb cards carry `renderBoard`, resolved from each climb's compatible sizes,
+so their thumbnail and preview use the same geometry (including Woods 8x10).
 Publication time wins over creation time, so publishing an old draft is new
 activity. Imports use the source creation date; an old catalogue import is not
 new activity. Invalid timestamps, drafts, hidden/unlisted climbs, and inaccessible

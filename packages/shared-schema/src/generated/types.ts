@@ -92,6 +92,8 @@ export type ActivityFeedItem = {
   metadata?: Maybe<Scalars['String']['output']>;
   /** Quality rating */
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Board geometry for this climb, including its compatible size */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Setter username */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Ascent status (flash, send, attempt) */
@@ -10816,6 +10818,7 @@ export type ActivityFeedItemResolvers<
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   metadata?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['ActivityFeedItemType'], ParentType, ContextType>;

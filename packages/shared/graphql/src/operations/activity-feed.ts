@@ -188,6 +188,7 @@ export const GET_CREW_FEED = gql`
             id type entityType entityId actorId actorDisplayName actorAvatarUrl
             climbUuid climbName boardType layoutId setterUsername frames angle
             difficultyName isNoMatch createdAt
+            renderBoard { layoutId sizeId setIds }
           }
         }
       }

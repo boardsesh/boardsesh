@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { followedAuthorCondition } from '@boardsesh/db/queries';
 import { boardClimbs, boardseshTicks, setterFollows, userFollows, users } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { crewFeedQueries } from '../graphql/resolvers/social/crew-feed';
+import { crewFeedQueries, crewPublicationTime } from '../graphql/resolvers/social/crew-feed';
 import {
   decodeCrewCursor,
   encodeCrewCursor,
@@ -121,9 +122,40 @@ describe('Crew feed', () => {
   });
 
   it('can explain the author-filtered catalogue lookup', async () => {
-    const plan = await db.execute(
-      sql`EXPLAIN SELECT uuid FROM board_climbs WHERE user_id = ${creatorId} AND is_draft = false`,
-    );
+    const lookup = db
+      .select({ uuid: boardClimbs.uuid })
+      .from(boardClimbs)
+      .where(
+        and(
+          followedAuthorCondition(viewerId),
+          eq(boardClimbs.isDraft, false),
+          sql`${crewPublicationTime} >= ${daysAgo(30)}::timestamptz`,
+        ),
+      )
+      .orderBy(crewPublicationTime)
+      .limit(21);
+    const plan = await db.execute(sql`EXPLAIN ${lookup}`);
     expect(plan.length).toBeGreaterThan(0);
+  });
+
+  it('carries the climb-specific board geometry instead of the largest default', async () => {
+    await db.insert(boardClimbs).values({
+      uuid: 'crew-woods',
+      boardType: 'woods',
+      layoutId: 1,
+      userId: creatorId,
+      setterUsername: 'crew-native-setter',
+      name: 'Small Woods climb',
+      isListed: true,
+      isDraft: false,
+      isHidden: false,
+      frames: 'p1r1',
+      compatibleSizeIds: [1],
+      requiredSetIds: [1],
+      createdAt: daysAgo(1),
+    });
+    const feed = await crewFeedQueries.crewFeed(null, {}, ctx);
+    const woods = feed.items.find((item) => item.id === 'climb:crew-woods');
+    expect(woods).toMatchObject({ climb: { renderBoard: { layoutId: 1, sizeId: 1 } } });
   });
 });

@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
+import { resolveRenderBoard } from '@boardsesh/board-config';
 import type {
   ConnectionContext,
   CrewFeedInput,
@@ -91,6 +92,12 @@ async function enrichClimbs(candidates: CrewCandidate[], viewerId: string): Prom
         climbName: climb.name,
         boardType: climb.boardType,
         layoutId: climb.layoutId,
+        renderBoard: resolveRenderBoard({
+          boardType: climb.boardType,
+          climbLayoutId: climb.layoutId,
+          compatibleSizeIds: climb.compatibleSizeIds,
+          requiredSetIds: climb.requiredSetIds,
+        }),
         setterUsername: climb.setterUsername,
         frames: climb.frames,
         angle,

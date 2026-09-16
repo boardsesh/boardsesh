@@ -149,6 +149,7 @@ export type ActivityFeedItem = {
   climbUuid?: string | null;
   boardType?: string | null;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   gradeName?: string | null;
   status?: string | null;
   angle?: number | null;

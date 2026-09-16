@@ -89,6 +89,8 @@ export type ActivityFeedItem = {
   metadata?: Maybe<Scalars['String']['output']>;
   /** Quality rating */
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Board geometry for this climb, including its compatible size */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Setter username */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Ascent status (flash, send, attempt) */

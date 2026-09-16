@@ -370,6 +370,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardType: String
     "Layout ID"
     layoutId: Int
+    "Board geometry for this climb, including its compatible size"
+    renderBoard: RenderBoardConfig
     "Grade name"
     gradeName: String
     "Ascent status (flash, send, attempt)"
