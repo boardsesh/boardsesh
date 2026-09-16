@@ -118,9 +118,18 @@ describe('useDonationLinksAllowed', () => {
     expect(getCountryCode).toHaveBeenCalledTimes(1);
   });
 
+  it('hides links on Expo web, where there is no storefront to read', async () => {
+    platformMock.OS = 'web';
+    flagsMock['donation-links'] = true;
+
+    expect(await renderAllowed()).toBe(false);
+  });
+
   it('points at the website, not a payment provider', async () => {
-    const { SUPPORT_URL } = await loadDonationLinks();
+    const { SUPPORT_URL, SUPPORT_URL_DISPLAY } = await loadDonationLinks();
 
     expect(SUPPORT_URL).toBe('https://www.boardsesh.com/support');
+    // The displayed form is the same address, bare enough to type off a screen.
+    expect(SUPPORT_URL).toContain(SUPPORT_URL_DISPLAY.replace('boardsesh.com', 'www.boardsesh.com'));
   });
 });

@@ -41,8 +41,15 @@ const storefrontNative = requireOptionalNativeModule<StorefrontNativeModule>('St
 /** StoreKit reports storefronts as ISO alpha-3; the US one is `USA`. */
 const US_STOREFRONT_COUNTRY = 'USA';
 
-/** The canonical donation surface. Also said, unlinked, in the fallback copy. */
+/** The canonical donation surface — where the CTA goes when links are allowed. */
 export const SUPPORT_URL = 'https://www.boardsesh.com/support';
+
+/**
+ * The same address as the fallback copy says it out loud: bare, so a reader can
+ * type it, and identical in every locale. Interpolated into `supportFallback`
+ * rather than written into four catalogs, so the address has one home.
+ */
+export const SUPPORT_URL_DISPLAY = 'boardsesh.com/support';
 
 let storefrontCountryPromise: Promise<string | null> | null = null;
 

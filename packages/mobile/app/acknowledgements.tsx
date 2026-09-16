@@ -11,7 +11,7 @@ import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import { contributors, sponsors, privateSponsorCount, friends, dogName, XPREM_URL } from '../src/lib/acknowledgements';
 import { openDiscordInvite } from '../src/lib/discord';
-import { SUPPORT_URL, useDonationLinksAllowed } from '../src/lib/donation-links';
+import { SUPPORT_URL, SUPPORT_URL_DISPLAY, useDonationLinksAllowed } from '../src/lib/donation-links';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, spacing } from '../src/theme/tokens';
@@ -130,7 +130,7 @@ export default function AcknowledgementsScreen() {
     />
   ) : (
     <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.supportFallback}>
-      {t('mobile.acknowledgements.supportFallback')}
+      {t('mobile.acknowledgements.supportFallback', { url: SUPPORT_URL_DISPLAY })}
     </Text>
   );
 

@@ -21,10 +21,10 @@ vi.mock('react-native', () => ({
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => routerMock }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, vars?: { count?: number }) =>
+    t: (key: string, vars?: { count?: number; url?: string }) =>
       ({
         'mobile.acknowledgements.becomeSponsor': 'Support Boardsesh',
-        'mobile.acknowledgements.supportFallback': 'Boardsesh is free and community-funded. boardsesh.com/support',
+        'mobile.acknowledgements.supportFallback': `Boardsesh is free and community-funded. ${vars?.url ?? ''}`,
         'mobile.acknowledgements.ossLicensesLink': 'Open source licenses',
         'mobile.acknowledgements.friendsTitle': 'The crew',
         'mobile.acknowledgements.discordTitle': 'Everyone on our Discord',
@@ -55,6 +55,7 @@ vi.mock('../../src/lib/open-url', () => openUrl);
 vi.mock('../../src/lib/discord', () => discord);
 vi.mock('../../src/lib/donation-links', () => ({
   SUPPORT_URL: 'https://www.boardsesh.com/support',
+  SUPPORT_URL_DISPLAY: 'boardsesh.com/support',
   useDonationLinksAllowed: () => donationLinks.allowed,
 }));
 

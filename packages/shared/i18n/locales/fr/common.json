@@ -426,7 +426,7 @@
       "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
       "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
       "becomeSponsor": "Soutenir Boardsesh",
-      "supportFallback": "Boardsesh est gratuit et financé par la communauté. boardsesh.com/support",
+      "supportFallback": "Boardsesh est gratuit et financé par la communauté. {{url}}",
       "poweredByTitle": "Propulsé par",
       "xpremBody": "Mercure Technologies a offert à Boardsesh une licence entreprise pour xprem, le serveur derrière nos mises à jour over-the-air. C'est grâce à lui que les correctifs arrivent sur votre téléphone sans attendre la validation du store, et que vous pouvez essayer une préversion depuis Nouveautés.",
       "personalTitle": "Remerciements personnels",
