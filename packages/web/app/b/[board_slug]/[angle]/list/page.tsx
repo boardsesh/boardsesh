@@ -16,13 +16,22 @@ import {
   type ListPageSearchParams,
 } from '@/app/lib/seo/list-page-robots';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import SprayWallListPage, { WALL_CAPABILITY_PARAM, buildSprayWallListMetadata } from './spray-wall-view';
 
-/** See the branches below: a wall has no catalogue row and no list page. */
+/**
+ * A wall takes its own branch out of both exports below: it has no catalogue row
+ * for `getBoardDetailsForBoard` to resolve, and this path is where its SHARE LINK
+ * lands rather than a climb list. `./spray-wall-view` owns the capability rule.
+ */
 const SPRAY_BOARD_TYPE = 'spray';
 
 type BoardSlugListPageProps = {
   params: Promise<{ board_slug: string; angle: string }>;
-  searchParams: Promise<SearchRequestPagination>;
+  // `SearchRequestPagination` names the filters this page reads; `?wall=` is not
+  // one of them, it is the share-link capability a spray wall arrives with, so
+  // the raw string form rides alongside rather than being bolted onto the filter
+  // type every other caller of that type shares.
+  searchParams: Promise<SearchRequestPagination & { [WALL_CAPABILITY_PARAM]?: string | string[] }>;
 };
 
 export async function generateMetadata(props: BoardSlugListPageProps): Promise<Metadata> {
@@ -39,15 +48,11 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       });
     }
 
-    // A wall has no `/list` surface on www — see the page body below for why —
-    // so its metadata is the same "nothing here" answer the route gives.
+    // A wall's share link lands here, so this path has a page — but never an
+    // indexable one, because the URL an unlisted wall is read at carries a
+    // capability. See `./spray-wall-view`.
     if (board.boardType === SPRAY_BOARD_TYPE) {
-      return createBoardContentPageMetadata({
-        title: t('metadata.list.fallbackTitle'),
-        description: t('metadata.list.fallbackDescription'),
-        locale,
-        robots: { index: false, follow: true },
-      });
+      return await buildSprayWallListMetadata(board);
     }
 
     const boardName = formatBoardDisplayName(board.boardType);
@@ -106,13 +111,14 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
     return notFound();
   }
 
-  // A spray wall has no climb list on www. SW-16 (#5449) gave a wall's CLIMBS a
-  // server-rendered page each, because those are what people share; the wall's
-  // own front door is not built, and this route would otherwise reach
-  // `getBoardDetailsForBoard`, which has no catalogue row to resolve for a wall
-  // and throws. A 404 is the honest answer for a page that does not exist, and
-  // it keeps `/b/{slug}` — which redirects here — off a 500.
-  if (board.boardType === SPRAY_BOARD_TYPE) return notFound();
+  // Not a climb list for a wall: this is where its share link lands, and the
+  // `?wall=` capability is what opens an unlisted one. Taken before the page
+  // ceiling and the angle parse below, because neither applies — a wall has one
+  // fixed angle and no pagination — and before `getBoardDetailsForBoard`, which
+  // has no catalogue row to resolve for a wall and throws.
+  if (board.boardType === SPRAY_BOARD_TYPE) {
+    return <SprayWallListPage board={board} wallParam={searchParams[WALL_CAPABILITY_PARAM]} />;
+  }
 
   // Same ceiling as the config-tuple twin: nothing links past
   // `FRONT_DOOR_MAX_INDEXABLE_PAGE`, so a page number beyond the grace band is a

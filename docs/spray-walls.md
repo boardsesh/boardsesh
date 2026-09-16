@@ -982,13 +982,17 @@ climbs at `/b/{slug}`, which is the next section.
 
 ## The wall on the web (SW-16)
 
-A share link from the app opens on www, so a wall's CLIMBS get a
-server-rendered page each — `/b/{slug}/{angle}/view/{climb}` — and nothing else
-does. The wall itself has no front door on www: `/b/{slug}/{angle}/list` 404s
-for spray, which is also what `/b/{slug}` redirects into. That is a page that
-does not exist rather than a page that failed; without the guard the route
-reaches `getBoardDetailsForBoard`, which has no catalogue size row for a wall
-and throws a 500 on a URL the gym page links to.
+A share link from the app opens on www, so two things are server-rendered: a
+wall's CLIMBS, one page each at `/b/{slug}/{angle}/view/{climb}`, and the WALL
+itself at `/b/{slug}/{angle}/list`, which is where `buildSprayWallShareUrl`
+points and what `/b/{slug}` redirects into. Neither route ever reaches
+`getBoardDetailsForBoard`, which has no catalogue size row for a wall and throws.
+
+The wall page is not a climb list. The climbs of a wall are browsed in the app,
+and the list machinery every other board uses is built around a configuration
+tuple a wall does not have. What somebody following a shared link needs is to see
+that they have the right wall, so the page is the photograph, the angle and the
+hold count.
 
 ### Three states, and what each one gets
 
@@ -1007,6 +1011,31 @@ everybody. The decision is made from the board row the slug resolved to and
 nothing else, so a private wall costs no round trip and the backend is never
 asked a question whose answer would confirm the wall exists
 (`spray-view.tsx`, `resolveSprayWallVisibility`).
+
+### `?wall=` is a capability, and it is checked as one
+
+`buildSprayWallShareUrl` gives a PUBLIC wall a clean URL and an UNLISTED one
+`?wall=<uuid>`, because `sprayWallByLayout` deliberately refuses an unlisted wall
+— a layout id is a sequence number — while `sprayWall(uuid)` resolves it. The web
+route redeems that param the same way `saveClimb` redeems `sprayWallUuid`: the
+uuid has to be **this** wall's, the one the slug already resolved to. Without the
+pairing one leaked uuid would open every wall in the sequence.
+
+| The wall is | No `?wall=` | `?wall=` matches | `?wall=` is wrong |
+| --- | --- | --- | --- |
+| public | renders | renders | 404 |
+| unlisted | 404 | renders | 404 |
+| private | 404 | 404 | 404 |
+
+A mismatch is the same 404 as no param at all, so the response is never an oracle
+for which slugs are unlisted walls. `/b/{slug}` re-emits the param onto its
+redirect — only that one, the way it already re-emits the QR attribution — because
+that hop is the only thing between the shared link and the page that redeems it.
+
+The wall page is always `noindex, follow` and emits no canonical: the URL an
+unlisted wall is read at carries a capability, so there is no clean twin to point
+a canonical at, and a canonical naming the bare path would invite a crawler to a
+URL that answers 404.
 
 ### Which photograph the page shows
 
@@ -1038,6 +1067,17 @@ rather than the canonical frame (they only agree on a wall whose owner tapped no
 anchors), and a singular matrix degrades to the photograph with no marks on it
 instead of throwing. On a server that is the wrong call; on a link somebody
 shared, a picture of the wall beats a 500.
+
+### No `BreadcrumbList`, deliberately
+
+SW-16 (#5449) asked for one on the climb page and it is left out. A breadcrumb
+needs a parent to name, and a wall's only parent is its own page — which is
+capability-gated and `noindex`. Emitting `Wall -> Climb` from an INDEXED climb
+page to a `noindex` parent is the same conflicting signal the metadata avoids by
+withholding a canonical on a noindex page, and Google can resolve it by
+propagating the noindex up the chain. So: no breadcrumb until a wall has an
+indexable page of its own, which is a decision about crawling somebody's home
+wall rather than a markup change.
 
 ### The card and the sitemap
 

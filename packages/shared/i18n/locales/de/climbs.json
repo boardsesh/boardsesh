@@ -836,6 +836,15 @@
     "metadata": {
       "title": "{{climbName}} {{grade}} an {{wallName}} | Spraywall",
       "description": "{{climbName}}, {{grade}}, an der Spraywall {{wallName}} mit {{angle}}°, geschraubt von {{setter}}. Sieh dir die Griffe auf dem Wandfoto an."
+    },
+    "wall": {
+      "summary": "Eine Spraywall mit {{angle}}° und {{holdCount}} Griffen.",
+      "photoAlt": "Die Spraywall {{wallName}}",
+      "openInApp": "Öffne diese Wand in der Boardsesh-App, um ihre Boulder zu sehen, eigene zu schrauben und deine Begehungen zu erfassen.",
+      "metadata": {
+        "title": "{{wallName}} | Spraywall",
+        "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Wand an und öffne sie in der Boardsesh-App."
+      }
     }
   }
 }

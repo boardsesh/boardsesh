@@ -836,6 +836,15 @@
     "metadata": {
       "title": "{{climbName}} {{grade}} on {{wallName}} | Spray Wall",
       "description": "{{climbName}}, {{grade}}, on the {{wallName}} spray wall at {{angle}}°, set by {{setter}}. See the holds on the wall photo."
+    },
+    "wall": {
+      "summary": "A spray wall at {{angle}}° with {{holdCount}} holds.",
+      "photoAlt": "The {{wallName}} spray wall",
+      "openInApp": "Open this wall in the Boardsesh app to browse its climbs, set your own and log your sends.",
+      "metadata": {
+        "title": "{{wallName}} | Spray Wall",
+        "description": "{{wallName}}, a spray wall at {{angle}}°. See the wall and open it in the Boardsesh app."
+      }
     }
   }
 }
