@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { LiveCardModel } from '../live-session-model';
@@ -65,7 +65,11 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { lg: 12, full: 999 },
 }));
 vi.mock('../LiveDot', () => ({ LiveDot: () => null, useLivePulseDriver: vi.fn() }));
-vi.mock('../use-minute-tick', () => ({ useMinuteTick: () => 42 }));
+vi.mock('../use-elapsed-clock', () => ({ useElapsedClock: () => 42 * 60_000, startedAtKeyFor: () => '' }));
+vi.mock('../LiveBadges', () => ({
+  LiveActionPill: ({ label }: { label: string }) => createElement('span', null, label),
+  LiveGradeChip: ({ label }: { label: string }) => createElement('span', { 'data-testid': 'grade-chip' }, label),
+}));
 vi.mock('../use-live-session-colors', () => ({ useLiveSessionColors: () => ({}) }));
 
 import { BoardLiveSessionsBlock } from '../BoardLiveSessionsBlock';
@@ -100,8 +104,8 @@ function renderBlock(props: Partial<Parameters<typeof BoardLiveSessionsBlock>[0]
   return render(
     createElement(BoardLiveSessionsBlock, {
       boardId: 7,
-      litByName: null,
-      litByUserId: null,
+      holderName: null,
+      holderUserId: null,
       onBeforeNavigate: spies.close,
       ...props,
     }),
@@ -110,6 +114,7 @@ function renderBlock(props: Partial<Parameters<typeof BoardLiveSessionsBlock>[0]
 
 beforeEach(() => {
   for (const spy of Object.values(spies)) spy.mockReset();
+  spies.close.mockResolvedValue(true);
   state.query = success([]);
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   state.queueSessionId = null;
@@ -135,7 +140,7 @@ describe('BoardLiveSessionsBlock', () => {
     });
   });
 
-  it('invites the climber to start one when nobody is in a session', () => {
+  it('invites the climber to start one when nobody is in a session', async () => {
     const { getByTestId, container } = renderBlock();
     expect(container.textContent).toContain('mobile.liveSessions.board.emptyTitle');
     expect(container.textContent).toContain('mobile.liveSessions.board.emptyBody');
@@ -145,15 +150,15 @@ describe('BoardLiveSessionsBlock', () => {
       variant: 'board_sheet',
     });
     expect(spies.close).toHaveBeenCalled();
-    expect(spies.navigate).toHaveBeenCalledWith('/(tabs)/record');
+    await waitFor(() => expect(spies.navigate).toHaveBeenCalledWith('/(tabs)/record'));
   });
 
   it('names who is on the wall, unless it is the viewer', () => {
-    const { container, unmount } = renderBlock({ litByName: 'Jonah W.', litByUserId: 'jonah' });
+    const { container, unmount } = renderBlock({ holderName: 'Jonah W.', holderUserId: 'jonah' });
     expect(container.textContent).toContain('mobile.liveSessions.board.emptyBodyLitBy(Jonah W.)');
     unmount();
 
-    const self = renderBlock({ litByName: 'Vic Viewer', litByUserId: 'viewer' });
+    const self = renderBlock({ holderName: 'Vic Viewer', holderUserId: 'viewer' });
     expect(self.container.textContent).not.toContain('emptyBodyLitBy');
   });
 
@@ -176,11 +181,24 @@ describe('BoardLiveSessionsBlock', () => {
     });
   });
 
-  it('closes the sheet and opens the join preview from a row', () => {
+  it('waits for the sheet to finish closing, then opens the join preview from a row', async () => {
+    let settle: (proceed: boolean) => void = () => {};
+    spies.close.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
     state.query = success([card('a')]);
     const { getByTestId } = renderBlock();
     fireEvent.click(getByTestId('board-live-session-row'));
-    expect(spies.close).toHaveBeenCalled();
+    // A second tap while the sheet is still leaving must not queue another push.
+    fireEvent.click(getByTestId('board-live-session-row'));
+    expect(spies.close).toHaveBeenCalledTimes(1);
+    expect(spies.push).not.toHaveBeenCalled();
+
+    settle(true);
+    await waitFor(() => expect(spies.push).toHaveBeenCalledTimes(1));
     expect(spies.push).toHaveBeenCalledWith({
       pathname: '/join/[sessionId]',
       params: { sessionId: 'a', source: 'board_sheet' },
@@ -193,12 +211,34 @@ describe('BoardLiveSessionsBlock', () => {
     });
   });
 
-  it('says Open on the session this phone is in and routes to Record', () => {
+  it('does not navigate when the sheet handoff was aborted', async () => {
+    spies.close.mockResolvedValue(false);
+    state.query = success([card('a')]);
+    const { getByTestId } = renderBlock();
+    fireEvent.click(getByTestId('board-live-session-row'));
+    await waitFor(() => expect(spies.close).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(spies.push).not.toHaveBeenCalled();
+  });
+
+  it('says Open on the session this phone is in and routes to Record', async () => {
     state.queueSessionId = 'mine';
     state.query = success([card('mine', { viewerIsMember: true })]);
     const { getByTestId, container } = renderBlock();
     expect(container.textContent).toContain('mobile.liveSessions.actions.open');
     fireEvent.click(getByTestId('board-live-session-row'));
-    expect(spies.navigate).toHaveBeenCalledWith('/(tabs)/record');
+    await waitFor(() => expect(spies.navigate).toHaveBeenCalledWith('/(tabs)/record'));
+  });
+
+  it('shows the hardest grade as a chip, not plain text in the meta line', () => {
+    state.query = success([card('a')]);
+    const { getByTestId } = renderBlock();
+    expect(getByTestId('grade-chip').textContent).toBe('V5');
+  });
+
+  it('keeps its rows when a later poll fails', () => {
+    state.query = { status: 'error', fetchStatus: 'idle', isSuccess: false, data: [card('a')] };
+    const { getAllByTestId } = renderBlock();
+    expect(getAllByTestId('board-live-session-row')).toHaveLength(1);
   });
 });

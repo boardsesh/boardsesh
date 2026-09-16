@@ -184,6 +184,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   // overlaps another sheet's transition (the iOS UIKit deadlock). The sheet stays
   // mounted (like QueueSheet) and is re-presented on the next open.
   const managed = useManagedSheet({ sheetRef, onFullyDismissed: handleFullyDismissed });
+  const dismissAndWait = managed.handle.dismissAndWait;
 
   useImperativeHandle(
     ref,
@@ -247,6 +248,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           boardLabel={boardLabel}
           boardConfig={boardConfig}
           onClose={onClose}
+          dismissAndWait={dismissAndWait}
           onSwitchBoard={onSwitchBoard}
           activeBoard={activeBoard}
           onSelectGymWall={onSelectGymWall}

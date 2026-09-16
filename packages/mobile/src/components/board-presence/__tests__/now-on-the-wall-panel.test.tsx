@@ -4,11 +4,13 @@ import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
 import type { NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
+import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
 const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
   history: [] as BoardPresenceClimb[],
   stats: null as BoardPresenceStats | null,
+  holder: null as { userId?: string | null; displayName?: string | null } | null,
   refresh: vi.fn(),
 }));
 
@@ -164,6 +166,7 @@ vi.mock('@boardsesh/board-presence-react', () => ({
     currentClimb: presence.currentClimb,
     previousClimb: null,
     undoTarget: null,
+    holder: presence.holder,
     isLive: true,
   }),
   useBoardPresenceFeed: () => ({ history: presence.history, stats: presence.stats }),
@@ -328,6 +331,7 @@ function panelElement(overrides: Partial<NowOnTheWallPanelProps> = {}) {
 describe('NowOnTheWallPanel', () => {
   beforeEach(() => {
     presence.currentClimb = null;
+    presence.holder = null;
     presence.history = [];
     presence.stats = null;
     safeArea.insets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -339,22 +343,42 @@ describe('NowOnTheWallPanel', () => {
     analytics.track.mockReset();
   });
 
-  it('mounts the live-sessions block in the sheet, with the board id and who lit the wall', () => {
+  it('mounts the live-sessions block in the sheet with the board id and whoever holds the board now', () => {
     liveSessionsBlock.props = [];
+    // The last climb was lit by someone who has since left; the holder is who is here.
     presence.currentClimb = {
       climbUuid: 'climb-1',
       name: 'Legion',
       grade: 'V3',
       sentAt: '2026-09-16T10:00:00.000Z',
       seq: 4,
-      sentByDisplayName: '  Jonah W. ',
-      sentByUserId: 'jonah',
+      sentByDisplayName: 'Old Lighter',
+      sentByUserId: 'old',
     };
+    presence.holder = { userId: 'jonah', displayName: '  Jonah W. ' };
     const { container } = render(panelElement({ variant: 'sheet' }));
     expect(container.querySelector('[data-live-sessions-block]')).not.toBeNull();
     expect(liveSessionsBlock.props.at(-1)).toEqual(
-      expect.objectContaining({ boardId: 123, litByName: 'Jonah W.', litByUserId: 'jonah' }),
+      expect.objectContaining({ boardId: 123, holderName: 'Jonah W.', holderUserId: 'jonah' }),
     );
+  });
+
+  it('gives the block no name when nobody holds the board', () => {
+    liveSessionsBlock.props = [];
+    render(panelElement({ variant: 'sheet' }));
+    expect(liveSessionsBlock.props.at(-1)).toEqual(expect.objectContaining({ holderName: null, holderUserId: null }));
+  });
+
+  it('closes the sheet and waits for it to settle before the block routes away', async () => {
+    liveSessionsBlock.props = [];
+    const dismissAndWait = vi.fn(async (): Promise<DismissAndWaitResult> => ({ status: 'dismissed' }));
+    render(panelElement({ variant: 'sheet', dismissAndWait }));
+    const leave = liveSessionsBlock.props.at(-1)?.onBeforeNavigate as () => Promise<boolean>;
+    await expect(leave()).resolves.toBe(true);
+    expect(dismissAndWait).toHaveBeenCalledTimes(1);
+
+    dismissAndWait.mockResolvedValueOnce({ status: 'aborted' });
+    await expect(leave()).resolves.toBe(false);
   });
 
   it('keeps the live-sessions block off the column variant (the wall kiosk)', () => {

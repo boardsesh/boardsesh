@@ -1,7 +1,7 @@
 // "Climbing here now" in the board sheet: live sessions on the wall the climber
 // is standing at. Self-subscribing and memoised so the panel's list header only
-// rebuilds on the board id (plus the lit-by name it already depends on), not on
-// every poll of this query.
+// rebuilds on the board id and who holds the board, not on every poll of this
+// query.
 
 import { memo, useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -23,10 +23,11 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { LiveDot, useLivePulseDriver } from './LiveDot';
-import { useMinuteTick } from './use-minute-tick';
+import { LiveActionPill, LiveGradeChip } from './LiveBadges';
+import { startedAtKeyFor, useElapsedClock } from './use-elapsed-clock';
 import { useLiveSessionColors } from './use-live-session-colors';
 import { describeLiveNames, elapsedParts, type LiveCardModel } from './live-session-model';
-import { elapsedShort, elapsedSpoken, liveNamesCopy } from './live-session-copy';
+import { elapsedShort, liveNamesCopy, startedSpoken } from './live-session-copy';
 
 /** Rows shown before "N more". A capped `.map`, so no list virtualization needed. */
 export const BOARD_LIVE_SESSIONS_MAX_ROWS = 3;
@@ -37,16 +38,20 @@ const ACTION_HEIGHT = 44;
 export type BoardLiveSessionsBlockProps = {
   /** The board-presence board id; null renders nothing. */
   boardId: number | null;
-  /** Who lit the climb on the wall right now, when the sheet knows. */
-  litByName: string | null;
-  litByUserId: string | null;
-  /** Close the sheet before routing away from it. */
-  onBeforeNavigate?: () => void;
+  /** Who is connected to the board right now, when the sheet knows. */
+  holderName: string | null;
+  holderUserId: string | null;
+  /**
+   * Close the sheet and wait for it to settle before routing away: pushing the
+   * native /join modal mid-dismiss is the handoff docs/mobile-sheets-vs-routes.md
+   * warns about. Resolves false when the handoff was aborted.
+   */
+  onBeforeNavigate?: () => Promise<boolean>;
 };
 
 type RowProps = {
   card: LiveCardModel;
-  nowMinute: number;
+  nowMs: number;
   viewerUserId: string | null;
   formatGrade: (grade: string | null | undefined) => string | null;
   onPress: (card: LiveCardModel) => void;
@@ -54,7 +59,7 @@ type RowProps = {
 
 const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
   card,
-  nowMinute,
+  nowMs,
   viewerUserId,
   formatGrade,
   onPress,
@@ -62,14 +67,14 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
   const { t } = useTranslation('feed');
   const colors = useLiveSessionColors();
   const names = liveNamesCopy(describeLiveNames(card, viewerUserId), t);
-  const elapsed = elapsedParts(card.startedAtMs, nowMinute * 60_000);
+  const elapsed = elapsedParts(card.startedAtMs, nowMs);
   const grade = card.hardestSendGrade ? (formatGrade(card.hardestSendGrade) ?? card.hardestSendGrade) : null;
   const sends = card.sendCount > 0 ? t('mobile.liveSessions.sends', { count: card.sendCount }) : null;
-  const meta = [elapsedShort(elapsed, t), sends, grade].filter((part): part is string => part != null).join(' · ');
+  const meta = [elapsedShort(elapsed, t), sends].filter((part): part is string => part != null).join(' · ');
   const spoken = [
     names.spoken,
     t('mobile.liveSessions.a11y.liveNow'),
-    t('mobile.liveSessions.a11y.started', { elapsed: elapsedSpoken(elapsed, t) }),
+    startedSpoken(elapsed, t),
     sends,
     grade ? t('mobile.liveSessions.a11y.hardest', { grade }) : null,
   ]
@@ -113,21 +118,23 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
           <Text variant="footnote" color={colors.meta} numberOfLines={1} style={styles.shrink}>
             {meta}
           </Text>
+          {grade && card.hardestSendGrade ? <LiveGradeChip rawGrade={card.hardestSendGrade} label={grade} /> : null}
         </View>
       </View>
-      <View style={[styles.joinPill, { backgroundColor: colors.primaryFill }]}>
-        <Text variant="subheadline" color={colors.onPrimary} numberOfLines={1} style={styles.bold}>
-          {card.viewerIsMember ? t('mobile.liveSessions.actions.open') : t('mobile.liveSessions.actions.join')}
-        </Text>
-      </View>
+      {/* The climber is standing at this wall, so Join is the filled primary. */}
+      <LiveActionPill
+        label={card.viewerIsMember ? t('mobile.liveSessions.actions.open') : t('mobile.liveSessions.actions.join')}
+        colors={colors}
+        tone="filled"
+      />
     </PressableSurface>
   );
 });
 
 function BoardLiveSessionsBlockComponent({
   boardId,
-  litByName,
-  litByUserId,
+  holderName,
+  holderUserId,
   onBeforeNavigate,
 }: BoardLiveSessionsBlockProps) {
   const { t } = useTranslation('feed');
@@ -146,26 +153,44 @@ function BoardLiveSessionsBlockComponent({
   const hasRows = cards.length > 0;
   const viewerInSession = queueSessionId != null || cards.some((card) => card.viewerIsMember);
 
-  const nowMinute = useMinuteTick(hasRows && !backgrounded);
+  const nowMs = useElapsedClock(hasRows && !backgrounded, startedAtKeyFor(cards));
   useLivePulseDriver(hasRows && !backgrounded);
 
   // Once per sheet open (the panel unmounts on dismiss), with settled data.
   const viewedRef = useRef(false);
-  const settledState = query.isSuccess
-    ? hasRows
-      ? 'loaded'
-      : 'empty'
-    : offline.isBlocked
-      ? offline.reason === 'offline' || offline.reason === 'offline_mode'
-        ? 'offline'
-        : 'error'
-      : null;
+  const settledState =
+    query.data !== undefined
+      ? hasRows
+        ? 'loaded'
+        : 'empty'
+      : offline.isBlocked
+        ? offline.reason === 'offline' || offline.reason === 'offline_mode'
+          ? 'offline'
+          : 'error'
+        : null;
   const cardCount = cards.length;
   useEffect(() => {
     if (settledState == null || viewedRef.current) return;
     viewedRef.current = true;
     track(SHARED_EVENTS.LiveSessionsShelfViewed, { surface: 'board_sheet', count: cardCount, state: settledState });
   }, [settledState, cardCount]);
+
+  // One handoff at a time: a second tap while the sheet is settling must not
+  // queue a second push. Claimed before the first await.
+  const leavingRef = useRef(false);
+  const leaveSheetThen = useCallback(
+    async (navigate: () => void) => {
+      if (leavingRef.current) return;
+      leavingRef.current = true;
+      try {
+        const proceed = onBeforeNavigate ? await onBeforeNavigate() : true;
+        if (proceed) navigate();
+      } finally {
+        leavingRef.current = false;
+      }
+    },
+    [onBeforeNavigate],
+  );
 
   const handleRowPress = useCallback(
     (card: LiveCardModel) => {
@@ -176,26 +201,28 @@ function BoardLiveSessionsBlockComponent({
         viewerIsMember: card.viewerIsMember,
         participantCount: card.participantCount,
       });
-      onBeforeNavigate?.();
-      if (card.viewerIsMember && card.sessionId === queueSessionIdRef.current) {
-        router.navigate('/(tabs)/record');
-        return;
-      }
-      router.push({ pathname: '/join/[sessionId]', params: { sessionId: card.sessionId, source: 'board_sheet' } });
+      const openRecord = card.viewerIsMember && card.sessionId === queueSessionIdRef.current;
+      void leaveSheetThen(() => {
+        if (openRecord) {
+          router.navigate('/(tabs)/record');
+          return;
+        }
+        router.push({ pathname: '/join/[sessionId]', params: { sessionId: card.sessionId, source: 'board_sheet' } });
+      });
     },
-    [onBeforeNavigate],
+    [leaveSheetThen],
   );
 
   const handleStartPress = useCallback(() => {
     hapticLight();
     track(SHARED_EVENTS.StartSessionPromptTapped, { surface: 'board_sheet', variant: 'board_sheet' });
-    onBeforeNavigate?.();
-    router.navigate('/(tabs)/record');
-  }, [onBeforeNavigate]);
+    void leaveSheetThen(() => router.navigate('/(tabs)/record'));
+  }, [leaveSheetThen]);
 
-  // Loading, error and offline render nothing: a sheet must not jump, and the
-  // wall feed below is what the climber opened it for.
-  if (!query.isSuccess) return null;
+  // Nothing before the first answer, and nothing on error or offline with no
+  // answer yet: a sheet must not jump. Once rows have loaded, a failed poll
+  // keeps them on screen rather than blinking the block away.
+  if (query.data === undefined) return null;
   if (!hasRows && viewerInSession) return null;
 
   const header = (
@@ -205,7 +232,7 @@ function BoardLiveSessionsBlockComponent({
   );
 
   if (!hasRows) {
-    const namedClimber = litByName && litByUserId !== viewerUserId ? litByName : null;
+    const namedClimber = holderName && holderUserId !== viewerUserId ? holderName : null;
     const body = namedClimber
       ? t('mobile.liveSessions.board.emptyBodyLitBy', { name: namedClimber })
       : t('mobile.liveSessions.board.emptyBody');
@@ -258,7 +285,7 @@ function BoardLiveSessionsBlockComponent({
           <BoardLiveSessionRow
             key={card.sessionId}
             card={card}
-            nowMinute={nowMinute}
+            nowMs={nowMs}
             viewerUserId={viewerUserId}
             formatGrade={formatGrade}
             onPress={handleRowPress}
@@ -313,14 +340,6 @@ const styles = StyleSheet.create({
   shrink: { flexShrink: 1 },
   noShrink: { flexShrink: 0 },
   bold: { fontWeight: '600' },
-  joinPill: {
-    height: ACTION_HEIGHT,
-    paddingHorizontal: spacing[4],
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
   more: {
     paddingHorizontal: spacing[1],
   },
