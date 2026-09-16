@@ -62,6 +62,7 @@ import {
   BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { SPRAY_PHOTO_PENDING_PREFIX } from '../../offline/spray-photo-retry';
 
 let db: TestSqliteDb & SQLiteDatabase;
 
@@ -217,6 +218,13 @@ describe('clearUserData', () => {
     for (const key of wallScopeKeys) {
       await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [key, '1']);
     }
+    // Keyed by layout id, so `scopeSyncMetaKeys` cannot carry it. A stale attempt
+    // count would carry into the next download of the same wall and could spend
+    // the retry budget before the first try.
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `${SPRAY_PHOTO_PENDING_PREFIX}4`,
+      JSON.stringify({ photoKey: 'spray-walls/wall-4/photo-2.jpg', attempts: 8 }),
+    ]);
     // A catalogue board's markers, which this wipe must still preserve.
     await setCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'), {
       updatedAt: '2024-06-01T00:00:00Z',
@@ -225,7 +233,7 @@ describe('clearUserData', () => {
 
     await clearUserData(db);
 
-    for (const key of [...wallScopeKeys, ...orphanScopeKeys]) {
+    for (const key of [...wallScopeKeys, ...orphanScopeKeys, `${SPRAY_PHOTO_PENDING_PREFIX}4`]) {
       const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
       expect(row, `${key} should be gone with the wall`).toBeNull();
     }
