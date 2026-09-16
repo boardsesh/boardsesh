@@ -58,6 +58,10 @@ export function toClimbInput(climb: Climb): ClimbInput {
     // different holds, so without this the peer's board lights the wrong climb
     // instead of skipping it (canAddClimbToBoard rule 5).
     compatibleSizeIds: climb.compatibleSizeIds,
+    // How many holds this climb has lost to a spray-wall reset. A peer standing
+    // at the same wall sees the same gaps in the board art, so the number that
+    // explains them has to travel with the climb.
+    missingHoldCount: climb.missingHoldCount,
   };
 }
 
@@ -150,6 +154,11 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // Size compatibility, so a queued climb keeps the one signal that tells
       // Woods' two boards apart (see toClimbInput above).
       compatibleSizeIds: climb.compatibleSizeIds,
+      // How many holds this climb has lost to a spray-wall reset. A broken climb
+      // is still queueable and still playable, and the play drawer says so from
+      // this number — a queued row that dropped it would be the one surface that
+      // quietly pretended the climb was whole.
+      missingHoldCount: climb.missingHoldCount,
     },
   };
 }

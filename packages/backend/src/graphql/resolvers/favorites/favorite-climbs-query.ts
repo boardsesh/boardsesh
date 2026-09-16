@@ -82,6 +82,11 @@ export const favoriteClimbsQuery = {
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
+        // How many of the climb's holds have come off the wall. Spray walls only —
+        // NULL on every catalogue board, where holds do not come off — and the badge,
+        // the Intact / Lost holds filter and the remix prompt all read it, so a
+        // projection without it tells a climber that a climb they cannot do is fine.
+        missing_hold_count: tables.climbs.missingHoldCount,
         // The structured climb rules. Omitting them here does not just blank a
         // badge: the derived `Climb.is_no_match` resolver falls back to the Aurora
         // description convention when the array is absent, and the play drawer
@@ -157,6 +162,7 @@ export const favoriteClimbsQuery = {
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
+      missingHoldCount: result.missing_hold_count ?? null,
       characteristics: result.characteristics ?? null,
       // Every row is scoped to this board by the join; carrying it keeps
       // is_no_match from applying Aurora's description convention to a

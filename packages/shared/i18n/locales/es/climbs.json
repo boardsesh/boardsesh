@@ -425,6 +425,12 @@
         "label": "Colección",
         "any": "Cualquiera"
       },
+      "holdIntegrity": {
+        "label": "Presas",
+        "any": "Todas",
+        "intact": "Solo intactos",
+        "broken": "Presas perdidas"
+      },
       "pin": "Fijar como atajo",
       "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",
@@ -589,6 +595,16 @@
       "short": "oculto",
       "chip": "Oculto",
       "banner": "Oculto por la comunidad"
+    },
+    "lostHolds": {
+      "chip_one": "Falta {{count}} presa",
+      "chip_other": "Faltan {{count}} presas",
+      "chipAria_one": "{{count}} presa ya no está en el muro",
+      "chipAria_other": "{{count}} presas ya no están en el muro",
+      "banner_one": "Falta {{count}} presa de este bloque",
+      "banner_other": "Faltan {{count}} presas de este bloque",
+      "bannerBody": "Remézclalo con lo que hay ahora en el muro.",
+      "remix": "Remezclar"
     },
     "climbActions": {
       "preview": "Vista previa",

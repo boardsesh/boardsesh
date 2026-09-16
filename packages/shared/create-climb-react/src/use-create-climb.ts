@@ -11,6 +11,25 @@ import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-sche
 type UseCreateClimbOptions = {
   /** Seeds the editor's full frame sequence (a fork, an edit, or an autosave restore). */
   initialFrames?: LitUpHoldsMap[];
+  /**
+   * The hold ids that exist on the board right now. Seeded holds outside this set
+   * are dropped.
+   *
+   * Omit it on a catalogue board, where the answer is "all of them": Kilter's
+   * holds are bolted on at the factory and a climb's hold ids are as permanent as
+   * the wall. A SPRAY WALL is the opposite — a reset takes holds off it, and a
+   * remix of a climb that lost two is seeded from the parent's frames, which
+   * still name them.
+   *
+   * Without this, the existing `filterSupportedFrames` lets them straight through:
+   * it filters by whether the BOARD TYPE supports a hold's STATE, never by whether
+   * the hold is there. The editor would then open with two holds painted that it
+   * cannot draw (no placement, so no ring) and the climber cannot tap off (no tap
+   * target) — while they still count toward `startingCount`, `finishCount` and
+   * `isValid`. Save would publish a climb born broken, on exactly the flow that
+   * exists to repair one.
+   */
+  availableHoldIds?: ReadonlySet<number>;
 };
 
 // Drop holds whose state the board doesn't support (e.g. a colour-only / MoonBoard
@@ -31,8 +50,31 @@ function filterSupportedHoldsMap(boardName: BoardName, holdsMap: LitUpHoldsMap):
   ) as LitUpHoldsMap;
 }
 
-function filterSupportedFrames(boardName: BoardName, frames: LitUpHoldsMap[]): LitUpHoldsMap[] {
-  const filtered = frames.map((frame) => filterSupportedHoldsMap(boardName, frame));
+/**
+ * Drop seeded holds that are not on the board.
+ *
+ * Separate from `filterSupportedHoldsMap` because the two ask different
+ * questions — "can this board paint that state?" and "is that hold there?" — and
+ * only the second one has an answer that changes over a wall's life.
+ *
+ * Keys are the numeric hold ids the frames string carries; `Object.entries`
+ * stringifies them, hence the `Number(...)`.
+ */
+function filterHoldsOnBoard(available: ReadonlySet<number>, holdsMap: LitUpHoldsMap): LitUpHoldsMap {
+  return Object.fromEntries(
+    Object.entries(holdsMap).filter(([holdId]) => available.has(Number(holdId))),
+  ) as LitUpHoldsMap;
+}
+
+function filterSupportedFrames(
+  boardName: BoardName,
+  frames: LitUpHoldsMap[],
+  availableHoldIds?: ReadonlySet<number>,
+): LitUpHoldsMap[] {
+  const filtered = frames.map((frame) => {
+    const supported = filterSupportedHoldsMap(boardName, frame);
+    return availableHoldIds ? filterHoldsOnBoard(availableHoldIds, supported) : supported;
+  });
   return filtered.length > 0 ? filtered : [{}];
 }
 
@@ -176,10 +218,14 @@ export function framesReducer(state: FramesHistory, action: FramesAction): Frame
   }
 }
 
-function initHistory(boardName: BoardName, initialFrames: LitUpHoldsMap[] | undefined): FramesHistory {
+function initHistory(
+  boardName: BoardName,
+  initialFrames: LitUpHoldsMap[] | undefined,
+  availableHoldIds?: ReadonlySet<number>,
+): FramesHistory {
   return {
     past: [],
-    present: filterSupportedFrames(boardName, initialFrames ?? [{}]),
+    present: filterSupportedFrames(boardName, initialFrames ?? [{}], availableHoldIds),
     future: [],
     currentFrameIndex: 0,
   };
@@ -203,7 +249,7 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
   // needs the mount-time board. If a future caller swaps boardName mid-mount,
   // remount this hook or re-sanitize the present frames on board change.
   const [history, dispatch] = useReducer(framesReducer, options?.initialFrames, (initial) =>
-    initHistory(boardName, initial),
+    initHistory(boardName, initial, options?.availableHoldIds),
   );
   const litUpHoldsMap = history.present[history.currentFrameIndex] ?? {};
   const frameCount = history.present.length;

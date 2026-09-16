@@ -35,8 +35,13 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * there (#5405). The key hashes the search params, but nothing in them moved for
  * those boards: the server flips cross-angle on from the board capability, so a
  * cached v7 page would keep serving the truncated list for the full 24h TTL.
+ * v9: search rows now carry `missingHoldCount`, the spray-wall integrity number a
+ * list row badges a climb from (SW-12, #5445). The key hashes the search params,
+ * and a search that does not filter on integrity has no param that moved — so a
+ * cached v8 page would serve rows with the field absent and every climb on a wall
+ * that has just been reset would read as intact for the full 24h TTL.
  */
-export const CACHE_VERSION = 'v8';
+export const CACHE_VERSION = 'v9';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

@@ -686,6 +686,18 @@ describe('isOfflineSearchSupported', () => {
     expect(isOfflineSearchSupported(makeInput({ holdsFilter: { hold_5: { STARTING: 'include' } } }))).toBe(false);
   });
 
+  // SW-13/SW-12: the device has no `missing_hold_count` until SW-15 (#5448)
+  // syncs it. Declining IS the faithful mirror — answering locally would report
+  // every climb on a wall that was just reset as intact, the one answer this
+  // filter exists to contradict. Pin it so a later "just answer it locally"
+  // shortcut has to delete this test on purpose.
+  it('declines a spray-wall hold-integrity search rather than answering from a column it lacks', () => {
+    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'INTACT' }))).toBe(false);
+    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'BROKEN' }))).toBe(false);
+    // ANY carries no predicate on either side, so it is still served locally.
+    expect(isOfflineSearchSupported(makeInput({ holdIntegrity: 'ANY' }))).toBe(true);
+  });
+
   // Random needs no un-synced tables, so it stays offline-supported.
   it('supports the random sort offline', () => {
     expect(isOfflineSearchSupported(makeInput({ sortBy: 'random', sortSeed: '42' }))).toBe(true);

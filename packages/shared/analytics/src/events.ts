@@ -423,6 +423,31 @@ export const SHARED_EVENTS = {
   // Props: { holdCount, hadCandidates }. What the review step actually saved —
   // the number the detector, and later the retrain flywheel (SW-20), is judged on.
   SprayHoldsReviewed: 'Spray Holds Reviewed',
+  // Spray walls — the reset funnel (epic #5346, SW-13). Two events, because a
+  // reset is two decisions: looking at what the matcher found, and landing it.
+  // The gap between them is the number that says whether the compare screen is
+  // trusted — an owner who previews and never applies has been shown something
+  // they do not believe.
+  //
+  // Props: { keptCount, removedCount, addedCount, lowConfidenceCount,
+  // climbsAffected, aspectMismatch, detectionCount }. Nothing here identifies
+  // the wall or its photograph.
+  SprayWallResetPreviewed: 'Spray Wall Reset Previewed',
+  // Props: { keptCount, removedCount, addedCount, climbsChanged, moveCount }.
+  // The counts are the SERVER's, not the review's: an owner's decisions are
+  // re-validated under the wall lock, so what landed and what was confirmed can
+  // legitimately differ. `moveCount` is how many "same hold, moved here"
+  // pairings were confirmed — the only thing that makes remix able to suggest a
+  // successor months later.
+  SprayWallResetApplied: 'Spray Wall Reset Applied',
+  // Props: { lostHoldCount, source: 'play_drawer' }. Fired when a climber takes
+  // the remix offer on a climb that lost holds — the one number that says
+  // whether a broken climb is a dead end or a starting point. No successor
+  // count: `remixClimb`'s suggestions are not read on this path (see
+  // `use-spray-wall-reset.ts`), and a property that is always absent is worse
+  // than no property at all — it reads as "no successors were offered" rather
+  // than "nobody asked".
+  ClimbRemixedFromBroken: 'Climb Remixed From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

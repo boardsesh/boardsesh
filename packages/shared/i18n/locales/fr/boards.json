@@ -834,5 +834,82 @@
       "checkFailed": "Impossible de vérifier ce mur. Réessaie.",
       "retry": "Réessayer"
     }
+  },
+  "sprayReset": {
+    "screenTitle": "Réinitialiser le mur",
+    "notYours": "Ce mur n'est pas à toi, tu ne peux pas le réinitialiser.",
+    "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
+    "openDraft": {
+      "title": "Une réinitialisation est à moitié faite",
+      "body": "Une photo d'un essai précédent est encore ouverte sur ce mur. Jette-la et recommence : rien n'a encore changé sur le mur.",
+      "discard": "La jeter et recommencer",
+      "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
+      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie."
+    },
+    "photo": {
+      "title": "Photographie le mur à nouveau",
+      "body": "Place-toi où tu étais la première fois si tu peux. Même mur, nouvelles prises."
+    },
+    "anchors": {
+      "title": "Marque les coins",
+      "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
+      "use": "Utiliser ces coins",
+      "notConvex": "Ces coins se croisent. Place-les autour du mur dans l'ordre."
+    },
+    "detect": {
+      "title": "On regarde ce qui a changé"
+    },
+    "leave": {
+      "title": "Quitter la réinitialisation ?",
+      "body": "Ta nouvelle photo reste en brouillon. Rien ne change sur le mur tant que tu ne confirmes pas."
+    },
+    "compare": {
+      "working": "On calcule ce qui a changé…",
+      "unavailable": "On n'a pas pu calculer ce qui a changé sur ce mur.",
+      "counts": "{{kept}} gardées · {{removed}} parties · {{added}} nouvelles",
+      "climbsAffected_one": "{{count}} bloc perd une prise",
+      "climbsAffected_other": "{{count}} blocs perdent des prises",
+      "aspectWarning": "Cette photo est cadrée différemment de la précédente. Vérifie que les coins sont bien sur les coins.",
+      "filterLabel": "Quels cercles afficher",
+      "tapHint": "Touche n'importe quel cercle pour changer d'avis.",
+      "confirm": "Confirmer la réinitialisation",
+      "acceptMoves": "Accepter tous les déplacements proposés",
+      "noDetections": "Rien à comparer",
+      "noDetectionsBody": "Ce téléphone n'a pas trouvé les prises sur ta nouvelle photo, donc il n'y a rien à comparer. Ta photo est gardée en brouillon."
+    },
+    "commit": {
+      "failed": "La réinitialisation n'est pas passée. Rien n'a changé sur le mur."
+    },
+    "filter": {
+      "all": "Toutes",
+      "kept": "Gardées {{value}}",
+      "removed": "Parties {{value}}",
+      "new": "Nouvelles {{value}}",
+      "unsure": "À vérifier {{value}}"
+    },
+    "hold": {
+      "kept": "Prise {{id}} — toujours sur le mur",
+      "removed": "Prise {{id}} — elle part",
+      "unsure": "Prise {{id}} — à vérifier",
+      "stillHere": "Elle est toujours là",
+      "gone": "Elle est partie"
+    },
+    "detection": {
+      "new": "Une prise qui n'était pas là",
+      "rejected": "Ce n'est pas une prise",
+      "accept": "C'est bien une prise",
+      "reject": "Ce n'est pas une prise"
+    },
+    "pairing": {
+      "start": "Même prise, déplacée ici",
+      "prompt": "Touche le cercle où cette prise était avant.",
+      "cancel": "Laisse tomber",
+      "paired": "Remplace la prise {{id}}",
+      "unpair": "Ce n'est pas cette prise",
+      "useSuggestion": "Remplace la prise {{id}}"
+    },
+    "done": {
+      "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
+    }
   }
 }

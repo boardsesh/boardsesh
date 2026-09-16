@@ -695,6 +695,20 @@ export const mutationsTypeDefs = /* GraphQL */ `
     removeSprayWallHolds(input: RemoveSprayWallHoldsInput!): Int!
 
     """
+    Land a reviewed reset: apply the decisions and publish the draft, in ONE
+    transaction under the wall lock.
+
+    Removed holds are stamped, never deleted — the climbs set on them stay
+    findable and countable. Added holds get a fresh catalogue pair and, where the
+    review confirmed a move, a \`movedFromHoldId\` back to the hold they replaced.
+    Kept holds keep their published position and take only a fresher silhouette.
+    The previous generation is superseded and every climb on the wall has its
+    \`missingHoldCount\` re-materialised, which is what makes the badge, the
+    Intact / Lost holds filter and the remix prompt agree. Owner only.
+    """
+    commitSprayWallVersion(input: CommitSprayWallVersionInput!): SprayWallResetResult!
+
+    """
     Publish a draft version: it becomes the generation climbers set against, the
     previous published version is superseded, and the wall's hold count and
     catalogue image are refreshed. Owner only.

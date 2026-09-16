@@ -74,6 +74,48 @@ export const climbTypeDefs = /* GraphQL */ `
     apart (see canAddClimbToBoard rule 5).
     """
     compatibleSizeIds: [Int!]
+    """
+    How many of this climb's holds are no longer on the wall.
+
+    Spray walls only — null on every catalogue board, where holds do not come off.
+    0 is an intact climb; anything higher is a climb that survived a reset minus
+    some holds, which stays findable, gets a badge and can be remixed. Materialised
+    on \`board_climbs\` rather than joined, because the offline mirror has no
+    \`board_climb_holds\` table to join through.
+    """
+    missingHoldCount: Int
+    """
+    The holds this climb was set on that are no longer on the wall, carrying the
+    geometry they had while they were — so a client can draw ghost rings where
+    they used to be and the climber can see what the reset took.
+
+    Spray walls only: null on every catalogue board, where holds do not come off,
+    and null on a climb that has lost nothing, so the common case costs no query.
+    An empty list means the climb's holds are all still there but the server did
+    look.
+
+    Coordinates are the wall's canonical frame — the same frame
+    \`SprayWallRenderData.holds\` uses — so the two sets draw on one photo without
+    conversion. \`removedVersion\` is the generation that took each hold off.
+
+    Resolved per climb, with its own query. A list must not select it; it is for a
+    single-climb surface — the play drawer and the remix editor.
+    """
+    lostHolds: [SprayWallHold!]
+  }
+
+  """
+  Whether a climb still has every hold it was set on.
+
+  ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
+  nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
+  reset takes holds off the wall; on a catalogue board every climb is INTACT, so
+  BROKEN there is an empty result rather than an error.
+  """
+  enum HoldIntegrityFilter {
+    ANY
+    INTACT
+    BROKEN
   }
 
   """
@@ -118,6 +160,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
+    "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
+    missingHoldCount: Int
   }
 
   # ============================================
@@ -217,6 +261,8 @@ export const climbTypeDefs = /* GraphQL */ `
     onlyDrafts: Boolean
     "Show only unclimbed projects (climbs with 0 ascents)"
     projectsOnly: Boolean
+    "Keep only intact climbs, only climbs that have lost a hold, or everything (the default)."
+    holdIntegrity: HoldIntegrityFilter
     "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read."
     crossAngleStats: Boolean
     "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."

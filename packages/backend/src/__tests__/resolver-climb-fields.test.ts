@@ -119,6 +119,8 @@ function rawClimbRow(overrides: Record<string, unknown> = {}) {
     frames_pace: 900,
     compatibleSizeIds: [2],
     compatible_size_ids: [2],
+    missingHoldCount: 2,
+    missing_hold_count: 2,
     characteristics: ['no_match'],
     statsAngle: 40,
     angle: 40,
@@ -153,7 +155,18 @@ vi.mock('../graphql/resolvers/playlists/helpers/enrichment', () => ({
  * Column keys every climb-returning projection must pass to `db.select()`.
  * Snake_case because that is how these resolvers alias board_climbs columns.
  */
-const REQUIRED_SELECT_KEYS = ['frames_count', 'frames_pace', 'compatible_size_ids', 'characteristics'] as const;
+const REQUIRED_SELECT_KEYS = [
+  'frames_count',
+  'frames_pace',
+  'compatible_size_ids',
+  'characteristics',
+  // Spray-wall integrity (SW-12, #5445). Dropping it is the same class of bug as
+  // `characteristics`: the column is NULL on every catalogue board, so an absent
+  // projection is indistinguishable from an intact climb — and a climb that lost
+  // three holds, opened from the queue, a playlist or the climb screen, would say
+  // it was fine.
+  'missing_hold_count',
+] as const;
 
 /**
  * Projection keys that are NOT board_climbs columns, so they are checked in the
@@ -175,6 +188,11 @@ const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   framesPace: 900,
   compatibleSizeIds: [2],
   characteristics: ['no_match'],
+  // How many of the climb's holds have come off the wall. 2 rather than 0 in the
+  // fixture on purpose: 0 and "the mapper never wrote the field" both read as
+  // falsy, so a zero would make this assertion pass for a projection that dropped
+  // the column.
+  missingHoldCount: 2,
   // Where the stats on this row were read from (issue #5405). On an angle-bound
   // board it is not the browsed angle, and a list row that drops it leaves the
   // play drawer unable to say the grade beside it belongs to another angle.
@@ -323,6 +341,7 @@ const ENTRY_POINTS: EntryPoint[] = [
           frames_count: 3,
           frames_pace: 900,
           compatible_size_ids: [2],
+          missing_hold_count: 2,
           characteristics: ['no_match'],
           stats_angle: 40,
           ascensionist_count: 5,
