@@ -52,6 +52,8 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
 
   user_follows: [
+    ['publicProfile'],
+    ['searchUsers'],
     ['followers'],
     ['following'],
     ['followedAuthors'],
@@ -64,6 +66,10 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
 
   // Following-only catalogue reads, Crew and the complete author snapshot.
   setter_follows: [
+    ['publicProfile'],
+    ['followers'],
+    ['following'],
+    ['searchUsers'],
     ['followedAuthors'],
     ['crewFeed'],
     ['setterStats'],

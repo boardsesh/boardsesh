@@ -13,6 +13,7 @@ import {
 import type { FollowConnection, UserSearchConnection, VoteSummary } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../local-user-id', () => ({ readLocalUserId: async () => 'me' }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: 'me', isLoading: false }),
 }));

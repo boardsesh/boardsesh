@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { updateUserFollowCaches } from '../user-follow-cache';
+
+describe('offline user-follow display state', () => {
+  it('updates profiles and paginated people without waiting for a network refetch', () => {
+    const queryClient = new QueryClient();
+    const person = { id: 'setter', followerCount: 2, followingCount: 3, isFollowedByMe: false };
+    queryClient.setQueryData(['publicProfile', 'setter'], person);
+    const connections = { pages: [{ users: [person], totalCount: 1, hasMore: false }], pageParams: [0] };
+    queryClient.setQueryData(['following', 'viewer'], connections);
+    queryClient.setQueryData(['followers', 'viewer'], connections);
+    const search = {
+      pages: [{ results: [{ user: person, recentAscentCount: 1 }], totalCount: 1, hasMore: false }],
+      pageParams: [0],
+    };
+    queryClient.setQueryData(['searchUsers', 'set'], search);
+    updateUserFollowCaches(queryClient, 'setter', true);
+    expect(queryClient.getQueryData(['publicProfile', 'setter'])).toMatchObject({
+      isFollowedByMe: true,
+      followerCount: 3,
+    });
+    expect(
+      queryClient.getQueryData<typeof connections>(['following', 'viewer'])?.pages[0].users[0].isFollowedByMe,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryData<typeof search>(['searchUsers', 'set'])?.pages[0].results[0].user.isFollowedByMe,
+    ).toBe(true);
+    updateUserFollowCaches(queryClient, 'setter', false);
+    expect(queryClient.getQueryData(['publicProfile', 'setter'])).toEqual(person);
+    queryClient.clear();
+  });
+});

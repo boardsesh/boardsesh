@@ -31,6 +31,7 @@ import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/sha
 import { getHttpClient } from '../client';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 import { useToggleAuthorFollow } from './use-followed-authors';
+import { updateUserFollowCaches } from './user-follow-cache';
 
 const SOCIAL_PAGE_SIZE = 30;
 
@@ -126,10 +127,13 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
   return useMutation({
     networkMode: 'always',
     mutationFn: async ({ userId, isFollowedByMe }: { userId: string; isFollowedByMe: boolean }) => {
-      await authorFollow.mutateAsync({ kind: 'user', identifier: userId, follow: !isFollowedByMe });
-      return true;
+      return authorFollow.mutateAsync({ kind: 'user', identifier: userId, follow: !isFollowedByMe });
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: async ({ queued, viewerId }, variables) => {
+      const { readLocalUserId } = await import('../../local-user-id');
+      if ((await readLocalUserId()) !== viewerId) return;
+      updateUserFollowCaches(queryClient, variables.userId, !variables.isFollowedByMe);
+      if (queued) return;
       void queryClient.invalidateQueries({ queryKey: ['publicProfile', variables.userId] });
       if (currentUserId) void queryClient.invalidateQueries({ queryKey: ['publicProfile', currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ['followers'] });
