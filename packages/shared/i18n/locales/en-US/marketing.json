@@ -10,7 +10,7 @@
       "description": "One app for every climbing board. Open source, community-driven."
     },
     "support": {
-      "title": "Support Boardsesh",
+      "title": "Donate to keep the servers running",
       "description": "Boardsesh is free and open source. Chip in for the hosting, database, and infrastructure bills that keep it running."
     },
     "help": {
@@ -145,6 +145,7 @@
       "body": "To everyone already sponsoring Boardsesh, reporting bugs, sending patches, or translating a screen: thank you. You keep this thing moving."
     },
     "aboutLink": "Read more about the project →",
+    "docsLink": "See how it is built in the developer docs →",
     "footer": "Free for everyone, funded by whoever can chip in."
   },
   "legal": {

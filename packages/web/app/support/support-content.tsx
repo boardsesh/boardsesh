@@ -28,7 +28,9 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
       <Box component="header" className={styles.header}>
         <BackButton fallbackUrl="/" />
         <Logo size="sm" showText={false} />
-        <Typography variant="h4" className={styles.headerTitle}>
+        {/* `component="p"`: page chrome, not a heading — a literal <h4> here
+            would sit above the hero's <h1> and scramble the outline. */}
+        <Typography variant="h4" component="p" className={styles.headerTitle}>
           {t('support.headerTitle')}
         </Typography>
       </Box>
@@ -109,6 +111,11 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
                 </Typography>
                 <Typography variant="body1" component="p">
                   {t('support.honesty.p2')}
+                </Typography>
+                <Typography variant="body1" component="p">
+                  <MuiLink component={LocaleLink} href="/docs">
+                    {t('support.docsLink')}
+                  </MuiLink>
                 </Typography>
               </section>
 
