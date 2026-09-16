@@ -73,6 +73,15 @@ const gymRoster = vi.hoisted(() => ({ boards: undefined as unknown[] | undefined
 vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
   useGymBoards: () => ({ data: gymRoster.boards }),
 }));
+// Self-subscribing (React Query, Reanimated, expo-router); its own suite covers
+// what it draws. Here: where it mounts and what the panel hands it.
+const liveSessionsBlock = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
+vi.mock('../../live-sessions/BoardLiveSessionsBlock', () => ({
+  BoardLiveSessionsBlock: (props: Record<string, unknown>) => {
+    liveSessionsBlock.props.push(props);
+    return createElement('div', { 'data-live-sessions-block': 'true' });
+  },
+}));
 // The list itself has its own suite; here we only care whether it is on screen.
 vi.mock('../GymWallSwitcher', () => ({
   GymWallSwitcher: () => createElement('div', { 'data-gym-wall-switcher': 'true' }),
@@ -328,6 +337,29 @@ describe('NowOnTheWallPanel', () => {
     presence.refresh.mockClear();
     // mockReset, not mockClear: the tap-ordering test installs an implementation.
     analytics.track.mockReset();
+  });
+
+  it('mounts the live-sessions block in the sheet, with the board id and who lit the wall', () => {
+    liveSessionsBlock.props = [];
+    presence.currentClimb = {
+      climbUuid: 'climb-1',
+      name: 'Legion',
+      grade: 'V3',
+      sentAt: '2026-09-16T10:00:00.000Z',
+      seq: 4,
+      sentByDisplayName: '  Jonah W. ',
+      sentByUserId: 'jonah',
+    };
+    const { container } = render(panelElement({ variant: 'sheet' }));
+    expect(container.querySelector('[data-live-sessions-block]')).not.toBeNull();
+    expect(liveSessionsBlock.props.at(-1)).toEqual(
+      expect.objectContaining({ boardId: 123, litByName: 'Jonah W.', litByUserId: 'jonah' }),
+    );
+  });
+
+  it('keeps the live-sessions block off the column variant (the wall kiosk)', () => {
+    const { container } = render(panelElement({ variant: 'column' }));
+    expect(container.querySelector('[data-live-sessions-block]')).toBeNull();
   });
 
   it('adds the bottom safe-area inset to the switch-board footer in both sheet and inline variants', () => {
