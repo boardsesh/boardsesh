@@ -45,7 +45,9 @@ export function sprayPhotoFileName(identity: SprayPhotoIdentity): string {
 /**
  * Suffix a download stages under before it is moved into place. The sweeper
  * refuses to delete anything carrying it (`planSprayPhotoSweep`), so the two must
- * agree — hence one constant rather than two literals.
+ * agree. `cache-sweep-plan.ts` keeps its own copy rather than importing this one —
+ * that module is deliberately import-free so its rules stay testable without a
+ * filesystem — and a test pins the two values together.
  */
 export const SPRAY_PARTIAL_SUFFIX = '.part';
 

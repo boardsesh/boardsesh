@@ -177,9 +177,13 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, key: string): Pr
     deleteQuietly(destination);
 
     await runRetainedDownload(wall.photoUrl, partial);
-    partial.moveSync(destination);
 
+    // Resolved BEFORE the move, so nothing can throw between a completed
+    // `moveSync` and the memo write. Reading the uri afterwards would leave the
+    // finished photo inside the catch's blast radius, and the catch deletes
+    // `destination` — a file that is, by then, the correct one.
     const path = toPath(destination.uri);
+    partial.moveSync(destination);
     resolvedPaths.set(key, path);
     return path;
   } catch {

@@ -24,6 +24,7 @@ import { BoardConfigChips } from './BoardConfigChips';
 import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builder-labels';
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
+import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
@@ -548,11 +549,15 @@ function BoardConfigPreview({
   setIds: string;
   maxWidth: number;
 }) {
+  // The preview of a wall being edited resolves synchronously too, so it needs
+  // the same subscription as every other board surface. `''` off spray.
+  const sprayToken = useSprayWallToken(boardName, layoutId);
   const renderData = useMemo(() => {
     const setIdValues = setIds.split(',').map(Number).filter(Number.isFinite);
     if (setIdValues.length === 0) return null;
     return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
-  }, [boardName, layoutId, sizeId, setIds]);
+    // `sprayToken` recomputes this when the wall lands or is reset.
+  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
 
   if (!renderData) return null;
 

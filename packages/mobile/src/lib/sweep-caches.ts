@@ -170,6 +170,11 @@ export async function sweepSnapshotLeftovers(options?: { maxAgeMs?: number }): P
   return measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.deleteNames });
 }
 
+/** What one wall-photo sweep removed. Counted into `CachedImagesSwept` on both axes. */
+export type SprayPhotoSweepResult = { freedBytes: number; filesDeleted: number };
+
+const EMPTY_SPRAY_PHOTO_SWEEP: SprayPhotoSweepResult = { freedBytes: 0, filesDeleted: 0 };
+
 /**
  * Reap wall photos nothing is using any more.
  *
@@ -177,9 +182,12 @@ export async function sweepSnapshotLeftovers(options?: { maxAgeMs?: number }): P
  * `planSprayPhotoSweep`. `maxAgeMs: 0` is how the Clear button says "everything
  * except the walls on screen right now".
  */
-export async function sweepSprayPhotos(options?: { maxAgeMs?: number; nowMs?: number }): Promise<number> {
+export async function sweepSprayPhotos(options?: {
+  maxAgeMs?: number;
+  nowMs?: number;
+}): Promise<SprayPhotoSweepResult> {
   const walk = await walkCacheDir(SPRAY_PHOTO_CACHE_DIR_NAME);
-  if (walk === null || walk.entries.length === 0) return 0;
+  if (walk === null || walk.entries.length === 0) return EMPTY_SPRAY_PHOTO_SWEEP;
 
   const plan = planSprayPhotoSweep({
     entries: walk.entries,
@@ -189,7 +197,7 @@ export async function sweepSprayPhotos(options?: { maxAgeMs?: number; nowMs?: nu
   });
   if (plan.deleteNames.length === 0) {
     recordCacheMeasurement(SPRAY_PHOTO_CACHE_DIR_NAME, walk.totalBytes);
-    return 0;
+    return EMPTY_SPRAY_PHOTO_SWEEP;
   }
 
   const deletedNames = deleteCacheDirEntries(SPRAY_PHOTO_CACHE_DIR_NAME, plan.deleteNames);
@@ -198,7 +206,13 @@ export async function sweepSprayPhotos(options?: { maxAgeMs?: number; nowMs?: nu
   // a file that is gone. Cheap to rebuild: one `stat` per wall on the next read.
   clearSprayPhotoPathCache();
   invalidateCacheMeasurement(SPRAY_PHOTO_CACHE_DIR_NAME);
-  return measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.deleteNames });
+  return {
+    freedBytes: measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.deleteNames }),
+    // The photos count in `filesDeleted` as well as in the bytes. Reporting the
+    // bytes alone made `CachedImagesSwept` claim a spray-only sweep freed
+    // megabytes and deleted nothing.
+    filesDeleted: deletedNames.length,
+  };
 }
 
 export type ClearCachedImagesResult = {
@@ -239,7 +253,9 @@ export async function clearCachedImages(): Promise<ClearCachedImagesResult> {
   freedBytes += await sweepSnapshotLeftovers({ maxAgeMs: SNAPSHOT_CLEAR_MIN_AGE_MS });
   // Age 0: the Clear button means everything, and the live-wall protection inside
   // the plan is what keeps a board the climber is looking at from going blank.
-  freedBytes += await sweepSprayPhotos({ maxAgeMs: 0 });
+  const sprayPhotoSweep = await sweepSprayPhotos({ maxAgeMs: 0 });
+  freedBytes += sprayPhotoSweep.freedBytes;
+  filesDeleted += sprayPhotoSweep.filesDeleted;
 
   // Android's `clearDiskCache` resolves FALSE — a no-op — when the module has no
   // current activity, which is why this is only ever wired to a button press and
@@ -317,12 +333,13 @@ export async function sweepBoardArtCache(params: {
   // machinery than the space is worth. Age-based, so this reaps the generations a
   // reset superseded and the walls the climber stopped visiting; the photos of
   // walls registered right now are protected by name.
-  const sprayPhotoBytes = await sweepSprayPhotos({ nowMs });
+  const sprayPhotoSweep = await sweepSprayPhotos({ nowMs });
+  const sprayPhotoBytes = sprayPhotoSweep.freedBytes;
 
   const walk = await walkCacheDir(OVERLAY_CACHE_DIR_NAME);
   if (walk === null) {
     return sprayPhotoBytes > 0
-      ? { beforeBytes: sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: 0 }
+      ? { beforeBytes: sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: sprayPhotoSweep.filesDeleted }
       : EMPTY_SWEEP;
   }
 
@@ -339,7 +356,11 @@ export async function sweepBoardArtCache(params: {
     // The wall photos this sweep freed were part of what the caches held before
     // it ran, so they count on both sides — otherwise `CachedImagesSwept` can
     // report freeing more than there was.
-    return { beforeBytes: plan.beforeBytes + sprayPhotoBytes, freedBytes: sprayPhotoBytes, filesDeleted: 0 };
+    return {
+      beforeBytes: plan.beforeBytes + sprayPhotoBytes,
+      freedBytes: sprayPhotoBytes,
+      filesDeleted: sprayPhotoSweep.filesDeleted,
+    };
   }
 
   const deletedNames = deleteCacheDirEntries(OVERLAY_CACHE_DIR_NAME, deleteNames);
@@ -354,7 +375,7 @@ export async function sweepBoardArtCache(params: {
     beforeBytes: plan.beforeBytes + sprayPhotoBytes,
     freedBytes:
       sprayPhotoBytes + measureFreedBytes({ entries: walk.entries, deletedNames, countableNames: plan.evictNames }),
-    filesDeleted: deletedNames.length,
+    filesDeleted: deletedNames.length + sprayPhotoSweep.filesDeleted,
   };
   if (result.freedBytes > 0) {
     track(SHARED_EVENTS.CachedImagesSwept, {

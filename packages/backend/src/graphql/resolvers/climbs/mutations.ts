@@ -765,12 +765,6 @@ export const climbMutations = {
       throw new Error('Cannot publish climb without an angle');
     }
 
-    // Publishing a spray climb needs a grade, and `updateClimb` has no
-    // `userGrade` field to take one from — so the grade has to already be on the
-    // stats row `saveClimb` seeded when the draft was created. Checking it here is
-    // what stops draft → publish from being a way around
-    // `assertSprayGradeOnPublish`: without it a client could save an ungraded
-    // draft and immediately publish it.
     // Decided inside the transaction, under the wall lock — see `saveClimb`.
     let sprayMayAnnounce = sprayTarget?.publishesFeedEvents ?? false;
 

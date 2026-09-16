@@ -17,7 +17,7 @@
 // copy on disk is keyed on `(layoutId, version)` instead — see
 // `spray-photo-cache.ts`.
 
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ensureSprayWallLoaded,
@@ -82,9 +82,14 @@ export function useSprayWall(layoutId: number | null): UseSprayWallResult {
     // blank the others. It is withdrawn when the wall itself goes away.
   }, [layoutId, loadState]);
 
-  return {
-    isLoading: loadState === 'idle' || loadState === 'loading',
-    isUnrenderable: loadState === 'unavailable',
-    loadState,
-  };
+  // Memoised on the one thing it derives from, so a consumer can put the result
+  // straight into a dependency array instead of a fresh object every render.
+  return useMemo(
+    () => ({
+      isLoading: loadState === 'idle' || loadState === 'loading',
+      isUnrenderable: loadState === 'unavailable',
+      loadState,
+    }),
+    [loadState],
+  );
 }
