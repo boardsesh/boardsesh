@@ -206,13 +206,20 @@ export async function prefetchBoardArtGeometry(query: BoardArtGeometryQuery): Pr
     })
     .catch(() => {
       const failures = (shardFailureCounts.get(key) ?? 0) + 1;
-      shardFailureCounts.set(key, failures);
       // Not cached while retries remain: a failed download is not evidence the
       // shard is absent, and the next board view should be free to try again.
       // Once they run out it IS cached, as `null` — that stops
       // `boardArtGeometryPending` reporting the key as still in flight, which is
-      // what a caller re-asking on every render is reading.
-      if (failures >= MAX_SHARD_DOWNLOAD_ATTEMPTS) shardCache.set(key, null);
+      // what a caller re-asking on every render is reading. The tally has done
+      // its job by then, and that cached `null` short-circuits every later call
+      // before this handler, so drop the count rather than hold it for the rest
+      // of the session.
+      if (failures >= MAX_SHARD_DOWNLOAD_ATTEMPTS) {
+        shardCache.set(key, null);
+        shardFailureCounts.delete(key);
+      } else {
+        shardFailureCounts.set(key, failures);
+      }
       return null;
     })
     .finally(() => {
