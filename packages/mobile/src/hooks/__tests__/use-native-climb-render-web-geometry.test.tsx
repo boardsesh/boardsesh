@@ -173,9 +173,10 @@ describe('web Aura geometry recovery', () => {
   });
 
   it('does not re-ask for a chunk that failed, so a dropped download is not a loop', async () => {
-    // A render still inside the renderer, so no PNG is cached under the pending
-    // key: without that entry, nothing else stops the effect from re-entering the
-    // prefetch branch, which is exactly where the loop lived.
+    // A render still inside the renderer. Nothing about the cache is load-bearing
+    // here any more — the prefetch branch runs ahead of the cached-overlay return
+    // on purpose — so what this pins is the narrow claim: resolving `null` must
+    // not itself bounce the effect. The re-ask on a LATER mount is the next case.
     nativeModule.renderHoldsOverlay.mockImplementation(() => new Promise<string>(() => {}));
     renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
 
@@ -187,12 +188,51 @@ describe('web Aura geometry recovery', () => {
     geometryChunk.resolve?.(null);
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    // One ask, not two: the render is still queued behind the hanging one, so
-    // this count is the only thing standing between a dropped chunk and an
-    // unbounded re-fetch. (The per-key download cap in
-    // `prefetchBoardArtGeometry` is the backstop, pinned in the
+    // One ask, not two, within this mount: the `null` resolved without bumping
+    // the recovery nonce, so the effect never re-ran. (The per-key download cap
+    // in `prefetchBoardArtGeometry` is the backstop, pinned in the
     // board-art-geometry suite.)
     expect(geometryChunk.prefetchCalls).toBe(1);
+  });
+
+  it('re-asks on a later mount even though the ring is cached, so the retry budget is reachable', async () => {
+    // The regression this guards: the hook caches the ring PNG under the
+    // `_geopending` key, and the cached-overlay fast path returns before it would
+    // reach the prefetch. With that ordering a board whose chunk dropped once
+    // short-circuits on its own ring for every later mount, never re-downloads,
+    // and the loader's three-attempt budget is dead code — one transient blip
+    // costs the silhouettes for the whole session.
+    const { unmount } = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
+
+    await waitFor(() => expect(geometryChunk.resolve).not.toBeNull());
+    expect(geometryChunk.prefetchCalls).toBe(1);
+
+    // The ring lands in the cache under the pending key, and the download fails.
+    await waitFor(() => expect(auraRenderKeys()).toHaveLength(1));
+    expect(auraRenderKeys()[0].endsWith('_geopending')).toBe(true);
+    geometryChunk.resolve?.(null);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    unmount();
+    const { unmount: unmountSecond } = renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
+
+    // Asks again, despite the cached ring sitting under this exact key.
+    await waitFor(() => expect(geometryChunk.prefetchCalls).toBe(2));
+
+    // And the asking is bounded. Once the loader's cap is spent it caches `null`
+    // and stops reporting the key as pending — the flip below stands in for that.
+    // Resolving `null` deliberately does not bump the recovery nonce, so the
+    // settled answer is picked up by the next mount, which is also where the
+    // re-ask would have happened: the key drops `_geopending`, the ring is
+    // redrawn under the clean name, and no further chunk is requested.
+    geometryChunk.resolve?.(null);
+    geometryChunk.pending = false;
+    unmountSecond();
+    renderHook(() => useNativeClimbRender({ ...GRASSHOPPER }));
+
+    await waitFor(() => expect(auraRenderKeys()).toHaveLength(2));
+    expect(auraRenderKeys()[1].endsWith('_geopending')).toBe(false);
+    expect(geometryChunk.prefetchCalls).toBe(2);
   });
 });
 

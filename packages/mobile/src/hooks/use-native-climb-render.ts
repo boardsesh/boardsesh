@@ -2292,6 +2292,41 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       }
     }
 
+    // Aura draws traced hold silhouettes, which on web are a per-board async
+    // chunk rather than something already in the bundle. Start it, and bounce the
+    // effect once it resolves so the config rebuilds with the art. Until then the
+    // board still renders, with a ring at each placement radius.
+    //
+    // Ahead of the cached-overlay return below, deliberately. The ring PNG this
+    // effect draws on the first pass IS cached, under the `_geopending` key, so
+    // asking after that return would mean the second mount of a board whose
+    // chunk dropped short-circuits on its own ring and never re-downloads — the
+    // loader's three-attempt budget would be unreachable and one transient
+    // network blip would cost the silhouettes for the whole session. It also
+    // sits ahead of the `getNativeModule` check: a geometry chunk is a plain
+    // download with no renderer involved, and on a web build whose WASM never
+    // loaded there is no overlay to draw either way.
+    if (boardArtChunkPending) {
+      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then((geometry) => {
+        // A chunk that failed to download resolves `null` and leaves the key
+        // PENDING, so bouncing the effect here would re-enter this same branch,
+        // ask for the chunk again, and get `null` again: a download loop that
+        // ends only when something else changes. The ring art is already the
+        // right drawing for a board with no silhouettes, so keep it and let the
+        // next mount try the download again — `prefetchBoardArtGeometry` caps
+        // how many times one key may be re-fetched, and past that cap it answers
+        // `null` for good, which clears `boardArtChunkPending` and moves the key
+        // off `_geopending` to the clean name the ring then renders under.
+        if (!geometry) return;
+        // Nothing to evict: `boardArtChunkPending` is false from here on, so the
+        // re-render this bump causes moves `currentCacheKey` off the
+        // `_geopending` name the ring PNG was cached under. The geometry render
+        // is submitted under the clean key, which no store has an entry for, and
+        // the ring entry is simply never looked up again.
+        if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+      });
+    }
+
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
       // Sync map already has it — make sure local state reflects that
@@ -2334,29 +2369,6 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         }, MODULE_LOAD_RETRY_DELAY_MS);
       }
       return;
-    }
-
-    // Aura draws traced hold silhouettes, which on web are a per-board async
-    // chunk rather than something already in the bundle. Start it, and bounce the
-    // effect once it resolves so the config rebuilds with the art. Until then the
-    // board still renders, with a ring at each placement radius.
-    if (boardArtChunkPending) {
-      void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then((geometry) => {
-        // A chunk that failed to download resolves `null` and leaves the key
-        // PENDING, so bouncing the effect here would re-enter this same branch,
-        // ask for the chunk again, and get `null` again: a download loop that
-        // ends only when something else changes. The ring art is already the
-        // right drawing for a board with no silhouettes, so keep it and let the
-        // next mount try the download again — `prefetchBoardArtGeometry` caps
-        // how many times one key may be re-fetched.
-        if (!geometry) return;
-        // Nothing to evict: `boardArtChunkPending` is false from here on, so the
-        // re-render this bump causes moves `currentCacheKey` off the
-        // `_geopending` name the ring PNG was cached under. The geometry render
-        // is submitted under the clean key, which no store has an entry for, and
-        // the ring entry is simply never looked up again.
-        if (mountedRef.current) setRecoveryRequest((request) => request + 1);
-      });
     }
 
     const boardConfig = getBoardConfig(
