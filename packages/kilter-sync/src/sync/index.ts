@@ -46,6 +46,14 @@ export {
 } from './catalog-parse';
 // Climbs the catalog read but could not ingest, kept with their raw upstream
 // payload so an encoding change is visible instead of silent (issue #3523).
-export { loadBacklog, summarizeSkipReasons, type ClimbIngestSkip } from './catalog-backlog';
+export {
+  describeBacklogStatus,
+  findUnmatchedClimbUuids,
+  loadBacklog,
+  rejectSkips,
+  summarizeSkipReasons,
+  unrejectSkips,
+  type ClimbIngestSkip,
+} from './catalog-backlog';
 export { reconcileDeletions, type DeletionReport } from './deletions';
 export { createSetterSyncNotifications, type NewClimbInfo } from './notifications';

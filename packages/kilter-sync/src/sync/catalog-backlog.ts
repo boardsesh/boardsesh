@@ -105,6 +105,11 @@ async function chunked<T>(rows: T[], run: (chunk: T[]) => Promise<void>): Promis
  * uuid so a catalog row still matches if upstream changes the casing — mapped
  * to the uuid *as stored*, which is what `markSkipsResolved` must match on for
  * its primary-key lookup to hit.
+ *
+ * Rejected rows are included on purpose: a rejection hides a climb from the
+ * operator report, it does not stop the sync from ingesting it. If a climb
+ * someone wrote off ever decodes, `resolved_at` still gets stamped and the
+ * record shows both.
  */
 export async function loadOpenSkips(db: DrizzleDb, boardType: string): Promise<Map<string, string>> {
   const rows = await db
@@ -137,6 +142,11 @@ export async function persistSkips(db: DrizzleDb, skips: ClimbIngestSkip[]): Pro
           setterUsername: sql`excluded.setter_username`,
           lastSeenAt: sql`now()`,
           resolvedAt: null,
+          // rejected_at / rejected_reason are deliberately absent from this SET.
+          // A rejection is an operator's judgement about the climb itself (an AI
+          // test upload, a hole that doesn't exist), not about this run, so
+          // seeing the climb again must not clear it — otherwise every cycle
+          // would resurrect the rows someone already triaged away.
         },
       });
   });
@@ -167,12 +177,15 @@ export type BacklogQuery = {
   reason?: KilterSkipReason;
   limit: number;
   includeResolved: boolean;
+  /** Show rows an operator rejected. Off by default — that is the point of rejecting. */
+  includeRejected: boolean;
 };
 
 /** Read the backlog for the `kilter-sync backlog` report. */
 export async function loadBacklog(db: DrizzleDb, query: BacklogQuery) {
   const filters = [eq(boardClimbIngestSkips.boardType, query.boardType)];
   if (!query.includeResolved) filters.push(isNull(boardClimbIngestSkips.resolvedAt));
+  if (!query.includeRejected) filters.push(isNull(boardClimbIngestSkips.rejectedAt));
   if (query.reason) filters.push(eq(boardClimbIngestSkips.reason, query.reason));
 
   return db
@@ -189,9 +202,98 @@ export async function loadBacklog(db: DrizzleDb, query: BacklogQuery) {
       firstSeenAt: boardClimbIngestSkips.firstSeenAt,
       lastSeenAt: boardClimbIngestSkips.lastSeenAt,
       resolvedAt: boardClimbIngestSkips.resolvedAt,
+      rejectedAt: boardClimbIngestSkips.rejectedAt,
+      rejectedReason: boardClimbIngestSkips.rejectedReason,
     })
     .from(boardClimbIngestSkips)
     .where(and(...filters))
     .orderBy(asc(boardClimbIngestSkips.reason), desc(boardClimbIngestSkips.lastSeenAt))
     .limit(query.limit);
+}
+
+/**
+ * Mark skips as rejected: climbs an operator has looked at and written off, so
+ * they stop crowding the open backlog. Five of the sixteen stuck rows on
+ * 2026-09-15 were AI test uploads referencing holes that don't exist on any
+ * board — no parser fix will ever ingest them.
+ *
+ * Nothing is deleted: the row keeps its verbatim payload, and the sync keeps
+ * trying to ingest it (see `loadOpenSkips`). Matching is case-insensitive
+ * because the uuids get pasted in from a report; the uuids as STORED come back,
+ * so the caller can name the ones that matched nothing.
+ */
+export async function rejectSkips(
+  db: DrizzleDb,
+  boardType: string,
+  climbUuids: string[],
+  rejectedReason: string,
+): Promise<string[]> {
+  return updateRejection(db, boardType, climbUuids, { rejectedAt: sql`now()`, rejectedReason });
+}
+
+/** Undo a rejection, putting the climb back in the open backlog. */
+export async function unrejectSkips(db: DrizzleDb, boardType: string, climbUuids: string[]): Promise<string[]> {
+  return updateRejection(db, boardType, climbUuids, { rejectedAt: null, rejectedReason: null });
+}
+
+async function updateRejection(
+  db: DrizzleDb,
+  boardType: string,
+  climbUuids: string[],
+  values: Parameters<ReturnType<DrizzleDb['update']>['set']>[0],
+): Promise<string[]> {
+  const matchedUuids: string[] = [];
+  const loweredUuids = climbUuids.map((uuid) => uuid.toLowerCase());
+  await chunked(loweredUuids, async (chunk) => {
+    const rows = await db
+      .update(boardClimbIngestSkips)
+      .set(values)
+      .where(
+        and(
+          eq(boardClimbIngestSkips.boardType, boardType),
+          inArray(sql`lower(${boardClimbIngestSkips.climbUuid})`, chunk),
+        ),
+      )
+      .returning({ climbUuid: boardClimbIngestSkips.climbUuid });
+    for (const row of rows) matchedUuids.push(row.climbUuid);
+  });
+  return matchedUuids;
+}
+
+/**
+ * The requested uuids that matched no backlog row, in the casing they were
+ * typed, deduped. A typo'd uuid would otherwise look like a successful
+ * rejection of nothing at all. Pure + exported for unit testing.
+ */
+export function findUnmatchedClimbUuids(requestedUuids: string[], matchedUuids: string[]): string[] {
+  const matchedLower = new Set(matchedUuids.map((uuid) => uuid.toLowerCase()));
+  const unmatchedUuids: string[] = [];
+  const seenLower = new Set<string>();
+  for (const uuid of requestedUuids) {
+    const lowerUuid = uuid.toLowerCase();
+    if (matchedLower.has(lowerUuid) || seenLower.has(lowerUuid)) continue;
+    seenLower.add(lowerUuid);
+    unmatchedUuids.push(uuid);
+  }
+  return unmatchedUuids;
+}
+
+export type BacklogStatusRow = {
+  resolvedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectedReason: string | null;
+};
+
+/**
+ * One-line status for a backlog row. Resolved and rejected are independent — a
+ * climb someone wrote off can still be ingested by a later parser fix — so both
+ * are shown when both are set. Pure + exported for unit testing.
+ */
+export function describeBacklogStatus(row: BacklogStatusRow): string {
+  const parts: string[] = [];
+  if (row.resolvedAt) parts.push(`resolved ${row.resolvedAt.toISOString()}`);
+  if (row.rejectedAt) {
+    parts.push(`rejected ${row.rejectedAt.toISOString()}${row.rejectedReason ? `: ${row.rejectedReason}` : ''}`);
+  }
+  return parts.length > 0 ? parts.join(', ') : 'open';
 }
