@@ -44,6 +44,21 @@ function completeSources(platform: 'ios' | 'android'): FingerprintSource[] {
       overrideHashKey: 'rootPatchedDependencies',
       hash: 'patch-hash',
     },
+    // The two config plugins whose file bodies carry a native guarantee. Both
+    // platforms must hash them — see the expectedPluginSources comment in
+    // mobile-fingerprint-inputs-check.ts.
+    {
+      type: 'file',
+      filePath: 'plugins/with-android-minify.js',
+      hash: 'minify-plugin-hash',
+      reasons: ['expoConfigPlugins'],
+    },
+    {
+      type: 'file',
+      filePath: 'plugins/with-android-sentry-proguard-uuid.js',
+      hash: 'proguard-uuid-plugin-hash',
+      reasons: ['expoConfigPlugins'],
+    },
   ];
 }
 
