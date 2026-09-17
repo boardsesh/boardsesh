@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-17T08:12:15.890Z",
+  "generatedAt": "2026-09-17T11:45:47.285Z",
   "entries": [
+    {
+      "prNumber": 5529,
+      "category": "new",
+      "title": "Swipe playlist climbs into your queue or another playlist.",
+      "mergedAt": "2026-09-17T11:44:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5529",
+      "body": "Find climbs from setters you follow in Discover for your active board."
+    },
     {
       "prNumber": 5523,
       "category": "new",
