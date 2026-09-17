@@ -1,5 +1,9 @@
 {
   "authors": {
+    "selectHint": "Setze ein Häkchen, um Boulder zu filtern. Tippe zum Stöbern auf einen Namen.",
+    "selectedCount": "{{count}} ausgewählt",
+    "viaUserFollow": "Über eine Person, der du folgst",
+    "followingHint": "Enthält verknüpfte Konten von Personen, denen du folgst. Folgen speichert Routenbauer*innen direkt.",
     "follow": "Folgen",
     "unfollow": "Nicht mehr folgen",
     "following": "Gefolgt",

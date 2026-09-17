@@ -44,8 +44,11 @@ their current behavior.
 ## Mobile
 
 The setter picker separates selection (checkbox), opening a setter's computed
-playlist (name), and following (Follow/Unfollow). Its Following toggle filters
-before the top-50 limit. The search sheet's followed-author switch intersects
+playlist (name), and following (Follow/Unfollow). Its All setters / Following
+segments filter before the top-50 limit without changing the selected checkboxes.
+Following also includes setters linked to followed Boardsesh users; these rows
+explain the indirect follow separately from the direct setter-follow action.
+The search sheet's followed-author switch intersects
 with its other filters; setter playlists deliberately start with only the exact
 setter and current board configuration, sorted newest first. Opening a playlist
 does not hand the picker's draft back until the picker is removed.
@@ -60,6 +63,11 @@ accounts. Local following searches use the same three membership rules as the
 server and require both a matching signed-in owner and complete author metadata.
 An unknown Boardsesh user can be followed offline, but following-only search
 asks for a sync until that user's linked accounts are known.
+The boot warm-up runs after schema readiness and owner stamping, even if a
+screen already fetched authors before SQLite was ready. Queued user unfollows
+remove the person from the viewer's cached Following list and update their
+following count without waiting for connectivity; other users' lists keep their
+membership.
 
 Follow writes update SQLite and enqueue the existing Follow/Unfollow operations
 atomically. Opposite pending writes are cancelled, with a corrective final

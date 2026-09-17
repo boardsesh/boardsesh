@@ -8,6 +8,7 @@ import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Button } from '../../../src/components/Button';
+import { SegmentedControl } from '../../../src/components/SegmentedControl';
 import { Icon } from '../../../src/components/Icon';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useSearchClimbsCount, useSetterStats } from '../../../src/lib/graphql/hooks';
@@ -81,6 +82,7 @@ type SetterRowProps = {
   onOpen: (username: string) => void;
   onFollow: (username: string, follow: boolean) => void;
   following: boolean;
+  viaUserFollow: boolean;
   canFollow: boolean;
   followPending: boolean;
 };
@@ -92,6 +94,7 @@ const SetterRow = memo(function SetterRow({
   onOpen,
   onFollow,
   following,
+  viaUserFollow,
   canFollow,
   followPending,
 }: SetterRowProps) {
@@ -104,15 +107,23 @@ const SetterRow = memo(function SetterRow({
         accessibilityRole="checkbox"
         accessibilityState={{ checked: isSelected }}
         accessibilityLabel={setter.setterUsername}
-        hitSlop={12}
+        accessibilityHint={t('authors.selectHint')}
+        style={styles.selectionTarget}
       >
-        <Icon name={isSelected ? 'check.small' : 'add'} size={24} color={brandColors.primary} />
+        <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
+          {isSelected ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
+        </View>
       </Pressable>
       <Pressable style={styles.rowText} onPress={() => onOpen(setter.setterUsername)} accessibilityRole="button">
         <Text variant="body">{setter.setterUsername}</Text>
         <Text variant="footnote" style={styles.count}>
           {t('mobile.search.climbsCount', { count: setter.climbCount })}
         </Text>
+        {viaUserFollow ? (
+          <Text variant="caption2" style={styles.count}>
+            {t('authors.viaUserFollow')}
+          </Text>
+        ) : null}
       </Pressable>
       {canFollow ? (
         <Pressable
@@ -229,6 +240,15 @@ export default function SettersFilterScreen() {
   );
 
   const { data: setters, isLoading, isError, refetch } = useSetterStats(queryInput, boardName.length > 0);
+  const linkedSetterNames = useMemo(
+    () =>
+      new Set(
+        follows.data?.users.flatMap((user) =>
+          user.boardAccounts.filter((account) => account.boardType === boardName).map((account) => account.username),
+        ) ?? [],
+      ),
+    [follows.data, boardName],
+  );
 
   // Live "Show N climbs" count: the sheet's draft with this screen's picks swapped
   // in. Built with the same helper as the sheet's own count, so returning to the
@@ -326,11 +346,24 @@ export default function SettersFilterScreen() {
         onOpen={openSetter}
         onFollow={followSetter}
         following={follows.setterNames.has(item.setterUsername)}
+        viaUserFollow={
+          !follows.setterNames.has(item.setterUsername) && (followingOnly || linkedSetterNames.has(item.setterUsername))
+        }
         canFollow={isAuthenticated && !!follows.data}
         followPending={pendingSetters.has(item.setterUsername)}
       />
     ),
-    [toggle, openSetter, followSetter, follows.setterNames, follows.data, isAuthenticated, pendingSetters],
+    [
+      toggle,
+      openSetter,
+      followSetter,
+      follows.setterNames,
+      follows.data,
+      isAuthenticated,
+      pendingSetters,
+      followingOnly,
+      linkedSetterNames,
+    ],
   );
 
   return (
@@ -362,12 +395,25 @@ export default function SettersFilterScreen() {
         </View>
 
         {isAuthenticated ? (
-          <View style={styles.selectionBar}>
-            <Button
-              title={followingOnly ? t('authors.following') : t('authors.allSetters')}
-              onPress={() => setFollowingOnly((previous) => !previous)}
+          <View style={styles.scopeControl}>
+            <SegmentedControl
+              options={[
+                { key: 'all', label: t('authors.allSetters') },
+                { key: 'following', label: t('authors.following') },
+              ]}
+              selectedKey={followingOnly ? 'following' : 'all'}
+              onSelect={(scope) => setFollowingOnly(scope === 'following')}
+              accessibilityLabel={t('mobile.filter.setters')}
             />
           </View>
+        ) : null}
+        <Text variant="footnote" style={styles.pickerHint}>
+          {t('authors.selectHint')}
+        </Text>
+        {followingOnly ? (
+          <Text variant="footnote" style={styles.pickerHint}>
+            {t('authors.followingHint')}
+          </Text>
         ) : null}
         {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
         {isError ? (
@@ -379,7 +425,7 @@ export default function SettersFilterScreen() {
         {selectedSet.size > 0 ? (
           <View style={styles.selectionBar}>
             <Text variant="footnote" style={styles.selectionCount}>
-              {t('mobile.search.settersCount', { count: selectedSet.size })}
+              {t('authors.selectedCount', { count: selectedSet.size })}
             </Text>
           </View>
         ) : null}
@@ -459,6 +505,29 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+  },
+  selectionTarget: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scopeControl: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+  },
+  pickerHint: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    opacity: 0.6,
   },
   count: {
     opacity: 0.6,

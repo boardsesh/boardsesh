@@ -35,7 +35,7 @@ const navMock = vi.hoisted(() => ({
 const followMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../src/lib/graphql/hooks/use-followed-authors', () => ({
-  useFollowedAuthors: () => ({ data: {}, setterNames: new Set(['alice']) }),
+  useFollowedAuthors: () => ({ data: { setterUsernames: ['alice'], users: [] }, setterNames: new Set(['alice']) }),
   useToggleAuthorFollow: () => ({ mutateAsync: followMock }),
 }));
 const setterStats = vi.hoisted(() => ({
@@ -43,6 +43,8 @@ const setterStats = vi.hoisted(() => ({
     { setterUsername: 'alice', climbCount: 5 },
     { setterUsername: 'bob', climbCount: 3 },
   ] as SetterStat[],
+  following: [{ setterUsername: 'alice', climbCount: 5 }] as SetterStat[],
+  inputs: [] as Record<string, unknown>[],
 }));
 // The count query: returns a count only while enabled, like the real hook, and
 // records the input so tests can assert what the footer counts.
@@ -101,7 +103,10 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
-  useSetterStats: () => ({ data: setterStats.data, isLoading: false }),
+  useSetterStats: (input: Record<string, unknown>) => {
+    setterStats.inputs.push(input);
+    return { data: input.onlyFollowedAuthors ? setterStats.following : setterStats.data, isLoading: false };
+  },
   useSearchClimbsCount: countQuery.hook,
 }));
 
@@ -180,6 +185,25 @@ vi.mock('../../../../src/components/Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
+vi.mock('../../../../src/components/SegmentedControl', () => ({
+  SegmentedControl: ({
+    options,
+    selectedKey,
+    onSelect,
+  }: {
+    options: { key: string; label: string }[];
+    selectedKey: string;
+    onSelect: (key: string) => void;
+  }) => (
+    <div>
+      {options.map((option) => (
+        <button key={option.key} aria-pressed={selectedKey === option.key} onClick={() => onSelect(option.key)}>
+          {option.label}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 
 import SettersFilterScreen from '../setters';
 
@@ -199,6 +223,8 @@ const sheetCountInput = {
 };
 
 beforeEach(() => {
+  setterStats.inputs = [];
+  setterStats.following = [{ setterUsername: 'alice', climbCount: 5 }];
   followMock.mockReset();
   followMock.mockResolvedValue(undefined);
   emitMock.mockClear();
@@ -225,6 +251,29 @@ function lastCountCall() {
 }
 
 describe('SettersFilterScreen', () => {
+  it('shows both scopes and filters without changing the selected setters', () => {
+    const { getByText, queryByText, getByLabelText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByLabelText('bob'));
+    fireEvent.click(getByText('authors.following'));
+    expect(getByText('authors.following').getAttribute('aria-pressed')).toBe('true');
+    expect(getByText('authors.allSetters').getAttribute('aria-pressed')).toBe('false');
+    expect(queryByText('bob')).toBeNull();
+    expect(getByText('alice')).not.toBeNull();
+    expect(setterStats.inputs.at(-1)?.onlyFollowedAuthors).toBe(true);
+    expect(lastCountCall().input.setter).toEqual(['bob']);
+    expect(followMock).not.toHaveBeenCalled();
+    fireEvent.click(getByText('authors.allSetters'));
+    expect(getByText('bob')).not.toBeNull();
+    expect(setterStats.inputs.at(-1)?.onlyFollowedAuthors).toBeUndefined();
+  });
+  it('explains why a followed user’s setter appears without a direct setter follow', () => {
+    setterStats.following = [{ setterUsername: 'linked', climbCount: 4 }];
+    const { getByText } = render(<SettersFilterScreen />);
+    fireEvent.click(getByText('authors.following'));
+    expect(getByText('linked')).not.toBeNull();
+    expect(getByText('authors.viaUserFollow')).not.toBeNull();
+    expect(getByText('authors.followingHint')).not.toBeNull();
+  });
   it('shows the headerRight Clear all only while setters are selected', () => {
     const { getByLabelText } = render(<SettersFilterScreen />);
 

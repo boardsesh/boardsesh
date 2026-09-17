@@ -1,5 +1,9 @@
 {
   "authors": {
+    "selectHint": "Marca una casilla para filtrar bloques. Toca un nombre para verlos.",
+    "selectedCount": "Seleccionados: {{count}}",
+    "viaUserFollow": "Por una persona que sigues",
+    "followingHint": "Incluye cuentas vinculadas de personas que sigues. Seguir guarda al setter directamente.",
     "follow": "Seguir",
     "unfollow": "Dejar de seguir",
     "following": "Siguiendo",

@@ -132,7 +132,7 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
     onSuccess: async ({ queued, viewerId }, variables) => {
       const { readLocalUserId } = await import('../../local-user-id');
       if ((await readLocalUserId()) !== viewerId) return;
-      updateUserFollowCaches(queryClient, variables.userId, !variables.isFollowedByMe);
+      updateUserFollowCaches(queryClient, variables.userId, !variables.isFollowedByMe, viewerId);
       if (queued) return;
       void queryClient.invalidateQueries({ queryKey: ['publicProfile', variables.userId] });
       if (currentUserId) void queryClient.invalidateQueries({ queryKey: ['publicProfile', currentUserId] });

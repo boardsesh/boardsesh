@@ -1,5 +1,9 @@
 {
   "authors": {
+    "selectHint": "Coche une case pour filtrer les blocs. Touche un nom pour les parcourir.",
+    "selectedCount": "Sélection : {{count}}",
+    "viaUserFollow": "Via une personne que tu suis",
+    "followingHint": "Inclut les comptes liés des personnes que tu suis. Suivre enregistre directement cet ouvreur ou cette ouvreuse.",
     "follow": "Suivre",
     "unfollow": "Ne plus suivre",
     "following": "Abonnements",
