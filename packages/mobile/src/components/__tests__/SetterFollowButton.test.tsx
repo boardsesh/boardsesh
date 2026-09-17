@@ -4,7 +4,7 @@ import { fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { SetterFollowButton } from '../SetterFollowButton';
 
-const mocks = vi.hoisted(() => ({ mutationError: false, snapshotError: false, mutate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ mutationError: false, snapshotError: false, pending: false, mutate: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({
@@ -13,11 +13,21 @@ vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({
     setterNames: new Set(),
     isError: mocks.snapshotError,
   }),
-  useToggleAuthorFollow: () => ({ isError: mocks.mutationError, isPending: false, mutate: mocks.mutate }),
+  useToggleAuthorFollow: () => ({ isError: mocks.mutationError, isPending: mocks.pending, mutate: mocks.mutate }),
 }));
 vi.mock('../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) => (
-    <button onClick={onPress} disabled={disabled}>
+  Button: ({
+    title,
+    onPress,
+    disabled,
+    loading,
+  }: {
+    title: string;
+    onPress: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled} aria-busy={loading}>
       {title}
     </button>
   ),
@@ -25,11 +35,19 @@ vi.mock('../Button', () => ({
 vi.mock('../Text', () => ({ Text: ({ children }: { children: ReactNode }) => <span>{children}</span> }));
 beforeEach(() => {
   mocks.mutationError = false;
+  mocks.pending = false;
   mocks.snapshotError = false;
   mocks.mutate.mockReset();
 });
 
 describe('SetterFollowButton errors', () => {
+  it('shows native loading feedback while the follow is being saved', () => {
+    mocks.pending = true;
+    const { getByRole } = render(<SetterFollowButton username="accountless" />);
+    const button = getByRole('button') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+  });
   it('shows follow failure, not sync guidance, when a mutation fails', () => {
     mocks.mutationError = true;
     const screen = render(<SetterFollowButton username="accountless" />);
