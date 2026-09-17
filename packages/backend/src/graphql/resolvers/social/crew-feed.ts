@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql, desc } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { resolveRenderBoard } from '@boardsesh/board-config';
 import type {
@@ -9,35 +9,19 @@ import type {
   ActivityFeedItem,
 } from '@boardsesh/shared-schema';
 import { followedAuthorCondition, sprayClimbVisibilityCondition, withSerialPlan } from '@boardsesh/db/queries';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { boardClimbs, boardClimbStats, boardDifficultyGrades, users, userProfiles } from '@boardsesh/db/schema';
 import { dbRead } from '../../../db/client';
 import { requireAuthenticated, applyRateLimit, resolveClimbNoMatch } from '../shared/helpers';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../../../db/queries/util/climb-stats-join';
 import { getSessionFeed } from './session-feed';
 import { decodeCrewCursor, encodeCrewCursor, selectCrewCandidates, type CrewCandidate } from './crew-feed-pagination';
+import { buildCrewClimbCandidatesQuery, type CrewClimbCandidateRow } from './crew-feed-candidates';
 
 const inputSchema = z.object({
   cursor: z.string().max(2048).nullish(),
   limit: z.number().int().min(1).max(50).default(20),
 });
-const publicationText = sql`COALESCE(NULLIF(${boardClimbs.publishedAt}, ''), NULLIF(${boardClimbs.createdAt}, ''))`;
-// Imports contain both naive UTC timestamps and ISO timestamps with offsets.
-// Invalid legacy dates are omitted, never treated as newly published on import.
-// First reject malformed components and timezone suffixes, then check the real
-// month's length (including leap years) before casting. This keeps one corrupt
-// import from failing the entire feed on PostgreSQL versions without pg_input_is_valid.
-export const crewPublicationTime = sql`CASE
-  WHEN ${publicationText} ~ '^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])([T ]([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,6})?(Z|[+-](0[0-9]|1[0-4]):[0-5][0-9])?)?$' THEN
-    CASE WHEN substring(${publicationText}, 9, 2)::int <= EXTRACT(day FROM (
-      make_date(substring(${publicationText}, 1, 4)::int, substring(${publicationText}, 6, 2)::int, 1)
-      + interval '1 month - 1 day'
-    )) THEN
-      CASE WHEN ${publicationText} ~ '(Z|[+-][0-9]{2}:[0-9]{2})$'
-        THEN ${publicationText}::timestamptz
-        ELSE ${publicationText}::timestamp AT TIME ZONE 'UTC'
-      END
-    END
-  END`;
 
 function visibleClimbs(viewerId: string) {
   return [
@@ -124,28 +108,10 @@ export const crewFeedQueries = {
     const viewerId = ctx.userId!;
     const before = decodeCrewCursor(cursor, viewerId);
     const snapshotAt = before?.snapshotAt ?? new Date().toISOString();
-    const rows = await withSerialPlan(dbRead, (tx) =>
-      tx
-        .select({
-          sourceId: boardClimbs.uuid,
-          occurredAt: sql<string>`to_char(${crewPublicationTime} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
-        })
-        .from(boardClimbs)
-        .where(
-          and(
-            ...visibleClimbs(viewerId),
-            sql`${crewPublicationTime} >= ${snapshotAt}::timestamptz - interval '30 days'`,
-            sql`${crewPublicationTime} <= ${snapshotAt}::timestamptz`,
-            ...(before
-              ? [
-                  sql`(${crewPublicationTime}, ('climb:' || ${boardClimbs.uuid}) COLLATE "C") < (${before.occurredAt}::timestamptz, ${before.id} COLLATE "C")`,
-                ]
-              : []),
-          ),
-        )
-        .orderBy(desc(crewPublicationTime), sql`${boardClimbs.uuid} COLLATE "C" DESC`)
-        .limit(limit + 1),
+    const candidateResult = await withSerialPlan(dbRead, (tx) =>
+      tx.execute(buildCrewClimbCandidatesQuery({ viewerId, snapshotAt, before, limit })),
     );
+    const rows = rowsFromResult<CrewClimbCandidateRow>(candidateResult);
     const climbCandidates: CrewCandidate[] = rows.map((row) => ({
       ...row,
       kind: 'climb',
