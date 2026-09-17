@@ -422,7 +422,7 @@ matches.
 | ---------------------- | ---------------------------------------------- |
 | `2xx`                  | Mark delivered                                 |
 | `410 Gone`             | Stop sending to this URL until you tell us otherwise |
-| `408`, `429`, `5xx`, timeout, connection error | Retry: 1 min, 5 min, 15 min, 1 h, 4 h, 8 h, 8 h |
+| `408`, `429`, `5xx`, timeout, connection error | Retry with exponential backoff: about 2 min, then doubling, nine retries over roughly 17 hours |
 | Any other `4xx`        | Give up on this delivery immediately           |
 
 After the last retry the delivery is marked dead. The results are still there

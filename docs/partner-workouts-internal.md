@@ -69,7 +69,7 @@ go through `vp run build:db` then `vp exec drizzle-kit generate` per
 | `oauth_access_tokens`       | `token_hash`, `grant_id`, `expires_at`                                                                           | Opaque, hashed, one hour. A row lookup by hash is cheap and revocation is immediate; a signed JWT would live on after Disconnect                                    |
 | `oauth_refresh_tokens`      | `token_hash`, `grant_id`, `expires_at`, `revoked_at`, `replaced_by`                                               | Same shape as `mobile_refresh_tokens`; `replaced_by` is what makes reuse detection possible                                                                          |
 | `partner_workouts`          | `id`, `client_id`, `grant_id`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch`, `idempotency_key`, `idempotency_body_hash` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can say planned vs done          |
-| `partner_webhook_deliveries` | `id`, `workout_id`, `client_id`, `event`, `payload jsonb`, `attempt`, `next_attempt_at`, `claimed_at`, `status`, `last_status_code`, `last_error` | An outbox. Written in the same transaction as the state change, so a process dying between "session ended" and "webhook sent" loses nothing                          |
+| `partner_webhook_deliveries` | `id`, `workout_id`, `client_id`, `event`, `payload jsonb`, `job_id`, `status`, `attempts`, `last_status_code`, `last_error`, `delivered_at` | The ledger of what we sent a partner and how it went. Retry state lives in the pg-boss job; this row is what support reads and what `Boardsesh-Delivery-Id` points at |
 
 Plus one column: `board_sessions.partner_workout_id`, nullable, FK to
 `partner_workouts`, set by `createSession` when the app passes it.
@@ -204,7 +204,8 @@ accounts and platform cards. A new "Apps with access" section lists
 scopes, connected date) with Disconnect. Disconnect calls
 `revokeConnectedApp(grantId)`, which sets `revoked_at`, moves that grant's
 unfinished `partner_workouts` to `revoked`, and leaves the deliveries table
-alone: the sweep checks the grant before sending, so nothing more is needed.
+alone: the delivery job checks the grant before sending, so nothing more is
+needed.
 Password reset in `packages/web/app/api/auth/reset-password/route.ts` gets a
 call to the same revoke-all, which is the rule Sequence applies to its own
 tokens and the one a climber would expect.
@@ -229,9 +230,9 @@ succeed:
 | `created` | `opened`      | The app, first successful `partnerWorkout(id)` fetch          |
 | `opened`  | `started`     | `createSession` with `partnerWorkoutId`                       |
 | `started` | `completed`   | `endSession`                                                  |
-| `started` | `auto_closed` | The inactivity sweep                                          |
+| `started` | `auto_closed` | The inactivity job                                            |
 | `created`, `opened` | `cancelled` | Partner `DELETE`; from `started` it is a 409           |
-| `created` | `expired`     | A daily sweep, `expires_at` passed                            |
+| `created` | `expired`     | A daily scheduled job, `expires_at` passed                    |
 | any       | `revoked`     | Disconnect, password reset                                    |
 
 `Idempotency-Key` is stored on the row with a hash of the body; a replay
@@ -330,6 +331,61 @@ works on every build, which is why the partner doc tells them to try
 
 ---
 
+## The job queue
+
+This integration is the third feature in the backend that needs "do this
+later, retry it if it fails, and don't do it twice". The inactivity sweep and
+the refresh-token cleanup are `setInterval`s in `server.ts` and
+`room-manager.ts`; the Strava export has a claim row and no retry at all,
+because nobody wanted to write a third sweep. Rather than a fourth, the
+partner API lands after a queue does.
+
+The queue is [pg-boss](https://github.com/timgit/pg-boss), running inside the
+backend process against the same Postgres. Two reasons it beat BullMQ, which
+would have sat on the Redis we already run:
+
+1. **The job can commit with the state change.** pg-boss `send` accepts a
+   `db` option, so the job insert rides the same transaction that ends the
+   session and writes the ledger row. A Redis queue cannot join a Postgres
+   transaction, which means keeping an outbox table and a relay to move rows
+   into Redis, and the relay is the sweep we were trying to delete.
+2. **Nothing new to make durable.** Today's Redis use tolerates loss: rate
+   limits, nonces, the Streams bus with `MAXLEN ~10000`. A queue would be the
+   first thing on it that does not, and would need `noeviction` and
+   persistence checked on the Railway instance. Postgres already has both.
+
+pg-boss polls with `SKIP LOCKED` rather than LISTEN/NOTIFY, so it keeps
+working behind any connection pooler. It creates and migrates its own
+`pgboss` schema on `start()`. That schema is outside `packages/db/drizzle`,
+so `check:db-migrations` does not see it and `pg_dump` carries it like any
+other schema; note it in `docs/db-migrations.md` when the PR lands. Before
+the design leans on them, verify two things against the installed version:
+that `send(..., { db })` really does run on a caller-supplied transaction,
+and the exact shape of `retryBackoff` (the numbers in this doc assume
+doubling from `retryDelay` with jitter).
+
+Boundaries: the Redis Streams notification worker stays as it is; it is a
+fan-out bus, not a delayed-job problem, and it works. The Railway scheduler
+(`packages/scheduler`) keeps driving the web-side cron paths; backend-side
+periodic work moves to pg-boss `schedule()` instead.
+
+First tenants, in the queue PR itself so the queue arrives already proven:
+
+| Job                       | Replaces                                                      | Shape                                      |
+| ------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
+| `session-inactivity`      | The 60 s `setInterval` in `room-manager.ts`                   | Scheduled every minute, `singletonKey` fixed |
+| `refresh-token-cleanup`   | `startRefreshTokenCleanup` in `native-auth.ts`                | Scheduled daily                            |
+| `integration-export`      | Fire-and-forget `autoSyncSessionToIntegrations`, no retry     | One job per `integration_exports` claim, retries with backoff |
+| `partner-webhook`         | Nothing yet; this design                                      | See "Delivery and retries"                 |
+| `partner-workout-expiry`  | Nothing yet                                                   | Scheduled daily, moves `created` past `expires_at` to `expired` |
+
+Tests: the backend suite already boots Postgres, so pg-boss runs for real
+under Vitest. A test helper starts it with a short poll interval, and tests
+that end a session either drain the queue or assert on the ledger row rather
+than the webhook, so no test depends on a timer.
+
+---
+
 ## Results
 
 ### When and from what
@@ -339,17 +395,18 @@ already does the work of ending a session and then fire-and-forgets
 `autoSyncSessionToIntegrations`. Partner results go in the same place but not
 the same way: inside the transaction that marks the session ended, if
 `partner_workout_id` is set, the resolver moves the workout to `completed`
-and inserts a `partner_webhook_deliveries` row with the full payload. Only
-after commit does it kick a first delivery attempt, fire-and-forget. The
-Strava path can lose an export if the process dies between the two steps;
-this one cannot, which matters more here because a partner is waiting on the
-other end and has no share button to press again.
+writes the `partner_webhook_deliveries` ledger row with the full payload,
+and enqueues the `partner-webhook` job on the same transaction (see "The job
+queue"). Either all three commit or none do. The Strava path can lose an
+export if the process dies between ending the session and starting the
+upload; this one cannot, which matters more here because a partner is
+waiting on the other end and has no share button to press again.
 
 Abandoned sessions need no new machinery. `endStaleInactiveSessions` in
 `packages/backend/src/services/room-manager/room-manager.ts` already ends a
-session after 60 minutes without activity. `runInactivitySweep` gets the same
-outbox insert with `completion: 'auto_closed'` and the workout moves to
-`auto_closed`.
+session after 60 minutes without activity. That sweep becomes a scheduled
+job on the queue, and its handler writes the same ledger row and job with
+`completion: 'auto_closed'` while moving the workout to `auto_closed`.
 
 The payload builder, `buildPartnerWorkoutResults(workoutId)` in
 `packages/backend/src/services/partner-workout-results.ts`, reads ticks
@@ -366,33 +423,35 @@ to the previous tick's `climbed_at`, `null` for the first.
 
 ### Delivery and retries
 
-There is no job queue in this repo and adding one for a webhook would be the
-wrong size. The outbox row plus an in-process sweep is enough:
+A delivery is one pg-boss job, `partner-webhook`, whose data is just the
+ledger row id. The handler loads the row, re-checks that the grant is still
+live (a climber who disconnected between End and a retry does not get their
+results sent anyway), signs the stored payload, and `POST`s it with a
+10-second `AbortController` timeout, the same shape as
+`packages/backend/src/lib/web-revalidate.ts`.
 
-- First attempt right after commit, in-process, with a 10-second
-  `AbortController` timeout, the same shape as
-  `packages/backend/src/lib/web-revalidate.ts`.
-- A 60-second `setInterval` started from `server.ts` beside
-  `startRefreshTokenCleanup`, claiming due rows with the conditional update
-  `claimExport` uses in `packages/backend/src/integrations/export-service.ts`:
+What the handler does with the response decides whether the queue retries:
 
-  ```sql
-  UPDATE partner_webhook_deliveries
-     SET claimed_at = now(), attempt = attempt + 1
-   WHERE status = 'pending' AND next_attempt_at <= now()
-     AND (claimed_at IS NULL OR claimed_at < now() - interval '5 minutes')
-  RETURNING *
-  ```
+| Response                                       | Handler                                                   | Ledger        |
+| ---------------------------------------------- | --------------------------------------------------------- | ------------- |
+| `2xx`                                          | Completes the job                                         | `delivered`   |
+| `410`                                          | Completes the job, marks the client's webhook URL gone, cancels the client's other pending jobs | `dead`        |
+| `408`, `429`, `5xx`, timeout, connection error | Throws, so pg-boss schedules the next attempt             | `pending`, `attempts` bumped |
+| any other `4xx`                                | Completes the job with a recorded failure                 | `dead`        |
 
-  Two backend instances can both run the sweep; the claim makes them safe.
-- Backoff after a retryable failure: 1 m, 5 m, 15 m, 1 h, 4 h, 8 h, 8 h, then
-  `dead`. `2xx` is `delivered`. `410` marks the client's URL as gone and dead-
-  letters every pending row for it. Any other `4xx` except `408` and `429` is
-  `dead` at once: the partner rejected it and retrying identical bytes will
-  not change their mind.
-- Before every attempt the sweep re-checks that the grant is still live. A
-  climber who disconnected between End and the retry does not get their
-  results sent anyway.
+The last row is the one worth stating: a partner that rejected the bytes
+will reject them again, so throwing there would only burn the retry budget.
+
+Job options: `singletonKey` is the ledger id, so an accidental double enqueue
+collapses into one job; `retryLimit: 9`, `retryDelay: 120`, `retryBackoff:
+true`, which is exponential from about two minutes and gives up after roughly
+17 hours; `expireInSeconds: 30` so a hung handler is reclaimed. The partner
+doc quotes the same numbers. After the last retry pg-boss fails the job and
+the handler's `onFail` marks the ledger `dead`; the results stay readable on
+`GET /workouts/{id}`.
+
+The retry-eligible errors are the same list `web-revalidate.ts` treats as
+transient; keep them in one helper so the Strava export job (below) agrees.
 
 Signing: `Boardsesh-Signature: t=<unix seconds>,v1=<hex hmac-sha256(secret,
 t + "." + rawBody)>`, with a second `v1` from `webhook_secret_prev_enc` while
@@ -400,10 +459,6 @@ a rotation is in progress. Secrets are encrypted with `@boardsesh/crypto`, as
 `credentials.ts` does for Strava tokens, because a webhook secret has to be
 recoverable to sign with; the client secret, by contrast, is only ever
 compared, so it is hashed.
-
-An optional cron-bearer GraphQL mutation `runPartnerWebhookSweep` exists only
-so the Railway scheduler can call it and give Sentry a cron monitor; the
-in-process interval is the one that matters for correctness.
 
 ---
 
@@ -423,11 +478,12 @@ PR order, each one small enough to review in a sitting:
 | ---- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | 0    | AASA `NOT /oauth/*`                                                                                          | Has to propagate through Apple's CDN before anyone opens the consent page             |
 | 0.5  | Constrain `callbackUrl` on `/auth/login` to a same-origin relative path                                      | The consent page is a new caller of it; closing the open redirect first is a prerequisite, not a follow-up |
-| 1    | Tables, OAuth server, consent page, Connected apps section                                                   | Gets a Fable review: it is auth-adjacent and the token rules above are easy to fumble |
-| 2    | Partner workouts API, results builder, outbox and sweep                                                      | Testable end to end with `curl` and a fake webhook receiver before any mobile code    |
-| 3    | Mobile `/w/` route, pending store, pre-session card, `partnerWorkoutId` on `createSession`, web landing page | JS-only, ships by OTA                                                                 |
-| 4    | Android `/w` intent filter                                                                                    | Native, rides release/next; the scheme covers Android until then                      |
-| 5    | `fourByFour` native, `round` and per-round timing in results                                                 | After #5379 and #5380                                                                 |
+| 1    | pg-boss, with the inactivity sweep, token cleanup and Strava export moved onto it                            | Proves the queue on things that exist before anything new depends on it               |
+| 2    | Tables, OAuth server, consent page, Connected apps section                                                   | Gets a Fable review: it is auth-adjacent and the token rules above are easy to fumble |
+| 3    | Partner workouts API, results builder, delivery and expiry jobs                                              | Testable end to end with `curl` and a fake webhook receiver before any mobile code    |
+| 4    | Mobile `/w/` route, pending store, pre-session card, `partnerWorkoutId` on `createSession`, web landing page | JS-only, ships by OTA                                                                 |
+| 5    | Android `/w` intent filter                                                                                    | Native, rides release/next; the scheme covers Android until then                      |
+| 6    | `fourByFour` native, `round` and per-round timing in results                                                 | After #5379 and #5380                                                                 |
 
 Telemetry, in `@boardsesh/analytics` `SHARED_EVENTS`: `Partner Workout
 Opened`, `Partner Workout Started`, `Partner Workout Completed`, each with
