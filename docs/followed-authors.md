@@ -31,6 +31,10 @@ lookups, so every page parses dates only for followed climbs instead of scanning
 the whole catalogue. Do not inline that CTE or move date predicates into its
 branches. Visibility, the 30-day window, and the exact cursor are applied before
 the candidate limit; enrichment still rechecks current follows and visibility.
+The intermediate rows scale with the viewer's complete followed catalogue, not
+the page size. A viewer following prolific setters can therefore cost more than
+the measured 1,963-row sample. Do not cap this intermediate set: doing so before
+date validation and global ordering could drop newer climbs or break pagination.
 
 Both sources supply at most `limit + 1` candidates to one backend merge. Only
 selected candidates are enriched. The opaque cursor carries the viewer, initial

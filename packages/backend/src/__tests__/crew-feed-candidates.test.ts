@@ -54,6 +54,8 @@ function originalPage(limit = 20, before?: Boundary) {
 }
 
 describe('author-first Crew candidates', () => {
+  // The shared setup truncates these tables before each test file and gives
+  // every parallel worker its own database (see setup.ts and worker-db.ts).
   beforeAll(async () => {
     await db
       .insert(users)
@@ -134,6 +136,18 @@ describe('author-first Crew candidates', () => {
 
   it('materializes only followed published rows before evaluating publication dates', async () => {
     type PlanNode = { 'Node Type': string; 'Subplan Name'?: string; 'Actual Rows': number; Plans?: PlanNode[] };
+    const expectedFollowed = await db
+      .select({ uuid: boardClimbs.uuid })
+      .from(boardClimbs)
+      .where(
+        and(
+          eq(boardClimbs.isListed, true),
+          eq(boardClimbs.isDraft, false),
+          eq(boardClimbs.isHidden, false),
+          followedAuthorCondition(viewerId),
+        ),
+      );
+    const expectedCandidates = await originalPage();
     const explained = await withSerialPlan(db, (transaction) =>
       transaction.execute(
         sql`EXPLAIN (ANALYZE, FORMAT JSON) ${buildCrewClimbCandidatesQuery({ viewerId, snapshotAt, limit: 20 })}`,
@@ -143,10 +157,11 @@ describe('author-first Crew candidates', () => {
     const flatten = (plan: PlanNode): PlanNode[] => [plan, ...(plan.Plans ?? []).flatMap(flatten)];
     const plans = flatten(root);
     const materialized = plans.find((plan) => plan['Subplan Name'] === 'CTE crew_followed_climbs');
-    // Five recent + old + future + invalid + inaccessible spray. None of the
-    // 500 unrelated climbs reaches the date parser; overlapping paths count once.
-    expect(materialized?.['Actual Rows']).toBe(9);
+    // Includes old, future, invalid, and inaccessible spray rows. None of the
+    // unrelated climbs reaches the date parser; overlapping paths count once.
+    expect(materialized?.['Actual Rows']).toBe(expectedFollowed.length);
+    expect(expectedFollowed.length).toBeGreaterThan(expectedCandidates.length);
     expect(plans.some((plan) => plan['Node Type'] === 'CTE Scan')).toBe(true);
-    expect(root['Actual Rows']).toBe(5);
+    expect(root['Actual Rows']).toBe(expectedCandidates.length);
   });
 });

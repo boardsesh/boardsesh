@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableName, sql } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { boardClimbs, setterFollows, userBoardMappings, userFollows } from '@boardsesh/db/schema';
@@ -36,6 +36,8 @@ export function buildCrewClimbCandidatesQuery({
   // Match followedAuthorCondition's three membership rules, but start with
   // authors so each branch can use an author index instead of OR-ed EXISTS
   // across the catalogue. UNION deduplicates overlapping follow paths.
+  // Membership source: packages/db/src/queries/climbs/followed-authors.ts.
+  // The candidates tests compare this query against that shared predicate.
   const columns = {
     uuid: boardClimbs.uuid,
     boardType: boardClimbs.boardType,
@@ -78,7 +80,10 @@ export function buildCrewClimbCandidatesQuery({
         'occurredAt',
       ),
     })
-    .from(sql`crew_followed_climbs AS board_climbs`)
+    // This alias deliberately matches boardClimbs' SQL table name: its column
+    // references (including crewPublicationTime) now address the CTE columns.
+    // Keep the alias and projected column names aligned if either is renamed.
+    .from(sql`crew_followed_climbs AS ${sql.identifier(getTableName(boardClimbs))}`)
     .where(
       and(
         sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, viewerId),
