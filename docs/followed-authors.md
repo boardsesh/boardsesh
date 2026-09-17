@@ -24,6 +24,14 @@ activity. Imports use the source creation date; an old catalogue import is not
 new activity. Invalid timestamps, drafts, hidden/unlisted climbs, and inaccessible
 spray walls are excluded. New-climb metadata is checked again during enrichment.
 
+Crew candidate selection starts with three author-index lookups (direct setter,
+native user, linked board account), combined with `UNION` to remove overlaps.
+A narrow `MATERIALIZED` CTE keeps publication-date validation outside those
+lookups, so every page parses dates only for followed climbs instead of scanning
+the whole catalogue. Do not inline that CTE or move date predicates into its
+branches. Visibility, the 30-day window, and the exact cursor are applied before
+the candidate limit; enrichment still rechecks current follows and visibility.
+
 Both sources supply at most `limit + 1` candidates to one backend merge. Only
 selected candidates are enriched. The opaque cursor carries the viewer, initial
 snapshot time, exact ordering timestamp, and stable prefixed ID. Session candidate

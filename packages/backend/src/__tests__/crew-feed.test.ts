@@ -3,7 +3,8 @@ import { eq, sql } from 'drizzle-orm';
 import { boardClimbs, boardseshTicks, setterFollows, userFollows, users } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { crewFeedQueries, crewPublicationTime } from '../graphql/resolvers/social/crew-feed';
+import { crewFeedQueries } from '../graphql/resolvers/social/crew-feed';
+import { crewPublicationTime } from '../graphql/resolvers/social/crew-feed-candidates';
 import {
   decodeCrewCursor,
   encodeCrewCursor,
