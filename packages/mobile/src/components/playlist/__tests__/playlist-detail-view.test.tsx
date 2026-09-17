@@ -3,11 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
+import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 
-const ctrl = vi.hoisted(() => ({ back: vi.fn(), variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+const ctrl = vi.hoisted(() => ({
+  back: vi.fn(),
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  addToQueue: vi.fn(),
+  openAddToPlaylist: vi.fn(),
+  openClimbActions: vi.fn(),
+}));
 
 type CapturedClimbListRowProps = {
-  climb: { uuid: string; name: string };
+  climb: SchemaClimb;
   boardName: string;
   layoutId: number;
   sizeId: number;
@@ -15,6 +22,8 @@ type CapturedClimbListRowProps = {
   angle: number;
   unsupported?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
+  onAddToQueue?: (climb: SchemaClimb) => void;
+  onOpenPlaylist?: (climb: SchemaClimb) => void;
 };
 
 type CapturedPlaylistEditClimbRowProps = {
@@ -157,8 +166,16 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ boardConfig: null }),
+  useDrawerHost: () => ({
+    boardConfig: null,
+    openClimbActions: ctrl.openClimbActions,
+    openAddToPlaylist: ctrl.openAddToPlaylist,
+  }),
 }));
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
+}));
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'queued-climb-uuid' }));
 
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
@@ -353,6 +370,9 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
 describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
+    ctrl.addToQueue.mockClear();
+    ctrl.openAddToPlaylist.mockClear();
+    ctrl.openClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
     capturedClimbRows.length = 0;
     capturedEditRows.length = 0;
@@ -517,6 +537,56 @@ describe('PlaylistDetailView', () => {
       angle: 35,
       unsupported: true,
     });
+  });
+
+  it('queues only the swiped climb without activating the playlist', () => {
+    const onActivateClimb = vi.fn();
+    render(<PlaylistDetailView {...makeProps({ climbs: [KILTER_CLIMB, TENSION_CLIMB], onActivateClimb })} />);
+
+    const tensionRow = capturedClimbRows[1]!;
+    expect(tensionRow.onAddToQueue).toBeTypeOf('function');
+    tensionRow.onAddToQueue?.(tensionRow.climb);
+
+    expect(ctrl.addToQueue).toHaveBeenCalledExactlyOnceWith({
+      uuid: 'queued-climb-uuid',
+      suggested: undefined,
+      climb: expect.objectContaining({ uuid: 'tension-row', boardType: 'tension', layoutId: 9, angle: 35 }),
+    });
+    expect(onActivateClimb).not.toHaveBeenCalled();
+  });
+
+  it('opens Add to Playlist using each swiped row’s resolved board', () => {
+    render(
+      <PlaylistDetailView
+        {...makeProps({
+          climbs: [KILTER_CLIMB, TENSION_CLIMB],
+          renderBoard: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 45 },
+        })}
+      />,
+    );
+
+    for (const row of capturedClimbRows) {
+      expect(row.onOpenPlaylist).toBeTypeOf('function');
+      row.onOpenPlaylist?.(row.climb);
+      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(row.climb, {
+        boardName: row.boardName,
+        layoutId: row.layoutId,
+        sizeId: row.sizeId,
+        setIds: row.setIds,
+        angle: row.angle,
+      });
+    }
+    expect(ctrl.openAddToPlaylist).toHaveBeenCalledTimes(2);
+    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps edit mode on reorder/remove rows without swipe actions', () => {
+    render(<PlaylistDetailView {...makeProps({ climbs: [KILTER_CLIMB], editMode: true })} />);
+
+    expect(capturedClimbRows).toHaveLength(0);
+    expect(capturedEditRows).toHaveLength(1);
+    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+    expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
   it('shows an indicator for climbs whose render board cannot be resolved', () => {
