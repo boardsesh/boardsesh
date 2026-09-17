@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-17
+
+### New
+
+- Follow setters you love, even without a Boardsesh account. ([#5527](https://github.com/boardsesh/boardsesh/pull/5527))
+  Find their climbs faster and catch their new problems in your Crew feed.
+  Tap a setter to climb through their newest problems.
+
 ## 2026-09-16
 
 ### App update

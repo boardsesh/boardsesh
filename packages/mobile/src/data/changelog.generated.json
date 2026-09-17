@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-16T11:56:35.165Z",
+  "generatedAt": "2026-09-17T07:10:57.903Z",
   "entries": [
+    {
+      "prNumber": 5527,
+      "category": "new",
+      "title": "Follow setters you love, even without a Boardsesh account.",
+      "mergedAt": "2026-09-17T07:09:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5527",
+      "body": "Find their climbs faster and catch their new problems in your Crew feed.\nTap a setter to climb through their newest problems."
+    },
     {
       "prNumber": 5521,
       "category": "new",
