@@ -16,7 +16,7 @@ vi.mock('../PlaylistCard', () => ({
     );
   },
 }));
-import { DiscoverPlaylistCard, DiscoverSmartPlaylistCard } from '../DiscoverPlaylistCard';
+import { DiscoverPlaylistCard, DiscoverSetterPlaylistCard, DiscoverSmartPlaylistCard } from '../DiscoverPlaylistCard';
 
 beforeEach(() => cardRender.mockClear());
 describe('Discover playlist callback adapters', () => {
@@ -78,6 +78,21 @@ describe('Discover playlist callback adapters', () => {
     fireEvent.click(view.getByText('First'));
     expect(newOpen).toHaveBeenCalledWith('first');
     expect(oldOpen).not.toHaveBeenCalled();
+    expect(view.queryByText('pin')).toBeNull();
+  });
+  it('opens setter cards with their username and does not expose playlist pins', () => {
+    const onOpen = vi.fn();
+    const view = render(
+      <DiscoverSetterPlaylistCard
+        username="setter-name"
+        name="Setter name"
+        climbCount={3}
+        variant="scroll"
+        onOpen={onOpen}
+      />,
+    );
+    fireEvent.click(view.getByText('Setter name'));
+    expect(onOpen).toHaveBeenCalledWith('setter-name');
     expect(view.queryByText('pin')).toBeNull();
   });
   it('smart hydration and recycling bind the current smart type', () => {

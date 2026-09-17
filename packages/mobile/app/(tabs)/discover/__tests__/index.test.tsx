@@ -519,6 +519,9 @@ describe('DiscoverLibrary followed setter playlists', () => {
     renderHub();
     act(() => {
       focusState.callback?.();
+    });
+    expect(followedSettersHook.refetch).not.toHaveBeenCalled();
+    act(() => {
       focusState.callback?.();
     });
     expect(followedSettersHook.refetch).not.toHaveBeenCalled();

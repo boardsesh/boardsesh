@@ -24,7 +24,11 @@ import { offlineReasonFor } from '../../../src/hooks/use-offline-query-state';
 import { Button } from '../../../src/components/Button';
 import { SectionHeader } from '../../../src/components/SectionHeader';
 import { PlaylistFormSheet, type PlaylistFormValues } from '../../../src/components/playlist';
-import { DiscoverPlaylistCard, DiscoverSmartPlaylistCard } from '../../../src/components/playlist/DiscoverPlaylistCard';
+import {
+  DiscoverPlaylistCard,
+  DiscoverSetterPlaylistCard,
+  DiscoverSmartPlaylistCard,
+} from '../../../src/components/playlist/DiscoverPlaylistCard';
 import { PlaylistShelf } from '../../../src/components/playlist/PlaylistShelf';
 import { DiscoverTopChrome } from '../../../src/components/chrome';
 import { SMART_PLAYLISTS, type SmartPlaylistPresentation } from '../../../src/lib/smart-playlists';
@@ -353,8 +357,8 @@ export default function DiscoverLibrary() {
   const renderForYouCard = useCallback(
     ({ item: card, index }: ListRenderItemInfo<ForYouCard>) =>
       card.kind === 'setter' ? (
-        <DiscoverPlaylistCard
-          uuid={card.username}
+        <DiscoverSetterPlaylistCard
+          username={card.username}
           name={card.username}
           climbCount={card.count}
           variant="scroll"
