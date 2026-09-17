@@ -19,6 +19,7 @@ import {
   sharedAdvertisedBoardType,
   type AdvertisedBoardTypes,
 } from './advertised-board-type';
+import { selectBleBoardCandidates } from './select-board-candidates';
 
 export { advertisedBoardTypesBySerial } from './advertised-board-type';
 
@@ -72,12 +73,13 @@ export async function resolveBleSerialNumbers(
   ]);
 
   const resolvedBoards = new Map<string, ResolvedBoardEntry>();
-  for (const board of savedResult.boardsBySerialNumbers) {
+  const selectedBoards = selectBleBoardCandidates(
+    savedResult.boardsBySerialNumbers,
+    recordedResult.myBoardSerialConfigs,
+    advertisedTypes,
+  );
+  for (const board of selectedBoards) {
     if (!board.serialNumber) continue;
-    // A board of another type shares nothing but the number with the controller
-    // that just advertised. Letting it in is what made a Tension box at
-    // Benchmark Climbing render — and behave — as a stranger's Kilter board.
-    if (!matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes)) continue;
     resolvedBoards.set(board.serialNumber, { kind: 'saved', board });
   }
   for (const config of recordedResult.myBoardSerialConfigs) {

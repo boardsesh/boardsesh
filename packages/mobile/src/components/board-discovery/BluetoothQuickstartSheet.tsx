@@ -1,5 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
-import { forwardRef, useCallback, useEffect } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,8 @@ import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-locat
 import { bluetoothBlockedBody } from '../../lib/ble/bluetooth-unavailable-alert';
 import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
+import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates';
+import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { Sheet } from '../Sheet';
@@ -42,13 +44,19 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
     // Scoped to what each controller announced. Aurora reuses a serial across
     // board apps, so unscoped this sheet would offer a stranger's Kilter board
     // for an in-range Tension controller and let the user make it active.
-    const { data: boards = [], isLoading: isResolving } = useBoardsBySerialNumbers(serials, advertisedTypes);
+    const { data: boards = [], isLoading: isResolvingBoards } = useBoardsBySerialNumbers(serials, advertisedTypes);
+    const { data: serialConfigs, isResolving: isResolvingPreferences } = useMyBoardSerialConfigs(serials);
+    const visibleBoards = useMemo(
+      () => selectBleBoardCandidates(boards, serialConfigs, advertisedTypes),
+      [advertisedTypes, boards, serialConfigs],
+    );
+    const isResolving = isResolvingBoards || isResolvingPreferences;
 
     // `!isResolving` matters: the scan reports 'done' the moment the radio work
     // finishes, while `boards` stays empty until GraphQL has turned the serials
     // into boards. Without it, a scan that found plenty of boards spends the
     // resolution window looking exactly like a scan that found none.
-    const scanFinishedEmpty = status === 'done' && boards.length === 0 && !isResolving;
+    const scanFinishedEmpty = status === 'done' && visibleBoards.length === 0 && !isResolving;
     // Same Android 12+ scan-result suppression the device picker guards against —
     // this sheet runs its own scan through use-board-scan, so it needs its own
     // hint. See lib/ble/android-scan-location-gate.ts.
@@ -150,10 +158,10 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         );
       }
 
-      if (boards.length > 0) {
+      if (visibleBoards.length > 0 && !isResolvingPreferences) {
         return (
           <View style={styles.list}>
-            {boards.map((board) => (
+            {visibleBoards.map((board) => (
               <PressableSurface
                 key={board.uuid}
                 accessibilityRole="button"

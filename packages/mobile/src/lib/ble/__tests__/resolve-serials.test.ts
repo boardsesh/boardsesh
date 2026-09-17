@@ -115,6 +115,28 @@ describe('resolveBleSerialNumbers', () => {
     expect(resolvedBoards.get('SN-2')).toEqual({ kind: 'recorded', config: makeConfig('SN-2') });
   });
 
+  it('prefers the board the climber saved for a reused serial', async () => {
+    harness.authToken = 'token-1';
+    const garage = makeBoard('SN-1', { uuid: 'garage', name: 'Garage' });
+    const miles = makeBoard('SN-1', { uuid: 'miles', name: 'MILES' });
+    const savedConfig = makeConfig('SN-1', { boardUuid: garage.uuid });
+    harness.request.mockImplementation((operation: unknown) => {
+      if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) {
+        // The backend does not order serial matches by ownership, so the
+        // preferred board must not depend on which public row arrives last.
+        return Promise.resolve({ boardsBySerialNumbers: [garage, miles] });
+      }
+      if (operation === GET_MY_BOARD_SERIAL_CONFIGS) {
+        return Promise.resolve({ myBoardSerialConfigs: [savedConfig] });
+      }
+      return Promise.reject(new Error('Unexpected operation'));
+    });
+
+    const resolvedBoards = await resolveBleSerialNumbers(['SN-1'], 'token-1');
+
+    expect(resolvedBoards.get('SN-1')).toEqual({ kind: 'saved', board: garage });
+  });
+
   it('skips recorded configs when signed out', async () => {
     harness.request.mockImplementation((operation: unknown) => {
       if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) {
