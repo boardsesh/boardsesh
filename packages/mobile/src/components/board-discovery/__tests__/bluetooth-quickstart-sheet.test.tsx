@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
+import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 
 const scan = vi.hoisted(() => ({
   status: 'done' as 'idle' | 'scanning' | 'done' | 'unavailable',
@@ -12,6 +13,8 @@ const scan = vi.hoisted(() => ({
 }));
 
 const boards = vi.hoisted(() => ({ data: [] as unknown[], isLoading: false }));
+
+const serialConfigs = vi.hoisted(() => ({ data: [] as BoardSerialConfig[], isResolving: false }));
 
 const { resolveCalls } = vi.hoisted(() => ({
   resolveCalls: [] as Array<{ serialNumbers: string[]; advertisedTypes?: ReadonlyMap<string, string> }>,
@@ -32,7 +35,8 @@ const locationHint = vi.hoisted(() => ({
 type ChildrenProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: ChildrenProps) => createElement('div', {}, children),
-  Pressable: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  Pressable: ({ children, onPress }: ChildrenProps & { onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -59,6 +63,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     resolveCalls.push({ serialNumbers, advertisedTypes });
     return boards;
   },
+}));
+
+vi.mock('../../../lib/ble/use-my-board-serial-configs', () => ({
+  useMyBoardSerialConfigs: () => serialConfigs,
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
@@ -107,6 +115,8 @@ describe('BluetoothQuickstartSheet', () => {
     scan.reset.mockReset();
     boards.data = [];
     boards.isLoading = false;
+    serialConfigs.data = [];
+    serialConfigs.isResolving = false;
     locationHint.shouldOfferLocationGrant = false;
     locationHint.wasGranted = false;
     locationHint.isRequesting = false;
@@ -262,7 +272,10 @@ describe('BluetoothQuickstartSheet board rows', () => {
   beforeEach(() => {
     scan.status = 'done';
     scan.serials = ['1234'];
+    boards.data = [];
     boards.isLoading = false;
+    serialConfigs.data = [];
+    serialConfigs.isResolving = false;
   });
 
   // The row used to render `{board.boardType} · {board.sizeName ?? ''}`, and the
@@ -309,5 +322,83 @@ describe('BluetoothQuickstartSheet board rows', () => {
         advertisedTypes: [['12345', 'tension']],
       },
     );
+  });
+
+  it("shows and selects only the climber's saved board when a serial is reused", () => {
+    const garage = {
+      uuid: 'garage',
+      serialNumber: '751945',
+      name: 'Garage',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      sizeName: null,
+    };
+    const miles = { ...garage, uuid: 'miles', name: 'MILES' };
+    boards.data = [miles, garage];
+    serialConfigs.data = [
+      {
+        serialNumber: '751945',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 7,
+        setIds: '1,20',
+        apiLevel: 3,
+        updatedAt: '2026-01-02T00:00:00.000Z',
+        boardUuid: garage.uuid,
+        boardSlug: garage.uuid,
+      },
+    ];
+    const onSelect = vi.fn();
+
+    const { container } = render(
+      createElement(BluetoothQuickstartSheet, { active: true, onClose: () => {}, onSelect }),
+    );
+
+    expect(hasText(container, 'Garage')).toBe(true);
+    expect(hasText(container, 'MILES')).toBe(false);
+    (container.querySelector('button') as HTMLButtonElement).click();
+    expect(onSelect).toHaveBeenCalledWith(garage);
+  });
+
+  it('keeps resolving while the saved-board lookup waits for authentication', () => {
+    const garage = {
+      uuid: 'garage',
+      serialNumber: '751945',
+      name: 'Garage',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      sizeName: null,
+    };
+    const miles = { ...garage, uuid: 'miles', name: 'MILES' };
+    boards.data = [garage, miles];
+    serialConfigs.isResolving = true;
+
+    const { container, rerender } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(false);
+    expect(hasText(container, 'mobile.bluetooth.resolving')).toBe(true);
+    expect(hasText(container, 'Garage')).toBe(false);
+    expect(hasText(container, 'MILES')).toBe(false);
+
+    serialConfigs.data = [
+      {
+        serialNumber: '751945',
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 7,
+        setIds: '1,20',
+        apiLevel: 3,
+        updatedAt: '2026-01-02T00:00:00.000Z',
+        boardUuid: garage.uuid,
+        boardSlug: garage.uuid,
+      },
+    ];
+    serialConfigs.isResolving = false;
+    rerender(<BluetoothQuickstartSheet active onClose={vi.fn()} onSelect={vi.fn()} />);
+
+    expect(hasText(container, 'Garage')).toBe(true);
+    expect(hasText(container, 'MILES')).toBe(false);
   });
 });
