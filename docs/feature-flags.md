@@ -197,6 +197,62 @@ value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
 
+### `donation-links` — the one flag whose targeting is a compliance boundary
+
+Almost every flag here decides whether a feature is visible. This one decides
+whether the app breaks a store policy, so it is worth reading before touching it
+in the dashboard.
+
+An external donation link is a rejection risk in both stores. Two narrow windows
+allow it: the **iOS US storefront** (external purchase links, allowed since May
+2025) and **Android in Australia** from **30 Sept 2026**. Outside them the
+compliant surface is unlinked text that merely names the website — the pattern
+StreetComplete ships and Google sanctions. The Acknowledgements screen renders
+exactly one of those two, and `useDonationLinksAllowed`
+(`packages/mobile/src/lib/donation-links.ts`) picks.
+
+**The two platforms are not equally protected, and the asymmetry is the whole
+point of this section.**
+
+- **iOS cannot be rolled out wrong.** Past the flag, the hook also requires an
+  App Store storefront of `USA`, read from the device through
+  `requireOptionalNativeModule('Storefront')`. A flag enabled worldwide still
+  shows a French iPhone the unlinked text. The module is a native change, so on
+  every binary that predates it — and in Expo Go, and on Android — the probe
+  returns null, which reads as not-allowed. That is the designed degradation.
+- **Android has no client guard at all.** Play exposes no storefront to the app,
+  so there is nothing on-device to check a country against. **The PostHog
+  targeting IS the guard**, and it has to be exactly:
+
+  > platform = Android **and** country = AU **and** date >= 2026-09-30
+
+  A percentage rollout on Android, or any country condition wider than AU, ships
+  a policy violation directly — nothing downstream will catch it.
+
+  **And the answer is sticky.** PostHog values persist on the device, so an
+  Android phone that resolved `true` while in an allowed country keeps the link
+  until its next flag reload somewhere else. Narrowing the targeting does not
+  reach back and correct a device already holding a `true`; plan the rollout
+  knowing a wrong answer outlives the config that produced it.
+
+**The tester override is disabled for it in production**, which is what
+`policyControlled: true` on a flag definition means. Ordinarily the on-device
+override is the highest-precedence layer — the whole point of the Feature Flags
+screen. Here that would be a hole: testers install the same store binaries as
+everyone else, so an override travels to a region where the behaviour it unlocks
+is not allowed, and it overrules PostHog, the only layer that knows where the
+device is. `applyOverridePolicy` in the provider therefore strips overrides for
+policy-controlled keys unless `isDevBuild()` — so QA can still force the CTA in a
+dev client, and a store build ignores the stored value. The tester row says so
+rather than showing a choice it is not honouring ("override ignored on this
+build"). Mark any future flag the same way if flipping it wrong is a policy
+violation rather than an early look at a feature.
+
+Everything else about the flag is ordinary: a POSITIVE rollout flag read as
+`=== true`, so unresolved, absent and off all land on the unlinked text, which
+is the safe answer in every region. It deliberately does not wait on
+`useFeatureFlagsResolved` — the first-frame render is already the compliant one.
+
 ### The board-render flags (issue #2202) — both retired
 
 Neither `board-render-mode-default` nor `board-glow-falloff` exists any more.

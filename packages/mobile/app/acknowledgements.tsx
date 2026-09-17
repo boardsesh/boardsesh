@@ -9,16 +9,9 @@ import { SectionHeader } from '../src/components/SectionHeader';
 import { Text } from '../src/components/Text';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
-import {
-  contributors,
-  sponsors,
-  privateSponsorCount,
-  friends,
-  dogName,
-  SPONSORS_URL,
-  XPREM_URL,
-} from '../src/lib/acknowledgements';
+import { contributors, sponsors, privateSponsorCount, friends, dogName, XPREM_URL } from '../src/lib/acknowledgements';
 import { openDiscordInvite } from '../src/lib/discord';
+import { SUPPORT_URL, SUPPORT_URL_DISPLAY, useDonationLinksAllowed } from '../src/lib/donation-links';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, spacing } from '../src/theme/tokens';
@@ -94,12 +87,15 @@ export default function AcknowledgementsScreen() {
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
   const friendsLine = friends.join(', ');
+  // Store rules only let some regions have a tappable donation link; everywhere
+  // else the same message goes out as plain, unlinked text. See donation-links.ts.
+  const donationLinksAllowed = useDonationLinksAllowed();
 
   const handleOpenProfile = useCallback((url: string) => {
     void openExternalUrl(url, 'acknowledgements');
   }, []);
-  const handleBecomeSponsor = useCallback(() => {
-    void openExternalUrl(SPONSORS_URL, 'acknowledgements-sponsor');
+  const handleSupport = useCallback(() => {
+    void openExternalUrl(SUPPORT_URL, 'acknowledgements-sponsor');
   }, []);
   const handleJoinDiscord = useCallback(() => {
     void openDiscordInvite('acknowledgements');
@@ -119,6 +115,24 @@ export default function AcknowledgementsScreen() {
   // on-iOS / Android paths where a transparent header would slide content under the
   // status bar.
   const screenOptions = useStackScreenOptions();
+
+  // One support block, rendered in both the sponsors-present and empty branches:
+  // a button where donation links are allowed, otherwise informational text with
+  // no tap target of any kind.
+  const supportBlock = donationLinksAllowed ? (
+    <Button
+      title={t('mobile.acknowledgements.becomeSponsor')}
+      icon="favorite"
+      size="large"
+      variant="outlined"
+      onPress={handleSupport}
+      style={styles.sponsorButton}
+    />
+  ) : (
+    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.supportFallback}>
+      {t('mobile.acknowledgements.supportFallback', { url: SUPPORT_URL_DISPLAY })}
+    </Text>
+  );
 
   return (
     <>
@@ -178,6 +192,7 @@ export default function AcknowledgementsScreen() {
                   {t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })}
                 </Text>
               ) : null}
+              {supportBlock}
             </View>
           ) : (
             <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
@@ -186,14 +201,7 @@ export default function AcknowledgementsScreen() {
                   ? t('mobile.acknowledgements.privateSponsorsThanks', { count: privateSponsorCount })
                   : t('mobile.acknowledgements.sponsorsEmpty')}
               </Text>
-              <Button
-                title={t('mobile.acknowledgements.becomeSponsor')}
-                icon="favorite"
-                size="large"
-                variant="outlined"
-                onPress={handleBecomeSponsor}
-                style={styles.sponsorButton}
-              />
+              {supportBlock}
             </View>
           )}
         </View>
@@ -347,6 +355,10 @@ const styles = StyleSheet.create({
   sponsorButton: {
     marginTop: spacing[4],
     alignSelf: 'flex-start',
+  },
+  supportFallback: {
+    marginTop: spacing[2],
+    lineHeight: 20,
   },
   linkRow: {
     flexDirection: 'row',
