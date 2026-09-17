@@ -56,9 +56,25 @@ export function updateAuthorSnapshot(
   const setterUsernames = new Set(snapshot.authors.setterUsernames);
   const users = new Map(snapshot.authors.users.map((user) => [user.userId, user]));
   const incomplete = new Set(snapshot.incompleteUserIds);
+  let complete = snapshot.complete;
   if (kind === 'setter') {
     if (follow) setterUsernames.add(identifier);
-    else setterUsernames.delete(identifier);
+    else {
+      setterUsernames.delete(identifier);
+      // unfollowSetter also removes the linked Boardsesh user follow. Mirror
+      // that side effect so native climbs and their other board accounts stop
+      // matching offline, too. Ambiguous usernames need a server refresh: the
+      // legacy mutation chooses one linked user, not every matching account.
+      const linkedUsers = [...users.values()].filter((user) =>
+        user.boardAccounts.some((account) => account.username === identifier),
+      );
+      if (linkedUsers.length === 1) {
+        users.delete(linkedUsers[0].userId);
+        incomplete.delete(linkedUsers[0].userId);
+      } else if (linkedUsers.length > 1) {
+        complete = false;
+      }
+    }
   } else if (follow && !users.has(identifier)) {
     users.set(identifier, { userId: identifier, boardAccounts: [] });
     incomplete.add(identifier);
@@ -68,6 +84,7 @@ export function updateAuthorSnapshot(
   }
   return {
     ...snapshot,
+    ...(complete !== undefined ? { complete } : {}),
     authors: { setterUsernames: [...setterUsernames], users: [...users.values()] },
     incompleteUserIds: [...incomplete],
   };

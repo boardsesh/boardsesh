@@ -61,7 +61,19 @@ export async function writeAuthorFollowLocal(
       incompleteUserIds: [],
       complete: false,
     };
-    await saveAuthorSnapshot(txn, userId, updateAuthorSnapshot(snapshot, kind, identifier, follow));
+    const updatedSnapshot = updateAuthorSnapshot(snapshot, kind, identifier, follow);
+    if (kind === 'setter' && !follow) {
+      const remainingUserIds = new Set(updatedSnapshot.authors.users.map((user) => user.userId));
+      for (const user of snapshot.authors.users) {
+        if (!remainingUserIds.has(user.userId)) {
+          await txn.runAsync('DELETE FROM user_follows WHERE following_id = ? AND follower_id = ?', [
+            user.userId,
+            userId,
+          ]);
+        }
+      }
+    }
+    await saveAuthorSnapshot(txn, userId, updatedSnapshot);
   });
   reportSuppressedEnqueue(table, operation, enqueueOutcome);
   notifyOutboxChanged();

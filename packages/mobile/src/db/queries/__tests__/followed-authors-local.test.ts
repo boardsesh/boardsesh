@@ -66,6 +66,58 @@ describe('offline followed authors', () => {
     await insertClimb('wrong-board', 'linked', null, 'tension');
     expect(await countClimbsLocal(db, { ...board, boardName: 'tension', onlyFollowedAuthors: true })).toBe(0);
   });
+  it('removes linked native and imported climbs after an offline setter unfollow', async () => {
+    const linkedSnapshot: AuthorSnapshot = {
+      ...snapshot,
+      authors: {
+        setterUsernames: ['unclaimed', 'linked'],
+        users: [
+          {
+            userId: 'friend',
+            boardAccounts: [
+              { boardType: 'kilter', username: 'linked' },
+              { boardType: 'tension', username: 'other-account' },
+            ],
+          },
+          { userId: 'other-friend', boardAccounts: [] },
+        ],
+      },
+    };
+    await insertClimb('accountless', 'unclaimed');
+    await insertClimb('native', 'native-setter', 'friend');
+    await insertClimb('linked', 'linked');
+    await insertClimb('other-account', 'other-account', null, 'tension');
+    await insertClimb('other-friend', 'other-setter', 'other-friend');
+    await saveAuthorSnapshot(db, 'viewer', updateAuthorSnapshot(linkedSnapshot, 'setter', 'linked', false));
+    const input = { ...board, onlyFollowedAuthors: true };
+    expect((await searchClimbsLocal(db, input)).climbs.map((climb) => climb.uuid).sort()).toEqual([
+      'accountless',
+      'other-friend',
+    ]);
+    expect(await countClimbsLocal(db, input)).toBe(2);
+    expect(await countClimbsLocal(db, { ...input, boardName: 'tension' })).toBe(0);
+    expect((await getSetterStatsLocal(db, input)).map((setter) => setter.setterUsername).sort()).toEqual([
+      'other-setter',
+      'unclaimed',
+    ]);
+  });
+  it('requires sync when a setter username has ambiguous linked users', async () => {
+    const ambiguous = {
+      ...snapshot,
+      authors: {
+        ...snapshot.authors,
+        users: [
+          ...snapshot.authors.users,
+          { userId: 'another', boardAccounts: snapshot.authors.users[0].boardAccounts },
+        ],
+      },
+    };
+    const updated = updateAuthorSnapshot(ambiguous, 'setter', 'linked', false);
+    expect(updated.authors.users).toEqual(ambiguous.authors.users);
+    await saveAuthorSnapshot(db, 'viewer', updated);
+    expect(await canReadFollowedAuthors(db)).toBe(false);
+    await expect(countClimbsLocal(db, { ...board, onlyFollowedAuthors: true })).rejects.toThrow('online sync');
+  });
   it('filters before the top-50 setter limit', async () => {
     for (let index = 0; index < 55; index++) await insertClimb(`other-${index}`, `aaa-${index}`);
     await insertClimb('wanted', 'unclaimed');

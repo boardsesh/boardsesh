@@ -65,5 +65,7 @@ Follow writes update SQLite and enqueue the existing Follow/Unfollow operations
 atomically. Opposite pending writes are cancelled, with a corrective final
 mutation always queued. A snapshot refresh cannot overwrite pending changes or
 a toggle that raced its response; the drain and sync invalidations refresh
-author metadata, search/counts, setter lists, and Crew. Existing backend side
-effects that link setter follows to user follows reconcile after delivery.
+author metadata, search/counts, setter lists, and Crew. Unfollowing a setter
+also removes its known linked user follow locally, matching the backend side
+effect; ambiguous linked usernames require a sync before Following searches.
+Other setter-to-user follow side effects reconcile after delivery.

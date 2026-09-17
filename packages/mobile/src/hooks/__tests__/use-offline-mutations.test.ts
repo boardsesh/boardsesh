@@ -169,6 +169,25 @@ describe('writeAuthorFollowLocal', () => {
     expect(await db.getAllAsync<Row>('SELECT operation FROM pending_mutations')).toEqual([{ operation: 'delete' }]);
     expect((await readAuthorSnapshot(db, 'viewer'))?.authors.setterUsernames).toEqual([]);
   });
+  it('removes a linked user locally with the queued setter unfollow', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await db.runAsync(
+      "INSERT INTO user_follows (following_id, follower_id, created_at, updated_at) VALUES ('friend', 'viewer', '2026-09-01', '2026-09-01')",
+    );
+    await saveAuthorSnapshot(db, 'viewer', {
+      authors: {
+        setterUsernames: ['linked'],
+        users: [{ userId: 'friend', boardAccounts: [{ boardType: 'kilter', username: 'linked' }] }],
+      },
+      incompleteUserIds: [],
+    });
+    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'linked', false);
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toEqual([]);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual({ setterUsernames: [], users: [] });
+    expect(await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations')).toEqual([
+      { table_name: 'setter_follows', operation: 'delete' },
+    ]);
+  });
   it('does not write follows or outbox rows under another account', async () => {
     await stampLocalUserId(db, 'someone-else');
     await expect(writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', true)).rejects.toThrow('another account');
