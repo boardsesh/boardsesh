@@ -8,9 +8,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The Acknowledgements screen now points at boardsesh.com/support if you want to chip in and keep Boardsesh free. ([#5523](https://github.com/boardsesh/boardsesh/pull/5523))
 - Follow setters you love, even without a Boardsesh account. ([#5527](https://github.com/boardsesh/boardsesh/pull/5527))
   Find their climbs faster and catch their new problems in your Crew feed.
   Tap a setter to climb through their newest problems.
+
+### Improved
+
+- Load your Crew feed and scroll to older climbs faster. ([#5528](https://github.com/boardsesh/boardsesh/pull/5528))
 
 ## 2026-09-16
 
