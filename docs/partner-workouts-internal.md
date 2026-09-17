@@ -413,7 +413,7 @@ The payload builder, `buildPartnerWorkoutResults(workoutId)` in
 filtered to the workout's `user_id`, the way the `sessionHealthExport`
 resolver does. A party session has other climbers' ticks on it and none of
 those may reach a partner. `generateSessionSummary` is viewer-scoped too, but
-it is scoped to whoever is calling, which in the sweep is nobody; the builder
+it is scoped to whoever is calling, which in the inactivity job is nobody; the builder
 takes the user id explicitly.
 
 Grade fields come from the tick's `difficulty` resolved through the board's
