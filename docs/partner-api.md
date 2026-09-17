@@ -204,7 +204,7 @@ Idempotency-Key: 0f4d6a2e-...        (uuid, required)
 | ---------------- | -------- | --------------------------------------------------------------------------------------- |
 | `externalRef`    | yes      | Your id for this planned session. Unique per climber per client; reused refs return 409 |
 | `title`          | yes      | Shown on the workout card in Boardsesh. 80 characters                                   |
-| `scheduledFor`   | no       | ISO date. Only display; the climber can open it any day until it expires                |
+| `scheduledFor`   | no       | ISO date, at most 90 days out. Only display; the climber can open it any day until it expires |
 | `notes`          | no       | Coach's notes, shown above the blocks. 2000 characters                                  |
 | `preferredBoard` | no       | A hint. `type` is `kilter`, `tension`, `moonboard`, `spray`; `angle` in degrees. The climber can still pick any board |
 | `blocks`         | yes      | 1 to 12 blocks, run in order                                                            |
@@ -287,7 +287,9 @@ has configured.
 
 `support` is `native` or `freeform` per the table above. A workout that is
 never opened expires seven days after creation (or the day after
-`scheduledFor`, whichever is later).
+`scheduledFor`, whichever is later). `scheduledFor` more than 90 days out
+is rejected with `422`, so the longest an unopened workout can live is 91
+days.
 
 ### Idempotency and duplicates
 
