@@ -33,9 +33,15 @@ const navMock = vi.hoisted(() => ({
   }),
 }));
 const followMock = vi.hoisted(() => vi.fn());
+const authorQuery = vi.hoisted(() => ({ failed: false, refetch: vi.fn() }));
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../src/lib/graphql/hooks/use-followed-authors', () => ({
-  useFollowedAuthors: () => ({ data: { setterUsernames: ['alice'], users: [] }, setterNames: new Set(['alice']) }),
+  useFollowedAuthors: () => ({
+    data: authorQuery.failed ? undefined : { setterUsernames: ['alice'], users: [] },
+    setterNames: new Set(['alice']),
+    isError: authorQuery.failed,
+    refetch: authorQuery.refetch,
+  }),
   useToggleAuthorFollow: () => ({ mutateAsync: followMock }),
 }));
 const setterStats = vi.hoisted(() => ({
@@ -45,6 +51,8 @@ const setterStats = vi.hoisted(() => ({
   ] as SetterStat[],
   following: [{ setterUsername: 'alice', climbCount: 5 }] as SetterStat[],
   inputs: [] as Record<string, unknown>[],
+  failed: false,
+  refetch: vi.fn(),
 }));
 // The count query: returns a count only while enabled, like the real hook, and
 // records the input so tests can assert what the footer counts.
@@ -105,7 +113,12 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useSetterStats: (input: Record<string, unknown>) => {
     setterStats.inputs.push(input);
-    return { data: input.onlyFollowedAuthors ? setterStats.following : setterStats.data, isLoading: false };
+    return {
+      data: input.onlyFollowedAuthors ? setterStats.following : setterStats.data,
+      isLoading: false,
+      isError: setterStats.failed,
+      refetch: setterStats.refetch,
+    };
   },
   useSearchClimbsCount: countQuery.hook,
 }));
@@ -223,6 +236,10 @@ const sheetCountInput = {
 };
 
 beforeEach(() => {
+  authorQuery.failed = false;
+  authorQuery.refetch.mockClear();
+  setterStats.failed = false;
+  setterStats.refetch.mockClear();
   setterStats.inputs = [];
   setterStats.following = [{ setterUsername: 'alice', climbCount: 5 }];
   followMock.mockReset();
@@ -251,6 +268,19 @@ function lastCountCall() {
 }
 
 describe('SettersFilterScreen', () => {
+  it.each([false, true])(
+    'explains missing author data and retries the failed queries (stats error: %s)',
+    (statsFailed) => {
+      authorQuery.failed = true;
+      setterStats.failed = statsFailed;
+      const { getByText, queryByText } = render(<SettersFilterScreen />);
+      expect(getByText('authors.syncNeeded')).not.toBeNull();
+      expect(queryByText('authors.follow')).toBeNull();
+      fireEvent.click(getByText('authors.retry'));
+      expect(authorQuery.refetch).toHaveBeenCalledTimes(1);
+      expect(setterStats.refetch).toHaveBeenCalledTimes(statsFailed ? 1 : 0);
+    },
+  );
   it('shows both scopes and filters without changing the selected setters', () => {
     const { getByText, queryByText, getByLabelText } = render(<SettersFilterScreen />);
     fireEvent.click(getByLabelText('bob'));

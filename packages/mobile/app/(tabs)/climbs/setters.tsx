@@ -416,10 +416,16 @@ export default function SettersFilterScreen() {
           </Text>
         ) : null}
         {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
-        {isError ? (
+        {isError || follows.isError ? (
           <View>
             <Text>{t('authors.syncNeeded')}</Text>
-            <Button title={t('authors.retry')} onPress={() => void refetch()} />
+            <Button
+              title={t('authors.retry')}
+              onPress={() => {
+                if (follows.isError) void follows.refetch();
+                if (isError) void refetch();
+              }}
+            />
           </View>
         ) : null}
         {selectedSet.size > 0 ? (
