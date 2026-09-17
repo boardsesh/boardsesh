@@ -6,10 +6,23 @@ import type { ReactNode } from 'react';
 import { useFollowedAuthors, useToggleAuthorFollow } from '../use-followed-authors';
 
 const request = vi.hoisted(() => vi.fn());
+const offline = vi.hoisted(() => ({ enabled: false, removedUserIds: [] as string[] }));
+vi.mock('@boardsesh/offline-sync', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/offline-sync')>()),
+  assertLocalUserDataOwner: async () => 'ok',
+}));
+vi.mock('../../../../hooks/use-offline-mutations', () => ({
+  writeAuthorFollowLocal: async () => offline.removedUserIds,
+}));
+vi.mock('../../../../offline/offline-sync-adapter', () => ({ drainMutationQueue: async () => {} }));
+vi.mock('../../../../db/queries/followed-authors-local', () => ({
+  readAuthorSnapshot: async () => ({ authors: { setterUsernames: [], users: [] }, incompleteUserIds: [] }),
+}));
+vi.mock('../../../local-user-id', () => ({ readLocalUserId: async () => 'viewer' }));
 vi.mock('../../client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ userId: 'viewer' }) }));
-vi.mock('../../../../db', () => ({ getDatabaseHandle: () => null }));
-vi.mock('../../../offline-engine', () => ({ isOfflineEngineEnabled: () => false }));
+vi.mock('../../../../db', () => ({ getDatabaseHandle: () => (offline.enabled ? {} : null) }));
+vi.mock('../../../offline-engine', () => ({ isOfflineEngineEnabled: () => offline.enabled }));
 const authors = { setterUsernames: ['accountless'], users: [] };
 
 function createHarness() {
@@ -22,11 +35,32 @@ function createHarness() {
 }
 
 beforeEach(() => {
+  offline.enabled = false;
+  offline.removedUserIds = [];
   request.mockReset();
   request.mockResolvedValue({ followedAuthors: authors });
 });
 
 describe('followed author invalidation', () => {
+  it('reconciles the linked user removed by a queued setter unfollow', async () => {
+    offline.enabled = true;
+    offline.removedUserIds = ['friend'];
+    const { client, wrapper } = createHarness();
+    client.setQueryData(['publicProfile', 'viewer'], { id: 'viewer', followingCount: 1 });
+    client.setQueryData(['publicProfile', 'friend'], { id: 'friend', followerCount: 2, isFollowedByMe: true });
+    client.setQueryData(['following', 'viewer'], {
+      pages: [{ users: [{ id: 'friend', followerCount: 2, isFollowedByMe: true }], totalCount: 1, hasMore: false }],
+      pageParams: [0],
+    });
+    const { result } = renderHook(() => useToggleAuthorFollow(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ kind: 'setter', identifier: 'linked', follow: false });
+    });
+    expect(client.getQueryData(['publicProfile', 'viewer'])).toMatchObject({ followingCount: 0 });
+    expect(client.getQueryData(['publicProfile', 'friend'])).toMatchObject({ isFollowedByMe: false, followerCount: 1 });
+    expect(client.getQueryData(['following', 'viewer'])).toMatchObject({ pages: [{ users: [], totalCount: 0 }] });
+    expect(request).not.toHaveBeenCalled();
+  });
   it('does not invalidate feeds when another button mounts with cached authors', () => {
     const { client, invalidate, wrapper } = createHarness();
     client.setQueryData(['followedAuthors', 'viewer'], authors);

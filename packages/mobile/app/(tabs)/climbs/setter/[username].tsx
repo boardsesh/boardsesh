@@ -20,6 +20,7 @@ import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
 import { createAbortError } from '../../../../src/lib/graphql/request-timeout';
 import { spacing } from '../../../../src/theme/tokens';
+import { setterPlaylistReturnTo } from '../../../../src/lib/boards/board-return-to';
 
 // Hooks still need an input while no board is selected; both queries stay disabled.
 const PLACEHOLDER_BOARD = { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 };
@@ -81,7 +82,15 @@ export default function SetterPlaylist() {
         <View style={styles.chooseBoard}>
           <PlaylistBackFab />
           <Text>{t('authors.chooseBoard')}</Text>
-          <Button title={t('authors.chooseBoard')} onPress={() => router.push('/boards')} />
+          <Button
+            title={t('authors.chooseBoard')}
+            onPress={() =>
+              router.push({
+                pathname: '/boards',
+                params: { returnTo: setterPlaylistReturnTo(username) },
+              })
+            }
+          />
         </View>
       )}
       <PlaylistQueueReplaceSheet {...activation.queueReplaceSheet} />

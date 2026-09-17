@@ -52,6 +52,8 @@ The search sheet's followed-author switch intersects
 with its other filters; setter playlists deliberately start with only the exact
 setter and current board configuration, sorted newest first. Opening a playlist
 does not hand the picker's draft back until the picker is removed.
+If no board is active, choosing one returns to the same setter playlist via
+the board picker's allow-listed, encoded return route.
 
 Crew uses the mixed endpoint across boards. Gym/Everyone keeps the existing
 session feed. New-climb previews use the server-resolved board geometry and fetch
@@ -76,4 +78,6 @@ a toggle that raced its response; the drain and sync invalidations refresh
 author metadata, search/counts, setter lists, and Crew. Unfollowing a setter
 also removes its known linked user follow locally, matching the backend side
 effect; ambiguous linked usernames require a sync before Following searches.
+Known linked-user removals also reconcile cached profiles and the viewer's
+Following list immediately, just like a direct user unfollow.
 Other setter-to-user follow side effects reconcile after delivery.

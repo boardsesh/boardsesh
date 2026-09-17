@@ -23,6 +23,7 @@ import {
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
 import { isOfflineEngineEnabled } from '../../offline-engine';
+import { updateUserFollowCaches } from './user-follow-cache';
 
 export const AUTHOR_QUERY_KEYS = [
   'followedAuthors',
@@ -130,23 +131,28 @@ export function useToggleAuthorFollow() {
       const db = isOfflineEngineEnabled() ? getDatabaseHandle() : null;
       if (db && (await assertLocalUserDataOwner(db, userId)) === 'ok') {
         const { writeAuthorFollowLocal } = await import('../../../hooks/use-offline-mutations');
-        await writeAuthorFollowLocal(db, userId, kind, identifier, follow);
+        const removedUserIds = await writeAuthorFollowLocal(db, userId, kind, identifier, follow);
         const snapshot = await readAuthorSnapshot(db, userId);
         if (snapshot) queryClient.setQueryData(['followedAuthors', userId], snapshot.authors);
         const graphqlFetch: GraphQLFetch = (document, variables) => getHttpClient().request(document, variables);
         const { drainMutationQueue } = await import('../../../offline/offline-sync-adapter');
         void drainMutationQueue(db, queryClient, graphqlFetch).catch(() => undefined);
-        return { queued: true, viewerId: userId };
+        return { queued: true, viewerId: userId, removedUserIds };
       } else {
         const document =
           kind === 'setter' ? (follow ? FOLLOW_SETTER : UNFOLLOW_SETTER) : follow ? FOLLOW_USER : UNFOLLOW_USER;
         await getHttpClient().request(document, {
           input: kind === 'setter' ? { setterUsername: identifier } : { userId: identifier },
         });
-        return { queued: false, viewerId: userId };
+        return { queued: false, viewerId: userId, removedUserIds: [] as string[] };
       }
     },
-    onSuccess: ({ queued }, { kind }) => {
+    onSuccess: async ({ queued, viewerId, removedUserIds }, { kind }) => {
+      if (removedUserIds.length > 0) {
+        const { readLocalUserId } = await import('../../local-user-id');
+        if ((await readLocalUserId()) !== viewerId) return;
+        for (const removedUserId of removedUserIds) updateUserFollowCaches(queryClient, removedUserId, false, viewerId);
+      }
       invalidateAuthorQueries(queryClient);
       if (queued || kind === 'user') return; // User screens own their invalidation; queued writes wait for delivery.
       for (const key of ['publicProfile', 'followers', 'following', 'searchUsers'])

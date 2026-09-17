@@ -181,7 +181,7 @@ describe('writeAuthorFollowLocal', () => {
       },
       incompleteUserIds: [],
     });
-    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'linked', false);
+    expect(await writeAuthorFollowLocal(db, 'viewer', 'setter', 'linked', false)).toEqual(['friend']);
     expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toEqual([]);
     expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual({ setterUsernames: [], users: [] });
     expect(await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations')).toEqual([

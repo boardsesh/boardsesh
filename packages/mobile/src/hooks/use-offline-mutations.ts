@@ -27,7 +27,8 @@ export async function writeAuthorFollowLocal(
   kind: 'setter' | 'user',
   identifier: string,
   follow: boolean,
-): Promise<void> {
+): Promise<string[]> {
+  const removedUserIds = new Set<string>();
   const table = kind === 'setter' ? 'setter_follows' : 'user_follows';
   const column = kind === 'setter' ? 'setter_username' : 'following_id';
   const payload = kind === 'setter' ? { setterUsername: identifier } : { followingId: identifier };
@@ -70,6 +71,7 @@ export async function writeAuthorFollowLocal(
             user.userId,
             userId,
           ]);
+          removedUserIds.add(user.userId);
         }
       }
     }
@@ -77,6 +79,7 @@ export async function writeAuthorFollowLocal(
   });
   reportSuppressedEnqueue(table, operation, enqueueOutcome);
   notifyOutboxChanged();
+  return [...removedUserIds];
 }
 
 export type SaveTickInput = SaveTickMutationVariables['input'];

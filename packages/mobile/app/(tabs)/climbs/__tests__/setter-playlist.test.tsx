@@ -107,7 +107,10 @@ describe('setter smart playlist route', () => {
     expect(mocks.detail).toBeNull();
     expect(screen.getByRole('button', { name: 'Back' })).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'authors.chooseBoard' }));
-    expect(mocks.push).toHaveBeenCalledWith('/boards');
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: '/boards',
+      params: { returnTo: '/(tabs)/climbs/setter/accountless-setter' },
+    });
   });
 
   it.each([false, true])('wires queue replacement and shared-session preview=%s', (shared) => {
