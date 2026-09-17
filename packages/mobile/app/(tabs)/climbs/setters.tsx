@@ -117,6 +117,7 @@ const SetterRow = memo(function SetterRow({
       {canFollow ? (
         <Pressable
           disabled={followPending}
+          accessibilityLabel={`${following ? t('authors.unfollow') : t('authors.follow')}: ${setter.setterUsername}`}
           accessibilityState={{ disabled: followPending, busy: followPending }}
           onPress={() => onFollow(setter.setterUsername, !following)}
           accessibilityRole="button"

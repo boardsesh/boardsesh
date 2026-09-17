@@ -301,6 +301,12 @@ describe('SettersFilterScreen', () => {
     expect(bob.disabled).toBe(false);
   });
 
+  it('names the setter in each accessible follow action', () => {
+    const { getByRole } = render(<SettersFilterScreen />);
+    expect(getByRole('button', { name: 'authors.unfollow: alice' })).not.toBeNull();
+    expect(getByRole('button', { name: 'authors.follow: bob' })).not.toBeNull();
+  });
+
   it('shows mutation failure and unlocks its setter for retry', async () => {
     followMock.mockRejectedValueOnce(new Error('Offline write failed'));
     const { getByText, findByText } = render(<SettersFilterScreen />);
