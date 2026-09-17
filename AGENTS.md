@@ -186,6 +186,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
+- `docs/partner-api.md` — the partner-facing contract for training apps (Sequence first): Boardsesh as the OAuth 2.0 authorization server (PKCE S256 only, `bsa_`/`bsr_` opaque tokens, grant-level revocation), `POST /v1/partner/workouts` with the block schema and the per-block `support: native | freeform` degrade rule, the `/w/{id}` launch link, and the signed `workout.completed` webhook with its retry table; `docs/partner-workouts-internal.md` — the design behind it: the seven tables, why consent is on web and the token endpoint on the backend, why partner tokens never pass through `validateToken`, the pending-workout store and how each block type maps onto the generator or the rest timer today, the outbox + in-process sweep for deliveries, the PR order (AASA `NOT /oauth/*` first), and what waits on #5379/#5380
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 
 ## Architecture Overview
