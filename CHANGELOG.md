@@ -26,7 +26,6 @@ A new version shipped to the App Store.
 ### New
 
 - Chip in for the server bills: a new support page explains what Boardsesh costs to run and how to help, through GitHub Sponsors or a one-off donation. ([#5521](https://github.com/boardsesh/boardsesh/pull/5521))
-- No user-facing surface; the only code path near the limit is a tester-only screen. ([#5524](https://github.com/boardsesh/boardsesh/pull/5524))
 - See who's climbing right now on Home and jump into their session. ([#5518](https://github.com/boardsesh/boardsesh/pull/5518))
   The board sheet shows sessions happening on that wall, ready to join.
   Keep a session to yourself: turn off "Show this session live" when you start.
@@ -53,9 +52,7 @@ A new version shipped to the App Store.
   Filtering by grade range now works at angles nobody's climbed yet, instead
   of coming back empty.
 - A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout. ([#5507](https://github.com/boardsesh/boardsesh/pull/5507))
-- Tester-only screen behind Development; never reaches a climber. ([#5519](https://github.com/boardsesh/boardsesh/pull/5519))
 - Board art on the web now fills in once a slow load finishes, instead of leaving you with rings. ([#5502](https://github.com/boardsesh/boardsesh/pull/5502))
-- Tester-only screen behind Development; never reaches a climber. ([#5517](https://github.com/boardsesh/boardsesh/pull/5517))
 
 ## 2026-09-15
 
@@ -65,8 +62,6 @@ A new version shipped to the App Store.
 
 ### Fixed
 
-- Mirror a climb from the lock screen and the wall flips with it, straight away. ([#5391](https://github.com/boardsesh/boardsesh/pull/5391))
-- Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix. ([#5361](https://github.com/boardsesh/boardsesh/pull/5361))
 - The Climbs tab no longer crashes when you pick a board ([#5459](https://github.com/boardsesh/boardsesh/pull/5459))
 
 ## 2026-09-14

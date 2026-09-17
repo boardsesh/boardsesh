@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T07:54:14.390Z",
+  "generatedAt": "2026-09-17T08:12:15.890Z",
   "entries": [
     {
       "prNumber": 5523,
@@ -46,13 +46,6 @@
       "body": "including angles beyond the board's usual 25°/40°.\nFiltering by grade range now works at angles nobody's climbed yet, instead\nof coming back empty."
     },
     {
-      "prNumber": 5524,
-      "category": "new",
-      "title": "No user-facing surface; the only code path near the limit is a tester-only screen.",
-      "mergedAt": "2026-09-16T11:37:16Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5524"
-    },
-    {
       "prNumber": 5507,
       "category": "fixed",
       "title": "A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout.",
@@ -68,25 +61,11 @@
       "body": "The board sheet shows sessions happening on that wall, ready to join.\nKeep a session to yourself: turn off \"Show this session live\" when you start."
     },
     {
-      "prNumber": 5519,
-      "category": "fixed",
-      "title": "Tester-only screen behind Development; never reaches a climber.",
-      "mergedAt": "2026-09-16T10:07:14Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5519"
-    },
-    {
       "prNumber": 5502,
       "category": "fixed",
       "title": "Board art on the web now fills in once a slow load finishes, instead of leaving you with rings.",
       "mergedAt": "2026-09-16T09:13:27Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5502"
-    },
-    {
-      "prNumber": 5517,
-      "category": "fixed",
-      "title": "Tester-only screen behind Development; never reaches a climber.",
-      "mergedAt": "2026-09-16T09:13:13Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5517"
     },
     {
       "prNumber": 5499,
@@ -131,20 +110,6 @@
       "title": "No user can reach a spray wall until SW-09 ships the front door.",
       "mergedAt": "2026-09-16T02:43:39Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5479"
-    },
-    {
-      "prNumber": 5391,
-      "category": "fixed",
-      "title": "Mirror a climb from the lock screen and the wall flips with it, straight away.",
-      "mergedAt": "2026-09-15T14:05:12Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5391"
-    },
-    {
-      "prNumber": 5361,
-      "category": "fixed",
-      "title": "Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix.",
-      "mergedAt": "2026-09-15T14:05:02Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5361"
     },
     {
       "prNumber": 5467,
