@@ -103,6 +103,7 @@ import {
 import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
+import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import {
   matchesAdvertisedType,
@@ -942,13 +943,15 @@ export function useSearchClimbs(
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   // Keyed on input only — offlineAwareRequest is local-first and picks the source
   // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
   return useQuery({
-    queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input],
+    queryKey: [...SEARCH_CLIMBS_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
     select: (data) => data.searchClimbs,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
@@ -956,23 +959,27 @@ export function useSearchClimbs(
 }
 
 export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
-    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input],
+    queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
     select: (data) => data.searchClimbs.totalCount,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
-    placeholderData: (previous) => previous,
+    placeholderData: input.onlyFollowedAuthors ? undefined : (previous) => previous,
   });
 }
 
 export function useSetterStats(input: SetterStatsInput, enabled = true) {
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
-    queryKey: ['setterStats', input],
+    queryKey: ['setterStats', input, ...(input.onlyFollowedAuthors ? [userId] : [])],
     queryFn: () => offlineAwareRequest<GetSetterStatsQueryResponse>(GET_SETTER_STATS, { input }),
     select: (data) => data.setterStats,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     staleTime: 5 * 60 * 1000,
   });
 }

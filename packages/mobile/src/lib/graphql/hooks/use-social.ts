@@ -9,8 +9,6 @@ import {
   GET_FOLLOWERS,
   GET_FOLLOWING,
   SEARCH_USERS,
-  FOLLOW_USER,
-  UNFOLLOW_USER,
   type VoteMutationResponse,
   type VoteMutationVariables,
   type GetCommentsQueryResponse,
@@ -25,10 +23,6 @@ import {
   type GetFollowingQueryVariables,
   type SearchUsersQueryResponse,
   type SearchUsersQueryVariables,
-  type FollowUserMutationResponse,
-  type FollowUserMutationVariables,
-  type UnfollowUserMutationResponse,
-  type UnfollowUserMutationVariables,
   GET_USER_CLIMBS,
   type GetUserClimbsQueryResponse,
   type GetUserClimbsQueryVariables,
@@ -36,6 +30,8 @@ import {
 import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
+import { useToggleAuthorFollow } from './use-followed-authors';
+import { updateUserFollowCaches } from './user-follow-cache';
 
 const SOCIAL_PAGE_SIZE = 30;
 
@@ -126,26 +122,18 @@ export function useSearchUsers(query: string, enabled = true) {
 
 export function useToggleUserFollow(currentUserId: string | undefined) {
   const queryClient = useQueryClient();
+  const authorFollow = useToggleAuthorFollow();
 
   return useMutation({
+    networkMode: 'always',
     mutationFn: async ({ userId, isFollowedByMe }: { userId: string; isFollowedByMe: boolean }) => {
-      if (isFollowedByMe) {
-        const variables: UnfollowUserMutationVariables = { input: { userId } };
-        const response = await getHttpClient().request<UnfollowUserMutationResponse, UnfollowUserMutationVariables>(
-          UNFOLLOW_USER,
-          variables,
-        );
-        return response.unfollowUser;
-      }
-
-      const variables: FollowUserMutationVariables = { input: { userId } };
-      const response = await getHttpClient().request<FollowUserMutationResponse, FollowUserMutationVariables>(
-        FOLLOW_USER,
-        variables,
-      );
-      return response.followUser;
+      return authorFollow.mutateAsync({ kind: 'user', identifier: userId, follow: !isFollowedByMe });
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: async ({ queued, viewerId }, variables) => {
+      const { readLocalUserId } = await import('../../local-user-id');
+      if ((await readLocalUserId()) !== viewerId) return;
+      updateUserFollowCaches(queryClient, variables.userId, !variables.isFollowedByMe, viewerId);
+      if (queued) return;
       void queryClient.invalidateQueries({ queryKey: ['publicProfile', variables.userId] });
       if (currentUserId) void queryClient.invalidateQueries({ queryKey: ['publicProfile', currentUserId] });
       void queryClient.invalidateQueries({ queryKey: ['followers'] });

@@ -30,6 +30,7 @@ export function getFilterSummary(
       defaultSortBy: DEFAULT_FILTERS.sortBy,
       name: searchText,
       setter: filters.setter,
+      onlyFollowedAuthors: filters.onlyFollowedAuthors,
       gradeAccuracy: filters.gradeAccuracy,
       onlyTallClimbs: filters.onlyTallClimbs,
       onlyWideClimbs: filters.onlyWideClimbs,

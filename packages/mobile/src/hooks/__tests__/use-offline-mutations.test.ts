@@ -71,9 +71,11 @@ import {
   favoriteRemoveKey,
   useOfflineFollowUser,
   useOfflineUnfollowUser,
+  writeAuthorFollowLocal,
   type SaveTickInput,
 } from '../use-offline-mutations';
-import { runMigrations, type GraphQLFetch } from '@boardsesh/offline-sync';
+import { runMigrations, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
+import { readAuthorSnapshot, saveAuthorSnapshot } from '../../db/queries/followed-authors-local';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
 type Row = Record<string, unknown>;
@@ -139,6 +141,59 @@ beforeEach(async () => {
 
 afterEach(() => {
   __resetDrainerStateForTests();
+});
+
+describe('writeAuthorFollowLocal', () => {
+  it.each(['setter', 'user'] as const)(
+    'keeps the final %s follow after follow/unfollow/follow offline',
+    async (kind) => {
+      await stampLocalUserId(db, 'viewer');
+      await saveAuthorSnapshot(db, 'viewer', { authors: { setterUsernames: [], users: [] }, incompleteUserIds: [] });
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', true);
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', false);
+      await writeAuthorFollowLocal(db, 'viewer', kind, 'target', true);
+      const table = kind === 'setter' ? 'setter_follows' : 'user_follows';
+      expect(await db.getAllAsync<Row>(`SELECT follower_id FROM ${table}`)).toEqual([{ follower_id: 'viewer' }]);
+      const pending = await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations');
+      expect(pending).toEqual([{ table_name: table, operation: 'create' }]);
+      const snapshot = await readAuthorSnapshot(db, 'viewer');
+      if (kind === 'setter') expect(snapshot?.authors.setterUsernames).toEqual(['target']);
+      else expect(snapshot?.authors.users[0].userId).toBe('target');
+    },
+  );
+  it('queues a corrective unfollow and updates the local snapshot', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', true);
+    await writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', false);
+    expect(await db.getAllAsync<Row>('SELECT * FROM setter_follows')).toEqual([]);
+    expect(await db.getAllAsync<Row>('SELECT operation FROM pending_mutations')).toEqual([{ operation: 'delete' }]);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors.setterUsernames).toEqual([]);
+  });
+  it('removes a linked user locally with the queued setter unfollow', async () => {
+    await stampLocalUserId(db, 'viewer');
+    await db.runAsync(
+      "INSERT INTO user_follows (following_id, follower_id, created_at, updated_at) VALUES ('friend', 'viewer', '2026-09-01', '2026-09-01')",
+    );
+    await saveAuthorSnapshot(db, 'viewer', {
+      authors: {
+        setterUsernames: ['linked'],
+        users: [{ userId: 'friend', boardAccounts: [{ boardType: 'kilter', username: 'linked' }] }],
+      },
+      incompleteUserIds: [],
+    });
+    expect(await writeAuthorFollowLocal(db, 'viewer', 'setter', 'linked', false)).toEqual(['friend']);
+    expect(await db.getAllAsync<Row>('SELECT * FROM user_follows')).toEqual([]);
+    expect((await readAuthorSnapshot(db, 'viewer'))?.authors).toEqual({ setterUsernames: [], users: [] });
+    expect(await db.getAllAsync<Row>('SELECT table_name, operation FROM pending_mutations')).toEqual([
+      { table_name: 'setter_follows', operation: 'delete' },
+    ]);
+  });
+  it('does not write follows or outbox rows under another account', async () => {
+    await stampLocalUserId(db, 'someone-else');
+    await expect(writeAuthorFollowLocal(db, 'viewer', 'setter', 'target', true)).rejects.toThrow('another account');
+    expect(await db.getAllAsync<Row>('SELECT * FROM setter_follows')).toEqual([]);
+    expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toEqual([]);
+  });
 });
 
 describe('writeTickLocal', () => {

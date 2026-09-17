@@ -51,13 +51,39 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   //   overwritten by a network refetch that raced the drain.
   user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['favoriteStatus']],
 
-  user_follows: [['followers'], ['following']],
+  // Follow changes affect Following searches on every board. This platform-neutral
+  // table map knows query prefixes, not each client's filter-bearing key shape,
+  // so it deliberately invalidates unfiltered searches too. Only active queries
+  // refetch; inactive searches are marked stale until the next visit.
+  user_follows: [
+    ['publicProfile'],
+    ['searchUsers'],
+    ['followers'],
+    ['following'],
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
-  // Deliberately empty, not a placeholder key. Nothing on mobile reads a setter's
-  // follow state yet — the setter surface shows ['setterStats'], which this table
-  // does not feed. The old ['setterFollows'] key looked like coverage and was
-  // not. Give this real keys when a follow-a-setter surface ships.
-  setter_follows: [],
+  // Following-only catalogue reads, Crew and the complete author snapshot.
+  // Setter identities can be accountless OR linked: followSetter/unfollowSetter
+  // also insert/delete user_follows for a linked Boardsesh account. Keep profile
+  // and user-follow queries fresh after that server-side side effect lands.
+  setter_follows: [
+    ['publicProfile'],
+    ['followers'],
+    ['following'],
+    ['searchUsers'],
+    ['followedAuthors'],
+    ['crewFeed'],
+    ['setterStats'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
   // Playlist follow state is a field on the playlist detail row
   // (isFollowedByMe + followerCount on ['playlist', uuid]), not its own query.
@@ -79,7 +105,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['boardseshGradesForAngles'],
   ],
 
-  // Deliberately empty, like `setter_follows` — not a placeholder.
+  // Deliberately empty — not a placeholder.
   //
   // A wall's holds and photo are read back through the spray wall registry
   // (`packages/mobile/src/lib/spray/spray-wall-registry.ts`, SW-07 / #5440),

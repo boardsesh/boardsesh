@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { readLocalUserId } from '../lib/local-user-id';
 
 /**
  * Historical key name: on web the id no longer comes from a JWT (see below). It
@@ -43,7 +42,10 @@ export function useStoredUserId(enabled: boolean): StoredUserId {
     // `?? null` because React Query rejects an undefined resolution as a
     // programming error ("Query data cannot be undefined"); "no id" is a real,
     // cacheable answer here.
-    queryFn: async () => (await readLocalUserId()) ?? null,
+    queryFn: async () => {
+      const { readLocalUserId } = await import('../lib/local-user-id');
+      return (await readLocalUserId()) ?? null;
+    },
     enabled,
     // The local read is cheap but the answer only changes across a sign-in /
     // sign-out, both of which clear the cache anyway. `gcTime: Infinity` is safe

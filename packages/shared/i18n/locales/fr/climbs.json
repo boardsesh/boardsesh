@@ -1,4 +1,25 @@
 {
+  "authors": {
+    "selectHint": "Coche une case pour filtrer les blocs. Touche un nom pour les parcourir.",
+    "selectedCount": "Sélection : {{count}}",
+    "viaUserFollow": "Via une personne que tu suis",
+    "followingHint": "Inclut les comptes liés des personnes que tu suis. Suivre enregistre directement cet ouvreur ou cette ouvreuse.",
+    "follow": "Suivre",
+    "unfollow": "Ne plus suivre",
+    "following": "Abonnements",
+    "allSetters": "Tous les ouvreurs",
+    "followingClimbs": "Blocs des personnes que je suis",
+    "playlistSubtitle": "Tous les blocs sur cette board · Les plus récents d’abord",
+    "signIn": "Connecte-toi pour suivre cet ouvreur",
+    "syncNeeded": "Connecte-toi pour synchroniser tes abonnements et les ouvreurs associés.",
+    "followError": "Impossible de modifier cet abonnement. Réessaie.",
+    "loadError": "Impossible de charger ces blocs.",
+    "empty": "Cet ouvreur n’a pas encore de blocs sur cette board.",
+    "chooseBoard": "Choisis une board",
+    "retry": "Réessayer",
+    "newClimb": "Nouveau bloc",
+    "setBy": "Ouvert par {{setter}}"
+  },
   "sends_one": "{{formattedCount}} croix",
   "sends_other": "{{formattedCount}} croix",
   "metadata": {

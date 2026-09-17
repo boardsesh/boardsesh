@@ -142,6 +142,15 @@ export const MIGRATIONS: Migration[] = [
     version: 8,
     statements: [SPRAY_WALLS],
   },
+  {
+    version: 9,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS followed_author_snapshots (
+        user_id TEXT PRIMARY KEY NOT NULL,
+        snapshot TEXT NOT NULL
+      );`,
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

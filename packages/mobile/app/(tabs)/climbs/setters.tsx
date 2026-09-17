@@ -1,13 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Button } from '../../../src/components/Button';
+import { SegmentedControl } from '../../../src/components/SegmentedControl';
 import { Icon } from '../../../src/components/Icon';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useSearchClimbsCount, useSetterStats } from '../../../src/lib/graphql/hooks';
@@ -16,6 +17,8 @@ import { emitSetterFilterSelection } from '../../../src/lib/setter-filter-handof
 import { hapticSelection } from '../../../src/lib/haptics';
 import { textStyles } from '../../../src/theme/typography';
 import { spacing, borderRadius } from '../../../src/theme/tokens';
+import { useAuth } from '../../../src/providers/auth-provider';
+import { useFollowedAuthors, useToggleAuthorFollow } from '../../../src/lib/graphql/hooks/use-followed-authors';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -35,6 +38,7 @@ type Params = {
 };
 
 type SetterStat = { setterUsername: string; climbCount: number };
+const setterKey = (setter: SetterStat) => setter.setterUsername;
 
 // Defensive parse of the serialized selection param: a malformed value falls back
 // to an empty selection rather than crashing the route.
@@ -75,27 +79,67 @@ type SetterRowProps = {
   setter: SetterStat;
   isSelected: boolean;
   onToggle: (username: string) => void;
+  onOpen: (username: string) => void;
+  onFollow: (username: string, follow: boolean) => void;
+  following: boolean;
+  viaUserFollow: boolean;
+  canFollow: boolean;
+  followPending: boolean;
 };
 
-const SetterRow = memo(function SetterRow({ setter, isSelected, onToggle }: SetterRowProps) {
+const SetterRow = memo(function SetterRow({
+  setter,
+  isSelected,
+  onToggle,
+  onOpen,
+  onFollow,
+  following,
+  viaUserFollow,
+  canFollow,
+  followPending,
+}: SetterRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
   return (
-    <Pressable
-      onPress={() => onToggle(setter.setterUsername)}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: isSelected }}
-      accessibilityLabel={setter.setterUsername}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <View style={styles.rowText}>
+    <View style={styles.row}>
+      <Pressable
+        onPress={() => onToggle(setter.setterUsername)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isSelected }}
+        accessibilityLabel={setter.setterUsername}
+        accessibilityHint={t('authors.selectHint')}
+        style={styles.selectionTarget}
+      >
+        <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
+          {isSelected ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
+        </View>
+      </Pressable>
+      <Pressable style={styles.rowText} onPress={() => onOpen(setter.setterUsername)} accessibilityRole="button">
         <Text variant="body">{setter.setterUsername}</Text>
         <Text variant="footnote" style={styles.count}>
           {t('mobile.search.climbsCount', { count: setter.climbCount })}
         </Text>
-      </View>
-      {isSelected ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
-    </Pressable>
+        {viaUserFollow ? (
+          <Text variant="caption2" style={styles.count}>
+            {t('authors.viaUserFollow')}
+          </Text>
+        ) : null}
+      </Pressable>
+      {canFollow ? (
+        <Pressable
+          disabled={followPending}
+          accessibilityLabel={`${following ? t('authors.unfollow') : t('authors.follow')}: ${setter.setterUsername}`}
+          accessibilityState={{ disabled: followPending, busy: followPending }}
+          onPress={() => onFollow(setter.setterUsername, !following)}
+          accessibilityRole="button"
+          hitSlop={8}
+        >
+          <Text variant="footnote" color={brandColors.primary}>
+            {following ? t('authors.unfollow') : t('authors.follow')}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 });
 
@@ -112,6 +156,14 @@ const SetterRow = memo(function SetterRow({ setter, isSelected, onToggle }: Sett
 export default function SettersFilterScreen() {
   const params = useLocalSearchParams<Params>();
   const navigation = useNavigation();
+  const router = useRouter();
+  const { isAuthenticated } = useAuth();
+  const follows = useFollowedAuthors();
+  const followMutation = useToggleAuthorFollow();
+  const pendingSettersRef = useRef(new Set<string>());
+  const [pendingSetters, setPendingSetters] = useState<ReadonlySet<string>>(new Set());
+  const [followError, setFollowError] = useState(false);
+  const [followingOnly, setFollowingOnly] = useState(false);
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -151,16 +203,15 @@ export default function SettersFilterScreen() {
     };
   }, []);
 
-  // Hand the current selection back to the sheet whenever this screen loses focus
-  // (back chevron or swipe-back). Matches the hold/zone handoff timing. Skipped
-  // after the footer button, which already handed it back with `apply`.
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
+  // Only removing the picker hands its draft back. Pushing a setter playlist
+  // must not re-present the underlying filter sheet over that playlist.
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', () => {
         if (appliedRef.current) return;
         emitSetterFilterSelection(selectedSettersRef.current);
-      };
-    }, []),
+      }),
+    [navigation],
   );
 
   const selectedSet = useMemo(() => new Set(selectedSetters), [selectedSetters]);
@@ -182,12 +233,22 @@ export default function SettersFilterScreen() {
       sizeId,
       setIds,
       angle,
+      onlyFollowedAuthors: (followingOnly && isAuthenticated) || undefined,
       ...(debouncedSearch.length > 0 ? { search: debouncedSearch } : {}),
     }),
-    [boardName, layoutId, sizeId, setIds, angle, debouncedSearch],
+    [boardName, layoutId, sizeId, setIds, angle, debouncedSearch, followingOnly, isAuthenticated],
   );
 
-  const { data: setters, isLoading } = useSetterStats(queryInput, boardName.length > 0);
+  const { data: setters, isLoading, isError, refetch } = useSetterStats(queryInput, boardName.length > 0);
+  const linkedSetterNames = useMemo(
+    () =>
+      new Set(
+        follows.data?.users.flatMap((user) =>
+          user.boardAccounts.filter((account) => account.boardType === boardName).map((account) => account.username),
+        ) ?? [],
+      ),
+    [follows.data, boardName],
+  );
 
   // Live "Show N climbs" count: the sheet's draft with this screen's picks swapped
   // in. Built with the same helper as the sheet's own count, so returning to the
@@ -254,11 +315,55 @@ export default function SettersFilterScreen() {
     });
   }, [navigation, selectedSet.size, clear, brandColors.primary, t]);
 
+  const openSetter = useCallback(
+    (username: string) => {
+      router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username } });
+    },
+    [router],
+  );
+  const followSetter = useCallback(
+    (username: string, follow: boolean) => {
+      if (pendingSettersRef.current.has(username)) return;
+      pendingSettersRef.current.add(username);
+      setPendingSetters(new Set(pendingSettersRef.current));
+      setFollowError(false);
+      void followMutation
+        .mutateAsync({ kind: 'setter', identifier: username, follow })
+        .catch(() => setFollowError(true))
+        .finally(() => {
+          pendingSettersRef.current.delete(username);
+          setPendingSetters(new Set(pendingSettersRef.current));
+        });
+    },
+    [followMutation.mutateAsync],
+  );
   const renderRow = useCallback(
     ({ item }: { item: SetterStat }) => (
-      <SetterRow setter={item} isSelected={selectedSetRef.current.has(item.setterUsername)} onToggle={toggle} />
+      <SetterRow
+        setter={item}
+        isSelected={selectedSetRef.current.has(item.setterUsername)}
+        onToggle={toggle}
+        onOpen={openSetter}
+        onFollow={followSetter}
+        following={follows.setterNames.has(item.setterUsername)}
+        viaUserFollow={
+          !follows.setterNames.has(item.setterUsername) && (followingOnly || linkedSetterNames.has(item.setterUsername))
+        }
+        canFollow={isAuthenticated && !!follows.data}
+        followPending={pendingSetters.has(item.setterUsername)}
+      />
     ),
-    [toggle],
+    [
+      toggle,
+      openSetter,
+      followSetter,
+      follows.setterNames,
+      follows.data,
+      isAuthenticated,
+      pendingSetters,
+      followingOnly,
+      linkedSetterNames,
+    ],
   );
 
   return (
@@ -289,10 +394,44 @@ export default function SettersFilterScreen() {
           />
         </View>
 
+        {isAuthenticated ? (
+          <View style={styles.scopeControl}>
+            <SegmentedControl
+              options={[
+                { key: 'all', label: t('authors.allSetters') },
+                { key: 'following', label: t('authors.following') },
+              ]}
+              selectedKey={followingOnly ? 'following' : 'all'}
+              onSelect={(scope) => setFollowingOnly(scope === 'following')}
+              accessibilityLabel={t('mobile.filter.setters')}
+            />
+          </View>
+        ) : null}
+        <Text variant="footnote" style={styles.pickerHint}>
+          {t('authors.selectHint')}
+        </Text>
+        {followingOnly ? (
+          <Text variant="footnote" style={styles.pickerHint}>
+            {t('authors.followingHint')}
+          </Text>
+        ) : null}
+        {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
+        {isError || follows.isError ? (
+          <View>
+            <Text>{t('authors.syncNeeded')}</Text>
+            <Button
+              title={t('authors.retry')}
+              onPress={() => {
+                if (follows.isError) void follows.refetch();
+                if (isError) void refetch();
+              }}
+            />
+          </View>
+        ) : null}
         {selectedSet.size > 0 ? (
           <View style={styles.selectionBar}>
             <Text variant="footnote" style={styles.selectionCount}>
-              {t('mobile.search.settersCount', { count: selectedSet.size })}
+              {t('authors.selectedCount', { count: selectedSet.size })}
             </Text>
           </View>
         ) : null}
@@ -306,7 +445,7 @@ export default function SettersFilterScreen() {
             <FlashList
               data={setters ?? []}
               extraData={selectedSetters}
-              keyExtractor={(item: SetterStat) => item.setterUsername}
+              keyExtractor={setterKey}
               renderItem={renderRow}
               ItemSeparatorComponent={SetterSeparator}
               contentInsetAdjustmentBehavior="automatic"
@@ -368,12 +507,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
     minHeight: 48,
-  },
-  rowPressed: {
-    opacity: 0.6,
+    gap: spacing[3],
   },
   rowText: {
     flex: 1,
+  },
+  selectionTarget: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scopeControl: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+  },
+  pickerHint: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    opacity: 0.6,
   },
   count: {
     opacity: 0.6,

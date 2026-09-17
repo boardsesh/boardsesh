@@ -2,6 +2,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+const loadFollowedAuthorsMock = vi.hoisted(() =>
+  vi.fn(async (_userId: string) => ({ setterUsernames: [], users: [] })),
+);
+vi.mock('../../lib/graphql/hooks/use-followed-authors', () => ({
+  useFollowedAuthors: () => ({}),
+  loadFollowedAuthors: loadFollowedAuthorsMock,
+  AUTHOR_QUERY_KEYS: ['followedAuthors', 'setterStats'],
+}));
 
 // The analytics barrel reaches posthog-react-native; stub it so the module scan
 // never parses it. The two flag readers are what FeatureFlagsProvider itself
@@ -391,6 +399,8 @@ describe('OfflineSyncBridge — legacy flag changes', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['setterStats'] }));
+    invalidateSpy.mockClear();
 
     rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
 
@@ -447,6 +457,28 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
 // migrations never ran — no board_climb_grades, no characteristics column. Both
 // the sync effect writes, so it has to wait.
 describe('OfflineSyncBridge — schema readiness gating', () => {
+  it('warms authors after schema readiness and owner stamping despite a fresh cached query', async () => {
+    setSchemaReady(false);
+    assertLocalUserDataOwnerMock.mockResolvedValue('missing');
+    let finishStamp!: () => void;
+    stampLocalUserIdMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStamp = resolve;
+        }),
+    );
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(['followedAuthors', 'user-1'], { setterUsernames: [], users: [] });
+    render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    expect(loadFollowedAuthorsMock).not.toHaveBeenCalled();
+    act(() => setSchemaReady(true));
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalled());
+    expect(loadFollowedAuthorsMock).not.toHaveBeenCalled();
+    await act(async () => {
+      finishStamp();
+    });
+    await waitFor(() => expect(loadFollowedAuthorsMock).toHaveBeenCalledWith('user-1'));
+  });
   it('does not start the scheduler against a database whose migrations have not run', async () => {
     setSchemaReady(false);
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);

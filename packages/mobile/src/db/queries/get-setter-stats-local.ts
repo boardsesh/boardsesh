@@ -2,6 +2,7 @@ import type { OfflineDatabase } from '@boardsesh/offline-sync';
 import type { SetterStat, SetterStatsInput } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { parseSetIds } from './search-climbs-local';
+import { followedAuthorsLocalCondition } from './followed-authors-local';
 
 /**
  * On-device twin of `getSetterStats` (packages/db/src/queries/climbs/setter-stats.ts):
@@ -33,6 +34,10 @@ export async function getSetterStatsLocal(db: OfflineDatabase, input: SetterStat
   };
 
   push('c.board_type = ?', boardType);
+  if (input.onlyFollowedAuthors) {
+    const followedCondition = await followedAuthorsLocalCondition(db);
+    push(followedCondition.sql, ...followedCondition.binds);
+  }
   push('c.layout_id = ?', input.layoutId);
   push('c.is_listed = 1');
   push('c.is_draft = 0');

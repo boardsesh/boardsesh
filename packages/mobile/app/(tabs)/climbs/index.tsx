@@ -92,6 +92,7 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import {
@@ -647,6 +648,7 @@ function ClimbListInner() {
     data: searchPages,
     isLoading: isClimbsLoading,
     isError: isClimbsError,
+    error: climbSearchError,
     isFetchingNextPage,
     isRefetching,
     fetchNextPage,
@@ -1688,6 +1690,13 @@ function ClimbListInner() {
           ListEmptyComponent={
             showInitialSkeletons ? (
               <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
+              <View style={styles.emptyContainer}>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('authors.syncNeeded')}
+                </Text>
+                <Button title={t('authors.retry')} onPress={() => void refetch()} />
+              </View>
             ) : offlineFilterUnavailable ? (
               <View style={styles.emptyContainer}>
                 {/* The glyph carries the same blame as the title: a wifi-slash over

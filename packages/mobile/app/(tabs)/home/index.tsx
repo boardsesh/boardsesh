@@ -6,12 +6,20 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
-import type { SessionFeedItem, SessionFeedTickHighlight, SocialEntityType, UserBoard } from '@boardsesh/shared-schema';
+import type {
+  CrewFeedItem,
+  SessionFeedItem,
+  SessionFeedTickHighlight,
+  SocialEntityType,
+  UserBoard,
+} from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Card } from '../../../src/components/Card';
 import { Button } from '../../../src/components/Button';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
+import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
+import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { HomeTopChrome, TOP_ISLAND_BAND } from '../../../src/components/feed/HomeTopChrome';
 import { type AppMenuAction } from '../../../src/components/AppMenu';
@@ -26,6 +34,7 @@ import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state
 import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
+import { createFeedPageGate, requiresCrewPageTap } from '../../../src/lib/feed/crew-page-state';
 import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
 import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
 import { hapticLight } from '../../../src/lib/haptics';
@@ -49,7 +58,8 @@ type CommentTarget = {
 
 // Hoisted so the FlashList `keyExtractor` prop keeps a stable identity across
 // renders (perf playbook rule 3) instead of a fresh inline arrow each pass.
-const keyExtractor = (item: SessionFeedItem) => item.sessionId;
+const keyExtractor = (item: CrewFeedItem) => item.id;
+const getItemType = (item: CrewFeedItem) => item.__typename;
 
 export default function HomeTab() {
   const { t } = useTranslation('feed');
@@ -61,7 +71,7 @@ export default function HomeTab() {
   const { openPlayDrawer } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
   const insets = useSafeAreaInsets();
-  const listRef = useRef<FlashListRef<SessionFeedItem>>(null);
+  const listRef = useRef<FlashListRef<CrewFeedItem>>(null);
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
   // Measured top-chrome height so the feed clears the chrome (seeded to the floating
@@ -101,15 +111,37 @@ export default function HomeTab() {
   // fires the unscoped global feed first (initial state is gym + no board) and
   // then refetches the scoped/crew query — that double-fetch flickered the feed.
   const scopeReady = !isResolvingHomeBoard;
-  const feed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady);
+  const sessionFeed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady && mode === 'gym');
+  const crewFeed = useCrewFeed(isAuthenticated && scopeReady && mode === 'crew');
+  const feed = mode === 'crew' ? crewFeed : sessionFeed;
+  // A visibility recheck can remove every candidate from one page. Advancing
+  // that cursor needs an explicit tap, not an automatic drain of sparse pages.
+  const lastCrewPage = crewFeed.data?.pages.at(-1)?.crewFeed;
+  const requiresManualPage = mode === 'crew' && requiresCrewPageTap(lastCrewPage);
+  const pageGateRef = useRef(createFeedPageGate());
+  const pageSource = mode === 'crew' ? 'crew' : `gym:${selectedBoard?.uuid ?? 'everyone'}`;
   // The feed is network-only and `networkMode: 'offlineFirst'` pauses an offline
   // fetch instead of failing it, so neither `isLoading` nor `isError` ever
   // resolves — the skeleton list would sit there for good.
   const feedOffline = useOfflineQueryState(feed);
 
+  const feedItems = useMemo<CrewFeedItem[]>(() => {
+    if (mode === 'crew') {
+      const items = crewFeed.data?.pages.flatMap((page) => page.crewFeed.items) ?? [];
+      return [...new Map(items.map((item) => [item.id, item])).values()];
+    }
+    return dedupeSessionsById(sessionFeed.data?.pages.flatMap((page) => page.sessionGroupedFeed.sessions) ?? []).map(
+      (session) => ({
+        __typename: 'CrewSessionItem',
+        id: `session:${session.sessionId}`,
+        occurredAt: session.lastTickAt,
+        session,
+      }),
+    );
+  }, [mode, crewFeed.data, sessionFeed.data]);
   const sessions = useMemo(
-    () => dedupeSessionsById(feed.data?.pages.flatMap((page) => page.sessionGroupedFeed.sessions) ?? []),
-    [feed.data],
+    () => feedItems.flatMap((item) => (item.__typename === 'CrewSessionItem' ? [item.session] : [])),
+    [feedItems],
   );
 
   const sessionEntityIds = useMemo(
@@ -174,9 +206,17 @@ export default function HomeTab() {
     [openPlayDrawer, router],
   );
 
+  const loadNextPage = useCallback(() => {
+    if (!feed.hasNextPage || feed.isFetchingNextPage || !pageGateRef.current.claim(pageSource)) return;
+    // Promise cleanup still runs after unmount. A remount owns a fresh ref, so
+    // this completion can only release the old instance's gate.
+    void feed.fetchNextPage().finally(() => {
+      pageGateRef.current.release(pageSource);
+    });
+  }, [feed.hasNextPage, feed.isFetchingNextPage, feed.fetchNextPage, pageSource]);
   const handleEndReached = useCallback(() => {
-    if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
-  }, [feed]);
+    if (!requiresManualPage) loadNextPage();
+  }, [requiresManualPage, loadNextPage]);
 
   const handleRefresh = useCallback(() => {
     // The rail subscribes to its own query, so the screen refreshes it by key.
@@ -234,16 +274,22 @@ export default function HomeTab() {
   // the single signal that re-invokes it. A churning `renderItem` would force
   // FlashList to re-render regardless of `extraData` (perf playbook rule 3).
   const renderItem = useCallback(
-    ({ item, target }: ListRenderItemInfo<SessionFeedItem>) => (
+    ({ item, target }: ListRenderItemInfo<CrewFeedItem>) => (
       <>
         {STARTUP_PROFILING_ENABLED && target === 'Cell' ? <HomeStartupCommit outcome="content" /> : null}
-        <SessionFeedCard
-          session={item}
-          voteSummary={summaryMapRef.current.get(voteSummaryKey(item.socialEntityType, item.socialEntityId))}
-          onOpenComments={handleOpenComments}
-          onPress={handleSessionPress}
-          onOpenClimb={handleOpenClimb}
-        />
+        {item.__typename === 'CrewClimbItem' ? (
+          <NewClimbFeedCard climb={item.climb} />
+        ) : (
+          <SessionFeedCard
+            session={item.session}
+            voteSummary={summaryMapRef.current.get(
+              voteSummaryKey(item.session.socialEntityType, item.session.socialEntityId),
+            )}
+            onOpenComments={handleOpenComments}
+            onPress={handleSessionPress}
+            onOpenClimb={handleOpenClimb}
+          />
+        )}
       </>
     ),
     [handleOpenComments, handleSessionPress, handleOpenClimb],
@@ -355,7 +401,8 @@ export default function HomeTab() {
     <View testID="home-screen" style={[styles.flex, { backgroundColor: systemColors.background }]}>
       <FlashList
         ref={listRef}
-        data={sessions}
+        data={feedItems}
+        getItemType={getItemType}
         extraData={summaryMap}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
@@ -400,7 +447,7 @@ export default function HomeTab() {
                   <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
                 </View>
               </View>
-            ) : mode === 'gym' && selectedBoard != null ? (
+            ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
               <View style={styles.feedState}>
                 <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
@@ -434,7 +481,11 @@ export default function HomeTab() {
           </>
         }
         ListFooterComponent={
-          feed.isFetchingNextPage ? <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} /> : null
+          feed.isFetchingNextPage ? (
+            <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} />
+          ) : requiresManualPage ? (
+            <Button title={t('crewLoadMore')} onPress={loadNextPage} />
+          ) : null
         }
       />
       <HomeTopChrome

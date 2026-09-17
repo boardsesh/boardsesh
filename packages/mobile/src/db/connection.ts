@@ -63,6 +63,7 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'user_favorites',
   'user_follows',
   'setter_follows',
+  'followed_author_snapshots',
   'playlist_follows',
   'pending_mutations',
   'spray_walls',

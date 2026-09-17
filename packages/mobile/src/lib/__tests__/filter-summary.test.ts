@@ -16,6 +16,7 @@ const text = (value: unknown) => (typeof value === 'string' || typeof value === 
 const mockT = ((key: string, options?: Record<string, unknown>) => {
   const translations: Record<string, string> = {
     'mobile.filter.title': 'Filters',
+    'authors.followingClimbs': 'Climbs by people you follow',
     'mobile.filter.sort.ascents': 'Ascents',
     'mobile.filter.sort.quality': 'Quality',
     'mobile.filter.sort.difficulty': 'Difficulty',
@@ -40,6 +41,11 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
 }) as unknown as Parameters<typeof getFilterSummary>[3];
 
 describe('getFilterSummary', () => {
+  it('names a saved Following-only filter', () => {
+    expect(getFilterSummary({ ...DEFAULT_FILTERS, onlyFollowedAuthors: true }, '', mockGrades, mockT)).toBe(
+      'Climbs by people you follow',
+    );
+  });
   it('returns fallback label when no filters are active', () => {
     expect(getFilterSummary(DEFAULT_FILTERS, '', mockGrades, mockT)).toBe('Filters');
   });

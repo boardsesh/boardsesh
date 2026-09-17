@@ -1183,6 +1183,16 @@ export function ClimbFilterSheet({
                 </View>
               </Pressable>
 
+              {isAuthenticated ? (
+                <View style={styles.followingSection}>
+                  <SwitchRow
+                    label={t('authors.followingClimbs')}
+                    value={!!localFilters.onlyFollowedAuthors}
+                    onValueChange={(enabled) => setFiltersPatch({ onlyFollowedAuthors: enabled || undefined })}
+                  />
+                </View>
+              ) : null}
+
               <View style={styles.subsectionGap} />
               <Pressable
                 onPress={openHoldFilter}
@@ -1389,6 +1399,9 @@ const styles = StyleSheet.create({
   },
   subsectionGap: {
     height: spacing[4],
+  },
+  followingSection: {
+    marginTop: spacing[4],
   },
   // A control's label line with a trailing pin toggle (pin the control to the chip row).
   pinnableLabelRow: {
