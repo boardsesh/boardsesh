@@ -48,74 +48,43 @@ export const GET_ACTIVITY_FEED = gql`
 // Session-Grouped Feed Queries
 // ============================================
 
-const SESSION_SUMMARY_FIELDS = `
-  sessionId
-  sessionType
-  sessionName
-  ownerUserId
-  participants {
-    userId
-    displayName
-    avatarUrl
-    sends
-    flashes
-    attempts
-  }
-  totalSends
-  totalFlashes
-  totalAttempts
-  tickCount
-  gradeDistribution {
-    grade
-    flash
-    send
-    attempt
-  }
-  boardTypes
-  hardestGrade
-  firstTickAt
-  lastTickAt
-  durationMinutes
-  goal
-  notes
-  upvotes
-  downvotes
-  voteScore
-  commentCount
-`;
-
-const SESSION_FEED_ITEM_FIELDS = `
-  ${SESSION_SUMMARY_FIELDS}
-  hardestSend {
-    uuid
-    userId
-    climbUuid
-    climbName
-    boardType
-    layoutId
-    renderBoard {
-      layoutId
-      sizeId
-      setIds
+// A real fragment keeps these shared fields visible to GraphQL codegen.
+const SESSION_FEED_ITEM_FIELDS = gql`
+  fragment SessionFeedItemFields on SessionFeedItem {
+    sessionId
+    sessionType
+    sessionName
+    ownerUserId
+    participants {
+      userId
+      displayName
+      avatarUrl
+      sends
+      flashes
+      attempts
     }
-    angle
-    status
-    attemptCount
-    difficulty
-    difficultyName
-    boardseshDifficulty
-    boardseshConfidence
-    quality
-    isMirror
-    isBenchmark
-    isNoMatch
-    comment
-    frames
-    setterUsername
-    climbedAt
-  }
-  featuredBeta {
-    tick {
+    totalSends
+    totalFlashes
+    totalAttempts
+    tickCount
+    gradeDistribution {
+      grade
+      flash
+      send
+      attempt
+    }
+    boardTypes
+    hardestGrade
+    firstTickAt
+    lastTickAt
+    durationMinutes
+    goal
+    notes
+    upvotes
+    downvotes
+    voteScore
+    commentCount
+    hardestSend {
       uuid
       userId
       climbUuid
@@ -143,38 +112,149 @@ const SESSION_FEED_ITEM_FIELDS = `
       setterUsername
       climbedAt
     }
-    betaLink {
-      climbUuid
-      link
-      foreignUsername
-      angle
-      thumbnail
-      isListed
-      createdAt
-      tickUuid
-      boardId
+    featuredBeta {
+      tick {
+        uuid
+        userId
+        climbUuid
+        climbName
+        boardType
+        layoutId
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
+        angle
+        status
+        attemptCount
+        difficulty
+        difficultyName
+        boardseshDifficulty
+        boardseshConfidence
+        quality
+        isMirror
+        isBenchmark
+        isNoMatch
+        comment
+        frames
+        setterUsername
+        climbedAt
+      }
+      betaLink {
+        climbUuid
+        link
+        foreignUsername
+        angle
+        thumbnail
+        isListed
+        createdAt
+        tickUuid
+        boardId
+      }
     }
+    socialEntityType
+    socialEntityId
   }
-  socialEntityType
-  socialEntityId
 `;
 
 export const GET_SESSION_GROUPED_FEED = gql`
   query GetSessionGroupedFeed($input: ActivityFeedInput) {
     sessionGroupedFeed(input: $input) {
       sessions {
-        ${SESSION_FEED_ITEM_FIELDS}
+        ...SessionFeedItemFields
       }
       cursor
       hasMore
     }
   }
+  ${SESSION_FEED_ITEM_FIELDS}
+`;
+
+export const GET_CREW_FEED = gql`
+  query GetCrewFeed($input: CrewFeedInput) {
+    crewFeed(input: $input) {
+      items {
+        __typename
+        ... on CrewSessionItem {
+          id
+          occurredAt
+          session {
+            ...SessionFeedItemFields
+          }
+        }
+        ... on CrewClimbItem {
+          id
+          occurredAt
+          climb {
+            id
+            type
+            entityType
+            entityId
+            actorId
+            actorDisplayName
+            actorAvatarUrl
+            climbUuid
+            climbName
+            boardType
+            layoutId
+            setterUsername
+            frames
+            angle
+            difficultyName
+            isNoMatch
+            createdAt
+            renderBoard {
+              layoutId
+              sizeId
+              setIds
+            }
+          }
+        }
+      }
+      cursor
+      hasMore
+    }
+  }
+  ${SESSION_FEED_ITEM_FIELDS}
 `;
 
 export const GET_SESSION_DETAIL = gql`
   query GetSessionDetail($sessionId: ID!) {
     sessionDetail(sessionId: $sessionId) {
-      ${SESSION_SUMMARY_FIELDS}
+      sessionId
+      sessionType
+      sessionName
+      ownerUserId
+      participants {
+        userId
+        displayName
+        avatarUrl
+        sends
+        flashes
+        attempts
+      }
+      totalSends
+      totalFlashes
+      totalAttempts
+      tickCount
+      gradeDistribution {
+        grade
+        flash
+        send
+        attempt
+      }
+      boardTypes
+      hardestGrade
+      firstTickAt
+      lastTickAt
+      durationMinutes
+      goal
+      notes
+      upvotes
+      downvotes
+      voteScore
+      commentCount
       healthKitWorkoutId
       ticks {
         uuid

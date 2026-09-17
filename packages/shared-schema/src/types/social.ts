@@ -126,3 +126,7 @@ export type SocialEvent = {
   timestamp: number;
   metadata: Record<string, string>;
 };
+export type FollowedAuthors = {
+  setterUsernames: string[];
+  users: { userId: string; boardAccounts: { boardType: string; username: string }[] }[];
+};

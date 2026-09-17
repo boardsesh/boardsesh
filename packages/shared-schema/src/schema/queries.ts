@@ -434,6 +434,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     Requires authentication.
     """
     activityFeed(input: ActivityFeedInput): ActivityFeedResult!
+    "Complete followed-author snapshot for the authenticated viewer."
+    followedAuthors: FollowedAuthors!
+    "Sessions and the last 30 days of published climbs from followed authors."
+    crewFeed(input: CrewFeedInput): CrewFeedResult!
 
     """
     Get trending feed of recent activity (public, no auth required).

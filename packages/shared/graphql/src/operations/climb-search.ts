@@ -154,6 +154,7 @@ export type ClimbSearchInputVariables = {
     sortSeed?: string;
     name?: string;
     setter?: string[];
+    onlyFollowedAuthors?: boolean;
     onlyTallClimbs?: boolean;
     onlyWideClimbs?: boolean;
     onlyWithBetaVideos?: boolean;

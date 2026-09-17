@@ -235,6 +235,8 @@ export const climbTypeDefs = /* GraphQL */ `
     name: String
     "Filter by setter usernames"
     setter: [String!]
+    "Only climbs by followed setters or followed users, including linked board accounts. Requires authentication."
+    onlyFollowedAuthors: Boolean
     "Filter by setter ID"
     setterId: Int
     "Only show benchmark climbs"
@@ -294,6 +296,8 @@ export const climbTypeDefs = /* GraphQL */ `
   Used to power the setter filter autocomplete in the search drawer.
   """
   input SetterStatsInput {
+    "Restrict counts and usernames to followed authors. Requires authentication."
+    onlyFollowedAuthors: Boolean
     "Board type (e.g., 'kilter', 'tension')"
     boardName: String!
     "Layout ID"

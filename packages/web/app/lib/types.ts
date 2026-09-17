@@ -161,6 +161,7 @@ export type SearchRequest = {
   // USER_SPECIFIC_SEARCH_PARAMS list stays assignable to this shape.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  onlyFollowedAuthors?: boolean;
   onlyDrafts: boolean;
   projectsOnly: boolean;
   // Climb-type filter (defaults: boulders=true, routes=false). Both true → no

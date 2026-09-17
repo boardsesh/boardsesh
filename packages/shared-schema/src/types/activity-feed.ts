@@ -4,6 +4,12 @@ import type { BetaLinksGqlRow } from '../beta-video-url';
 
 import type { SocialEntityType } from './comments';
 
+export type CrewFeedInput = { cursor?: string | null; limit?: number };
+export type CrewFeedItem =
+  | { __typename: 'CrewSessionItem'; id: string; occurredAt: string; session: SessionFeedItem }
+  | { __typename: 'CrewClimbItem'; id: string; occurredAt: string; climb: ActivityFeedItem };
+export type CrewFeedResult = { items: CrewFeedItem[]; cursor: string | null; hasMore: boolean };
+
 /**
  * The board configuration a logged climb should be drawn on (GraphQL
  * `RenderBoardConfig`). Resolved server-side against the climber's own boards —
@@ -143,6 +149,7 @@ export type ActivityFeedItem = {
   climbUuid?: string | null;
   boardType?: string | null;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   gradeName?: string | null;
   status?: string | null;
   angle?: number | null;

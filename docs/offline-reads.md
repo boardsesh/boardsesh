@@ -28,7 +28,9 @@ Budgets: target under 100 KB serialized, hard cap 512 KB with lowest-priority-fi
 
 ### Bucket 3 — honest offline states, no storage at all
 
-Feeds (`sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
+Feeds (`crewFeed`, `sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
+
+`crewFeed` is viewer-scoped and live: it mixes followed climbers' sessions with recently published climbs by followed authors. It is not persisted or replayed offline, even though follows and author metadata are stored locally for climb search.
 
 These have "now" semantics or are unbounded, so a stale copy is worse than an honest gap. They used to be worse than that: `networkMode: 'offlineFirst'` (`query-provider.tsx`) means an offline network-only query fires once, fails, then **pauses**, and a *hung* request never even failed. Since #4862 the interactive GraphQL client has a 20 s deadline and, while the connectivity store says the app is effectively offline (device offline, backend unreachable, or offline mode), the fetch chokepoint rejects instantly with a `BackendUnavailableError` that React Query does not retry — so these queries settle in `status: 'error'` within milliseconds instead of spinning, and `useOfflineQueryState` / `OfflineState` render the honest placard for the right reason ("No signal" vs "Can't reach Boardsesh right now" vs "Offline mode is on"). See `docs/offline-sync-plan.md` → "Backend reachability".
 
@@ -53,6 +55,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['publicProfile', selfId]`                                                              | Persisted cache             | Own profile only, 24 h                                             |
 | `['userTicks', userId]`                                                                  | Neither (for now)           | See "Deliberately deferred"                                        |
 | `['activityFeed']`, `['sessionGroupedFeed']`, `['sessionDetail', …]`                     | Neither                     | "Now" semantics                                                    |
+| `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |

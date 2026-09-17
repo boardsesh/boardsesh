@@ -1,4 +1,29 @@
 export const activityFeedTypeDefs = /* GraphQL */ `
+  input CrewFeedInput {
+    cursor: String
+    limit: Int
+  }
+
+  type CrewSessionItem {
+    id: ID!
+    occurredAt: String!
+    session: SessionFeedItem!
+  }
+
+  type CrewClimbItem {
+    id: ID!
+    occurredAt: String!
+    climb: ActivityFeedItem!
+  }
+
+  union CrewFeedItem = CrewSessionItem | CrewClimbItem
+
+  type CrewFeedResult {
+    items: [CrewFeedItem!]!
+    cursor: String
+    hasMore: Boolean!
+  }
+
   # ============================================
   # Activity Feed Types
   # ============================================
@@ -345,6 +370,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardType: String
     "Layout ID"
     layoutId: Int
+    "Board geometry for this climb, including its compatible size"
+    renderBoard: RenderBoardConfig
     "Grade name"
     gradeName: String
     "Ascent status (flash, send, attempt)"

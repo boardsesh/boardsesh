@@ -175,6 +175,7 @@ export type ClimbSearchInput = {
   sortSeed?: string;
   name?: string;
   setter?: string[];
+  onlyFollowedAuthors?: boolean;
   setterId?: number;
   onlyBenchmarks?: boolean;
   onlyTallClimbs?: boolean;
@@ -219,6 +220,7 @@ export type ClimbSearchInput = {
  * causes a compile error if the type doesn't match.
  */
 export const USER_SPECIFIC_SEARCH_PARAMS = [
+  'onlyFollowedAuthors',
   'hideAttempted',
   'hideCompleted',
   'showOnlyAttempted',
@@ -235,6 +237,7 @@ export type ClimbSearchResult = {
 };
 
 export type SetterStatsInput = {
+  onlyFollowedAuthors?: boolean;
   boardName: string;
   layoutId: number;
   sizeId: number;

@@ -38,6 +38,8 @@ import { setterFollowQueries, setterFollowMutations } from './social/setter-foll
 import { socialFeedQueries } from './social/feed';
 import { activityFeedQueries } from './social/activity-feed';
 import { sessionFeedQueries } from './social/session-feed';
+import { followedAuthorQueries } from './social/followed-authors';
+import { crewFeedQueries } from './social/crew-feed';
 import { sessionEditMutations } from './social/session-mutations';
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
@@ -114,6 +116,8 @@ export const resolvers = {
     ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
+    ...followedAuthorQueries,
+    ...crewFeedQueries,
     ...socialNotificationQueries,
     ...socialProposalQueries,
     ...socialRoleQueries,

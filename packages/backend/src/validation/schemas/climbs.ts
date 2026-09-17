@@ -170,6 +170,7 @@ export const ClimbQueueItemSchema = z.object({
  * Climb search input validation schema
  */
 export const ClimbSearchInputSchema = z.object({
+  onlyFollowedAuthors: z.boolean().optional(),
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
@@ -422,6 +423,7 @@ export const CheckMoonBoardClimbDuplicatesInputSchema = z.object({
 });
 
 export const SetterStatsInputSchema = z.object({
+  onlyFollowedAuthors: z.boolean().optional(),
   boardName: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
