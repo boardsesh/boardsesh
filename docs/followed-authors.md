@@ -55,6 +55,16 @@ their current behavior.
 
 ## Mobile
 
+Discover's For You shelf appends followed setters' computed playlists after
+personal smart playlists. It uses the active board's type, layout, size, sets,
+and angle with `onlyFollowedAuthors`, preserving the setter query's top-50
+count-descending/name-ascending order. Setters without matching climbs are
+omitted. Direct setter follows and linked followed users both contribute;
+returning to Discover refreshes the shelf. These cards open the existing setter
+playlist and do not offer pinning. The virtualized shelf keeps personal cards
+visible while setters load, and locally available followed-setter results can
+keep the shelf usable offline.
+
 The setter picker separates selection (checkbox), opening a setter's computed
 playlist (name), and following (Follow/Unfollow). Its All setters / Following
 segments filter before the top-50 limit without changing the selected checkboxes.

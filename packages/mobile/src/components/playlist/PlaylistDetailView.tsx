@@ -42,7 +42,9 @@ import { resolvePlaylistEmojiIcon } from './playlist-icon';
 import { PLAYLIST_COLORS, normalizePlaylistColor } from './playlist-colors';
 import { withAlpha } from '../../theme/colors';
 import { toQueueClimb, toSchemaClimb } from '../../lib/climb-types';
+import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import type { PlaylistRenderBoard, PlaylistBoardBanner } from '../../lib/playlists/use-playlist-render-board';
 import {
   getPlaylistRenderBoardTarget,
@@ -261,8 +263,15 @@ export function PlaylistDetailView({
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
-  const { openClimbActions } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist } = useDrawerHost();
+  const { addToQueue } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
+  const handleAddToQueue = useCallback(
+    (climb: SchemaClimb) => {
+      void addToQueue(climbToQueueItem(climb));
+    },
+    [addToQueue],
+  );
 
   // Activate-all only needs to know whether the board-switch banner is present;
   // row taps still open the drawer so it can explain incompatible climbs.
@@ -325,6 +334,15 @@ export function PlaylistDetailView({
     },
     [openClimbActions, resolvedRowsByClimbUuid],
   );
+  const handleOpenPlaylist = useCallback(
+    (climb: SchemaClimb) => {
+      const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
+      if (!resolved || resolved.kind !== 'renderable') return;
+      const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
+      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle });
+    },
+    [openAddToPlaylist, resolvedRowsByClimbUuid],
+  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: Climb; index: number }) => {
@@ -358,11 +376,23 @@ export function PlaylistDetailView({
           angle={resolvedRow.renderBoard.angle}
           onPress={handleActivate}
           onOpenActions={handleOpenActions}
+          onAddToQueue={handleAddToQueue}
+          onOpenPlaylist={handleOpenPlaylist}
           unsupported={resolvedRow.incompatible}
         />
       );
     },
-    [resolvedRowsByClimbUuid, editMode, dragControls, onRemoveClimb, onReorderClimb, handleActivate, handleOpenActions],
+    [
+      resolvedRowsByClimbUuid,
+      editMode,
+      dragControls,
+      onRemoveClimb,
+      onReorderClimb,
+      handleActivate,
+      handleOpenActions,
+      handleAddToQueue,
+      handleOpenPlaylist,
+    ],
   );
 
   // Cog shown beside the playlist name only in edit mode — opens the

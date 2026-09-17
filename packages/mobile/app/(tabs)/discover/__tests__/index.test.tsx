@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { router } from 'expo-router';
 
 type PlaylistItem = {
   uuid: string;
@@ -53,6 +54,27 @@ const smartCountsHook = vi.hoisted(() => ({
   isError: false,
   refetch: vi.fn(),
 }));
+const followedSettersHook = vi.hoisted(() => ({
+  data: [] as { setterUsername: string; climbCount: number }[],
+  isLoading: false,
+  isError: false,
+  refetch: vi.fn(),
+}));
+const setterStats = vi.hoisted(() =>
+  vi.fn((_input: Record<string, unknown>, _enabled: boolean) => followedSettersHook),
+);
+const authState = vi.hoisted(() => ({ isAuthenticated: true, isLoading: false }));
+const connectivityState = vi.hoisted(() => ({ effectiveOffline: false, reason: null as string | null }));
+const focusState = vi.hoisted(() => ({ callback: undefined as (() => void) | undefined }));
+const activeBoardState = vi.hoisted(() => ({
+  data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as {
+    boardType: string;
+    layoutId: number;
+    sizeId: number;
+    setIds: string;
+    angle: number;
+  } | null,
+}));
 const communityHook = vi.hoisted(() => ({
   popular: [] as PlaylistItem[],
   recent: [] as PlaylistItem[],
@@ -102,7 +124,16 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 // asserts against the live cache. Renders are wrapped in a QueryClientProvider.
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('expo-router', () => ({ router: { push: vi.fn() }, useFocusEffect: () => undefined }));
+vi.mock('expo-router', () => ({
+  router: { push: vi.fn() },
+  useFocusEffect: (callback: () => void) => {
+    focusState.callback = callback;
+  },
+}));
+vi.mock('../../../../src/lib/connectivity/use-connectivity', () => ({ useConnectivity: () => connectivityState }));
+vi.mock('../../../../src/components/OfflineState', () => ({
+  OfflineState: () => createElement('div', { 'data-offline-state': true }),
+}));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
@@ -148,7 +179,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#6D28D9' } }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, isLoading: false }),
+  useAuth: () => authState,
 }));
 vi.mock('../../../../src/providers/toast-provider', () => ({
   useToast: () => toast,
@@ -158,9 +189,10 @@ vi.mock('../../../../src/lib/graphql/use-auth-token', () => ({
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'me' } }),
+  useSetterStats: setterStats,
 }));
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40 } }),
+  useActiveBoard: () => activeBoardState,
 }));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
@@ -255,16 +287,21 @@ vi.mock('../../../../src/components/playlist/PlaylistCard', () => ({
     metaLabel,
     isPinned,
     onTogglePin,
+    onPress,
+    climbCount,
   }: {
     name: string;
     metaLabel?: string;
     isPinned?: boolean;
     onTogglePin?: () => void;
+    onPress?: () => void;
+    climbCount: number;
   }) =>
     createElement(
       'div',
-      { 'data-card': name, 'data-pinned': isPinned ? 'true' : 'false' },
+      { 'data-card': name, 'data-pinned': isPinned ? 'true' : 'false', 'data-count': climbCount },
       createElement('span', null, metaLabel ? `${name} ${metaLabel}` : name),
+      createElement('button', { 'aria-label': `open-${name}`, onClick: onPress }, 'open'),
       onTogglePin ? createElement('button', { 'aria-label': `pin-${name}`, onClick: onTogglePin }, 'pin') : null,
     ),
 }));
@@ -299,16 +336,22 @@ vi.mock('../../../../src/components/playlist/PlaylistShelf', () => ({
     items,
     renderItem,
     title,
+    keyExtractor,
+    loading,
+    isLoadingMore,
   }: {
     items: PlaylistItem[];
     renderItem: (entry: { item: PlaylistItem; index: number }) => ReactNode;
     title: string;
+    keyExtractor: (item: PlaylistItem, index: number) => string;
+    loading?: boolean;
+    isLoadingMore?: boolean;
   }) =>
     createElement(
       'section',
-      { 'data-scroll-section': title },
+      { 'data-scroll-section': title, 'data-loading': loading, 'data-loading-more': isLoadingMore },
       createElement('h2', null, title),
-      items.map((item, index) => createElement('div', { key: item.uuid }, renderItem({ item, index }))),
+      items.map((item, index) => createElement('div', { key: keyExtractor(item, index) }, renderItem({ item, index }))),
     ),
 }));
 // The chrome exposes the create button so the test can open + submit the flow.
@@ -332,6 +375,16 @@ function renderHub() {
 }
 
 beforeEach(() => {
+  followedSettersHook.data = [];
+  followedSettersHook.isLoading = false;
+  followedSettersHook.isError = false;
+  followedSettersHook.refetch.mockClear();
+  setterStats.mockClear();
+  authState.isAuthenticated = true;
+  connectivityState.effectiveOffline = false;
+  connectivityState.reason = null;
+  focusState.callback = undefined;
+  activeBoardState.data = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
   userHook.playlists = [];
   userHook.isLoading = false;
   userHook.hasError = false;
@@ -369,6 +422,130 @@ beforeEach(() => {
   unpinPlaylist.mockReset();
   toast.showToast.mockClear();
   discoverOptions.length = 0;
+});
+
+describe('DiscoverLibrary followed setter playlists', () => {
+  it('queries the complete active board and appends setters after personal smart playlists', () => {
+    followedSettersHook.data = [
+      { setterUsername: 'Setter / One', climbCount: 12 },
+      { setterUsername: 'Empty setter', climbCount: 0 },
+    ];
+    const { container, getByLabelText, queryByText } = renderHub();
+    expect(setterStats).toHaveBeenLastCalledWith(
+      {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+        angle: 40,
+        onlyFollowedAuthors: true,
+      },
+      true,
+    );
+    const cards = container.querySelectorAll('[data-scroll-section="library.sections.forYou"] [data-card]');
+    expect(cards[cards.length - 1]?.getAttribute('data-card')).toBe('Setter / One');
+    expect(cards[cards.length - 1]?.getAttribute('data-count')).toBe('12');
+    expect(queryByText('Empty setter')).toBeNull();
+    expect(container.querySelector('[aria-label="pin-Setter / One"]')).toBeNull();
+    fireEvent.click(getByLabelText('open-Setter / One'));
+    expect(router.push).toHaveBeenLastCalledWith({
+      pathname: '/(tabs)/climbs/setter/[username]',
+      params: { username: 'Setter / One' },
+    });
+  });
+
+  it.each(['signed out', 'no board'] as const)('disables setters with %s', (scenario) => {
+    if (scenario === 'signed out') authState.isAuthenticated = false;
+    else activeBoardState.data = null;
+    followedSettersHook.data = [{ setterUsername: 'Hidden setter', climbCount: 3 }];
+    const { queryByText } = renderHub();
+    expect(setterStats.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(queryByText('Hidden setter')).toBeNull();
+  });
+
+  it('updates the setter query when the active board changes', () => {
+    const { rerender, queryClient } = renderHub();
+    activeBoardState.data = { boardType: 'tension', layoutId: 8, sizeId: 12, setIds: '20', angle: 25 };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <DiscoverLibrary />
+      </QueryClientProvider>,
+    );
+    expect(setterStats).toHaveBeenLastCalledWith(
+      {
+        boardName: 'tension',
+        layoutId: 8,
+        sizeId: 12,
+        setIds: '20',
+        angle: 25,
+        onlyFollowedAuthors: true,
+      },
+      true,
+    );
+  });
+
+  it('keeps personal cards visible while setters load', () => {
+    followedSettersHook.isLoading = true;
+    const { container, getByText } = renderHub();
+    expect(getByText('library.smart.likedClimbs.title')).toBeTruthy();
+    const shelf = container.querySelector('[data-scroll-section="library.sections.forYou"]');
+    expect(shelf?.getAttribute('data-loading')).toBe('false');
+    expect(shelf?.getAttribute('data-loading-more')).toBe('true');
+  });
+
+  it('retries a failed setter request instead of showing an empty library', () => {
+    smartCountsHook.data = undefined;
+    followedSettersHook.isError = true;
+    const { getByLabelText, queryByText } = renderHub();
+    expect(queryByText('library.empty.title')).toBeNull();
+    fireEvent.click(getByLabelText('library.errors.tryAgain'));
+    expect(followedSettersHook.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes followed setters on subsequent focus', () => {
+    renderHub();
+    act(() => {
+      focusState.callback?.();
+    });
+    expect(followedSettersHook.refetch).not.toHaveBeenCalled();
+    act(() => {
+      focusState.callback?.();
+    });
+    expect(followedSettersHook.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refetch setters on focus without an active board', () => {
+    activeBoardState.data = null;
+    renderHub();
+    act(() => {
+      focusState.callback?.();
+    });
+    expect(followedSettersHook.refetch).not.toHaveBeenCalled();
+    act(() => {
+      focusState.callback?.();
+    });
+    expect(followedSettersHook.refetch).not.toHaveBeenCalled();
+  });
+
+  it('shows locally available setters offline instead of an empty-state placard', () => {
+    connectivityState.effectiveOffline = true;
+    connectivityState.reason = 'device_offline';
+    smartCountsHook.data = undefined;
+    followedSettersHook.data = [{ setterUsername: 'Offline setter', climbCount: 8 }];
+    const { container, getByText, queryByText } = renderHub();
+    expect(getByText('Offline setter')).toBeTruthy();
+    expect(queryByText('library.empty.title')).toBeNull();
+    expect(container.querySelector('[data-offline-state]')).toBeNull();
+  });
+
+  it('shows offline fallback when no cards are locally available', () => {
+    connectivityState.effectiveOffline = true;
+    connectivityState.reason = 'device_offline';
+    smartCountsHook.data = undefined;
+    const { container, queryByText } = renderHub();
+    expect(container.querySelector('[data-offline-state]')).not.toBeNull();
+    expect(queryByText('library.empty.title')).toBeNull();
+  });
 });
 
 describe('DiscoverLibrary error handling', () => {
