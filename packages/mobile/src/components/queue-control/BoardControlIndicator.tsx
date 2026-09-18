@@ -151,12 +151,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Soft warm glow, matching the in-drawer lightbulb's connected halo + shadow.
-  // iOS-only: Android's native `elevation` shadow on a fully-rounded small view
-  // (borderRadius = size / 2) casts as a visible hexagon rather than a circle on
-  // real hardware. The amber `haloColor` background already carries the
-  // "connected" look on Android, so the drop shadow adds nothing there worth the
-  // artifact.
+  // iOS-only elevation: Android's native shadow on this fully-rounded view renders as a hexagon, not a circle.
   connected: {
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
