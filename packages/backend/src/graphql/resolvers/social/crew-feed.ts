@@ -29,20 +29,45 @@ const inputSchema = z.object({
   cursor: z.string().max(2048).nullish(),
   limit: z.number().int().min(1).max(50).default(20),
   timeZone: z.string().max(64).nullish(),
+  groupClimbs: z.boolean().nullish(),
 });
+
+/**
+ * Every zone name THIS Postgres accepts, lowercased, read once per process.
+ *
+ * Validating with `Intl` instead would be a live outage: Node's ICU accepts
+ * every IANA backward link, and the Debian Postgres images moved those to
+ * `tzdata-legacy` in 2023 — so `Asia/Calcutta`, `Europe/Kiev`, `US/Eastern`,
+ * `US/Pacific`, `America/Buenos_Aires` and friends pass `Intl` and then raise
+ * `time zone not recognized` inside the query. Android hands
+ * `resolvedOptions().timeZone` back as `Asia/Calcutta` on a great many devices,
+ * and React Query keys the feed cache on the zone, so those climbers would get a
+ * 500 on every page with no way to recover.
+ */
+let knownTimeZones: Promise<Set<string>> | null = null;
+function loadKnownTimeZones(): Promise<Set<string>> {
+  knownTimeZones ??= dbRead
+    .execute(sql`SELECT name FROM pg_timezone_names`)
+    .then((result) => new Set(rowsFromResult<{ name: string }>(result).map((row) => row.name.toLowerCase())))
+    .catch((error: unknown) => {
+      // Don't cache a failed read — the next request should try again rather
+      // than pin every climber to UTC for the life of the process.
+      knownTimeZones = null;
+      throw error;
+    });
+  return knownTimeZones;
+}
 
 /**
  * The viewer's zone, or UTC.
  *
- * This value reaches `AT TIME ZONE`, and Postgres raises on a name it does not
- * know — so an unrecognised or malformed zone degrades to UTC rather than
- * failing the whole feed over one odd client.
+ * Checked against what the database will actually accept, because this value
+ * reaches `AT TIME ZONE` and Postgres raises on a name it does not know.
  */
-function resolveTimeZone(timeZone: string | null | undefined): string {
+async function resolveTimeZone(timeZone: string | null | undefined): Promise<string> {
   if (!timeZone) return 'UTC';
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone });
-    return timeZone;
+    return (await loadKnownTimeZones()).has(timeZone.toLowerCase()) ? timeZone : 'UTC';
   } catch {
     return 'UTC';
   }
@@ -74,6 +99,13 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
       climb: boardClimbs,
       angle: resolvedClimbAngleSql,
       difficultyName: boardDifficultyGrades.boulderName,
+      // The stats join is already here for the grade; read the rest of it too,
+      // so the drawer shows real ascents and stars. The card used to route
+      // through the climb page, which loaded them — opening in place has to
+      // carry them or it is a visible regression.
+      ascensionistCount: boardClimbStats.ascensionistCount,
+      qualityAverage: boardClimbStats.qualityAverage,
+      benchmarkDifficulty: boardClimbStats.benchmarkDifficulty,
       actorDisplayName: sql<string | null>`COALESCE(${userProfiles.displayName}, ${users.name})`,
       actorAvatarUrl: sql<string | null>`COALESCE(${userProfiles.avatarUrl}, ${users.image})`,
     })
@@ -90,7 +122,7 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
     .leftJoin(userProfiles, eq(userProfiles.userId, boardClimbs.userId))
     .where(and(inArray(boardClimbs.uuid, climbUuids), ...visibleClimbs(viewerId)));
   return new Map(
-    rows.map(({ climb, angle, difficultyName, actorDisplayName, actorAvatarUrl }) => [
+    rows.map(({ climb, angle, difficultyName, actorDisplayName, actorAvatarUrl, ...stats }) => [
       climb.uuid,
       {
         id: `climb:${climb.uuid}`,
@@ -114,6 +146,9 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
         frames: climb.frames,
         angle,
         difficultyName,
+        ascensionistCount: stats.ascensionistCount,
+        qualityAverage: stats.qualityAverage,
+        isBenchmark: stats.benchmarkDifficulty != null,
         isNoMatch: resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
         createdAt: timeById.get(climb.uuid)!,
       },
@@ -161,26 +196,46 @@ async function loadGroupClimbs(
 }
 
 /**
- * One feed card for a group's climbs.
+ * The feed cards for a group's climbs.
  *
- * A lone climb stays a `CrewClimbItem` so a client that predates
- * `CrewClimbGroupItem` keeps rendering single new climbs rather than dropping
- * them on a union member it cannot match.
+ * `grouped` is opt-in and OFF by default, because a client that predates
+ * `CrewClimbGroupItem` does not merely fail to render one — it dies on it. Its
+ * query has no fragment for the member, so the item arrives as a bare
+ * `__typename`; its `renderItem` is a two-way branch that falls through to the
+ * session card and reads `item.session.socialEntityType`, which throws inside
+ * the feed list and takes the whole Home tab down with the route's error
+ * boundary. Every store build that has not taken the OTA yet is such a client.
+ *
+ * So an unasked client gets one `CrewClimbItem` per climb — exactly the shape it
+ * already renders. It sees at most the group's ten newest rather than all of
+ * them, which is a strictly smaller flood than it gets today; the rest stay
+ * reachable from the setter's page.
  */
-function toCrewClimbCard(
+function toCrewClimbCards(
   id: string,
   occurredAt: string,
   climbs: ActivityFeedItem[],
   climbCount: number,
-): CrewFeedItem | null {
-  if (climbs.length === 0) return null;
+  grouped: boolean,
+): CrewFeedItem[] {
+  if (climbs.length === 0) return [];
+  if (!grouped) {
+    return climbs.map((climb) => ({
+      __typename: 'CrewClimbItem',
+      id: `climb:${climb.climbUuid}`,
+      occurredAt: climb.createdAt,
+      climb,
+    }));
+  }
   if (climbs.length === 1 && climbCount === 1) {
-    return { __typename: 'CrewClimbItem', id, occurredAt, climb: climbs[0] };
+    return [{ __typename: 'CrewClimbItem', id, occurredAt, climb: climbs[0] }];
   }
   // `climbCount` comes from the candidate query and `climbs` from the one after
   // it, so a climb hidden between the two leaves the count high. Never report
   // fewer than we actually loaded.
-  return { __typename: 'CrewClimbGroupItem', id, occurredAt, climbs, totalCount: Math.max(climbCount, climbs.length) };
+  return [
+    { __typename: 'CrewClimbGroupItem', id, occurredAt, climbs, totalCount: Math.max(climbCount, climbs.length) },
+  ];
 }
 
 export const crewFeedQueries = {
@@ -191,9 +246,11 @@ export const crewFeedQueries = {
   ): Promise<CrewFeedResult> => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 60, 'crewFeed');
-    const { limit, cursor, timeZone } = inputSchema.parse(input ?? {});
+    const { limit, cursor, timeZone, groupClimbs } = inputSchema.parse(input ?? {});
     const viewerId = ctx.userId!;
-    const zone = resolveTimeZone(timeZone);
+    // Opt-in: only a client that asked can be handed a CrewClimbGroupItem.
+    const grouped = groupClimbs === true;
+    const zone = await resolveTimeZone(timeZone);
     const before = decodeCrewCursor(cursor, viewerId);
     const snapshotAt = before?.snapshotAt ?? new Date().toISOString();
     const candidateResult = await withSerialPlan(dbRead, (tx) =>
@@ -238,7 +295,7 @@ export const crewFeedQueries = {
       const group = groupsById.get(candidate.sourceId);
       return group ? [group] : [];
     });
-    const groupClimbs = await loadGroupClimbs(selectedGroups, viewerId, snapshotAt, zone);
+    const groupedClimbs = await loadGroupClimbs(selectedGroups, viewerId, snapshotAt, zone);
     const sessions = new Map(sessionPage.sessions.map((session) => [session.sessionId, session]));
     const items: CrewFeedItem[] = [];
     for (const candidate of selection.selected) {
@@ -246,8 +303,9 @@ export const crewFeedQueries = {
       if (candidate.kind === 'climb') {
         const group = groupsById.get(candidate.sourceId);
         if (!group) continue;
-        const card = toCrewClimbCard(id, occurredAt, groupClimbs.get(groupKeyOf(group)) ?? [], group.climbCount);
-        if (card) items.push(card);
+        items.push(
+          ...toCrewClimbCards(id, occurredAt, groupedClimbs.get(groupKeyOf(group)) ?? [], group.climbCount, grouped),
+        );
       } else {
         const session = sessions.get(candidate.sourceId);
         if (session) items.push({ __typename: 'CrewSessionItem', id, occurredAt, session });

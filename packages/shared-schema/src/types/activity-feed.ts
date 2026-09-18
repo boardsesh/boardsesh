@@ -13,6 +13,11 @@ export type CrewFeedInput = {
    * Defaults to UTC when absent or unrecognised.
    */
   timeZone?: string | null;
+  /**
+   * Opt in to `CrewClimbGroupItem`. Off by default — see the SDL: a client that
+   * predates the member crashes on it rather than ignoring it.
+   */
+  groupClimbs?: boolean | null;
 };
 
 /** How many of a group's climbs the feed carries; the rest live on the setter page. */
@@ -184,6 +189,10 @@ export type ActivityFeedItem = {
   difficulty?: number | null;
   difficultyName?: string | null;
   quality?: number | null;
+  /** Community ascents at the resolved angle; drives the drawer's send count. */
+  ascensionistCount?: number | null;
+  /** Blended community star average (1-5) at the resolved angle. */
+  qualityAverage?: number | null;
   attemptCount?: number | null;
   comment?: string | null;
   commentCount?: number | null;

@@ -189,6 +189,9 @@ export const CREW_CLIMB_FIELDS = gql`
     frames
     angle
     difficultyName
+    ascensionistCount
+    qualityAverage
+    isBenchmark
     isNoMatch
     createdAt
     renderBoard {
