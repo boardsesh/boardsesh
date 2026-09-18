@@ -31,6 +31,49 @@ describe('async-iterators overflow', () => {
     warnMock.mockClear();
   });
 
+  it.each(['lazy', 'eager'])(
+    '%s: preserves priority state and FIFO order while bounding mixed overflow',
+    async (mode) => {
+      let push!: (event: number) => void;
+      const create = mode === 'lazy' ? createAsyncIterator<number> : createEagerAsyncIterator<number>;
+      const iterator = await create(
+        async (pushEvent) => {
+          push = pushEvent;
+          return () => {};
+        },
+        'priority',
+        { isPriority: (event) => event === 0 },
+      );
+      for (let event = 0; event <= 1005; event++) push(event);
+      const retained: number[] = [];
+      for (let index = 0; index < 1000; index++) retained.push((await iterator.next()).value);
+      expect(retained).toEqual([0, ...Array.from({ length: 999 }, (_, index) => index + 7)]);
+      const drained = iterator.next();
+      await iterator.return();
+      expect((await drained).done).toBe(true);
+    },
+  );
+
+  it('bounds all-priority floods and preserves the latest priority event through later ordinary churn', async () => {
+    let push!: (event: number) => void;
+    const iterator = await createAsyncIterator<number>(
+      async (pushEvent) => {
+        push = pushEvent;
+        return () => {};
+      },
+      'priority-flood',
+      { isPriority: (event) => event > 0 },
+    );
+    for (let event = 1; event <= 1001; event++) push(event);
+    for (let event = -1; event >= -1005; event--) push(event);
+    const retained: number[] = [];
+    for (let index = 0; index < 1000; index++) retained.push((await iterator.next()).value);
+    expect(retained).toEqual([...Array.from({ length: 999 }, (_, index) => index + 3), -1005]);
+    const drained = iterator.next();
+    await iterator.return();
+    expect((await drained).done).toBe(true);
+  });
+
   it('createAsyncIterator: 1001 pushes with no consumer drops the oldest, retains the newest 1000, and logs the first drop with the label', async () => {
     let push!: (value: number) => void;
     const iterable = await createAsyncIterator<number>(async (pushFn) => {

@@ -74,6 +74,53 @@ Two small helpers keep the direct-capture paths from double-reporting and from l
 - **`utils/sentry-dedupe.ts`** — a resolver that captures a failure itself (e.g. `updateProfile`, `createSession`) calls `markErrorReported(err)`; the generic `graphql/yoga.ts` handler checks `wasErrorReported(err)` (which also inspects a `GraphQLError`'s `originalError`) and skips its own capture, so one failure yields one Sentry event. If you see a backend error reported exactly once with rich tags, that's this marker at work.
 - **`graphql/mask-error.ts`** — in prod-like environments `graphql/yoga.ts` installs a targeted `maskError`. It sanitizes **only** raw database errors (drizzle's `Failed query: …` wrapper, or anything with a PostgresError code on its cause chain) into a generic `GraphQLError`, captures the real cause to Sentry (deduped as above), and passes every other error through unchanged. Global masking stays off so intentional `throw new Error(message)` resolver copy still reaches clients.
 
+## Backend memory samples
+
+Every backend instance emits `event: "backend.memory"` once per 60 seconds.
+Samples include release, deployment/replica identity, uptime, process memory in
+bytes (`rss`, `heapUsed`, `heapTotal`, `external`, `arrayBuffers`), connection
+and pubsub counts, room/grace-timer/pending-write counts, metadata and geometry
+cache sizes, renderer cache/queue statistics, and Sharp cache/task counters.
+The timer is unref'd and is cleared during server shutdown. Samples contain
+counts rather than tokens, user IDs, URLs, or cached payloads.
+
+`memory.peakRssBytes` is the process-lifetime RSS high-water mark from
+[`process.resourceUsage().maxRSS`](https://nodejs.org/api/process.html#processresourceusage),
+converted from KiB to bytes. It preserves short spikes between samples if the
+process survives to emit another sample; it resets on process restart. Do not
+sum replica peaks as though they occurred simultaneously, or treat a lifetime
+peak as current usage. A process killed before its next sample may lose the
+last spike's telemetry.
+
+`arrayBuffers` is included in `external`; do not sum them. RSS also includes
+native allocations and is not equivalent to live JavaScript heap. Serialized
+metadata-cache weights bound retained payloads but do not measure V8 overhead.
+Instagram and TikTok each retain at most 1,000 entries and 4 MiB of serialized
+keys/payloads. Their existing 10-minute success and 2-minute transient-error
+TTLs remain; the sampler also sweeps expired entries while traffic is idle.
+
+Compare replicas with the same release, uptime, and workload before aggregating
+service memory. For the reported growth within hours, compare 24 hours before
+and after rollout at the same replica count. Track connection/subscriber counts
+after disconnects and empty rooms after their 60-second grace window. A low
+cold-start reading alone does not establish a fix. Keep renderer budgets and
+replica counts fixed during the comparison; correlate continued RSS growth
+with heap, external memory, render jobs, and Sharp task counts before tuning.
+The reported 30-day history includes spikes near 12 GB, whereas the last seven
+days stayed near or below 3 GB. Treat these as separate windows: correlate peak
+timestamps with releases, restarts, replica count, rendering, uploads, and bulk
+imports/exports. Seven quieter days do not establish that a leak is fixed.
+Heavy bot traffic was blocked during this period, making request-driven work
+and cache growth important leads rather than confirmed causes. Compare request
+volume and endpoint mix as well as uptime; bots can also amplify retention
+bugs. Without matching traffic, lower post-rollout memory alone is inconclusive.
+
+The local reconnect soak (`vp exec node --expose-gc --import tsx
+scripts/backend-memory-churn.ts 1800`) exercises active and quiet subscriptions
+for 30 minutes, asserting channel counts return to zero and sampling memory
+each minute. Forced GC is diagnostic-only; it is never used in production.
+This test covers subscription retention, not a full backend traffic workload.
+
 ## Out of scope
 
 - A request-id propagation layer is a separate concern (separate issue).

@@ -182,7 +182,7 @@ export class WriteScheduler {
    * Flush all pending debounced writes to Postgres immediately.
    * Called on graceful shutdown to ensure durability.
    */
-  async flushPendingWrites(sessionGraceTimers: Map<string, NodeJS.Timeout>): Promise<void> {
+  async flushPendingWrites(): Promise<void> {
     logger.info(`[RoomManager] Flushing ${this.pendingWrites.size} pending writes to Postgres...`);
 
     const writePromises: Promise<void>[] = [];
@@ -213,13 +213,15 @@ export class WriteScheduler {
     this.retryTimers.clear();
     this.writeRetryAttempts.clear();
 
-    // Clear grace timers
-    for (const timer of sessionGraceTimers.values()) {
-      clearTimeout(timer);
-    }
-    sessionGraceTimers.clear();
-
     logger.info('[RoomManager] All pending writes flushed');
+  }
+
+  getRuntimeStats() {
+    return {
+      pendingWrites: this.pendingWrites.size,
+      debounceTimers: this.postgresWriteTimers.size,
+      retryTimers: this.retryTimers.size,
+    };
   }
 }
 

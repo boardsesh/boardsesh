@@ -1174,6 +1174,25 @@ The `EVENTS_REPLAY` query uses the same GraphQL aliases as `queueUpdates` (`adde
 
 ### 1. Client Disconnection
 
+Backend callback subscriptions use `withSubscriptionCleanup`. Native async
+generators queue `return()` behind an outstanding `next()`; on a quiet feed,
+that used to prevent both unsubscribe and graphql-ws's `onDisconnect` from
+running. The wrapper owns the underlying source outside the generator, closes
+it immediately on cancellation, and settles pending reads even during snapshot
+loading. Late subscription setup is closed on arrival. Resolver failures still
+reach GraphQL; initial snapshots, sequence filters, and per-event visibility
+checks retain their existing behavior. Controller transformations consume a
+bounded queue of relevant raw events, so stalled reads cannot accumulate an
+unbounded promise chain or let playback noise evict LED changes. Controller
+overflow evicts the oldest queue-only event first, protecting pending climb,
+full-sync, and clearing LED updates from queue-mutation bursts. Retained events
+stay in FIFO order; even an all-LED burst remains capped at 1,000 events by
+dropping its oldest event when no queue-only event is available.
+
+The 60-second persistence flush does not clear session grace timers. Empty
+local rooms expire after their grace window and do not refresh Redis TTLs;
+shutdown owns explicit disposal of session and participant timers.
+
 ```mermaid
 sequenceDiagram
     participant C as Client

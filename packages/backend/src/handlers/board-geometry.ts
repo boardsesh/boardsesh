@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { promisify } from 'node:util';
 import { gzip } from 'node:zlib';
-import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
+import { getWallLightness, loadBoardArtGeometry, getBoardArtGeometryCacheStats } from '@boardsesh/board-art-geometry';
 import { createOgImageHeaders, isSupportedBoardName } from '@boardsesh/board-render';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getPublicClientIp } from '../utils/client-ip';
@@ -43,13 +43,13 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
  */
 type EncodedGeometry = { json: Buffer; gzip: Buffer };
 const encodedCache = new Map<string, Promise<EncodedGeometry>>();
+let emptyGeometry: Promise<EncodedGeometry> | undefined;
 
 async function encodeGeometry(
   cacheKey: string,
-  query: { boardName: BoardName; layoutId: number; sizeId: number },
+  geometry: ReturnType<typeof loadBoardArtGeometry>,
+  wallLightness: ReturnType<typeof getWallLightness>,
 ): Promise<EncodedGeometry> {
-  const geometry = loadBoardArtGeometry(query);
-  const wallLightness = getWallLightness(query);
   const payload = {
     ...(geometry
       ? {
@@ -169,9 +169,23 @@ export async function handleBoardGeometry(req: IncomingMessage, res: ServerRespo
   // would be a restart.
   let pending = encodedCache.get(cacheKey);
   if (!pending) {
-    pending = encodeGeometry(cacheKey, { boardName, layoutId, sizeId });
-    encodedCache.set(cacheKey, pending);
-    pending.catch(() => encodedCache.delete(cacheKey));
+    const query = { boardName: boardName as BoardName, layoutId, sizeId };
+    const geometry = loadBoardArtGeometry(query);
+    const wallLightness = getWallLightness(query);
+    if (!geometry && !wallLightness) {
+      // Arbitrary caller IDs share one empty response, never a permanent key.
+      emptyGeometry ??= encodeGeometry('empty', null, null).catch((error: unknown) => {
+        emptyGeometry = undefined;
+        throw error;
+      });
+      pending = emptyGeometry;
+    } else {
+      pending = encodeGeometry(cacheKey, geometry, wallLightness);
+      encodedCache.set(cacheKey, pending);
+      pending.catch(() => {
+        if (encodedCache.get(cacheKey) === pending) encodedCache.delete(cacheKey);
+      });
+    }
   }
   const encoded = await pending;
 
@@ -199,4 +213,9 @@ export async function handleBoardGeometry(req: IncomingMessage, res: ServerRespo
 /** Tests only: forget the encoded payloads between cases. */
 export function resetBoardGeometryCache(): void {
   encodedCache.clear();
+  emptyGeometry = undefined;
+}
+
+export function getBoardGeometryCacheStats() {
+  return { entries: encodedCache.size, ...getBoardArtGeometryCacheStats() };
 }

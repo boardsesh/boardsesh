@@ -23,6 +23,7 @@ vi.mock('../../../../pubsub/index', () => ({
 // subscription whose entityType passes validation finishes on the first next().
 vi.mock('../../shared/async-iterators', () => ({
   createAsyncIterator: vi.fn(async () => ({
+    return: async () => ({ value: undefined, done: true }),
     [Symbol.asyncIterator]() {
       return { next: async () => ({ value: undefined, done: true }) };
     },

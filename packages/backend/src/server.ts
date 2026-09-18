@@ -81,6 +81,7 @@ import { buildContentStateFromQueueState } from './services/apns/content-state';
 import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
+import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
@@ -880,6 +881,8 @@ export async function startServer(): Promise<ServerResources> {
       logger.error('[Server] Error during RoomManager shutdown:', error);
     }
   }
+
+  intervals.push(startBackendMemoryMonitoring());
 
   // Periodic flush as backup (every 60 seconds)
   const flushInterval = setInterval(async () => {

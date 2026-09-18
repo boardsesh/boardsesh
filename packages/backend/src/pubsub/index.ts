@@ -206,6 +206,19 @@ class PubSub {
     return this.redisAdapter?.getInstanceId() ?? null;
   }
 
+  getRuntimeStats() {
+    return {
+      queue: this.queueChannel.getRuntimeStats(),
+      session: this.sessionChannel.getRuntimeStats(),
+      notification: this.notificationChannel.getRuntimeStats(),
+      comment: this.commentChannel.getRuntimeStats(),
+      newClimb: this.newClimbChannel.getRuntimeStats(),
+      climbStats: this.climbStatsChannel.getRuntimeStats(),
+      boardPresence: this.boardPresenceChannel.getRuntimeStats(),
+      boardQueue: this.boardQueueChannel.getRuntimeStats(),
+    };
+  }
+
   /**
    * Register an external hook that fires after every queue event publish.
    * Multiple hooks may be registered (APNs Live Activity updates, the

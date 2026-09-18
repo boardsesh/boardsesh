@@ -8,6 +8,7 @@ import { GroupedNotificationsInputSchema, NotificationActorsInputSchema } from '
 import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 type NotificationRow = {
   uuid: string;
@@ -686,17 +687,19 @@ export const socialNotificationMutations = {
 
 export const socialNotificationSubscriptions = {
   notificationReceived: {
-    subscribe: async function* (_: unknown, __: unknown, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (lifetime, _: unknown, __: unknown, ctx: ConnectionContext) {
       requireAuthenticated(ctx);
       const userId = ctx.userId!;
 
-      const asyncIterator = await createAsyncIterator<NotificationEvent>((push) => {
-        return pubsub.subscribeNotifications(userId, push);
-      });
+      const asyncIterator = await lifetime.own(
+        createAsyncIterator<NotificationEvent>((push) => {
+          return pubsub.subscribeNotifications(userId, push);
+        }, `notificationReceived:${userId}`),
+      );
 
       for await (const event of asyncIterator) {
         yield { notificationReceived: event };
       }
-    },
+    }),
   },
 };
