@@ -131,6 +131,13 @@ function poller() {
 }
 
 describe('Kilter history integration', () => {
+  it('cleans source mappings when an owning account is deleted', async () => {
+    await db.delete(schema.users).where(eq(schema.users.id, linkedUser));
+    expect(
+      await db.select().from(schema.kilterWallSources).where(eq(schema.kilterWallSources.sourceKey, sourceKey)),
+    ).toEqual([]);
+  });
+
   it('merges repeated polls, preserves native reports, and repairs a missing Redis cache', async () => {
     const wall = (await matchKilterWall(boardId))!;
     const entry = display();

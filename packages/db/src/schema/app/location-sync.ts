@@ -9,7 +9,7 @@ export const kilterWallSources = pgTable(
     sourceKey: text('source_key').primaryKey(),
     sourceBoardUuid: text('source_board_uuid')
       .notNull()
-      .references(() => userBoards.uuid),
+      .references(() => userBoards.uuid, { onDelete: 'cascade' }),
     gymUuid: text('gym_uuid').notNull(),
     productLayoutUuid: text('product_layout_uuid').notNull(),
     wallUuid: text('wall_uuid').notNull(),

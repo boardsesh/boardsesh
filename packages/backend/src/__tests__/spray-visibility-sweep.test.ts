@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
+import { boardClimbEvents } from '@boardsesh/db/schema';
 import type * as GraphQLModule from 'graphql';
 import type {
   GraphQLArgument,
@@ -113,6 +114,7 @@ const {
 } = graphql;
 
 const { db } = await import('../db/client');
+const { pubsub } = await import('../pubsub');
 const { schema } = await import('../graphql/index');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
@@ -628,8 +630,6 @@ const NOT_APPLICABLE: Record<string, string> = {
     'same: lists only live sessions, and the sweep opens no connection; the board gate mirrors boardHistory (assertSprayBoardIsReadable)',
 
   // --- board presence: Redis queue state, not board_climbs --------------------
-  'Query.boardRecentClimbs': 'presence history is driven by live queue events, and the sweep publishes none',
-  'Query.boardHistory': 'same: live queue events only',
   'Query.boardClimbRecentSenders': 'same: live queue events only',
   'Query.boardConnection': 'who holds the board connection right now; Redis state',
   'Query.boardQueuePreview': 'the live queue preview; Redis state',
@@ -942,6 +942,35 @@ async function seedWorld(): Promise<SeededWorld> {
     SELECT id, slug, set_ids, serial_number FROM user_boards WHERE uuid = ${wall.uuid}
   `)) as unknown as Array<{ id: number; slug: string | null; set_ids: string; serial_number: string | null }>;
   const boardId = Number(boardRow?.id);
+  // Exercise native and merged recent history plus both durable APIs. The
+  // owner must see real content so empty responses cannot hide missing gates.
+  const displayedAt = new Date().toISOString();
+  await db.insert(boardClimbEvents).values({
+    boardId,
+    boardType: 'spray',
+    climbUuid: savedClimb.uuid,
+    angle: ANGLE,
+    seq: 1,
+    confirmedAt: displayedAt,
+    name: CLIMB_NAME,
+    frames,
+    userId: OWNER,
+  });
+  vi.spyOn(pubsub, 'getRecentBoardClimbs').mockImplementation(async (queriedBoardId) =>
+    queriedBoardId === String(boardId)
+      ? [
+          {
+            climbUuid: savedClimb.uuid,
+            angle: ANGLE,
+            seq: 1,
+            sentAt: displayedAt,
+            name: CLIMB_NAME,
+            frames,
+            sentByUserId: OWNER,
+          },
+        ]
+      : [],
+  );
 
   const [userRow] = (await db.execute(sql`SELECT name FROM users WHERE id = ${OWNER}`)) as unknown as Array<{
     name: string;
