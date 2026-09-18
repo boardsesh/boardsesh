@@ -63,10 +63,16 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
   const setterUsername = lead?.setterUsername ?? null;
   const total = item.__typename === 'CrewClimbGroupItem' ? Math.max(item.totalCount, climbs.length) : 1;
 
+  // The setter page is keyed on the board username, which a purely native climb
+  // has none of — those authors only exist as Boardsesh accounts. Fall back to
+  // the profile rather than leave "See all" as a dead tap.
   const openSetter = useCallback(() => {
-    if (setterUsername)
+    if (setterUsername) {
       router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username: setterUsername } });
-  }, [setterUsername, router]);
+      return;
+    }
+    if (lead?.actorId) router.push({ pathname: '/users/[userId]', params: { userId: lead.actorId } });
+  }, [setterUsername, lead?.actorId, router]);
 
   const openClimb = useCallback(
     (entry: ActivityFeedItem) => {
@@ -99,12 +105,13 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
     [openPlayDrawer, router],
   );
 
+  const canOpenSetter = Boolean(setterUsername || lead?.actorId);
   const pages = useMemo<Page[]>(
     () => [
       ...climbs.map((climb): Page => ({ kind: 'climb', climb })),
-      ...(total > climbs.length ? [{ kind: 'see-all' as const, count: total }] : []),
+      ...(total > climbs.length && canOpenSetter ? [{ kind: 'see-all' as const, count: total }] : []),
     ],
-    [climbs, total],
+    [climbs, total, canOpenSetter],
   );
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
