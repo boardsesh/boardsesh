@@ -51,6 +51,11 @@ export default function InstallAppCard({ platform }: { platform: InstallPlatform
   if (platform === 'unknown') return <InstallAppShadowCard />;
   if (platform === 'native') return null;
 
+  // 'desktop-web' falls through to the generic card below: the hero already
+  // offers both stores, and a second place doing the same is noise. The card's
+  // copy is store-agnostic ("Get the Boardsesh app"), so pointing it at the
+  // App Store is a default rather than a claim about the visitor's phone.
+
   if (platform === 'android-web') {
     return (
       <OnboardingCard

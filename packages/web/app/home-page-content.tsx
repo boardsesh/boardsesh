@@ -47,7 +47,25 @@ type HomePageContentProps = {
 // Button override adds a translateY(-1px) on hover; cancel it so the CTA stays
 // anchored under the warm glow.
 // The homepage hero is the one surface that carries the amber glow.
-const HERO_CTA_SX = { mt: 1, ...brandCtaSx({ size: 'large', glow: true }) };
+const HERO_CTA_SX = brandCtaSx({ size: 'large', glow: true });
+
+// The second store on desktop: outlined, so it is clearly the same kind of
+// action as the primary without competing with it for weight.
+const HERO_SECONDARY_CTA_SX = {
+  borderRadius: `${themeTokens.borderRadius.full}px`,
+  textTransform: 'none',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  px: 4,
+  py: 1.5,
+  fontSize: themeTokens.typography.fontSize.lg,
+  color: 'var(--color-primary)',
+  borderColor: 'var(--separator)',
+  '&:hover': {
+    borderColor: 'var(--color-primary)',
+    backgroundColor: 'var(--semantic-selected-light)',
+    transform: 'none',
+  },
+} as const;
 
 // The web hand-off reads as a link, so it takes the foreground violet rather
 // than the fill — #A78BFA on text, never behind white.
@@ -62,17 +80,25 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
   const { t } = useTranslation('marketing');
   const { platform: installPlatform, nativeStore } = useInstallPlatform();
 
-  // Hero CTA now drives app installs instead of starting a sesh. Store target,
-  // label, and icon all follow the detected platform.
+  // Hero CTA drives app installs. The store, label and icon follow the detected
+  // platform — except on desktop, where there is no phone OS to infer and the
+  // hero offers both stores rather than guessing.
   const heroInstall = resolveHeroInstall(installPlatform, nativeStore);
-  const heroInstallUrl = heroInstall.store === 'android' ? ANDROID_PLAY_STORE_URL : IOS_APP_STORE_URL;
   const HeroInstallIcon = heroInstall.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
-  const heroInstallLabel =
-    heroInstall.mode === 'update'
-      ? t('home.hero.ctaUpdate')
-      : heroInstall.store === 'android'
-        ? t('home.hero.ctaInstallAndroid')
-        : t('home.hero.ctaInstallIos');
+  const heroInstallButtons = heroInstall.stores.map((store, index) => ({
+    store,
+    url: store === 'android' ? ANDROID_PLAY_STORE_URL : IOS_APP_STORE_URL,
+    source: store === 'android' ? ('google-play' as const) : ('app-store' as const),
+    label:
+      heroInstall.mode === 'update'
+        ? t('home.hero.ctaUpdate')
+        : store === 'android'
+          ? t('home.hero.ctaInstallAndroid')
+          : t('home.hero.ctaInstallIos'),
+    // Only the first store reads as the primary action; a second filled pill of
+    // equal weight would be no hierarchy at all.
+    primary: index === 0,
+  }));
 
   return (
     // Page-level translate="no" was removed because it blocked browser
@@ -146,29 +172,34 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
           </Typography>
           {/* Store-first, per the marketing wireframe: the app is the product
               and the web is the way in for someone who has not installed it.
-              The install button stays platform-aware rather than showing both
-              store badges — an Android visitor should not be offered the App
-              Store. It self-suppresses entirely inside the native app. */}
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<HeroInstallIcon />}
-            onClick={() => {
-              track(
-                APP_INSTALL_CLICK_EVENT,
-                buildAppInstallClickProperties({
-                  platform: heroInstall.store,
-                  source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
-                  placement: 'hero',
-                  mode: heroInstall.mode,
-                }),
-              );
-              window.open(heroInstallUrl, '_blank', 'noopener,noreferrer');
-            }}
-            sx={HERO_CTA_SX}
-          >
-            {heroInstallLabel}
-          </Button>
+              A phone browser gets the one store that matches it; a desktop
+              browser gets both, because there is nothing to infer from. The
+              whole row self-suppresses inside the native app. */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center', mt: 1 }}>
+            {heroInstallButtons.map((button) => (
+              <Button
+                key={button.store}
+                variant={button.primary ? 'contained' : 'outlined'}
+                size="large"
+                startIcon={<HeroInstallIcon />}
+                onClick={() => {
+                  track(
+                    APP_INSTALL_CLICK_EVENT,
+                    buildAppInstallClickProperties({
+                      platform: button.store,
+                      source: button.source,
+                      placement: 'hero',
+                      mode: heroInstall.mode,
+                    }),
+                  );
+                  window.open(button.url, '_blank', 'noopener,noreferrer');
+                }}
+                sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
+              >
+                {button.label}
+              </Button>
+            ))}
+          </Box>
           {/* Secondary: hand off to the Expo-web app (single sign-on when logged
               in, the app's own login otherwise). A text link, not a second
               filled pill — two equal-weight buttons is no hierarchy at all. */}

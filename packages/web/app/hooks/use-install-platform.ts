@@ -28,7 +28,16 @@ export function useInstallPlatform(): InstallPlatformState {
 
   useEffect(() => {
     let cancelled = false;
-    const classifyWeb = () => (/Android/i.test(navigator.userAgent) ? 'android-web' : 'other-web');
+    const classifyWeb = (): InstallPlatform => {
+      const ua = navigator.userAgent;
+      if (/Android/i.test(ua)) return 'android-web';
+      // iPadOS 13+ reports a Macintosh UA. Touch points are what separate it
+      // from an actual Mac, and an iPad wants the App Store, not both stores.
+      const isIpad = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
+      if (isIpad || /iPhone|iPod|Mobile|Silk|Kindle/i.test(ua)) return 'other-web';
+      // No phone OS to infer from a desktop browser, so the hero offers both.
+      return 'desktop-web';
+    };
     const classifyNativeStore = (): HeroInstallStore => (/Android/i.test(navigator.userAgent) ? 'android' : 'ios');
 
     // App-store screenshot tests set this flag so the install CTA matches what
