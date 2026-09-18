@@ -606,7 +606,8 @@ function fetchBaselineInner(
       sha256ByFile[name] = sha256Of(join(target, name));
     }
     const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
-    if (verification.ok) {
+    let presentationOk = verification.ok;
+    if (presentationOk) {
       try {
         const files: Record<string, PresentedScreenshot> = {};
         for (const name of Object.keys(sha256ByFile)) {
@@ -630,11 +631,11 @@ function fetchBaselineInner(
         );
         readPresentationManifest(target);
       } catch (error) {
-        verification.ok = false;
+        presentationOk = false;
         verification.problems.push(error instanceof Error ? error.message : String(error));
       }
     }
-    if (!verification.ok) {
+    if (!presentationOk) {
       for (const problem of verification.problems) {
         console.warn(`::warning::${LOG} baseline verification failed: ${problem}`);
       }
