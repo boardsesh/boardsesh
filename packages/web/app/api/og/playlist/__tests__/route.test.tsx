@@ -19,7 +19,7 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 vi.mock('@/app/theme/theme-config', () => ({
-  themeTokens: {
+  printSurfaceTokens: {
     neutral: {
       300: '#D0D0D0',
       400: '#B0B0B0',
@@ -27,9 +27,7 @@ vi.mock('@/app/theme/theme-config', () => ({
       600: '#707070',
       900: '#101010',
     },
-    colors: {
-      primary: '#123456',
-    },
+    primary: '#123456',
   },
 }));
 

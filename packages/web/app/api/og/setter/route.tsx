@@ -3,7 +3,9 @@ import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
 import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { sql } from 'drizzle-orm';
-import { themeTokens } from '@/app/theme/theme-config';
+// This card renders on a WHITE ground, so it reads the light-surface tokens
+// deliberately — see the printSurfaceTokens doc comment in theme-config.
+import { printSurfaceTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
@@ -145,12 +147,12 @@ export async function GET(request: NextRequest) {
                 width: '120px',
                 height: '120px',
                 borderRadius: '60px',
-                background: themeTokens.neutral[200],
+                background: printSurfaceTokens.neutral[200],
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '48px',
-                color: themeTokens.neutral[500],
+                color: printSurfaceTokens.neutral[500],
               }}
             >
               {displayName.charAt(0).toUpperCase()}
@@ -167,7 +169,7 @@ export async function GET(request: NextRequest) {
               style={{
                 fontSize: '48px',
                 fontWeight: 'bold',
-                color: themeTokens.neutral[900],
+                color: printSurfaceTokens.neutral[900],
                 lineHeight: 1.2,
               }}
             >
@@ -176,7 +178,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 fontSize: '24px',
-                color: themeTokens.neutral[500],
+                color: printSurfaceTokens.neutral[500],
               }}
             >
               {totalAscents > 0
@@ -233,7 +235,7 @@ export async function GET(request: NextRequest) {
                     flex: 1,
                     fontSize: '14px',
                     textAlign: 'center',
-                    color: themeTokens.neutral[400],
+                    color: printSurfaceTokens.neutral[400],
                   }}
                 >
                   {bar.grade}
@@ -250,7 +252,7 @@ export async function GET(request: NextRequest) {
             bottom: '24px',
             right: '40px',
             fontSize: '20px',
-            color: themeTokens.neutral[300],
+            color: printSurfaceTokens.neutral[300],
             fontWeight: 600,
           }}
         >
