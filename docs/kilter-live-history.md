@@ -12,7 +12,7 @@ Imports preserve Boardsesh history, current climb, holder, queue, and tick-deriv
 
 ## Exact physical wall identity
 
-The location sync persists complete `(gymUuid, productLayoutUuid, wallUuid)` selectors in `kilter_wall_sources`. Source keys and deterministic source board UUIDs survive board merges. The backend follows up to three reverse merge links and requires exactly one listed source, matching layout, size, hold sets, and canonical gym association. It checks the binding again after the network request and inside the history transaction while holding the board row lock.
+The location sync persists complete `(gymUuid, productLayoutUuid, wallUuid)` selectors in `kilter_wall_sources`. Source keys and deterministic source board UUIDs survive board merges. The backend follows up to three reverse merge links and requires exactly one listed source, matching layout, size, hold sets, and canonical gym association. It checks the binding again after the network request and inside the history transaction while holding the board row lock. In-transaction account eligibility reads reuse that transaction’s connection. Each Redis ownership/viewer read has a one-second deadline; a stalled read aborts the transaction instead of holding the board lock indefinitely.
 
 Manual/config-only boards, ambiguous mappings, private boards, custom walls, unlisted sources, and incompatible configurations are skipped. Broader matching is tracked in [#5539](https://github.com/boardsesh/boardsesh/issues/5539). Serial or configuration equality alone does not prove wall identity. Unresolved matches log a warning when older source boards exist beyond the three-link lookup bound. Unmatched bindings are checked again after five minutes while eligible viewers remain; no token or REST history request is made before a match.
 
@@ -22,7 +22,7 @@ Manual/config-only boards, ambiguous mappings, private boards, custom walls, unl
 - A Redis owner lease selects one poller per board across backend instances. Viewer/owner leases last 60 seconds and renew every 15 seconds, bounding crash recovery. A control channel wakes owners when viewers or credentials change.
 - The first read starts immediately. Successful reads wait 30 seconds plus 0–5 seconds jitter after completion; requests never overlap for a board. REST reads have a 15-second timeout. Failures back off to five minutes and honor a longer `Retry-After`.
 - A 401 forces one refresh/retry. Rejected accounts are temporarily excluded so another linked viewer can take over. Removing credentials cancels work; in-flight results also recheck ownership, account identity, and remaining viewers before committing.
-- Backend and daemon refresh through the same helper. A Postgres credential row lock serializes refreshes; rotated encrypted refresh tokens commit before the next reader. Unlink/revocation uses the same lock. Access tokens stay in process memory and never enter history or logs.
+- Backend and daemon refresh through the same helper. A Postgres credential row lock serializes refreshes; rotated encrypted refresh tokens commit before the next reader. Unlink/revocation uses the same lock. Access tokens stay in process memory and never enter history or logs. `KILTER_OAUTH_CLIENT_SECRET` is optional for the default public PKCE client; only confidential-client deployments provide it.
 
 The backend currently uses standalone Redis. The two-key ownership/cooldown script requires both keys in one hash slot; adopting Redis Cluster would require migrating the board keys consistently before switching clients. Redis outage stops polling until coordination recovers. The flag defaults off; existing history remains readable. Operators should restart backend instances when changing the flag.
 
@@ -38,13 +38,13 @@ Partial indexes for external occurrence keys and imported chronological reads ar
 
 Imported recent history has its own Redis cache (`board:<id>:kilter-history`), retaining the newest 50 displays from seven days. The native history list is unchanged. Queries merge the two sources chronologically. A missing cache falls back to Postgres; subsequent polls rebuild it, including when every occurrence already exists. `BoardHistoryUpdated` changes client history only. Imported events are excluded from native display-count activity aggregates.
 
-Cached timestamps must be strings that parse as valid dates. Invalid cached entries trigger a warning and a durable-history read. Malformed timestamps in the merged history are excluded with a warning count, separately from normal retention expiry.
+Cached entries validate every supported field: nullable strings, integer angles, positive safe-integer sequences, and timestamp strings that parse as valid dates. Invalid cached entries trigger a warning and a durable-history read. Malformed timestamps in the merged history are excluded with a warning count, separately from normal retention expiry.
 
 Durable event retention follows existing board history. Unlinking stops new reads; it does not erase previously imported public-wall history.
 
 ## Durable presence-sheet history
 
-`boardHistoryPage` orders by `(confirmed_at DESC, seq DESC)` with an opaque, board-bound cursor. This separates event time from import arrival order. The legacy sequence-based `boardHistory` query and native `boardRecentClimbs` stay native-only for older clients.
+`boardHistoryPage` orders by `(confirmed_at DESC, seq DESC)` with an opaque, board-bound cursor. This separates event time from import arrival order. The legacy sequence-based `boardHistory` query and native `boardRecentClimbs` stay native-only for older clients, whose backfill path may update current-wall state. Clients that display Kilter imports use `boardRecentHistory` and `boardHistoryPage`; the legacy source filter must remain until those older clients are retired.
 
 The shared pagination hook automatically loads exactly one first page when the sheet mounts or changes boards. Its cursor starts independently of the sparse Redis window. A failed page remains retryable without advancing the cursor. Pull-to-refresh and reconnect reload the first durable page. The sheet merges durable and live entries chronologically, retains richer live copies, labels Kilter entries, and offers a load/retry button for lists too short to scroll.
 

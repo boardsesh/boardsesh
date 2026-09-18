@@ -15,6 +15,7 @@ import { importKilterDisplays, matchKilterWall } from './kilter-live-import';
 const HEARTBEAT_MS = 15_000;
 const LEASE_MS = 60_000;
 const UNMATCHED_WALL_RETRY_MS = 300_000;
+const COORDINATION_READ_TIMEOUT_MS = 1_000;
 const CONTROL_CHANNEL = 'boardsesh:kilter-live:changed';
 const RENEW_OWNER = `if redis.call('GET', KEYS[1]) == ARGV[1] then
   redis.call('PEXPIRE', KEYS[1], ARGV[2]); return 1 end
@@ -36,6 +37,24 @@ type BoardWatch = {
   rerun: boolean;
   accountUserId: string | null;
 };
+
+async function readCoordination<Result>(operation: Promise<Result>): Promise<Result> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Kilter live coordination read timed out')),
+          COORDINATION_READ_TIMEOUT_MS,
+        );
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 /** Subscription-driven, cluster-coordinated polling. No background board crawl. */
 export class KilterLiveSync {
@@ -127,14 +146,20 @@ export class KilterLiveSync {
         await publisher.publish(CONTROL_CHANNEL, String(boardId));
       }
       await this.reconcile(boardId);
-    } catch {
+    } catch (error) {
       board?.controller?.abort();
+      logger.warn('[KilterLive] Viewer removal coordination failed', {
+        boardId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   }
 
-  private async eligibleViewers(boardId: number) {
+  private async eligibleViewers(boardId: number, reader: Pick<typeof db, 'select'> = db) {
     const publisher = redisClientManager.getClients().publisher;
-    const members = await publisher.zrangebyscore(`kilter-live:${boardId}:viewers`, Date.now(), '+inf');
+    const members = await readCoordination(
+      publisher.zrangebyscore(`kilter-live:${boardId}:viewers`, Date.now(), '+inf'),
+    );
     const userIds = new Set<string>();
     for (const member of members) {
       try {
@@ -145,7 +170,7 @@ export class KilterLiveSync {
       }
     }
     if (!userIds.size) return [];
-    const credentials = await db
+    const credentials = await reader
       .select({
         userId: auroraCredentials.userId,
         kilterId: userBoardMappings.boardUserIdText,
@@ -280,11 +305,13 @@ export class KilterLiveSync {
         delay = UNMATCHED_WALL_RETRY_MS;
         return;
       }
-      const isCurrent = async () => {
+      const isCurrent = async (reader: Pick<typeof db, 'select'> = db) => {
         if (controller.signal.aborted || this.stopped || !redisClientManager.isRedisConnected()) return false;
-        const owner = await redisClientManager.getClients().publisher.get(`kilter-live:${boardId}:owner`);
+        const owner = await readCoordination(
+          redisClientManager.getClients().publisher.get(`kilter-live:${boardId}:owner`),
+        );
         if (owner !== this.owner) return false;
-        const eligible = await this.eligibleViewers(boardId);
+        const eligible = await this.eligibleViewers(boardId, reader);
         return eligible.some(
           (viewer) => viewer.userId === account.userId && viewer.linkIdentity === account.linkIdentity,
         );

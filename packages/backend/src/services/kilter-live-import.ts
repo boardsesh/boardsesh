@@ -91,7 +91,7 @@ export async function matchKilterWall(
 export async function importKilterDisplays(
   wall: MatchedKilterWall,
   displays: KilterLiveDisplay[],
-  isCurrent: () => Promise<boolean>,
+  isCurrent: (reader?: Pick<typeof db, 'select'>) => Promise<boolean>,
 ): Promise<number> {
   if (!displays.length || !(await isCurrent())) return 0;
   const upstreamUuids = [...new Set(displays.map((display) => display.climbUuid))];
@@ -161,7 +161,9 @@ export async function importKilterDisplays(
         warnValidationFailure('board_unavailable_or_layout_changed');
         return false;
       }
-      if (!(await isCurrent())) return false;
+      // Reuse the transaction connection for eligibility instead of acquiring
+      // a second pool slot while holding this board's row lock.
+      if (!(await isCurrent(transaction))) return false;
       const currentWall = await matchKilterWall(wall.boardId, transaction);
       if (
         !currentWall ||

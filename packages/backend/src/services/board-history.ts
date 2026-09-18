@@ -143,6 +143,33 @@ export async function readImportedRecentClimbs(boardId: number): Promise<BoardPr
   return rows.map(historyRowToClimb);
 }
 
+function isImportedHistoryEntry(entry: unknown): entry is BoardPresenceClimb {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  const cachedEntry = entry as Record<string, unknown>;
+  const nullableStringFields = [
+    'queueItemUuid',
+    'name',
+    'grade',
+    'gradeColor',
+    'frames',
+    'setter',
+    'sentByDisplayName',
+    'sentByAvatarUrl',
+    'sentByUserId',
+  ];
+  return (
+    cachedEntry.source === 'kilter' &&
+    typeof cachedEntry.climbUuid === 'string' &&
+    typeof cachedEntry.sentAt === 'string' &&
+    Number.isFinite(Date.parse(cachedEntry.sentAt)) &&
+    typeof cachedEntry.seq === 'number' &&
+    Number.isSafeInteger(cachedEntry.seq) &&
+    cachedEntry.seq > 0 &&
+    (cachedEntry.angle == null || (typeof cachedEntry.angle === 'number' && Number.isSafeInteger(cachedEntry.angle))) &&
+    nullableStringFields.every((field) => cachedEntry[field] == null || typeof cachedEntry[field] === 'string')
+  );
+}
+
 export async function readMergedRecentHistory(boardId: number): Promise<BoardPresenceClimb[]> {
   const native = await pubsub.getRecentBoardClimbs(String(boardId));
   let imported: BoardPresenceClimb[] | null = null;
@@ -150,24 +177,8 @@ export async function readMergedRecentHistory(boardId: number): Promise<BoardPre
     try {
       const cached = await redisClientManager.getClients().publisher.get(`board:${boardId}:kilter-history`);
       const parsed: unknown = cached ? JSON.parse(cached) : null;
-      if (
-        Array.isArray(parsed) &&
-        parsed.every(
-          (entry: unknown) =>
-            entry &&
-            typeof entry === 'object' &&
-            'source' in entry &&
-            entry.source === 'kilter' &&
-            'sentAt' in entry &&
-            typeof entry.sentAt === 'string' &&
-            Number.isFinite(Date.parse(entry.sentAt)) &&
-            'seq' in entry &&
-            typeof entry.seq === 'number' &&
-            'climbUuid' in entry &&
-            typeof entry.climbUuid === 'string',
-        )
-      ) {
-        imported = parsed as BoardPresenceClimb[];
+      if (Array.isArray(parsed) && parsed.every(isImportedHistoryEntry)) {
+        imported = parsed;
       } else if (cached !== null) {
         logger.warn('[BoardHistory] Invalid imported history cache; reading durable history', { boardId });
       }

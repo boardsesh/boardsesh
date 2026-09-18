@@ -213,6 +213,54 @@ describe('Kilter history integration', () => {
     });
   });
 
+  it.each([
+    ['angle', '40'],
+    ['angle', 40.5],
+    ['frames', {}],
+    ['name', false],
+    ['grade', 5],
+    ['gradeColor', []],
+    ['setter', 2],
+    ['queueItemUuid', {}],
+    ['sentByDisplayName', []],
+    ['sentByAvatarUrl', false],
+    ['sentByUserId', 4],
+    ['seq', -1],
+    ['seq', 1.5],
+  ])('recovers durable history for invalid cached %s', async (field, invalidField) => {
+    const wall = (await matchKilterWall(boardId))!;
+    await importKilterDisplays(wall, [display()], async () => true);
+    const [entry] = (await readBoardHistoryPage(boardId)).entries;
+    await publisher.set(
+      `board:${boardId}:kilter-history`,
+      JSON.stringify([{ ...entry, [field as string]: invalidField }]),
+    );
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    expect(await readMergedRecentHistory(boardId)).toEqual([entry]);
+    expect(warn).toHaveBeenCalledWith('[BoardHistory] Invalid imported history cache; reading durable history', {
+      boardId,
+    });
+  });
+
+  it('provides the transaction connection for the eligibility check under the board lock', async () => {
+    const wall = (await matchKilterWall(boardId))!;
+    let checkedWithinTransaction = false;
+    await importKilterDisplays(wall, [display()], async (reader) => {
+      if (reader) {
+        expect(reader).not.toBe(db);
+        const [board] = await reader
+          .select({ id: schema.userBoards.id })
+          .from(schema.userBoards)
+          .where(eq(schema.userBoards.id, boardId));
+        expect(board.id).toBe(boardId);
+        checkedWithinTransaction = true;
+      }
+      return true;
+    });
+    expect(checkedWithinTransaction).toBe(true);
+    expect((await readBoardHistoryPage(boardId)).entries).toHaveLength(1);
+  });
+
   it('retains climb metadata without borrowing a grade from another angle', async () => {
     await db
       .insert(schema.boardDifficultyGrades)
@@ -446,6 +494,55 @@ describe('presence subscription lifetime', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('releases the board lock without importing when the in-transaction Redis read stalls', async () => {
+    vi.mocked(fetchKilterLiveHistory).mockResolvedValue([display()]);
+    const transactions = vi.spyOn(db, 'transaction');
+    const originalGet = publisher.get.bind(publisher);
+    const stalledGet = vi.spyOn(publisher, 'get').mockImplementation((key) => {
+      if (key === `kilter-live:${boardId}:owner` && transactions.mock.calls.length) {
+        return new Promise(() => {});
+      }
+      return originalGet(key);
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(
+      () => expect(warn).toHaveBeenCalledWith('[KilterLive] Poll failed', expect.objectContaining({ boardId })),
+      { timeout: 4000 },
+    );
+    stalledGet.mockRestore();
+    // A subsequent board write must acquire the lock after the read deadline,
+    // even though the mocked Redis response never completes.
+    await db.update(schema.userBoards).set({ name: 'Lock released' }).where(eq(schema.userBoards.id, boardId));
+    expect((await readBoardHistoryPage(boardId)).entries).toEqual([]);
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
+  it('logs failed Redis viewer removal and still removes the local watcher and aborts its read', async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(fetchKilterLiveHistory).mockImplementation((_token, _wall, signal) => {
+      requestSignal = signal;
+      return new Promise((resolve) => signal?.addEventListener('abort', () => resolve([]), { once: true }));
+    });
+    const sync = poller();
+    const stop = sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const remove = vi.spyOn(publisher, 'zrem').mockRejectedValueOnce(new Error('test removal failure'));
+    stop();
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('[KilterLive] Viewer removal coordination failed', {
+        boardId,
+        error: 'test removal failure',
+      }),
+    );
+    expect(requestSignal?.aborted).toBe(true);
+    stop();
+    expect(remove).toHaveBeenCalledTimes(1);
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:next`)).not.toBeNull());
+  });
+
   it('releases every operation on a socket while preserving another connected viewer', async () => {
     let requestSignal: AbortSignal | undefined;
     vi.mocked(fetchKilterLiveHistory).mockImplementation((_token, _wall, signal) => {

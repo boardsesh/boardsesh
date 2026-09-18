@@ -165,7 +165,7 @@ BEGIN
 
   -- The legacy Aurora tables exist only as empty stubs during the build, so the
   -- journal can apply to a bare cluster; 0038 must have dropped every one.
-  -- The live wall mapping added in 0232 is current application data.
+  -- The live wall mapping is current application data, not a legacy catalogue.
   IF EXISTS (
     SELECT 1 FROM pg_tables
     WHERE schemaname = 'public'
