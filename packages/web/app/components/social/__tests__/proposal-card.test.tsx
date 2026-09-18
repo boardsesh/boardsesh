@@ -24,10 +24,6 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/kilter/original/12x12/default/40/list',
 }));
 
-vi.mock('@/app/hooks/use-is-dark-mode', () => ({
-  useIsDarkMode: () => false,
-}));
-
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => ({
     token: 'test-token',

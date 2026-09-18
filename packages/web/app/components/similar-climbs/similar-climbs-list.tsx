@@ -14,7 +14,6 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
 import {
@@ -212,13 +211,12 @@ type SimilarClimbCardProps = {
 function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: SimilarClimbCardProps) {
   const { t } = useTranslation('climbs');
   const canvasReady = useCanvasRendererReady();
-  const isDark = useIsDarkMode();
   const { formatGrade, getGradeColor } = useGradeFormat();
   const angle = climb.angle ?? 0;
   // Format and colour the grade using the same hook the main climb-title
   // uses, so the slider respects the user's Font vs V-grade preference.
   const formattedGrade = formatGrade(climb.difficultyName ?? undefined);
-  const gradeColor = getGradeColor(climb.difficultyName ?? undefined, isDark);
+  const gradeColor = getGradeColor(climb.difficultyName ?? undefined);
 
   // Compatible climb: render at the viewer's exact wall config so the
   // thumbnail matches what they'll see on their board. Incompatible:
