@@ -71,7 +71,6 @@
     }
   },
   "about": {
-    "headerTitle": "Über uns",
     "hero": {
       "title": "Festhalten, trainieren, zusammen klettern",
       "subtitle": "Eine App für jedes Kletterboard"
@@ -112,7 +111,6 @@
     "footer": "Von Kletterer*innen gebaut. Offen für alle."
   },
   "support": {
-    "headerTitle": "Unterstützen",
     "hero": {
       "title": "Halt Boardsesh am Laufen",
       "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
@@ -149,7 +147,6 @@
     "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {
-    "headerTitle": "Rechtliches",
     "intro": {
       "title": "Rechtliches & Richtlinie zum geistigen Eigentum",
       "p1": "Boardsesh ist eine kostenlose, quelloffene, von der Community gebaute Alternative, um standardisierte LED-Trainingsboards (Kilter Board, Tension Board, MoonBoard und andere) zu durchstöbern und zu bedienen. Das Projekt ist nicht kommerziell und wird ausschließlich von Freiwilligen betreut.",

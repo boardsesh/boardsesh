@@ -71,7 +71,6 @@
     }
   },
   "about": {
-    "headerTitle": "À propos",
     "hero": {
       "title": "Notez, entraînez-vous et grimpez ensemble",
       "subtitle": "Une seule app pour chaque board d'escalade"
@@ -112,7 +111,6 @@
     "footer": "Fait par des grimpeurs. Ouvert à tous."
   },
   "support": {
-    "headerTitle": "Soutenir",
     "hero": {
       "title": "Gardez Boardsesh en vie",
       "subtitle": "Gratuit, open source, et payé par des grimpeurs"
@@ -149,7 +147,6 @@
     "footer": "Gratuit pour tous, financé par ceux qui le peuvent."
   },
   "legal": {
-    "headerTitle": "Mentions légales",
     "intro": {
       "title": "Politique légale et de propriété intellectuelle",
       "p1": "Boardsesh est une alternative gratuite, open source et communautaire pour parcourir et interagir avec les boards d'entraînement à LED standardisées (Kilter Board, Tension Board, MoonBoard et autres). Le projet est non commercial et entièrement maintenu par des bénévoles.",

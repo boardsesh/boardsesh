@@ -1,0 +1,164 @@
+/* The shared frame for every long-form page: /about, /help, /support, /legal,
+ * /privacy. Before this module each of those owned a near-duplicate copy of
+ * .pageLayout / .header / .content, and /legal imported /about's outright.
+ *
+ * Colours are CSS vars from app/components/index.css — never literals. */
+
+.pageShell {
+  /* The ONE place the fixed MarketingHeader's height is cleared. If you find
+     yourself adding var(--global-header-height) to a page, use this instead. */
+  padding-top: calc(var(--global-header-height) + var(--spacing-6));
+  padding-bottom: var(--spacing-16);
+  background: var(--semantic-background);
+  /* min-height, never margin: e2e/site-chrome.spec.ts measures
+     scrollHeight - footerBottom < 24, so a trailing margin reads as a dead
+     gutter under the footer. */
+  min-height: calc(100dvh - var(--global-header-height));
+}
+
+.inner {
+  margin: 0 auto;
+  padding: 0 var(--spacing-4);
+  width: 100%;
+}
+
+/* Reading measure for long-form copy. ~68ch is the comfortable line length; the
+   760px cap keeps it from stretching on a wide viewport at a large font size. */
+.prose {
+  max-width: min(68ch, 760px);
+}
+
+.wide {
+  max-width: 1200px;
+}
+
+.header {
+  margin-bottom: var(--spacing-8);
+}
+
+.headerCenter {
+  text-align: center;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: var(--spacing-2);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.breadcrumb {
+  margin-bottom: var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--neutral-500);
+}
+
+.title {
+  margin: 0;
+}
+
+.lead {
+  margin-top: var(--spacing-3);
+  color: var(--neutral-500);
+}
+
+/* ---- sections ---- */
+
+.section {
+  /* Anchored sections (e.g. /help#climb-counts) must clear the fixed header
+     when linked to directly. */
+  scroll-margin-top: calc(var(--global-header-height) + var(--spacing-4));
+}
+
+.section + .section {
+  margin-top: var(--spacing-8);
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-3);
+}
+
+.sectionIcon {
+  flex-shrink: 0;
+  font-size: 1.25em;
+}
+
+.toneBrand {
+  color: var(--color-primary);
+}
+
+.toneAccent {
+  color: var(--color-accent);
+}
+
+.toneNeutral {
+  color: var(--neutral-500);
+}
+
+.sectionLead {
+  margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-4);
+  color: var(--neutral-500);
+}
+
+/* ---- prose ---- */
+
+.paragraph + .paragraph {
+  margin-top: var(--spacing-3);
+}
+
+.list {
+  margin: var(--spacing-3) 0 0;
+  padding-left: var(--spacing-5);
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.list li {
+  padding-left: var(--spacing-1);
+}
+
+/* ---- cards ---- */
+
+.card {
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface);
+}
+
+/* Depth on near-black is a lighter violet, not a shadow. Use `elevated` for a
+   card that sits on top of another surface, or that has to be findable. */
+.cardElevated {
+  background: var(--semantic-surface-elevated);
+}
+
+.cardPaddingMd {
+  padding: var(--spacing-5);
+}
+
+.cardPaddingSm {
+  padding: var(--spacing-4);
+}
+
+@media (max-width: 600px) {
+  .pageShell {
+    padding-bottom: var(--spacing-10);
+  }
+
+  .header {
+    margin-bottom: var(--spacing-6);
+  }
+
+  .section + .section {
+    margin-top: var(--spacing-6);
+  }
+
+  .cardPaddingMd {
+    padding: var(--spacing-4);
+  }
+}
