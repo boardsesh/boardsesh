@@ -2,13 +2,12 @@
 
 import React from 'react';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { themeTokens } from '@/app/theme/theme-config';
-import styles from './help.module.css';
+import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
@@ -25,38 +24,6 @@ const CTA_SX = {
   '&:hover': { backgroundColor: 'var(--color-primary-fill-hover)', transform: 'none' },
 } as const;
 
-type SectionProps = {
-  /** Optional anchor id, so a section can be linked to directly. */
-  id?: string;
-  title: string;
-  intro: string;
-  items: string[];
-  children?: React.ReactNode;
-};
-
-function Section({ id, title, intro, items, children }: SectionProps) {
-  return (
-    <Box component="section" id={id} className={styles.section}>
-      <Typography variant="h2" className={styles.sectionTitle}>
-        {title}
-      </Typography>
-      <Typography variant="body1" color="text.secondary" className={styles.sectionIntro}>
-        {intro}
-      </Typography>
-      <ul className={styles.list}>
-        {items.map((item) => (
-          <li key={item}>
-            <Typography variant="body1" component="span">
-              {item}
-            </Typography>
-          </li>
-        ))}
-      </ul>
-      {children}
-    </Box>
-  );
-}
-
 /**
  * The front-door help page.
  *
@@ -70,93 +37,81 @@ export default function HelpContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <div className={styles.pageLayout}>
-      <div className={styles.content}>
-        <Box component="header" className={styles.heroSection}>
-          <Typography variant="h1" className={styles.heroTitle}>
-            {t('help.hero.title')}
-          </Typography>
-          <Typography variant="body1" color="text.secondary" className={styles.heroSubtitle}>
-            {t('help.hero.subtitle')}
-          </Typography>
+    <PageShell title={t('help.hero.title')} lead={t('help.hero.subtitle')}>
+      <PageSection title={t('help.web.title')} lead={t('help.web.intro')}>
+        <ProseList>
+          <li>{t('help.web.item1')}</li>
+          <li>{t('help.web.item2')}</li>
+          <li>{t('help.web.item3')}</li>
+          <li>{t('help.web.item4')}</li>
+        </ProseList>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/playlists">
+            {t('help.web.playlistsLink')}
+          </MuiLink>
+          {' · '}
+          <MuiLink component={LocaleLink} href="/about">
+            {t('help.web.aboutLink')}
+          </MuiLink>
+        </Prose>
+      </PageSection>
+
+      <PageSection title={t('help.app.title')} lead={t('help.app.intro')}>
+        <ProseList>
+          <li>{t('help.app.item1')}</li>
+          <li>{t('help.app.item2')}</li>
+          <li>{t('help.app.item3')}</li>
+          <li>{t('help.app.item4')}</li>
+        </ProseList>
+        <Box sx={{ mt: 2 }}>
+          <StartClimbingButton
+            label={t('help.app.cta')}
+            ariaLabel={t('help.app.ctaAriaLabel')}
+            size="medium"
+            sx={CTA_SX}
+          />
         </Box>
+      </PageSection>
 
-        <Section
-          title={t('help.web.title')}
-          intro={t('help.web.intro')}
-          items={[t('help.web.item1'), t('help.web.item2'), t('help.web.item3'), t('help.web.item4')]}
-        >
-          <Typography variant="body1" className={styles.sectionOutro}>
-            <MuiLink component={LocaleLink} href="/playlists">
-              {t('help.web.playlistsLink')}
+      <PageSection title={t('help.aurora.title')} lead={t('help.aurora.intro')}>
+        <ProseList>
+          <li>{t('help.aurora.item1')}</li>
+          <li>{t('help.aurora.item2')}</li>
+        </ProseList>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/aurora-migration">
+            {t('help.aurora.link')}
+          </MuiLink>
+        </Prose>
+      </PageSection>
+
+      <PageSection id={CLIMB_COUNTS_SECTION_ID} title={t('help.climbCounts.title')} lead={t('help.climbCounts.intro')}>
+        <ProseList>
+          <li>{t('help.climbCounts.item1')}</li>
+          <li>{t('help.climbCounts.item2')}</li>
+          <li>{t('help.climbCounts.item3')}</li>
+        </ProseList>
+      </PageSection>
+
+      <PageSection title={t('help.ask.title')} lead={t('help.ask.intro')}>
+        <ProseList>
+          <li>
+            <MuiLink href={DISCORD_INVITE_URL} target="_blank" rel="noopener noreferrer">
+              {t('help.ask.discord')}
             </MuiLink>
-            {' · '}
-            <MuiLink component={LocaleLink} href="/about">
-              {t('help.web.aboutLink')}
+          </li>
+          <li>
+            <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+              {t('help.ask.github')}
             </MuiLink>
-          </Typography>
-        </Section>
-
-        <Section
-          title={t('help.app.title')}
-          intro={t('help.app.intro')}
-          items={[t('help.app.item1'), t('help.app.item2'), t('help.app.item3'), t('help.app.item4')]}
-        >
-          <Box className={styles.ctaRow}>
-            <StartClimbingButton
-              label={t('help.app.cta')}
-              ariaLabel={t('help.app.ctaAriaLabel')}
-              size="medium"
-              sx={CTA_SX}
-            />
-          </Box>
-        </Section>
-
-        <Section
-          title={t('help.aurora.title')}
-          intro={t('help.aurora.intro')}
-          items={[t('help.aurora.item1'), t('help.aurora.item2')]}
-        >
-          <Typography variant="body1" className={styles.sectionOutro}>
-            <MuiLink component={LocaleLink} href="/aurora-migration">
-              {t('help.aurora.link')}
+          </li>
+          <li>
+            <MuiLink component={LocaleLink} href="/docs">
+              {t('help.ask.docs')}
             </MuiLink>
-          </Typography>
-        </Section>
-
-        <Section
-          id={CLIMB_COUNTS_SECTION_ID}
-          title={t('help.climbCounts.title')}
-          intro={t('help.climbCounts.intro')}
-          items={[t('help.climbCounts.item1'), t('help.climbCounts.item2'), t('help.climbCounts.item3')]}
-        />
-
-        <Box component="section" className={styles.section}>
-          <Typography variant="h2" className={styles.sectionTitle}>
-            {t('help.ask.title')}
-          </Typography>
-          <Typography variant="body1" color="text.secondary" className={styles.sectionIntro}>
-            {t('help.ask.intro')}
-          </Typography>
-          <ul className={styles.list}>
-            <li>
-              <MuiLink href={DISCORD_INVITE_URL} target="_blank" rel="noopener noreferrer">
-                {t('help.ask.discord')}
-              </MuiLink>
-            </li>
-            <li>
-              <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
-                {t('help.ask.github')}
-              </MuiLink>
-            </li>
-            <li>
-              <MuiLink component={LocaleLink} href="/docs">
-                {t('help.ask.docs')}
-              </MuiLink>
-            </li>
-          </ul>
-        </Box>
-      </div>
-    </div>
+          </li>
+        </ProseList>
+      </PageSection>
+    </PageShell>
   );
 }

@@ -59,15 +59,41 @@ const PERKS_LANGUAGE: Record<string, RegExp> = {
   de: /schalte.{0,12}frei|freischalt|früher zugang|vorrangig|exklusiv|belohnung|early access|unlock/i,
 };
 
+/** Cardinals that would turn the rails heading into a promise, per locale. */
+const RAIL_COUNT_WORDS: Record<string, RegExp> = {
+  'en-US': /\b(one|two|1|2)\b/i,
+  es: /\b(dos|2)\b|\buna? forma\b/i,
+  fr: /\b(deux|2)\b|\bune fa\u00e7on\b/i,
+  de: /\b(zwei|2)\b|\bein Weg\b/i,
+};
+
 const SUPPORT_COPY_KEYS = [
   'support.hero.title',
   'support.hero.subtitle',
+  'support.promise',
   'support.why.p1',
   'support.why.p2',
+  'support.rails.title',
   'support.sponsors.body',
   'support.sponsors.cta',
   'support.oneTime.body',
   'support.oneTime.cta',
+  // "Other ways to help" is the non-monetary column. It is the copy most likely
+  // to drift into promising something back, so every string on it is listed.
+  'support.otherWays.title',
+  'support.otherWays.body',
+  'support.otherWays.bug.title',
+  'support.otherWays.bug.body',
+  'support.otherWays.bug.cta',
+  'support.otherWays.translate.title',
+  'support.otherWays.translate.body',
+  'support.otherWays.translate.cta',
+  'support.otherWays.patch.title',
+  'support.otherWays.patch.body',
+  'support.otherWays.patch.cta',
+  'support.otherWays.discord.title',
+  'support.otherWays.discord.body',
+  'support.otherWays.discord.cta',
   'support.honesty.p1',
   'support.honesty.p2',
   'support.thanks.body',
@@ -89,6 +115,15 @@ describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale
   // `withBrandTitle` in the web app appends " | Boardsesh" unless the title
   // already carries the brand. A title containing "Boardsesh" therefore either
   // doubles the brand or loses the suffix entirely, depending on where it sits.
+  // The Stripe rail renders only when STRIPE_DONATE_URL is set, which it is not
+  // in production today. A heading that counts the rails is therefore wrong
+  // half the time, in whichever direction — so it must not count them at all.
+  // Cardinals only: the indefinite articles (un/una/une/eine) are ordinary
+  // words here, and Spanish "echar una mano" is an idiom, not a count.
+  it('does not count the donation rails in their heading', () => {
+    expect(readString(catalog, 'support.rails.title')).not.toMatch(RAIL_COUNT_WORDS[locale]);
+  });
+
   it('keeps the brand out of the page title so the suffix can add it', () => {
     expect(readString(catalog, 'metadata.support.title')).not.toMatch(/boardsesh/i);
   });

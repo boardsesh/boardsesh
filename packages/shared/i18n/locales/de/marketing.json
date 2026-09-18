@@ -71,7 +71,6 @@
     }
   },
   "about": {
-    "headerTitle": "Über uns",
     "hero": {
       "title": "Festhalten, trainieren, zusammen klettern",
       "subtitle": "Eine App für jedes Kletterboard"
@@ -112,28 +111,52 @@
     "footer": "Von Kletterer*innen gebaut. Offen für alle."
   },
   "support": {
-    "headerTitle": "Unterstützen",
     "hero": {
       "title": "Halt Boardsesh am Laufen",
       "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
     },
+    "promise": "Keine gesperrten Screens, keine zweite Klasse, keine Werbung. Beisteuern zahlt die Rechnung, sonst nichts.",
     "why": {
       "title": "Warum es diese Seite gibt",
       "p1": "Boardsesh ist kostenlos und Open Source, und das bleibt auch so. Der Betrieb kostet trotzdem echtes Geld: Hosting, Datenbank und Infrastruktur summieren sich, je mehr Leute dazukommen.",
       "p2": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Server am Netz."
     },
     "rails": {
-      "title": "Zwei Wege zu helfen"
+      "title": "So kannst du beisteuern"
     },
     "sponsors": {
       "title": "GitHub Sponsors",
       "body": "Unterstütz Boardsesh monatlich. Am einfachsten, wenn du schon einen GitHub-Account hast.",
-      "cta": "Auf GitHub sponsern →"
+      "cta": "Auf GitHub sponsern"
     },
     "oneTime": {
       "title": "Einmalige Spende",
       "body": "Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
-      "cta": "Einmal spenden →"
+      "cta": "Einmal spenden"
+    },
+    "otherWays": {
+      "title": "Andere Wege zu helfen",
+      "body": "Geld ist davon das Langsamste. Jeder der vier Wege bringt die App weiter.",
+      "bug": {
+        "title": "Fehler melden",
+        "body": "Sag uns, was kaputt war, an welchem Board, und was du erwartet hättest.",
+        "cta": "Issue auf GitHub öffnen →"
+      },
+      "translate": {
+        "title": "Einen Screen übersetzen",
+        "body": "Die spanischen, französischen und deutschen Kataloge liegen im Repo. Korrigier einen Satz oder füg eine Sprache dazu.",
+        "cta": "Sprachkataloge ansehen →"
+      },
+      "patch": {
+        "title": "Code schicken",
+        "body": "Die ganze App ist öffentlich: Web, Mobile, Backend und die Board-Daten dahinter.",
+        "cta": "Ansehen, wie es gebaut ist →"
+      },
+      "discord": {
+        "title": "Dem Discord beitreten",
+        "body": "Frag, woran gerade gearbeitet wird, streite über Grade, sag uns, was fehlt.",
+        "cta": "Sag mal Hallo →"
+      }
     },
     "honesty": {
       "title": "Das Kleingedruckte",
@@ -149,7 +172,6 @@
     "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {
-    "headerTitle": "Rechtliches",
     "intro": {
       "title": "Rechtliches & Richtlinie zum geistigen Eigentum",
       "p1": "Boardsesh ist eine kostenlose, quelloffene, von der Community gebaute Alternative, um standardisierte LED-Trainingsboards (Kilter Board, Tension Board, MoonBoard und andere) zu durchstöbern und zu bedienen. Das Projekt ist nicht kommerziell und wird ausschließlich von Freiwilligen betreut.",

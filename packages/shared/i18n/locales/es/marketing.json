@@ -71,7 +71,6 @@
     }
   },
   "about": {
-    "headerTitle": "Acerca de",
     "hero": {
       "title": "Registra, Entrena y Escala en Grupo",
       "subtitle": "Una sola app para todos los plafones"
@@ -112,28 +111,52 @@
     "footer": "Hecho por escaladores. Abierto para todos."
   },
   "support": {
-    "headerTitle": "Apoya el proyecto",
     "hero": {
       "title": "Mantén Boardsesh en marcha",
       "subtitle": "Gratis, de código abierto y pagado por escaladores"
     },
+    "promise": "Sin pantallas bloqueadas, sin segunda categoría, sin anuncios. Echar una mano paga la factura, nada más.",
     "why": {
       "title": "Por qué existe esta página",
       "p1": "Boardsesh es gratis y de código abierto, y siempre lo será. Pero mantenerlo cuesta dinero de verdad: el hosting, la base de datos y la infraestructura suman cada vez que se une más gente.",
       "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas."
     },
     "rails": {
-      "title": "Dos formas de echar una mano"
+      "title": "Formas de echar una mano"
     },
     "sponsors": {
       "title": "GitHub Sponsors",
       "body": "Apoya Boardsesh cada mes. Lo más fácil si ya tienes cuenta de GitHub.",
-      "cta": "Patrocina en GitHub →"
+      "cta": "Patrocina en GitHub"
     },
     "oneTime": {
       "title": "Donación única",
       "body": "Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
-      "cta": "Dona una vez →"
+      "cta": "Dona una vez"
+    },
+    "otherWays": {
+      "title": "Otras formas de ayudar",
+      "body": "El dinero es la más lenta de todas. Cualquiera de las cuatro hace avanzar la app.",
+      "bug": {
+        "title": "Informa de un fallo",
+        "body": "Cuéntanos qué se rompió, en qué plafón y qué esperabas que pasara.",
+        "cta": "Abre una issue en GitHub →"
+      },
+      "translate": {
+        "title": "Traduce una pantalla",
+        "body": "Los catálogos en español, francés y alemán están en el repo. Corrige una frase o añade un idioma.",
+        "cta": "Explora los catálogos de idiomas →"
+      },
+      "patch": {
+        "title": "Manda un parche",
+        "body": "Toda la app es pública: web, móvil, backend y los datos de plafones que hay detrás.",
+        "cta": "Mira cómo está hecho →"
+      },
+      "discord": {
+        "title": "Únete al Discord",
+        "body": "Pregunta en qué se está trabajando, discute sobre grados, dinos qué falta.",
+        "cta": "Pásate a saludar →"
+      }
     },
     "honesty": {
       "title": "La letra pequeña",
@@ -225,7 +248,6 @@
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos."
   },
   "legal": {
-    "headerTitle": "Legal",
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
       "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). No tiene fines comerciales y está mantenida íntegramente por voluntarios.",

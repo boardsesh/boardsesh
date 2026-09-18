@@ -85,7 +85,9 @@ describe('SupportContent', () => {
   });
 
   // The page is indexable, so it owes a crawler exactly one h1 carrying the
-  // thing people search for. `/about` renders its hero as an h2 and has none.
+  // thing people search for. PageShell renders it; a page must not add a second
+  // heading above it (the in-page header bar that used to sit there was the
+  // reason this test exists).
   it('gives the hero the only h1 on the page', () => {
     const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
 
