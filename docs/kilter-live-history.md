@@ -50,7 +50,7 @@ The shared pagination hook automatically loads exactly one first page when the s
 
 ## Rollout and verification
 
-1. Apply migration `0232_kilter_live_history` before deploying the backend and sync daemon.
+1. Apply migration `0233_kilter_live_history` before deploying the backend and sync daemon.
 2. Run the normal Kilter reference/location sync to populate exact source selectors.
 3. Enable `KILTER_LIVE_SYNC_ENABLED=1` on backend instances and restart them.
 4. Open an exact imported public Kilter board with a linked account; confirm history gains labeled entries while current wall state stays unchanged.
