@@ -1,9 +1,8 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
-import { loadEnvFile } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { createDevObjectPublisher } from './dev-object-store';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const DESIGN_ROOT = resolve(REPO_ROOT, 'docs/design');
@@ -13,12 +12,6 @@ interface DesignPreview {
   url: string;
   sha256: string;
   bytes: number;
-}
-
-function requiredEnvironment(name: string): string {
-  const configured = process.env[name]?.trim();
-  if (!configured) throw new Error(`Missing ${name}; see docs/design/README.md`);
-  return configured;
 }
 
 export function designPreviewPath(filename: string): string {
@@ -55,23 +48,7 @@ function readPreviews(): Record<string, DesignPreview> {
 
 /** Dev-only credentials: never fall back to production media storage. */
 export function createDesignPreviewPublisher(): (filename: string) => Promise<string> {
-  const environment = resolve(REPO_ROOT, '.env.local');
-  if (existsSync(environment)) loadEnvFile(environment);
-  const bucket = requiredEnvironment('DEV_S3_BUCKET_NAME');
-  const endpoint = requiredEnvironment('DEV_AWS_ENDPOINT_URL');
-  const publicBase = requiredEnvironment('DEV_PUBLIC_BASE_URL').replace(/\/$/, '');
-  if (new URL(endpoint).protocol !== 'https:' || new URL(publicBase).protocol !== 'https:') {
-    throw new Error('Dev artifact endpoint and public URL must use HTTPS');
-  }
-  const client = new S3Client({
-    endpoint,
-    region: process.env.DEV_AWS_REGION || 'auto',
-    forcePathStyle: true,
-    credentials: {
-      accessKeyId: requiredEnvironment('DEV_AWS_ACCESS_KEY_ID'),
-      secretAccessKey: requiredEnvironment('DEV_AWS_SECRET_ACCESS_KEY'),
-    },
-  });
+  const publish = createDevObjectPublisher();
   const previews = readPreviews();
 
   return async (filename) => {
@@ -82,22 +59,7 @@ export function createDesignPreviewPublisher(): (filename: string) => Promise<st
     }
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const key = `design/${path.slice(0, -4)}/${sha256}.png`;
-    const url = `${publicBase}/${key.split('/').map(encodeURIComponent).join('/')}`;
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: bytes,
-        ContentType: 'image/png',
-        CacheControl: 'public, max-age=31536000, immutable',
-      }),
-    );
-    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error(`Published preview returned HTTP ${response.status}: ${url}`);
-    const uploadedHash = createHash('sha256')
-      .update(Buffer.from(await response.arrayBuffer()))
-      .digest('hex');
-    if (uploadedHash !== sha256) throw new Error(`Published preview checksum differs: ${url}`);
+    const url = await publish(key, bytes, 'image/png');
 
     previews[path] = { url, sha256, bytes: bytes.length };
     const sorted = Object.fromEntries(Object.entries(previews).sort(([left], [right]) => left.localeCompare(right)));
