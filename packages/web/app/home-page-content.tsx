@@ -87,7 +87,7 @@ const accentSurface: Record<OnboardingCardAccent, string> = {
 // Button override adds a translateY(-1px) on hover; cancel it so the CTA stays
 // anchored under the warm glow.
 // The homepage hero is the one surface that carries the amber glow.
-const HERO_CTA_SX = { mt: 1, ...(brandCtaSx({ size: 'large', glow: true }) as object) };
+const HERO_CTA_SX = { mt: 1, ...brandCtaSx({ size: 'large', glow: true }) };
 
 function resolveAccentIconColor(accent: OnboardingCardAccent): string {
   switch (accent) {
