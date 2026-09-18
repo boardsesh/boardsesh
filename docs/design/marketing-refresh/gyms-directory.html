@@ -1,0 +1,1979 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gyms Directory Wireframe — Dark</title>
+    <style>
+      /* ============================================================
+         Velvet Send (web, dark) — the ONLY scheme www renders.
+         Tokens lifted from docs/ai-design-guidelines.md +
+         packages/web/app/theme/theme-config.ts (darkTokens).
+         ============================================================ */
+      :root {
+        color-scheme: dark;
+
+        /* Surface ladder — depth is a lighter violet, never a shadow. */
+        --bg: #110a20; /* page ground */
+        --surface: #251b3a; /* cards, panels */
+        --surface-2: #2f234a; /* raised: rails, inputs, selected */
+
+        /* Text ramp (dark: 50 darkest → 900 lightest) */
+        --label: #f3effa; /* primary text        (neutral-900) */
+        --secondary-label: #aca5bd; /* secondary text      (neutral-500) */
+        --tertiary-label: #6f6882; /* disabled/decorative (neutral-400) */
+
+        --separator: rgba(185, 170, 215, 0.2); /* the one hairline */
+
+        /* Brand — two jobs, two tokens. NEVER collapse them. */
+        --primary: #a78bfa; /* FOREGROUND: text, links, icons, borders */
+        --primary-fill: #7c3aed; /* FILL: button background, white text 5.70:1 */
+        --primary-fill-hover: #6d28d9;
+        --on-primary: #ffffff;
+
+        /* Amber is fill-only, dark ink, at most once per page. */
+        --accent: #ff8a3d;
+        --on-accent: #16111f;
+
+        --success: #34d399;
+        --warning: #fbbf24;
+        --error: #f87171;
+
+        --radius-card: 12px;
+        --radius-btn: 10px;
+        --radius-full: 9999px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--label);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        font-size: 16px;
+      }
+      a {
+        color: var(--primary);
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      /* Prose measure — long-form copy never runs wider than this. */
+      .prose {
+        max-width: 68ch;
+      }
+
+      /* ---- type scale: ONE large thing per page ---- */
+      h1 {
+        font-size: 40px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      h3 {
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      @media (max-width: 600px) {
+        h1 {
+          font-size: 30px;
+        }
+        h2 {
+          font-size: 21px;
+        }
+      }
+
+      /* ---- buttons ---- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: var(--radius-btn);
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .btn-filled {
+        background: var(--primary-fill);
+        color: var(--on-primary);
+      }
+      .btn-filled:hover {
+        background: var(--primary-fill-hover);
+      }
+      .btn-outlined {
+        border-color: var(--separator);
+        color: var(--primary);
+        background: transparent;
+      }
+      .btn-outlined:hover {
+        border-color: var(--primary);
+        background: rgba(167, 139, 250, 0.08);
+      }
+
+      /* ---- cards: only for things you can act on ---- */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 20px;
+      }
+      .card-raised {
+        background: var(--surface-2);
+      }
+
+      /* ---- wireframe chrome (meta UI, NOT product UI) ---- */
+      .wf-banner {
+        background: #060310;
+        color: var(--label);
+        font-size: 13px;
+        padding: 8px 16px;
+        text-align: center;
+        border-bottom: 1px solid var(--separator);
+      }
+      .wf-banner strong {
+        color: var(--accent);
+      }
+      .wf-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--warning);
+        border: 1px dashed var(--warning);
+        border-radius: 4px;
+        padding: 1px 6px;
+        vertical-align: middle;
+      }
+      .note-ref {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 3px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        vertical-align: super;
+        line-height: 1;
+        margin-left: 4px;
+      }
+      /* Placeholder for imagery we do not have yet. NEVER an AI-generated image. */
+      .img-slot {
+        background: var(--surface-2);
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--tertiary-label);
+        font-size: 12px;
+        padding: 12px;
+      }
+
+      /* ---- global header placeholder (the real MarketingHeader) ---- */
+      .global-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(37, 27, 58, 0.72);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--separator);
+        padding: 12px 0;
+      }
+      .global-header .container {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #7c3aed, #a78bfa);
+        flex-shrink: 0;
+      }
+      .brand-name {
+        font-weight: 700;
+        font-size: 17px;
+      }
+      .global-header nav {
+        display: flex;
+        gap: 18px;
+        font-size: 15px;
+      }
+      .global-header nav a {
+        color: var(--secondary-label);
+        text-decoration: none;
+      }
+      .global-header nav a:hover {
+        color: var(--label);
+      }
+      .header-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      @media (max-width: 760px) {
+        .global-header nav {
+          display: none;
+        }
+      }
+
+      /* ---- design notes ---- */
+      .notes {
+        background: #060310;
+        border-top: 1px solid var(--separator);
+        margin-top: 64px;
+        padding: 40px 0 64px;
+      }
+      .notes h2 {
+        margin-bottom: 8px;
+      }
+      .notes .intro {
+        color: var(--secondary-label);
+        font-size: 14px;
+        margin-bottom: 24px;
+        max-width: 68ch;
+      }
+      .annotation {
+        display: flex;
+        gap: 12px;
+        padding: 14px 0;
+        border-top: 1px solid var(--separator);
+      }
+      .annotation .num {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .annotation .body {
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .annotation .body strong {
+        color: var(--label);
+      }
+      .annotation code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .bind,
+      .oq {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+      }
+      .bind {
+        color: var(--tertiary-label);
+      }
+      .oq {
+        color: var(--warning);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ============================================================
+         PAGE-SPECIFIC CSS. Everything above is the shared preamble.
+         ============================================================ -->
+    <style>
+      :root {
+        /* In prod this is set by the real MarketingHeader; PageShell reads it
+           as calc(var(--global-header-height) + 24px). Declared here so the
+           mockup's spacing rhythm matches. */
+        --global-header-height: 55px;
+        --chip-selected-ring: rgba(167, 139, 250, 0.45);
+        --card-hover: #2c2143;
+      }
+
+      /* ---- page frame (the future PageShell, width="wide") ---- */
+      .page-shell {
+        padding-top: 24px;
+        padding-bottom: 8px;
+      }
+      .view-sep {
+        margin: 72px 0 0;
+        border-top: 1px dashed var(--separator);
+        padding-top: 28px;
+      }
+      .view-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+      .view-label .what {
+        font-size: 13px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- breadcrumbs ---- */
+      .breadcrumbs {
+        font-size: 14px;
+        color: var(--secondary-label);
+        margin-bottom: 14px;
+      }
+      .breadcrumbs a {
+        text-decoration: none;
+      }
+      .breadcrumbs a:hover {
+        text-decoration: underline;
+      }
+      .breadcrumbs .sep {
+        margin: 0 7px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- SEO header block ---- */
+      .seo-header h1 {
+        max-width: 22ch;
+      }
+      .seo-header p {
+        margin-top: 14px;
+        color: var(--secondary-label);
+        font-size: 17px;
+      }
+      .seo-header p + p {
+        margin-top: 10px;
+        font-size: 16px;
+      }
+
+      /* ---- search row ---- */
+      .search-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 26px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .search-field {
+        flex: 1 1 300px;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-btn);
+        padding: 0 14px;
+        min-height: 44px;
+        color: var(--tertiary-label);
+        font-size: 16px;
+      }
+      .search-field.focused {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px var(--chip-selected-ring);
+        color: var(--label);
+      }
+      .search-field .glyph {
+        flex-shrink: 0;
+        color: var(--secondary-label);
+      }
+      .geo-hint {
+        flex-basis: 100%;
+        font-size: 13px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- facet chips ---- */
+      .facet-block {
+        margin-top: 24px;
+      }
+      .facet-block h2 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--secondary-label);
+        letter-spacing: 0.01em;
+        margin-bottom: 10px;
+      }
+      .facet-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 36px;
+        padding: 0 15px;
+        border-radius: var(--radius-full);
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        color: var(--label);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .chip:hover {
+        border-color: var(--primary);
+        background: var(--surface-2);
+      }
+      .chip .count {
+        color: var(--tertiary-label);
+        font-weight: 400;
+      }
+      .chip.selected {
+        background: var(--surface-2);
+        border-color: var(--primary);
+        color: var(--primary);
+        box-shadow: 0 0 0 3px var(--chip-selected-ring);
+      }
+      .chip.selected .count {
+        color: var(--primary);
+        opacity: 0.85;
+      }
+      .count-hint {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- results meta ---- */
+      .results-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 28px 0 14px;
+        flex-wrap: wrap;
+      }
+      .results-meta h2 {
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .near-me-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .radius-group {
+        display: inline-flex;
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-btn);
+        overflow: hidden;
+      }
+      .radius-group span {
+        padding: 8px 12px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--secondary-label);
+        border-right: 1px solid var(--separator);
+      }
+      .radius-group span:last-child {
+        border-right: none;
+      }
+      .radius-group span.on {
+        background: var(--surface-2);
+        color: var(--primary);
+      }
+
+      /* ---- directory layout: list + map column ---- */
+      .directory-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      @media (min-width: 960px) {
+        .directory-grid {
+          grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+        }
+        .map-col {
+          position: sticky;
+          top: calc(var(--global-header-height) + 16px);
+        }
+        .map-toggle {
+          display: none;
+        }
+      }
+      @media (max-width: 959.98px) {
+        .map-col {
+          order: -1;
+        }
+      }
+      .map-toggle {
+        width: 100%;
+        margin-bottom: 12px;
+      }
+
+      .gym-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+        list-style: none;
+      }
+      @media (min-width: 560px) {
+        .gym-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      /* ---- gym card: FILLED, not a bare outline ---- */
+      .gym-card {
+        padding: 16px 18px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .gym-card:hover {
+        background: var(--card-hover);
+        border-color: var(--primary);
+      }
+      .gym-card .card-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .gym-card h3 {
+        flex: 1;
+        min-width: 0;
+        font-size: 17px;
+      }
+      .gym-card h3 a {
+        text-decoration: none;
+      }
+      .gym-card h3 a:hover {
+        text-decoration: underline;
+      }
+      .badge-claimed {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(52, 211, 153, 0.14);
+        border: 1px solid rgba(52, 211, 153, 0.35);
+        color: var(--success);
+        border-radius: var(--radius-full);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        padding: 3px 9px;
+      }
+      .meta-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .meta-line .glyph {
+        flex-shrink: 0;
+        color: var(--tertiary-label);
+      }
+      .meta-line.muted {
+        color: var(--tertiary-label);
+        font-style: italic;
+      }
+      .board-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 2px;
+      }
+      .board-chip {
+        display: inline-flex;
+        align-items: center;
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        color: var(--label);
+        border-radius: var(--radius-full);
+        font-size: 12.5px;
+        font-weight: 600;
+        padding: 4px 11px;
+      }
+      .board-chip .angle {
+        font-weight: 400;
+        color: var(--secondary-label);
+        margin-left: 4px;
+      }
+      .claim-link {
+        margin-top: 2px;
+        font-size: 13.5px;
+      }
+      .claim-link a {
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .claim-link a:hover {
+        text-decoration: underline;
+      }
+
+      /* ---- map panel on a DARK tile ---- */
+      .map-box {
+        position: relative;
+        height: 340px;
+        border-radius: var(--radius-card);
+        border: 1px solid var(--separator);
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(167, 139, 250, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(167, 139, 250, 0.06) 1px, transparent 1px),
+          linear-gradient(160deg, #1b1533, #14102a 60%, #181232);
+        background-size:
+          38px 38px,
+          38px 38px,
+          100% 100%;
+      }
+      @media (min-width: 960px) {
+        .map-box {
+          height: 420px;
+        }
+      }
+      .map-road {
+        position: absolute;
+        background: rgba(185, 170, 215, 0.1);
+      }
+      .map-water {
+        position: absolute;
+        background: rgba(124, 58, 237, 0.13);
+        border-radius: 40% 60% 55% 45%;
+      }
+      .map-tile-note {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        font-size: 11px;
+        color: var(--tertiary-label);
+        background: rgba(6, 3, 16, 0.72);
+        border: 1px solid var(--separator);
+        border-radius: 6px;
+        padding: 4px 8px;
+      }
+      /* Marker + cluster: the ring is the map GROUND, never #fff. */
+      .map-pin {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--primary);
+        border: 3px solid var(--bg);
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+        transform: translate(-50%, -50%);
+      }
+      .map-cluster {
+        position: absolute;
+        min-width: 32px;
+        height: 32px;
+        padding: 0 8px;
+        border-radius: var(--radius-full);
+        background: var(--primary);
+        color: var(--on-accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        border: 2px solid var(--bg);
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+        transform: translate(-50%, -50%);
+      }
+      .map-popup {
+        position: absolute;
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        min-width: 180px;
+      }
+      .map-popup a {
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .map-popup .pop-chips {
+        margin-top: 5px;
+        color: var(--secondary-label);
+        font-size: 12px;
+      }
+      .map-pill {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        max-width: calc(100% - 20px);
+        background: rgba(6, 3, 16, 0.86);
+        border: 1px solid var(--separator);
+        color: var(--label);
+        border-radius: var(--radius-full);
+        font-size: 12px;
+        padding: 6px 12px;
+      }
+      .map-attrib {
+        position: absolute;
+        bottom: 0;
+        right: 0;
+        background: rgba(6, 3, 16, 0.8);
+        color: var(--tertiary-label);
+        font-size: 10px;
+        padding: 3px 6px;
+        border-top-left-radius: 6px;
+      }
+      .map-zoom {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--separator);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .map-zoom span {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface);
+        color: var(--label);
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .map-zoom span:first-child {
+        border-bottom: 1px solid var(--separator);
+      }
+
+      /* ---- marker spec bench ---- */
+      .marker-bench {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        margin-top: 14px;
+      }
+      @media (min-width: 640px) {
+        .marker-bench {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      .marker-spec {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--separator);
+        background: linear-gradient(160deg, #1b1533, #14102a);
+      }
+      .marker-spec .swatch {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        flex-shrink: 0;
+      }
+      .marker-spec .swatch > * {
+        top: 50%;
+        left: 50%;
+      }
+      .marker-spec .txt {
+        font-size: 12.5px;
+        color: var(--secondary-label);
+      }
+      .marker-spec .txt b {
+        display: block;
+        color: var(--label);
+        font-size: 13px;
+      }
+      .marker-spec.rejected {
+        border-style: dashed;
+        border-color: var(--error);
+      }
+      .pin-white {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #7c3aed;
+        border: 3px solid #fff;
+        transform: translate(-50%, -50%);
+      }
+
+      /* ---- pagination ---- */
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 28px 0 4px;
+        flex-wrap: wrap;
+      }
+      .page-link {
+        min-width: 40px;
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 12px;
+        border-radius: var(--radius-btn);
+        border: 1px solid var(--separator);
+        background: var(--surface);
+        color: var(--label);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .page-link:hover {
+        border-color: var(--primary);
+        background: var(--surface-2);
+      }
+      .page-link.current {
+        background: var(--surface-2);
+        border-color: var(--primary);
+        color: var(--primary);
+      }
+      .page-link.disabled {
+        color: var(--tertiary-label);
+        pointer-events: none;
+        background: transparent;
+      }
+      .page-ellipsis {
+        color: var(--tertiary-label);
+        padding: 0 4px;
+      }
+
+      /* ---- state demo blocks ---- */
+      .demo-block {
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-card);
+        padding: 16px;
+        margin-top: 18px;
+        background: rgba(37, 27, 58, 0.35);
+      }
+      .demo-title {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--secondary-label);
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+      }
+      .state-panel {
+        text-align: center;
+        padding: 40px 24px;
+      }
+      .state-panel .glyph-big {
+        width: 52px;
+        height: 52px;
+        border-radius: var(--radius-full);
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 14px;
+        color: var(--primary);
+      }
+      .state-panel h3 {
+        font-size: 19px;
+      }
+      .state-panel p {
+        color: var(--secondary-label);
+        font-size: 15px;
+        margin: 8px auto 18px;
+        max-width: 46ch;
+      }
+      .state-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .state-panel.error .glyph-big {
+        color: var(--warning);
+        border-color: rgba(251, 191, 36, 0.4);
+      }
+      .keeps-h1 {
+        text-align: left;
+        border-bottom: 1px solid var(--separator);
+        padding-bottom: 14px;
+        margin-bottom: 20px;
+      }
+      .keeps-h1 h2 {
+        font-size: 26px;
+      }
+
+      /* ---- more ways to browse ---- */
+      .more-ways {
+        margin-top: 44px;
+      }
+      .more-ways h2 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--secondary-label);
+        margin-bottom: 10px;
+      }
+      .more-ways ul {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .more-ways a {
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .more-ways a:hover {
+        text-decoration: underline;
+      }
+
+      /* ---- gym detail ---- */
+      .gym-hero {
+        display: flex;
+        gap: 18px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        margin-top: 4px;
+      }
+      .gym-logo {
+        width: 72px;
+        height: 72px;
+        border-radius: 14px;
+        flex-shrink: 0;
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 22px;
+      }
+      .gym-hero .hero-text {
+        flex: 1 1 260px;
+        min-width: 0;
+      }
+      .gym-hero h1 {
+        font-size: 34px;
+      }
+      @media (max-width: 600px) {
+        .gym-hero h1 {
+          font-size: 27px;
+        }
+      }
+      .hero-badges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .stat-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      .stat-chip {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-full);
+        padding: 7px 14px;
+        font-size: 13px;
+        color: var(--secondary-label);
+      }
+      .stat-chip b {
+        color: var(--label);
+        font-size: 15px;
+      }
+      .cta-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+      }
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin: 36px 0 14px;
+        padding-top: 22px;
+        border-top: 1px solid var(--separator);
+        flex-wrap: wrap;
+      }
+      .section-head h2 {
+        font-size: 21px;
+      }
+      .section-head .count {
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .board-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        list-style: none;
+      }
+      @media (min-width: 620px) {
+        .board-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      .board-card {
+        padding: 16px 18px;
+        display: flex;
+        gap: 14px;
+        align-items: center;
+      }
+      .board-card:hover {
+        border-color: var(--primary);
+        background: var(--card-hover);
+      }
+      .board-card .thumb {
+        width: 52px;
+        height: 62px;
+        flex-shrink: 0;
+        border-radius: 8px;
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        position: relative;
+        overflow: hidden;
+      }
+      .board-card .thumb::after {
+        content: '';
+        position: absolute;
+        inset: 8px;
+        border-radius: 4px;
+        background:
+          radial-gradient(circle at 30% 25%, var(--primary) 0 2px, transparent 2px),
+          radial-gradient(circle at 70% 45%, var(--accent) 0 2px, transparent 2px),
+          radial-gradient(circle at 40% 72%, var(--primary) 0 2px, transparent 2px);
+      }
+      .board-card .board-name {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .board-card .board-name a {
+        text-decoration: none;
+      }
+      .board-card .board-name a:hover {
+        text-decoration: underline;
+      }
+      .board-card .board-sub {
+        font-size: 13.5px;
+        color: var(--secondary-label);
+        margin-top: 3px;
+      }
+
+      /* ---- footer ---- */
+      .page-footer {
+        margin-top: 52px;
+        border-top: 1px solid var(--separator);
+        padding: 26px 0 8px;
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .footer-links {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .footer-links a {
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .footer-links a:hover {
+        text-decoration: underline;
+      }
+      .trademark-line {
+        font-size: 13px;
+        color: var(--tertiary-label);
+        max-width: 72ch;
+      }
+    </style>
+
+    <div class="wf-banner">
+      <strong>WIREFRAME</strong> — <code>/gyms/*</code> directory + <code>/gym/[slug]</code> detail, ported to the dark
+      Velvet Send palette. Not production UI. <strong>Every gym name, address, distance and count below is a fictional
+      demo value.</strong> Violet markers link to the
+      <a href="#notes">design notes</a> at the bottom.
+    </div>
+
+    <!-- The ONE global header. There is no second in-page bar. -->
+    <header class="global-header">
+      <div class="container">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <span class="brand-name">Boardsesh</span>
+        <nav>
+          <a href="/gyms">Gyms</a>
+          <a href="/playlists">Playlists</a>
+          <a href="/about">About</a>
+        </nav>
+        <div class="header-right">
+          <a class="btn btn-outlined" href="/auth" style="min-height: 36px; font-size: 14px">Sign in</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- ==========================================================
+         VIEW A — THE DIRECTORY (/gyms/kilter as the worked example)
+         ========================================================== -->
+    <main class="container page-shell">
+      <div class="view-label">
+        <span class="wf-tag">View A — Directory</span>
+        <span class="what"><code>/gyms/kilter</code> · same renderer as <code>/gyms</code>, <code>/gyms/tension</code>,
+          <code>/gyms/moonboard</code></span>
+        <a class="note-ref" href="#note-1">1</a>
+      </div>
+
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span><span
+          aria-current="page"
+          >Kilter</span
+        >
+        <a class="note-ref" href="#note-2">2</a>
+      </nav>
+
+      <section class="seo-header">
+        <h1>Gyms with a Kilter board <a class="note-ref" href="#note-2">2</a></h1>
+        <p>
+          1,786 gyms on Boardsesh have a Kilter board on the wall. Every listing shows the angle it is set at, so you
+          can tell which one matches the project you are on.
+        </p>
+        <p>
+          Climbers list these gyms themselves, and Boardsesh is not affiliated with the people who make the boards. Run
+          one of these walls? Claim the listing and keep the details straight.
+        </p>
+      </section>
+
+      <!-- Search: plain method="get" form. Works before hydration. -->
+      <form class="search-row" role="search" onsubmit="return false">
+        <label class="search-field focused" for="gym-q">
+          <svg
+            class="glyph"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.6-3.6" />
+          </svg>
+          <span id="gym-q">Gym name or town</span>
+        </label>
+        <a class="note-ref" href="#note-5" style="align-self: center">5</a>
+        <button class="btn btn-filled" type="button">Search</button>
+        <button class="btn btn-outlined" type="button">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="8" />
+            <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+            <path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" />
+          </svg>
+          Use my location
+        </button>
+        <a class="note-ref" href="#note-6" style="align-self: center">6</a>
+        <p class="geo-hint">
+          Location off? Type a town instead — same results, no permission prompt.
+        </p>
+      </form>
+
+      <!-- Facet chips: --separator borders, one clearly selected. -->
+      <section class="facet-block">
+        <h2>Browse by board <a class="note-ref" href="#note-4">4</a></h2>
+        <div class="facet-row">
+          <a class="chip" href="/gyms">All gyms <span class="count">· 4,740</span></a>
+          <a class="chip selected" href="/gyms/kilter" aria-current="page">Kilter <span class="count">· 1,786</span></a>
+          <a class="chip" href="/gyms/moonboard">MoonBoard <span class="count">· 2,586</span></a>
+          <a class="chip" href="/gyms/tension">Tension <span class="count">· 465</span></a>
+        </div>
+        <p class="count-hint">The numbers count gyms, not boards: a gym with three Kilter walls counts once.</p>
+      </section>
+
+      <div class="results-meta">
+        <h2>1,786 gyms</h2>
+        <div class="near-me-controls">
+          <span style="font-size: 13px; color: var(--secondary-label)">Within</span>
+          <div class="radius-group" role="group" aria-label="Search radius">
+            <span>10 km</span><span class="on">25 km</span><span>50 km</span><span>100 km</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="directory-grid">
+        <!-- ---------------- LIST (primary surface) ---------------- -->
+        <div>
+          <button class="btn btn-outlined map-toggle" id="mapToggle" type="button" aria-expanded="true">
+            Hide map
+          </button>
+
+          <ul class="gym-grid">
+            <!-- Claimed, address + distance -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3><a href="/gym/crimp-city-boulders">Crimp City Boulders</a> <a class="note-ref" href="#note-3">3</a></h3>
+                <span class="badge-claimed">✓ Claimed <a class="note-ref" href="#note-10" style="background: var(--success); color: var(--on-accent)">10</a></span>
+              </div>
+              <p class="meta-line">
+                <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                14 Crux Lane, Fakeston
+              </p>
+              <p class="meta-line">
+                <svg
+                  class="glyph"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M3 11 21 3l-8 18-2-7-8-3Z" />
+                </svg>
+                1.2 km away
+              </p>
+              <div class="board-row"><span class="board-chip">Kilter <span class="angle">40°</span></span></div>
+            </li>
+
+            <!-- Unclaimed, pin only (distance takes the location line) -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3><a href="/gym/the-plywood-palace">The Plywood Palace</a></h3>
+              </div>
+              <p class="meta-line">
+                <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                3.4 km away
+              </p>
+              <div class="board-row"><span class="board-chip">Kilter <span class="angle">45°</span></span></div>
+              <p class="claim-link"><a href="/gym/the-plywood-palace?claim=1">Is this your gym?</a></p>
+            </li>
+
+            <!-- Unclaimed, multi-board -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3><a href="/gym/static-point-training-co">Static Point Training Co.</a></h3>
+              </div>
+              <p class="meta-line">
+                <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                8 Beta Street, Fakeston
+              </p>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">45°</span></span>
+                <span class="board-chip">Tension <span class="angle">30°</span></span>
+                <span class="board-chip">MoonBoard <span class="angle">25°</span></span>
+              </div>
+              <p class="claim-link"><a href="/gym/static-point-training-co?claim=1">Is this your gym?</a></p>
+            </li>
+
+            <!-- Unclaimed, NO pin and NO address: the location line is simply absent -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3>
+                  <a href="/gym/fictional-state-university-wall">Fictional State University Wall</a>
+                  <a class="note-ref" href="#note-9">9</a>
+                </h3>
+              </div>
+              <div class="board-row"><span class="board-chip">Kilter <span class="angle">40°</span></span></div>
+              <p class="claim-link"><a href="/gym/fictional-state-university-wall?claim=1">Is this your gym?</a></p>
+            </li>
+
+            <!-- Claimed, second example -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3><a href="/gym/gastons-garage">Gaston&rsquo;s Garage</a></h3>
+                <span class="badge-claimed">✓ Claimed</span>
+              </div>
+              <p class="meta-line">
+                <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                61 Heel Hook Way, Fakeston
+              </p>
+              <p class="meta-line">
+                <svg
+                  class="glyph"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M3 11 21 3l-8 18-2-7-8-3Z" />
+                </svg>
+                8.9 km away
+              </p>
+              <div class="board-row"><span class="board-chip">Kilter <span class="angle">20°</span></span></div>
+            </li>
+
+            <!-- Unclaimed, pin only -->
+            <li class="card gym-card">
+              <div class="card-head">
+                <h3><a href="/gym/sloper-station">Sloper Station</a></h3>
+              </div>
+              <p class="meta-line">
+                <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                12 km away
+              </p>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">40°</span></span>
+                <span class="board-chip">Kilter <span class="angle">55°</span></span>
+              </div>
+              <p class="claim-link"><a href="/gym/sloper-station?claim=1">Is this your gym?</a></p>
+            </li>
+          </ul>
+
+          <nav class="pagination" aria-label="Directory pages">
+            <span class="page-link disabled">‹ Previous</span>
+            <span class="page-link current" aria-current="page">1</span>
+            <a class="page-link" href="/gyms/kilter?page=2">2</a>
+            <a class="page-link" href="/gyms/kilter?page=3">3</a>
+            <span class="page-ellipsis">…</span>
+            <a class="page-link" href="/gyms/kilter?page=40">40</a>
+            <a class="page-link" href="/gyms/kilter?page=2">Next ›</a>
+            <a class="note-ref" href="#note-11">11</a>
+          </nav>
+        </div>
+
+        <!-- ---------------- MAP (secondary surface) ---------------- -->
+        <aside class="map-col" id="mapPanel" aria-label="Map of the gyms in this list">
+          <div class="map-box">
+            <span class="map-tile-note">Leaflet + dark OSM tiles <a class="note-ref" href="#note-8">8</a></span>
+            <span class="map-water" style="top: 8%; left: -8%; width: 46%; height: 34%"></span>
+            <span class="map-road" style="top: 0; left: 36%; width: 2px; height: 100%"></span>
+            <span class="map-road" style="top: 52%; left: 0; width: 100%; height: 2px"></span>
+            <span class="map-road" style="top: 18%; left: 0; width: 100%; height: 1px"></span>
+            <span class="map-road" style="top: 0; left: 74%; width: 1px; height: 100%"></span>
+
+            <span class="map-pin" style="top: 30%; left: 22%"></span>
+            <span class="map-pin" style="top: 44%; left: 52%"></span>
+            <span class="map-pin" style="top: 72%; left: 34%"></span>
+            <span class="map-pin" style="top: 80%; left: 64%"></span>
+            <span class="map-cluster" style="top: 26%; left: 70%">12</span>
+            <span class="map-cluster" style="top: 62%; left: 14%">5</span>
+
+            <div class="map-popup" style="top: 40%; left: 40%">
+              <a href="/gym/crimp-city-boulders">Crimp City Boulders</a>
+              <div class="pop-chips">Kilter 40° · Tension 30°</div>
+            </div>
+
+            <div class="map-zoom" aria-hidden="true"><span>+</span><span>−</span></div>
+            <span class="map-pill">18 of 24 gyms here have a map pin</span>
+            <span class="map-attrib">© OpenStreetMap contributors</span>
+          </div>
+
+          <!-- Marker spec bench: the one place the style-prop ban cannot apply. -->
+          <div class="marker-bench">
+            <div class="marker-spec">
+              <div class="swatch"><span class="map-pin"></span></div>
+              <div class="txt">
+                <b>Single pin <a class="note-ref" href="#note-7">7</a></b>
+                16px <code>--primary</code> core, 3px <code>--semantic-background</code> ring.
+              </div>
+            </div>
+            <div class="marker-spec">
+              <div class="swatch"><span class="map-cluster">12</span></div>
+              <div class="txt">
+                <b>Cluster</b>
+                <code>--primary</code> fill, dark ink label, 2px ground ring.
+              </div>
+            </div>
+            <div class="marker-spec rejected">
+              <div class="swatch"><span class="pin-white"></span></div>
+              <div class="txt">
+                <b style="color: var(--error)">Shipping today — replace</b>
+                <code>#fff</code> ring on <code>--color-primary-fill</code>: halos on a dark tile and is a literal hex.
+              </div>
+            </div>
+            <div class="marker-spec">
+              <div class="swatch">
+                <span class="map-pin" style="background: var(--tertiary-label); border-color: var(--bg)"></span>
+              </div>
+              <div class="txt">
+                <b>Not a state</b>
+                No pin exists for a gym with no coordinates — it stays in the list, never on the map.
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ---------------- STATE DEMOS ---------------- -->
+      <section style="margin-top: 44px">
+        <h2 style="font-size: 20px">Result states</h2>
+        <p style="color: var(--secondary-label); font-size: 14px; margin-top: 4px">
+          Both branches exist in <code>directory-page.tsx</code> today and neither has been designed. They render inline
+          here; in production each replaces the region above.
+        </p>
+
+        <div class="demo-block">
+          <div class="demo-title">
+            <span class="wf-tag">State — Empty</span> 0 results, page 1. A legitimate 200, not a 404.
+            <a class="note-ref" href="#note-12">12</a>
+          </div>
+          <div class="card state-panel">
+            <div class="glyph-big" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.6-3.6" />
+              </svg>
+            </div>
+            <h3>Nothing matches that yet</h3>
+            <p>Try a shorter search, or drop the board filter and browse every gym.</p>
+            <div class="state-actions">
+              <a class="btn btn-outlined" href="/gyms/kilter">Clear the search</a>
+              <a class="btn btn-filled" href="/gyms">Browse every gym</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-block">
+          <div class="demo-title">
+            <span class="wf-tag">State — Error</span> Either fetch failed. The
+            <code>h1</code> survives; the body copy that quotes counts does not.
+            <a class="note-ref" href="#note-13">13</a>
+          </div>
+          <div class="keeps-h1">
+            <h2>Gyms with a Kilter board</h2>
+          </div>
+          <div class="card state-panel error">
+            <div class="glyph-big" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 3 2 20h20L12 3Z" />
+                <path d="M12 10v4M12 17v.5" />
+              </svg>
+            </div>
+            <h3>We can&rsquo;t reach the gym list right now</h3>
+            <p>
+              Something on our end is down. Give it a minute and reload, or head to a gym page you already know.
+            </p>
+            <div class="state-actions">
+              <button class="btn btn-filled" type="button">Reload</button>
+              <a class="btn btn-outlined" href="/">Back to Boardsesh</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="more-ways">
+        <h2>More ways to browse</h2>
+        <ul>
+          <li><a href="/gyms">Every gym on Boardsesh</a></li>
+          <li><a href="/gyms/moonboard">Gyms with a MoonBoard</a></li>
+          <li><a href="/gyms/tension">Gyms with a Tension board</a></li>
+        </ul>
+      </section>
+
+      <!-- ==========================================================
+           VIEW B — THE GYM DETAIL PAGE (/gym/[gym_slug])
+           ========================================================== -->
+      <section class="view-sep">
+        <div class="view-label">
+          <span class="wf-tag">View B — Gym detail</span>
+          <span class="what"><code>/gym/crimp-city-boulders</code> · <code>width="prose"</code>, one column</span>
+        </div>
+
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span><span
+            aria-current="page"
+            >Crimp City Boulders</span
+          >
+          <a class="note-ref" href="#note-14">14</a>
+        </nav>
+
+        <div style="max-width: 800px">
+          <div class="img-slot" style="aspect-ratio: 16 / 9; margin-bottom: 20px">
+            Owner-uploaded wall shot (real photo only — never generated).<br />
+            Gyms without one render nothing here: no placeholder art, no ranking penalty.
+          </div>
+
+          <div class="gym-hero">
+            <div class="gym-logo" aria-hidden="true">CC</div>
+            <div class="hero-text">
+              <h1>Crimp City Boulders</h1>
+              <p class="meta-line" style="margin-top: 8px; font-size: 15px">
+                <svg class="glyph" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"
+                  />
+                </svg>
+                14 Crux Lane, Fakeston
+              </p>
+              <div class="hero-badges">
+                <span class="badge-claimed">✓ Claimed</span>
+                <span class="board-chip">Kilter <span class="angle">40°</span></span>
+                <span class="board-chip">Tension <span class="angle">30°</span></span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin-top: 20px; color: var(--secondary-label)">
+            Bouldering co-op with a fresh-set Kilter corner and Friday night sessions. Day passes at the desk, and the
+            boards stay on until close.
+            <a class="note-ref" href="#note-15">15</a>
+          </p>
+
+          <div class="stat-row">
+            <span class="stat-chip"><b>3</b> boards</span>
+            <span class="stat-chip"><b>148</b> members</span>
+            <span class="stat-chip"><b>612</b> followers</span>
+            <span class="stat-chip"><b>27</b> comments</span>
+          </div>
+
+          <div class="cta-row">
+            <button class="btn btn-filled" type="button">Follow this gym</button>
+            <a class="btn btn-outlined" href="/kiosk/crimp-city-boulders">See it on the wall</a>
+            <a class="btn btn-outlined" href="https://example.invalid">Visit website</a>
+          </div>
+
+          <div class="section-head">
+            <h2>Boards on the wall</h2>
+            <span class="count">3 boards</span>
+          </div>
+
+          <ul class="board-grid">
+            <li class="card board-card">
+              <div class="thumb" aria-hidden="true"></div>
+              <div>
+                <p class="board-name"><a href="/b/crimp-city-kilter-home">Kilter Home 12&nbsp;×&nbsp;12</a></p>
+                <p class="board-sub">40° · Original + Bolt-on holds</p>
+              </div>
+            </li>
+            <li class="card board-card">
+              <div class="thumb" aria-hidden="true"></div>
+              <div>
+                <p class="board-name"><a href="/b/crimp-city-tension2">Tension 2 · 8&nbsp;×&nbsp;12</a></p>
+                <p class="board-sub">30° · Spray-free, mirrored</p>
+              </div>
+            </li>
+            <li class="card board-card">
+              <div class="thumb" aria-hidden="true"></div>
+              <div>
+                <p class="board-name"><a href="/b/crimp-city-moonboard-2019">MoonBoard 2019</a></p>
+                <p class="board-sub">40° · Masters set</p>
+              </div>
+            </li>
+          </ul>
+
+          <div class="section-head">
+            <h2>Spray walls</h2>
+            <span class="count">1 wall</span>
+          </div>
+          <ul class="board-grid">
+            <li class="card board-card">
+              <div class="thumb" aria-hidden="true"></div>
+              <div>
+                <p class="board-name"><a href="/b/crimp-city-cave">The Cave</a></p>
+                <p class="board-sub">184 holds · public</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        <div class="footer-links">
+          <a href="/gyms">Find a gym</a>
+          <a href="/playlists">Build a playlist</a>
+          <a href="/about">About Boardsesh</a>
+          <a href="/legal">Legal</a>
+        </div>
+        <p class="trademark-line">
+          Kilter, Tension, MoonBoard and other board names are trademarks of their respective owners. Boardsesh works
+          with these boards and is not affiliated with or endorsed by any board manufacturer.
+          <a class="note-ref" href="#note-16">16</a>
+        </p>
+      </footer>
+    </main>
+
+    <!-- ==========================================================
+         DESIGN NOTES
+         ========================================================== -->
+    <section class="notes" id="notes">
+      <div class="container">
+        <h2>Design notes</h2>
+        <p class="intro">
+          What each region is, the file or test it binds to, and what is still open. Notes carried forward from
+          <code>docs/design/web-reposition/gyms-directory.html</code> keep their original rationale; the dark-palette
+          notes are new. The information architecture is settled — this pass is palette, surface and the two states
+          nobody drew.
+        </p>
+
+        <div class="annotation" id="note-1">
+          <span class="num">1</span>
+          <div class="body">
+            <strong>One header, one frame, one breadcrumb trail.</strong> The page sits directly under the single global
+            header bar; there is no second in-page bar and no in-page back arrow. The planned <code>PageShell</code>
+            primitive (<code>title</code>, <code>lead</code>, <code>breadcrumb</code>, <code>width</code>) owns the
+            frame and the <code>calc(var(--global-header-height) + 24px)</code> top padding. The directory takes
+            <code>width="wide"</code>; the gym page takes <code>width="prose"</code>. Breadcrumbs are real
+            <code>&lt;a href&gt;</code> anchors rendered with <code>LocaleLink</code> — so a
+            <code>/de/gyms/kilter</code> visitor stays in German — and emit <code>BreadcrumbList</code> JSON-LD. Never
+            <code>router.push</code> on a <code>&lt;div&gt;</code>. Three levels also gives the page its first two
+            internal links before any result renders.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/directory-page.tsx</code> (<code>Container maxWidth="lg"</code> +
+              <code>pt: 'calc(var(--global-header-height) + 32px)'</code>, repeated in the error branch); the same
+              literal in <code>packages/web/app/gym/[gym_slug]/page.tsx</code>; <code>@/app/components/i18n/locale-link</code>. The directory renders no breadcrumb at all today — that markup is net-new, not a restyle.</span
+            >
+            <span class="oq"
+              >Open: PageShell drops the padding to 24px where both routes hardcode 32px — pick one before the shell
+              lands, or every ported page shifts 8px.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-2">
+          <span class="num">2</span>
+          <div class="body">
+            <strong>One <code>h1</code>, and it is load-bearing.</strong> The heading comes from
+            <code>facetHeading(t, facet)</code> and is the only 40px thing on the page. A test asserts it survives even
+            when the data fetch fails, so no refactor may make the heading conditional on results. Lead and detail
+            paragraphs are server-rendered with live counts, capped at the prose measure.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/directory-copy.ts</code> (<code>facetHeading</code>,
+              <code>facetLead</code>, <code>facetDetail</code>);
+              <code>packages/web/app/gyms/__tests__/directory-page.test.tsx:146</code>.</span
+            >
+            <span class="oq"
+              ><strong>Mandatory open question — indexing.</strong> All four routes are
+              <code>robots: { index: false, follow: true }</code> via <code>createNoIndexMetadata</code>. The doc comment
+              in <code>directory-page.tsx</code> ties lifting that to the duplicate-gym dedup queue and the gyms sitemap
+              shard (#4372 / #4381), <em>not</em> to visual quality — indexed duplicates outlive their merges in
+              Google's cache. Design the page as the search surface it is meant to become, but a visual overhaul is the
+              wrong PR to flip indexing in. Removing the noindex stays a one-line change, made on its own, after the
+              queue drains.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-3">
+          <span class="num">3</span>
+          <div class="body">
+            <strong>Cards get a fill. This is the single biggest dark-mode fix.</strong>
+            <code>GymDirectoryCard</code> renders a bare <code>1px solid var(--neutral-200)</code> outline with no
+            background. On the pale light page that read fine; on <code>#110A20</code> a 1px outline is nearly invisible
+            and the grid stops reading as a grid. Give every card the <code>.card</code> treatment —
+            <code>--surface</code> fill, <code>--separator</code> hairline, 12px radius — so the fill does the work and
+            the border only finishes the edge. Hover raises to <code>--surface-2</code>.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-card.tsx</code> (the
+              <code>Box component="li"</code> sx block).</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-4">
+          <span class="num">4</span>
+          <div class="body">
+            <strong>Facet chips need a border and a real selected state.</strong> They are outlined MUI
+            <code>Chip</code>s today; on dark an outlined chip with default borders disappears into the ground and the
+            whole filter row goes missing. Unselected: <code>--surface</code> fill, <code>--separator</code> border,
+            <code>--label</code> text. Selected: <code>--surface-2</code> fill, <code>--primary</code> border and label,
+            plus a soft violet ring — the state has to survive being the only styled thing in a row of four. Counts are
+            gyms, never boards, and the hint line says so.
+            <span class="bind"
+              >Binds: <code>directory-page.tsx</code> facet <code>Chip</code> block;
+              <code>facetChipLabel</code> in <code>directory-copy.ts</code>; <code>gyms.facets.countHint</code>.</span
+            >
+            <span class="oq"
+              >Open: only four facets exist (<code>all</code>, <code>kilter</code>, <code>moonboard</code>,
+              <code>tension</code>). Grasshopper, Decoy and the rest of the long tail reach
+              <code>/gyms?boardType=…</code> with no page of their own and no chip — decide whether they get chips that
+              canonicalise back to <code>/gyms</code>, or stay unlisted.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-5">
+          <span class="num">5</span>
+          <div class="body">
+            <strong>Search input sits on <code>--surface-2</code>.</strong> Dark inputs use the elevated dark surface
+            (<code>#2F234A</code>) with a violet <code>#A78BFA</code> focus ring — never a forced white field. The form
+            is a plain <code>method="get"</code> with no JavaScript, so it works before hydration and the result is a
+            shareable URL; the analytics island reads the <em>result</em> of that navigation so
+            <code>resultsCount</code> is real rather than guessed at submit time.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-search-form.tsx</code>;
+              <code>--input-*</code> vars in <code>packages/web/app/components/index.css</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-6">
+          <span class="num">6</span>
+          <div class="body">
+            <strong>"Use my location" is opt-in, and it hides gyms.</strong> Both proximity paths hard-filter
+            <code>location IS NOT NULL</code>, so switching to near-me silently drops roughly a third of the catalog.
+            It carries the pinless notice, the radius group (10/25/50/100 km), and a one-tap "Show all gyms" back out.
+            Denial or no support falls back to typing a town — the hint line makes that discoverable without a
+            permission prompt. No <code>?lat</code>/<code>?lng</code> in the URL: a shareable link should not carry
+            somebody's position.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-near-me.tsx</code>;
+              <code>gyms.nearMe.pinlessNotice</code>, <code>nearMe.deniedBody</code>,
+              <code>nearMe.unsupportedBody</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-7">
+          <span class="num">7</span>
+          <div class="body">
+            <strong>Map markers hardcode <code>#fff</code> — and this is the one place the
+            <code>style</code>-prop ban cannot apply.</strong>
+            Leaflet's <code>divIcon</code> takes an HTML <em>string</em>, so the markup is built with inline
+            <code>style=</code> attributes by construction; there is no MUI component to reach for. What the rule still
+            demands is that no literal hex survive: the strings already interpolate
+            <code>var(--color-primary-fill)</code>, and the <code>#fff</code> rings and
+            <code>rgba(0,0,0,0.4)</code> shadows must become vars the same way. On a dark tile the ring should be the
+            map ground (<code>--semantic-background</code>), not white — a white ring halos. Pin:
+            <code>--primary</code> core, 3px ground ring. Cluster: <code>--primary</code> fill with dark ink, 2px ground
+            ring, so it reads as a Boardsesh chip rather than a foreign map control.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-map.tsx:210</code> (cluster divIcon) and
+              <code>:227</code> (single-pin divIcon); the popup anchor string just below.</span
+            >
+            <span class="oq"
+              >Open: OSM's standard raster tiles are light. A dark-styled marker set on a light tile is worse than what
+              ships today, so the marker change and a dark tile source have to land together — or the markers stay
+              tuned for the light tile and only the hex literals get tokenised.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-8">
+          <span class="num">8</span>
+          <div class="body">
+            <strong>The map is a second column, never the page.</strong> Only about 63% of gyms have a pin, so the list
+            is primary at every width and the coverage pill states the gap on the surface that has it — bottom-left,
+            <code>pointerEvents: none</code>, because Leaflet's zoom control sits top-left and a label must never
+            swallow a click on <code>+</code>. OSM attribution is not optional on a public page. At ≥960px the map is a
+            sticky right column; below that it collapses behind a Show map toggle and renders full-width above the
+            list.
+            <span class="bind"
+              >Binds: <code>gym-directory-map.tsx</code> (the pill <code>Chip</code>,
+              <code>OSM_ATTRIBUTION</code>, <code>attributionControl: true</code>);
+              <code>WIDE_LAYOUT = '@media (min-width: 960px)'</code> in <code>gym-directory-near-me.tsx</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-9">
+          <span class="num">9</span>
+          <div class="body">
+            <strong>Sparse is the default, and sparse never ranks lower.</strong> The card renders only schema-real
+            fields: name, board chips, and a location line <em>when there is one</em> — the free-text address, a
+            distance, or nothing at all. No photo, no description, no hours, no "verified" treatment. The long tail —
+            university walls, garages, club boards — will never have those, and a card that leans on them quietly
+            demotes every gym nobody filled in. A gym with no pin and no address simply loses the location line and
+            keeps its list position.
+            <span class="bind"
+              >Binds: <code>gym-directory-card.tsx</code> (<code>cardLocation</code>, <code>distanceChipKm</code>,
+              <code>boardChips</code> from <code>directory-card-model</code>).</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-10">
+          <span class="num">10</span>
+          <div class="body">
+            <strong>Claim state: a badge or a quiet prompt, never a penalty.</strong> Claimed gyms get the green
+            "✓ Claimed" pill — on dark that is a tinted fill plus a border, since <code>--success</code> as text alone
+            is easy to miss at 11px. Unclaimed gyms get one quiet line ("Is this your gym?") and are otherwise
+            identical: never hidden, never ranked down, never greyed. The prompt fires the claim-funnel event with the
+            server-settled <code>viewerState</code>, so a click that beats hydration still reports the truth.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-claim-link.tsx</code>;
+              <code>gyms.card.claimCta</code>; <code>viewerState</code> derived in <code>directory-page.tsx</code> from
+              <code>getPosthogDistinctId()</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-11">
+          <span class="num">11</span>
+          <div class="body">
+            <strong>Pagination is a crawl path, not 40 competing URLs.</strong> 24 per page, real
+            <code>?page=N</code> anchors with <code>rel="prev"</code>/<code>rel="next"</code>, and a windowed number
+            range. One page per interaction by construction — there is no load-more loop that can drain the catalog
+            into one request. Page 41+ is a 404 rather than a clamp (a clamp serves a 200 whose URL and highlighted page
+            disagree), and every variant self-canonicalises to the route's own clean base.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gyms/gym-directory-pagination.tsx</code>;
+              <code>DIRECTORY_PAGE_SIZE = 24</code> and <code>DIRECTORY_MAX_PAGE = 40</code> in
+              <code>directory-facets.ts</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-12">
+          <span class="num">12</span>
+          <div class="body">
+            <strong>Empty state — designed, because the branch exists and nobody drew it.</strong> Today zero results
+            renders two bare <code>Typography</code> lines in a <code>Box</code>. Give it the card surface, a muted
+            glyph, and two ways out: clear the search, or browse every gym. Climber voice, no dead end. It is a
+            legitimate 200 on page 1 — "no gyms match that search" is an answer; "page 40 of 2" is not, which is why
+            only the latter 404s.
+            <span class="bind"
+              >Binds: <code>directory-page.tsx</code> <code>pageResult.gyms.length === 0</code> branch;
+              <code>gyms.results.emptyTitle</code> / <code>emptyBody</code>.</span
+            >
+            <span class="oq"
+              >Open: the near-me empty case has its own copy (<code>nearMe.empty</code>) and a different fix ("widen the
+              radius"). Decide whether it reuses this panel with swapped actions or stays the plain line it is.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-13">
+          <span class="num">13</span>
+          <div class="body">
+            <strong>Error state — also undesigned, and it must keep the heading.</strong> When either fetch fails the
+            page cannot state the counts its body copy is built around, so it renders the outage instead of a confident
+            "0 gyms". The <code>h1</code> stays: a test asserts the page still says what it is. Warning-toned glyph, not
+            red — nothing is broken for the visitor, the data is late. Give them a reload and a way back.
+            <span class="bind"
+              >Binds: <code>directory-page.tsx</code> <code>!pageResult.ok || !facetCountsResult.ok</code> branch;
+              <code>gyms.error.title</code> / <code>error.body</code>;
+              <code>__tests__/directory-page.test.tsx:146</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-14">
+          <span class="num">14</span>
+          <div class="body">
+            <strong>The gym page's breadcrumb link is the back pattern.</strong> It already renders a single
+            <code>LocaleLink</code> home above the hero — that is the pattern replacing the deleted in-page back arrow,
+            and it is also what keeps the page at ≥2 crawlable internal links even for a gym with no boards and no
+            kiosk. This mockup extends it to the full Home › Gyms › <em>gym</em> trail so the directory is reachable
+            from a poster scan, which is the single most common way anyone arrives here.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gym/[gym_slug]/page.tsx:353</code>
+              (<code>gymPage.breadcrumbHome</code>); the "≥2 crawlable internal links" comment at
+              <code>:564</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-15">
+          <span class="num">15</span>
+          <div class="body">
+            <strong>The gym page reads the LIGHT ramp — already fixed by the token collapse.</strong> Seven call sites
+            pull <code>themeTokens.neutral[400]</code> and <code>[700]</code> straight into <code>sx</code>, and those
+            are light-ramp values: on <code>#110A20</code> the body copy lands near-black on near-black. Flagging it
+            here so nobody re-derives it — <strong>the token collapse fixes this, not the restyle.</strong> This pass
+            should not chase individual <code>neutral[n]</code> reads; once the collapse lands they resolve to the dark
+            ramp and these lines become <code>color="text.secondary"</code> or a semantic var.
+            <span class="bind"
+              >Binds: <code>packages/web/app/gym/[gym_slug]/page.tsx</code> lines 391, 401, 409, 420, 489, 553, 605.
+              Same class of bug as <code>border: '1px solid var(--neutral-200)'</code> in
+              <code>gym-directory-card.tsx</code> and <code>gym-directory-map.tsx</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-16">
+          <span class="num">16</span>
+          <div class="body">
+            <strong>Cross-cutting, no single region.</strong> (a) <strong>No hardcoded hex</strong> in the
+            implementation — every colour a CSS var from
+            <code>packages/web/app/components/index.css</code>; the Leaflet strings in note 8 are the only markup that
+            may carry inline <code>style</code>, and even there the values are vars. (b) <strong>i18n:</strong> every
+            visible string through the <code>gyms</code> catalog in all four locales, literal <code>t()</code> keys only
+            (the per-facet switch in <code>directory-copy.ts</code> exists precisely because
+            <code>t(variable)</code> hard-fails); Spanish uses <em>plafón</em> for board.
+            (c) <strong>Trademarks:</strong> "gyms with a Kilter board", never "Kilter gyms" — compatibility, never
+            endorsement — and MoonBoard, Kilter, Tension capitalised as shown. (d) <strong>390px:</strong> the card grid
+            drops to one column, the map becomes a full-width block above the list behind the Show map toggle, and the
+            facet row wraps. CSS media queries only — no <code>useMediaQuery</code>, which renders the wrong layout on
+            the server and flashes on hydrate.
+            <span class="bind"
+              >Binds: <code>gyms.json</code> across <code>en-US</code>/<code>es</code>/<code>fr</code>/<code>de</code>;
+              <code>catalog-completeness.test.ts</code>; <code>vp run check:i18n</code>; <code>LEGAL.md</code>.</span
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      // Mobile-only map toggle. Desktop shows the map column via the media query.
+      (function () {
+        var toggleButton = document.getElementById('mapToggle');
+        var mapPanel = document.getElementById('mapPanel');
+        if (!toggleButton || !mapPanel) return;
+        var open = true;
+        toggleButton.addEventListener('click', function () {
+          open = !open;
+          mapPanel.hidden = !open;
+          toggleButton.textContent = open ? 'Hide map' : 'Show map';
+          toggleButton.setAttribute('aria-expanded', String(open));
+        });
+      })();
+    </script>
+  </body>
+</html>

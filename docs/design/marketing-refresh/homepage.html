@@ -1,0 +1,1833 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Homepage Wireframe — Dark</title>
+    <style>
+      /* ============================================================
+         Velvet Send (web, dark) — the ONLY scheme www renders.
+         Tokens lifted from docs/ai-design-guidelines.md +
+         packages/web/app/theme/theme-config.ts (darkTokens).
+         ============================================================ */
+      :root {
+        color-scheme: dark;
+
+        /* Surface ladder — depth is a lighter violet, never a shadow. */
+        --bg: #110a20; /* page ground */
+        --surface: #251b3a; /* cards, panels */
+        --surface-2: #2f234a; /* raised: rails, inputs, selected */
+
+        /* Text ramp (dark: 50 darkest → 900 lightest) */
+        --label: #f3effa; /* primary text        (neutral-900) */
+        --secondary-label: #aca5bd; /* secondary text      (neutral-500) */
+        --tertiary-label: #6f6882; /* disabled/decorative (neutral-400) */
+
+        --separator: rgba(185, 170, 215, 0.2); /* the one hairline */
+
+        /* Brand — two jobs, two tokens. NEVER collapse them. */
+        --primary: #a78bfa; /* FOREGROUND: text, links, icons, borders */
+        --primary-fill: #7c3aed; /* FILL: button background, white text 5.70:1 */
+        --primary-fill-hover: #6d28d9;
+        --on-primary: #ffffff;
+
+        /* Amber is fill-only, dark ink, at most once per page. */
+        --accent: #ff8a3d;
+        --on-accent: #16111f;
+
+        --success: #34d399;
+        --warning: #fbbf24;
+        --error: #f87171;
+
+        --radius-card: 12px;
+        --radius-btn: 10px;
+        --radius-full: 9999px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--label);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        font-size: 16px;
+      }
+      a {
+        color: var(--primary);
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      /* Prose measure — long-form copy never runs wider than this. */
+      .prose {
+        max-width: 68ch;
+      }
+
+      /* ---- type scale: ONE large thing per page ---- */
+      h1 {
+        font-size: 40px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      h3 {
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      @media (max-width: 600px) {
+        h1 {
+          font-size: 30px;
+        }
+        h2 {
+          font-size: 21px;
+        }
+      }
+
+      /* ---- buttons ---- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: var(--radius-btn);
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .btn-filled {
+        background: var(--primary-fill);
+        color: var(--on-primary);
+      }
+      .btn-filled:hover {
+        background: var(--primary-fill-hover);
+      }
+      .btn-outlined {
+        border-color: var(--separator);
+        color: var(--primary);
+        background: transparent;
+      }
+      .btn-outlined:hover {
+        border-color: var(--primary);
+        background: rgba(167, 139, 250, 0.08);
+      }
+
+      /* ---- cards: only for things you can act on ---- */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 20px;
+      }
+      .card-raised {
+        background: var(--surface-2);
+      }
+
+      /* ---- wireframe chrome (meta UI, NOT product UI) ---- */
+      .wf-banner {
+        background: #060310;
+        color: var(--label);
+        font-size: 13px;
+        padding: 8px 16px;
+        text-align: center;
+        border-bottom: 1px solid var(--separator);
+      }
+      .wf-banner strong {
+        color: var(--accent);
+      }
+      .wf-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--warning);
+        border: 1px dashed var(--warning);
+        border-radius: 4px;
+        padding: 1px 6px;
+        vertical-align: middle;
+      }
+      .note-ref {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 3px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        vertical-align: super;
+        line-height: 1;
+        margin-left: 4px;
+      }
+      /* Placeholder for imagery we do not have yet. NEVER an AI-generated image. */
+      .img-slot {
+        background: var(--surface-2);
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--tertiary-label);
+        font-size: 12px;
+        padding: 12px;
+      }
+
+      /* ---- global header placeholder (the real MarketingHeader) ---- */
+      .global-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(37, 27, 58, 0.72);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--separator);
+        padding: 12px 0;
+      }
+      .global-header .container {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #7c3aed, #a78bfa);
+        flex-shrink: 0;
+      }
+      .brand-name {
+        font-weight: 700;
+        font-size: 17px;
+      }
+      .global-header nav {
+        display: flex;
+        gap: 18px;
+        font-size: 15px;
+      }
+      .global-header nav a {
+        color: var(--secondary-label);
+        text-decoration: none;
+      }
+      .global-header nav a:hover {
+        color: var(--label);
+      }
+      .header-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      @media (max-width: 760px) {
+        .global-header nav {
+          display: none;
+        }
+      }
+
+      /* ---- design notes ---- */
+      .notes {
+        background: #060310;
+        border-top: 1px solid var(--separator);
+        margin-top: 64px;
+        padding: 40px 0 64px;
+      }
+      .notes h2 {
+        margin-bottom: 8px;
+      }
+      .notes .intro {
+        color: var(--secondary-label);
+        font-size: 14px;
+        margin-bottom: 24px;
+        max-width: 68ch;
+      }
+      .annotation {
+        display: flex;
+        gap: 12px;
+        padding: 14px 0;
+        border-top: 1px solid var(--separator);
+      }
+      .annotation .num {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .annotation .body {
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .annotation .body strong {
+        color: var(--label);
+      }
+      .annotation code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .bind,
+      .oq {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+      }
+      .bind {
+        color: var(--tertiary-label);
+      }
+      .oq {
+        color: var(--warning);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ==========================================================
+         Page-specific CSS. Everything above came from the shared
+         preamble (tokens, type scale, .btn/.card/.container/.prose,
+         wireframe chrome). Only three colour ROLES are added here —
+         brand violet, amber spark, info — see design note 12.
+         ========================================================== -->
+    <style>
+      :root {
+        /* Role 3 of 3. Velvet "info" = violet-slate, dark-scheme value
+           from darkTokens in theme-config.ts. Replaces the six ad-hoc
+           accent surfaces the live page hardcodes (#9C27B0/#7B1FA2/#6A1B9A). */
+        --info: #a5abd6;
+        --info-tint: rgba(165, 171, 214, 0.12);
+        --fill: rgba(167, 139, 250, 0.1); /* faint violet wash */
+        --fill-strong: rgba(167, 139, 250, 0.18);
+      }
+
+      /* ---------- shared section rhythm ---------- */
+      section.region {
+        padding: 72px 0;
+        border-bottom: 1px solid var(--separator);
+      }
+      .region-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .region-sub {
+        color: var(--secondary-label);
+        max-width: 62ch;
+        margin-bottom: 28px;
+        font-size: 17px;
+      }
+      /* ---- support strip (sits between the feature grid and the footer) ---- */
+      .support-strip {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 32px;
+        align-items: center;
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 32px;
+      }
+      .support-strip h2 {
+        margin-bottom: 10px;
+      }
+      .support-strip p {
+        color: var(--secondary-label);
+        max-width: 56ch;
+      }
+      .support-strip p + p {
+        margin-top: 10px;
+      }
+      .support-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .support-aside {
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 20px;
+      }
+      .support-aside h3 {
+        margin-bottom: 10px;
+      }
+      .support-aside ul {
+        list-style: none;
+        display: grid;
+        gap: 8px;
+        font-size: 15px;
+        color: var(--secondary-label);
+      }
+      .support-aside a {
+        text-decoration: none;
+      }
+      .support-aside a:hover {
+        text-decoration: underline;
+      }
+      @media (max-width: 860px) {
+        .support-strip {
+          grid-template-columns: minmax(0, 1fr);
+          padding: 24px;
+        }
+      }
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--primary);
+        margin-bottom: 10px;
+      }
+      .see-all {
+        margin-top: 26px;
+        display: inline-block;
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .see-all:hover {
+        text-decoration: underline;
+      }
+      @media (max-width: 600px) {
+        section.region {
+          padding: 44px 0;
+        }
+      }
+
+      /* ---------- 1 · TRANSPARENT FLOATING HEADER ----------
+         HIDDEN_HEADER_PAGES = ['/'] in marketing-header.tsx: on the
+         homepage ONLY, the header has no bar, no blur, no hairline —
+         it floats over the hero glow. Every other page gets the
+         sticky treatment the preamble ships. */
+      /* Positions against .hero (position: relative), not the document — as an
+         absolute child of <body> it landed on top of the wireframe banner. */
+      .global-header.floating {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: transparent;
+        backdrop-filter: none;
+        border-bottom: none;
+        padding: 16px 0;
+      }
+      .global-header.floating .container {
+        gap: 24px;
+      }
+      .header-note {
+        font-size: 11px;
+        color: var(--tertiary-label);
+        border: 1px dashed var(--separator);
+        border-radius: 4px;
+        padding: 2px 7px;
+      }
+      .header-right .btn {
+        min-height: 38px;
+        font-size: 15px;
+        border-radius: var(--radius-full);
+      }
+      .header-right a.signin {
+        color: var(--secondary-label);
+        text-decoration: none;
+        font-size: 15px;
+      }
+      @media (max-width: 760px) {
+        .header-note {
+          display: none;
+        }
+      }
+
+      /* ---------- 2 · HERO ---------- */
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 148px 0 88px;
+        text-align: center;
+        border-bottom: 1px solid var(--separator);
+      }
+      /* Depth is a lighter violet, never a shadow: a radial glow, not a gradient bar. */
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: -260px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 1100px;
+        height: 720px;
+        background: radial-gradient(
+          closest-side,
+          rgba(124, 58, 237, 0.42),
+          rgba(124, 58, 237, 0.16) 55%,
+          rgba(124, 58, 237, 0) 78%
+        );
+        pointer-events: none;
+      }
+      .hero .container {
+        position: relative;
+      }
+      .hero h1 {
+        font-size: 60px;
+        line-height: 1.05;
+        max-width: 15ch;
+        margin: 0 auto;
+      }
+      .hero .sub {
+        color: var(--secondary-label);
+        font-size: 19px;
+        max-width: 54ch;
+        margin: 20px auto 0;
+      }
+      .store-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        justify-content: center;
+        margin-top: 34px;
+      }
+      .btn-store {
+        min-height: 54px;
+        padding: 0 26px;
+        border-radius: var(--radius-full);
+        font-size: 17px;
+        text-align: left;
+        line-height: 1.1;
+      }
+      .btn-store small {
+        display: block;
+        font-size: 11px;
+        font-weight: 500;
+        opacity: 0.8;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      /* THE ONE AMBER ACCENT ON THE PAGE — matches HERO_CTA_SX's
+         boxShadow: '0 6px 18px rgba(255,138,61,.35)'. Nothing else
+         on this page may use --accent. See design note 12. */
+      .btn-store.spark {
+        box-shadow: 0 8px 26px rgba(255, 138, 61, 0.38);
+      }
+      .btn-store.spark:hover {
+        box-shadow: 0 10px 30px rgba(255, 138, 61, 0.48);
+      }
+      .btn-store.quiet {
+        background: var(--surface-2);
+        color: var(--label);
+        border-color: var(--separator);
+      }
+      .btn-store.quiet:hover {
+        border-color: var(--primary);
+      }
+      .hero-tertiary {
+        margin-top: 22px;
+        font-size: 16px;
+      }
+      .hero-tertiary a {
+        text-decoration: none;
+        border-bottom: 1px solid rgba(167, 139, 250, 0.4);
+        padding-bottom: 2px;
+      }
+      .hero-proof {
+        margin-top: 44px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 28px;
+        justify-content: center;
+        font-size: 14px;
+        color: var(--tertiary-label);
+      }
+      .hero-shot {
+        margin: 56px auto 0;
+        max-width: 880px;
+        height: 360px;
+      }
+      @media (max-width: 900px) {
+        .hero {
+          padding: 116px 0 64px;
+        }
+        .hero h1 {
+          font-size: 44px;
+        }
+      }
+      @media (max-width: 600px) {
+        .hero {
+          padding: 96px 0 52px;
+        }
+        .hero h1 {
+          font-size: 34px;
+          max-width: none;
+        }
+        .hero .sub {
+          font-size: 17px;
+        }
+        .store-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .btn-store {
+          justify-content: center;
+          text-align: center;
+        }
+        .hero-shot {
+          height: 260px;
+        }
+      }
+
+      /* ---------- 3 · GYM SEARCH ---------- */
+      .search-panel {
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      .search-field {
+        flex: 1 1 320px;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--surface-2);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-btn);
+        padding: 0 14px;
+        min-height: 48px;
+        color: var(--tertiary-label);
+        font-size: 16px;
+      }
+      /* Dark-mode input contract: elevated --surface-2 field, violet focus
+         ring. Never a white field. */
+      .search-field:focus-within {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.25);
+      }
+      .search-field input {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        border: 0;
+        outline: none;
+        color: var(--label);
+        font-size: 16px;
+        font-family: inherit;
+      }
+      .search-field input::placeholder {
+        color: var(--tertiary-label);
+      }
+      .geo-hint {
+        flex-basis: 100%;
+        font-size: 13px;
+        color: var(--tertiary-label);
+      }
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 18px 0 24px;
+        align-items: center;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-full);
+        background: var(--surface);
+        color: var(--secondary-label);
+        font-size: 14px;
+        padding: 7px 15px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .chip:hover {
+        border-color: var(--primary);
+        color: var(--label);
+      }
+      .chip.on {
+        background: var(--fill-strong);
+        border-color: var(--primary);
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .chip .count {
+        color: var(--tertiary-label);
+        font-weight: 400;
+        font-size: 13px;
+      }
+
+      .gym-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
+      .gym-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .gym-card .card-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .gym-card h3 {
+        flex: 1;
+        min-width: 0;
+      }
+      .gym-card h3 a {
+        color: var(--label);
+        text-decoration: none;
+      }
+      .gym-card h3 a:hover {
+        color: var(--primary);
+        text-decoration: underline;
+      }
+      .badge {
+        flex-shrink: 0;
+        border-radius: var(--radius-full);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 3px 10px;
+        white-space: nowrap;
+        margin-top: 2px;
+      }
+      .badge-claimed {
+        background: rgba(52, 211, 153, 0.12);
+        color: var(--success);
+      }
+      .badge-unclaimed {
+        background: var(--info-tint);
+        color: var(--info);
+      }
+      .loc-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .loc-line.no-pin {
+        color: var(--tertiary-label);
+        font-style: italic;
+      }
+      .loc-line .dist {
+        color: var(--label);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .board-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .board-chip {
+        background: var(--fill);
+        color: var(--primary);
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 4px 9px;
+      }
+      .board-chip .angle {
+        font-weight: 400;
+        opacity: 0.85;
+      }
+      .claim-prompt {
+        margin-top: auto;
+        padding-top: 10px;
+        border-top: 1px solid var(--separator);
+        font-size: 13px;
+        color: var(--secondary-label);
+      }
+      .claim-prompt a {
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .claim-prompt a:hover {
+        text-decoration: underline;
+      }
+      .card-footnote {
+        margin-top: 16px;
+        font-size: 13px;
+        color: var(--tertiary-label);
+        max-width: 78ch;
+      }
+
+      /* ---------- 4 · POPULAR BOARD SETUPS ---------- */
+      .board-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
+      .board-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        text-decoration: none;
+        color: var(--label);
+        transition: border-color 0.15s ease;
+      }
+      .board-card:hover {
+        border-color: var(--primary);
+      }
+      .board-card .thumb {
+        aspect-ratio: 4 / 3;
+      }
+      .board-card .bname {
+        font-weight: 700;
+        font-size: 16px;
+      }
+      .board-card .bmeta {
+        font-size: 13px;
+        color: var(--secondary-label);
+        margin-top: 2px;
+      }
+      .board-card .bstat {
+        font-size: 12px;
+        color: var(--tertiary-label);
+        margin-top: 6px;
+      }
+      .board-card .bhref {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: var(--tertiary-label);
+        word-break: break-all;
+        margin-top: 8px;
+        border-top: 1px dashed var(--separator);
+        padding-top: 8px;
+      }
+
+      /* ---------- 5 · RECENT BETA RAIL ---------- */
+      .beta-rail {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 16px;
+      }
+      .beta-item {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        text-decoration: none;
+        color: var(--label);
+      }
+      .beta-thumb {
+        aspect-ratio: 9 / 16;
+        position: relative;
+      }
+      .beta-item .bt {
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .beta-item .bm {
+        font-size: 13px;
+        color: var(--secondary-label);
+      }
+      .beta-item:hover .bt {
+        color: var(--primary);
+      }
+
+      /* ---------- 6 · FEATURE STRIP ---------- */
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+      }
+      .feature {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .feature .shot {
+        aspect-ratio: 9 / 16;
+        max-height: 420px;
+      }
+      .feature h3 {
+        font-size: 20px;
+      }
+      .feature p {
+        color: var(--secondary-label);
+        font-size: 15px;
+      }
+      .feature .icon-chip {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--fill);
+        color: var(--primary);
+        font-weight: 700;
+      }
+      .feature .icon-chip.info {
+        background: var(--info-tint);
+        color: var(--info);
+      }
+      .feature-cta {
+        margin-top: 36px;
+        text-align: center;
+      }
+
+      /* ---------- 7 · FOOTER ---------- */
+      footer.site {
+        background: #0b0616;
+        border-top: 1px solid var(--separator);
+        padding: 56px 0 32px;
+      }
+      .footer-top {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr 1fr 1fr;
+        gap: 32px;
+      }
+      .footer-intro p {
+        color: var(--secondary-label);
+        font-size: 14px;
+        max-width: 42ch;
+        margin: 8px 0 16px;
+      }
+      .footer-group h4 {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--label);
+        margin-bottom: 12px;
+      }
+      .footer-group ul {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        font-size: 14px;
+      }
+      .footer-group a {
+        color: var(--secondary-label);
+        text-decoration: none;
+      }
+      .footer-group a:hover {
+        color: var(--label);
+        text-decoration: underline;
+      }
+      .footer-bottom {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid var(--separator);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .trademark-line {
+        font-size: 12px;
+        color: var(--tertiary-label);
+        max-width: 78ch;
+        line-height: 1.6;
+      }
+      .lang-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-full);
+        padding: 7px 14px;
+        font-size: 14px;
+        color: var(--secondary-label);
+        white-space: nowrap;
+      }
+
+      /* ---------- responsive: every 3/4/5-up grid stacks ---------- */
+      @media (max-width: 1040px) {
+        .gym-grid,
+        .board-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .beta-rail {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .footer-top {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 760px) {
+        .feature-grid {
+          grid-template-columns: 1fr;
+          gap: 40px;
+        }
+        .feature .shot {
+          max-width: 260px;
+        }
+      }
+      @media (max-width: 600px) {
+        .gym-grid,
+        .board-grid,
+        .beta-rail,
+        .footer-top {
+          grid-template-columns: 1fr;
+        }
+        .footer-bottom {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+
+      /* ---------- wireframe-only: colour-role swatches ---------- */
+      .role-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .role {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--secondary-label);
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-full);
+        padding: 5px 12px;
+      }
+      .role i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        display: block;
+      }
+    </style>
+
+    <div class="wf-banner">
+      <strong>WIREFRAME</strong> — marketing refresh: the www homepage, dark Velvet Send. Not production UI. Gym names,
+      distances and counts are demo values. This is the
+      <code>docs/design/web-reposition/homepage-marketing.html</code> information architecture, ported to the dark
+      palette and raised to delivery quality — the structure is settled, the execution is what changed. Numbered violet
+      markers link to the <a href="#notes" style="color: #c4b5fd">design notes</a> at the bottom.
+    </div>
+
+
+    <!-- ================= 2 · HERO ================= -->
+    <section class="hero">
+      <!-- ================= 1 · TRANSPARENT FLOATING HEADER (homepage only) ================= -->
+      <header class="global-header floating">
+        <div class="container">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <span class="brand-name">Boardsesh</span>
+          <nav>
+            <a href="/gyms">Gyms</a>
+            <a href="/playlists">Playlists</a>
+            <a href="/about">About</a>
+            <a href="/help">Help</a>
+          </nav>
+          <span class="header-note">transparent over the hero — <code>HIDDEN_HEADER_PAGES = ['/']</code></span>
+          <div class="header-right">
+            <a class="signin" href="/auth/login">Sign in</a>
+            <a class="btn btn-filled" href="https://app.boardsesh.com">Start climbing</a>
+            <a class="note-ref" href="#note-1">1</a>
+          </div>
+        </div>
+      </header>
+      <div class="container">
+        <h1>One app for your boards <a class="note-ref" href="#note-2">2</a></h1>
+        <p class="sub">
+          Queue up climbs, light the wall and log your sends with the crew. Works with Kilter, Tension and MoonBoard.
+        </p>
+
+        <div class="store-row">
+          <a class="btn btn-filled btn-store spark" href="https://apps.apple.com/app/boardsesh">
+            <span><small>Download on the</small>App Store</span>
+          </a>
+          <a class="btn btn-filled btn-store quiet" href="https://play.google.com/store/apps/details?id=com.boardsesh.app">
+            <span><small>Get it on</small>Google Play</span>
+          </a>
+          <a class="note-ref" href="#note-3" style="align-self: center">3</a>
+        </div>
+
+        <p class="hero-tertiary">
+          <a href="https://app.boardsesh.com">Start climbing on the web &rarr;</a>
+          <a class="note-ref" href="#note-4">4</a>
+        </p>
+
+        <p class="hero-proof">
+          <span>Kilter &middot; Tension &middot; MoonBoard &middot; Grasshopper &middot; Decoy</span>
+          <span>Bluetooth LED control</span>
+          <span>Bring your Aurora logbook</span>
+        </p>
+
+        <div class="img-slot hero-shot">
+          App screenshot — Play view with the queue open, iPhone 16 Pro frame.<br />
+          <strong>Does not exist yet.</strong> Closest real asset today:
+          <code>app-stores/google/screenshots/pixel-2/07-board-sheet.png</code> (1080&times;1920 Pixel 2 — too low-res
+          for a 880px hero). Needs a fresh capture. <a class="note-ref" href="#note-13">13</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 3 · FIND A BOARD NEAR YOU ================= -->
+    <section class="region" id="gyms">
+      <div class="container">
+        <p class="eyebrow">Gym directory</p>
+        <div class="region-head">
+          <h2>Find a board near you</h2>
+          <a class="note-ref" href="#note-5">5</a>
+        </div>
+        <p class="region-sub">
+          Thousands of gyms, club walls and garages with a board on the wall are already listed. Search by name or
+          place, or let the browser find you.
+        </p>
+
+        <form class="search-panel" action="/gyms" method="get" role="search">
+          <label class="search-field">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input type="search" name="q" placeholder="Gym, city or postcode" aria-label="Search gyms" />
+          </label>
+          <button class="btn btn-filled" type="submit">Search</button>
+          <button class="btn btn-outlined" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="8" />
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+            </svg>
+            Use my location
+            <a class="note-ref" href="#note-6">6</a>
+          </button>
+          <p class="geo-hint">Location off? Type a city instead — same results, no permission prompt.</p>
+        </form>
+
+        <div class="chip-row" role="group" aria-label="Filter by board type">
+          <a class="chip on" href="/gyms">All boards <span class="count">4,740</span></a>
+          <a class="chip" href="/gyms/moonboard">MoonBoard <span class="count">2,586</span></a>
+          <a class="chip" href="/gyms/kilter">Kilter <span class="count">1,786</span></a>
+          <a class="chip" href="/gyms/tension">Tension <span class="count">465</span></a>
+          <a class="note-ref" href="#note-7" style="align-self: center">7</a>
+        </div>
+
+        <div class="gym-grid">
+          <!-- DEFAULT: claimed, has pin + address. This sparse card IS the design. -->
+          <article class="card gym-card">
+            <div class="card-head">
+              <h3><a href="/gym/crimp-city-boulders">Crimp City Boulders</a></h3>
+              <span class="badge badge-claimed">Claimed</span>
+            </div>
+            <p class="loc-line">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
+              </svg>
+              14 Crux Lane, Fakeston <span class="dist">1.2 km</span>
+            </p>
+            <div class="board-row">
+              <span class="board-chip">Kilter <span class="angle">&middot; 40&deg;</span></span>
+            </div>
+          </article>
+
+          <!-- Unclaimed + multi-board (~25 gyms have 3+) with the claim prompt -->
+          <article class="card gym-card">
+            <div class="card-head">
+              <h3><a href="/gym/granite-barn">Granite Barn Bouldering</a></h3>
+              <span class="badge badge-unclaimed">Unclaimed</span>
+            </div>
+            <p class="loc-line">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
+              </svg>
+              <span class="dist">5.4 km</span>
+            </p>
+            <div class="board-row">
+              <span class="board-chip">Kilter <span class="angle">&middot; 40&deg;</span></span>
+              <span class="board-chip">Tension <span class="angle">&middot; 45&deg;</span></span>
+              <span class="board-chip">MoonBoard <span class="angle">&middot; 25&deg;</span></span>
+            </div>
+            <p class="claim-prompt">Run this place? <a href="/gyms/claim">Claim the page &rarr;</a></p>
+          </article>
+
+          <!-- No pin, no address: the 36.9%-no-coords fallback. Still listed, never ranked down. -->
+          <article class="card gym-card">
+            <div class="card-head">
+              <h3><a href="/gym/northgate-uni-wall">Northgate Uni Climbing Wall</a></h3>
+              <span class="badge badge-unclaimed">Unclaimed</span>
+            </div>
+            <p class="loc-line no-pin">No map pin yet <a class="note-ref" href="#note-8">8</a></p>
+            <div class="board-row">
+              <span class="board-chip">MoonBoard <span class="angle">&middot; 40&deg;</span></span>
+            </div>
+            <p class="claim-prompt">Your wall? <a href="/gyms/claim">Claim it and add the pin &rarr;</a></p>
+          </article>
+
+          <!-- Claimed, pin only -->
+          <article class="card gym-card">
+            <div class="card-head">
+              <h3><a href="/gym/southside-climbing-co">Southside Climbing Co.</a></h3>
+              <span class="badge badge-claimed">Claimed</span>
+            </div>
+            <p class="loc-line">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
+              </svg>
+              <span class="dist">8.9 km</span>
+            </p>
+            <div class="board-row">
+              <span class="board-chip">Tension <span class="angle">&middot; 45&deg;</span></span>
+            </div>
+          </article>
+        </div>
+
+        <p class="card-footnote">
+          Card contract: name and claim state always; address and distance only when the row has them; boards with type
+          and angle. No photos on gym cards — the long tail will never have them, and the field is empty for all but a
+          handful of rows.
+        </p>
+        <a class="see-all" href="/gyms">Browse the full gym directory &rarr;</a>
+      </div>
+    </section>
+
+    <!-- ================= 4 · POPULAR BOARD SETUPS ================= -->
+    <section class="region" id="boards">
+      <div class="container">
+        <p class="eyebrow">Jump straight on</p>
+        <div class="region-head">
+          <h2>Popular board setups</h2>
+          <span class="wf-tag">SEO load-bearing</span>
+          <a class="note-ref" href="#note-9">9</a>
+        </div>
+        <p class="region-sub">
+          Every setup below is a plain server-rendered link into the climb list for that board, layout, size and angle.
+          This grid is the crawl path into the climb catalogue.
+        </p>
+
+        <div class="board-grid">
+          <a class="card board-card" href="/kilter/original/12x12-square/screw_bolt/40/list">
+            <div class="img-slot thumb">Board thumbnail — rendered by BoardRenderer from live hold data (not a photo)</div>
+            <div>
+              <span class="bname">Kilter Board</span>
+              <p class="bmeta">Original &middot; 12&times;12 Square &middot; Bolt Ons + Screw Ons &middot; 40&deg;</p>
+              <p class="bstat">48,210 climbs &middot; 1.2M sends</p>
+            </div>
+            <p class="bhref">/kilter/original/12x12-square/screw_bolt/40/list</p>
+          </a>
+          <a class="card board-card" href="/tension/tb2-spray/12x10/45/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">Tension Board 2</span>
+              <p class="bmeta">Spray &middot; 12&times;10 &middot; 45&deg;</p>
+              <p class="bstat">19,004 climbs &middot; 310k sends</p>
+            </div>
+            <p class="bhref">/tension/tb2-spray/12x10/45/list</p>
+          </a>
+          <a class="card board-card" href="/moonboard/2024/25/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">MoonBoard</span>
+              <p class="bmeta">2024 &middot; 25&deg;</p>
+              <p class="bstat">7,880 climbs &middot; 96k sends</p>
+            </div>
+            <p class="bhref">/moonboard/2024/25/list</p>
+          </a>
+          <a class="card board-card" href="/kilter/homewall/10x10/30/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">Kilter Board</span>
+              <p class="bmeta">Homewall &middot; 10&times;10 &middot; 30&deg;</p>
+              <p class="bstat">12,455 climbs &middot; 188k sends</p>
+            </div>
+            <p class="bhref">/kilter/homewall/10x10/30/list</p>
+          </a>
+          <a class="card board-card" href="/moonboard/2019/40/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">MoonBoard</span>
+              <p class="bmeta">2019 &middot; 40&deg;</p>
+              <p class="bstat">22,140 climbs &middot; 402k sends</p>
+            </div>
+            <p class="bhref">/moonboard/2019/40/list</p>
+          </a>
+          <a class="card board-card" href="/tension/original/12x10/40/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">Tension Board</span>
+              <p class="bmeta">Original &middot; 12&times;10 &middot; 40&deg;</p>
+              <p class="bstat">9,630 climbs &middot; 141k sends</p>
+            </div>
+            <p class="bhref">/tension/original/12x10/40/list</p>
+          </a>
+          <a class="card board-card" href="/kilter/original/8x12-home/screw_bolt/45/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">Kilter Board</span>
+              <p class="bmeta">Original &middot; 8&times;12 Home &middot; 45&deg;</p>
+              <p class="bstat">15,772 climbs &middot; 233k sends</p>
+            </div>
+            <p class="bhref">/kilter/original/8x12-home/screw_bolt/45/list</p>
+          </a>
+          <a class="card board-card" href="/tension/tb2-spray/8x12/40/list">
+            <div class="img-slot thumb">Board thumbnail — BoardRenderer</div>
+            <div>
+              <span class="bname">Tension Board 2</span>
+              <p class="bmeta">Spray &middot; 8&times;12 &middot; 40&deg;</p>
+              <p class="bstat">6,117 climbs &middot; 74k sends</p>
+            </div>
+            <p class="bhref">/tension/tb2-spray/8x12/40/list</p>
+          </a>
+        </div>
+        <p class="card-footnote">
+          Card count follows whatever <code>getPopularBoardConfigs()</code> returns — eight is the mockup, not a
+          contract. Zero configs renders zero cards and the section heading disappears with them.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================= 5 · RECENT BETA ================= -->
+    <section class="region" id="beta">
+      <div class="container">
+        <p class="eyebrow">From the crew</p>
+        <div class="region-head">
+          <h2>Recent beta</h2>
+          <a class="note-ref" href="#note-10">10</a>
+        </div>
+        <p class="region-sub">Videos climbers posted on their sends in the last few days.</p>
+
+        <div class="beta-rail">
+          <a class="beta-item" href="/climb/kilter/abc123">
+            <div class="img-slot beta-thumb">Beta thumbnail — user upload, served from the backend (cross-origin, LCP-preloaded)</div>
+            <span class="bt">Sloper Sermon</span>
+            <span class="bm">Kilter 40&deg; &middot; V7 &middot; 3h ago</span>
+          </a>
+          <a class="beta-item" href="/climb/tension/def456">
+            <div class="img-slot beta-thumb">Beta thumbnail — user upload</div>
+            <span class="bt">Small Hands Only</span>
+            <span class="bm">Tension 45&deg; &middot; V5 &middot; 6h ago</span>
+          </a>
+          <a class="beta-item" href="/climb/moonboard/ghi789">
+            <div class="img-slot beta-thumb">Beta thumbnail — user upload</div>
+            <span class="bt">Crimp Ladder</span>
+            <span class="bm">MoonBoard 25&deg; &middot; V6 &middot; yesterday</span>
+          </a>
+          <a class="beta-item" href="/climb/kilter/jkl012">
+            <div class="img-slot beta-thumb">Beta thumbnail — user upload</div>
+            <span class="bt">Heel Hook Heaven</span>
+            <span class="bm">Kilter 30&deg; &middot; V4 &middot; yesterday</span>
+          </a>
+          <a class="beta-item" href="/climb/tension/mno345">
+            <div class="img-slot beta-thumb">Beta thumbnail — user upload</div>
+            <span class="bt">Project Zone</span>
+            <span class="bm">Tension 40&deg; &middot; V9 &middot; 2d ago</span>
+          </a>
+        </div>
+        <a class="see-all" href="https://app.boardsesh.com/feed">See the feed &rarr;</a>
+      </div>
+    </section>
+
+    <!-- ================= 6 · FEATURE STRIP ================= -->
+    <section class="region" id="features">
+      <div class="container">
+        <p class="eyebrow">In the app</p>
+        <div class="region-head">
+          <h2>Board night, sorted</h2>
+          <a class="note-ref" href="#note-11">11</a>
+        </div>
+        <p class="region-sub">
+          Three things the app does that a shared phone on the mat does not. At 1440px this is a three-up grid, not a
+          420px ribbon.
+        </p>
+
+        <div class="feature-grid">
+          <div class="feature">
+            <div class="img-slot shot">App screenshot — Queue sheet with four climbers lined up, iPhone 16 Pro</div>
+            <div class="icon-chip" aria-hidden="true">Q</div>
+            <h3>Shared queue</h3>
+            <p>Take turns without the awkward "who's next?". Everyone adds, everyone sees the order.</p>
+          </div>
+          <div class="feature">
+            <div class="img-slot shot">App screenshot — Party mode, live roster + current climber, iPhone 16 Pro</div>
+            <div class="icon-chip" aria-hidden="true">P</div>
+            <h3>Party mode</h3>
+            <p>One queue for the whole crew, live on every phone. Light the wall from whichever one is closest.</p>
+          </div>
+          <div class="feature">
+            <div class="img-slot shot">App screenshot — Logbook / tick list with grade pyramid, iPhone 16 Pro</div>
+            <div class="icon-chip info" aria-hidden="true">L</div>
+            <h3>Logbook</h3>
+            <p>Log sends and attempts as you go, and bring your Kilter or Tension history across with you.</p>
+          </div>
+        </div>
+
+        <div class="feature-cta">
+          <a class="btn btn-filled" href="https://apps.apple.com/app/boardsesh">Get the app</a>
+          <a class="note-ref" href="#note-12">12</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 7 · FOOTER ================= -->
+    <!-- ================= 12 · SUPPORT (last thing before the footer) ================= -->
+    <section class="region" id="support">
+      <div class="container">
+        <div class="support-strip">
+          <div>
+            <p class="eyebrow">Free, and staying that way</p>
+            <div class="region-head">
+              <h2>Boardsesh runs on climbers chipping in</h2>
+              <a class="note-ref" href="#note-17">17</a>
+            </div>
+            <p>
+              No ads, no locked screens, no second tier. Every part of Boardsesh stays open to everyone, sponsor or not
+              — self-hosting included.
+            </p>
+            <p>Hosting, the database and the bills behind them are paid by the people who use it.</p>
+            <div class="support-actions" style="margin-top: 20px">
+              <a class="btn btn-filled" href="/support">Chip in</a>
+              <a class="btn btn-outlined" href="https://github.com/boardsesh/boardsesh">Read the source</a>
+            </div>
+          </div>
+          <aside class="support-aside">
+            <h3>Not got money spare?</h3>
+            <ul>
+              <li><a href="https://github.com/boardsesh/boardsesh/issues">Report a bug →</a></li>
+              <li><a href="/support">Translate a screen →</a></li>
+              <li><a href="/docs">Send a patch →</a></li>
+              <li><a href="https://discord.gg/boardsesh">Join the Discord →</a></li>
+            </ul>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <footer class="site" data-testid="site-footer">
+      <div class="container">
+        <div class="footer-top">
+          <div class="footer-intro">
+            <strong style="font-size: 17px">Boardsesh</strong>
+            <p>Queue, light and log your board sessions with the crew. Works with Kilter, Tension and MoonBoard.</p>
+            <a class="btn btn-filled" href="https://app.boardsesh.com">Start climbing</a>
+          </div>
+          <div class="footer-group">
+            <h4>Find a gym</h4>
+            <ul>
+              <li><a href="/gyms/kilter">Gyms with a Kilter board</a></li>
+              <li><a href="/gyms/tension">Gyms with a Tension board</a></li>
+              <li><a href="/gyms/moonboard">Gyms with a MoonBoard</a></li>
+              <li><a href="/gyms">All gyms and walls</a></li>
+            </ul>
+          </div>
+          <div class="footer-group">
+            <h4>Explore</h4>
+            <ul>
+              <li><a href="/">Home</a></li>
+              <li><a href="/about">About</a></li>
+              <li><a href="/support">Support us</a></li>
+              <li><a href="/help">Help</a></li>
+              <li><a href="/playlists">Playlists</a></li>
+              <li><a href="/aurora-migration">Aurora migration</a></li>
+              <li><a href="/docs">API docs</a></li>
+            </ul>
+          </div>
+          <div class="footer-group">
+            <h4>Small print</h4>
+            <ul>
+              <li><a href="/legal">Legal &amp; IP policy</a></li>
+              <li><a href="/privacy">Privacy</a></li>
+            </ul>
+            <a class="note-ref" href="#note-14">14</a>
+          </div>
+        </div>
+
+        <div class="footer-bottom">
+          <p class="trademark-line">
+            <a class="note-ref" href="#note-16" style="margin-left: 0; margin-right: 4px">16</a>
+            Kilter Board, Tension Board and MoonBoard are trademarks of their respective owners. Boardsesh describes
+            hardware compatibility only and is not affiliated with, endorsed by or sponsored by Aurora Climbing, Moon
+            Climbing or any board manufacturer.
+          </p>
+          <span class="lang-switch">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18" />
+            </svg>
+            English &middot; Español &middot; Français &middot; Deutsch
+            <a class="note-ref" href="#note-15">15</a>
+          </span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ================= DESIGN NOTES ================= -->
+    <section class="notes" id="notes">
+      <div class="container">
+        <h2>Design notes</h2>
+        <p class="intro">
+          For the implementing agent. Each note: the claim, why it holds, and what it binds to. The information
+          architecture is carried forward from <code>docs/design/web-reposition/homepage-marketing.html</code> and is
+          not up for re-litigation here — what changed is the palette (dark Velvet Send) and the execution quality.
+          Notes tagged <span class="wf-tag">never shipped</span> are places where that earlier wireframe described
+          something the live page does not do today; those are the gap this refresh closes.
+        </p>
+
+        <div class="annotation" id="note-1">
+          <span class="num">1</span>
+          <div class="body">
+            <strong>The homepage header is transparent and floats over the hero — every other page gets the bar.</strong>
+            <code>HIDDEN_HEADER_PAGES = ['/']</code> in <code>marketing-header.tsx</code> already does this, and the
+            mockup has to show it or the hero glow reads wrong: no background, no blur, no hairline, absolute over the
+            radial. The nav links are the four the header ships (<code>/gyms</code>, <code>/playlists</code>,
+            <code>/about</code>, <code>/help</code>) plus the sign-in entry and the app hand-off. There is deliberately
+            no <code>/boards</code> link — that route does not exist and a link to it would be a site-wide 404.
+            <span class="bind">
+              Binds: <code>packages/web/app/components/site-chrome/marketing-header.tsx</code>;
+              <code>packages/web/e2e/site-chrome.spec.ts</code> asserts the <code>marketing-header</code> testid on
+              <code>/</code>, one <code>nav a</code> per those four hrefs, a visible <code>a[href="/auth/login"]</code>,
+              a <code>boardsesh.com</code> app link, and zero <code>a[href^="/boards"]</code>.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-2">
+          <span class="num">2</span>
+          <div class="body">
+            <strong>The h1 is the biggest thing on the page — one of them, and it says what Boardsesh is.</strong>
+            <span class="wf-tag">never shipped</span> The earlier wireframe drew a 38px marketing h1; what shipped is a
+            130px brand PNG above <code>Typography variant="h5" component="h1"</code>, i.e. an h1 rendered at h5 size
+            under an image. Semantically correct, visually a caption. This mockup restores the type scale (60px desktop,
+            34px at 390px) and drops the oversized mark — the wordmark in the floating header carries the brand. Exactly
+            one h1 on the page, server-rendered, with real copy around it; no indexable spinner-only render.
+            <span class="bind">
+              Binds: <code>packages/web/app/__tests__/home-page-content.test.tsx</code> → "homepage must render exactly
+              one &lt;h1&gt;" with non-empty text; <code>scripts/production-smoke.ts</code> reads the real SSR body for
+              <code>/</code>. Copy is <code>marketing:home.hero.title</code> / <code>.subtitle</code>, landed in all four
+              locales in the same commit.
+            </span>
+            <span class="oq">
+              Open: final h1 wording must survive the three glossaries — es "plafón" (never "tabla"), fr "enchaîné /
+              croix" (never "envoyer"), de "Getoppt / Board beleuchten" (never "senden").
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-3">
+          <span class="num">3</span>
+          <div class="body">
+            <strong>Two store CTAs side by side, and the amber spark is spent here.</strong> The hero is the measured
+            install driver, so both stores stay above the fold rather than one platform-sniffed button. The App Store
+            button carries the warm glow (<code>0 8px 26px rgba(255,138,61,.38)</code>, the dark-palette sibling of
+            <code>HERO_CTA_SX</code>'s <code>boxShadow</code>); Google Play is the quiet <code>--surface-2</code>
+            variant so the pair does not read as two primaries. Amber is fill-only with <code>#16111F</code> ink and at
+            most once per page — this glow is that one use, and nothing below the hero may take it.
+            <span class="bind">
+              Binds: <code>IOS_APP_STORE_URL</code> / <code>ANDROID_PLAY_STORE_URL</code> in
+              <code>app/lib/store-urls.ts</code>; both keep firing <code>App Install Click</code> with
+              <code>placement: 'hero'</code> via <code>buildAppInstallClickProperties</code> — the test pins
+              <code>{platform, source, placement: 'hero', mode}</code> exactly.
+            </span>
+            <span class="oq">
+              Open: the live hero platform-sniffs to a single button (<code>resolveHeroInstall</code>) and has a third
+              "update the app" mode for retired Capacitor stragglers. Showing both stores means deciding whether that
+              update path becomes a hero variant or moves into a dismissible strip.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-4">
+          <span class="num">4</span>
+          <div class="body">
+            <strong>"Start climbing on the web" is a tertiary text link, not a second pill.</strong> Carried forward
+            from the earlier wireframe unchanged: the web hand-off stays reachable but installs are what the hero is
+            for. The live page has this backwards — <code>StartClimbingButton</code> is the hero's first and largest
+            CTA, with the install button second and identically styled, so the two compete.
+            <span class="bind">
+              Binds: <code>packages/web/app/components/start-climbing-button.tsx</code> (SSO hand-off to the Expo-web
+              app when signed in). The same control also lives in the header and the footer.
+            </span>
+            <span class="oq">
+              Open: install-first vs web-first is still unsettled — the web hand-off click is uninstrumented, so there
+              is no number to decide on. Instrument it in the PR that moves it.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-5">
+          <span class="num">5</span>
+          <div class="body">
+            <strong>"Find a board near you" is a real search block, not a link card.</strong>
+            <span class="wf-tag">never shipped</span> The earlier wireframe specified a search field, a location button,
+            facet chips and a row of gym result cards. What shipped is one <code>OnboardingCard</code> reading "find a
+            gym" that links to <code>/gyms</code>. This restores the block: a plain GET form to <code>/gyms</code>, no
+            drawer, no client JS needed to submit, SSR-friendly. Text search leads because a large minority of gym rows
+            have no coordinates at all.
+            <span class="bind">
+              Binds: <code>searchGyms</code> (free-text + PostGIS <code>ST_DWithin</code>, board-type facets, offset
+              paging). Submits <code>?q=</code> (+ <code>near</code> when geolocation is granted). The existing
+              <code>home.cards.gymTitle</code> card and its <code>/gyms</code> href are asserted by the unit test — keep
+              a crawlable <code>/gyms</code> anchor in this block so that assertion survives the card's removal.
+            </span>
+            <span class="oq">
+              Open: which gyms populate the four teasers with no geolocation. Any default must not systematically bury
+              sparse or unclaimed listings — university walls and garages are the long tail this directory exists for.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-6">
+          <span class="num">6</span>
+          <div class="body">
+            <strong>"Use my location" is optional and the fallback is visible before the prompt.</strong> Geolocation is
+            an outlined secondary, never the only path: denial, an unsupported browser, or a desktop with no fix all
+            land on typing a city. The hint line under the row says so in plain words so nobody has to trigger a
+            permission dialog to find out.
+            <span class="bind">
+              Binds: the existing <code>useGeolocation</code> hook + <code>searchGyms(lat, lng, radiusKm)</code>; the
+              city-geocode fallback pattern already in <code>map-location-picker.tsx</code>.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-7">
+          <span class="num">7</span>
+          <div class="body">
+            <strong>Facet chips point at the literal routes, never at query strings.</strong>
+            <code>/gyms/kilter</code> is a page with its own copy and its own canonical;
+            <code>/gyms?board=kilter</code> would self-canonicalise away and waste the crawl. The footer already makes
+            this mistake impossible to repeat — its comment spells out why — and the chips here must follow it. Counts
+            come from the live board mix, ordered by count, and are dynamic rather than hardcoded.
+            <span class="bind">
+              Binds: <code>packages/web/app/gyms/page.tsx</code> (per-board routes and canonicals);
+              <code>site-footer.tsx</code> link group <code>gyms</code>. Chip counts from the gym/board join.
+            </span>
+            <span class="oq">
+              Open: the directory carries more board types than the four shown (Grasshopper, Decoy, So iLL,
+              Touchstone). Four chips plus "All" fits 390px; the rest need a "More" affordance or horizontal scroll.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-8">
+          <span class="num">8</span>
+          <div class="body">
+            <strong>The sparse card is the default, and a gym with no pin ranks exactly the same.</strong> Carried
+            forward verbatim from the earlier wireframe's note 6 and the gyms-directory design. Card renders only
+            schema-real fields: name, claim state, boards with type and angle, and — only when present — an address and
+            a distance. No photo, no logo, no description, no hours: those are empty for all but a handful of rows and
+            the long tail will never fill them. A missing pin gets a muted line and a claim prompt that doubles as the
+            fix, never a hidden or down-ranked listing.
+            <span class="bind">
+              Binds: <code>gyms.name</code>, <code>gyms.address</code>, <code>gyms.latitude/longitude</code>,
+              <code>user_boards.board_type + angle</code>, claim state from <code>owner_id</code>. Card title is a real
+              anchor to <code>/gym/&lt;slug&gt;</code> — merged slugs 308-redirect and never 404, because printed QR
+              codes exist in the field.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-9">
+          <span class="num">9</span>
+          <div class="body">
+            <strong>Popular board setups are the page's SEO spine — every card is a real anchor.</strong> This is the
+            one block the live page genuinely delivers (<code>PopularBoardRail</code>), and the refresh only re-frames
+            it: a four-up grid with the board thumbnail, human-readable config and a send count, instead of a rail
+            squeezed beside a 420px column. The mockup prints the href under each card so the implementer can see the
+            URL shape is unchanged. Cards must stay <code>&lt;a href&gt;</code> — never <code>router.push</code>, never
+            a click handler on a div.
+            <span class="bind">
+              Binds: <code>getPopularBoardConfigs()</code> (already SSR-fetched in <code>app/page.tsx</code>) rendered
+              through <code>constructClimbListWithSlugs(...)</code>;
+              <code>home-page-content.test.tsx</code> → "renders one crawlable board link per SSR config", matching
+              <code>/^\/(kilter|tension|moonboard)\/.+\/list$/</code>, and zero links with an empty config array without
+              crashing.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-10">
+          <span class="num">10</span>
+          <div class="body">
+            <strong>Recent beta stays a rail, and it stays the LCP.</strong> Five 9:16 thumbnails, community signal
+            directly under the fold. <code>app/page.tsx</code> already picks the LCP hint — a
+            <code>preconnect</code> to the backend origin plus a single high-priority <code>preload</code> for the first
+            beta thumbnail, falling back to the first board thumbnail when the rail is empty — so the rail must keep its
+            position and its first-image identity or the hint points at nothing the browser paints.
+            <span class="bind">
+              Binds: <code>getRecentBetaLinks()</code>, <code>selectHomeLcpHints()</code> in
+              <code>app/lib/popular-lcp-preload.ts</code>, <code>home-recent-beta-section.tsx</code>. Thumbnails are
+              cross-origin credentialed requests, hence the bare preconnect with no <code>crossOrigin</code>.
+            </span>
+            <span class="oq">
+              Open: an empty rail (new install, no recent uploads) collapses the section entirely and moves the LCP to
+              the board grid. Confirm the section heading disappears with it rather than leaving an empty "Recent beta".
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-11">
+          <span class="num">11</span>
+          <div class="body">
+            <strong>The feature strip is three-up at 1440 — this is the single biggest thing the live page gets
+            wrong.</strong>
+            <span class="wf-tag">never shipped</span> The earlier wireframe drew a three-column feature grid; the live
+            page wraps its whole onboarding stack in <code>maxWidth: 420, mx: 'auto'</code>, so a 1440px desktop shows a
+            narrow ribbon of cards down the middle with empty violet on both sides. Same content, three columns, each
+            with a portrait app screenshot, and the column only collapses below 760px. Copy keeps the existing voice
+            ("Take turns without the awkward 'who's next?'") and describes what the climber gets.
+            <span class="bind">
+              Binds: <code>packages/web/app/home-page-content.tsx</code> — the single 550-line
+              <code>'use client'</code> file; this block is the reason to split it into a
+              <code>app/(marketing)/home/sections/</code> directory with server components for everything that does not
+              need the browser.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-12">
+          <span class="num">12</span>
+          <div class="body">
+            <strong>Three colour roles. The Material purples are gone.</strong> The live file hardcodes
+            <code>#9C27B0</code>, <code>#7B1FA2</code> and <code>#6A1B9A</code> across an
+            <code>accentSurface</code> map of six accent variants, which reads as six unexplained category colours and
+            none of them are Velvet tokens. This page uses exactly three roles and says so out loud:
+            <strong>brand violet</strong> (<code>--primary</code> foreground for text/links/icons,
+            <code>--primary-fill</code> for button fills — never collapsed into one token),
+            <strong>amber spark</strong> (fill-only, dark <code>#16111F</code> ink, used once, on the hero CTA glow),
+            and <strong>info</strong> (violet-slate <code>#A5ABD6</code>, the low-key chip role — unclaimed badges, the
+            logbook icon chip).
+            <div class="role-strip">
+              <span class="role"><i style="background: #a78bfa"></i> brand violet · foreground</span>
+              <span class="role"><i style="background: #7c3aed"></i> brand violet · fill</span>
+              <span class="role"><i style="background: #ff8a3d"></i> amber spark · fill-only, once</span>
+              <span class="role"><i style="background: #a5abd6"></i> info · violet-slate</span>
+            </div>
+            <span class="bind">
+              Binds: <code>darkTokens</code> in <code>packages/web/app/theme/theme-config.ts</code> (<code>info</code>
+              <code>#A5ABD6</code>, <code>infoTint</code>) and <code>@boardsesh/velvet-tokens</code>. No hardcoded hex
+              in components — colours come from tokens, per the repo rule.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-13">
+          <span class="num">13</span>
+          <div class="body">
+            <strong>Every image on this page is a placeholder, and none of them may be generated.</strong> The only real
+            captures that exist today are eight Play Store screenshots at
+            <code>app-stores/google/screenshots/pixel-2/</code> — Pixel 2 resolution, too small for an 880px hero shot
+            and framed for a store listing rather than a web page. Real board and gym photography is being sourced and
+            does not exist yet. Until it does, the hero shot and the feature screenshots need fresh captures from the
+            screenshot pipeline, and the gym cards carry no imagery at all by design (note 8).
+            <span class="bind">
+              Binds: <code>vp run mobile:screenshots</code> (iOS, locale-matched en/es/fr/de) and
+              <code>vp run mobile:android-shots</code>; repo rule — no AI-generated images, real photos or diagrams
+              only.
+            </span>
+            <span class="oq">
+              Open: do the feature screenshots reuse App Store captures (already locale-matched) or get web-specific
+              ones at desktop resolution? Reuse is cheaper but the store crops assume a phone viewport.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-14">
+          <span class="num">14</span>
+          <div class="body">
+            <strong>The footer is a fixed link contract, not a design surface.</strong> Three groups — Find a gym,
+            Explore, Small print — exactly as <code>site-footer.tsx</code> ships them, plus the brand blurb and the
+            "Start climbing" capsule. Restyling is fine; dropping or renaming an href is not, because
+            <code>/gyms</code> is <code>noindex, follow</code> and out of the sitemap until the duplicate-gym queue
+            drains, which makes these anchors the only crawl path into the directory.
+            <span class="bind">
+              Binds: <code>packages/web/e2e/site-chrome.spec.ts</code> asserts the <code>site-footer</code> testid and
+              exactly one anchor each for <code>/</code>, <code>/about</code>, <code>/support</code>,
+              <code>/help</code>, <code>/docs</code>, <code>/playlists</code>, <code>/aurora-migration</code>,
+              <code>/legal</code>, <code>/privacy</code>, <code>/gyms</code>, <code>/gyms/kilter</code>,
+              <code>/gyms/tension</code>, <code>/gyms/moonboard</code>.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-15">
+          <span class="num">15</span>
+          <div class="body">
+            <strong>The trademark caption and the language switcher both live in the footer bottom bar.</strong> The
+            switcher is the only way to change language anywhere on www — the user drawer that used to host it is gone —
+            so it cannot be quietly dropped in a restyle. The trademark line describes compatibility and explicitly
+            disclaims affiliation; capitalisation is MoonBoard, Kilter, Tension, and the wording never implies
+            endorsement by Aurora Climbing, Moon Climbing or any manufacturer.
+            <span class="bind">
+              Binds: <code>CompactLanguageSwitcher</code> in <code>site-footer.tsx</code>;
+              <code>common:footer.trademarkNote</code>; e2e "keeps a locale switcher" asserts a visible
+              <code>button[name=/language/i]</code> inside the footer. Locales: <code>en-US</code> root, plus
+              <code>/es</code>, <code>/fr</code>, <code>/de</code>.
+            </span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-16">
+          <span class="num">16</span>
+          <div class="body">
+            <strong>390px is a first-class width, and the document ends at the footer.</strong> Every grid collapses by
+            CSS media query only — no JS breakpoint detection, no <code>Grid.useBreakpoint()</code>: gyms and boards go
+            4 → 2 → 1, beta 5 → 3 → 1, features 3 → 1 at 760px, footer 4 → 2 → 1. The hero drops to 34px and the store
+            buttons go full-width and stack. Nothing below the footer may reserve space — the old chrome's
+            <code>--bottom-bar-height</code> gutter is gone and must stay gone.
+            <span class="bind">
+              Binds: <code>packages/web/e2e/site-chrome.spec.ts</code> → "ends at the footer on the home page"
+              (&lt;24px below the footer's bottom edge) and "defines no --bottom-bar-height custom property". Repo rule:
+              CSS media queries for responsive design.
+            </span>
+          </div>
+        </div>
+      
+        <div class="annotation" id="note-17">
+          <span class="num">17</span>
+          <div class="body">
+            <strong>A support block, last thing before the footer.</strong> <code>/support</code> is currently reachable
+            only from one footer link in the "Explore" group, which is where links go to be ignored. Putting the ask at
+            the bottom of the homepage catches people who have just read what the app does and are already convinced —
+            and it costs the hero nothing, because it is below every acquisition CTA. The paired "Not got money spare?"
+            column is the same list <code>/support</code> carries, so the page never reads as money-only.
+            <span class="bind"
+              >Binds: <code>app/support/page.tsx</code>; <code>site-footer.tsx</code> link group
+              <code>explore</code>; copy must clear the perks regex in
+              <code>donation-disclosure.test.ts</code> and must not name a figure.</span
+            >
+            <span class="oq"
+              >Open: the "Chip in" label is deliberately not "Donate" — worth checking against whatever the App Store
+              review guidelines allow on a page the mobile app can link to, since the same wording travels.</span
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>
