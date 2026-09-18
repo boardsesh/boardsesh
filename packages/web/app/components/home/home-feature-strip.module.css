@@ -1,0 +1,116 @@
+/* "Board night, sorted" — the homepage feature strip.
+ *
+ * Three columns at 1440, one at 760 and below. The live page wrapped its
+ * onboarding stack in `maxWidth: 420, mx: 'auto'`, which turned a desktop into
+ * a narrow ribbon with empty violet either side (design note 11). The collapse
+ * is a CSS media query on purpose — no JS breakpoint detection.
+ *
+ * Colours are CSS vars from app/components/index.css. Never literals. */
+
+.strip {
+  margin-top: var(--spacing-12);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-4);
+}
+
+/* The phone capture. 9:16 because the source crops are 738x1312 device shots —
+   they are never scaled past their natural width, so a narrow column stays
+   crisp rather than soft. */
+.shot {
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 9 / 16;
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  background: var(--semantic-surface);
+}
+
+.shotImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A column with no honest capture yet gets this instead of a screenshot of
+   something else. No AI-generated images, ever. */
+.shotPending {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4);
+  border: 1px dashed var(--separator);
+  border-radius: var(--border-radius-lg);
+  background: var(--semantic-surface-elevated);
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* Three colour roles, not six. Brand violet for what the app does with your
+   crew; info (violet-slate) for the quiet one. */
+.chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--border-radius-md);
+  background: var(--home-accent-brand-surface);
+  color: var(--color-primary);
+}
+
+.chipInfo {
+  background: var(--home-accent-info-surface);
+  color: var(--color-info);
+}
+
+.featureTitle {
+  margin: 0;
+}
+
+.featureBody {
+  margin: 0;
+  color: var(--neutral-500);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-10);
+}
+
+@media (max-width: 760px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-10);
+  }
+
+  .strip {
+    margin-top: var(--spacing-8);
+  }
+
+  .cta {
+    margin-top: var(--spacing-8);
+  }
+}

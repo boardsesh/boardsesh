@@ -68,6 +68,35 @@
     },
     "recentBeta": {
       "title": "Beta fresca"
+    },
+    "features": {
+      "title": "Noche de plafón, resuelta",
+      "lead": "Tres cosas que hace la app y que un móvil compartido en la colchoneta no.",
+      "queue": {
+        "title": "Cola compartida",
+        "body": "Turnaos sin el típico «¿quién va ahora?». Todos añaden, todos ven el orden.",
+        "shotPending": "Captura en camino"
+      },
+      "party": {
+        "title": "Modo Fiesta",
+        "body": "Una cola para todo el grupo, en vivo en cada móvil. Enciende el plafón desde el que tengas más cerca.",
+        "shotAlt": "La pantalla de inicio de la app con las sesiones en vivo del grupo"
+      },
+      "logbook": {
+        "title": "Registro",
+        "body": "Apunta encadenes e intentos sobre la marcha, y trae contigo tu historial de Kilter o Tension.",
+        "shotAlt": "La pantalla de progreso de la app con los grados encadenados y el calendario de sesiones"
+      },
+      "cta": "Consigue la app"
+    },
+    "support": {
+      "eyebrow": "Gratis, y así se queda",
+      "title": "Boardsesh sale adelante porque los escaladores echan una mano",
+      "p1": "Sin anuncios, sin pantallas bloqueadas, sin segunda categoría. Todo Boardsesh sigue abierto para cualquiera, patrocines o no, incluido el autoalojamiento.",
+      "p2": "El alojamiento, la base de datos y las facturas que hay detrás las paga la gente que lo usa.",
+      "chipIn": "Echa una mano",
+      "source": "Mira el código",
+      "otherWays": "¿No te sobra el dinero?"
     }
   },
   "about": {

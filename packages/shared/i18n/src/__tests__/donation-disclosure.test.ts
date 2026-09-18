@@ -97,6 +97,16 @@ const SUPPORT_COPY_KEYS = [
   'support.honesty.p1',
   'support.honesty.p2',
   'support.thanks.body',
+  // The homepage support block carries the same ask above the footer, so it
+  // carries the same constraint. Its "not got money spare?" column reuses the
+  // `support.otherWays.*` titles above rather than duplicating them.
+  'home.support.eyebrow',
+  'home.support.title',
+  'home.support.p1',
+  'home.support.p2',
+  'home.support.chipIn',
+  'home.support.source',
+  'home.support.otherWays',
 ];
 
 describe.each(Object.keys(NOT_TAX_DEDUCTIBLE))('%s donation disclosure', (locale) => {
