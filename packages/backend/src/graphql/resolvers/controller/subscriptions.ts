@@ -236,6 +236,11 @@ export const controllerSubscriptions = {
                 push(event);
             }),
           `controllerEvents:${sessionId}`,
+          {
+            // Queue-only churn must not evict the latest pending LED state
+            // while a preceding queue lookup is slow. Clearing is LED state too.
+            isPriority: (event) => event.__typename === 'CurrentClimbChanged' || event.__typename === 'FullSync',
+          },
         ),
       );
 

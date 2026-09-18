@@ -6,7 +6,10 @@ import { controllerMutations } from '../graphql/resolvers/controller/mutations';
 import { controllerQueries } from '../graphql/resolvers/controller/queries';
 import { controllerSubscriptions } from '../graphql/resolvers/controller/subscriptions';
 import { pubsub } from '../pubsub';
-import type { ConnectionContext, ControllerEvent } from '@boardsesh/shared-schema';
+import { roomManager } from '../services/room-manager';
+import type { QueueState } from '../services/room-manager/types';
+import { createBarrier, createValueBarrier } from './helpers/concurrency';
+import type { ClimbQueueItem, ConnectionContext, ControllerEvent, QueueEvent } from '@boardsesh/shared-schema';
 
 // Test user ID
 const TEST_USER_ID = 'test-user-controller-tests';
@@ -380,6 +383,106 @@ describe('Controller Mutations', () => {
   });
 
   describe('controllerEvents subscription', () => {
+    it.each(['current', 'full', 'clear'] as const)(
+      'preserves %s LED state through queue overflow behind a blocked queue lookup',
+      async (eventKind) => {
+        const registered = await controllerMutations.registerController(
+          undefined,
+          { input: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2,3' } },
+          createMockContext(),
+        );
+        const iterator = controllerSubscriptions.controllerEvents.subscribe(
+          undefined,
+          { sessionId: TEST_SESSION_ID },
+          createControllerContext(registered.controllerId, registered.apiKey),
+        );
+        const lookupStarted = createBarrier();
+        const finishLookup = createValueBarrier<QueueState>();
+        const item: ClimbQueueItem = {
+          uuid: 'protected-queue-item',
+          climb: {
+            uuid: 'protected-climb',
+            setter_username: 'Setter',
+            name: 'Protected climb',
+            frames: 'p1r12',
+            angle: 40,
+            ascensionist_count: 0,
+            difficulty: 'V5',
+            quality_average: '3',
+            stars: 3,
+            difficulty_error: '0',
+            mirrored: false,
+            benchmark_difficulty: null,
+          },
+          addedBy: TEST_USER_ID,
+          tickedBy: [],
+          suggested: false,
+        };
+        const queueState: QueueState = {
+          queue: [item],
+          currentClimbQueueItem: eventKind === 'clear' ? null : item,
+          sequence: 2,
+          version: 1,
+          stateHash: 'protected-state',
+          stateHashOrdered: 'protected-ordered-state',
+        };
+        try {
+          expect((await nextControllerEvent(iterator)).controllerEvents.__typename).toBe('ControllerQueueSync');
+          expect((await nextControllerEvent(iterator)).controllerEvents.__typename).toBe('LedUpdate');
+          vi.spyOn(roomManager, 'getQueueState')
+            .mockImplementationOnce(() => {
+              lookupStarted.release();
+              return finishLookup.promise;
+            })
+            .mockResolvedValue(queueState);
+          const pendingQueueSync = iterator.next();
+          pubsub.publishQueueEvent(TEST_SESSION_ID, {
+            __typename: 'QueueItemRemoved',
+            sequence: 1,
+            stateHash: 'before',
+            uuid: 'old',
+          });
+          await lookupStarted.promise;
+
+          const ledEvent: QueueEvent =
+            eventKind === 'full'
+              ? { __typename: 'FullSync', sequence: 2, state: queueState }
+              : {
+                  __typename: 'CurrentClimbChanged',
+                  sequence: 2,
+                  stateHash: 'protected-state',
+                  item: eventKind === 'clear' ? null : item,
+                  clientId: 'controller-peer',
+                  correlationId: null,
+                };
+          pubsub.publishQueueEvent(TEST_SESSION_ID, ledEvent);
+          for (let index = 0; index < 1005; index++) {
+            pubsub.publishQueueEvent(TEST_SESSION_ID, {
+              __typename: 'QueueItemRemoved',
+              sequence: index + 3,
+              stateHash: 'churn',
+              uuid: `removed-${index}`,
+            });
+          }
+          finishLookup.release(queueState);
+          const queueSync = await pendingQueueSync;
+          expect(queueSync.done).toBe(false);
+          expect(queueSync.value?.controllerEvents.__typename).toBe('ControllerQueueSync');
+          const { controllerEvents: ledUpdate } = await nextControllerEvent(iterator);
+          expect(ledUpdate.__typename).toBe('LedUpdate');
+          if (ledUpdate.__typename === 'LedUpdate') {
+            expect(ledUpdate.frames).toBe(eventKind === 'clear' ? '' : 'p1r12');
+            expect(ledUpdate.clientId).toBe(eventKind === 'full' ? null : 'controller-peer');
+            if (eventKind === 'clear') expect(ledUpdate.commands).toEqual([]);
+            else expect(ledUpdate.climbUuid).toBe('protected-climb');
+          }
+        } finally {
+          finishLookup.release(queueState);
+          await iterator.return();
+        }
+      },
+    );
+
     it('sends flattened frames for unknown BLE climb thumbnails', async () => {
       const ctx = createMockContext();
       const registered = await controllerMutations.registerController(

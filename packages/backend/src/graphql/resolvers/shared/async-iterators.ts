@@ -10,13 +10,20 @@ const MAX_SUBSCRIPTION_QUEUE_SIZE = 1000;
  */
 function logOverflowDrop(label: string, droppedCount: number): void {
   if (droppedCount === 1 || droppedCount % 100 === 0) {
-    logger.warn(`[Subscription] Queue full for "${label}", dropping oldest event (${droppedCount} dropped so far)`);
+    logger.warn(
+      `[Subscription] Queue full for "${label}", dropping oldest eligible event (${droppedCount} dropped so far)`,
+    );
   }
 }
 
 export type CancellableAsyncIterator<T> = AsyncIterableIterator<T> & {
   return: (value?: unknown) => Promise<IteratorResult<T>>;
   throw: (error?: unknown) => Promise<IteratorResult<T>>;
+};
+
+export type SubscriptionQueueOptions<T> = {
+  /** Synchronous, pure predicate. On overflow, evict ordinary events first. */
+  isPriority?: (event: T) => boolean;
 };
 
 /**
@@ -35,8 +42,9 @@ export type CancellableAsyncIterator<T> = AsyncIterableIterator<T> & {
 export async function createAsyncIterator<T>(
   subscribe: (push: (value: T) => void) => Promise<() => void>,
   label = 'unknown',
+  options: SubscriptionQueueOptions<T> = {},
 ): Promise<CancellableAsyncIterator<T>> {
-  return createCallbackAsyncIterator(subscribe, label);
+  return createCallbackAsyncIterator(subscribe, label, options);
 }
 
 /**
@@ -57,13 +65,15 @@ export async function createAsyncIterator<T>(
 export async function createEagerAsyncIterator<T>(
   subscribe: (push: (value: T) => void) => Promise<() => void>,
   label = 'unknown',
+  options: SubscriptionQueueOptions<T> = {},
 ): Promise<CancellableAsyncIterator<T>> {
-  return createCallbackAsyncIterator(subscribe, label);
+  return createCallbackAsyncIterator(subscribe, label, options);
 }
 
 async function createCallbackAsyncIterator<T>(
   subscribe: (push: (value: T) => void) => Promise<() => void>,
   label: string,
+  { isPriority }: SubscriptionQueueOptions<T> = {},
 ): Promise<CancellableAsyncIterator<T>> {
   const queue: T[] = [];
   const pending: Array<(value: IteratorResult<T>) => void> = [];
@@ -76,9 +86,12 @@ async function createCallbackAsyncIterator<T>(
     if (pending.length > 0) {
       pending.shift()!({ value, done: false });
     } else {
-      // Bounded queue: drop oldest events if queue is full
+      // Keep FIFO order among retained events. Priority callers preserve their
+      // latest state across ordinary-event bursts; even all-priority floods
+      // remain bounded by evicting the oldest priority event as a last resort.
       if (queue.length >= MAX_SUBSCRIPTION_QUEUE_SIZE) {
-        queue.shift(); // Drop oldest
+        const ordinaryIndex = isPriority ? queue.findIndex((event) => !isPriority(event)) : 0;
+        queue.splice(Math.max(0, ordinaryIndex), 1);
         droppedCount += 1;
         logOverflowDrop(label, droppedCount);
       }
