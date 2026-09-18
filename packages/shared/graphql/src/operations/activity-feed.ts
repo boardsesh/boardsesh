@@ -171,6 +171,34 @@ export const GET_SESSION_GROUPED_FEED = gql`
   ${SESSION_FEED_ITEM_FIELDS}
 `;
 
+/** The climb payload behind both the single-climb card and the grouped one. */
+export const CREW_CLIMB_FIELDS = gql`
+  fragment CrewClimbFields on ActivityFeedItem {
+    id
+    type
+    entityType
+    entityId
+    actorId
+    actorDisplayName
+    actorAvatarUrl
+    climbUuid
+    climbName
+    boardType
+    layoutId
+    setterUsername
+    frames
+    angle
+    difficultyName
+    isNoMatch
+    createdAt
+    renderBoard {
+      layoutId
+      sizeId
+      setIds
+    }
+  }
+`;
+
 export const GET_CREW_FEED = gql`
   query GetCrewFeed($input: CrewFeedInput) {
     crewFeed(input: $input) {
@@ -187,28 +215,15 @@ export const GET_CREW_FEED = gql`
           id
           occurredAt
           climb {
-            id
-            type
-            entityType
-            entityId
-            actorId
-            actorDisplayName
-            actorAvatarUrl
-            climbUuid
-            climbName
-            boardType
-            layoutId
-            setterUsername
-            frames
-            angle
-            difficultyName
-            isNoMatch
-            createdAt
-            renderBoard {
-              layoutId
-              sizeId
-              setIds
-            }
+            ...CrewClimbFields
+          }
+        }
+        ... on CrewClimbGroupItem {
+          id
+          occurredAt
+          totalCount
+          climbs {
+            ...CrewClimbFields
           }
         }
       }
@@ -217,6 +232,7 @@ export const GET_CREW_FEED = gql`
     }
   }
   ${SESSION_FEED_ITEM_FIELDS}
+  ${CREW_CLIMB_FIELDS}
 `;
 
 export const GET_SESSION_DETAIL = gql`

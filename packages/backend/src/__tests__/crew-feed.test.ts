@@ -16,6 +16,15 @@ const viewerId = 'crew-feed-viewer';
 const creatorId = 'crew-feed-creator';
 const ctx = { userId: viewerId, isAuthenticated: true, connectionId: 'crew-test' } as ConnectionContext;
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+// Captured once so the fixture rows and the ids asserted against them cannot
+// land on different sides of midnight when a run straddles it.
+const importedAt = daysAgo(1);
+const nativeAt = daysAgo(3);
+const draftPublishedAt = daysAgo(4);
+const woodsAt = daysAgo(1);
+/** A card's id: the (board, author, UTC day) the group was filed under. */
+const groupId = (boardType: string, authorKey: string, at: string) =>
+  `climbgroup:${boardType}:${authorKey}:${at.slice(0, 10)}`;
 
 describe('Crew feed', () => {
   beforeAll(async () => {
@@ -24,19 +33,19 @@ describe('Crew feed', () => {
     await db.insert(userFollows).values({ followerId: viewerId, followingId: creatorId });
     await db.insert(boardClimbs).values(
       [
-        { uuid: 'crew-imported', setterUsername: 'crew-accountless', createdAt: daysAgo(1) },
+        { uuid: 'crew-imported', setterUsername: 'crew-accountless', createdAt: importedAt },
         {
           uuid: 'crew-native',
           userId: creatorId,
           setterUsername: 'crew-native-setter',
-          createdAt: daysAgo(3),
-          publishedAt: daysAgo(3),
+          createdAt: nativeAt,
+          publishedAt: nativeAt,
         },
         {
           uuid: 'crew-published-draft',
           setterUsername: 'crew-accountless',
           createdAt: daysAgo(100),
-          publishedAt: daysAgo(4),
+          publishedAt: draftPublishedAt,
         },
         { uuid: 'crew-old', setterUsername: 'crew-accountless', createdAt: daysAgo(31) },
         { uuid: 'crew-draft', setterUsername: 'crew-accountless', createdAt: daysAgo(1), isDraft: true },
@@ -76,10 +85,13 @@ describe('Crew feed', () => {
   it('mixes sessions and published climbs, including accountless imports and recent draft publication', async () => {
     const first = await crewFeedQueries.crewFeed(null, { input: { limit: 2 } }, ctx);
     expect(first.items.map((item) => item.__typename)).toEqual(['CrewClimbItem', 'CrewSessionItem']);
-    expect(first.items[0].id).toBe('climb:crew-imported');
+    expect(first.items[0].id).toBe(groupId('kilter', 'crew-accountless', importedAt));
     expect(first.hasMore).toBe(true);
     const second = await crewFeedQueries.crewFeed(null, { input: { limit: 2, cursor: first.cursor } }, ctx);
-    expect(second.items.map((item) => item.id)).toEqual(['climb:crew-native', 'climb:crew-published-draft']);
+    expect(second.items.map((item) => item.id)).toEqual([
+      groupId('kilter', 'crew-native-setter', nativeAt),
+      groupId('kilter', 'crew-accountless', draftPublishedAt),
+    ]);
     expect(second.hasMore).toBe(false);
     expect(second.cursor).toBeNull();
     expect(first.items[0]).toMatchObject({ climb: { actorId: null, actorDisplayName: 'crew-accountless' } });
@@ -88,12 +100,12 @@ describe('Crew feed', () => {
   it('reevaluates visibility and follow membership on refresh', async () => {
     await db.update(boardClimbs).set({ isHidden: true }).where(eq(boardClimbs.uuid, 'crew-imported'));
     const hidden = await crewFeedQueries.crewFeed(null, {}, ctx);
-    expect(hidden.items.map((item) => item.id)).not.toContain('climb:crew-imported');
+    expect(hidden.items.map((item) => item.id)).not.toContain(groupId('kilter', 'crew-accountless', importedAt));
     await db.update(boardClimbs).set({ isHidden: false }).where(eq(boardClimbs.uuid, 'crew-imported'));
     await db.delete(setterFollows).where(eq(setterFollows.followerId, viewerId));
     const unfollowed = await crewFeedQueries.crewFeed(null, {}, ctx);
     expect(unfollowed.items.filter((item) => item.__typename === 'CrewClimbItem').map((item) => item.id)).toEqual([
-      'climb:crew-native',
+      groupId('kilter', 'crew-native-setter', nativeAt),
     ]);
     await db.insert(setterFollows).values({ followerId: viewerId, setterUsername: 'crew-accountless' });
   });
@@ -188,10 +200,95 @@ describe('Crew feed', () => {
       frames: 'p1r1',
       compatibleSizeIds: [1],
       requiredSetIds: [1],
-      createdAt: daysAgo(1),
+      createdAt: woodsAt,
     });
     const feed = await crewFeedQueries.crewFeed(null, {}, ctx);
-    const woods = feed.items.find((item) => item.id === 'climb:crew-woods');
+    const woods = feed.items.find((item) => item.id === groupId('woods', 'crew-native-setter', woodsAt));
     expect(woods).toMatchObject({ climb: { renderBoard: { layoutId: 1, sizeId: 1 } } });
+  });
+
+  // Declared last: these insert rows the exact-list assertions above would see.
+  describe('setter day groups', () => {
+    const groupedAt = daysAgo(6);
+    const cappedAt = daysAgo(7);
+    const hour = (at: string, index: number) => `${at.slice(0, 11)}${String(index).padStart(2, '0')}:00:00.000000Z`;
+
+    beforeAll(async () => {
+      await db
+        .insert(setterFollows)
+        .values(['crew-pair', 'crew-prolific'].map((setterUsername) => ({ followerId: viewerId, setterUsername })));
+      await db.insert(boardClimbs).values(
+        [
+          ...[0, 1].map((index) => ({
+            uuid: `crew-pair-${index}`,
+            setterUsername: 'crew-pair',
+            createdAt: hour(groupedAt, index),
+          })),
+          ...Array.from({ length: 12 }, (_, index) => ({
+            uuid: `crew-prolific-${String(index).padStart(2, '0')}`,
+            setterUsername: 'crew-prolific',
+            createdAt: hour(cappedAt, index),
+          })),
+        ].map((climb) => ({
+          boardType: 'kilter',
+          layoutId: 99772,
+          isListed: true,
+          isDraft: false,
+          isHidden: false,
+          frames: 'p1r1',
+          name: climb.uuid,
+          ...climb,
+        })),
+      );
+    });
+
+    it('folds one setter day into a single card, newest climb first', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const pair = feed.items.find((item) => item.id === groupId('kilter', 'crew-pair', groupedAt));
+      expect(pair?.__typename).toBe('CrewClimbGroupItem');
+      expect(pair).toMatchObject({ totalCount: 2, occurredAt: hour(groupedAt, 1) });
+      expect(pair?.__typename === 'CrewClimbGroupItem' && pair.climbs.map((climb) => climb.climbUuid)).toEqual([
+        'crew-pair-1',
+        'crew-pair-0',
+      ]);
+    });
+
+    it('caps a card at ten climbs but still counts the rest', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const prolific = feed.items.find((item) => item.id === groupId('kilter', 'crew-prolific', cappedAt));
+      expect(prolific?.__typename).toBe('CrewClimbGroupItem');
+      expect(prolific).toMatchObject({ totalCount: 12 });
+      // Ten newest, so "See all 12" is the only way to the other two.
+      expect(prolific?.__typename === 'CrewClimbGroupItem' && prolific.climbs.map((climb) => climb.climbUuid)).toEqual(
+        Array.from({ length: 10 }, (_, index) => `crew-prolific-${String(11 - index).padStart(2, '0')}`),
+      );
+    });
+
+    it('leaves a lone climb as a CrewClimbItem for clients that predate the group', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const lone = feed.items.find((item) => item.id === groupId('kilter', 'crew-native-setter', nativeAt));
+      expect(lone?.__typename).toBe('CrewClimbItem');
+      expect(lone).toMatchObject({ climb: { climbUuid: 'crew-native' } });
+    });
+
+    it('splits a setter day on the viewer zone, not on UTC', async () => {
+      // 00:00 and 01:00 UTC on `cappedAt` are the previous evening in Denver,
+      // so a US viewer sees the day break where their clock puts it.
+      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const denver = await crewFeedQueries.crewFeed(null, { input: { limit: 50, timeZone: 'America/Denver' } }, ctx);
+      const countsFor = (feed: Awaited<ReturnType<typeof crewFeedQueries.crewFeed>>, setter: string) =>
+        feed.items
+          .filter((item) => item.id.startsWith(`climbgroup:kilter:${setter}:`))
+          .map((item) => (item.__typename === 'CrewClimbGroupItem' ? item.totalCount : 1));
+      expect(countsFor(utc, 'crew-prolific')).toEqual([12]);
+      // 00:00-05:59 UTC fall on the previous Denver day (UTC-6): 6 and 6.
+      expect(countsFor(denver, 'crew-prolific')).toEqual([6, 6]);
+    });
+
+    it('falls back to UTC for a zone Postgres would reject', async () => {
+      const bogus = await crewFeedQueries.crewFeed(null, { input: { limit: 50, timeZone: 'Mars/Olympus' } }, ctx);
+      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      expect(bogus.items.map((item) => item.id)).toEqual(utc.items.map((item) => item.id));
+    });
   });
 });
