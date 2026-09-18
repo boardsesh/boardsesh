@@ -108,20 +108,31 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             alt="Boardsesh"
             priority
           />
-          {/* `variant` keeps the visual size; `component` fixes the semantics.
-              MUI maps variant="h5" to a literal <h5>, so before this the
-              homepage server-rendered no <h1> at all — the highest-traffic
-              indexable page on the site had no top-level heading for a crawler
-              to read. Visual output is unchanged. */}
+          {/* `component` fixes the semantics: MUI maps a variant to its literal
+              tag, so this used to server-render no <h1> at all on the
+              highest-traffic indexable page on the site. The size is set here
+              rather than by variant — the hero is the one large thing on the
+              page and it was rendering at h5, smaller than the section headings
+              further down. */}
           <Typography
-            variant="h5"
+            variant="h3"
             component="h1"
             fontWeight={themeTokens.typography.fontWeight.bold}
-            sx={{ color: 'var(--bs-text-brand-primary)' }}
+            sx={{
+              color: 'var(--bs-text-brand-primary)',
+              fontSize: { xs: 30, sm: 40 },
+              lineHeight: 1.15,
+              letterSpacing: '-0.02em',
+              // Cap the measure so the title breaks in a deliberate place.
+              maxInlineSize: '18ch',
+            }}
           >
             {t('home.hero.title')}
           </Typography>
-          <Typography variant="body1" sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 320 }}>
+          <Typography
+            variant="body1"
+            sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 420, fontSize: { xs: 16, sm: 18 } }}
+          >
             {t('home.hero.subtitle')}
           </Typography>
           {/* Primary CTA: hand off to the Expo-web app (single sign-on when
