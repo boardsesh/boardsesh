@@ -4,10 +4,32 @@ import type { BetaLinksGqlRow } from '../beta-video-url';
 
 import type { SocialEntityType } from './comments';
 
-export type CrewFeedInput = { cursor?: string | null; limit?: number };
+export type CrewFeedInput = {
+  cursor?: string | null;
+  limit?: number;
+  /**
+   * IANA zone the per-setter day boundary is drawn in. A climb published at
+   * 23:00 local belongs to that local day, not to whatever UTC calls it.
+   * Defaults to UTC when absent or unrecognised.
+   */
+  timeZone?: string | null;
+};
+
+/** How many of a group's climbs the feed carries; the rest live on the setter page. */
+export const CREW_CLIMB_GROUP_LIMIT = 10;
+
 export type CrewFeedItem =
   | { __typename: 'CrewSessionItem'; id: string; occurredAt: string; session: SessionFeedItem }
-  | { __typename: 'CrewClimbItem'; id: string; occurredAt: string; climb: ActivityFeedItem };
+  | { __typename: 'CrewClimbItem'; id: string; occurredAt: string; climb: ActivityFeedItem }
+  | {
+      __typename: 'CrewClimbGroupItem';
+      id: string;
+      occurredAt: string;
+      /** At most `CREW_CLIMB_GROUP_LIMIT`, newest first. */
+      climbs: ActivityFeedItem[];
+      /** Every climb in the group, including the ones past the cap. */
+      totalCount: number;
+    };
 export type CrewFeedResult = { items: CrewFeedItem[]; cursor: string | null; hasMore: boolean };
 
 /**

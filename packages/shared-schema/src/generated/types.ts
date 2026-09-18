@@ -1738,6 +1738,24 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+/**
+ * Several climbs one setter published on one local day, newest first.
+ *
+ * Emitted only for two or more climbs: a lone climb stays a CrewClimbItem, so
+ * a client that predates this member keeps rendering single new climbs instead of
+ * silently dropping them.
+ */
+export type CrewClimbGroupItem = {
+  __typename?: 'CrewClimbGroupItem';
+  /** At most 10, newest first. totalCount says how many there really are. */
+  climbs: Array<ActivityFeedItem>;
+  id: Scalars['ID']['output'];
+  /** When the newest climb in the group was published. */
+  occurredAt: Scalars['String']['output'];
+  /** Every climb in the group, including the ones past the 10-climb cap. */
+  totalCount: Scalars['Int']['output'];
+};
+
 export type CrewClimbItem = {
   __typename?: 'CrewClimbItem';
   climb: ActivityFeedItem;
@@ -1748,9 +1766,15 @@ export type CrewClimbItem = {
 export type CrewFeedInput = {
   cursor?: InputMaybe<Scalars['String']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+   * A climb published at 23:00 local belongs to that local day, not to whatever
+   * UTC calls it. Defaults to UTC when absent or unrecognised.
+   */
+  timeZone?: InputMaybe<Scalars['String']['input']>;
 };
 
-export type CrewFeedItem = CrewClimbItem | CrewSessionItem;
+export type CrewFeedItem = CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
 
 export type CrewFeedResult = {
   __typename?: 'CrewFeedResult';
@@ -9903,7 +9927,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
   BoardPresenceEvent: BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
-  CrewFeedItem: CrewClimbItem | CrewSessionItem;
+  CrewFeedItem: CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
   QueueEvent:
     | ClimbMirrored
     | CurrentClimbChanged
@@ -10025,6 +10049,7 @@ export type ResolversTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbGroupItem: ResolverTypeWrapper<CrewClimbGroupItem>;
   CrewClimbItem: ResolverTypeWrapper<CrewClimbItem>;
   CrewFeedInput: CrewFeedInput;
   CrewFeedItem: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CrewFeedItem']>;
@@ -10472,6 +10497,7 @@ export type ResolversParentTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbGroupItem: CrewClimbGroupItem;
   CrewClimbItem: CrewClimbItem;
   CrewFeedInput: CrewFeedInput;
   CrewFeedItem: ResolversUnionTypes<ResolversParentTypes>['CrewFeedItem'];
@@ -11639,6 +11665,17 @@ export type ControllerRegistrationResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type CrewClimbGroupItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewClimbGroupItem'] = ResolversParentTypes['CrewClimbGroupItem'],
+> = ResolversObject<{
+  climbs?: Resolver<Array<ResolversTypes['ActivityFeedItem']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type CrewClimbItemResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['CrewClimbItem'] = ResolversParentTypes['CrewClimbItem'],
@@ -11653,7 +11690,7 @@ export type CrewFeedItemResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['CrewFeedItem'] = ResolversParentTypes['CrewFeedItem'],
 > = ResolversObject<{
-  __resolveType: TypeResolveFn<'CrewClimbItem' | 'CrewSessionItem', ParentType, ContextType>;
+  __resolveType: TypeResolveFn<'CrewClimbGroupItem' | 'CrewClimbItem' | 'CrewSessionItem', ParentType, ContextType>;
 }>;
 
 export type CrewFeedResultResolvers<
@@ -15868,6 +15905,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
+  CrewClimbGroupItem?: CrewClimbGroupItemResolvers<ContextType>;
   CrewClimbItem?: CrewClimbItemResolvers<ContextType>;
   CrewFeedItem?: CrewFeedItemResolvers<ContextType>;
   CrewFeedResult?: CrewFeedResultResolvers<ContextType>;

@@ -1735,6 +1735,24 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+/**
+ * Several climbs one setter published on one local day, newest first.
+ *
+ * Emitted only for two or more climbs: a lone climb stays a CrewClimbItem, so
+ * a client that predates this member keeps rendering single new climbs instead of
+ * silently dropping them.
+ */
+export type CrewClimbGroupItem = {
+  __typename?: 'CrewClimbGroupItem';
+  /** At most 10, newest first. totalCount says how many there really are. */
+  climbs: Array<ActivityFeedItem>;
+  id: Scalars['ID']['output'];
+  /** When the newest climb in the group was published. */
+  occurredAt: Scalars['String']['output'];
+  /** Every climb in the group, including the ones past the 10-climb cap. */
+  totalCount: Scalars['Int']['output'];
+};
+
 export type CrewClimbItem = {
   __typename?: 'CrewClimbItem';
   climb: ActivityFeedItem;
@@ -1745,9 +1763,15 @@ export type CrewClimbItem = {
 export type CrewFeedInput = {
   cursor?: InputMaybe<Scalars['String']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+   * A climb published at 23:00 local belongs to that local day, not to whatever
+   * UTC calls it. Defaults to UTC when absent or unrecognised.
+   */
+  timeZone?: InputMaybe<Scalars['String']['input']>;
 };
 
-export type CrewFeedItem = CrewClimbItem | CrewSessionItem;
+export type CrewFeedItem = CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
 
 export type CrewFeedResult = {
   __typename?: 'CrewFeedResult';
@@ -10118,6 +10142,28 @@ export type GetSessionGroupedFeedQuery = {
   };
 };
 
+export type CrewClimbFieldsFragment = {
+  __typename?: 'ActivityFeedItem';
+  id: string;
+  type: ActivityFeedItemType;
+  entityType: SocialEntityType;
+  entityId: string;
+  actorId?: string | null;
+  actorDisplayName?: string | null;
+  actorAvatarUrl?: string | null;
+  climbUuid?: string | null;
+  climbName?: string | null;
+  boardType?: string | null;
+  layoutId?: number | null;
+  setterUsername?: string | null;
+  frames?: string | null;
+  angle?: number | null;
+  difficultyName?: string | null;
+  isNoMatch?: boolean | null;
+  createdAt: string;
+  renderBoard?: { __typename?: 'RenderBoardConfig'; layoutId: number; sizeId: number; setIds: Array<number> } | null;
+};
+
 export type GetCrewFeedQueryVariables = Exact<{
   input?: InputMaybe<CrewFeedInput>;
 }>;
@@ -10129,6 +10175,38 @@ export type GetCrewFeedQuery = {
     cursor?: string | null;
     hasMore: boolean;
     items: Array<
+      | {
+          __typename: 'CrewClimbGroupItem';
+          id: string;
+          occurredAt: string;
+          totalCount: number;
+          climbs: Array<{
+            __typename?: 'ActivityFeedItem';
+            id: string;
+            type: ActivityFeedItemType;
+            entityType: SocialEntityType;
+            entityId: string;
+            actorId?: string | null;
+            actorDisplayName?: string | null;
+            actorAvatarUrl?: string | null;
+            climbUuid?: string | null;
+            climbName?: string | null;
+            boardType?: string | null;
+            layoutId?: number | null;
+            setterUsername?: string | null;
+            frames?: string | null;
+            angle?: number | null;
+            difficultyName?: string | null;
+            isNoMatch?: boolean | null;
+            createdAt: string;
+            renderBoard?: {
+              __typename?: 'RenderBoardConfig';
+              layoutId: number;
+              sizeId: number;
+              setIds: Array<number>;
+            } | null;
+          }>;
+        }
       | {
           __typename: 'CrewClimbItem';
           id: string;
@@ -13542,6 +13620,50 @@ export const SessionFeedItemFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<SessionFeedItemFieldsFragment, unknown>;
+export const CrewClimbFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'CrewClimbFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'ActivityFeedItem' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'renderBoard' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CrewClimbFieldsFragment, unknown>;
 export const LiveSessionFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -14148,35 +14270,29 @@ export const GetCrewFeedDocument = {
                               selectionSet: {
                                 kind: 'SelectionSet',
                                 selections: [
-                                  { kind: 'Field', name: { kind: 'Name', value: 'id' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'type' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
-                                  { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
-                                  {
-                                    kind: 'Field',
-                                    name: { kind: 'Name', value: 'renderBoard' },
-                                    selectionSet: {
-                                      kind: 'SelectionSet',
-                                      selections: [
-                                        { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
-                                        { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
-                                        { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
-                                      ],
-                                    },
-                                  },
+                                  { kind: 'FragmentSpread', name: { kind: 'Name', value: 'CrewClimbFields' } },
+                                ],
+                              },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'InlineFragment',
+                        typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'CrewClimbGroupItem' } },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'occurredAt' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'climbs' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  { kind: 'FragmentSpread', name: { kind: 'Name', value: 'CrewClimbFields' } },
                                 ],
                               },
                             },
@@ -14361,6 +14477,45 @@ export const GetCrewFeedDocument = {
           },
           { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
           { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'CrewClimbFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'ActivityFeedItem' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'entityType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'entityId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorDisplayName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'actorAvatarUrl' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'renderBoard' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+              ],
+            },
+          },
         ],
       },
     },

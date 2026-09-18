@@ -1338,6 +1338,12 @@ input AttachBetaLinkInput {
 input CrewFeedInput {
   cursor: String
   limit: Int
+  """
+  IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+  A climb published at 23:00 local belongs to that local day, not to whatever
+  UTC calls it. Defaults to UTC when absent or unrecognised.
+  """
+  timeZone: String
 }
 
 type CrewSessionItem {
@@ -1352,7 +1358,24 @@ type CrewClimbItem {
   climb: ActivityFeedItem!
 }
 
-union CrewFeedItem = CrewSessionItem | CrewClimbItem
+"""
+Several climbs one setter published on one local day, newest first.
+
+Emitted only for two or more climbs: a lone climb stays a CrewClimbItem, so
+a client that predates this member keeps rendering single new climbs instead of
+silently dropping them.
+"""
+type CrewClimbGroupItem {
+  id: ID!
+  "When the newest climb in the group was published."
+  occurredAt: String!
+  "At most 10, newest first. totalCount says how many there really are."
+  climbs: [ActivityFeedItem!]!
+  "Every climb in the group, including the ones past the 10-climb cap."
+  totalCount: Int!
+}
+
+union CrewFeedItem = CrewSessionItem | CrewClimbItem | CrewClimbGroupItem
 
 type CrewFeedResult {
   items: [CrewFeedItem!]!
