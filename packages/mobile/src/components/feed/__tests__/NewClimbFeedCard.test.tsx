@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { ActivityFeedItem } from '@boardsesh/shared-schema';
 import { NewClimbFeedCard } from '../NewClimbFeedCard';
 
-const mocks = vi.hoisted(() => ({ push: vi.fn(), open: vi.fn(), thumbnail: vi.fn(), carousel: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  open: vi.fn(),
+  thumbnail: vi.fn(),
+  carousel: vi.fn(),
+  snap: { current: undefined as ((index: number) => void) | undefined },
+}));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -18,10 +24,21 @@ vi.mock('react-native', () => ({
     OS: 'android',
     select: (options: { android?: unknown; default?: unknown }) => options.android ?? options.default,
   },
-  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => (
+  View: ({
+    children,
+    onLayout,
+    style,
+  }: {
+    children?: ReactNode;
+    onLayout?: (event: unknown) => void;
+    style?: unknown;
+  }) => (
     // Report a width the moment the slot mounts, the way the native onLayout
-    // does — without it the card would never leave its unmeasured branch.
-    <div ref={() => onLayout?.({ nativeEvent: { layout: { width: 320 } } })}>{children}</div>
+    // does — without it the card would never leave its unmeasured branch. The
+    // style rides along as data so a test can see which page dot is lit.
+    <div data-style={JSON.stringify(style ?? null)} ref={() => onLayout?.({ nativeEvent: { layout: { width: 320 } } })}>
+      {children}
+    </div>
   ),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => (
     <button onClick={onPress}>{children}</button>
@@ -62,12 +79,15 @@ vi.mock('../../SnapCarousel', () => ({
     data,
     renderItem,
     keyExtractor,
+    onSnapToIndex,
   }: {
     data: readonly TItem[];
     renderItem: (info: { item: TItem; index: number }) => ReactNode;
     keyExtractor: (item: TItem, index: number) => string;
+    onSnapToIndex?: (index: number) => void;
   }) => {
     mocks.carousel(data);
+    mocks.snap.current = onSnapToIndex;
     return (
       <div>
         {data.map((item, index) => (
@@ -204,6 +224,39 @@ describe('NewClimbFeedCard', () => {
     render(<NewClimbFeedCard item={group([climb, second])} />);
     expect(mocks.carousel).toHaveBeenCalledWith(
       expect.not.arrayContaining([expect.objectContaining({ kind: 'see-all' })]),
+    );
+  });
+
+  // FlashList recycles one group cell into the next, so the page index has to be
+  // paired with its group or B opens on the page you left A on.
+  it('resets the lit dot when the cell is recycled into another group', () => {
+    const third: ActivityFeedItem = { ...climb, climbUuid: 'third', entityId: 'third', climbName: 'Sixty percent' };
+    const groupA = { ...group([climb, second, third]), id: 'climbgroup:woods:accountless:2026-09-01' };
+    const groupB = { ...group([climb, second]), id: 'climbgroup:woods:accountless:2026-08-30' };
+    const litIndex = (container: HTMLElement) => {
+      const dots = [...container.querySelectorAll('div[data-style]')]
+        .map((node) => JSON.parse(node.getAttribute('data-style')!))
+        .filter((style) => Array.isArray(style) && style[1]?.backgroundColor);
+      return dots.findIndex((style) => style[1].backgroundColor === '#888');
+    };
+    const { rerender, container } = render(<NewClimbFeedCard item={groupA} />);
+    act(() => mocks.snap.current?.(2));
+    expect(litIndex(container)).toBe(2);
+
+    rerender(<NewClimbFeedCard item={groupB} />);
+    // Group B has only two pages; index 2 would light nothing at all.
+    expect(litIndex(container)).toBe(0);
+  });
+
+  it('carries the feed ascents and stars into the drawer instead of zeros', () => {
+    const { getByRole } = render(<NewClimbFeedCard item={single({ ascensionistCount: 7, qualityAverage: 4.5 })} />);
+    fireEvent.click(getByRole('button', { name: /Fresh holds/ }));
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climb: expect.objectContaining({ ascensionist_count: 7, quality_average: '4.5', stars: 4.5 }),
+      }),
+      expect.anything(),
+      { preview: true },
     );
   });
 });

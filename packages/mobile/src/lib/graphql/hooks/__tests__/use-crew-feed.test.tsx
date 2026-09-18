@@ -30,14 +30,16 @@ describe('useCrewFeed', () => {
     request.mockResolvedValueOnce({ crewFeed: { items: [], cursor: null, hasMore: false } });
     const { result } = renderHook(() => useCrewFeed(true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, { input: { limit: 20, cursor: null, timeZone } });
+    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, {
+      input: { limit: 20, cursor: null, timeZone, groupClimbs: true },
+    });
     expect(result.current.hasNextPage).toBe(true);
     await act(async () => {
       await result.current.fetchNextPage();
     });
     await waitFor(() => expect(result.current.hasNextPage).toBe(false));
     expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, {
-      input: { limit: 20, cursor: 'next-cursor', timeZone },
+      input: { limit: 20, cursor: 'next-cursor', timeZone, groupClimbs: true },
     });
   });
   it('does not request a private crew feed without a viewer', () => {

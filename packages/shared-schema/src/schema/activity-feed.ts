@@ -8,6 +8,12 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     UTC calls it. Defaults to UTC when absent or unrecognised.
     """
     timeZone: String
+    """
+    Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+    member has no fragment for it, so the item would arrive as a bare __typename
+    and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+    """
+    groupClimbs: Boolean
   }
 
   type CrewSessionItem {
@@ -25,9 +31,11 @@ export const activityFeedTypeDefs = /* GraphQL */ `
   """
   Several climbs one setter published on one local day, newest first.
 
-  Emitted only for two or more climbs: a lone climb stays a CrewClimbItem, so
-  a client that predates this member keeps rendering single new climbs instead of
-  silently dropping them.
+  Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+  two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+  gets one CrewClimbItem per climb instead, because a client that predates this
+  member does not ignore it: with no fragment for it the item arrives as a bare
+  __typename and its feed list throws on the missing payload.
   """
   type CrewClimbGroupItem {
     id: ID!
@@ -419,6 +427,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Quality rating"
     quality: Int
+    "Community ascent count for this climb at its resolved angle"
+    ascensionistCount: Int
+    "Blended community star average (1-5) at the resolved angle"
+    qualityAverage: Float
     "Number of attempts"
     attemptCount: Int
     "User comment on the ascent"

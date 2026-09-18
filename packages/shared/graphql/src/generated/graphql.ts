@@ -45,6 +45,8 @@ export type ActivityFeedItem = {
   actorId?: Maybe<Scalars['String']['output']>;
   /** Board angle */
   angle?: Maybe<Scalars['Int']['output']>;
+  /** Community ascent count for this climb at its resolved angle */
+  ascensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Number of attempts */
   attemptCount?: Maybe<Scalars['Int']['output']>;
   /** Board type (kilter, tension, moonboard) */
@@ -89,6 +91,8 @@ export type ActivityFeedItem = {
   metadata?: Maybe<Scalars['String']['output']>;
   /** Quality rating */
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Blended community star average (1-5) at the resolved angle */
+  qualityAverage?: Maybe<Scalars['Float']['output']>;
   /** Board geometry for this climb, including its compatible size */
   renderBoard?: Maybe<RenderBoardConfig>;
   /** Setter username */
@@ -1738,9 +1742,11 @@ export type CreateSprayWallVersionInput = {
 /**
  * Several climbs one setter published on one local day, newest first.
  *
- * Emitted only for two or more climbs: a lone climb stays a CrewClimbItem, so
- * a client that predates this member keeps rendering single new climbs instead of
- * silently dropping them.
+ * Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+ * two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+ * gets one CrewClimbItem per climb instead, because a client that predates this
+ * member does not ignore it: with no fragment for it the item arrives as a bare
+ * __typename and its feed list throws on the missing payload.
  */
 export type CrewClimbGroupItem = {
   __typename?: 'CrewClimbGroupItem';
@@ -1762,6 +1768,12 @@ export type CrewClimbItem = {
 
 export type CrewFeedInput = {
   cursor?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+   * member has no fragment for it, so the item would arrive as a bare __typename
+   * and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+   */
+  groupClimbs?: InputMaybe<Scalars['Boolean']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
   /**
    * IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
@@ -10159,6 +10171,9 @@ export type CrewClimbFieldsFragment = {
   frames?: string | null;
   angle?: number | null;
   difficultyName?: string | null;
+  ascensionistCount?: number | null;
+  qualityAverage?: number | null;
+  isBenchmark?: boolean | null;
   isNoMatch?: boolean | null;
   createdAt: string;
   renderBoard?: { __typename?: 'RenderBoardConfig'; layoutId: number; sizeId: number; setIds: Array<number> } | null;
@@ -10197,6 +10212,9 @@ export type GetCrewFeedQuery = {
             frames?: string | null;
             angle?: number | null;
             difficultyName?: string | null;
+            ascensionistCount?: number | null;
+            qualityAverage?: number | null;
+            isBenchmark?: boolean | null;
             isNoMatch?: boolean | null;
             createdAt: string;
             renderBoard?: {
@@ -10228,6 +10246,9 @@ export type GetCrewFeedQuery = {
             frames?: string | null;
             angle?: number | null;
             difficultyName?: string | null;
+            ascensionistCount?: number | null;
+            qualityAverage?: number | null;
+            isBenchmark?: boolean | null;
             isNoMatch?: boolean | null;
             createdAt: string;
             renderBoard?: {
@@ -13645,6 +13666,9 @@ export const CrewClimbFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
           { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
           { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
           { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
           {
@@ -14502,6 +14526,9 @@ export const GetCrewFeedDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
           { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
           { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
           { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
           {

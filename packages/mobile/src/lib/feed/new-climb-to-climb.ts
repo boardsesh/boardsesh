@@ -18,14 +18,16 @@ export function newClimbToClimb(item: ActivityFeedItem): Climb | null {
     name: item.climbName ?? item.climbUuid,
     frames: item.frames,
     angle: item.angle ?? 0,
-    // A climb this new has no ascents and no community rating yet; the drawer
-    // refreshes both from the server once it is open.
-    ascensionist_count: 0,
+    // Carried from the feed, not zeroed. The drawer does NOT refetch a preview
+    // whose angle already matches (`previewNeedsAngleReanchor`), so zeros here
+    // would render as "0 ascents, no stars" on a climb that has both — the
+    // regression the old climb-page route did not have.
+    ascensionist_count: item.ascensionistCount ?? 0,
     difficulty: item.difficultyName ?? '',
     difficulty_error: '',
-    quality_average: '0',
+    quality_average: item.qualityAverage == null ? '0' : String(item.qualityAverage),
     setter_username: item.setterUsername ?? '',
-    stars: 0,
+    stars: item.qualityAverage ?? 0,
     benchmark_difficulty: item.isBenchmark ? (item.difficultyName ?? null) : null,
     mirrored: item.isMirror ?? false,
     is_no_match: item.isNoMatch ?? false,

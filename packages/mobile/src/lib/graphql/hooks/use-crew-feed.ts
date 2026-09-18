@@ -36,7 +36,10 @@ export function useCrewFeed(enabled: boolean) {
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       getHttpClient().request<{ crewFeed: CrewFeedResult }>(GET_CREW_FEED, {
-        input: { limit: 20, cursor: pageParam, timeZone: TIME_ZONE },
+        // groupClimbs opts this build into CrewClimbGroupItem. The server
+        // withholds the member otherwise, because a client without a fragment
+        // for it crashes rather than ignoring it.
+        input: { limit: 20, cursor: pageParam, timeZone: TIME_ZONE, groupClimbs: true },
       }),
     getNextPageParam: (lastPage) => (lastPage.crewFeed.hasMore ? (lastPage.crewFeed.cursor ?? undefined) : undefined),
     enabled: enabled && !!userId,

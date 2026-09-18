@@ -49,7 +49,14 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
   // the screen. Measured rather than derived from Dimensions so a split view,
   // a rotation or an iPad pane can't hand it a stale number.
   const [pageWidth, setPageWidth] = useState(0);
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Paired with the group it belongs to. FlashList recycles one CrewClimbGroupItem
+  // cell into the next, so a plain useState would carry the page you left group A
+  // on into group B — lighting the wrong dot, or none. Resetting during render is
+  // React's own "adjust state when props change"; the extra pass never commits.
+  const [paging, setPaging] = useState({ id: item.id, activeIndex: 0 });
+  if (paging.id !== item.id) setPaging({ id: item.id, activeIndex: 0 });
+  const activeIndex = paging.id === item.id ? paging.activeIndex : 0;
+  const handleSnap = useCallback((index: number) => setPaging({ id: item.id, activeIndex: index }), [item.id]);
 
   const climbs = useMemo(() => (item.__typename === 'CrewClimbGroupItem' ? item.climbs : [item.climb]), [item]);
   const lead = climbs[0];
@@ -158,11 +165,14 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
             <ClimbHero climb={lead} onPress={openClimb} />
           ) : (
             <SnapCarousel
+              // Keyed on the group: the rail holds its settled index and scroll
+              // offset internally, and a recycled cell must not inherit them.
+              key={item.id}
               data={pages}
               cardWidth={pageWidth}
               renderItem={renderPage}
               keyExtractor={pageKey}
-              onSnapToIndex={setActiveIndex}
+              onSnapToIndex={handleSnap}
               // One page ahead: each live card holds a board render, and a rail
               // of them inside a feed row is the memory the cap exists to bound.
               drawDistance={pageWidth}

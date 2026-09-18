@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { boardClimbs, boardseshTicks, setterFollows, userFollows, users } from '@boardsesh/db/schema';
+import { boardClimbs, boardClimbStats, boardseshTicks, setterFollows, userFollows, users } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { crewFeedQueries } from '../graphql/resolvers/social/crew-feed';
@@ -70,6 +70,16 @@ describe('Crew feed', () => {
         ...climb,
       })),
     );
+    // Stats for the drawer's send count and stars. `crew-native` carries no
+    // angle of its own, so this row's angle is the one the join resolves to.
+    await db.insert(boardClimbStats).values({
+      boardType: 'kilter',
+      climbUuid: 'crew-native',
+      angle: 40,
+      ascensionistCount: 7,
+      qualityAverage: 4.5,
+      benchmarkDifficulty: 21,
+    });
     await db.insert(boardseshTicks).values({
       uuid: 'crew-tick',
       userId: creatorId,
@@ -83,11 +93,15 @@ describe('Crew feed', () => {
   });
 
   it('mixes sessions and published climbs, including accountless imports and recent draft publication', async () => {
-    const first = await crewFeedQueries.crewFeed(null, { input: { limit: 2 } }, ctx);
+    const first = await crewFeedQueries.crewFeed(null, { input: { limit: 2, groupClimbs: true } }, ctx);
     expect(first.items.map((item) => item.__typename)).toEqual(['CrewClimbItem', 'CrewSessionItem']);
     expect(first.items[0].id).toBe(groupId('kilter', 'crew-accountless', importedAt));
     expect(first.hasMore).toBe(true);
-    const second = await crewFeedQueries.crewFeed(null, { input: { limit: 2, cursor: first.cursor } }, ctx);
+    const second = await crewFeedQueries.crewFeed(
+      null,
+      { input: { limit: 2, cursor: first.cursor, groupClimbs: true } },
+      ctx,
+    );
     expect(second.items.map((item) => item.id)).toEqual([
       groupId('kilter', 'crew-native-setter', nativeAt),
       groupId('kilter', 'crew-accountless', draftPublishedAt),
@@ -99,11 +113,11 @@ describe('Crew feed', () => {
 
   it('reevaluates visibility and follow membership on refresh', async () => {
     await db.update(boardClimbs).set({ isHidden: true }).where(eq(boardClimbs.uuid, 'crew-imported'));
-    const hidden = await crewFeedQueries.crewFeed(null, {}, ctx);
+    const hidden = await crewFeedQueries.crewFeed(null, { input: { groupClimbs: true } }, ctx);
     expect(hidden.items.map((item) => item.id)).not.toContain(groupId('kilter', 'crew-accountless', importedAt));
     await db.update(boardClimbs).set({ isHidden: false }).where(eq(boardClimbs.uuid, 'crew-imported'));
     await db.delete(setterFollows).where(eq(setterFollows.followerId, viewerId));
-    const unfollowed = await crewFeedQueries.crewFeed(null, {}, ctx);
+    const unfollowed = await crewFeedQueries.crewFeed(null, { input: { groupClimbs: true } }, ctx);
     expect(unfollowed.items.filter((item) => item.__typename === 'CrewClimbItem').map((item) => item.id)).toEqual([
       groupId('kilter', 'crew-native-setter', nativeAt),
     ]);
@@ -230,7 +244,7 @@ describe('Crew feed', () => {
       requiredSetIds: [1],
       createdAt: woodsAt,
     });
-    const feed = await crewFeedQueries.crewFeed(null, {}, ctx);
+    const feed = await crewFeedQueries.crewFeed(null, { input: { groupClimbs: true } }, ctx);
     const woods = feed.items.find((item) => item.id === groupId('woods', 'crew-native-setter', woodsAt));
     expect(woods).toMatchObject({ climb: { renderBoard: { layoutId: 1, sizeId: 1 } } });
   });
@@ -271,7 +285,7 @@ describe('Crew feed', () => {
     });
 
     it('folds one setter day into a single card, newest climb first', async () => {
-      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
       const pair = feed.items.find((item) => item.id === groupId('kilter', 'crew-pair', groupedAt));
       expect(pair?.__typename).toBe('CrewClimbGroupItem');
       expect(pair).toMatchObject({ totalCount: 2, occurredAt: hour(groupedAt, 1) });
@@ -282,7 +296,7 @@ describe('Crew feed', () => {
     });
 
     it('caps a card at ten climbs but still counts the rest', async () => {
-      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
       const prolific = feed.items.find((item) => item.id === groupId('kilter', 'crew-prolific', cappedAt));
       expect(prolific?.__typename).toBe('CrewClimbGroupItem');
       expect(prolific).toMatchObject({ totalCount: 12 });
@@ -293,7 +307,7 @@ describe('Crew feed', () => {
     });
 
     it('leaves a lone climb as a CrewClimbItem for clients that predate the group', async () => {
-      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
       const lone = feed.items.find((item) => item.id === groupId('kilter', 'crew-native-setter', nativeAt));
       expect(lone?.__typename).toBe('CrewClimbItem');
       expect(lone).toMatchObject({ climb: { climbUuid: 'crew-native' } });
@@ -302,8 +316,12 @@ describe('Crew feed', () => {
     it('splits a setter day on the viewer zone, not on UTC', async () => {
       // 00:00 and 01:00 UTC on `cappedAt` are the previous evening in Denver,
       // so a US viewer sees the day break where their clock puts it.
-      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
-      const denver = await crewFeedQueries.crewFeed(null, { input: { limit: 50, timeZone: 'America/Denver' } }, ctx);
+      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
+      const denver = await crewFeedQueries.crewFeed(
+        null,
+        { input: { limit: 50, timeZone: 'America/Denver', groupClimbs: true } },
+        ctx,
+      );
       const countsFor = (feed: Awaited<ReturnType<typeof crewFeedQueries.crewFeed>>, setter: string) =>
         feed.items
           .filter((item) => item.id.startsWith(`climbgroup:kilter:${setter}:`))
@@ -313,9 +331,52 @@ describe('Crew feed', () => {
       expect(countsFor(denver, 'crew-prolific')).toEqual([6, 6]);
     });
 
+    it('never hands an unasked client a CrewClimbGroupItem', async () => {
+      // A build that predates the member has no fragment for it, so it would
+      // arrive as a bare __typename and take the Home tab down. Unasked clients
+      // get the shape they already render: one card per climb.
+      const legacy = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      expect(legacy.items.every((item) => item.__typename !== 'CrewClimbGroupItem')).toBe(true);
+      const pairCards = legacy.items.filter((item) => item.id.startsWith('climb:crew-pair-'));
+      expect(pairCards.map((item) => item.id).sort()).toEqual(['climb:crew-pair-0', 'climb:crew-pair-1']);
+      expect(pairCards.every((item) => item.__typename === 'CrewClimbItem' && item.climb != null)).toBe(true);
+      // Still capped, so one setter cannot flood an old client either.
+      expect(legacy.items.filter((item) => item.id.startsWith('climb:crew-prolific-'))).toHaveLength(10);
+    });
+
+    it('carries real ascents and stars so the drawer does not show zeros', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
+      const lone = feed.items.find((item) => item.id === groupId('kilter', 'crew-native-setter', nativeAt));
+      expect(lone?.__typename === 'CrewClimbItem' && lone.climb).toMatchObject({
+        ascensionistCount: 7,
+        qualityAverage: 4.5,
+        isBenchmark: true,
+      });
+    });
+
+    it.each([
+      // Intl accepts every IANA backward link; Debian's Postgres dropped them to
+      // tzdata-legacy, and Android still reports Asia/Calcutta on many devices.
+      ['Asia/Calcutta'],
+      ['Europe/Kiev'],
+      ['US/Eastern'],
+      ['America/Buenos_Aires'],
+    ])('serves the feed on %s, a zone Intl accepts but Postgres does not', async (zone) => {
+      const feed = await crewFeedQueries.crewFeed(
+        null,
+        { input: { limit: 50, timeZone: zone, groupClimbs: true } },
+        ctx,
+      );
+      expect(feed.items.length).toBeGreaterThan(0);
+    });
+
     it('falls back to UTC for a zone Postgres would reject', async () => {
-      const bogus = await crewFeedQueries.crewFeed(null, { input: { limit: 50, timeZone: 'Mars/Olympus' } }, ctx);
-      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50 } }, ctx);
+      const bogus = await crewFeedQueries.crewFeed(
+        null,
+        { input: { limit: 50, timeZone: 'Mars/Olympus', groupClimbs: true } },
+        ctx,
+      );
+      const utc = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
       expect(bogus.items.map((item) => item.id)).toEqual(utc.items.map((item) => item.id));
     });
   });
