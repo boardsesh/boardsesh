@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
+
 import { MASK_UPSAMPLE, type MaskGrid, maskToOutline } from '../outline';
 
 /**
@@ -204,8 +206,14 @@ describe('maskToOutline', () => {
 
   it('smooths with upsampling rather than stepping the mask grid', () => {
     // A diagonal edge at mask resolution is a staircase. Upsampling before
-    // thresholding is what turns it back into a line; tracing at upsample 1
-    // keeps every step, so the finer trace must not have MORE vertices.
+    // thresholding turns it back into a line.
+    //
+    // The comparison has to be at the same PHYSICAL tolerance to mean anything:
+    // `tolerance` is in UPSAMPLED pixels, so 0.5 at upsample 1 and 2.0 at
+    // upsample 4 are both half a mask cell. Compared that way the smoothed trace
+    // needs no more vertices to describe the same edge; compared at equal
+    // NUMERIC tolerance the finer grid simply measures a finer shape and
+    // legitimately keeps more.
     const diagonal = gridFrom([
       '########',
       '#######.',
@@ -216,8 +224,14 @@ describe('maskToOutline', () => {
       '##......',
       '#.......',
     ]);
-    const stepped = maskToOutline(diagonal, [0, 0, 1, 1], { upsample: 1, tolerance: 0 }) as number[];
-    const smooth = maskToOutline(diagonal, [0, 0, 1, 1], { upsample: MASK_UPSAMPLE }) as number[];
+    // Tolerance is held equal on both sides: this is a claim about UPSAMPLING,
+    // and letting the default tolerance differ would measure simplification
+    // instead.
+    const stepped = maskToOutline(diagonal, [0, 0, 1, 1], { upsample: 1, tolerance: 0.5 }) as number[];
+    const smooth = maskToOutline(diagonal, [0, 0, 1, 1], {
+      upsample: MASK_UPSAMPLE,
+      tolerance: 0.5 * MASK_UPSAMPLE,
+    }) as number[];
     expect(points(smooth).length).toBeLessThanOrEqual(points(stepped).length);
   });
 
@@ -226,5 +240,62 @@ describe('maskToOutline', () => {
     const simplified = maskToOutline(SQUARE, [0.25, 0.25, 0.75, 0.75], { tolerance: 2 }) as number[];
     expect(points(simplified).length).toBeLessThan(points(detailed).length);
     expect(points(simplified).length).toBeGreaterThanOrEqual(3);
+  });
+
+  describe('the storage contract', () => {
+    /**
+     * `upsertSprayWallHolds` validates every ring with `isValidOutlineRing`. A
+     * ring this tracer emits that the store then refuses would surface to a
+     * climber as a failed save, not as a missing outline — so the guarantee is
+     * that anything returned here is already storable.
+     */
+    it('emits only rings the real validator accepts', () => {
+      const shapes: MaskGrid[] = [SQUARE, gridFrom(['####', '####', '####', '####'])];
+      // A deliberately ragged blob: the case that generates the most vertices.
+      const size = 40;
+      const ragged: string[] = [];
+      for (let y = 0; y < size; y += 1) {
+        let row = '';
+        for (let x = 0; x < size; x += 1) {
+          const dx = x - size / 2;
+          const dy = y - size / 2;
+          const wobble = 12 + 4 * Math.sin(Math.atan2(dy, dx) * 9);
+          row += Math.hypot(dx, dy) <= wobble ? '#' : '.';
+        }
+        ragged.push(row);
+      }
+      shapes.push(gridFrom(ragged));
+
+      for (const shape of shapes) {
+        for (const tolerance of [0, 0.25, 0.5, 1.5]) {
+          const ring = maskToOutline(shape, [0.15, 0.15, 0.85, 0.85], { tolerance });
+          if (ring === undefined) continue;
+          expect(isValidOutlineRing(ring)).toBe(true);
+          expect(ring.length).toBeGreaterThanOrEqual(MIN_RING_NUMBERS);
+          expect(ring.length).toBeLessThanOrEqual(MAX_RING_NUMBERS);
+        }
+      }
+    });
+
+    it('raises the tolerance rather than emitting an over-long ring', () => {
+      // Tolerance 0 keeps every traced vertex, which on a ragged blob is well
+      // over the ceiling; the contract pass has to bring it back under.
+      const size = 60;
+      const rows: string[] = [];
+      for (let y = 0; y < size; y += 1) {
+        let row = '';
+        for (let x = 0; x < size; x += 1) {
+          const dx = x - size / 2;
+          const dy = y - size / 2;
+          const wobble = 20 + 6 * Math.sin(Math.atan2(dy, dx) * 15);
+          row += Math.hypot(dx, dy) <= wobble ? '#' : '.';
+        }
+        rows.push(row);
+      }
+      const ring = maskToOutline(gridFrom(rows), [0.1, 0.1, 0.9, 0.9], { tolerance: 0 });
+      expect(ring).toBeDefined();
+      expect((ring as number[]).length).toBeLessThanOrEqual(MAX_RING_NUMBERS);
+      expect(isValidOutlineRing(ring)).toBe(true);
+    });
   });
 });

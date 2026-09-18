@@ -31,11 +31,28 @@ import type { Box } from './types';
 /** Where the mask grid is upsampled to before tracing, as a multiple of its own side. */
 export const MASK_UPSAMPLE = 4;
 
-/** Douglas–Peucker tolerance, in upsampled mask pixels. */
-export const OUTLINE_SIMPLIFY_TOLERANCE = 1.5;
+/**
+ * Douglas–Peucker tolerance, in upsampled mask pixels.
+ *
+ * Low enough that a round hold renders round. At 1.5 the median ring was 7
+ * points and a circular hold came out a visible heptagon; the storage contract
+ * allows 150 points, so there is room to be faithful. `enforceRingContract`
+ * raises it per-ring for the rare silhouette that needs it.
+ */
+export const OUTLINE_SIMPLIFY_TOLERANCE = 0.5;
 
 /** Below this many points a ring is not a shape, and the renderer should use its circle. */
 const MIN_RING_POINTS = 3;
+
+/**
+ * The storage contract, from `@boardsesh/board-art-geometry`'s `ring`: a ring is
+ * 3 to 150 points and every coordinate is within 4 radii. Duplicated as numbers
+ * rather than imported so this package keeps its empty dependency list; the
+ * tests import the real `isValidOutlineRing` and assert agreement, so a drift
+ * fails there rather than in production.
+ */
+const MAX_RING_POINTS = 150;
+const MAX_RING_COORDINATE = 4;
 
 export interface MaskGrid {
   /** Row-major logits for ONE query, `height * width` long. Not thresholded. */
@@ -85,7 +102,15 @@ export function maskToOutline(mask: MaskGrid, box: Box, options: OutlineOptions 
   // Only the neighbourhood of the box can belong to this query's hold, so the
   // window is cropped before upsampling. Bilinear interpolation is local, so this
   // is the same arithmetic as upsampling the whole grid, minus the work.
-  const margin = 2 * upsample;
+  //
+  // The margin scales with the BOX, not just the grid. A fixed few cells is fine
+  // for a crimp and far too tight for a volume: the mask then runs off the edge
+  // of its own window and the trace follows the window instead of the hold,
+  // which straightens one side of every large silhouette. Measured on the eval
+  // split, a fixed margin put 15% of rings above 0.80 fill — a "rectangle" score
+  // for something that is not a rectangle.
+  const boxSpan = Math.max((box[2] - box[0]) * width, (box[3] - box[1]) * height);
+  const margin = Math.ceil(2 * upsample + boxSpan / 2);
   const left = clamp(Math.floor(box[0] * width) - margin, 0, width - 1);
   const top = clamp(Math.floor(box[1] * height) - margin, 0, height - 1);
   const right = clamp(Math.ceil(box[2] * width) + margin, left + 1, width);
@@ -109,8 +134,8 @@ export function maskToOutline(mask: MaskGrid, box: Box, options: OutlineOptions 
 
   const traced = traceBoundary(component, windowWidth, windowHeight);
   if (traced.length < MIN_RING_POINTS) return undefined;
-  const simplified = simplify(traced, tolerance);
-  if (simplified.length < MIN_RING_POINTS) return undefined;
+  const simplified = enforceRingContract(traced, tolerance);
+  if (!simplified) return undefined;
 
   // Out of window pixels, into units of r about the box centre.
   //
@@ -131,7 +156,34 @@ export function maskToOutline(mask: MaskGrid, box: Box, options: OutlineOptions 
   for (const [x, y] of simplified) {
     ring.push(round4(((x - originX) * scaleX) / radius), round4(((y - originY) * scaleY) / radius));
   }
+
+  // A ring that escapes 4 radii is one the store will refuse, and a refusal at
+  // save time reads to a climber as a broken save rather than a missing
+  // silhouette. Drop it here, where the circle fallback is the visible result.
+  if (ring.some((value) => !Number.isFinite(value) || Math.abs(value) > MAX_RING_COORDINATE)) return undefined;
   return ring;
+}
+
+/**
+ * Simplify until the ring fits the 150-point ceiling.
+ *
+ * Douglas–Peucker at a fixed tolerance has no bound on its output, so a long or
+ * ragged silhouette can exceed what the store accepts. Raising the tolerance is
+ * the cheap lever: each pass drops the least significant vertices, so the ring
+ * degrades in detail rather than being truncated into a different shape.
+ */
+function enforceRingContract(points: Array<[number, number]>, tolerance: number): Array<[number, number]> | null {
+  let current = simplify(points, tolerance);
+  // Start the climb from a positive floor: a caller asking for tolerance 0 wants
+  // every vertex, and scaling zero by any factor is still zero — the loop would
+  // spin without simplifying and then drop a ring it could have kept.
+  let attempt = Math.max(tolerance, 0.25);
+  for (let round = 0; round < 12 && current.length > MAX_RING_POINTS; round += 1) {
+    current = simplify(points, attempt);
+    attempt *= 1.6;
+  }
+  if (current.length > MAX_RING_POINTS || current.length < MIN_RING_POINTS) return null;
+  return current;
 }
 
 /** Bilinear sample of the raw logits at a fractional mask-grid coordinate. */

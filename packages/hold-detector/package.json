@@ -1,0 +1,21 @@
+{
+  "name": "@boardsesh/hold-detector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit",
+    "lint": "vp lint",
+    "lint-fix": "vp lint --fix"
+  },
+  "dependencies": {
+    "@boardsesh/hold-detection": "workspace:*",
+    "onnxruntime-node": "^1.24.0",
+    "sharp": "^0.34.5"
+  }
+}
