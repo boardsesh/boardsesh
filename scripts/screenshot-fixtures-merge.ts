@@ -5,7 +5,7 @@
  * commits.
  *
  *   vp run mobile:screenshot-fixtures-merge -- --out packages/mobile/screenshot-fixtures \
- *     ./artifacts/screenshot-fixtures-en-US-iphone-16-pro-max ./artifacts/screenshot-fixtures-android
+ *     ./artifacts/screenshot-fixtures-ios-capture-en-US-iphone-16-pro-max ./artifacts/screenshot-fixtures-android
  *
  * A recording run is sharded — the iOS workflow records one shard per (locale,
  * device), Android records its own — so each shard comes back holding only the

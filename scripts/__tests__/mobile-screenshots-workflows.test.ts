@@ -304,7 +304,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
 
   it('captures the full 12-shard matrix when the probe crashed or was skipped, and the 11-shard one only on probe success', () => {
     // Pins the #5326 fix: gate=probe computes an exclude assuming the probe
-    // itself will capture and upload its shard, but a probe that FAILS never
+    // itself will capture and upload its shard, but a probe that FAILS may not
     // does that — so the matrix, not just the `if:`, must fall back to the
     // full 12-shard set on failure (and on `skipped`, the gate=full path,
     // which never asked for an exclude at all). Only an actually-successful
@@ -368,6 +368,22 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     );
     expect(publishStep?.run).toContain('vp run screenshot:baseline -- publish');
     expect(publishStep?.run).toContain('--commit "${{ needs.setup.outputs.source_sha }}"');
+  });
+
+  it('excludes artifacts from a failed probe when the full matrix recovers its pair', () => {
+    const download = workflow.jobs['ios-finalize'].steps?.find((step) => step.name === 'Download locale screenshots');
+    expect(download?.with?.pattern).toBe(
+      "${{ needs.probe.result == 'success' && 'ios-screenshots-*' || 'ios-screenshots-ios-capture-*' }}",
+    );
+    expect(download?.with?.['merge-multiple']).toBe(true);
+    const action = parse(readYaml(SHARD_ACTION_PATH)) as { runs: { steps: WorkflowStep[] } };
+    const uploads = action.runs.steps.filter((step) => step.uses === 'actions/upload-artifact@v4');
+    expect(uploads.length).toBeGreaterThan(0);
+    for (const upload of uploads) {
+      // Debug and recorded-fixture uploads must also survive recovery after a
+      // partial capture; each caller gets its own immutable artifact name.
+      expect(upload.with?.name).toContain('${{ github.job }}');
+    }
   });
 
   it('cannot report FULL_SET_CAPTURED=true on the partial/unchanged path where ios-capture was skipped', () => {
@@ -640,7 +656,7 @@ describe('ios-screenshot-shard composite action', () => {
     const source = readYaml(SHARD_ACTION_PATH);
     expect(source).toContain('fail-on-cache-miss: true');
     expect(source).toContain('key: ${{ inputs.app-cache-key }}');
-    expect(source).toContain('name: ios-screenshots-${{ inputs.locale }}-${{ inputs.device-slug }}');
+    expect(source).toContain('name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}');
     // The capture body must stay byte-identical between the probe and the fan-out.
     expect(source).toContain('vp run mobile:screenshots -- \\');
     expect(source).toContain('attempts=2');

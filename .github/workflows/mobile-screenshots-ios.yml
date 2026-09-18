@@ -664,9 +664,9 @@ jobs:
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
     # The `if:` above lets a crashed probe fan out, but the MATRIX also has to
-    # switch to the full 12-shard set on that path: a probe that crashed never
-    # captured or uploaded its own shard, even though `gate=probe` computed the
-    # exclude assuming it would. `needs.probe.result == 'success'` is the only
+    # switch to the full 12-shard set on that path: a crashed probe may have
+    # uploaded partial screenshots before a later step failed. Its artifacts
+    # stay separate and ios-finalize uses only the recovery captures. `needs.probe.result == 'success'` is the only
     # branch that gets the excluded (11-shard) matrix; both `skipped` (gate=full,
     # no probe ran) and `failure` fall through to the full one. GitHub Actions'
     # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
@@ -826,7 +826,9 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          pattern: ios-screenshots-*
+          # A failed probe may have uploaded before baseline/compare failed.
+          # Only its replacement belongs in the final tree on that path.
+          pattern: ${{ needs.probe.result == 'success' && 'ios-screenshots-*' || 'ios-screenshots-ios-capture-*' }}
           path: app-stores/apple/screenshots
           merge-multiple: true
 
