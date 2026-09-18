@@ -17,6 +17,10 @@
       "description": "Tu cherches une board Tension près de chez toi ? Parcours les salles d'escalade qui ont une board Tension au mur et l'angle auquel elle est réglée."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Salles"
+  },
   "directory": {
     "all": {
       "h1": "Salles d'escalade avec des boards d'entraînement",
@@ -60,11 +64,15 @@
     "heading_one": "{{formattedCount}} salle",
     "heading_other": "{{formattedCount}} salles",
     "emptyTitle": "Rien ne correspond pour l'instant",
-    "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles."
+    "emptyBody": "Essaie une recherche plus courte, ou enlève le filtre de board et parcours toutes les salles.",
+    "emptyClearSearch": "Efface la recherche",
+    "emptyBrowseAll": "Parcours toutes les salles"
   },
   "error": {
     "title": "On n'arrive pas à charger la liste des salles pour le moment",
-    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais."
+    "body": "Quelque chose cloche de notre côté. Attends une minute et recharge, ou va directement sur la fiche d'une salle que tu connais.",
+    "retry": "Recharge la liste",
+    "home": "Retour à Boardsesh"
   },
   "card": {
     "boardChip": "{{board}} {{angle}}°",

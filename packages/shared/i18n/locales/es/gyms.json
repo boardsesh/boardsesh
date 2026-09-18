@@ -17,6 +17,10 @@
       "description": "¿Buscas un plafón Tension cerca de ti? Explora los rocódromos que tienen un plafón Tension en la pared y el ángulo al que está montado cada uno."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Rocódromos"
+  },
   "directory": {
     "all": {
       "h1": "Rocódromos con plafones de entrenamiento",
@@ -60,11 +64,15 @@
     "heading_one": "{{formattedCount}} rocódromo",
     "heading_other": "{{formattedCount}} rocódromos",
     "emptyTitle": "Todavía no hay nada que encaje",
-    "emptyBody": "Prueba con una búsqueda más corta o quita el filtro de plafón y explora todos los rocódromos."
+    "emptyBody": "Prueba con una búsqueda más corta o quita el filtro de plafón y explora todos los rocódromos.",
+    "emptyClearSearch": "Borra la búsqueda",
+    "emptyBrowseAll": "Explora todos los rocódromos"
   },
   "error": {
     "title": "Ahora mismo no podemos cargar la lista de rocódromos",
-    "body": "Algo falla por nuestra parte. Espera un momento y recarga, o ve a la ficha de un rocódromo que ya conozcas."
+    "body": "Algo falla por nuestra parte. Espera un momento y recarga, o ve a la ficha de un rocódromo que ya conozcas.",
+    "retry": "Recarga la lista",
+    "home": "Vuelve a Boardsesh"
   },
   "card": {
     "boardChip": "{{board}} {{angle}}°",

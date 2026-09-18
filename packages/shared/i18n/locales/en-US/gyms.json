@@ -17,6 +17,10 @@
       "description": "Looking for a Tension board near you? Browse the climbing gyms with a Tension board on the wall and the angle each one is set at."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Gyms"
+  },
   "directory": {
     "all": {
       "h1": "Climbing gyms with training boards",
@@ -60,11 +64,15 @@
     "heading_one": "{{formattedCount}} gym",
     "heading_other": "{{formattedCount}} gyms",
     "emptyTitle": "Nothing matches that yet",
-    "emptyBody": "Try a shorter search, or drop the board filter and browse every gym."
+    "emptyBody": "Try a shorter search, or drop the board filter and browse every gym.",
+    "emptyClearSearch": "Clear the search",
+    "emptyBrowseAll": "Browse every gym"
   },
   "error": {
     "title": "We can't reach the gym list right now",
-    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know."
+    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know.",
+    "retry": "Reload the list",
+    "home": "Back to Boardsesh"
   },
   "card": {
     "boardChip": "{{board}} {{angle}}°",

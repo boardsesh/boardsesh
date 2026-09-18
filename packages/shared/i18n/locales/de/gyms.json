@@ -17,6 +17,10 @@
       "description": "Du suchst ein Tension Board in deiner Nähe? Hier sind die Kletterhallen mit einem Tension Board an der Wand, samt dem Winkel, auf den es eingestellt ist."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Hallen"
+  },
   "directory": {
     "all": {
       "h1": "Kletterhallen mit Trainingsboards",
@@ -60,11 +64,15 @@
     "heading_one": "{{formattedCount}} Halle",
     "heading_other": "{{formattedCount}} Hallen",
     "emptyTitle": "Dazu passt noch nichts",
-    "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen."
+    "emptyBody": "Versuch eine kürzere Suche oder nimm den Board-Filter raus und stöber durch alle Hallen.",
+    "emptyClearSearch": "Suche zurücksetzen",
+    "emptyBrowseAll": "Alle Hallen durchstöbern"
   },
   "error": {
     "title": "Wir kommen gerade nicht an die Hallenliste ran",
-    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst."
+    "body": "Bei uns hakt gerade was. Warte kurz und lad neu, oder geh direkt auf die Seite einer Halle, die du schon kennst.",
+    "retry": "Liste neu laden",
+    "home": "Zurück zu Boardsesh"
   },
   "card": {
     "boardChip": "{{board}} {{angle}}°",

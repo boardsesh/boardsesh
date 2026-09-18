@@ -76,6 +76,7 @@
     "metaTitle": "{{gymName}} climbing gym",
     "metaDescription": "See the boards and live wall at {{gymName}} on Boardsesh.",
     "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "Gyms",
     "manageGym": "Manage gym",
     "seeOnTheWall": "See what's on the wall",
     "boardsHeading": "Boards",

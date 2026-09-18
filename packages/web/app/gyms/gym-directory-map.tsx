@@ -32,6 +32,25 @@ type GymDirectoryMapProps = {
   locale: Locale;
 };
 
+/**
+ * THE ONE PLACE THE REPO'S `style`-PROP BAN CANNOT APPLY.
+ *
+ * `divIcon` and `bindPopup` take an HTML **string**, not a node — Leaflet parses
+ * it and owns the element from then on. There is no MUI component to reach for
+ * and no className that survives, so the markup below is built with inline
+ * `style=` attributes by construction. What the rule still demands, and what
+ * this file now honours, is that no literal colour survives: every value is a
+ * CSS custom property from `app/components/index.css`, and they resolve because
+ * Leaflet appends the marker inside the map container, which inherits `:root`.
+ *
+ * The rings stay LIGHT (`--neutral-900`), not the page ground. OSM's standard
+ * raster tiles are a light basemap, so a dark ring around a violet pin would
+ * disappear into the streets it sits on. Tuning the markers for the dark page
+ * is the right move the day the tile source becomes a dark one; until then the
+ * marker is tuned for the surface it is actually drawn on, and only the hex
+ * literals are gone.
+ */
+
 /** Leaflet popups take an HTML string, so every interpolated value is escaped. */
 function escapeHtml(value: string): string {
   return value
@@ -162,9 +181,33 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
           width: '100%',
           height: MAP_HEIGHT,
           borderRadius: `${themeTokens.borderRadius.lg}px`,
-          border: '1px solid var(--neutral-200)',
+          border: '1px solid var(--separator)',
           overflow: 'hidden',
           backgroundColor: 'var(--semantic-surface)',
+          // Leaflet paints its own pale grey ground behind the tile grid,
+          // and it shows at every edge the tiles do not reach — panning, at the
+          // poles, and for the split second before a tile lands. On a near-black
+          // page that is a grey flash, so the container ground is a token too.
+          // The chrome Leaflet injects (zoom buttons, attribution, popups) is
+          // hardcoded white in its stylesheet for the same reason and gets the
+          // same treatment: these are the only selectors here we do not own.
+          '& .leaflet-container': { backgroundColor: 'var(--semantic-surface)' },
+          '& .leaflet-bar a, & .leaflet-bar a:hover': {
+            backgroundColor: 'var(--semantic-surface-elevated)',
+            borderBottomColor: 'var(--separator)',
+            color: 'var(--neutral-900)',
+          },
+          '& .leaflet-control-attribution': {
+            backgroundColor: 'var(--semantic-surface-overlay)',
+            color: 'var(--neutral-500)',
+          },
+          '& .leaflet-control-attribution a': { color: 'var(--color-primary)' },
+          '& .leaflet-popup-content-wrapper, & .leaflet-popup-tip': {
+            backgroundColor: 'var(--semantic-surface-elevated)',
+            color: 'var(--neutral-900)',
+          },
+          '& .leaflet-popup-content a': { color: 'var(--color-primary)' },
+          '& .leaflet-popup-close-button': { color: 'var(--neutral-500)' },
         }}
       />
       {/* The honest pill: partial pin coverage stated on the surface that has
@@ -187,7 +230,9 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
           left: themeTokens.spacing[2],
           zIndex: themeTokens.zIndex.dropdown,
           pointerEvents: 'none',
-          backgroundColor: 'var(--semantic-surface)',
+          backgroundColor: 'var(--semantic-surface-elevated)',
+          border: '1px solid var(--separator)',
+          color: 'var(--neutral-900)',
           borderRadius: `${themeTokens.borderRadius.full}px`,
         }}
       />
@@ -207,7 +252,7 @@ function buildMarker(
   if (!cluster.pin) {
     const icon = leaflet.divIcon({
       className: '',
-      html: `<div style="display:flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;background:var(--color-primary-fill);color:#fff;border:2px solid #fff;border-radius:9999px;box-shadow:0 1px 4px rgba(0,0,0,0.4);font-size:12px;font-weight:600;">${cluster.count}</div>`,
+      html: `<div style="display:flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;background:var(--color-primary-fill);color:var(--color-on-primary);border:2px solid var(--neutral-900);border-radius:var(--border-radius-full);box-shadow:var(--shadow-sm);font-size:12px;font-weight:600;">${cluster.count}</div>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16],
     });
@@ -224,7 +269,7 @@ function buildMarker(
   // asset pipeline, so every marker is a divIcon.
   const icon = leaflet.divIcon({
     className: '',
-    html: '<div style="width:16px;height:16px;background:var(--color-primary-fill);border:3px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
+    html: '<div style="width:16px;height:16px;background:var(--color-primary-fill);border:3px solid var(--neutral-900);border-radius:50%;box-shadow:var(--shadow-sm);"></div>',
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });

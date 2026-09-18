@@ -262,7 +262,25 @@ export default function GymDirectoryNearMe({
               aria-labelledby="gym-near-me-radius-label"
             >
               {NEAR_ME_RADIUS_OPTIONS_KM.map((option) => (
-                <ToggleButton key={option} value={option} sx={{ textTransform: 'none' }}>
+                <ToggleButton
+                  key={option}
+                  value={option}
+                  // Same two states as the facet chips, for the same reason: on
+                  // the near-black ground a default toggle group is a row of
+                  // hairlines with no legible "this one".
+                  sx={{
+                    textTransform: 'none',
+                    borderColor: 'var(--separator)',
+                    backgroundColor: 'var(--semantic-surface)',
+                    color: 'var(--neutral-900)',
+                    '&.Mui-selected': {
+                      backgroundColor: 'var(--semantic-surface-elevated)',
+                      borderColor: 'var(--color-primary)',
+                      color: 'var(--color-primary)',
+                    },
+                    '&.Mui-selected:hover': { backgroundColor: 'var(--semantic-surface-elevated)' },
+                  }}
+                >
                   {radiusOptionLabel(t, option)}
                 </ToggleButton>
               ))}
