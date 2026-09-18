@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { useTheme } from '@mui/material/styles';
 import AppThemeProvider from '../app-theme-provider';
-import { themeTokens, darkTokens } from '@/app/theme/theme-config';
+import { themeTokens } from '@/app/theme/theme-config';
 
 function ThemeProbe() {
   const theme = useTheme();
@@ -34,11 +34,11 @@ describe('AppThemeProvider', () => {
       </AppThemeProvider>,
     );
     expect(screen.getByTestId('mode').textContent).toBe('dark');
-    expect(screen.getByTestId('primary').textContent).toBe(darkTokens.colors.primary);
+    expect(screen.getByTestId('primary').textContent).toBe(themeTokens.colors.primary);
     // The foreground/fill split is load-bearing: white on the lifted foreground
     // violet is 2.5:1, so a filled button must use the darker fill.
-    expect(screen.getByTestId('fill').textContent).toBe(darkTokens.colors.primaryFill);
-    expect(darkTokens.colors.primary).not.toBe(darkTokens.colors.primaryFill);
+    expect(screen.getByTestId('fill').textContent).toBe(themeTokens.colors.primaryFill);
+    expect(themeTokens.colors.primary).not.toBe(themeTokens.colors.primaryFill);
     expect(themeTokens.colors.onPrimary).toBe('#FFFFFF');
   });
 });

@@ -6,11 +6,12 @@ design language. **"Velvet Send"** is the design language, and it lives in the m
 `packages/mobile/src/theme/` — treat that directory as the single source of truth and this doc as
 its explanation.
 
-> **Web is on Velvet Send too.** The Next.js app (`packages/web`) renders this palette in light and
-> dark via `packages/web/app/theme/theme-config.ts` + `app/components/index.css` (kept in sync by a
-> parity test). The brand hexes and colour helpers are shared with mobile through
-> `@boardsesh/velvet-tokens`. See [Web (consuming Velvet Send)](#web-consuming-velvet-send) at the
-> end for the web-specific wiring — the foreground/fill split and scheme-aware CSS vars.
+> **Web is on Velvet Send too, in dark only.** The Next.js app (`packages/web`) renders this palette
+> via `packages/web/app/theme/theme-config.ts` + `app/components/index.css` (kept in sync by a parity
+> test). www is a marketing surface now, so it has ONE scheme — the light values and the colour-mode
+> switch are gone. The brand hexes and colour helpers are still shared with mobile through
+> `@boardsesh/velvet-tokens`, which keeps both halves because **mobile still renders light**. See
+> [Web (consuming Velvet Send)](#web-consuming-velvet-send) at the end for the web-specific wiring.
 
 ---
 
@@ -576,26 +577,46 @@ against the theme get dark mode for free — there is no `isDark ? a : b` branch
 
 ## Web (consuming Velvet Send)
 
-The web app renders Velvet Send in light and dark. Wiring notes specific to web:
+The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
 
-- **Shared source of truth.** The brand palette, surface anchors, and colour helpers (`brandColors`,
-  `brandColorsDark`, `materialSurfaces`, `withAlpha`, `blendOpaque`) live in `@boardsesh/velvet-tokens`;
-  mobile re-exports them and web imports them. Change a brand hex there, not in each app.
+- **One scheme, no branching.** `packages/web` has no light palette, no `darkTokens`, no colour-mode
+  provider and no theme toggle — they came out with the climbing UI (#4467) and the collapse that
+  followed. `themeTokens` in `app/theme/theme-config.ts` *is* the dark set, `mui-theme.ts` exports a
+  single `darkTheme`, and `index.css` has one `:root` block. Two fences in
+  `app/theme/__tests__/velvet-tokens-parity.test.ts` keep it that way: one fails if an
+  `html[data-theme=…]` or `prefers-color-scheme` block reappears in the CSS, the other if `:root`
+  loses `color-scheme: dark` (which is what makes scrollbars, `<select>` popups, date pickers and
+  autofill draw dark — nothing else does).
+- **Direct token reads are now correct.** A `themeTokens.colors.*` or `themeTokens.neutral.*` read
+  used to render the *light* value regardless of scheme, so the guidance was to route everything
+  through a CSS var. That is no longer true — the constants and the vars hold the same values. Use
+  whichever fits: `themeTokens` in TS/`sx`, `var(--color-primary)` and friends in `.module.css`.
+- **Read the neutral ramp darkest-first.** On a dark scheme the ramp inverts: `neutral[50]` is the
+  darkest step (`#1E1434`) and `neutral[900]` the lightest (`#F3EFFA`). 50–300 are surfaces; 400–900
+  bear text. The numeric keys are a known wart — renaming them to semantic names is a follow-up.
+- **Shared source of truth.** The brand palette, surface anchors and colour helpers (`brandColors`,
+  `brandColorsDark`, `materialSurfaces`, `withAlpha`, `blendOpaque`) live in `@boardsesh/velvet-tokens`.
+  Web reads only `brandColorsDark`; **`brandColors` (light) must not be deleted as dead code** — mobile
+  re-exports it and still renders light. Change a brand hex there, not in each app.
 - **Two synced sources.** `app/theme/theme-config.ts` feeds MUI + direct imports; `app/components/index.css`
   feeds the CSS custom properties read by the `.module.css` files. Every shared colour changes in BOTH —
-  `app/theme/__tests__/velvet-tokens-parity.test.ts` enforces parity (plus the MUI split + WCAG contrast).
-- **Foreground/fill split.** MUI `palette.primary.main` is the FOREGROUND violet (links, text/outlined
-  buttons, selection controls); the FILL ships through an augmented `primaryFill` palette channel used
-  only by filled buttons/FAB. Violet can't be both a dark-mode foreground and a white-text fill the way
-  rose was, so the two roles are separate tokens.
-- **Scheme-awareness.** A direct `themeTokens.colors.{primary,success,error,warning,info}` read renders
-  the _light_ value in dark mode — use the scheme-aware CSS vars instead: `var(--color-primary)`
-  (foreground), `var(--color-primary-fill)` (fills), `var(--color-success|error|warning|info)` (status).
-- **Input fields.** The `--input-*` family in `index.css` (bg / bg-hover / text / placeholder / border /
-  border-hover, both scheme blocks) is the source of truth for form fields; the MUI theme and the
-  `.module.css` files both read it. Light fields are white; dark fields ride the elevated violet
-  (`darkTokens.semantic.inputSurface`, `#2F234A`) with a 2px foreground-violet focus outline — never
-  force white fields in dark. All pairings are contrast-guarded in the parity test.
+  the parity test enforces it, plus the MUI split and WCAG contrast.
+- **Foreground/fill split — load-bearing forever.** MUI `palette.primary.main` is the FOREGROUND violet
+  `#A78BFA` (links, text/outlined buttons, selection controls); the FILL ships through an augmented
+  `primaryFill` channel (`#7C3AED`) used only by filled buttons/FAB. **Never collapse them**: white on
+  `#A78BFA` is 2.5:1. `primary.contrastText` is the DARK ink (`#16111F`) for the same reason. A dedicated
+  test asserts the two are different colours, because with one scheme nothing else says so.
+- **Input fields.** The `--input-*` family in `index.css` (bg / bg-hover / bg-focused / text / placeholder
+  / border / border-hover) is the source of truth for form fields; the MUI theme and the `.module.css`
+  files both read it. Fields ride the elevated violet (`semantic.inputSurface`, `#2F234A`) with a 2px
+  foreground-violet focus outline. The three `bg` vars hold the same value today on purpose — the border
+  carries hover, the ring carries focus — and stay separately named so that can be retuned in one place.
+- **The surface ladder is how depth works.** `background #110A20` → `surface #251B3A` →
+  `surfaceElevated #2F234A`, with one hairline (`--separator`). On near-black a drop shadow does almost
+  nothing; a card is a lighter violet, not a shadowed panel. The parity test asserts the luminance order.
+- **The one place light values survive** is `printSurfaceTokens` in `theme-config.ts`: the Satori OG
+  cards for `/api/og/{profile,setter,playlist}` render on `#FFFFFF`. It is not a light theme and must
+  not be imported into a product component.
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.

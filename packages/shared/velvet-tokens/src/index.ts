@@ -21,6 +21,11 @@ const isDev = process.env.NODE_ENV !== 'production';
  * `brandColorsDark` overrides the few roles that need a different value in dark
  * mode so they stay legible. Consumers resolve the right set per scheme.
  *
+ * DO NOT delete `brandColors` as dead code because nothing in `packages/web`
+ * imports it. www collapsed to one dark scheme, so web reads only the dark half —
+ * but MOBILE still renders light and resolves both. Its guard is the test beside
+ * this file.
+ *
  * Role split:
  * - `primary`/`tint`: brand colour for FOREGROUND use (text, icons, links, borders).
  * - `primaryFill`: brand colour for a FILLED surface/button background.

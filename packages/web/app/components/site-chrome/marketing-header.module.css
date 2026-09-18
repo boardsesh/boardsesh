@@ -10,10 +10,10 @@
   height: var(--global-header-height);
   padding: 0 16px;
   padding-top: var(--safe-area-inset-top);
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.6));
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(to bottom, rgba(26, 26, 26, 0.85), rgba(26, 26, 26, 0.6));
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-subtle);
   touch-action: manipulation;
 }
 
@@ -109,11 +109,4 @@
   .headerTransparent {
     gap: 8px;
   }
-}
-
-:global(html[data-theme='dark']) .header {
-  background: linear-gradient(to bottom, rgba(26, 26, 26, 0.85), rgba(26, 26, 26, 0.6));
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }

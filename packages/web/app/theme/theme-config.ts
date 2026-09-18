@@ -10,12 +10,19 @@
 // custom properties read by ~150 `.module.css` files. Every shared colour must be
 // edited in BOTH. The parity test in `__tests__/` guards this.
 //
-// The brand is SCHEME-AWARE: `primary` is the FOREGROUND violet (links, indicators,
-// borders, focus); `primaryFill` is the FILLED-surface violet (button bg + white
-// text). They are equal in light (#6D28D9) but diverge in dark — foreground lifts to
-// #A78BFA for legibility on near-black, fill stays #7C3AED so white text clears AA.
+// There is ONE scheme: dark. www is a marketing surface and the light/dark switch
+// came out with the climbing UI (#4467), so these values ARE the dark values —
+// `darkTokens` no longer exists and nothing branches on scheme.
+//
+// `primary` is the FOREGROUND violet (links, indicators, borders, focus) at
+// #A78BFA; `primaryFill` is the FILLED-surface violet (button bg + white text) at
+// #7C3AED. The two are NOT interchangeable and must never be collapsed into one:
+// white on #A78BFA is 2.5:1. The parity test fences this.
+//
+// The handful of values web still needs for a LIGHT surface — the Satori OG cards
+// that render on white — live in `printSurfaceTokens` at the bottom of this file.
 
-import { brandColors, brandColorsDark } from '@boardsesh/velvet-tokens';
+import { brandColorsDark } from '@boardsesh/velvet-tokens';
 
 // Only the BRAND palette is shared with mobile. Web tunes its own surface + neutral
 // ramp — richer/more violet than the shared Material surfaces, so the velvet permeates
@@ -25,77 +32,83 @@ import { brandColors, brandColorsDark } from '@boardsesh/velvet-tokens';
 export const themeTokens = {
   // Brand colors — Velvet Send violet + amber
   colors: {
-    primary: brandColors.primary, // #6D28D9 — FOREGROUND violet (text, icons, links, borders, focus)
-    primaryHover: '#5B21B6', // violet-800
-    primaryActive: '#4C1D95', // violet-900
-    primaryFill: brandColors.primaryFill, // #6D28D9 — FILLED bg (white text); diverges in dark
-    primaryFillHover: '#5B21B6',
-    onPrimary: brandColors.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
-    accent: brandColors.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
-    onAccent: brandColors.onAccent, // #16111F — dark text on accent (8.95:1)
-    live: brandColors.live, // #B45309 — "now on the wall / physically lit" status hue (own role, not warning)
-    secondary: '#5B5563', // violet-grey for info/secondary
-    info: '#5E6491', // Violet-slate — help/guide accent, re-pulled into the violet family
+    primary: brandColorsDark.primary, // #A78BFA — FOREGROUND violet (text, icons, links, borders, focus)
+    primaryHover: '#C4B5FD',
+    primaryActive: '#8B5CF6',
+    primaryFill: brandColorsDark.primaryFill, // #7C3AED — FILLED bg; white text clears 5.70:1
+    primaryFillHover: '#6D28D9', // Darker than the fill so white text stays AA on hover
+    onPrimary: brandColorsDark.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
+    accent: brandColorsDark.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
+    onAccent: brandColorsDark.onAccent, // #16111F — dark text on accent (8.95:1)
+    live: brandColorsDark.live, // #FBBF24 — "now on the wall / physically lit" status hue (own role, not warning)
+    secondary: '#A9A2B6', // violet-grey for info/secondary
+    info: '#A5ABD6', // Lifted violet-slate — help/guide accent
     infoTint: 'rgba(94, 100, 145, 0.12)', // 12%-alpha `info` — shared low-key icon-chip bg (OnboardingCard 'help', homepage gym card)
-    success: brandColors.success, // #047857
+    success: brandColorsDark.success, // #34D399
+    // Kept from the light ramp deliberately: it feeds palette.success.dark, where a
+    // hover DARKER than #34D399 is still the right direction. Retune with a designer,
+    // not as a side effect of the scheme collapse.
     successHover: '#036B4D',
-    successBg: '#E7F4EE',
-    warning: '#A04A08', // Nudged up from Velvet #B45309 so warning text clears AA on the tinted bg
-    warningBg: '#FBF0E3',
-    error: '#B91C1C', // Darkened from Velvet #C81E1E so error TEXT clears AA (4.96:1) on the #E8DDF6 page (#C81E1E was 4.40)
-    errorBg: '#FBE9E9',
-    errorMuted: 'rgba(185, 28, 28, 0.18)', // Translucent error for non-destructive action buttons
-    errorMutedHover: 'rgba(185, 28, 28, 0.28)',
+    successBg: 'rgba(52, 211, 153, 0.14)',
+    warning: brandColorsDark.warning, // #FBBF24
+    warningBg: 'rgba(251, 191, 36, 0.14)',
+    error: brandColorsDark.error, // #F87171
+    errorBg: 'rgba(248, 113, 113, 0.14)',
+    errorMuted: 'rgba(248, 113, 113, 0.2)', // Translucent error for non-destructive action buttons
+    errorMutedHover: 'rgba(248, 113, 113, 0.3)',
     purple: '#9C27B0', // V11 brand purple — Mirror button + chart palette accent (grade token)
     purpleHover: '#7B1FA2', // V12 — Mirror button hover
     amber: '#FBBF24', // Flash/benchmark badges + star ratings (data yellow, distinct from brand accent)
     pink: '#EC4899', // For finish holds in climb creation
-    accentGreen: '#0D9488', // Teal — decorative playlist/OG palette (re-pulled to read with violet+amber)
-    accentRose: '#F43F5E', // Modern rose — decorative playlist/OG palette (re-pulled from warm coral)
+    accentGreen: '#2DD4BF', // Teal — decorative playlist/OG palette (re-pulled to read with violet+amber)
+    accentRose: '#FB7185', // Modern rose — decorative playlist/OG palette (re-pulled from warm coral)
   },
 
   // Text colours scoped to brand surfaces (landing hero, splash, OG/social, App Store
   // screenshots, marketing emails). Retuned from the old warm cream to cool Velvet
   // label values so the hero reads as the same product as the violet chrome.
-  // `*Light` are the values for light surfaces (violet-black); the unsuffixed pair is
-  // for dark brand surfaces (cool near-white). The `--bs-text-brand-*` CSS vars mirror.
+  // The `--bs-text-brand-*` CSS vars mirror these. The `*Light` counterparts went
+  // with the light scheme — no brand surface on www is light any more.
   text: {
     brandPrimary: '#f5f2fb',
     brandMuted: '#a9a2b6',
-    brandPrimaryLight: '#16111f',
-    brandMutedLight: '#5b5563',
   },
 
-  // Neutral palette — violet-tinted greys. The chroma lives in the SURFACE steps
-  // (50–300: backgrounds/chips/borders/skeletons) so the velvet permeates; the
-  // text-bearing mids (400/500) are desaturated to read as tinted-grey, not purple.
+  // Neutral palette — violet-tinted greys, and READ IT DARKEST-FIRST: on a dark
+  // scheme the ramp is inverted, so 50 is the darkest step and 900 the lightest.
+  // 50–300 are surfaces (backgrounds/chips/borders/skeletons); 400–900 bear text.
+  //
+  // The numeric keys are kept on purpose. Renaming them to semantic names
+  // (surface1 / text3) is the right end state, but it is 107 call sites of churn
+  // and would bury the value change this file just made. Follow-up, not this PR.
   neutral: {
-    50: '#EBE2F9',
-    100: '#DED2F3',
-    200: '#CBBCEA',
-    300: '#AD9ECC',
-    400: '#7B7591', // disabled/decorative tier (AA-exempt; body text re-points to 500)
-    500: '#595464', // secondary text (6.8:1 on card, 5.6:1 on bg)
-    600: '#48415A',
-    700: '#373042',
-    800: '#262030', // text.primary
-    900: '#181221', // label — max-contrast text
+    50: '#1E1434',
+    100: '#291C43',
+    200: '#37294B',
+    300: '#483B5C',
+    400: '#6F6882', // disabled/decorative tier (AA-exempt; body text re-points to 500)
+    500: '#ACA5BD', // secondary text (6.8:1 on card)
+    600: '#C3BCD3',
+    700: '#D7D1E3',
+    800: '#E7E2F0', // text.primary
+    900: '#F3EFFA', // label — max-contrast text
   },
 
-  // Semantic colors — richer violet surfaces (cards faintly tinted, deeper page base)
+  // Semantic colors — the surface ladder. Depth on near-black is a LIGHTER violet,
+  // not a shadow: background → surface → surfaceElevated each step up in lightness.
   semantic: {
-    selected: 'rgba(109, 40, 217, 0.14)', // Violet tint for selected state
-    selectedHover: 'rgba(109, 40, 217, 0.22)',
-    selectedLight: 'rgba(109, 40, 217, 0.08)', // Very subtle violet highlight
-    selectedBorder: brandColors.primary, // #6D28D9 — matches foreground primary
-    separator: 'rgba(60, 50, 90, 0.2)', // dividers/hairlines (decoupled from neutral-200)
-    background: '#E8DDF6', // violet-tinted page base (richer than the shared surface)
-    surface: '#FAF6FE', // cards/sheets — faintly violet, not stark white
-    surfaceElevated: '#FFFFFF', // elevated layers pop one step brighter than the card
-    inputSurface: '#FFFFFF', // input fields on light (matches elevated) — dark diverges to the elevated violet
-    surfaceOverlay: 'rgba(250, 246, 254, 0.95)', // Semi-transparent overlay (matches surface)
-    overlayLight: 'rgba(0, 0, 0, 0.3)', // Light dark overlay for hover states
-    overlayDark: 'rgba(0, 0, 0, 0.6)', // Dark overlay for text backgrounds
+    selected: 'rgba(199, 184, 232, 0.16)', // Violet tint for selected state
+    selectedHover: 'rgba(199, 184, 232, 0.24)',
+    selectedLight: 'rgba(199, 184, 232, 0.10)', // Very subtle violet highlight
+    selectedBorder: brandColorsDark.primary, // #A78BFA — matches foreground primary
+    separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines (decoupled from neutral-200)
+    background: '#110A20', // deeper violet near-black (richer than a generic dark theme)
+    surface: '#251B3A', // cards/sheets — richer violet
+    surfaceElevated: '#2F234A', // elevated layers pop one step brighter than the card
+    inputSurface: '#2F234A', // input fields ride the elevated dark surface (violet focus ring, not white)
+    surfaceOverlay: 'rgba(37, 27, 58, 0.95)', // Semi-transparent overlay (matches surface)
+    overlayLight: 'rgba(0, 0, 0, 0.4)', // Light dark overlay for hover states
+    overlayDark: 'rgba(0, 0, 0, 0.7)', // Dark overlay for text backgrounds
   },
 
   // Syntax highlighting colors (VS Code dark theme inspired)
@@ -110,12 +123,12 @@ export const themeTokens = {
 
   // Shadows
   shadows: {
-    xs: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-    sm: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
-    md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
-    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
-    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-    inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
+    xs: '0 1px 2px 0 rgba(0, 0, 0, 0.2)',
+    sm: '0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3)',
+    md: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3)',
+    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
+    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+    inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.15)',
   },
 
   // Typography
@@ -217,73 +230,6 @@ export const themeTokens = {
   },
 } as const;
 
-// Dark mode overrides. Brand is now SCHEME-AWARE, so darkTokens carries a `colors`
-// block (the foreground violet lifts, the fill stays dark, status tones brighten).
-// Backgrounds, surfaces, neutrals, selected tints, separator, and status backgrounds
-// also change. Everything else inherits from themeTokens.
-export const darkTokens = {
-  colors: {
-    primary: brandColorsDark.primary, // #A78BFA — lifted FOREGROUND
-    primaryHover: '#C4B5FD',
-    primaryActive: '#8B5CF6',
-    primaryFill: brandColorsDark.primaryFill, // #7C3AED — FILL (white text clears 5.70:1)
-    primaryFillHover: '#6D28D9', // Darker than the fill so white text stays AA on hover
-    secondary: '#A9A2B6',
-    info: '#A5ABD6', // lifted violet-slate
-    success: brandColorsDark.success, // #34D399
-    warning: brandColorsDark.warning, // #FBBF24
-    error: brandColorsDark.error, // #F87171
-    live: brandColorsDark.live, // #FBBF24 — lifted lit-climb hue on dark surfaces
-    errorMuted: 'rgba(248, 113, 113, 0.2)', // lighter red wash for non-destructive buttons on dark
-    errorMutedHover: 'rgba(248, 113, 113, 0.3)',
-    accentGreen: '#2DD4BF',
-    accentRose: '#FB7185',
-  },
-
-  neutral: {
-    50: '#1E1434',
-    100: '#291C43',
-    200: '#37294B',
-    300: '#483B5C',
-    400: '#6F6882', // disabled/decorative
-    500: '#ACA5BD', // secondary text (6.8:1 on card)
-    600: '#C3BCD3',
-    700: '#D7D1E3',
-    800: '#E7E2F0', // text.primary
-    900: '#F3EFFA', // label — max-contrast text
-  },
-
-  semantic: {
-    selected: 'rgba(199, 184, 232, 0.16)',
-    selectedHover: 'rgba(199, 184, 232, 0.24)',
-    selectedLight: 'rgba(199, 184, 232, 0.10)',
-    selectedBorder: brandColorsDark.primary, // #A78BFA
-    separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines
-    background: '#110A20', // deeper violet near-black (richer than a generic dark theme)
-    surface: '#251B3A', // cards/sheets — richer violet
-    surfaceElevated: '#2F234A',
-    inputSurface: '#2F234A', // input fields ride the elevated dark surface (violet focus ring, not white)
-    surfaceOverlay: 'rgba(37, 27, 58, 0.95)',
-    overlayLight: 'rgba(0, 0, 0, 0.4)',
-    overlayDark: 'rgba(0, 0, 0, 0.7)',
-  },
-
-  statusBg: {
-    success: 'rgba(52, 211, 153, 0.14)',
-    error: 'rgba(248, 113, 113, 0.14)',
-    warning: 'rgba(251, 191, 36, 0.14)',
-  },
-
-  shadows: {
-    xs: '0 1px 2px 0 rgba(0, 0, 0, 0.2)',
-    sm: '0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3)',
-    md: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3)',
-    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
-    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
-    inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.15)',
-  },
-} as const;
-
 // The only LIGHT-surface values web still ships.
 //
 // Three OG cards — profile, setter, playlist — are Satori-rendered onto a white
@@ -322,5 +268,4 @@ export type ThemeTokens = typeof themeTokens;
 export type ColorTokens = typeof themeTokens.colors;
 export type NeutralTokens = typeof themeTokens.neutral;
 export type SyntaxTokens = typeof themeTokens.syntax;
-export type DarkTokens = typeof darkTokens;
 export type PrintSurfaceTokens = typeof printSurfaceTokens;
