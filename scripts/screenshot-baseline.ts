@@ -443,6 +443,11 @@ export function fetchBaseline(options: FetchOptions): FetchResult {
 
   try {
     return fetchBaselineInner(options, runner, outDir, downloadDir);
+  } catch (error) {
+    // A corrupt archive can fail after earlier shards have been extracted.
+    // Never leave that partial tree available to an upload or retry.
+    failFetch(outDir);
+    throw error;
   } finally {
     // Every exit path — success, a `failFetch` early return, or a thrown
     // error from runUnzip — must not orphan the download dir. `failFetch`

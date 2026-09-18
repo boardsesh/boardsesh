@@ -557,6 +557,9 @@ describe('fetchBaseline', () => {
 
   it('fails on an unzip exit code other than 0 or 1', () => {
     const downloadDir = join(workDir, 'download');
+    const outDir = join(workDir, 'baseline');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, 'partial.png'), 'previously extracted shard');
     mkdirSync(downloadDir, { recursive: true });
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
     writeFileSync(
@@ -576,13 +579,15 @@ describe('fetchBaseline', () => {
     expect(() =>
       fetchBaseline({
         platform: 'ios',
-        outDir: join(workDir, 'baseline'),
+        outDir,
         asset: 'ios-en-US-iphone-16-pro-max.zip',
         all: false,
         runner,
         downloadDir,
       }),
     ).toThrow(/unzip/);
+    expect(existsSync(outDir)).toBe(false);
+    expect(existsSync(downloadDir)).toBe(true);
   });
 
   it('rebuilds the locale/device tree when fetching every shard', () => {
