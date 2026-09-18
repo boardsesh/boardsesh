@@ -1,0 +1,60 @@
+/* The support block, last thing on the homepage before the footer.
+ *
+ * `/support` is otherwise reachable only from one footer link in the "Explore"
+ * group, which is where links go to be ignored (design note 17). The paired
+ * "Not got money spare?" column is the same list `/support` carries, so the
+ * block never reads as money-only.
+ *
+ * Colours are CSS vars from app/components/index.css. Never literals. */
+
+.block {
+  margin-top: var(--spacing-12);
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--spacing-8);
+  align-items: center;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: var(--spacing-2);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-5);
+}
+
+.asideTitle {
+  margin: 0 0 var(--spacing-3);
+}
+
+.asideList {
+  display: grid;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 860px) {
+  .strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-6);
+  }
+
+  .block {
+    margin-top: var(--spacing-8);
+  }
+}

@@ -78,6 +78,35 @@
     },
     "recentBeta": {
       "title": "Frische Beta"
+    },
+    "features": {
+      "title": "Board-Abend, geregelt",
+      "lead": "Drei Dinge, die die App kann und ein herumgereichtes Handy auf der Matte nicht.",
+      "queue": {
+        "title": "Geteilte Warteschlange",
+        "body": "Wechselt euch ab ohne das peinliche „wer ist dran?“. Alle legen auf, alle sehen die Reihenfolge.",
+        "shotPending": "Screenshot folgt"
+      },
+      "party": {
+        "title": "Party-Modus",
+        "body": "Eine Warteschlange für die ganze Crew, live auf jedem Handy. Beleuchte das Board vom Handy, das gerade am nächsten liegt.",
+        "shotAlt": "Der Startbildschirm der App mit den laufenden Sessions der Crew"
+      },
+      "logbook": {
+        "title": "Routenbuch",
+        "body": "Halt Begehungen und Versuche direkt fest und bring deine Kilter- oder Tension-Historie mit rüber.",
+        "shotAlt": "Der Fortschritts-Screen der App mit Begehungsgraden und dem Session-Kalender"
+      },
+      "cta": "App holen"
+    },
+    "support": {
+      "eyebrow": "Kostenlos, und das bleibt so",
+      "title": "Boardsesh läuft, weil Kletterer*innen beisteuern",
+      "p1": "Keine Werbung, keine gesperrten Screens, keine zweite Klasse. Ganz Boardsesh bleibt für alle offen, ob du sponserst oder nicht, Selbsthosting inklusive.",
+      "p2": "Hosting, Datenbank und die Rechnungen dahinter zahlen die Leute, die es benutzen.",
+      "chipIn": "Beisteuern",
+      "source": "Code ansehen",
+      "otherWays": "Kein Geld übrig?"
     }
   },
   "about": {
