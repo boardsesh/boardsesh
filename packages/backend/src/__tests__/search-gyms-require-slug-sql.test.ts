@@ -132,6 +132,20 @@ describe('searchGyms requireSlug — rendered SQL', () => {
     expect(rowsSql).toContain(SLUG_PREDICATE);
   });
 
+  it('prioritizes claims in text ordering without filtering out unclaimed gyms', async () => {
+    const baseline = await textSearchWith(TEXT_INPUT);
+    textSelectCaptures.length = 0;
+    const prioritized = await textSearchWith({ ...TEXT_INPUT, prioritizeClaimed: true });
+    expect(prioritized.wheres).toEqual(baseline.wheres);
+    expect(prioritized.orderBys).toEqual(['"gyms"."owner_id" <> $1 desc, "gyms"."created_at" desc, "gyms"."id"']);
+  });
+
+  it('keeps distance and stable ID ordering within claimed proximity groups', async () => {
+    const [countSql, rowsSql] = await searchWith({ ...PROXIMITY_INPUT, prioritizeClaimed: true });
+    expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
+    expect(rowsSql).toContain('ORDER BY gyms.owner_id <> $6 desc, distance_meters ASC, gyms.id ASC');
+  });
+
   it('excludes empty-string slugs, not just NULL, and leaves the caller params untouched', async () => {
     await socialGymQueries.searchGyms(null, { input: { ...PROXIMITY_INPUT, requireSlug: true } }, anonCtx());
     const [countCall, rowsCall] = mockDb.execute.mock.calls;

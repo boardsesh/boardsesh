@@ -235,6 +235,7 @@ export const SearchGymsInputSchema = z.object({
   // slug predicate decision for every existing caller (mobile's useNearbyGyms,
   // the gym picker) instead of leaving their rendered SQL byte-identical.
   requireSlug: z.boolean().optional(),
+  prioritizeClaimed: z.boolean().optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().min(0.1).max(500).optional().default(50),

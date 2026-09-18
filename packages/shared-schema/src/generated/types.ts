@@ -7632,6 +7632,8 @@ export type SearchGymsInput = {
   multiBoardTypeOnly?: InputMaybe<Scalars['Boolean']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Show claimed gyms first, preserving the existing order within each group. Opt-in; other callers keep their current ordering. */
+  prioritizeClaimed?: InputMaybe<Scalars['Boolean']['input']>;
   /** Search query */
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
