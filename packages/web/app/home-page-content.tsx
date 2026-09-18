@@ -39,6 +39,20 @@ const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 type HomePageContentProps = {
   initialPopularConfigs?: PopularBoardConfig[];
   initialRecentBeta?: RecentBetaLinkRow[];
+  /**
+   * Sections rendered on the SERVER and passed down as slots.
+   *
+   * This component is `'use client'` because the hero reads the visitor's
+   * platform. These three are async React Server Components that fetch their
+   * own data, so they cannot be imported here — a client module cannot await a
+   * server one. Rendering them in `page.tsx` and handing them down keeps their
+   * markup server-rendered (which is the point: the gym links and the marketing
+   * copy have to be in the first HTML a crawler sees) while letting them sit
+   * between two client blocks.
+   */
+  gymSearch?: React.ReactNode;
+  featureStrip?: React.ReactNode;
+  supportBlock?: React.ReactNode;
 };
 
 // Shared rounded-full brand CTA styling for the hero buttons — the Velvet violet
@@ -76,7 +90,13 @@ const HERO_WEB_CTA_SX = {
   '&:hover': { backgroundColor: 'var(--semantic-selected-light)' },
 } as const;
 
-export default function HomePageContent({ initialPopularConfigs, initialRecentBeta = [] }: HomePageContentProps) {
+export default function HomePageContent({
+  initialPopularConfigs,
+  initialRecentBeta = [],
+  gymSearch,
+  featureStrip,
+  supportBlock,
+}: HomePageContentProps) {
   const { t } = useTranslation('marketing');
   const { platform: installPlatform, nativeStore } = useInstallPlatform();
 
@@ -212,14 +232,23 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
           />
         </Box>
 
-        {/* Recent beta videos from across the community — leads the discovery
-            rail so the community signal is the first thing below the hero */}
-        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+        {/* Section order follows the marketing wireframe: find a board, jump
+            onto one, see what the crew is doing, then what the app adds. */}
+
+        {/* "Find a board near you" — the gym directory teaser. Server-rendered,
+            so its gym links are crawlable. */}
+        {gymSearch}
 
         {/* Board discovery — a static, crawlable grid of the popular configs the
-            page already SSR-fetches. Finding a board nearby, searching, and
-            building a custom config all live in the app. */}
+            page already SSR-fetches. */}
         <PopularBoardRail configs={initialPopularConfigs ?? []} />
+
+        {/* Recent beta videos from across the community. */}
+        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+
+        {/* "Board night, sorted" — what the app does that a shared phone on the
+            mat does not. */}
+        {featureStrip}
 
         {/* Onboarding Cards */}
         {/* The stack used to be a single column capped at 420px, which on a
@@ -318,6 +347,10 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             newTab
           />
         </Box>
+
+        {/* Support — last thing before the footer, so it catches people who
+            have just read what the app does and are already convinced. */}
+        {supportBlock}
       </Box>
     </Box>
   );
