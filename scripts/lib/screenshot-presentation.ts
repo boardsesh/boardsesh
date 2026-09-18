@@ -37,6 +37,13 @@ export const STORE_CAPTION_LOCALES: Readonly<Record<string, CaptionLocale>> = {
   'de-DE': 'de',
 };
 
+export function captionLocaleForStore(platform: 'ios' | 'android', storeLocale: string): CaptionLocale {
+  if (platform === 'android') return 'en-US';
+  const locale = STORE_CAPTION_LOCALES[storeLocale];
+  if (!locale) throw new Error(`No screenshot captions for Apple store locale ${storeLocale}`);
+  return locale;
+}
+
 const PHONE_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '00-board-view.png': 'board',
   '01-board-view-2.png': 'boards',
@@ -71,7 +78,7 @@ const ANDROID_CAPTIONS: Readonly<Record<string, CaptionId>> = {
 export function screenshotCaptions(platform: 'ios' | 'android', device: string): Readonly<Record<string, CaptionId>> {
   if (platform === 'android') return ANDROID_CAPTIONS;
   if (device.startsWith('ipad-')) return IPAD_CAPTIONS;
-  if (device === 'iphone-16-pro-max') return PHONE_CAPTIONS;
+  if (device.startsWith('iphone-')) return PHONE_CAPTIONS;
   throw new Error(`No screenshot presentation for device ${device}`);
 }
 
@@ -149,6 +156,8 @@ export function rawSizeForPresentedScreenshot(
   path: string,
   manifest: PresentationManifest = readPresentationManifest(dirname(path)),
 ): number {
+  // Each command verifies each PNG once. A parsed sidecar alone cannot prove
+  // the image still matches it; do not cache this check across file changes.
   const name = basename(path);
   const entry = manifest.files[name];
   if (!entry || sha256Screenshot(readFileSync(path)) !== entry.framedSha256) {

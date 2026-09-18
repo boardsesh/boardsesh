@@ -70,7 +70,7 @@ import { tmpdir } from 'node:os';
 import { fixtureSnapshotDirectory } from './lib/screenshot-fixture-snapshot';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { STORE_CAPTION_LOCALES } from './lib/screenshot-presentation';
+import { captionLocaleForStore } from './lib/screenshot-presentation';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
 import {
   METRO_LOG_PATH,
@@ -1439,6 +1439,7 @@ function collectScreenshots(
       saved.push(...writeCapturedScreenshots(captureDir, output));
       continue;
     }
+    const captionLocale = captionLocaleForStore(platform, storeLocale);
     const raw = join(storeRoot, 'raw-screenshots', shard);
     writeCapturedScreenshots(captureDir, raw);
     const status = runInherit(
@@ -1456,7 +1457,7 @@ function collectScreenshots(
         '--device',
         deviceSlug(deviceName),
         '--locale',
-        STORE_CAPTION_LOCALES[storeLocale] ?? 'en-US',
+        captionLocale,
       ],
       process.env,
     );

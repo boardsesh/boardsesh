@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -14,7 +15,9 @@ import {
   PRESENTATION_MANIFEST,
   CAPTION_IDS,
   STORE_CAPTION_LOCALES,
+  captionLocaleForStore,
   readCaptionCatalog,
+  readPresentationManifest,
   screenshotCaptions,
   sha256Screenshot,
 } from '../lib/screenshot-presentation';
@@ -35,6 +38,42 @@ describe('store screenshot presentation', () => {
       expect(Object.keys(screenshotCaptions('ios', deviceSlug(device.name))).length).toBeGreaterThan(0);
     }
   });
+
+  it('rejects unknown Apple locales instead of silently using English', () => {
+    expect(captionLocaleForStore('ios', 'es-MX')).toBe('es');
+    expect(captionLocaleForStore('android', '')).toBe('en-US');
+    expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
+  });
+
+  it('frames a complete directory with verifiable metadata and a review sheet', async () => {
+    const input = directory();
+    const output = directory();
+    // Keep enough image detail to clear the content gate without spending
+    // minutes compressing full-screen noise in a directory-contract test.
+    const raw = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#164c39' } })
+      .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+      .png()
+      .toBuffer();
+    const names = Object.keys(screenshotCaptions('android', 'pixel-2'));
+    for (const name of names) writeFileSync(join(input, name), raw);
+
+    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+
+    expect(saved).toEqual(names.map((name) => join(output, name)));
+    expect(readPngSizesRecursively(output)).toEqual(names.map((relativePath) => ({ relativePath, size: raw.length })));
+    const manifest = readPresentationManifest(output);
+    for (const name of names) {
+      const framed = readFileSync(join(output, name));
+      expect(readPngDimensions(framed)).toEqual({ width: 1080, height: 1920 });
+      expect(manifest.files[name]).toEqual({
+        rawBytes: raw.length,
+        rawSha256: sha256Screenshot(raw),
+        framedSha256: sha256Screenshot(framed),
+      });
+      expect(readFileSync(join(input, name))).toEqual(raw);
+    }
+    expect((await sharp(join(output, 'contact-sheet.jpg')).metadata()).format).toBe('jpeg');
+  }, 60_000);
   it.each(['en-US', 'es', 'fr', 'de'] as const)(
     'fits every %s caption in every store device shape',
     async (locale) => {

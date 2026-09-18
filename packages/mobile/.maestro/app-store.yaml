@@ -86,6 +86,15 @@ name: app-store screenshots
 # Home — the global "Everyone" feed. The home screen defaults to it in screenshot
 # mode (see home/index.tsx) for a livelier hero than the test user's own crew.
 - waitForAnimationToEnd
+# The live rail settles independently from the session feed.
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- assertNotVisible:
+    id: 'live-sessions-error'
+- assertNotVisible:
+    id: 'live-sessions-offline'
 - takeScreenshot: 02-home
 
 # Discover — the playlist library (smart "Your Picks" + saved playlists). The dialog was
@@ -145,6 +154,19 @@ name: app-store screenshots
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
+# Pixel stability alone can still describe the preceding tab.
+- extendedWaitUntil:
+    visible:
+      id: 'pre-session-footer'
+    timeout: 90000
+# FlashList can preserve a scrolled preview position after rows load.
+- scrollUntilVisible:
+    element:
+      id: 'pre-session-board-summary'
+    direction: UP
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
 - takeScreenshot: 05-workout-generator
 
 # Playlist detail — a smart playlist (crowd favourites): full-bleed gradient hero + climb
