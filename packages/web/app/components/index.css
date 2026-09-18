@@ -1,15 +1,23 @@
 /* Boardsesh Global Styles */
 
 /* Design tokens as CSS custom properties — Velvet Send. Mirror of theme-config.ts;
-   the parity test in app/theme/__tests__ asserts these stay in sync. */
+   the parity test in app/theme/__tests__ asserts these stay in sync.
+   ONE scheme: there is no `html[data-theme='dark']` block any more, and the parity
+   test fences one from coming back. */
 :root {
+  /* Tells the browser to draw its own chrome dark: scrollbars, <select> popups, date
+     pickers, autofill. Nothing else does this — without it they revert to light
+     widgets on a near-black page, and no test would catch it. */
+  color-scheme: dark;
+
   /* Primary colors — Velvet Send violet. `--color-primary` is the FOREGROUND (links,
      indicators, borders, focus); `--color-primary-fill` is the FILLED button
-     background (white text). Equal in light, diverge in dark. */
-  --color-primary: #6d28d9;
-  --color-primary-hover: #5b21b6;
-  --color-primary-fill: #6d28d9;
-  --color-primary-fill-hover: #5b21b6;
+     background (white text). The two are NOT interchangeable: white on #a78bfa is
+     2.5:1, so a filled button must use the darker fill. */
+  --color-primary: #a78bfa;
+  --color-primary-hover: #c4b5fd;
+  --color-primary-fill: #7c3aed;
+  --color-primary-fill-hover: #6d28d9;
   --color-on-primary: #ffffff;
 
   /* Amber accent — FILL-ONLY, always pair with --color-on-accent for text. */
@@ -22,58 +30,61 @@
 
   /* Lit-climb status hue — "now on the wall". Its own role (not --color-warning) so a
      future warning retune can't silently shift the board-presence affordance. */
-  --color-live: #b45309;
+  --color-live: #fbbf24;
 
   /* Help/guide accent — violet-slate */
-  --color-info: #5e6491;
+  --color-info: #a5abd6;
 
   /* Neutral palette — violet-tinted greys (decoupled from the surface ladder) */
-  --neutral-50: #ebe2f9;
-  --neutral-100: #ded2f3;
-  --neutral-200: #cbbcea;
-  --neutral-300: #ad9ecc;
-  --neutral-400: #7b7591;
-  --neutral-500: #595464;
-  --neutral-600: #48415a;
-  --neutral-700: #373042;
-  --neutral-800: #262030;
-  --neutral-900: #181221;
+  --neutral-50: #1e1434;
+  --neutral-100: #291c43;
+  --neutral-200: #37294b;
+  --neutral-300: #483b5c;
+  --neutral-400: #6f6882;
+  --neutral-500: #aca5bd;
+  --neutral-600: #c3bcd3;
+  --neutral-700: #d7d1e3;
+  --neutral-800: #e7e2f0;
+  --neutral-900: #f3effa;
 
   /* Semantic colors */
-  --semantic-background: #e8ddf6;
-  --semantic-surface: #faf6fe;
-  --semantic-surface-overlay: rgba(250, 246, 254, 0.95);
-  --semantic-selected: rgba(109, 40, 217, 0.14);
-  --semantic-selected-hover: rgba(109, 40, 217, 0.22);
-  --semantic-selected-light: rgba(109, 40, 217, 0.08);
-  --semantic-selected-border: #6d28d9;
+  --semantic-background: #110a20;
+  --semantic-surface: #251b3a;
+  /* One step brighter than the card — depth on near-black is a lighter violet, not a
+     shadow. Mirrors `themeTokens.semantic.surfaceElevated`. */
+  --semantic-surface-elevated: #2f234a;
+  --semantic-surface-overlay: rgba(37, 27, 58, 0.95);
+  --semantic-selected: rgba(199, 184, 232, 0.16);
+  --semantic-selected-hover: rgba(199, 184, 232, 0.24);
+  --semantic-selected-light: rgba(199, 184, 232, 0.1);
+  --semantic-selected-border: #a78bfa;
   /* Dividers/hairlines — decoupled from neutral-200 so they never equal a surface. */
-  --separator: rgba(60, 50, 90, 0.2);
+  --separator: rgba(185, 170, 215, 0.2);
 
   /* Status colors */
-  --color-success: #047857;
+  --color-success: #34d399;
   --color-success-hover: #036b4d;
-  --color-success-bg: #e7f4ee;
+  --color-success-bg: rgba(52, 211, 153, 0.14);
   /* Darkened from Velvet #c81e1e so error TEXT clears AA (4.96:1) on the #E8DDF6 page. */
-  --color-error: #b91c1c;
-  --color-error-bg: #fbe9e9;
-  --color-error-muted: rgba(185, 28, 28, 0.18);
-  --color-error-muted-hover: rgba(185, 28, 28, 0.28);
-  --color-warning: #a04a08;
-  --color-warning-bg: #fbf0e3;
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.14);
+  --color-error-muted: rgba(248, 113, 113, 0.2);
+  --color-error-muted-hover: rgba(248, 113, 113, 0.3);
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.14);
 
   /* Shadows */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
 
   /* Borders */
-  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.1);
 
   /* Overlays */
-  --overlay-light: rgba(0, 0, 0, 0.3);
-  --overlay-dark: rgba(0, 0, 0, 0.6);
-  --overlay-text: rgba(255, 255, 255, 0.9);
+  --overlay-light: rgba(0, 0, 0, 0.4);
+  --overlay-dark: rgba(0, 0, 0, 0.7);
+  --overlay-text: rgba(255, 255, 255, 0.85);
 
   /* Velvet motion — Glass durations + M3 'standard' easing for utility transitions;
      'emphasized' is reserved for large-surface enter/exit. */
@@ -115,16 +126,16 @@
 
   /* Input field tokens — the source of truth for input surface/text/border in BOTH
      schemes. The MUI theme (mui-theme.ts) and ~150 module.css files read these. */
-  --input-bg: #ffffff;
-  --input-bg-hover: #f1eef7;
-  --input-bg-focused: #ffffff;
+  --input-bg: #2f234a;
+  --input-bg-hover: #2f234a;
+  --input-bg-focused: #2f234a;
   /* Dark-on-white body text inside the field. */
-  --input-text: #26222d;
+  --input-text: #e7e2f0;
   /* Placeholder — fixed dark grey ≥4.5:1 on the white field. */
-  --input-placeholder: #6b6577;
+  --input-placeholder: #a9a2b6;
   /* Resting outline (≥3:1 on white and on the #E8DDF6 page); one neutral step darker on hover. */
-  --input-border: #7b7591;
-  --input-border-hover: #595464;
+  --input-border: rgba(195, 188, 211, 0.5);
+  --input-border-hover: rgba(195, 188, 211, 0.7);
 
   /* Safe-area insets, exposed as CSS vars so consumers resolve through
      a single indirection (and so future per-platform or per-view overrides
@@ -173,91 +184,11 @@
      swaps in the warm cream that ships on dark brand surfaces.
      Canonical values live in app/theme/theme-config.ts as
      `text.brandPrimaryLight` / `text.brandMutedLight` — keep in sync. */
-  --bs-text-brand-primary: #16111f;
-  --bs-text-brand-muted: #5b5563;
-}
-
-/* Dark mode overrides */
-html[data-theme='dark'] {
-  color-scheme: dark;
-
-  /* Brand violet — foreground lifts to #A78BFA for legibility on near-black; the FILL
-     stays dark (#7C3AED) so white text clears AA. These did not exist in the dark
-     block before (rose was scheme-invariant). */
-  --color-primary: #a78bfa;
-  --color-primary-hover: #c4b5fd;
-  --color-primary-fill: #7c3aed;
-  --color-primary-fill-hover: #6d28d9;
-  --color-on-primary: #ffffff;
-  --color-accent: #ff8a3d;
-  --color-on-accent: #16111f;
-  --color-amber: #fbbf24;
-  /* Lit-climb status hue lifts to the brighter amber on dark surfaces. */
-  --color-live: #fbbf24;
-  --color-info: #a5abd6;
-
-  /* Neutral palette (violet-grey, inverted: 50 darkest → 900 lightest) */
-  --neutral-50: #1e1434;
-  --neutral-100: #291c43;
-  --neutral-200: #37294b;
-  --neutral-300: #483b5c;
-  --neutral-400: #6f6882;
-  --neutral-500: #aca5bd;
-  --neutral-600: #c3bcd3;
-  --neutral-700: #d7d1e3;
-  --neutral-800: #e7e2f0;
-  --neutral-900: #f3effa;
-
-  /* Semantic colors */
-  --semantic-background: #110a20;
-  --semantic-surface: #251b3a;
-  --semantic-surface-overlay: rgba(37, 27, 58, 0.95);
-  --semantic-selected: rgba(199, 184, 232, 0.16);
-  --semantic-selected-hover: rgba(199, 184, 232, 0.24);
-  --semantic-selected-light: rgba(199, 184, 232, 0.1);
-  --semantic-selected-border: #a78bfa;
-  --separator: rgba(185, 170, 215, 0.2);
-
-  /* Status mains + background tints (scheme-aware) */
-  --color-success: #34d399;
-  --color-error: #f87171;
-  --color-warning: #fbbf24;
-  --color-success-bg: rgba(52, 211, 153, 0.14);
-  --color-error-bg: rgba(248, 113, 113, 0.14);
-  --color-error-muted: rgba(248, 113, 113, 0.2);
-  --color-error-muted-hover: rgba(248, 113, 113, 0.3);
-  --color-warning-bg: rgba(251, 191, 36, 0.14);
-
-  /* Input field tokens — elevated violet field (#2F234A). The surface is unchanged on
-     hover/focus; the BORDER carries the hover state, the violet ring carries focus. */
-  --input-bg: #2f234a;
-  --input-bg-hover: #2f234a;
-  --input-bg-focused: #2f234a;
-  /* Light-on-violet body text + placeholder (both ≥4.5:1 on the field). */
-  --input-text: #e7e2f0;
-  --input-placeholder: #a9a2b6;
-  /* Translucent resting outline; brighter on hover (both composite to ≥3:1 on the field). */
-  --input-border: rgba(195, 188, 211, 0.5);
-  --input-border-hover: rgba(195, 188, 211, 0.7);
-
-  /* Shadows (stronger for dark backgrounds) */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-
-  /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.1);
-
-  /* Overlays */
-  --overlay-light: rgba(0, 0, 0, 0.4);
-  --overlay-dark: rgba(0, 0, 0, 0.7);
-  --overlay-text: rgba(255, 255, 255, 0.85);
-
-  /* Cool near-white pair for dark brand surfaces.
-     Canonical values: `themeTokens.text.brandPrimary` / `text.brandMuted`. */
   --bs-text-brand-primary: #f5f2fb;
   --bs-text-brand-muted: #a9a2b6;
 }
+
+/* Dark mode overrides */
 
 /* Base styles */
 html {

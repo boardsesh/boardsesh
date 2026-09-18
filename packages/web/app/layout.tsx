@@ -17,7 +17,7 @@ import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
-import { darkTokens } from './theme/theme-config';
+import { themeTokens } from './theme/theme-config';
 import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
@@ -60,7 +60,7 @@ export const viewport: Viewport = {
   interactiveWidget: 'resizes-visual',
   // The page base, not the shared Material anchor — velvet-tokens-parity
   // asserts web's ground is deliberately NOT materialSurfaces.dark.background.
-  themeColor: darkTokens.semantic.background,
+  themeColor: themeTokens.semantic.background,
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

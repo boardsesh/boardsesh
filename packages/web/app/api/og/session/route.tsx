@@ -1,7 +1,7 @@
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { darkTokens, themeTokens } from '@/app/theme/theme-config';
+import { themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
@@ -84,8 +84,8 @@ export async function GET(request: NextRequest) {
           display: 'flex',
           position: 'relative',
           overflow: 'hidden',
-          background: darkTokens.semantic.background,
-          color: darkTokens.neutral[900],
+          background: themeTokens.semantic.background,
+          color: themeTokens.neutral[900],
           padding: '42px',
           gap: '34px',
         }}
@@ -129,14 +129,14 @@ export async function GET(request: NextRequest) {
             width: '366px',
             height: '546px',
             borderRadius: '28px',
-            background: darkTokens.semantic.surfaceElevated,
-            border: `1px solid ${darkTokens.neutral[300]}`,
+            background: themeTokens.semantic.surfaceElevated,
+            border: `1px solid ${themeTokens.neutral[300]}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             position: 'relative',
             overflow: 'hidden',
-            boxShadow: darkTokens.shadows.lg,
+            boxShadow: themeTokens.shadows.lg,
             flexShrink: 0,
           }}
         >
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '32px',
-                color: darkTokens.neutral[600],
+                color: themeTokens.neutral[600],
                 textAlign: 'center',
               }}
             >
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
                 fontWeight: 700,
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
-                color: darkTokens.neutral[500],
+                color: themeTokens.neutral[500],
               }}
             >
               {boardInfoLine}
@@ -208,7 +208,7 @@ export async function GET(request: NextRequest) {
                 fontSize: '62px',
                 fontWeight: 700,
                 lineHeight: 1.04,
-                color: darkTokens.neutral[900],
+                color: themeTokens.neutral[900],
               }}
             >
               {joinHeadline}
@@ -216,7 +216,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 fontSize: '27px',
-                color: darkTokens.neutral[700],
+                color: themeTokens.neutral[700],
                 lineHeight: 1.35,
               }}
             >
@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
               <div
                 style={{
                   fontSize: '22px',
-                  color: darkTokens.neutral[600],
+                  color: themeTokens.neutral[600],
                 }}
               >
                 {statsLine}
@@ -236,7 +236,7 @@ export async function GET(request: NextRequest) {
               <div
                 style={{
                   fontSize: '19px',
-                  color: darkTokens.neutral[500],
+                  color: themeTokens.neutral[500],
                 }}
               >
                 {participantNames}
@@ -251,16 +251,16 @@ export async function GET(request: NextRequest) {
               gap: '14px',
               borderRadius: '24px',
               padding: '24px 26px',
-              background: darkTokens.semantic.surface,
-              border: `1px solid ${darkTokens.neutral[300]}`,
-              boxShadow: darkTokens.shadows.md,
+              background: themeTokens.semantic.surface,
+              border: `1px solid ${themeTokens.neutral[300]}`,
+              boxShadow: themeTokens.shadows.md,
             }}
           >
             <div
               style={{
                 fontSize: '22px',
                 fontWeight: 700,
-                color: darkTokens.neutral[900],
+                color: themeTokens.neutral[900],
               }}
             >
               {/* i18n-ignore-next-line -- OG image, English-only */}
@@ -294,7 +294,7 @@ export async function GET(request: NextRequest) {
                         alignItems: 'flex-end',
                         width: '100%',
                         height: '156px',
-                        borderBottom: `1px solid ${darkTokens.neutral[300]}`,
+                        borderBottom: `1px solid ${themeTokens.neutral[300]}`,
                         paddingBottom: '10px',
                       }}
                     >
@@ -317,7 +317,7 @@ export async function GET(request: NextRequest) {
                         fontSize: '17px',
                         fontWeight: 700,
                         textAlign: 'center',
-                        color: darkTokens.neutral[700],
+                        color: themeTokens.neutral[700],
                       }}
                     >
                       {bar.grade}
@@ -329,7 +329,7 @@ export async function GET(request: NextRequest) {
               <div
                 style={{
                   fontSize: '20px',
-                  color: darkTokens.neutral[600],
+                  color: themeTokens.neutral[600],
                 }}
               >
                 {/* i18n-ignore-next-line -- OG image, English-only */}
@@ -345,7 +345,7 @@ export async function GET(request: NextRequest) {
             bottom: '24px',
             right: '34px',
             fontSize: '18px',
-            color: darkTokens.neutral[500],
+            color: themeTokens.neutral[500],
             fontWeight: 700,
             letterSpacing: '0.04em',
           }}

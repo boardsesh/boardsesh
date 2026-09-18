@@ -29,8 +29,3 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
-
-:global(html[data-theme='dark']) .badge,
-:global(html[data-theme='dark']) .badgeMirrored {
-  background-color: var(--overlay-light);
-}

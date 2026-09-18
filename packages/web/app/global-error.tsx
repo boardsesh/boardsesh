@@ -2,7 +2,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useEffect, useState } from 'react';
-import { darkTokens, themeTokens } from './theme/theme-config';
+import { themeTokens } from './theme/theme-config';
 
 // This is a Next.js root error boundary that renders when the root layout
 // itself fails. It lives outside the normal provider tree, so we can't rely
@@ -70,8 +70,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
       <body
         style={{
           margin: 0,
-          backgroundColor: darkTokens.semantic.background,
-          color: darkTokens.neutral[900],
+          backgroundColor: themeTokens.semantic.background,
+          color: themeTokens.neutral[900],
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         }}
       >
@@ -87,14 +87,14 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           }}
         >
           <p style={{ fontSize: 18, fontWeight: 500, margin: '0 0 8px' }}>{copy.title}</p>
-          <p style={{ fontSize: 14, color: darkTokens.neutral[500], margin: '0 0 24px' }}>{copy.subtitle}</p>
+          <p style={{ fontSize: 14, color: themeTokens.neutral[500], margin: '0 0 24px' }}>{copy.subtitle}</p>
           <button
             onClick={() => reset()}
             style={{
               padding: '12px 24px',
               borderRadius: 8,
               border: 'none',
-              backgroundColor: darkTokens.colors.primaryFill,
+              backgroundColor: themeTokens.colors.primaryFill,
               color: themeTokens.colors.onPrimary,
               fontSize: 16,
               cursor: 'pointer',
