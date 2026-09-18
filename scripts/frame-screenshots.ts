@@ -16,6 +16,7 @@ import sharp from 'sharp';
 import { brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
 import { findGooglePlayOffenders, findOffenders, readPngDimensions } from './assert-screenshot-dimensions';
 import {
+  CAPTION_LOCALES,
   PRESENTATION_MANIFEST,
   PRESENTATION_ROOT,
   PRESENTATION_VERSION,
@@ -174,9 +175,11 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const staging = mkdtempSync(join(dirname(output), '.framing-'));
   const manifest: PresentationManifest = { version: PRESENTATION_VERSION, locale: options.locale, files: {} };
   try {
+    const thumbnails: Array<{ data: Buffer; info: sharp.OutputInfo }> = [];
     for (const { name, buffer } of captures) {
       const framed = await frameScreenshot(buffer, catalog[mapping[name]]);
       writeFileSync(join(staging, name), framed);
+      thumbnails.push(await sharp(framed).resize({ width: 270 }).toBuffer({ resolveWithObject: true }));
       manifest.files[name] = {
         rawBytes: buffer.length,
         rawSha256: sha256Screenshot(buffer),
@@ -185,9 +188,6 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
     }
     writeFileSync(join(staging, PRESENTATION_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
     // Build a review artifact outside the PNG upload set.
-    const thumbnails = await Promise.all(
-      names.map((name) => sharp(join(staging, name)).resize({ width: 270 }).toBuffer({ resolveWithObject: true })),
-    );
     const columns = Math.min(4, thumbnails.length);
     const cellWidth = 290;
     const cellHeight = Math.max(...thumbnails.map((thumbnail) => thumbnail.info.height)) + 20;
@@ -252,7 +252,8 @@ export function parseFrameArguments(argv: readonly string[]): {
     );
   }
   const locale = flags.get('--locale');
-  if (locale && !['en-US', 'es', 'fr', 'de'].includes(locale)) throw new Error(`Unsupported caption locale: ${locale}`);
+  if (locale && !CAPTION_LOCALES.some((supportedLocale) => supportedLocale === locale))
+    throw new Error(`Unsupported caption locale: ${locale}`);
   if (flags.has('--device') && platform === 'ios' && !locale)
     throw new Error('--locale is required for a single iOS device directory');
   return {

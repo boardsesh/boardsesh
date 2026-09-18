@@ -346,7 +346,7 @@ export function packBaseline(options: PackOptions): PackResult {
       for (const name of pngNames) {
         manifestFiles.push({
           relativePath: `${locale}/${deviceSlug}/${name}`,
-          sha256: sha256Of(join(shardDir, name)),
+          sha256: presentation.files[name].framedSha256,
         });
       }
     }

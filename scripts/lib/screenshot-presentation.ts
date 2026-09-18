@@ -21,7 +21,8 @@ export const CAPTION_IDS = [
   'wall',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
-export type CaptionLocale = 'en-US' | 'es' | 'fr' | 'de';
+export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
+export type CaptionLocale = (typeof CAPTION_LOCALES)[number];
 export interface ScreenshotCaption {
   headline: string;
   description: string;
@@ -121,7 +122,7 @@ export function readPresentationManifest(directory: string): PresentationManifes
     !isRecord(parsed) ||
     parsed.version !== PRESENTATION_VERSION ||
     !isRecord(parsed.files) ||
-    !['en-US', 'es', 'fr', 'de'].includes(String(parsed.locale))
+    !CAPTION_LOCALES.some((locale) => locale === parsed.locale)
   ) {
     throw new Error(`Invalid screenshot presentation manifest: ${filename}`);
   }
