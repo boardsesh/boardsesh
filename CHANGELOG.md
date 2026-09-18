@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Switch boards without briefly seeing your previous board’s workout climbs. ([#5330](https://github.com/boardsesh/boardsesh/pull/5330))
 - The gym finder and gym pages now read properly in the dark: cards you can actually see, a filter row that shows what you picked, and a real answer when a search comes up empty. ([#5563](https://github.com/boardsesh/boardsesh/pull/5563))
 - The Support page now shows you how to chip in without scrolling, and lists the ways to help that cost nothing. ([#5557](https://github.com/boardsesh/boardsesh/pull/5557))
 - A setter's new climbs from one day now arrive as a single card you swipe through ([#5537](https://github.com/boardsesh/boardsesh/pull/5537))

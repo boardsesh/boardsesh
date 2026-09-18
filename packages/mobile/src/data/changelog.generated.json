@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-18T22:13:16.021Z",
+  "generatedAt": "2026-09-18T22:24:03.599Z",
   "entries": [
+    {
+      "prNumber": 5330,
+      "category": "new",
+      "title": "Switch boards without briefly seeing your previous board’s workout climbs.",
+      "mergedAt": "2026-09-18T22:12:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5330"
+    },
     {
       "prNumber": 5563,
       "category": "new",
