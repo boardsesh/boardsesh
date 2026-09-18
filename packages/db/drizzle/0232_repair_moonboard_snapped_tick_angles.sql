@@ -161,6 +161,7 @@ WHERE EXISTS (SELECT 1 FROM boardsesh_ticks tick WHERE tick.uuid = repair.tick_u
 
 DO $$
 DECLARE
+  expected_count constant integer := 55;
   present_count integer;
   moved_count integer;
 BEGIN
@@ -183,8 +184,8 @@ BEGIN
      AND tick.updated_at = repair.expected_updated_at;
 
   GET DIAGNOSTICS moved_count = ROW_COUNT;
-  IF moved_count <> 55 THEN
-    RAISE EXCEPTION 'MoonBoard angle repair moved % ticks instead of 55', moved_count;
+  IF moved_count <> expected_count THEN
+    RAISE EXCEPTION 'MoonBoard angle repair moved % ticks instead of %', moved_count, expected_count;
   END IF;
 END $$;
 --> statement-breakpoint
