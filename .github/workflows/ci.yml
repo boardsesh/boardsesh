@@ -273,12 +273,10 @@ jobs:
             #     pnpm-workspace.yaml, the root package.json, and patches/**
             #     (pnpm resolves patchedDependencies
             #     before the deps stage can install at all).
-            #   * the three repo-root scripts services.web.extraSourceFiles
-            #     copies into the context. Only tailscale-hostname.ts is
-            #     load-bearing (packages/web/scripts imports it and Next's
-            #     production type-check compiles that directory); the other two
-            #     are listed because the context copies them and W-26/#4442 will
-            #     drop the set together.
+            #   * the repo-root scripts services.web.extraSourceFiles copies
+            #     into the context. packages/web/scripts imports the hostname
+            #     and design preview helpers, and Next's production type-check
+            #     compiles that directory. Keep every copied input covered.
             #   * the generator itself. A cheap contract test below verifies
             #     vite.config.ts still maps `docker-context:web` to it, so an
             #     unrelated task edit does not launch this four-minute build.
@@ -352,6 +350,8 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
+              - 'scripts/lib/design-previews.ts'
+              - 'scripts/lib/dev-object-store.ts'
               - '.github/workflows/ci.yml'
               - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
