@@ -27,7 +27,7 @@ export type BrandCtaOptions = {
   glow?: boolean;
 };
 
-const SIZE_SX: Record<BrandCtaSize, SxProps<Theme>> = {
+const SIZE_SX = {
   small: { px: 2, flexShrink: 0, whiteSpace: 'nowrap' },
   medium: { px: 3 },
   large: {
@@ -35,27 +35,32 @@ const SIZE_SX: Record<BrandCtaSize, SxProps<Theme>> = {
     py: 1.5,
     fontSize: themeTokens.typography.fontSize.lg,
   },
-};
+} satisfies Record<BrandCtaSize, SxProps<Theme>>;
 
 /**
  * Build the CTA style. Call it at module scope and hoist the result, the way the
  * `*_SX` constants it replaces were hoisted — it is a plain object, so calling
  * it per render would allocate a new one every time for no benefit.
+ *
+ * The return type is inferred rather than annotated `SxProps<Theme>`: that type
+ * is a union which also admits an array and a callback, so annotating it would
+ * make the result unspreadable and force a cast at every call site that merges
+ * into it. `satisfies` keeps the key checking without widening.
  */
-export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = {}): SxProps<Theme> {
+export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = {}) {
   return {
     borderRadius: `${themeTokens.borderRadius.full}px`,
     textTransform: 'none',
     fontWeight: themeTokens.typography.fontWeight.semibold,
     backgroundColor: 'var(--color-primary-fill)',
     color: 'var(--color-on-primary)',
-    ...(SIZE_SX[size] as object),
-    ...(glow ? { boxShadow: 'var(--shadow-accent-glow)' } : null),
+    ...SIZE_SX[size],
+    ...(glow ? { boxShadow: 'var(--shadow-accent-glow)' } : {}),
     '&:hover': {
       backgroundColor: 'var(--color-primary-fill-hover)',
       // The shared StartClimbingButton lifts on hover; the brand pill does not.
       transform: 'none',
-      ...(glow ? { boxShadow: 'var(--shadow-accent-glow-hover)' } : null),
+      ...(glow ? { boxShadow: 'var(--shadow-accent-glow-hover)' } : {}),
     },
-  };
+  } satisfies SxProps<Theme>;
 }
