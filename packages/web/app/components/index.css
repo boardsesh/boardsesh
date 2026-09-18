@@ -177,13 +177,12 @@
   /* Tap highlight (Android/mobile browsers) */
   --tap-highlight: transparent;
 
-  /* Warm text tokens for brand surfaces (landing hero, splash, OG, App Store,
-     marketing). Scoped intentionally — standard product UI keeps the
-     existing neutral scale. Light-mode values are warm darks so the same
-     text token reads against a light surface; the dark-mode block below
-     swaps in the warm cream that ships on dark brand surfaces.
-     Canonical values live in app/theme/theme-config.ts as
-     `text.brandPrimaryLight` / `text.brandMutedLight` — keep in sync. */
+  /* Text tokens for brand surfaces (landing hero, splash, OG, App Store,
+     marketing). Scoped intentionally — standard product UI keeps the existing
+     neutral scale. Canonical values live in app/theme/theme-config.ts as
+     `text.brandPrimary` / `text.brandMuted` — keep in sync; the parity test
+     asserts it. The `*Light` counterparts went with the light scheme, as did
+     the second block that used to swap these. */
   --bs-text-brand-primary: #f5f2fb;
   --bs-text-brand-muted: #a9a2b6;
 }
