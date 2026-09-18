@@ -14,6 +14,8 @@ export type SubscriptionLifetime = {
  * underlying sources outside the generator so cancellation can wake them up.
  * The outer next() also settles during a pending seed or permission lookup;
  * late setup is closed immediately and cannot publish after cancellation.
+ * return() signals cancellation, not completion of async generator finalizers;
+ * cleanup that must run immediately belongs in an owned source's return().
  */
 export function withSubscriptionCleanup<Args extends unknown[], Payload>(
   subscribe: (lifetime: SubscriptionLifetime, ...args: Args) => AsyncGenerator<Payload>,

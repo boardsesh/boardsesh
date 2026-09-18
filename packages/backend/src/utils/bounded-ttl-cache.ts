@@ -1,6 +1,9 @@
 type CacheEntry<Payload> = { payload: Payload; expiresAt: number; bytes: number };
 
-/** Payload weights are serialized bytes, not a measurement of V8 heap size. */
+/**
+ * Payload weights are serialized bytes, not a measurement of V8 heap size.
+ * Payloads are retained by reference; callers must not mutate cached objects.
+ */
 export class BoundedTtlCache<Payload> {
   private readonly entries = new Map<string, CacheEntry<Payload>>();
   private bytes = 0;
@@ -20,6 +23,8 @@ export class BoundedTtlCache<Payload> {
   }
 
   set(key: string, payload: Payload, ttlMs: number): void {
+    // Scan at most maxEntries (1,000 for metadata) so expired entries are
+    // reclaimed before capacity eviction can displace a still-live entry.
     this.evictExpired();
     this.delete(key);
     let serialized: string | undefined;
