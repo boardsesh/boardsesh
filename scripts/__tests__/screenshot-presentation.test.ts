@@ -147,6 +147,13 @@ describe('store screenshot presentation', () => {
     ).rejects.toThrow('likely blank');
   });
 
+  it('identifies the shard when its presentation metadata cannot be parsed', () => {
+    const shard = directory();
+    const manifest = join(shard, PRESENTATION_MANIFEST);
+    writeFileSync(manifest, '{invalid json');
+    expect(() => readPresentationManifest(shard)).toThrow(manifest);
+  });
+
   it('checks raw capture sizes and refuses stale presentation metadata', () => {
     const input = directory();
     const framed = Buffer.alloc(200_000, 7);

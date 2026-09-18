@@ -124,7 +124,12 @@ export function sha256Screenshot(bytes: Buffer): string {
 /** A sidecar belongs to exactly these PNG bytes; stale metadata must never weaken the content gate. */
 export function readPresentationManifest(directory: string): PresentationManifest {
   const filename = join(directory, PRESENTATION_MANIFEST);
-  const parsed: unknown = JSON.parse(readFileSync(filename, 'utf8'));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filename, 'utf8'));
+  } catch (error) {
+    throw new Error(`Cannot read screenshot presentation manifest: ${filename}`, { cause: error });
+  }
   if (
     !isRecord(parsed) ||
     parsed.version !== PRESENTATION_VERSION ||
