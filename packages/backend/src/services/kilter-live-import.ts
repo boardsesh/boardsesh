@@ -15,6 +15,7 @@ import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { reserveBoardPresenceSeq } from '../graphql/resolvers/board-presence/shared';
 import { HISTORY_TTL_SECONDS, readImportedRecentClimbs } from './board-history';
+import { logger } from '../utils/logger';
 
 export type MatchedKilterWall = KilterWallSelection & { sourceKey: string; boardId: number; layoutId: number };
 
@@ -118,13 +119,21 @@ export async function importKilterDisplays(
         inArray(boardClimbs.uuid, canonicalUuids),
       ),
     );
-  const climbsByUuid = new Map(catalog.map((climb) => [climb.uuid, climb]));
+  // Climb identity/geometry is angle-independent. A missing angle-specific
+  // stats row still permits history, but must never borrow another angle's grade.
+  const climbsByUuid = new Map(catalog.map(({ uuid, name, frames, setter }) => [uuid, { name, frames, setter }]));
   const climbsByAngle = new Map(catalog.map((climb) => [`${climb.uuid}:${climb.angle}`, climb]));
   let insertedCount = 0;
+  const warnedReasons = new Set<string>();
+  const warnValidationFailure = (reason: string) => {
+    if (warnedReasons.has(reason)) return;
+    warnedReasons.add(reason);
+    logger.warn('[KilterLive] Import validation failed', { boardId: wall.boardId, sourceKey: wall.sourceKey, reason });
+  };
   for (const display of displays) {
     if (!(await isCurrent())) break;
     const climbUuid = canonicalByAlias.get(display.climbUuid) ?? display.climbUuid;
-    const climb = climbsByAngle.get(`${climbUuid}:${display.angle}`) ?? climbsByUuid.get(climbUuid);
+    const climb = climbsByUuid.get(climbUuid);
     if (!climb) continue;
     const inserted = await db.transaction(async (transaction) => {
       // Same board row lock as native reports and board merges. Revalidate public scope.
@@ -134,7 +143,11 @@ export async function importKilterDisplays(
         .where(and(eq(userBoards.id, wall.boardId), eq(userBoards.isPublic, true), isNull(userBoards.deletedAt)))
         .for('update')
         .limit(1);
-      if (!board || board.layoutId !== wall.layoutId || !(await isCurrent())) return false;
+      if (!board || board.layoutId !== wall.layoutId) {
+        warnValidationFailure('board_unavailable_or_layout_changed');
+        return false;
+      }
+      if (!(await isCurrent())) return false;
       const currentWall = await matchKilterWall(wall.boardId, transaction);
       if (
         !currentWall ||
@@ -142,8 +155,10 @@ export async function importKilterDisplays(
         currentWall.gymUuid !== wall.gymUuid ||
         currentWall.wallUuid !== wall.wallUuid ||
         currentWall.productLayoutUuid !== wall.productLayoutUuid
-      )
+      ) {
+        warnValidationFailure('wall_binding_changed');
         return false;
+      }
       const [existing] = await transaction
         .select({ id: boardClimbEvents.id })
         .from(boardClimbEvents)

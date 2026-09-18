@@ -30,9 +30,13 @@ Redis outage stops polling until coordination recovers. The flag defaults off; e
 
 The parser accepts timezone-qualified display timestamps, normalizes them to UTC with microsecond precision, and prefers `derivativeAngle`. Deleted, reported, malformed, or unresolvable catalog entries are skipped. Climb aliases resolve into Boardsesh catalog IDs; name, setter, frames, and grade come from that catalog. Only `liveBoardUsername` supplies optional external attribution. Setter names and upstream user UUIDs are never mapped to Boardsesh senders.
 
+Name, setter, and frames are shared across angles. An occurrence without catalog statistics at its displayed angle is retained with a null grade; it never borrows another angle's grade. Board/layout or wall-binding validation failures log their reason once per import batch. Duplicate occurrences and normal cancellation do not produce warnings.
+
 The occurrence key hashes the complete wall selection, upstream display ID, and normalized timestamp. If an ID is absent, climb UUID and angle replace it. `(source, external_occurrence_key)` uniqueness prevents repeated polls and overlapping workers from duplicating events. Each imported event receives a reserved board sequence and `source='kilter'` in `board_climb_events`.
 
 Imported recent history has its own Redis cache (`board:<id>:kilter-history`), retaining the newest 50 displays from seven days. The native history list is unchanged. Queries merge the two sources chronologically. A missing cache falls back to Postgres; subsequent polls rebuild it, including when every occurrence already exists. `BoardHistoryUpdated` changes client history only. Imported events are excluded from native display-count activity aggregates.
+
+Cached timestamps must be strings that parse as valid dates. Invalid cached entries trigger a warning and a durable-history read. Malformed timestamps in the merged history are excluded with a warning count, separately from normal retention expiry.
 
 Durable event retention follows existing board history. Unlinking stops new reads; it does not erase previously imported public-wall history.
 

@@ -15,6 +15,7 @@ import { redisClientManager } from '../redis/client';
 import { importKilterDisplays, matchKilterWall } from '../services/kilter-live-import';
 import { parseHistoryPageCursor, readBoardHistoryPage, readMergedRecentHistory } from '../services/board-history';
 import { KilterLiveSync } from '../services/kilter-live-sync';
+import { logger } from '../utils/logger';
 
 vi.mock('@boardsesh/kilter-sync/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/kilter-sync/api')>()),
@@ -131,6 +132,111 @@ function poller() {
 }
 
 describe('Kilter history integration', () => {
+  it.each([undefined, null, 42, 'not-a-timestamp'])(
+    'recovers durable history for invalid cached sentAt %s',
+    async (sentAt) => {
+      const wall = (await matchKilterWall(boardId))!;
+      await importKilterDisplays(wall, [display()], async () => true);
+      const [entry] = (await readBoardHistoryPage(boardId)).entries;
+      await publisher.set(`board:${boardId}:kilter-history`, JSON.stringify([{ ...entry, sentAt }]));
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+      expect(await readMergedRecentHistory(boardId)).toEqual([entry]);
+      expect(warn).toHaveBeenCalledWith('[BoardHistory] Invalid imported history cache; reading durable history', {
+        boardId,
+      });
+    },
+  );
+
+  it('logs malformed native timestamps while retaining valid recent history', async () => {
+    const wall = (await matchKilterWall(boardId))!;
+    await importKilterDisplays(wall, [display()], async () => true);
+    const [entry] = (await readBoardHistoryPage(boardId)).entries;
+    vi.spyOn(pubsub, 'getRecentBoardClimbs').mockResolvedValue([
+      { ...entry, seq: entry.seq + 1, source: 'boardsesh', sentAt: 'invalid' },
+      { ...entry, seq: entry.seq + 2, source: 'boardsesh', sentAt: '2000-01-01T00:00:00Z' },
+    ]);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    expect(await readMergedRecentHistory(boardId)).toEqual([entry]);
+    expect(warn).toHaveBeenCalledWith('[BoardHistory] Skipped history with invalid timestamps', {
+      boardId,
+      invalidTimestampCount: 1,
+    });
+  });
+
+  it('retains climb metadata without borrowing a grade from another angle', async () => {
+    await db
+      .insert(schema.boardDifficultyGrades)
+      .values({ boardType: 'kilter', difficulty: 987, boulderName: 'Test grade' })
+      .onConflictDoNothing();
+    await db
+      .insert(schema.boardClimbStats)
+      .values({ boardType: 'kilter', climbUuid, angle: 40, displayDifficulty: 987 });
+    const wall = (await matchKilterWall(boardId))!;
+
+    expect(await importKilterDisplays(wall, [display({ angle: 40 }), display({ angle: 50 })], async () => true)).toBe(
+      2,
+    );
+    const { entries } = await readBoardHistoryPage(boardId);
+    expect(entries.find((entry) => entry.angle === 40)).toMatchObject({ grade: 'Test grade' });
+    expect(entries.find((entry) => entry.angle === 50)).toMatchObject({
+      name: 'Catalog climb',
+      frames: 'p1r12',
+      grade: null,
+    });
+  });
+
+  it('stops between occurrences when eligibility is lost and leaves the cache untouched', async () => {
+    const wall = (await matchKilterWall(boardId))!;
+    const first = display();
+    // Initial check, first loop check, and first transaction check succeed;
+    // eligibility disappears before the second occurrence starts.
+    const isCurrent = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValue(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    expect(await importKilterDisplays(wall, [first, display()], isCurrent)).toBe(1);
+    const rows = await db.select().from(schema.boardClimbEvents).where(eq(schema.boardClimbEvents.boardId, boardId));
+    expect(rows.map((row) => row.externalOccurrenceKey)).toEqual([first.occurrenceKey]);
+    expect(await publisher.get(`board:${boardId}:kilter-history`)).toBeNull();
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not commit when eligibility is lost inside the transaction', async () => {
+    const wall = (await matchKilterWall(boardId))!;
+    const isCurrent = vi
+      .fn<() => Promise<boolean>>()
+      .mockResolvedValue(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    expect(await importKilterDisplays(wall, [display()], isCurrent)).toBe(0);
+    expect((await readBoardHistoryPage(boardId)).entries).toEqual([]);
+    expect(await publisher.get(`board:${boardId}:kilter-history`)).toBeNull();
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { change: { layoutId: 2 }, reason: 'board_unavailable_or_layout_changed' },
+    { change: { sizeId: 20 }, reason: 'wall_binding_changed' },
+  ])('logs changed mapping validation once per batch: $reason', async ({ change, reason }) => {
+    const wall = (await matchKilterWall(boardId))!;
+    await db.update(schema.userBoards).set(change).where(eq(schema.userBoards.id, boardId));
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    expect(await importKilterDisplays(wall, [display(), display()], async () => true)).toBe(0);
+    expect(warn).toHaveBeenCalledExactlyOnceWith('[KilterLive] Import validation failed', {
+      boardId,
+      sourceKey,
+      reason,
+    });
+    expect((await readBoardHistoryPage(boardId)).entries).toEqual([]);
+  });
+
   it('cleans source mappings when an owning account is deleted', async () => {
     await db.delete(schema.users).where(eq(schema.users.id, linkedUser));
     expect(
@@ -236,6 +342,68 @@ describe('Kilter history integration', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('cleans up a failed Redis control subscription and retries successfully', async () => {
+    const baselineListeners = subscriber.listenerCount('message');
+    vi.spyOn(subscriber, 'subscribe').mockRejectedValueOnce(new Error('test subscribe failure'));
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('[KilterLive] Coordination failed', {
+        boardId,
+        error: 'test subscribe failure',
+      }),
+    );
+    expect(subscriber.listenerCount('message')).toBe(baselineListeners);
+    expect(fetchKilterLiveHistory).not.toHaveBeenCalled();
+
+    await sync.credentialsChanged();
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+    expect(subscriber.listenerCount('message')).toBe(baselineListeners + 1);
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:next`)).not.toBeNull());
+  });
+
+  it('does not poll after a Redis lease pipeline error and recovers on retry', async () => {
+    const failedPipeline = publisher.pipeline();
+    vi.spyOn(failedPipeline, 'exec').mockResolvedValueOnce([[new Error('test lease failure'), null]]);
+    vi.spyOn(publisher, 'pipeline').mockReturnValueOnce(failedPipeline);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith('[KilterLive] Coordination failed', {
+        boardId,
+        error: 'Kilter viewer lease update failed',
+      }),
+    );
+    expect(fetchKilterLiveHistory).not.toHaveBeenCalled();
+    expect(await publisher.get(`kilter-live:${boardId}:owner`)).toBeNull();
+
+    await sync.credentialsChanged();
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:next`)).not.toBeNull());
+  });
+
+  it('aborts an active read on a Redis coordination error without importing its late response', async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(fetchKilterLiveHistory).mockImplementation((_token, _wall, signal) => {
+      requestSignal = signal;
+      return new Promise((resolve) => signal?.addEventListener('abort', () => resolve([display()]), { once: true }));
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+    vi.spyOn(publisher, 'zrangebyscore').mockRejectedValueOnce(new Error('test Redis outage'));
+
+    await sync.credentialsChanged();
+    await vi.waitFor(() => expect(requestSignal?.aborted).toBe(true));
+    expect(warn).toHaveBeenCalledWith('[KilterLive] Coordination failed', { boardId, error: 'test Redis outage' });
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:next`)).not.toBeNull());
+    expect((await readBoardHistoryPage(boardId)).entries).toEqual([]);
+    expect(publishEvent).not.toHaveBeenCalled();
+  });
+
   it('waits five minutes to retry an unmatched wall without requesting credentials or history', async () => {
     await db
       .update(schema.kilterWallSources)

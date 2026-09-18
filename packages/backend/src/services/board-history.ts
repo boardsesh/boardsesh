@@ -7,6 +7,7 @@ import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { parsePostgresUtcTimestamp } from '../utils/postgres-timestamps';
 import { mergeBoardHistory } from '@boardsesh/board-presence';
+import { logger } from '../utils/logger';
 
 export const HISTORY_TTL_SECONDS = 604_800;
 const selectedHistory = {
@@ -159,6 +160,7 @@ export async function readMergedRecentHistory(boardId: number): Promise<BoardPre
             entry.source === 'kilter' &&
             'sentAt' in entry &&
             typeof entry.sentAt === 'string' &&
+            Number.isFinite(Date.parse(entry.sentAt)) &&
             'seq' in entry &&
             typeof entry.seq === 'number' &&
             'climbUuid' in entry &&
@@ -166,6 +168,8 @@ export async function readMergedRecentHistory(boardId: number): Promise<BoardPre
         )
       ) {
         imported = parsed as BoardPresenceClimb[];
+      } else if (cached !== null) {
+        logger.warn('[BoardHistory] Invalid imported history cache; reading durable history', { boardId });
       }
     } catch {
       /* Durable history remains readable when Redis is unavailable. */
@@ -175,7 +179,17 @@ export async function readMergedRecentHistory(boardId: number): Promise<BoardPre
   // history-change broadcast or overwrite a newer committed cache snapshot.
   imported ??= await readImportedRecentClimbs(boardId);
   const cutoff = Date.now() - HISTORY_TTL_SECONDS * 1000;
-  return mergeBoardHistory(native, imported)
-    .filter((climb) => Date.parse(climb.sentAt) >= cutoff)
-    .slice(0, 50);
+  let invalidTimestampCount = 0;
+  const recent = mergeBoardHistory(native, imported).filter((climb) => {
+    const timestamp = Date.parse(climb.sentAt);
+    if (!Number.isFinite(timestamp)) {
+      invalidTimestampCount++;
+      return false;
+    }
+    return timestamp >= cutoff;
+  });
+  if (invalidTimestampCount) {
+    logger.warn('[BoardHistory] Skipped history with invalid timestamps', { boardId, invalidTimestampCount });
+  }
+  return recent.slice(0, 50);
 }
