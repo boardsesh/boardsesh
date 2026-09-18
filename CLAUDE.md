@@ -91,7 +91,7 @@ Common commands:
 
 ### Database hosting (Railway)
 
-We host Postgres on Railway but treat it as portable — anything we write should run on a `docker run postgres:17`. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Exit runbook: `docs/neon-migration.md`.
+We host Postgres on Railway but treat it as portable. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Exit runbook: `docs/neon-migration.md`.
 
 ## GitHub Issue Fix Workflow
 
@@ -129,6 +129,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/climb-moderation.md` — reporting and hiding climbs: the `reportClimb` state machine (created / added / already_reported), join-vs-supersede, the shared weighted approval threshold, what an approved `hide` writes, which surfaces filter a hidden climb (and the four that don't), and the setter's `proposal_on_your_climb` notification
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
+- `docs/partner-api.md` — the partner-facing contract for training apps (Sequence first): Boardsesh as the OAuth 2.0 authorization server (PKCE S256 only, `bsa_`/`bsr_` opaque tokens, grant-level revocation), `POST /v1/partner/workouts` with the block schema and the per-block `support: native | freeform` degrade rule, the `/w/{id}` launch link, and the signed `workout.completed` webhook with its retry table; `docs/partner-workouts-internal.md` — the design behind it: the seven tables, why consent is on web and the token endpoint on the backend, why partner tokens never pass through `validateToken`, the pending-workout store and how each block type maps onto the generator or the rest timer today, why pg-boss is the job queue and which sweeps it absorbs first, the PR order (AASA `NOT /oauth/*` first), and what waits on #5379/#5380
 - `docs/scheduler.md` — the Railway cron scheduler (`packages/scheduler`): which job runs on Vercel vs the scheduler, env vars, Railway setup, cutover order and runbook
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
