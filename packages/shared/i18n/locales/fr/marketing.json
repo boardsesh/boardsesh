@@ -115,23 +115,48 @@
       "title": "Gardez Boardsesh en vie",
       "subtitle": "Gratuit, open source, et payé par des grimpeurs"
     },
+    "promise": "Pas d'écran verrouillé, pas de deuxième catégorie, pas de pub. Participer paie la facture, rien d'autre.",
     "why": {
       "title": "Pourquoi cette page",
       "p1": "Boardsesh est gratuit et open source, et le restera. Le faire tourner coûte pourtant de l'argent : l'hébergement, la base de données et l'infrastructure s'additionnent à chaque nouveau grimpeur.",
       "p2": "On promet de ne pas gâcher Boardsesh, et l'auto-hébergement restera toujours possible. Si l'app vous sert et que vous pouvez vous le permettre, un coup de main garde les serveurs allumés."
     },
     "rails": {
-      "title": "Deux façons de participer"
+      "title": "Façons de participer"
     },
     "sponsors": {
       "title": "GitHub Sponsors",
       "body": "Soutenez Boardsesh chaque mois. Le plus simple si vous avez déjà un compte GitHub.",
-      "cta": "Devenir sponsor sur GitHub →"
+      "cta": "Devenir sponsor sur GitHub"
     },
     "oneTime": {
       "title": "Don unique",
       "body": "Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
-      "cta": "Faire un don →"
+      "cta": "Faire un don"
+    },
+    "otherWays": {
+      "title": "Autres façons d'aider",
+      "body": "L'argent est la plus lente des quatre. N'importe laquelle fait avancer l'app.",
+      "bug": {
+        "title": "Signaler un bug",
+        "body": "Dites-nous ce qui a cassé, sur quel board, et ce que vous attendiez.",
+        "cta": "Ouvrir une issue sur GitHub →"
+      },
+      "translate": {
+        "title": "Traduire un écran",
+        "body": "Les catalogues espagnol, français et allemand sont dans le dépôt. Corrigez une phrase ou ajoutez une langue.",
+        "cta": "Parcourir les catalogues de langues →"
+      },
+      "patch": {
+        "title": "Proposer du code",
+        "body": "Toute l'app est publique : web, mobile, backend, et les données de board derrière.",
+        "cta": "Voir comment c'est construit →"
+      },
+      "discord": {
+        "title": "Rejoindre le Discord",
+        "body": "Demandez ce qui est en cours, débattez des cotations, dites-nous ce qui manque.",
+        "cta": "Venez dire bonjour →"
+      }
     },
     "honesty": {
       "title": "Les petits caractères",

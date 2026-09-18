@@ -3,14 +3,26 @@
 import React from 'react';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
+import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
-import { GitHub, FavoriteBorderOutlined, CreditCardOutlined, InfoOutlined, GroupOutlined } from '@mui/icons-material';
+import {
+  GitHub,
+  FavoriteBorderOutlined,
+  CreditCardOutlined,
+  InfoOutlined,
+  GroupOutlined,
+  VolunteerActivismOutlined,
+} from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
 import styles from './support.module.css';
 
 const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
+const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
+const LOCALE_CATALOGS_URL = 'https://github.com/boardsesh/boardsesh/tree/main/packages/shared/i18n/locales';
+const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
+const DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
 
 type SupportContentProps = {
   /** Stripe Payment Link. Unset in most environments — the rail hides itself. */
@@ -21,6 +33,29 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
   const { t } = useTranslation('marketing');
   return (
     <PageShell title={t('support.hero.title')} lead={t('support.hero.subtitle')} headerAlign="center">
+      {/* The ask, in the first screen. On the old page it was a bare text link
+          below two paragraphs of prose and a section heading. */}
+      <Box className={styles.heroActions}>
+        <Button
+          variant="contained"
+          color="primaryFill"
+          size="large"
+          href={GITHUB_SPONSORS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          startIcon={<GitHub />}
+        >
+          {t('support.sponsors.cta')}
+        </Button>
+      </Box>
+
+      {/* The promise belongs next to the ask, not buried in the small print. */}
+      <Box className={styles.promise}>
+        <Typography variant="h5" component="p">
+          {t('support.promise')}
+        </Typography>
+      </Box>
+
       <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
         <Prose>{t('support.why.p1')}</Prose>
         <Prose>{t('support.why.p2')}</Prose>
@@ -38,11 +73,17 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
             <Typography variant="body1" component="p" color="text.secondary">
               {t('support.sponsors.body')}
             </Typography>
-            <Typography variant="body1" component="p" className={styles.railCta}>
-              <MuiLink href={GITHUB_SPONSORS_URL} target="_blank" rel="noopener noreferrer">
+            <Box className={styles.railCta}>
+              <Button
+                variant="contained"
+                color="primaryFill"
+                href={GITHUB_SPONSORS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 {t('support.sponsors.cta')}
-              </MuiLink>
-            </Typography>
+              </Button>
+            </Box>
           </PageCard>
 
           {stripeDonateUrl ? (
@@ -54,13 +95,80 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
               <Typography variant="body1" component="p" color="text.secondary">
                 {t('support.oneTime.body')}
               </Typography>
-              <Typography variant="body1" component="p" className={styles.railCta}>
-                <MuiLink href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
+              <Box className={styles.railCta}>
+                <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
                   {t('support.oneTime.cta')}
-                </MuiLink>
-              </Typography>
+                </Button>
+              </Box>
             </PageCard>
           ) : null}
+        </Box>
+      </PageSection>
+
+      {/* The page's second column of substance. Without it, an environment with
+          no Stripe link is one card and a lot of prose. */}
+      <PageSection
+        title={t('support.otherWays.title')}
+        lead={t('support.otherWays.body')}
+        icon={<VolunteerActivismOutlined />}
+        tone="neutral"
+      >
+        <Box className={styles.helpGrid}>
+          <Box className={styles.helpItem}>
+            <Typography variant="h5" component="h3">
+              {t('support.otherWays.bug.title')}
+            </Typography>
+            <Typography variant="body2" component="p" color="text.secondary">
+              {t('support.otherWays.bug.body')}
+            </Typography>
+            <Typography variant="body2" component="p" className={styles.helpCta}>
+              <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+                {t('support.otherWays.bug.cta')}
+              </MuiLink>
+            </Typography>
+          </Box>
+
+          <Box className={styles.helpItem}>
+            <Typography variant="h5" component="h3">
+              {t('support.otherWays.translate.title')}
+            </Typography>
+            <Typography variant="body2" component="p" color="text.secondary">
+              {t('support.otherWays.translate.body')}
+            </Typography>
+            <Typography variant="body2" component="p" className={styles.helpCta}>
+              <MuiLink href={LOCALE_CATALOGS_URL} target="_blank" rel="noopener noreferrer">
+                {t('support.otherWays.translate.cta')}
+              </MuiLink>
+            </Typography>
+          </Box>
+
+          <Box className={styles.helpItem}>
+            <Typography variant="h5" component="h3">
+              {t('support.otherWays.patch.title')}
+            </Typography>
+            <Typography variant="body2" component="p" color="text.secondary">
+              {t('support.otherWays.patch.body')}
+            </Typography>
+            <Typography variant="body2" component="p" className={styles.helpCta}>
+              <MuiLink href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer">
+                {t('support.otherWays.patch.cta')}
+              </MuiLink>
+            </Typography>
+          </Box>
+
+          <Box className={styles.helpItem}>
+            <Typography variant="h5" component="h3">
+              {t('support.otherWays.discord.title')}
+            </Typography>
+            <Typography variant="body2" component="p" color="text.secondary">
+              {t('support.otherWays.discord.body')}
+            </Typography>
+            <Typography variant="body2" component="p" className={styles.helpCta}>
+              <MuiLink href={DISCORD_URL} target="_blank" rel="noopener noreferrer">
+                {t('support.otherWays.discord.cta')}
+              </MuiLink>
+            </Typography>
+          </Box>
         </Box>
       </PageSection>
 

@@ -115,23 +115,48 @@
       "title": "Keep Boardsesh running",
       "subtitle": "Free, open source, and paid for by climbers"
     },
+    "promise": "No locked screens, no second tier, no ads. Chipping in pays the bill, nothing else.",
     "why": {
       "title": "Why this page exists",
       "p1": "Boardsesh is free and open source, and it always will be. Running it costs real money: hosting, the database, and infrastructure bills add up as more climbers join.",
       "p2": "We promise not to enshittify Boardsesh, and self-hosting will always be an option. If you get something out of it and can spare it, chipping in keeps the lights on."
     },
     "rails": {
-      "title": "Two ways to chip in"
+      "title": "Ways to chip in"
     },
     "sponsors": {
       "title": "GitHub Sponsors",
       "body": "Back Boardsesh every month. Easiest if you already have a GitHub account.",
-      "cta": "Sponsor on GitHub →"
+      "cta": "Sponsor on GitHub"
     },
     "oneTime": {
       "title": "One-time donation",
       "body": "Pay by card, Apple Pay, or Google Pay in your browser. No account needed.",
-      "cta": "Give once →"
+      "cta": "Give once"
+    },
+    "otherWays": {
+      "title": "Other ways to help",
+      "body": "Money is the slowest of these. Any of the four moves the app along.",
+      "bug": {
+        "title": "Report a bug",
+        "body": "Tell us what broke, on which board, and what you expected instead.",
+        "cta": "Open an issue on GitHub →"
+      },
+      "translate": {
+        "title": "Translate a screen",
+        "body": "The Spanish, French and German catalogs live in the repo. Fix a phrase or add a language.",
+        "cta": "Browse the locale catalogs →"
+      },
+      "patch": {
+        "title": "Send a patch",
+        "body": "The whole app is public: web, mobile, backend, and the board data behind them.",
+        "cta": "See how it is built →"
+      },
+      "discord": {
+        "title": "Join the Discord",
+        "body": "Ask what is being worked on, argue about grades, tell us what is missing.",
+        "cta": "Come say hi →"
+      }
     },
     "honesty": {
       "title": "The small print",

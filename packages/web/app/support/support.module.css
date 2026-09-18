@@ -1,9 +1,33 @@
-/* Only the donation-rail grid lives here now; the page frame, sections and card
- * surfaces come from app/components/ui/page-shell. */
+/* Only the donation rails and the help grid live here; the page frame, sections
+ * and card surfaces come from app/components/ui/page-shell. */
+
+/* The ask, directly under the hero. A filled button, not a link four sections
+   down — the old page made you read two paragraphs before it showed you one. */
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-5);
+}
+
+.heroActionNote {
+  color: var(--neutral-500);
+}
+
+/* The free-forever promise, pulled up out of the small print where it was doing
+   no work. A rule and a size bump, not a card: it is a claim, not an action. */
+.promise {
+  margin-top: var(--spacing-8);
+  margin-bottom: var(--spacing-8);
+  padding-left: var(--spacing-4);
+  border-left: 3px solid var(--color-primary);
+}
 
 /* auto-fit, not a fixed two-column grid: the Stripe rail is env-gated and absent
- * in most environments, and `repeat(2, 1fr)` left the single remaining rail
- * sitting in half a row looking unfinished. */
+   in most environments, and `repeat(2, 1fr)` left the single remaining rail
+   sitting in half a row looking unfinished. */
 .rails {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -27,5 +51,26 @@
    when one body wraps to an extra line. */
 .railCta {
   margin-top: auto;
-  padding-top: var(--spacing-2);
+  padding-top: var(--spacing-3);
+}
+
+/* Four columns of non-monetary help. Plain columns with a hairline, not cards —
+   the rails above are the cards, and a page of equal-weight cards has no ask. */
+.helpGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-5);
+  margin-top: var(--spacing-4);
+}
+
+.helpItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--separator);
+}
+
+.helpCta {
+  margin-top: auto;
 }
