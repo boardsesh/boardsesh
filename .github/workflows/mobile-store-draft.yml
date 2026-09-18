@@ -420,12 +420,14 @@ jobs:
       # against an already-populated version replaces rather than appends.
       - uses: voidzero-dev/setup-vp@v1
         if: steps.draft.outcome == 'success'
+        continue-on-error: true
         with:
           node-version: '22.x'
           cache: true
 
       - name: Install screenshot tooling
         if: steps.draft.outcome == 'success'
+        continue-on-error: true
         run: vp install --frozen-lockfile --ignore-scripts
 
       - name: Fetch screenshot baseline

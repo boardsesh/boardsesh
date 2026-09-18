@@ -694,6 +694,13 @@ describe('mobile-store-draft.yml screenshot attach', () => {
       | (WorkflowStep & { 'continue-on-error'?: boolean })
       | undefined;
     expect(attachStep?.['continue-on-error']).toBe(true);
+    // Tool setup is part of the optional attachment, too: a setup failure must
+    // not turn a successfully created App Store draft into a failed job.
+    for (const step of steps.filter(
+      (step) => step.uses === 'voidzero-dev/setup-vp@v1' || step.name === 'Install screenshot tooling',
+    )) {
+      expect((step as WorkflowStep & { 'continue-on-error'?: boolean })['continue-on-error']).toBe(true);
+    }
   });
 
   it('distinguishes "no baseline yet" from "attach failed" in its warnings', () => {

@@ -567,8 +567,8 @@ jobs:
       - name: Capture the probe shard
         uses: ./.github/actions/ios-screenshot-shard
         env:
-          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
-          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
         with:
           locale: en-US
           device-name: iPhone 16 Pro Max
@@ -719,8 +719,8 @@ jobs:
       - name: Capture shard
         uses: ./.github/actions/ios-screenshot-shard
         env:
-          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com') || '' }}
-          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && (secrets.SCREENSHOT_USER_PASSWORD || 'test') || '' }}
+          SCREENSHOT_USER_EMAIL: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_EMAIL || '' }}
+          SCREENSHOT_USER_PASSWORD: ${{ (inputs.fixtures || 'replay') != 'replay' && secrets.SCREENSHOT_USER_PASSWORD || '' }}
         with:
           locale: ${{ matrix.locale }}
           device-name: ${{ matrix.device.name }}
