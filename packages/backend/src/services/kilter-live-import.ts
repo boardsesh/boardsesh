@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import {
   boardClimbAliases,
   boardClimbs,
@@ -44,7 +44,21 @@ export async function matchKilterWall(
     .select()
     .from(kilterWallSources)
     .where(and(inArray(kilterWallSources.sourceBoardUuid, [...sourceUuids]), eq(kilterWallSources.isListed, true)));
-  if (mappings.length !== 1) return null;
+  if (mappings.length !== 1) {
+    if (frontier.length) {
+      // Check one level beyond the bound only for an unresolved match. Reaching
+      // exactly three links is valid and must not produce a truncation warning.
+      const [unvisitedAncestor] = await reader
+        .select({ uuid: userBoards.uuid })
+        .from(userBoards)
+        .where(and(inArray(userBoards.mergedIntoBoardUuid, frontier), notInArray(userBoards.uuid, [...sourceUuids])))
+        .limit(1);
+      if (unvisitedAncestor) {
+        logger.warn('[KilterLive] Unresolved wall exceeds merge lookup depth', { boardId, maxDepth: 3 });
+      }
+    }
+    return null;
+  }
   const mapping = mappings[0];
   const [gymSource] = await reader
     .select({ gymId: locationSyncGymSources.gymId })

@@ -20,6 +20,8 @@ const RENEW_OWNER = `if redis.call('GET', KEYS[1]) == ARGV[1] then
   redis.call('PEXPIRE', KEYS[1], ARGV[2]); return 1 end
   if redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2], 'NX') then return 1 end return 0`;
 const RELEASE_OWNER = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`;
+// Our Redis client targets standalone Redis. Cluster support would require
+// migrating these board keys to a shared hash tag before using this two-key script.
 const SAVE_NEXT = `if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3]) end return 0`;
 type Viewer = { userId: string; connectionId: string; member: string };

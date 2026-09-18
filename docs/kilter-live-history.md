@@ -14,7 +14,7 @@ Imports preserve Boardsesh history, current climb, holder, queue, and tick-deriv
 
 The location sync persists complete `(gymUuid, productLayoutUuid, wallUuid)` selectors in `kilter_wall_sources`. Source keys and deterministic source board UUIDs survive board merges. The backend follows up to three reverse merge links and requires exactly one listed source, matching layout, size, hold sets, and canonical gym association. It checks the binding again after the network request and inside the history transaction while holding the board row lock.
 
-Manual/config-only boards, ambiguous mappings, private boards, custom walls, unlisted sources, and incompatible configurations are skipped. Broader matching is tracked in [#5539](https://github.com/boardsesh/boardsesh/issues/5539). Serial or configuration equality alone does not prove wall identity. Unmatched bindings are checked again after five minutes while eligible viewers remain; no token or REST history request is made before a match.
+Manual/config-only boards, ambiguous mappings, private boards, custom walls, unlisted sources, and incompatible configurations are skipped. Broader matching is tracked in [#5539](https://github.com/boardsesh/boardsesh/issues/5539). Serial or configuration equality alone does not prove wall identity. Unresolved matches log a warning when older source boards exist beyond the three-link lookup bound. Unmatched bindings are checked again after five minutes while eligible viewers remain; no token or REST history request is made before a match.
 
 ## Polling and credentials
 
@@ -24,7 +24,7 @@ Manual/config-only boards, ambiguous mappings, private boards, custom walls, unl
 - A 401 forces one refresh/retry. Rejected accounts are temporarily excluded so another linked viewer can take over. Removing credentials cancels work; in-flight results also recheck ownership, account identity, and remaining viewers before committing.
 - Backend and daemon refresh through the same helper. A Postgres credential row lock serializes refreshes; rotated encrypted refresh tokens commit before the next reader. Unlink/revocation uses the same lock. Access tokens stay in process memory and never enter history or logs.
 
-Redis outage stops polling until coordination recovers. The flag defaults off; existing history remains readable. Operators should restart backend instances when changing the flag.
+The backend currently uses standalone Redis. The two-key ownership/cooldown script requires both keys in one hash slot; adopting Redis Cluster would require migrating the board keys consistently before switching clients. Redis outage stops polling until coordination recovers. The flag defaults off; existing history remains readable. Operators should restart backend instances when changing the flag.
 
 ## Merge and persistence
 

@@ -2373,4 +2373,4 @@ With `KILTER_LIVE_SYNC_ENABLED=1`, authenticated `boardNowPlaying` subscribers w
 
 `BoardHistoryUpdated { climbs, seq }` merges imported history without changing current climb, holder, queue, or statistics. `boardRecentHistory` merges recent native/imported history; `boardHistoryPage(boardId, limit, before)` returns durable chronological `entries` and opaque `nextCursor`. Both carry the same board access checks as existing presence reads. Legacy `boardRecentClimbs` and `boardHistory` remain native-only.
 
-The shared pagination hook loads one first durable page independently of Redis history, retries failures, and refreshes on reconnect/pull-to-refresh. See [Kilter live integration](kilter-live-integration-plan.md) for source matching, occurrence identity, credentials, and deployment order.
+The shared pagination hook loads one first durable page independently of Redis history, retries failures, and refreshes on reconnect/pull-to-refresh. See [Kilter live integration](kilter-live-history.md) for source matching, occurrence identity, credentials, and deployment order.

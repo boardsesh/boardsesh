@@ -1537,10 +1537,8 @@ describe('board-presence resolvers', () => {
         return resolved.boardId;
       })();
 
-      // subscribe() returns an async generator. Awaiting the first .next()
-      // triggers createEagerAsyncIterator, which awaits the (Redis) subscribe
-      // before resolving — so a climb reported *after* this await is captured.
-      const iterator = await boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, authCtx());
+      // The managed iterator starts Redis setup on its first next() call.
+      const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, authCtx());
 
       // Prime the iterator: kick off the first next() (this runs up to the
       // first `yield`, establishing the subscription) then report a climb.
@@ -2334,7 +2332,7 @@ describe('board-presence connection holder', () => {
         'Board not found',
       );
       await expect(
-        boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, anon()),
+        boardPresenceSubscriptions.boardNowPlaying.subscribe(undefined, { boardId }, anon()).next(),
       ).rejects.toThrow('Board not found');
 
       // A logged-in viewer still reads it (the feed is membership-free for them).

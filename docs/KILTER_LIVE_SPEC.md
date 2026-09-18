@@ -2,7 +2,7 @@
 
 **Covered version**: Kilter Board Android 2.10.1, versionCode 65 (`com.kiltergrips.kilter_board_app`)
 **Re-verified**: 2026-09-07 against the Google Play APK installed on the connected Android phone, using readable Dart AOT strings and call-path analysis of `libapp.so` (SHA-256 `f5191fdbf466cf2082a9ae5e076c43cf69d13e6b5ca9aeca3eebb79f9222eeed`; 30,922 strings at minimum length 5).
-**Sibling docs**: [HTTP API](KILTER_HTTP_API_SPEC.md), [PowerSync](KILTER_POWERSYNC_SPEC.md), [Bluetooth](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [Kilter sync](kilter-sync.md), [integration plan](kilter-live-integration-plan.md)
+**Sibling docs**: [HTTP API](KILTER_HTTP_API_SPEC.md), [PowerSync](KILTER_POWERSYNC_SPEC.md), [Bluetooth](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [Kilter sync](kilter-sync.md), [live history integration](kilter-live-history.md)
 
 > The live feature reads recently displayed climbs through authenticated REST polling and publishes display events through a separate REST endpoint. Its observed contract is a wall-scoped recent-climb feed. A feed entry does not establish that a climber is still present or that a climb is still lit.
 >
@@ -274,4 +274,4 @@ All items below are **LOW confidence / unresolved**, unless an explicit client o
 
 Entries included numeric `recentlyDisplayedClimbId` and timezone-qualified `recentlyDisplayedAt` with six fractional digits and a `+00` suffix. One observed climb had base `angle=20` and `derivativeAngle=50`; the display projection must prefer the derivative angle. `liveBoardUsername` was absent in the sampled entries. Ordinary `username` and `userUuid` are climb/setter metadata and must not be used as live actor identity.
 
-The probe made no activity writes. The sample does not establish retention limits, repeated-display ID reuse, custom-wall authorization, rate limits, or visibility guarantees. Event deduplication therefore includes both display ID and timestamp, scoped to all three selectors. See the [implemented integration](kilter-live-integration-plan.md) for rollout and persistence behavior.
+The probe made no activity writes. The sample does not establish retention limits, repeated-display ID reuse, custom-wall authorization, rate limits, or visibility guarantees. Event deduplication therefore includes both display ID and timestamp, scoped to all three selectors. See the [implemented integration](kilter-live-history.md) for rollout and persistence behavior.

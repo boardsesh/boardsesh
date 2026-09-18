@@ -14,8 +14,9 @@ import { pubsub } from '../pubsub';
 import { redisClientManager } from '../redis/client';
 import { importKilterDisplays, matchKilterWall } from '../services/kilter-live-import';
 import { parseHistoryPageCursor, readBoardHistoryPage, readMergedRecentHistory } from '../services/board-history';
-import { KilterLiveSync } from '../services/kilter-live-sync';
+import { KilterLiveSync, kilterLiveSync } from '../services/kilter-live-sync';
 import { logger } from '../utils/logger';
+import { boardPresenceSubscriptions } from '../graphql/resolvers/board-presence/subscription';
 
 vi.mock('@boardsesh/kilter-sync/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/kilter-sync/api')>()),
@@ -132,6 +133,53 @@ function poller() {
 }
 
 describe('Kilter history integration', () => {
+  it.each([
+    { depth: 3, listed: true },
+    { depth: 3, listed: false },
+    { depth: 4, listed: true },
+  ])(
+    'diagnoses only unresolved searches beyond the merge bound: $depth links, listed=$listed',
+    async ({ depth, listed }) => {
+      const [original] = await db.select().from(schema.userBoards).where(eq(schema.userBoards.id, boardId));
+      await db
+        .update(schema.kilterWallSources)
+        .set({ isListed: listed })
+        .where(eq(schema.kilterWallSources.sourceKey, sourceKey));
+      let previousBoardId = boardId;
+      for (let link = 0; link < depth; link++) {
+        const [survivor] = await db
+          .insert(schema.userBoards)
+          .values({
+            uuid: randomUUID(),
+            slug: randomUUID(),
+            name: 'Merged survivor',
+            ownerId: linkedUser,
+            boardType: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,2',
+            gymId: original.gymId,
+          })
+          .returning();
+        await db
+          .update(schema.userBoards)
+          .set({ deletedAt: new Date(), mergedIntoBoardUuid: survivor.uuid })
+          .where(eq(schema.userBoards.id, previousBoardId));
+        previousBoardId = survivor.id;
+      }
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const matched = await matchKilterWall(previousBoardId);
+      if (depth === 3 && listed) expect(matched).toMatchObject({ sourceKey, boardId: previousBoardId });
+      else expect(matched).toBeNull();
+      if (depth > 3) {
+        expect(warn).toHaveBeenCalledExactlyOnceWith('[KilterLive] Unresolved wall exceeds merge lookup depth', {
+          boardId: previousBoardId,
+          maxDepth: 3,
+        });
+      } else expect(warn).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([undefined, null, 42, 'not-a-timestamp'])(
     'recovers durable history for invalid cached sentAt %s',
     async (sentAt) => {
@@ -338,6 +386,62 @@ describe('Kilter history integration', () => {
       .set({ deletedAt: new Date(), mergedIntoBoardUuid: survivor.uuid })
       .where(eq(schema.userBoards.id, boardId));
     expect(await matchKilterWall(survivor.id)).toMatchObject({ sourceKey, boardId: survivor.id });
+  });
+});
+
+describe('presence subscription lifetime', () => {
+  it('releases the Kilter watcher and listener immediately while next is idle', async () => {
+    const unsubscribe = vi.fn();
+    const stopWatching = vi.fn();
+    vi.spyOn(pubsub, 'subscribeBoardPresence').mockResolvedValue(unsubscribe);
+    const watch = vi.spyOn(kilterLiveSync, 'watch').mockReturnValue(stopWatching);
+    const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(
+      undefined,
+      { boardId },
+      {
+        connectionId: 'idle-socket',
+        userId: linkedUser,
+        isAuthenticated: true,
+      },
+    );
+    const pending = iterator.next();
+    await vi.waitFor(() => expect(watch).toHaveBeenCalledWith(boardId, linkedUser, 'idle-socket'));
+
+    await iterator.return();
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    expect(stopWatching).toHaveBeenCalledTimes(1);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    await iterator.return();
+    expect(stopWatching).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts a Kilter watcher when unsubscribe precedes Redis setup completion', async () => {
+    const unsubscribe = vi.fn();
+    let finishSetup!: (cleanup: () => void) => void;
+    const subscribe = vi.spyOn(pubsub, 'subscribeBoardPresence').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSetup = resolve;
+        }),
+    );
+    const watch = vi.spyOn(kilterLiveSync, 'watch').mockReturnValue(vi.fn());
+    const iterator = boardPresenceSubscriptions.boardNowPlaying.subscribe(
+      undefined,
+      { boardId },
+      {
+        connectionId: 'setup-socket',
+        userId: linkedUser,
+        isAuthenticated: true,
+      },
+    );
+    const pending = iterator.next();
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+
+    await iterator.return();
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    finishSetup(unsubscribe);
+    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalledTimes(1));
+    expect(watch).not.toHaveBeenCalled();
   });
 });
 
