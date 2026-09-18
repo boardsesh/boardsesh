@@ -18,7 +18,9 @@
     "chooseBoard": "Choose a board",
     "retry": "Try again",
     "newClimb": "New climb",
-    "setBy": "Set by {{setter}}"
+    "newClimbCount_one": "1 new climb",
+    "newClimbCount_other": "{{count}} new climbs",
+    "seeAllClimbs": "See all {{count}}"
   },
   "sends_one": "{{formattedCount}} send",
   "sends_other": "{{formattedCount}} sends",

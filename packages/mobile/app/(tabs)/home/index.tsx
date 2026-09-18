@@ -277,8 +277,8 @@ export default function HomeTab() {
     ({ item, target }: ListRenderItemInfo<CrewFeedItem>) => (
       <>
         {STARTUP_PROFILING_ENABLED && target === 'Cell' ? <HomeStartupCommit outcome="content" /> : null}
-        {item.__typename === 'CrewClimbItem' ? (
-          <NewClimbFeedCard climb={item.climb} />
+        {item.__typename === 'CrewClimbItem' || item.__typename === 'CrewClimbGroupItem' ? (
+          <NewClimbFeedCard item={item} />
         ) : (
           <SessionFeedCard
             session={item.session}

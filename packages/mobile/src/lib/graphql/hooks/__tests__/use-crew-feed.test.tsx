@@ -19,19 +19,26 @@ beforeEach(() => {
   identity.userId = 'viewer';
 });
 
+// The hook resolves the device zone once at module load; the test env's is
+// whatever TZ vitest runs under, so assert against the same source rather than
+// pinning a zone the CI box may not share.
+const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+
 describe('useCrewFeed', () => {
-  it('pages with the backend cursor, without forwarding board or gym filters', async () => {
+  it('pages with the backend cursor, carrying the viewer zone and no board or gym filters', async () => {
     request.mockResolvedValueOnce({ crewFeed: { items: [], cursor: 'next-cursor', hasMore: true } });
     request.mockResolvedValueOnce({ crewFeed: { items: [], cursor: null, hasMore: false } });
     const { result } = renderHook(() => useCrewFeed(true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, { input: { limit: 20, cursor: null } });
+    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, { input: { limit: 20, cursor: null, timeZone } });
     expect(result.current.hasNextPage).toBe(true);
     await act(async () => {
       await result.current.fetchNextPage();
     });
     await waitFor(() => expect(result.current.hasNextPage).toBe(false));
-    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, { input: { limit: 20, cursor: 'next-cursor' } });
+    expect(request).toHaveBeenLastCalledWith(GET_CREW_FEED, {
+      input: { limit: 20, cursor: 'next-cursor', timeZone },
+    });
   });
   it('does not request a private crew feed without a viewer', () => {
     identity.userId = undefined;

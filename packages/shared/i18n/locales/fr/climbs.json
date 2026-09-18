@@ -18,7 +18,9 @@
     "chooseBoard": "Choisis une board",
     "retry": "Réessayer",
     "newClimb": "Nouveau bloc",
-    "setBy": "Ouvert par {{setter}}"
+    "newClimbCount_one": "1 nouveau bloc",
+    "newClimbCount_other": "{{count}} nouveaux blocs",
+    "seeAllClimbs": "Voir les {{count}}"
   },
   "sends_one": "{{formattedCount}} croix",
   "sends_other": "{{formattedCount}} croix",

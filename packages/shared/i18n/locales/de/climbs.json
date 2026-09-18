@@ -18,7 +18,9 @@
     "chooseBoard": "Wähle ein Board",
     "retry": "Erneut versuchen",
     "newClimb": "Neuer Boulder",
-    "setBy": "Geschraubt von {{setter}}"
+    "newClimbCount_one": "1 neuer Boulder",
+    "newClimbCount_other": "{{count}} neue Boulder",
+    "seeAllClimbs": "Alle {{count}} ansehen"
   },
   "sends_one": "{{formattedCount}} Begehung",
   "sends_other": "{{formattedCount}} Begehungen",
