@@ -41,7 +41,7 @@ vi.mock('@/app/lib/db/read-deadline', () => ({
 }));
 
 vi.mock('@/app/theme/theme-config', () => ({
-  themeTokens: {
+  printSurfaceTokens: {
     neutral: {
       200: '#E0E0E0',
       300: '#D0D0D0',

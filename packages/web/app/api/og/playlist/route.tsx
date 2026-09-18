@@ -1,7 +1,9 @@
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { themeTokens } from '@/app/theme/theme-config';
+// This card renders on a WHITE ground, so it reads the light-surface tokens
+// deliberately — see the printSurfaceTokens doc comment in theme-config.
+import { printSurfaceTokens } from '@/app/theme/theme-config';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getPlaylistOgSummary } from '@/app/lib/seo/dynamic-og-data';
@@ -70,7 +72,7 @@ export async function GET(request: NextRequest) {
 
     const name = playlist.name || 'Playlist';
     const description = playlist.description?.trim() || null;
-    const color = playlist.color?.trim() || themeTokens.colors.primary;
+    const color = playlist.color?.trim() || printSurfaceTokens.primary;
     const icon = playlist.icon?.trim() || null;
     const boardType = playlist.boardType;
     const climbCount = playlist.climbCount;
@@ -129,7 +131,7 @@ export async function GET(request: NextRequest) {
             style={{
               fontSize: '48px',
               fontWeight: 'bold',
-              color: themeTokens.neutral[900],
+              color: printSurfaceTokens.neutral[900],
               lineHeight: 1.2,
             }}
           >
@@ -140,7 +142,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 fontSize: '24px',
-                color: themeTokens.neutral[500],
+                color: printSurfaceTokens.neutral[500],
                 lineHeight: 1.4,
               }}
             >
@@ -158,7 +160,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 fontSize: '28px',
-                color: themeTokens.neutral[600],
+                color: printSurfaceTokens.neutral[600],
                 fontWeight: 600,
               }}
             >
@@ -167,7 +169,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 fontSize: '28px',
-                color: themeTokens.neutral[400],
+                color: printSurfaceTokens.neutral[400],
               }}
             >
               {boardLabel}
@@ -182,7 +184,7 @@ export async function GET(request: NextRequest) {
             bottom: '24px',
             right: '40px',
             fontSize: '20px',
-            color: themeTokens.neutral[300],
+            color: printSurfaceTokens.neutral[300],
             fontWeight: 600,
           }}
         >

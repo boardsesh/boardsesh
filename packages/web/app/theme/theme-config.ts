@@ -284,9 +284,43 @@ export const darkTokens = {
   },
 } as const;
 
+// The only LIGHT-surface values web still ships.
+//
+// Three OG cards — profile, setter, playlist — are Satori-rendered onto a white
+// ground (`background: '#FFFFFF'`), because a social unfurl sits in whatever
+// chrome X, Discord or iMessage gives it. They are not part of the app's theme
+// and they never were: they just happened to read `themeTokens` back when
+// `themeTokens` was the light set.
+//
+// Naming them separately is what lets `themeTokens` be repointed at the dark
+// values without turning every shared profile link into near-white text on a
+// white card. Nothing catches that: all three route tests mock this module.
+//
+// NOT a light theme. Do not import this into a product component — if you want
+// a colour on an app surface, you want `themeTokens`.
+export const printSurfaceTokens = {
+  neutral: {
+    50: '#EBE2F9',
+    100: '#DED2F3',
+    200: '#CBBCEA',
+    300: '#AD9ECC',
+    400: '#7B7591',
+    500: '#595464',
+    600: '#48415A',
+    700: '#373042',
+    800: '#262030',
+    900: '#181221',
+  },
+
+  // The foreground violet that reads on white (7.10:1). The dark-surface
+  // foreground (#A78BFA) does not — it is 1.9:1 on white.
+  primary: '#6D28D9',
+} as const;
+
 // Type exports for use in components
 export type ThemeTokens = typeof themeTokens;
 export type ColorTokens = typeof themeTokens.colors;
 export type NeutralTokens = typeof themeTokens.neutral;
 export type SyntaxTokens = typeof themeTokens.syntax;
 export type DarkTokens = typeof darkTokens;
+export type PrintSurfaceTokens = typeof printSurfaceTokens;
