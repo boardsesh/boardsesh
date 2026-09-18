@@ -210,7 +210,9 @@ class RoomManager {
   }
 
   /**
-   * Shutdown RoomManager and clean up distributed state.
+   * Terminal process teardown: stop timers and clean up distributed state.
+   * This does not reset local room/client state for reuse; tests and
+   * re-initialization must use reset() for that separate lifecycle.
    */
   async shutdown(): Promise<void> {
     await this.flushPendingWrites();

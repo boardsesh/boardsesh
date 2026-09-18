@@ -1,8 +1,14 @@
+import { resourceUsage } from 'node:process';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { collectBackendMemorySample, startBackendMemoryMonitoring } from '../memory-monitor';
 import { maintainInstagramMetaCache } from '../../lib/instagram-meta';
 import { maintainTikTokMetaCache } from '../../lib/tiktok-meta';
 import { logger } from '../../utils/logger';
+
+vi.mock('node:process', async (importOriginal) => {
+  const processModule = await importOriginal<typeof import('node:process')>();
+  return { ...processModule, resourceUsage: vi.fn(() => processModule.resourceUsage()) };
+});
 
 vi.mock('../../lib/instagram-meta', () => ({
   maintainInstagramMetaCache: vi.fn(() => ({ entries: 0, serializedBytes: 0 })),
@@ -44,5 +50,12 @@ describe('backend memory monitoring', () => {
     clearInterval(timer);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the process lifetime RSS peak in bytes, not just sampled RSS', () => {
+    vi.mocked(resourceUsage).mockReturnValueOnce({ ...resourceUsage(), maxRSS: 12 * 1024 * 1024 });
+    const sample = collectBackendMemorySample();
+    expect(sample.memory.peakRssBytes).toBe(12 * 1024 * 1024 * 1024);
+    expect(sample.memory.rss).toBeGreaterThan(0);
   });
 });

@@ -84,6 +84,14 @@ cache sizes, renderer cache/queue statistics, and Sharp cache/task counters.
 The timer is unref'd and is cleared during server shutdown. Samples contain
 counts rather than tokens, user IDs, URLs, or cached payloads.
 
+`memory.peakRssBytes` is the process-lifetime RSS high-water mark from
+[`process.resourceUsage().maxRSS`](https://nodejs.org/api/process.html#processresourceusage),
+converted from KiB to bytes. It preserves short spikes between samples if the
+process survives to emit another sample; it resets on process restart. Do not
+sum replica peaks as though they occurred simultaneously, or treat a lifetime
+peak as current usage. A process killed before its next sample may lose the
+last spike's telemetry.
+
 `arrayBuffers` is included in `external`; do not sum them. RSS also includes
 native allocations and is not equivalent to live JavaScript heap. Serialized
 metadata-cache weights bound retained payloads but do not measure V8 overhead.
@@ -98,6 +106,14 @@ after disconnects and empty rooms after their 60-second grace window. A low
 cold-start reading alone does not establish a fix. Keep renderer budgets and
 replica counts fixed during the comparison; correlate continued RSS growth
 with heap, external memory, render jobs, and Sharp task counts before tuning.
+The reported 30-day history includes spikes near 12 GB, whereas the last seven
+days stayed near or below 3 GB. Treat these as separate windows: correlate peak
+timestamps with releases, restarts, replica count, rendering, uploads, and bulk
+imports/exports. Seven quieter days do not establish that a leak is fixed.
+Heavy bot traffic was blocked during this period, making request-driven work
+and cache growth important leads rather than confirmed causes. Compare request
+volume and endpoint mix as well as uptime; bots can also amplify retention
+bugs. Without matching traffic, lower post-rollout memory alone is inconclusive.
 
 The local reconnect soak (`vp exec node --expose-gc --import tsx
 scripts/backend-memory-churn.ts 1800`) exercises active and quiet subscriptions

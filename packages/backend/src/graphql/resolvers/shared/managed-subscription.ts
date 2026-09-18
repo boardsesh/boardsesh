@@ -56,6 +56,8 @@ export function withSubscriptionCleanup<Args extends unknown[], Payload>(
     };
     const iterator: CancellableAsyncIterator<Payload> = {
       async next() {
+        // The native generator serializes overlapping next() calls;
+        // pendingReads lets cancellation wake every queued caller immediately.
         if (closed) return completed();
         let resolveCancelled!: (result: IteratorResult<Payload>) => void;
         const cancelled = new Promise<IteratorResult<Payload>>((resolve) => {

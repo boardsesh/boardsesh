@@ -1,4 +1,4 @@
-import { memoryUsage, uptime } from 'node:process';
+import { memoryUsage, resourceUsage, uptime } from 'node:process';
 import sharp from 'sharp';
 import { BUILD_RELEASE } from '../build-release';
 import { getConnectionCount } from '../graphql/context';
@@ -18,10 +18,15 @@ export function collectBackendMemorySample() {
     replicaId: process.env.RAILWAY_REPLICA_ID?.trim() || process.env.HOSTNAME || 'local',
     release: BUILD_RELEASE,
     uptimeSeconds: Math.floor(uptime()),
-    memory: memoryUsage(),
+    memory: {
+      ...memoryUsage(),
+      // OS high-water mark catches spikes between samples; Node reports KiB.
+      peakRssBytes: resourceUsage().maxRSS * 1024,
+    },
     connections: getConnectionCount(),
     rooms: roomManager.getRuntimeStats(),
     subscriptions: pubsub.getRuntimeStats(),
+    // Sampling intentionally sweeps idle metadata entries before counting them.
     caches: {
       instagram: maintainInstagramMetaCache(),
       tiktok: maintainTikTokMetaCache(),
