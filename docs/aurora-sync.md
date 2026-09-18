@@ -225,9 +225,8 @@ MoonBoard is fenced out of both non-owned legs. Ungraded MoonBoard catalog rows
 are legitimate, and `packages/db/scripts/moonboard-grade-repair.ts` and
 `repair-moonboard-8c-grades.ts` fill them from the Moon catalog under a
 `display_difficulty IS NULL` guard; a tick-derived grade would make both skip the
-row permanently and would flip `statsRowCarriesRealCatalogData` (the predicate
-the #3529 wrong-angle fix rests on) TRUE on a row holding no catalog data. Owned
-MoonBoard climbs still derive.
+row permanently. MoonBoard ticks can seed counts and ratings at any supported
+angle, while catalog grades remain catalog-owned. Owned MoonBoard climbs still derive.
 
 Each upstream writer sets the marker in the same statement that writes the grade:
 

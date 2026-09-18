@@ -29,6 +29,13 @@ A flash and a send are collectively "ascents". Attempts are "bids". The same use
 
 Everything about ascents is single-table: one PostgreSQL table (`boardsesh_ticks`), one TypeScript type (`BoardseshTick`), one GraphQL type (`Tick`).
 
+The requested supported angle is authoritative when saving or editing a tick,
+including MoonBoard. Canonicalizing a retired climb UUID must preserve that
+angle even if the catalog climb retains a different legacy angle. Angle edits
+move linked beta videos with the tick and recompute stats at both angles. A
+MoonBoard send can seed counts and ratings at a new angle; its catalog grade
+stays unset until a catalog writer supplies it.
+
 ---
 
 ## The Single Table: `boardsesh_ticks`

@@ -11,7 +11,6 @@ export {
   type StatsColumnKey,
 } from './effective-stats';
 export { getClimbStars } from './climb-stars';
-export { resolveMoonBoardTickAngle, type MoonBoardTickAngleInput } from './moonboard-tick-angle';
 export { getGradeLabel } from './grade-lookup';
 export { populateDenormalizedColumns } from './populate-denormalized-columns';
 export { getSetterStats } from './setter-stats';
