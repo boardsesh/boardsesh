@@ -453,7 +453,9 @@
         "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
         "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
         "headerSwitcherHintClose": "Oculta los otros plafones"
-      }
+      },
+      "kilterHistorySource": "Iluminado desde Kilter",
+      "retryHistory": "Volver a cargar el historial"
     },
     "toast": {
       "sessionEnded": "Sesión terminada",

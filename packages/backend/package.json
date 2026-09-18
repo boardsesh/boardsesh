@@ -31,6 +31,7 @@
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/board-look": "workspace:*",
+    "@boardsesh/board-presence": "workspace:*",
     "@boardsesh/board-render": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",

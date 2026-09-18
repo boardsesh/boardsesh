@@ -3,6 +3,7 @@
 // subscription) lives in a separate `@boardsesh/board-presence-react` package.
 
 export { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP } from './reducer';
+export { compareBoardHistoryEntries, mergeBoardHistory, boardHistoryEntryKey } from './history';
 
 export { mapBoardPresenceEnvelopeToAction } from './map-envelope';
 

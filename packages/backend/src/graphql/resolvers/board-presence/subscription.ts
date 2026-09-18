@@ -1,5 +1,6 @@
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
+import { kilterLiveSync } from '../../../services/kilter-live-sync';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
@@ -60,10 +61,19 @@ export const boardPresenceSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterator = await lifetime.own(
-        createEagerAsyncIterator<BoardPresenceEvent>(
-          (push) => pubsub.subscribeBoardPresence(boardKey, push),
-          `boardNowPlaying:${boardId}`,
-        ),
+        createEagerAsyncIterator<BoardPresenceEvent>(async (push) => {
+          const unsubscribe = await pubsub.subscribeBoardPresence(boardKey, push);
+          // The managed lifetime closes late setup and idle subscriptions.
+          // Keep the polling lease in the same owned source as its listener.
+          const stopWatching =
+            !lifetime.closed && ctx.userId && presenceBoard?.boardType === 'kilter'
+              ? kilterLiveSync.watch(boardId, ctx.userId, ctx.connectionId)
+              : () => {};
+          return () => {
+            stopWatching();
+            unsubscribe();
+          };
+        }, `boardNowPlaying:${boardId}`),
       );
 
       // Re-asked per event, because the check above ran once and the socket outlives

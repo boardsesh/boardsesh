@@ -135,6 +135,7 @@ function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
     case 'BoardClimbCleared':
     case 'BoardStatsUpdated':
     case 'BoardConnectionChanged':
+    case 'BoardHistoryUpdated':
       return event.seq;
     default:
       return null;
@@ -228,13 +229,18 @@ export function useBoardPresence(
         client.fetchRecentClimbs(boardId),
         client.fetchStats(boardId),
         connectionPromise,
+        client.fetchRecentHistory?.(boardId) ?? Promise.resolve([]),
       ] as const)
-        .then(([recentResult, statsResult, connectionResult]) => {
+        .then(([recentResult, statsResult, connectionResult, historyResult]) => {
           if (!isActive || boardIdRef.current !== subscribedBoardId) {
             return;
           }
 
           let repairedThroughSeq = startedAtSeq;
+          if (historyResult.status === 'fulfilled') {
+            dispatch({ type: 'MERGE_HISTORY', payload: historyResult.value });
+            observedSeqRef.current = Math.max(observedSeqRef.current, highestClimbSeq(historyResult.value));
+          }
           if (recentResult.status === 'fulfilled') {
             const recentClimbs = recentResult.value;
             repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
@@ -320,6 +326,18 @@ export function useBoardPresence(
     //     reconnect so a just-missed send shows up without waiting for the next
     //     one. Optional on the client (web omits it); returns an unsubscribe.
     const unsubscribeReconnect = client.onReconnect?.(() => runCatchUp('reconnect'));
+
+    void client
+      .fetchRecentHistory?.(boardId)
+      .then((history) => {
+        if (isActive && boardIdRef.current === subscribedBoardId) {
+          dispatch({ type: 'MERGE_HISTORY', payload: history });
+          observedSeqRef.current = Math.max(observedSeqRef.current, highestClimbSeq(history));
+        }
+      })
+      .catch(() => {
+        /* Native wall state and durable paging remain available. */
+      });
 
     // 2) Backfill recent history, then 3) seed stats. Both guarded against
     //    unmount and against a board switch (a late resolve for the previous

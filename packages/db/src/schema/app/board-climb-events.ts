@@ -26,6 +26,10 @@ export const boardClimbEvents = pgTable(
       .notNull()
       .references(() => userBoards.id, { onDelete: 'cascade' }),
     boardType: text('board_type').notNull(),
+    // Imported displays are history only, never proof of a Boardsesh LED write.
+    source: text('source').default('boardsesh').notNull(),
+    externalOccurrenceKey: text('external_occurrence_key'),
+    externalDisplayName: text('external_display_name'),
     climbUuid: text('climb_uuid').notNull(),
     angle: integer('angle').notNull(),
     // The member whose phone wrote the frames. Nullable so deleting a user
@@ -53,6 +57,11 @@ export const boardClimbEvents = pgTable(
     boardConfirmedAtIdx: index('board_climb_events_board_confirmed_at_idx').on(table.boardId, table.confirmedAt),
     // Keyset paging + double-flush idempotency (onConflictDoNothing target).
     boardSeqUnique: uniqueIndex('board_climb_events_board_seq_unique').on(table.boardId, table.seq),
+    externalOccurrenceUnique: uniqueIndex('board_climb_events_external_occurrence_unique').on(
+      table.source,
+      table.externalOccurrenceKey,
+    ),
+    chronologicalIdx: index('board_climb_events_chronological_idx').on(table.boardId, table.confirmedAt, table.seq),
     // Session recap: every climb on the wall during a session.
     sessionIdx: index('board_climb_events_session_idx').on(table.sessionId),
     // "How often was this climb on this wall" (future leaderboards).

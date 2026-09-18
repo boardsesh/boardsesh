@@ -6682,6 +6682,10 @@ type Query {
   before the live `boardNowPlaying` subscription takes over.
   """
   boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+  "Merged native and imported recent history; never represents current wall state."
+  boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+  "Chronological durable history with an opaque, board-scoped pagination cursor."
+  boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
 
   """
   Durable history of what was pushed to a board (survives past the 1 week
@@ -9262,6 +9266,8 @@ A climb reported as lit on a physical board. Denormalised for display (mirrors
 the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
 """
 type BoardPresenceClimb {
+  "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+  source: String
   "UUID of the climb lit on the wall"
   climbUuid: String!
   "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
@@ -9368,7 +9374,22 @@ type BoardConnectionChanged {
 """
 Union of board-presence events streamed by `boardNowPlaying`.
 """
-union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+type BoardHistoryUpdated {
+  climbs: [BoardPresenceClimb!]!
+  seq: Int!
+}
+
+type BoardHistoryPage {
+  entries: [BoardPresenceClimb!]!
+  nextCursor: String
+}
+
+union BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
 
 """
 The first climber to send the hardest grade logged on this wall.
