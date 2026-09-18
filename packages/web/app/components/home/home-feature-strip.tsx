@@ -11,6 +11,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { PageSection } from '@/app/components/ui/page-shell';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import styles from './home-feature-strip.module.css';
 
 /**
@@ -24,6 +25,8 @@ import styles from './home-feature-strip.module.css';
  * never upscaled past their natural 738x1312. There is no queue-sheet capture
  * in the repo yet, so that column carries a neutral placeholder instead of a
  * screenshot of something else — no AI-generated images, ever (design note 13).
+ * They go through `resolveStaticAssetUrl`, so production serves the immutable
+ * object and a preview still reads the file straight out of `public/`.
  */
 
 // Hoisted: brandCtaSx returns a plain object, so building it per render would
@@ -65,7 +68,10 @@ export default async function HomeFeatureStrip() {
       icon: <GroupsOutlined />,
       title: t('home.features.party.title'),
       body: t('home.features.party.body'),
-      shot: { src: '/images/app/party-mode-crew.webp', alt: t('home.features.party.shotAlt') },
+      shot: {
+        src: resolveStaticAssetUrl('/images/app/party-mode-crew.webp'),
+        alt: t('home.features.party.shotAlt'),
+      },
     },
     {
       id: 'logbook',
@@ -73,7 +79,10 @@ export default async function HomeFeatureStrip() {
       quietChip: true,
       title: t('home.features.logbook.title'),
       body: t('home.features.logbook.body'),
-      shot: { src: '/images/app/logbook-progress.webp', alt: t('home.features.logbook.shotAlt') },
+      shot: {
+        src: resolveStaticAssetUrl('/images/app/logbook-progress.webp'),
+        alt: t('home.features.logbook.shotAlt'),
+      },
     },
   ];
 
