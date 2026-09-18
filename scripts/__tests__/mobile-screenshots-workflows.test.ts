@@ -388,7 +388,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     const finalize = workflow.jobs['ios-finalize'];
     const uploadStep = (finalize.steps ?? []).find((step) => step.name === 'Upload screenshots to App Store Connect');
     expect(flatten(uploadStep?.if)).toBe(
-      "${{ success() && (env.UPLOAD_RUN == 'true' || " +
+      "${{ success() && (env.MANUAL_UPLOAD_RUN == 'true' || " +
         "(github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}",
     );
   });

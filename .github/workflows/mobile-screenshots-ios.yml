@@ -768,7 +768,7 @@ jobs:
     env:
       # Marks an upload dispatch — gates the App Store Connect upload steps so a
       # capture-only dispatch never touches ASC.
-      UPLOAD_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.upload && inputs.flow == 'app-store' }}
+      MANUAL_UPLOAD_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.upload && inputs.flow == 'app-store' }}
       # The probe ran and found nothing moved: there is one shard artifact, no
       # full tree, and nothing to gate, upload or republish. force_full overrides
       # this — a locale-only or iPad-only change the probe's own pixels can't see
@@ -900,7 +900,7 @@ jobs:
       # a prior failure without it. fastlane's screenshots lane is a pure network
       # upload (no Xcode), so it runs fine on ubuntu.
       - name: Set up Ruby + fastlane
-        if: ${{ success() && (env.UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
+        if: ${{ success() && (env.MANUAL_UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
@@ -908,7 +908,7 @@ jobs:
           working-directory: fastlane
 
       - name: Decode App Store Connect API key
-        if: ${{ success() && (env.UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
+        if: ${{ success() && (env.MANUAL_UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
@@ -923,7 +923,7 @@ jobs:
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
       - name: Upload screenshots to App Store Connect
-        if: ${{ success() && (env.UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
+        if: ${{ success() && (env.MANUAL_UPLOAD_RUN == 'true' || (github.event_name == 'workflow_run' && env.FULL_SET_CAPTURED == 'true')) }}
         working-directory: fastlane
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
