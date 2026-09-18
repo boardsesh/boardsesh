@@ -1,13 +1,13 @@
 /// <reference types="node" />
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
-import { frameDirectory, frameScreenshot, parseFrameArguments } from '../frame-screenshots';
+import { frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
 import { ACCEPTED_SIZES, readPngDimensions } from '../assert-screenshot-dimensions';
 import { readPngSizesRecursively, findContentOffenders } from '../assert-screenshot-content';
 import { decideProbeScope } from '../screenshot-probe-scope';
@@ -74,6 +74,30 @@ describe('store screenshot presentation', () => {
     }
     expect((await sharp(join(output, 'contact-sheet.jpg')).metadata()).format).toBe('jpeg');
   }, 60_000);
+  it('discovers Apple locale/device folders and uses their localized captions', async () => {
+    const input = directory();
+    const output = directory();
+    const device = 'iphone-16-pro-max';
+    const shard = join('es-MX', device);
+    mkdirSync(join(input, shard), { recursive: true });
+    const raw = await sharp({ create: { width: 1320, height: 2868, channels: 3, background: '#164c39' } })
+      .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+      .png()
+      .toBuffer();
+    const names = Object.keys(screenshotCaptions('ios', device));
+    for (const name of names) writeFileSync(join(input, shard, name), raw);
+
+    expect(await main(['--platform', 'ios', '--input', input, '--output', output])).toBe(0);
+
+    const manifest = readPresentationManifest(join(output, shard));
+    expect(manifest.locale).toBe('es');
+    expect(Object.keys(manifest.files)).toEqual(names);
+    const first = names[0];
+    expect(readFileSync(join(output, shard, first))).toEqual(
+      await frameScreenshot(raw, readCaptionCatalog('es')[screenshotCaptions('ios', device)[first]]),
+    );
+  }, 60_000);
+
   it.each(['en-US', 'es', 'fr', 'de'] as const)(
     'fits every %s caption in every store device shape',
     async (locale) => {

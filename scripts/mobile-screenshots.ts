@@ -1427,8 +1427,8 @@ function collectScreenshots(
   captureDir: string,
   platform: 'ios' | 'android',
   deviceName: string,
-  appStoreLocales: readonly string[] | null = null,
-  framed = true,
+  appStoreLocales: readonly string[] | null,
+  framed: boolean,
 ): string[] {
   const storeRoot = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform]);
   const saved: string[] = [];
