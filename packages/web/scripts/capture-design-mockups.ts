@@ -20,6 +20,7 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname } from 'node:path';
+import { createDesignPreviewPublisher, designPreviewPath } from '../../../scripts/lib/design-previews';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(SCRIPT_DIR, '../../../docs/design');
@@ -58,11 +59,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // deviceScaleFactor stays at 1: scripts/check-large-files.mjs caps a single
-  // file at 2MB, and a full-page @2x capture of a long wireframe clears that.
-  // The captures then go through a palette quantise — these are flat-colour UI
-  // renders with a few hundred distinct colours, so 8-bit costs nothing visible
-  // and takes a long page from ~1.8MB to a few hundred KB.
+  for (const file of files) designPreviewPath(file.replace(/\.html$/, '-1440.png'));
+  const publish = createDesignPreviewPublisher();
+  // Keep review downloads small: these flat-colour renders compress well to a
+  // palette PNG at 1x. Generated PNGs are ignored; only their public links enter Git.
   const browser = await chromium.launch();
   try {
     for (const file of files) {
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
         const raw = await page.screenshot({ fullPage: true });
         await page.close();
         await sharp(raw).png({ palette: true, quality: 90, effort: 9 }).toFile(output);
-        console.log(`[design:mockups] ${output.replace(`${process.cwd()}/`, '')}`);
+        console.log(`[design:mockups] ${await publish(output)}`);
       }
     }
   } finally {
@@ -87,6 +87,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : 'Design preview capture failed');
   process.exitCode = 1;
 });

@@ -13,6 +13,8 @@
     "types": ["node"]
   },
   "include": [
+    "publish-design-previews.ts",
+    "lib/design-previews.ts",
     "discord-feedback-scan.ts",
     "lib/discord-feedback.ts",
     "lib/discord-feedback-issue.ts",

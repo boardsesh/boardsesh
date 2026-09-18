@@ -539,11 +539,13 @@ export default defineConfig({
         command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
-      // Re-render the static design wireframes in docs/design/** to PNG at 1440
-      // and 390. Not cached: it writes PNGs next to their source HTML, and the
-      // point of running it is that the HTML just changed.
+      // Render design previews, publish them to dev storage, and update links.
       'design:mockups': {
         command: 'tsx packages/web/scripts/capture-design-mockups.ts',
+        cache: false,
+      },
+      'design:publish': {
+        command: 'tsx scripts/publish-design-previews.ts',
         cache: false,
       },
       // Two-way i18n guard: catalog keys with no reference, code references with
