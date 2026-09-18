@@ -6,7 +6,7 @@ import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { themeTokens } from '@/app/theme/theme-config';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
@@ -14,15 +14,7 @@ const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
 // Anchor for /help#climb-counts, linked from docs/kilter-sync.md.
 const CLIMB_COUNTS_SECTION_ID = 'climb-counts';
 
-const CTA_SX = {
-  borderRadius: `${themeTokens.borderRadius.full}px`,
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  px: 3,
-  backgroundColor: 'var(--color-primary-fill)',
-  color: 'var(--color-on-primary)',
-  '&:hover': { backgroundColor: 'var(--color-primary-fill-hover)', transform: 'none' },
-} as const;
+const CTA_SX = brandCtaSx();
 
 /**
  * The front-door help page.

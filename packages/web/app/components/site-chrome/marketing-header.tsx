@@ -25,24 +25,12 @@ import { useStatsFilterBridge } from '@/app/components/stats-filter-bridge/stats
 import { useProfileHeaderShare } from '@/app/components/profile-header-bridge/profile-header-bridge-context';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import styles from './marketing-header.module.css';
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
 // off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
-const HEADER_START_CLIMBING_SX = {
-  flexShrink: 0,
-  borderRadius: `${themeTokens.borderRadius.full}px`,
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  px: 2,
-  whiteSpace: 'nowrap',
-  backgroundColor: 'var(--color-primary-fill)',
-  color: 'var(--color-on-primary)',
-  '&:hover': {
-    backgroundColor: 'var(--color-primary-fill-hover)',
-    transform: 'none',
-  },
-} as const;
+const HEADER_START_CLIMBING_SX = brandCtaSx({ size: 'small' });
 
 const BRAND_SX = {
   flexShrink: 0,

@@ -23,6 +23,7 @@ import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls'
 import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
 import { APP_URL } from '@/app/lib/app-origin';
@@ -85,23 +86,8 @@ const accentSurface: Record<OnboardingCardAccent, string> = {
 // scheme-aware fill clears AA with white text in both modes. The global MUI
 // Button override adds a translateY(-1px) on hover; cancel it so the CTA stays
 // anchored under the warm glow.
-const HERO_CTA_SX = {
-  mt: 1,
-  borderRadius: `${themeTokens.borderRadius.full}px`,
-  px: 4,
-  py: 1.5,
-  fontSize: themeTokens.typography.fontSize.lg,
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  textTransform: 'none',
-  backgroundColor: 'var(--color-primary-fill)',
-  color: 'var(--color-on-primary)',
-  boxShadow: '0 6px 18px rgba(255, 138, 61, 0.35)',
-  '&:hover': {
-    backgroundColor: 'var(--color-primary-fill-hover)',
-    boxShadow: '0 8px 22px rgba(255, 138, 61, 0.45)',
-    transform: 'none',
-  },
-} as const;
+// The homepage hero is the one surface that carries the amber glow.
+const HERO_CTA_SX = { mt: 1, ...(brandCtaSx({ size: 'large', glow: true }) as object) };
 
 function resolveAccentIconColor(accent: OnboardingCardAccent): string {
   switch (accent) {

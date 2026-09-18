@@ -11,20 +11,10 @@ import StartClimbingButton from '@/app/components/start-climbing-button';
 import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { themeTokens } from '@/app/theme/theme-config';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import styles from './site-footer.module.css';
 
-const FOOTER_START_CLIMBING_SX = {
-  borderRadius: `${themeTokens.borderRadius.full}px`,
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  px: 3,
-  backgroundColor: 'var(--color-primary-fill)',
-  color: 'var(--color-on-primary)',
-  '&:hover': {
-    backgroundColor: 'var(--color-primary-fill-hover)',
-    transform: 'none',
-  },
-} as const;
+const FOOTER_START_CLIMBING_SX = brandCtaSx();
 
 const LINK_SX = {
   color: 'text.secondary',
