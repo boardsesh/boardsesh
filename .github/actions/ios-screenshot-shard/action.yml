@@ -1,7 +1,7 @@
 name: iOS screenshot shard
 description: >
   Capture one (locale, device) screenshot shard on a macOS runner and upload it
-  as `ios-screenshots-<locale>-<device-slug>`. Extracted from the ios-capture job
+  as `ios-screenshots-<job>-<locale>-<device-slug>`. Extracted from the ios-capture job
   in mobile-screenshots-ios.yml so the probe job and the fan-out matrix run the
   BYTE-IDENTICAL capture — a probe that captured differently from the fan-out
   would compare against a baseline it can never match.
@@ -192,7 +192,7 @@ runs:
       with:
         # Per-shard name: upload-artifact@v4 rejects two uploads with the same
         # name in one run.
-        name: capture-debug-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: capture-debug-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
         path: capture-debug/**
         if-no-files-found: warn
         retention-days: 14
@@ -200,13 +200,14 @@ runs:
     # Hand this shard's PNGs to ios-finalize. The artifact's internal layout is
     # <app-store-locale>/<device>/NN-name.png (upper paths stripped to the
     # non-wildcard prefix); (locale, device) pairs are disjoint across shards, so
-    # the merge in ios-finalize has no collisions. Short retention — it's an
+    # the merge in ios-finalize has no collisions. The caller job distinguishes
+    # a failed probe from the full-matrix recovery of that same pair. Short retention — it's an
     # intermediate; the combined tree is re-uploaded by ios-finalize.
     - name: Upload shard screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: ios-screenshots-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
         path: app-stores/apple/screenshots/**
         if-no-files-found: warn
         retention-days: 1
@@ -215,7 +216,7 @@ runs:
       if: ${{ always() && inputs.fixtures == 'record' }}
       uses: actions/upload-artifact@v4
       with:
-        name: screenshot-fixtures-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: screenshot-fixtures-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
         path: packages/mobile/screenshot-fixtures/**
         if-no-files-found: warn
         retention-days: 7
