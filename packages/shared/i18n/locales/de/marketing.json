@@ -66,6 +66,16 @@
       "manage": "Verwalten",
       "viewPage": "Seite ansehen"
     },
+    "gymSearch": {
+      "eyebrow": "Hallenverzeichnis",
+      "title": "Finde ein Board in deiner Nähe",
+      "lead_one": "{{formattedCount}} Halle, Vereinswand oder Garage hat schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "lead_other": "{{formattedCount}} Hallen, Vereinswände und Garagen haben schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "leadNoCount": "Hallen, Vereinswände und Garagen mit einem Board an der Wand sind schon eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "geoHint": "Ortung aus? Tipp einfach eine Stadt ein: gleiche Ergebnisse, ohne Berechtigungsabfrage.",
+      "cardsUnavailable": "Die Hallenliste lädt gerade nicht. Das komplette Verzeichnis ist trotzdem da.",
+      "browseAll": "Zum kompletten Hallenverzeichnis"
+    },
     "recentBeta": {
       "title": "Frische Beta"
     }
