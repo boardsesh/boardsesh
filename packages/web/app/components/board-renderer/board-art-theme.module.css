@@ -1,8 +1,8 @@
 /*
- * Theme swap for boards that ship dark art — Woods today, see BOARDS_WITH_DARK_ART in
- * util.ts. Every surface that draws board art renders both variants and lets CSS pick one.
- *
- * www renders one scheme, so the pick is now unconditional: the dark layer always wins.
+ * Art-layer pick for boards that ship dark art — Woods today, see BOARDS_WITH_DARK_ART
+ * in util.ts. Every surface that draws board art renders both variants and lets CSS
+ * choose. It used to choose by scheme; www renders one scheme, so the dark layer
+ * simply always wins.
  * The pair itself stays for the moment — collapsing the FETCH to a single file is a perf
  * change with its own hazard (the <link rel="preload"> sites still name the light file,
  * so a half-done collapse is an LCP regression) and belongs in its own PR.
