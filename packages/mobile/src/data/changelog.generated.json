@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-18T13:17:47.660Z",
+  "generatedAt": "2026-09-18T22:13:16.021Z",
   "entries": [
+    {
+      "prNumber": 5563,
+      "category": "new",
+      "title": "The gym finder and gym pages now read properly in the dark: cards you can actually see, a filter row that shows what you picked, and a real answer when a search comes up empty.",
+      "mergedAt": "2026-09-18T22:10:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5563"
+    },
     {
       "prNumber": 5557,
       "category": "new",
