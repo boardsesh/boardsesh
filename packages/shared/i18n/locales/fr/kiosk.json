@@ -76,6 +76,7 @@
     "metaTitle": "Salle d'escalade {{gymName}}",
     "metaDescription": "Découvre les boards et le mur en direct de {{gymName}} sur Boardsesh.",
     "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "Salles",
     "manageGym": "Gérer la salle",
     "seeOnTheWall": "Voir ce qui est sur le mur",
     "boardsHeading": "Boards",

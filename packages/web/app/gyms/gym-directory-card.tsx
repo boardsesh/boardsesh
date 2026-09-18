@@ -12,6 +12,7 @@ import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphq
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageCard } from '@/app/components/ui/page-shell';
 import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
 import { boardChips, cardLocation, distanceChipKm, numberFormatFor, roundDistanceKm } from './directory-card-model';
@@ -53,16 +54,25 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
   const distanceKm = distanceChipKm(gym, origin, location);
 
   return (
-    <Box
+    /* A FILL, not a hairline. The card used to be `1px solid var(--neutral-200)`
+       over nothing, which on the near-black ground left 24 near-invisible
+       outlines where a grid should be. `PageCard` gives it the surface violet
+       the rest of the site uses, and hover raises it one step so the whole card
+       reads as the target it is. */
+    <PageCard
       component="li"
+      variant="surface"
+      padding="sm"
       sx={{
         listStyle: 'none',
-        border: '1px solid var(--neutral-200)',
-        borderRadius: `${themeTokens.borderRadius.lg}px`,
-        p: 2,
         display: 'flex',
         flexDirection: 'column',
         gap: 1,
+        transition: 'background-color 120ms ease, border-color 120ms ease',
+        '&:hover': {
+          backgroundColor: 'var(--semantic-surface-elevated)',
+          borderColor: 'var(--color-primary)',
+        },
       }}
     >
       <Typography variant="subtitle1" component="h3" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
@@ -114,7 +124,16 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
                   ? t('card.boardChip', { board: boardTypeLabel(chip.boardType), angle: chip.angle })
                   : boardTypeLabel(chip.boardType)
               }
-              sx={{ borderRadius: `${themeTokens.borderRadius.full}px` }}
+              // The elevated surface, so the chips stay separable from the card
+              // they sit on at rest AND on hover, which raises the card to the
+              // same step.
+              sx={{
+                borderRadius: 'var(--border-radius-full)',
+                backgroundColor: 'var(--semantic-selected)',
+                border: '1px solid var(--separator)',
+                color: 'var(--neutral-900)',
+                fontWeight: themeTokens.typography.fontWeight.semibold,
+              }}
             />
           ))}
         </Box>
@@ -123,6 +142,6 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
       {!gym.isClaimed && (
         <GymDirectoryClaimLink gymUuid={gym.uuid} gymSlug={gym.slug ?? ''} viewerState={viewerState} />
       )}
-    </Box>
+    </PageCard>
   );
 }

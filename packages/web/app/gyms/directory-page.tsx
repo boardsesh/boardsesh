@@ -3,16 +3,20 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
+import SearchOutlined from '@mui/icons-material/SearchOutlined';
+import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
 import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageCard, PageShell } from '@/app/components/ui/page-shell';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
@@ -105,17 +109,36 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
   if (!pageResult.ok || !facetCountsResult.ok) {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'gyms']}>
-        <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 2 }}>
-            {facetHeading(t, facet)}
-          </Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-            {t('error.title')}
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, maxWidth: '68ch' }}>
-            {t('error.body')}
-          </Typography>
-        </Container>
+        {/* The h1 survives an outage — a test asserts the page still says what
+            it is — but the count-bearing lead does not, because there are no
+            counts to state. */}
+        <PageShell
+          width="wide"
+          title={facetHeading(t, facet)}
+          breadcrumb={
+            <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
+          }
+        >
+          <StatePanel
+            tone="warning"
+            icon={<WarningAmberOutlined />}
+            title={t('error.title')}
+            body={t('error.body')}
+            actions={
+              <>
+                {/* A plain anchor, not a LocaleLink: this button's whole job is
+                    to fetch the page again, and a soft navigation to the URL
+                    the visitor is already on is a no-op. */}
+                <Button variant="contained" color="primaryFill" href={localeHref(FACET_BASE_PATHS[facet], locale)}>
+                  {t('error.retry')}
+                </Button>
+                <Button variant="outlined" component={LocaleLink} href="/">
+                  {t('error.home')}
+                </Button>
+              </>
+            }
+          />
+        </PageShell>
       </I18nProvider>
     );
   }
@@ -160,15 +183,17 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         />
       )}
 
-      <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, mb: 2 }}>
-          {facetHeading(t, facet)}
-        </Typography>
-
-        <Typography variant="body1" sx={{ mb: 1.5, maxWidth: '68ch' }}>
-          {facetLead(t, facet, facetCounts, formatNumber)}
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 3, maxWidth: '68ch' }}>
+      {/* PageShell owns the fixed-header clearance and the 1200px measure, so
+          no page file hand-rolls the header offset any more. */}
+      <PageShell
+        width="wide"
+        title={facetHeading(t, facet)}
+        lead={facetLead(t, facet, facetCounts, formatNumber)}
+        breadcrumb={
+          <DirectoryBreadcrumb facet={facet} homeLabel={t('breadcrumb.home')} gymsLabel={t('breadcrumb.gyms')} />
+        }
+      >
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3, maxWidth: '68ch' }}>
           {facetDetail(t, facet, facetCounts, formatNumber)}
         </Typography>
 
@@ -183,18 +208,38 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             {t('facets.heading')}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {DIRECTORY_FACETS.map((candidate) => (
-              <Chip
-                key={candidate}
-                clickable
-                component={LocaleLink}
-                href={buildFacetSwitchHref(candidate, query)}
-                label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
-                color={candidate === facet ? 'primary' : 'default'}
-                variant={candidate === facet ? 'filled' : 'outlined'}
-                sx={{ borderRadius: `${themeTokens.borderRadius.full}px` }}
-              />
-            ))}
+            {DIRECTORY_FACETS.map((candidate) => {
+              const isCurrentFacet = candidate === facet;
+              return (
+                <Chip
+                  key={candidate}
+                  clickable
+                  component={LocaleLink}
+                  href={buildFacetSwitchHref(candidate, query)}
+                  aria-current={isCurrentFacet ? 'page' : undefined}
+                  label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
+                  variant="outlined"
+                  // MUI's default outlined chip has no fill and a barely-there
+                  // border, which on the near-black page ground loses the whole
+                  // filter row. Both states are spelled out: a surface fill and
+                  // the one hairline unselected; the elevated surface plus a
+                  // violet border, label and ring when selected.
+                  sx={{
+                    borderRadius: 'var(--border-radius-full)',
+                    height: 36,
+                    fontWeight: themeTokens.typography.fontWeight.semibold,
+                    backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
+                    borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--separator)',
+                    color: isCurrentFacet ? 'var(--color-primary)' : 'var(--neutral-900)',
+                    boxShadow: isCurrentFacet ? '0 0 0 3px var(--semantic-selected)' : 'none',
+                    '&:hover': {
+                      backgroundColor: 'var(--semantic-surface-elevated)',
+                      borderColor: 'var(--color-primary)',
+                    },
+                  }}
+                />
+              );
+            })}
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
             {t('facets.countHint')}
@@ -228,14 +273,31 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           </Typography>
 
           {pageResult.gyms.length === 0 ? (
-            <Box sx={{ py: 4 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-                {t('results.emptyTitle')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {t('results.emptyBody')}
-              </Typography>
-            </Box>
+            /* A legitimate 200 on page one, so it gets a designed answer rather
+               than two bare lines: the card surface, a muted glyph, and two ways
+               out. Each action only renders when it would actually change the
+               query — on a bare `/gyms` there is nothing to clear and nothing
+               wider to browse. */
+            <StatePanel
+              tone="brand"
+              icon={<SearchOutlined />}
+              title={t('results.emptyTitle')}
+              body={t('results.emptyBody')}
+              actions={
+                <>
+                  {query.query.length > 0 && (
+                    <Button variant="outlined" component={LocaleLink} href={FACET_BASE_PATHS[facet]}>
+                      {t('results.emptyClearSearch')}
+                    </Button>
+                  )}
+                  {(facet !== 'all' || query.boardTypes.length > 0) && (
+                    <Button variant="contained" color="primaryFill" component={LocaleLink} href={FACET_BASE_PATHS.all}>
+                      {t('results.emptyBrowseAll')}
+                    </Button>
+                  )}
+                </>
+              }
+            />
           ) : (
             <Box
               component="ul"
@@ -285,8 +347,111 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             ))}
           </Box>
         </Box>
-      </Container>
+      </PageShell>
     </I18nProvider>
+  );
+}
+
+/**
+ * Home > Gyms, as real anchors.
+ *
+ * Both crumbs are passed in already resolved, and both `t()` call sites that
+ * produce them are literal keys — a computed `t(crumb)` is a hard lint failure
+ * and would hide the two catalog entries from the orphan checker.
+ */
+function DirectoryBreadcrumb({
+  facet,
+  homeLabel,
+  gymsLabel,
+}: {
+  facet: DirectoryFacet;
+  homeLabel: string;
+  gymsLabel: string;
+}) {
+  return (
+    <Box component="nav" sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+        {homeLabel}
+      </MuiLink>
+      <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
+        ›
+      </Box>
+      {facet === 'all' ? (
+        <Box component="span" aria-current="page">
+          {gymsLabel}
+        </Box>
+      ) : (
+        <MuiLink
+          component={LocaleLink}
+          href={FACET_BASE_PATHS.all}
+          underline="hover"
+          sx={{ color: 'var(--color-primary)' }}
+        >
+          {gymsLabel}
+        </MuiLink>
+      )}
+    </Box>
+  );
+}
+
+/**
+ * The empty and the outage panel, which are the same object with a different
+ * glyph tone: a card surface, a ringed glyph, one line of what happened, and
+ * the ways out. Neither branch had a design before — zero results rendered two
+ * bare lines and a failed fetch rendered three.
+ */
+function StatePanel({
+  tone,
+  icon,
+  title,
+  body,
+  actions,
+}: {
+  tone: 'brand' | 'warning';
+  icon: React.ReactElement<{ sx?: object }>;
+  title: string;
+  body: string;
+  actions: React.ReactNode;
+}) {
+  const glyphColor = tone === 'warning' ? 'var(--color-warning)' : 'var(--color-primary)';
+
+  return (
+    <PageCard
+      variant="elevated"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        py: 5,
+        my: 2,
+      }}
+    >
+      <Box
+        aria-hidden="true"
+        sx={{
+          width: 52,
+          height: 52,
+          borderRadius: 'var(--border-radius-full)',
+          backgroundColor: 'var(--semantic-surface)',
+          border: '1px solid var(--separator)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: glyphColor,
+          mb: 2,
+        }}
+      >
+        {React.cloneElement(icon, { sx: { fontSize: 24 } })}
+      </Box>
+      <Typography variant="h6" component="p" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+        {title}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: '46ch' }}>
+        {body}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center', mt: 2.5 }}>{actions}</Box>
+    </PageCard>
   );
 }
 

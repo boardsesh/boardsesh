@@ -1,7 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
-import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -38,6 +37,7 @@ import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { PageShell } from '@/app/components/ui/page-shell';
 import GymStatChip from '@/app/components/gym-entity/gym-stat-chip';
 import CommentSection from '@/app/components/social/comment-section';
 import GymPageManageButton from './gym-page-manage-button';
@@ -55,6 +55,13 @@ import GymQrLandingTracker from './gym-qr-landing-tracker';
 import { fetchGymBySlug, isGymViewable } from './fetch-gym-by-slug';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl, resolveGymPhotoDisplayUrl } from '@/app/lib/gym-logo-display-url';
+
+/**
+ * The page sits in the shell's wide frame, but its long-form blocks — the wall
+ * shot, the description, the hours — stay at a reading measure. A paragraph
+ * stretched across 1200px is not a page anyone reads.
+ */
+const GYM_READING_MEASURE = 800;
 
 type GymRouteProps = {
   params: Promise<{ gym_slug: string }>;
@@ -347,13 +354,30 @@ export default async function GymPage(props: GymRouteProps) {
     <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
       {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
-      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Box sx={{ mb: 2 }}>
-          <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
-            {t('gymPage.breadcrumbHome')}
-          </MuiLink>
-        </Box>
-
+      {/* PageShell owns the fixed-header clearance and the page measure, so the
+          hand-rolled Container and its header offset are gone. The h1 is the
+          shell's title now, which puts it above the wall shot rather than
+          beside the logo — the name is what someone scanning a poster is
+          looking for, and it is the first thing rendered either way. */}
+      <PageShell
+        width="wide"
+        title={gym.name}
+        breadcrumb={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+              {t('gymPage.breadcrumbHome')}
+            </MuiLink>
+            <Box component="span" aria-hidden="true" sx={{ color: 'var(--neutral-400)' }}>
+              ›
+            </Box>
+            {/* The directory is how most people got here — a poster scan lands
+                on this page with no other way back into the gym list. */}
+            <MuiLink component={LocaleLink} href="/gyms" underline="hover" sx={{ color: 'var(--color-primary)' }}>
+              {t('gymPage.breadcrumbGyms')}
+            </MuiLink>
+          </Box>
+        }
+      >
         {/* Owner-uploaded wall/board shot. Gyms without one simply don't render
             this — no placeholder art, and no effect on ranking or visibility
             anywhere; most of the long tail will never upload a photo. */}
@@ -364,30 +388,37 @@ export default async function GymPage(props: GymRouteProps) {
             alt={t('gymPage.photoAlt', { gymName: gym.name })}
             sx={{
               width: '100%',
+              maxWidth: GYM_READING_MEASURE,
               aspectRatio: '16 / 9',
               objectFit: 'cover',
-              borderRadius: 2,
+              borderRadius: 'var(--border-radius-lg)',
+              border: '1px solid var(--separator)',
               display: 'block',
               mb: 3,
             }}
           />
         )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-          {logoSrc && (
-            <Box
-              component="img"
-              src={logoSrc}
-              alt={gym.name}
-              sx={{ width: 72, height: 72, borderRadius: 2, objectFit: 'contain', flexShrink: 0 }}
-            />
-          )}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h3" component="h1" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
-              {gym.name}
-            </Typography>
+        {(logoSrc || gym.address) && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+            {logoSrc && (
+              <Box
+                component="img"
+                src={logoSrc}
+                alt={gym.name}
+                sx={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 'var(--border-radius-lg)',
+                  objectFit: 'contain',
+                  flexShrink: 0,
+                  backgroundColor: 'var(--semantic-surface)',
+                  border: '1px solid var(--separator)',
+                }}
+              />
+            )}
             {gym.address && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <LocationOnOutlined sx={{ fontSize: 18, color: themeTokens.neutral[400] }} />
                 <Typography variant="body1" color="text.secondary">
                   {gym.address}
@@ -395,10 +426,10 @@ export default async function GymPage(props: GymRouteProps) {
               </Box>
             )}
           </Box>
-        </Box>
+        )}
 
         {gym.description && (
-          <Typography variant="body1" sx={{ mb: 3, color: themeTokens.neutral[700] }}>
+          <Typography variant="body1" sx={{ mb: 3, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
             {gym.description}
           </Typography>
         )}
@@ -417,7 +448,10 @@ export default async function GymPage(props: GymRouteProps) {
             </Box>
             {/* The gym types its own line breaks; keep them instead of collapsing
                 a week of hours into one run-on paragraph. */}
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-line', color: themeTokens.neutral[700] }}>
+            <Typography
+              variant="body1"
+              sx={{ whiteSpace: 'pre-line', maxWidth: '68ch', color: themeTokens.neutral[700] }}
+            >
               {hoursText}
             </Typography>
             {hoursConfirmedDate && (
@@ -486,7 +520,7 @@ export default async function GymPage(props: GymRouteProps) {
           >
             {t('gymPage.install.heading')}
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: themeTokens.neutral[700] }}>
+          <Typography variant="body2" sx={{ mb: 1.5, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
             {t('gymPage.install.body', { gymName: gym.name })}
           </Typography>
           <GymInstallCta
@@ -602,7 +636,7 @@ export default async function GymPage(props: GymRouteProps) {
               </Typography>
             </Box>
 
-            <Typography variant="body2" sx={{ mb: 2, color: themeTokens.neutral[700] }}>
+            <Typography variant="body2" sx={{ mb: 2, maxWidth: '68ch', color: themeTokens.neutral[700] }}>
               {t('gymPage.sprayWallsIntro')}
             </Typography>
 
@@ -664,7 +698,7 @@ export default async function GymPage(props: GymRouteProps) {
             {t('gymPage.explorePlaylists')}
           </MuiLink>
         </Box>
-      </Container>
+      </PageShell>
     </I18nProvider>
   );
 }

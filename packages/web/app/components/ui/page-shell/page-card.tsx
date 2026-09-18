@@ -10,8 +10,15 @@ export type PageCardProps = {
   variant?: 'surface' | 'elevated';
   padding?: 'sm' | 'md';
   className?: string;
+  /**
+   * The element to render. `Box`'s own `component` prop is generic and does not
+   * survive `ComponentProps`, so it is declared here: the gym directory renders
+   * each card as the `li` of a real list, and a div wrapped in an li would put
+   * a non-list child inside a `ul`.
+   */
+  component?: React.ElementType;
   children: React.ReactNode;
-} & Omit<React.ComponentProps<typeof Box>, 'className' | 'children'>;
+} & Omit<React.ComponentProps<typeof Box>, 'className' | 'children' | 'component'>;
 
 /**
  * A card for something you can ACT on. Prose does not get a card — that was the
