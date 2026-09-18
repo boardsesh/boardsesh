@@ -11,6 +11,7 @@ export { boardArtGeometryKey } from './types';
 export {
   boardArtGeometryPending,
   clearBoardArtGeometryCache,
+  getBoardArtGeometryCacheStats,
   getOutlineCounts,
   getRuntimeGeometry,
   getWallLightness,

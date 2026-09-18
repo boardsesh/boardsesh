@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { getTikTokVideoId, isTikTokUrl, TIKTOK_URL_REGEX } from '@boardsesh/shared-schema';
 import { createCircuitBreaker } from './circuit-breaker';
 import { logger } from '../utils/logger';
+import { BoundedTtlCache } from '../utils/bounded-ttl-cache';
 
 export { TIKTOK_URL_REGEX, isTikTokUrl };
 
@@ -45,7 +46,7 @@ type OEmbedResponse = {
   author_name?: string;
 };
 
-const metaCache = new Map<string, { data: TikTokMetaResult; expiresAt: number }>();
+const metaCache = new BoundedTtlCache<TikTokMetaResult>({ maxEntries: 1000, maxBytes: 4 * 1024 * 1024 });
 const inflight = new Map<string, Promise<TikTokMetaResult>>();
 
 const circuit = createCircuitBreaker({
@@ -63,6 +64,11 @@ export function clearTikTokMetaCache(): void {
   metaCache.clear();
   inflight.clear();
   circuit.reset();
+}
+
+export function maintainTikTokMetaCache() {
+  metaCache.evictExpired();
+  return { ...metaCache.getStats(), inFlight: inflight.size };
 }
 
 async function fetchTikTokMetaUncached(url: string): Promise<TikTokMetaResult> {
@@ -109,11 +115,8 @@ async function fetchTikTokMetaUncached(url: string): Promise<TikTokMetaResult> {
 }
 
 export async function fetchTikTokMeta(url: string): Promise<TikTokMetaResult> {
-  const now = Date.now();
   const cached = metaCache.get(url);
-  if (cached && cached.expiresAt > now) {
-    return cached.data;
-  }
+  if (cached) return cached;
 
   if (circuit.isOpen()) {
     return { status: 'transient_error' };
@@ -125,7 +128,7 @@ export async function fetchTikTokMeta(url: string): Promise<TikTokMetaResult> {
   const promise = fetchTikTokMetaUncached(url)
     .then((result) => {
       const ttl = result.status === 'transient_error' ? TIKTOK_TRANSIENT_TTL_MS : TIKTOK_META_TTL_MS;
-      metaCache.set(url, { data: result, expiresAt: Date.now() + ttl });
+      metaCache.set(url, result, ttl);
       if (result.status === 'transient_error') {
         circuit.recordFailure();
       }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {
   clearBoardArtGeometryCache,
+  getBoardArtGeometryCacheStats,
   getOutlineCounts,
   getWallLightness,
   listBoardArtGeometryKeys,
@@ -21,6 +22,16 @@ import { boardArtGeometryKey } from '../types';
 const KILTER_ORIGINAL_12X12 = { boardName: 'kilter', layoutId: 1, sizeId: 10 } as const;
 
 describe('loadBoardArtGeometry', () => {
+  it('does not retain unknown catalogue keys', () => {
+    clearBoardArtGeometryCache();
+    for (let layoutId = 10_000; layoutId < 11_000; layoutId++) {
+      expect(loadBoardArtGeometry({ boardName: 'kilter', layoutId, sizeId: 999 })).toBeNull();
+    }
+    expect(getBoardArtGeometryCacheStats()).toEqual({ shards: 0, pending: 0, runtime: 0 });
+    loadBoardArtGeometry(KILTER_ORIGINAL_12X12);
+    expect(getBoardArtGeometryCacheStats().shards).toBe(1);
+  });
+
   it('returns null for a board config with no shard', () => {
     // `null` is a normal answer, not an error — the caller falls back to a ring at
     // the placement radius. Every config in the catalogue ships a shard now (Woods
@@ -36,8 +47,7 @@ describe('loadBoardArtGeometry', () => {
     const second = loadBoardArtGeometry(KILTER_ORIGINAL_12X12);
     expect(first).not.toBeNull();
     expect(second).toBe(first);
-    // A miss is memoised too, or every frame of an unshipped config pays a failed
-    // module lookup.
+    // Unknown configs keep their null response without retaining a cache entry.
     const missing = { boardName: 'woods', layoutId: 1, sizeId: 99 } as const;
     expect(loadBoardArtGeometry(missing)).toBe(loadBoardArtGeometry(missing));
   });

@@ -3,6 +3,7 @@ import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { requireSessionMember } from '../shared/helpers';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const sessionSubscriptions = {
   /**
@@ -23,14 +24,21 @@ export const sessionSubscriptions = {
    * converges.
    */
   sessionUpdates: {
-    subscribe: async function* (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
+      _: unknown,
+      { sessionId }: { sessionId: string },
+      ctx: ConnectionContext,
+    ) {
       // Verify user is a member of the session they're subscribing to
       // Uses retry logic to handle race conditions with joinSession
       await requireSessionMember(ctx, sessionId);
 
-      const asyncIterable = await createEagerAsyncIterator<SessionEvent>(
-        (push) => pubsub.subscribeSession(sessionId, push),
-        `sessionUpdates:${sessionId}`,
+      const asyncIterable = await lifetime.own(
+        createEagerAsyncIterator<SessionEvent>(
+          (push) => pubsub.subscribeSession(sessionId, push),
+          `sessionUpdates:${sessionId}`,
+        ),
       );
       // One concrete iterator, shared by the loop and the finally below, so
       // cleanup always targets the iterator that owns the subscription.
@@ -74,6 +82,6 @@ export const sessionSubscriptions = {
         // idempotent, so a loop that already finished cleanly is unaffected.
         await eagerIterator.return?.(undefined);
       }
-    },
+    }),
   },
 };

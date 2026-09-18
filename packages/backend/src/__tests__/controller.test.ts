@@ -403,8 +403,8 @@ describe('Controller Mutations', () => {
       const iterator = stream[Symbol.asyncIterator]();
 
       try {
-        await nextControllerEvent(iterator);
-        await nextControllerEvent(iterator);
+        expect((await nextControllerEvent(iterator)).controllerEvents.__typename).toBe('ControllerQueueSync');
+        expect((await nextControllerEvent(iterator)).controllerEvents.__typename).toBe('LedUpdate');
 
         pubsub.publishQueueEvent(TEST_SESSION_ID, {
           __typename: 'CurrentClimbChanged',
@@ -418,6 +418,20 @@ describe('Controller Mutations', () => {
           correlationId: null,
         });
 
+        // Irrelevant playback bursts must not evict the pending LED update.
+        for (let frameIndex = 0; frameIndex < 1005; frameIndex++) {
+          pubsub.publishQueueEvent(TEST_SESSION_ID, {
+            __typename: 'PlaybackStateChanged',
+            sequence: 1,
+            climbUuid: 'playing',
+            frameIndex,
+            isPlaying: true,
+            speed: 1,
+            paceMs: 1000,
+            anchorTimestamp: new Date(0).toISOString(),
+            clientId: 'peer',
+          });
+        }
         const update = await nextControllerEvent(iterator);
         expect(update.controllerEvents.__typename).toBe('LedUpdate');
         if (update.controllerEvents.__typename === 'LedUpdate') {
@@ -425,6 +439,9 @@ describe('Controller Mutations', () => {
           expect(update.controllerEvents.climbName).toBe('Unknown Climb');
           expect(update.controllerEvents.clientId).toBe('AA:BB:CC:DD:EE:FF');
         }
+        const idleRead = iterator.next();
+        await iterator.return?.(undefined);
+        expect((await idleRead).done).toBe(true);
       } finally {
         await iterator.return?.(undefined);
       }

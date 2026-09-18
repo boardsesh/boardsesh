@@ -1,6 +1,7 @@
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
 import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
@@ -55,7 +56,12 @@ export const boardQueuePreviewSubscriptions = {
    * publish converges (same accepted race as boardNowPlaying's backfill).
    */
   boardQueuePreview: {
-    subscribe: async function* (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
+      _: unknown,
+      { boardId }: { boardId: number },
+      ctx: ConnectionContext,
+    ) {
       // 30/min, parity with boardNowPlaying (the seed does DB work). Anon WS
       // callers are keyed per-connection — see the query resolver's note.
       await applyRateLimit(ctx, 30, 'boardQueuePreview');
@@ -64,9 +70,11 @@ export const boardQueuePreviewSubscriptions = {
 
       const boardKey = String(boardId);
 
-      const asyncIterable = await createEagerAsyncIterator<BoardQueuePreview>(
-        (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
-        `boardQueuePreview:${boardId}`,
+      const asyncIterable = await lifetime.own(
+        createEagerAsyncIterator<BoardQueuePreview>(
+          (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
+          `boardQueuePreview:${boardId}`,
+        ),
       );
       // One concrete iterator, shared by the loop and the finally below, so
       // cleanup always targets the iterator that owns the subscription.
@@ -92,6 +100,6 @@ export const boardQueuePreviewSubscriptions = {
         // idempotent, so a loop that already finished cleanly is unaffected.
         await eagerIterator.return?.(undefined);
       }
-    },
+    }),
   },
 };

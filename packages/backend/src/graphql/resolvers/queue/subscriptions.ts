@@ -3,6 +3,7 @@ import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { requireSessionMember } from '../shared/helpers';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const queueSubscriptions = {
   /**
@@ -11,7 +12,12 @@ export const queueSubscriptions = {
    * Uses eager subscription to prevent race conditions
    */
   queueUpdates: {
-    subscribe: async function* (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
+      _: unknown,
+      { sessionId }: { sessionId: string },
+      ctx: ConnectionContext,
+    ) {
       // Verify user is a member of the session they're subscribing to
       // Uses retry logic to handle race conditions with joinSession
       await requireSessionMember(ctx, sessionId);
@@ -22,9 +28,11 @@ export const queueSubscriptions = {
       // Events that arrive before we yield FullSync will be queued.
       // NOTE: We await here to ensure Redis subscription is established
       // before proceeding - this is critical for multi-instance sync.
-      const asyncIterator = await createEagerAsyncIterator<QueueEvent>((push) => {
-        return pubsub.subscribeQueue(sessionId, push);
-      });
+      const asyncIterator = await lifetime.own(
+        createEagerAsyncIterator<QueueEvent>((push) => {
+          return pubsub.subscribeQueue(sessionId, push);
+        }, `queueUpdates:${sessionId}`),
+      );
 
       // Now fetch the current state (any events during this time are queued)
       const queueState = await roomManager.getQueueState(sessionId);
@@ -55,6 +63,6 @@ export const queueSubscriptions = {
           yield { queueUpdates: event };
         }
       }
-    },
+    }),
   },
 };

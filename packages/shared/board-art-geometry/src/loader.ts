@@ -148,8 +148,8 @@ export function loadBoardArtGeometry(query: BoardArtGeometryQuery): BoardArtGeom
   // caching, and let `prefetchBoardArtGeometry` fill the cache when it lands.
   if (BOARD_ART_GEOMETRY_SHARDS_ASYNC?.[key]) return null;
 
-  // Genuinely absent from the catalogue. Cache it: this answer never changes.
-  shardCache.set(key, null);
+  // Unknown keys can come from public URL parameters. The catalogue lookup is
+  // already O(1); caching misses would retain one entry per arbitrary ID forever.
   return null;
 }
 
@@ -272,4 +272,9 @@ export function clearBoardArtGeometryCache(): void {
   shardCache.clear();
   pendingShards.clear();
   runtimeGeometry.clear();
+}
+
+/** Counts only; suitable for backend runtime diagnostics. */
+export function getBoardArtGeometryCacheStats() {
+  return { shards: shardCache.size, pending: pendingShards.size, runtime: runtimeGeometry.size };
 }

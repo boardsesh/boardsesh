@@ -143,4 +143,10 @@ export class PubSubChannel<TEvent> {
   count(key: string): number {
     return this.subscribers.get(key)?.size ?? 0;
   }
+
+  getRuntimeStats() {
+    let subscribers = 0;
+    for (const callbacks of this.subscribers.values()) subscribers += callbacks.size;
+    return { channels: this.subscribers.size, subscribers };
+  }
 }

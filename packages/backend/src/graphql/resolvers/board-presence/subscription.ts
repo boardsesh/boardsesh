@@ -1,6 +1,7 @@
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -22,7 +23,12 @@ export const boardPresenceSubscriptions = {
    * setup isn't dropped.
    */
   boardNowPlaying: {
-    subscribe: async function* (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
+      _: unknown,
+      { boardId }: { boardId: number },
+      ctx: ConnectionContext,
+    ) {
       // Bumped to the same 60/min budget as the sibling anon-tolerant reads
       // for consistency. Since issue #2863 the WS context carries clientIp
       // (websocket/setup.ts resolves it from the upgrade request), so this
@@ -53,9 +59,11 @@ export const boardPresenceSubscriptions = {
 
       const boardKey = String(boardId);
 
-      const asyncIterator = await createEagerAsyncIterator<BoardPresenceEvent>(
-        (push) => pubsub.subscribeBoardPresence(boardKey, push),
-        `boardNowPlaying:${boardId}`,
+      const asyncIterator = await lifetime.own(
+        createEagerAsyncIterator<BoardPresenceEvent>(
+          (push) => pubsub.subscribeBoardPresence(boardKey, push),
+          `boardNowPlaying:${boardId}`,
+        ),
       );
 
       // Re-asked per event, because the check above ran once and the socket outlives
@@ -67,6 +75,6 @@ export const boardPresenceSubscriptions = {
         if (gate && !(await gate())) return;
         yield { boardNowPlaying: event };
       }
-    },
+    }),
   },
 };

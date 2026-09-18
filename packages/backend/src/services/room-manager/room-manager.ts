@@ -214,6 +214,13 @@ class RoomManager {
    */
   async shutdown(): Promise<void> {
     await this.flushPendingWrites();
+    for (const timer of this.sessionGraceTimers.values()) clearTimeout(timer);
+    this.sessionGraceTimers.clear();
+    for (const participants of this.sessionParticipants.values()) {
+      for (const participant of participants.values()) {
+        if (participant.reconnectTimer) clearTimeout(participant.reconnectTimer);
+      }
+    }
     if (this.inactivitySweepInterval) {
       clearInterval(this.inactivitySweepInterval);
       this.inactivitySweepInterval = null;
@@ -686,14 +693,33 @@ class RoomManager {
   }
 
   async flushPendingWrites(): Promise<void> {
-    return this.writeScheduler.flushPendingWrites(this.sessionGraceTimers);
+    return this.writeScheduler.flushPendingWrites();
+  }
+
+  getRuntimeStats() {
+    let emptySessions = 0;
+    let participants = 0;
+    for (const connections of this.sessions.values()) {
+      if (connections.size === 0) emptySessions += 1;
+    }
+    for (const sessionParticipants of this.sessionParticipants.values()) participants += sessionParticipants.size;
+    return {
+      clients: this.clients.size,
+      sessions: this.sessions.size,
+      emptySessions,
+      participants,
+      graceTimers: this.sessionGraceTimers.size,
+      ...this.writeScheduler.getRuntimeStats(),
+    };
   }
 
   async refreshActiveSessionTTLs(): Promise<void> {
     const store = this.redisStore;
     if (!store) return;
 
-    const activeSessions = Array.from(this.sessions.keys());
+    const activeSessions = Array.from(this.sessions)
+      .filter(([, connections]) => connections.size > 0)
+      .map(([sessionId]) => sessionId);
     if (activeSessions.length === 0) return;
 
     logger.info(`[RoomManager] Refreshing TTL for ${activeSessions.length} active sessions`);
