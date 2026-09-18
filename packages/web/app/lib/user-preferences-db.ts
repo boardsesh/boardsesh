@@ -1,7 +1,6 @@
 import { createIndexedDBStore, migrateFromLocalStorage } from './idb-helper';
 import type { LogbookPreferences } from './logbook-preferences';
 import type { GradeDisplayFormat } from './grade-colors';
-import type { ColorMode } from '../hooks/use-color-mode';
 
 const STORE_NAME = 'preferences';
 
@@ -43,8 +42,6 @@ export type UserPreferenceKeyMap = {
    */
   'homeGymCard:dismissed': boolean;
   lastUsedGrade: number;
-  /** Saved colour mode; mirrored to localStorage for the pre-paint theme script. */
-  colorMode: ColorMode;
 };
 
 // Map of IDB preference keys to their legacy localStorage keys for one-time migration
@@ -65,6 +62,12 @@ const ORPHANED_PREFERENCE_KEYS = [
   // deleted with that page in W-19 (#4437). Anyone who ran the emulator locally
   // still has a row for it, including their board serial numbers.
   'esp32Connections',
+  // The saved light/dark choice. www renders one scheme now (dark), so the key
+  // is dead. Note a stale `boardsesh:colorMode` may still sit in localStorage —
+  // that was the pre-paint mirror, and nothing writes it any more. If a theme
+  // choice ever comes back, it must NOT read that value: ignore it, don't seed
+  // from it.
+  'colorMode',
 ] as const;
 
 const getDBRaw = createIndexedDBStore('boardsesh-user-preferences', STORE_NAME);
