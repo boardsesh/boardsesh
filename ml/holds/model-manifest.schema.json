@@ -321,6 +321,54 @@
     "licence": {
       "const": "Apache-2.0",
       "description": "Licence of the exported weights themselves (RF-DETR is Apache-2.0). The training data's own licence, which may require app-side attribution, is training.licence."
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "longSide",
+        "tiles",
+        "nmsIou"
+      ],
+      "description": "How to drive the model over a whole photo. `input` describes ONE tensor; this describes the pass. Without it a consumer cannot tell a tiled config from an untiled one and would run a single full-frame pass, which scores differently - so it is required for any config whose `tiles` are not 1x1.",
+      "properties": {
+        "longSide": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Resize the photo's long side to this before tiling."
+        },
+        "tiles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows",
+            "cols",
+            "overlap"
+          ],
+          "description": "The tile grid. rows=cols=1 with overlap 0 is one full-frame pass. Tiles are NOT square: each is round(side / count * (1 + overlap)), so a 4:3 photo gives 4:3 tiles that the `stretch` letterbox squashes into the square input - a consumer tracing a mask must undo that or every hold comes out an ellipse.",
+          "properties": {
+            "rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cols": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "overlap": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "nmsIou": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "IoU for the class-agnostic NMS that merges what neighbouring tiles both saw. RF-DETR is a set predictor, so a SINGLE pass needs no NMS; this exists only because tiles overlap."
+        }
+      }
     }
   }
 }
