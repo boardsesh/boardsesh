@@ -20,15 +20,14 @@ import { existsSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname } from 'node:path';
+import {
+  createDesignPreviewPublisher,
+  designPreviewFiles,
+  DESIGN_PREVIEW_VIEWPORTS,
+} from '../../../scripts/lib/design-previews';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = resolve(SCRIPT_DIR, '../../../docs/design');
-
-/** Capture widths. 1440 is the desktop review size; 390 is an iPhone viewport. */
-const VIEWPORTS = [
-  { width: 1440, height: 900, suffix: '1440' },
-  { width: 390, height: 844, suffix: '390' },
-] as const;
 
 async function collectHtmlFiles(target: string): Promise<string[]> {
   if (statSync(target).isFile()) return [target];
@@ -52,22 +51,27 @@ async function main(): Promise<void> {
   }
 
   const files = (await Promise.all(targets.map(collectHtmlFiles))).flat();
+  const fullCapture = targets.includes(DEFAULT_ROOT);
   if (files.length === 0) {
+    if (fullCapture) {
+      createDesignPreviewPublisher().finish([]);
+      console.log('[design:mockups] no HTML mockups remain; cleared the preview index');
+      return;
+    }
     console.error('[design:mockups] no .html wireframes found');
     process.exitCode = 1;
     return;
   }
 
-  // deviceScaleFactor stays at 1: scripts/check-large-files.mjs caps a single
-  // file at 2MB, and a full-page @2x capture of a long wireframe clears that.
-  // The captures then go through a palette quantise — these are flat-colour UI
-  // renders with a few hundred distinct colours, so 8-bit costs nothing visible
-  // and takes a long page from ~1.8MB to a few hundred KB.
+  const outputs = designPreviewFiles(files);
+  const { publish, finish } = createDesignPreviewPublisher();
+  // Keep review downloads small: these flat-colour renders compress well to a
+  // palette PNG at 1x. Generated PNGs are ignored; only their public links enter Git.
   const browser = await chromium.launch();
   try {
     for (const file of files) {
       const name = basename(file, '.html');
-      for (const viewport of VIEWPORTS) {
+      for (const viewport of DESIGN_PREVIEW_VIEWPORTS) {
         const page = await browser.newPage({
           viewport: { width: viewport.width, height: viewport.height },
           deviceScaleFactor: 1,
@@ -78,15 +82,16 @@ async function main(): Promise<void> {
         const raw = await page.screenshot({ fullPage: true });
         await page.close();
         await sharp(raw).png({ palette: true, quality: 90, effort: 9 }).toFile(output);
-        console.log(`[design:mockups] ${output.replace(`${process.cwd()}/`, '')}`);
+        console.log(`[design:mockups] ${await publish(output)}`);
       }
     }
+    finish(fullCapture ? outputs : undefined);
   } finally {
     await browser.close();
   }
 }
 
 main().catch((error: unknown) => {
-  console.error(error);
+  console.error(error instanceof Error ? error.message : 'Design preview capture failed');
   process.exitCode = 1;
 });

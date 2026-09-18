@@ -107,6 +107,9 @@ packages/db/docker/tmp/
 
 # local environment variables
 .env.local
+
+# Generated design previews are published to the dev object store.
+docs/design/**/*.png
 .boardsesh/
 eng.traineddata
 
