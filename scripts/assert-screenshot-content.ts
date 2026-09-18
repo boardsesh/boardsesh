@@ -35,8 +35,12 @@
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
-import { PRESENTATION_MANIFEST, rawSizeForPresentedScreenshot } from './lib/screenshot-presentation';
+import { join, relative } from 'node:path';
+import {
+  PRESENTATION_MANIFEST,
+  rawSizeForPresentedScreenshot,
+  readPresentationManifest,
+} from './lib/screenshot-presentation';
 import { pathToFileURL } from 'node:url';
 
 const LOG = '[screenshot:assert-content]';
@@ -116,6 +120,9 @@ export function readPngSizesRecursively(root: string): CandidateFile[] {
   if (!existsSync(root) || !statSync(root).isDirectory()) return [];
   const found: CandidateFile[] = [];
   const walk = (directory: string): void => {
+    const presentation = existsSync(join(directory, PRESENTATION_MANIFEST))
+      ? readPresentationManifest(directory)
+      : null;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const entryPath = join(directory, entry.name);
       if (entry.isDirectory()) {
@@ -125,9 +132,7 @@ export function readPngSizesRecursively(root: string): CandidateFile[] {
       if (entry.name.toLowerCase().endsWith('.png')) {
         found.push({
           relativePath: relative(root, entryPath),
-          size: existsSync(join(dirname(entryPath), PRESENTATION_MANIFEST))
-            ? rawSizeForPresentedScreenshot(entryPath)
-            : statSync(entryPath).size,
+          size: presentation ? rawSizeForPresentedScreenshot(entryPath, presentation) : statSync(entryPath).size,
         });
       }
     }

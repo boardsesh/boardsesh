@@ -144,10 +144,12 @@ export function readPresentationManifest(directory: string): PresentationManifes
   return { version: PRESENTATION_VERSION, locale: parsed.locale as CaptionLocale, files };
 }
 
-export function rawSizeForPresentedScreenshot(path: string): number {
-  const directory = dirname(path);
+export function rawSizeForPresentedScreenshot(
+  path: string,
+  manifest: PresentationManifest = readPresentationManifest(dirname(path)),
+): number {
   const name = basename(path);
-  const entry = readPresentationManifest(directory).files[name];
+  const entry = manifest.files[name];
   if (!entry || sha256Screenshot(readFileSync(path)) !== entry.framedSha256) {
     throw new Error(`Screenshot does not match its presentation metadata: ${path}`);
   }

@@ -337,7 +337,7 @@ export function packBaseline(options: PackOptions): PackResult {
         throw new Error(`Presentation metadata does not cover ${shardDir}`);
       }
       for (const name of pngNames) {
-        rawSizeForPresentedScreenshot(join(shardDir, name));
+        rawSizeForPresentedScreenshot(join(shardDir, name), presentation);
         captures[`${locale}/${deviceSlug}/${name}`] = presentation.files[name];
       }
       const zipFile = join(outDir, assetNameFor(options.platform, locale, deviceSlug));

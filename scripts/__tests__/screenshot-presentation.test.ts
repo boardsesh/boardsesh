@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
+import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
 import { frameDirectory, frameScreenshot, parseFrameArguments } from '../frame-screenshots';
 import { ACCEPTED_SIZES, readPngDimensions } from '../assert-screenshot-dimensions';
 import { readPngSizesRecursively, findContentOffenders } from '../assert-screenshot-content';
@@ -29,6 +30,11 @@ afterEach(() => {
 });
 
 describe('store screenshot presentation', () => {
+  it('maps every device in the actual store capture matrix', () => {
+    for (const device of IOS_SCREENSHOT_DEVICES) {
+      expect(Object.keys(screenshotCaptions('ios', deviceSlug(device.name))).length).toBeGreaterThan(0);
+    }
+  });
   it.each(['en-US', 'es', 'fr', 'de'] as const)(
     'fits every %s caption in every store device shape',
     async (locale) => {
