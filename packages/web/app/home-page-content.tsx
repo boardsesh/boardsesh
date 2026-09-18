@@ -165,13 +165,18 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
         <PopularBoardRail configs={initialPopularConfigs ?? []} />
 
         {/* Onboarding Cards */}
+        {/* The stack used to be a single column capped at 420px, which on a
+            1440px screen was a narrow ribbon of cards down the middle with
+            empty violet either side. A CSS grid (no JS breakpoint) gives two
+            columns once there is room and stays one column on a phone. The
+            section header spans the full width via gridColumn: '1 / -1'. */}
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
             gap: 1.5,
             width: '100%',
-            maxWidth: 420,
+            maxWidth: { xs: 420, md: 880 },
             mx: 'auto',
           }}
         >
@@ -179,6 +184,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             variant="body2"
             fontWeight={themeTokens.typography.fontWeight.semibold}
             sx={{
+              gridColumn: '1 / -1',
               color: 'var(--neutral-400)',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
@@ -189,12 +195,16 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             {t('home.onboardingHeader')}
           </Typography>
 
-          <InstallAppCard platform={installPlatform} />
+          <Box sx={{ gridColumn: '1 / -1' }}>
+            <InstallAppCard platform={installPlatform} />
+          </Box>
 
           {/* Signed-in only: the gym you help run, with Manage / View links.
               Self-gates to null for signed-out visitors and for climbers with
               no gym. */}
-          <HomeGymCard />
+          <Box sx={{ gridColumn: '1 / -1' }}>
+            <HomeGymCard />
+          </Box>
 
           {/* The "find a gym" nudge the drawers used to carry, restored now that
               the directory exists. Everyone sees it, including the signed-out
@@ -203,7 +213,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<PlaceOutlined />}
             title={t('home.cards.gymTitle')}
             description={t('home.cards.gymDescription')}
-            accent="v11"
+            accent="brand"
             href="/gyms"
           />
 
@@ -211,7 +221,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<WarningAmberOutlined />}
             title={t('home.cards.auroraTitle')}
             description={t('home.cards.auroraDescription')}
-            accent="v11"
+            accent="brand"
             href="/aurora-migration"
           />
 
@@ -219,7 +229,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<LocalOfferOutlined />}
             title={t('home.cards.playlistTitle')}
             description={t('home.cards.playlistDescription')}
-            accent="v12"
+            accent="brand"
             href="/playlists"
           />
 
@@ -227,7 +237,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<BluetoothOutlined />}
             title={t('home.cards.bluetoothTitle')}
             description={t('home.cards.bluetoothDescription')}
-            accent="v12"
+            accent="spark"
             href={APP_URL}
             external
           />
@@ -236,7 +246,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<PeopleOutlined />}
             title={t('home.cards.crewTitle')}
             description={t('home.cards.crewDescription')}
-            accent="v13"
+            accent="spark"
             href={APP_URL}
             external
           />
@@ -245,7 +255,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<DiscordIcon />}
             title={t('home.cards.discordTitle')}
             description={t('home.cards.discordDescription')}
-            accent="v13"
+            accent="info"
             href={DISCORD_INVITE_URL}
             external
             newTab
