@@ -9,6 +9,11 @@ PNG, verifies its public download checksum, and updates `previews.json` and
 `vp run design:publish` publishes already generated local PNGs without recapturing.
 Commit the HTML and updated links together.
 
+A full capture removes index entries for deleted or renamed HTML mockups, including
+when none remain. Subset captures preserve unrelated entries. `design:publish`
+also prunes obsolete links and ignores leftover PNGs without a current HTML source.
+The index is written once, after every upload succeeds; stored objects are retained.
+
 Add the variables from `.env.dev-artifacts.example` to the repository root's
 ignored `.env.local`, then fill in the dev bucket credentials. Existing process variables take precedence.
 These commands use only `DEV_*` storage variables, never production media credentials.
