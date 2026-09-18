@@ -19,7 +19,7 @@
 // bulb; the Live Activity keeps reading the narrower BLE-only value.
 
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
@@ -151,12 +151,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Soft warm glow, matching the in-drawer lightbulb's connected halo + shadow.
+  // iOS-only elevation: Android's native shadow on this fully-rounded view renders as a hexagon, not a circle.
   connected: {
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: Platform.OS === 'ios' ? 2 : 0,
   },
   pressed: {
     opacity: 0.6,
