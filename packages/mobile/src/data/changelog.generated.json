@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-17T11:45:47.285Z",
+  "generatedAt": "2026-09-18T09:33:37.590Z",
   "entries": [
+    {
+      "prNumber": 5537,
+      "category": "new",
+      "title": "A setter's new climbs from one day now arrive as a single card you swipe through",
+      "mergedAt": "2026-09-18T09:30:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5537",
+      "body": "Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen\nNew-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade"
+    },
     {
       "prNumber": 5529,
       "category": "new",

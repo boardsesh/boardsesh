@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-18
+
+### New
+
+- A setter's new climbs from one day now arrive as a single card you swipe through ([#5537](https://github.com/boardsesh/boardsesh/pull/5537))
+  Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen
+  New-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade
+
 ## 2026-09-17
 
 ### New
