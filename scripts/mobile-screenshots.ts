@@ -1423,14 +1423,15 @@ export function writeCapturedScreenshots(captureDir: string, outputDir: string):
   return saved;
 }
 
-function collectScreenshots(
+export function collectScreenshots(
   captureDir: string,
   platform: 'ios' | 'android',
   deviceName: string,
   appStoreLocales: readonly string[] | null,
   framed: boolean,
+  outputRoot = OUTPUT_ROOT,
 ): string[] {
-  const storeRoot = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform]);
+  const storeRoot = join(outputRoot, STORE_BY_PLATFORM[platform]);
   const saved: string[] = [];
   for (const storeLocale of appStoreLocales ?? ['']) {
     const shard = join(storeLocale, deviceSlug(deviceName));
@@ -1441,7 +1442,9 @@ function collectScreenshots(
     }
     const captionLocale = captionLocaleForStore(platform, storeLocale);
     const raw = join(storeRoot, 'raw-screenshots', shard);
-    writeCapturedScreenshots(captureDir, raw);
+    if (writeCapturedScreenshots(captureDir, raw).length === 0) {
+      throw new Error(`No PNG screenshots were captured in ${captureDir}; refusing to frame previous images.`);
+    }
     const status = runInherit(
       'vp',
       [
