@@ -105,6 +105,7 @@ export function useWorkoutPreview(
   const [plannedCount, setPlannedCount] = useState(0);
   const [plannedSlots, setPlannedSlots] = useState<readonly PlannedClimbSlot[]>([]);
   const [committedPreviewKey, setCommittedPreviewKeyState] = useState<string | null>(null);
+  const [committedBoardKey, setCommittedBoardKey] = useState<string | null>(null);
 
   // Mutable source of truth the async callbacks read/write without re-rendering.
   const dataRef = useRef<WorkoutPreviewData>(EMPTY_DATA());
@@ -129,9 +130,10 @@ export function useWorkoutPreview(
   const gradesOverrideRef = useRef(deps?.grades);
   gradesOverrideRef.current = deps?.grades;
 
-  const setCommittedPreviewKey = useCallback((nextPreviewKey: string | null) => {
+  const setCommittedPreviewKey = useCallback((nextPreviewKey: string | null, nextBoardKey: string | null = null) => {
     committedPreviewKeyRef.current = nextPreviewKey;
     setCommittedPreviewKeyState(nextPreviewKey);
+    setCommittedBoardKey(nextBoardKey);
   }, []);
 
   const buildCtx = useCallback((): PreviewFetchContext | null => {
@@ -180,6 +182,7 @@ export function useWorkoutPreview(
     }
 
     const nextPreviewKey = getPreviewGenerationKey(currentSelection, currentBoard, isAuthRef.current);
+    const nextBoardKey = getBoardGenerationKey(currentBoard);
     const token = ++genTokenRef.current;
     setStatus('loading'); // keep prior items mounted so the list doesn't jump
     try {
@@ -188,7 +191,7 @@ export function useWorkoutPreview(
       if (!ctx || token !== genTokenRef.current) return; // selection/board changed underneath
       if (plan.length === 0) {
         dataRef.current = EMPTY_DATA();
-        setCommittedPreviewKey(nextPreviewKey);
+        setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
         setItems([]);
         setPlannedCount(0);
         setPlannedSlots([]);
@@ -199,7 +202,7 @@ export function useWorkoutPreview(
       if (token !== genTokenRef.current) return; // superseded by a newer build
       const { items: nextItems, usedUuids } = selectItemsFromPools(plan, pools);
       dataRef.current = { items: nextItems, pools, usedUuids };
-      setCommittedPreviewKey(nextPreviewKey);
+      setCommittedPreviewKey(nextPreviewKey, nextBoardKey);
       setItems(nextItems);
       setPlannedCount(plan.length);
       setPlannedSlots(plan);
@@ -280,7 +283,10 @@ export function useWorkoutPreview(
     }
     return {
       status: hasActivePreviewRequest ? exposedStatus : 'idle',
-      items: hasActivePreviewRequest ? items : [],
+      // Rows may stay mounted while filters rebuild on the same board. A board
+      // switch must hide them synchronously: row artwork and stats already use
+      // the new board, before the debounce effect can replace the old climbs.
+      items: hasActivePreviewRequest && committedBoardKey === boardKey ? items : [],
       refreshingUuids,
       plannedCount: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedCount : 0,
       plannedSlots: hasActivePreviewRequest && isCommittedPreviewCurrent ? plannedSlots : [],
@@ -292,6 +298,7 @@ export function useWorkoutPreview(
     generationKey,
     boardKey,
     committedPreviewKey,
+    committedBoardKey,
     currentPreviewKey,
     status,
     items,
