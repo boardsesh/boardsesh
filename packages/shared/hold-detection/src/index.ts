@@ -26,6 +26,13 @@ export {
   unLetterbox,
 } from './letterbox';
 export { type MergeOptions, boxIou, mergeTiles, nms } from './nms';
+export {
+  MASK_UPSAMPLE,
+  OUTLINE_SIMPLIFY_TOLERANCE,
+  type MaskGrid,
+  type OutlineOptions,
+  maskToOutline,
+} from './outline';
 export { type DetectionRun, type RunDetectionOptions, runDetection } from './run-detection';
 export { DEFAULT_TILE_PLAN, type TileGrid, type TilePlan, type TilePlanOptions, planTiles, tileWindows } from './tiles';
 export type { Box, Detection, DetectionRuntime, HoldCandidate, RfDetrOutputs, RgbaImage, TileRect } from './types';
