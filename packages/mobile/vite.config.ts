@@ -21,6 +21,7 @@ export default defineConfig({
   },
   test: {
     name: 'mobile',
+    globalSetup: [fileURLToPath(new URL('./test/screenshot-fixture-setup.ts', import.meta.url))],
     globals: true,
     environment: 'node',
     alias: [

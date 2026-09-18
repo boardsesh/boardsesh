@@ -6,6 +6,7 @@ import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -105,7 +106,8 @@ export function useInfiniteSearchClimbs(
         input: { ...searchInput, page: pageParam },
       }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
-    getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
     placeholderData,
     enabled: enabled && (!input.onlyFollowedAuthors || !!userId),

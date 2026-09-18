@@ -110,6 +110,9 @@ packages/db/docker/tmp/
 
 # Generated design previews are published to the dev object store.
 docs/design/**/*.png
+
+# Backend screenshot recordings are published as pinned dev-storage snapshots.
+packages/mobile/screenshot-fixtures/
 .boardsesh/
 eng.traineddata
 

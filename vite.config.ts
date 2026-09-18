@@ -1058,6 +1058,29 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-backend.ts',
         cache: false,
       },
+      // Fold the per-shard fixture sets a recording fan-out produced into the
+      // single snapshot published to dev storage. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-fetch': {
+        command: 'tsx scripts/screenshot-fixtures-fetch.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-publish': {
+        command: 'tsx scripts/screenshot-fixtures-publish.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-merge': {
+        command: 'tsx scripts/screenshot-fixtures-merge.ts',
+        cache: false,
+      },
+      // Replace every climber but the recording account with a stable stand-in
+      // across an already-recorded set. The recorder does this itself now; this
+      // is the one-off for a set recorded before it did (and the `--check` a
+      // downloaded recording artifact should pass). See
+      // docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-pseudonymise': {
+        command: 'tsx scripts/screenshot-fixtures-pseudonymise.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,
@@ -1080,6 +1103,26 @@ export default defineConfig({
       },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
+        cache: false,
+      },
+      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
+      // shard against the stored baseline (scripts/compare-screenshots.ts).
+      'screenshot:compare': {
+        command: 'tsx scripts/compare-screenshots.ts',
+        cache: false,
+      },
+      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
+      // the compare above reads (scripts/screenshot-baseline.ts).
+      'screenshot:baseline': {
+        command: 'tsx scripts/screenshot-baseline.ts',
+        cache: false,
+      },
+      // Decides whether the probe's single pixel-compared shard should be
+      // overridden and the full 12-shard capture forced anyway, based on
+      // changed-file paths the probe shard itself can't see (locale-only or
+      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
+      'screenshot:probe-scope': {
+        command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
       'mobile:publish': {

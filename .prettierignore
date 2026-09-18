@@ -22,6 +22,12 @@ CHANGELOG.md
 # config (the CI PR-lint already skips `embedded/`).
 embedded/
 docs/embedded-architecture.md
+# Recorded screenshot fixtures (docs/mobile-screenshot-fixtures.md). The record
+# backend writes these files and `vp run mobile:screenshot-fixtures-merge`
+# rewrites the manifest; a formatting pass would put both permanently at odds
+# with what the next recording emits.
+packages/mobile/screenshot-fixtures/
+
 # Maestro flow yamls are consumed by the Maestro CLI and asserted VERBATIM by
 # scripts/__tests__/mobile-screenshots.test.ts (exact quote style included) —
 # a formatting pass that rewrites quotes breaks those tests.
