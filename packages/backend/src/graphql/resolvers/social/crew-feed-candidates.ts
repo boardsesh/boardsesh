@@ -102,6 +102,48 @@ function followedClimbsSelect(viewerId: string) {
   return setterClimbs.union(nativeClimbs).union(linkedClimbs);
 }
 
+/** One row per climb, the shape the feed used before it grouped. */
+export type CrewClimbRowCandidateRow = { sourceId: string; occurredAt: string };
+
+/**
+ * Candidates for a client that did NOT ask for groups.
+ *
+ * Deliberately the pre-grouping query rather than a fan-out of the grouped one.
+ * Expanding groups after the page was cut would return up to `perGroup × limit`
+ * cards for a `limit`-card request, and would emit a group's 08:00 climb ahead
+ * of a 09:00 session that sorted after the group's 10:00 head — the endpoint
+ * promises newest-first, so the legacy path has to paginate over climbs.
+ */
+export function buildCrewClimbRowCandidatesQuery({
+  viewerId,
+  snapshotAt,
+  before,
+  limit,
+}: {
+  viewerId: string;
+  snapshotAt: string;
+  before?: { occurredAt: string; id: string } | null;
+  limit: number;
+}) {
+  const followedClimbs = followedClimbsSelect(viewerId);
+  const rows = sql`
+    SELECT
+      ${boardClimbs.uuid} AS "sourceId",
+      ${isoUtc(crewPublicationTime)} AS "occurredAt"
+    FROM crew_followed_climbs AS ${sql.identifier(getTableName(boardClimbs))}
+    WHERE ${sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, viewerId)}
+      AND ${crewPublicationTime} >= ${snapshotAt}::timestamptz - interval '30 days'
+      AND ${crewPublicationTime} <= ${snapshotAt}::timestamptz
+      ${
+        before
+          ? sql`AND (${crewPublicationTime}, ('climb:' || ${boardClimbs.uuid}) COLLATE "C") < (${before.occurredAt}::timestamptz, ${before.id} COLLATE "C")`
+          : sql``
+      }
+    ORDER BY ${crewPublicationTime} DESC, ${boardClimbs.uuid} COLLATE "C" DESC
+    LIMIT ${limit + 1}`;
+  return sql`WITH crew_followed_climbs AS MATERIALIZED (${followedClimbs}) ${rows}`;
+}
+
 export function buildCrewClimbCandidatesQuery({
   viewerId,
   snapshotAt,

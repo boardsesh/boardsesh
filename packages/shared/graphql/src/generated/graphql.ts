@@ -65,6 +65,8 @@ export type ActivityFeedItem = {
   commentCount?: Maybe<Scalars['Int']['output']>;
   /** When this feed item was created (ISO 8601) */
   createdAt: Scalars['String']['output'];
+  /** Setter notes shown in the play drawer */
+  description?: Maybe<Scalars['String']['output']>;
   /** Difficulty rating */
   difficulty?: Maybe<Scalars['Int']['output']>;
   /** Human-readable difficulty name */
@@ -75,6 +77,8 @@ export type ActivityFeedItem = {
   entityType: SocialEntityType;
   /** Encoded hold frames for thumbnail */
   frames?: Maybe<Scalars['String']['output']>;
+  /** Authored playback pace (ms) for a multi-frame climb */
+  framesPace?: Maybe<Scalars['Int']['output']>;
   /** Grade name */
   gradeName?: Maybe<Scalars['String']['output']>;
   /** Feed item ID */
@@ -10169,6 +10173,8 @@ export type CrewClimbFieldsFragment = {
   layoutId?: number | null;
   setterUsername?: string | null;
   frames?: string | null;
+  description?: string | null;
+  framesPace?: number | null;
   angle?: number | null;
   difficultyName?: string | null;
   ascensionistCount?: number | null;
@@ -10210,6 +10216,8 @@ export type GetCrewFeedQuery = {
             layoutId?: number | null;
             setterUsername?: string | null;
             frames?: string | null;
+            description?: string | null;
+            framesPace?: number | null;
             angle?: number | null;
             difficultyName?: string | null;
             ascensionistCount?: number | null;
@@ -10244,6 +10252,8 @@ export type GetCrewFeedQuery = {
             layoutId?: number | null;
             setterUsername?: string | null;
             frames?: string | null;
+            description?: string | null;
+            framesPace?: number | null;
             angle?: number | null;
             difficultyName?: string | null;
             ascensionistCount?: number | null;
@@ -13664,6 +13674,8 @@ export const CrewClimbFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
           { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
           { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
           { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
           { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
           { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },
@@ -14524,6 +14536,8 @@ export const GetCrewFeedDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
           { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
           { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'description' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'framesPace' } },
           { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
           { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
           { kind: 'Field', name: { kind: 'Name', value: 'ascensionistCount' } },

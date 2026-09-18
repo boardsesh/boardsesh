@@ -181,6 +181,10 @@ export type ActivityFeedItem = {
   status?: string | null;
   angle?: number | null;
   frames?: string | null;
+  /** Setter notes; the drawer renders them under the board. */
+  description?: string | null;
+  /** Authored playback pace (ms) for a multi-frame climb. */
+  framesPace?: number | null;
   setterUsername?: string | null;
   commentBody?: string | null;
   isMirror?: boolean | null;

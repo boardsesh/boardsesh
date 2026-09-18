@@ -29,6 +29,11 @@ export function newClimbToClimb(item: ActivityFeedItem): Climb | null {
     difficulty_error: '',
     quality_average: item.qualityAverage == null ? '0' : String(item.qualityAverage),
     setter_username: item.setterUsername ?? '',
+    // Both came from the full climb the redirector used to fetch. Without them
+    // the drawer drops the setter's notes and plays a multi-frame climb at its
+    // 750ms default instead of the authored pace.
+    description: item.description,
+    framesPace: item.framesPace,
     stars: item.qualityAverage ?? 0,
     benchmark_difficulty: item.isBenchmark ? (item.difficultyName ?? null) : null,
     mirrored: item.isMirror ?? false,

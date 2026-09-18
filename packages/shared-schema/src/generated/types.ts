@@ -68,6 +68,8 @@ export type ActivityFeedItem = {
   commentCount?: Maybe<Scalars['Int']['output']>;
   /** When this feed item was created (ISO 8601) */
   createdAt: Scalars['String']['output'];
+  /** Setter notes shown in the play drawer */
+  description?: Maybe<Scalars['String']['output']>;
   /** Difficulty rating */
   difficulty?: Maybe<Scalars['Int']['output']>;
   /** Human-readable difficulty name */
@@ -78,6 +80,8 @@ export type ActivityFeedItem = {
   entityType: SocialEntityType;
   /** Encoded hold frames for thumbnail */
   frames?: Maybe<Scalars['String']['output']>;
+  /** Authored playback pace (ms) for a multi-frame climb */
+  framesPace?: Maybe<Scalars['Int']['output']>;
   /** Grade name */
   gradeName?: Maybe<Scalars['String']['output']>;
   /** Feed item ID */
@@ -10844,11 +10848,13 @@ export type ActivityFeedItemResolvers<
   commentBody?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   commentCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficultyName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   entityId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   entityType?: Resolver<ResolversTypes['SocialEntityType'], ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  framesPace?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   gradeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   isBenchmark?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;

@@ -68,11 +68,20 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
   // the profile rather than leave "See all" as a dead tap.
   const openSetter = useCallback(() => {
     if (setterUsername) {
-      router.push({ pathname: '/(tabs)/climbs/setter/[username]', params: { username: setterUsername } });
+      // Carry the group's board: the setter page filters by board, and without
+      // this it would filter by whatever board the viewer is on.
+      router.push({
+        pathname: '/(tabs)/climbs/setter/[username]',
+        params: {
+          username: setterUsername,
+          ...(lead?.boardType ? { boardType: lead.boardType } : {}),
+          ...(lead?.layoutId != null ? { layoutId: String(lead.layoutId) } : {}),
+        },
+      });
       return;
     }
     if (lead?.actorId) router.push({ pathname: '/users/[userId]', params: { userId: lead.actorId } });
-  }, [setterUsername, lead?.actorId, router]);
+  }, [setterUsername, lead?.actorId, lead?.boardType, lead?.layoutId, router]);
 
   const openClimb = useCallback(
     (entry: ActivityFeedItem) => {
