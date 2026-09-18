@@ -216,7 +216,7 @@ runs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: raw-ios-${{ inputs.locale }}-${{ inputs.device-slug }}
+        name: raw-ios-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
         path: app-stores/apple/raw-screenshots/**
         if-no-files-found: ignore
         retention-days: 7
