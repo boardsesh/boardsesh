@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
+import { Platform, Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -167,11 +167,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // iOS-only: Android's native `elevation` shadow on a fully-rounded small view
+  // (borderRadius = containerSize / 2) casts as a visible hexagon rather than a
+  // circle on real hardware. The amber `backgroundColor` halo already carries
+  // the "connected" look on Android, so the drop shadow adds nothing there
+  // worth the artifact.
   connected: {
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: Platform.OS === 'ios' ? 2 : 0,
   },
   pressed: {
     opacity: 0.6,

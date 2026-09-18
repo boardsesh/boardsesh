@@ -19,7 +19,7 @@
 // bulb; the Live Activity keeps reading the narrower BLE-only value.
 
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
+import { Platform, Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
@@ -152,11 +152,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   // Soft warm glow, matching the in-drawer lightbulb's connected halo + shadow.
+  // iOS-only: Android's native `elevation` shadow on a fully-rounded small view
+  // (borderRadius = size / 2) casts as a visible hexagon rather than a circle on
+  // real hardware. The amber `haloColor` background already carries the
+  // "connected" look on Android, so the drop shadow adds nothing there worth the
+  // artifact.
   connected: {
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: Platform.OS === 'ios' ? 2 : 0,
   },
   pressed: {
     opacity: 0.6,
