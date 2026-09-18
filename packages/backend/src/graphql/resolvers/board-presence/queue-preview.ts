@@ -90,14 +90,8 @@ export const boardQueuePreviewSubscriptions = {
           yield { boardQueuePreview: result.value };
         }
       } finally {
-        // graphql-ws can call `.return()` on this generator while the seed
-        // snapshot above is still being computed (client disconnects during
-        // setup). The queued return then completes at the seed `yield` —
-        // before the loop ever starts — so without this finally the eager
-        // iterator would never be closed and the pubsub callback + Redis
-        // channel subscription would leak permanently (anon-triggerable by
-        // reload churn). Closing here covers every exit path; `.return()` is
-        // idempotent, so a loop that already finished cleanly is unaffected.
+        // The lifetime wrapper closes immediately on disconnect, even during
+        // the seed lookup. Keep generator-exit cleanup too; return is idempotent.
         await eagerIterator.return?.(undefined);
       }
     }),

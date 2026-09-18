@@ -694,7 +694,7 @@ export const socialNotificationSubscriptions = {
       const asyncIterator = await lifetime.own(
         createAsyncIterator<NotificationEvent>((push) => {
           return pubsub.subscribeNotifications(userId, push);
-        }, 'notificationReceived'),
+        }, `notificationReceived:${userId}`),
       );
 
       for await (const event of asyncIterator) {

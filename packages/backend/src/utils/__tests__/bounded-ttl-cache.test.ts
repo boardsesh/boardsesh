@@ -30,6 +30,18 @@ describe('bounded TTL cache', () => {
     expect(cache.get('third')).toBe(3);
   });
 
+  it('skips payloads that cannot be serialized without failing the caller', () => {
+    const cache = new BoundedTtlCache<unknown>({ maxEntries: 10, maxBytes: 1000 });
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    expect(() => cache.set('circular', circular, 1000)).not.toThrow();
+    expect(() => cache.set('bigint', 1n, 1000)).not.toThrow();
+    expect(() => cache.set('undefined', undefined, 1000)).not.toThrow();
+    expect(cache.getStats()).toMatchObject({ entries: 0, serializedBytes: 0 });
+    cache.set('valid', { status: 'ok' }, 1000);
+    expect(cache.get('valid')).toEqual({ status: 'ok' });
+  });
+
   it('accounts for UTF-8 keys, replacements, and oversized payloads', () => {
     const cache = new BoundedTtlCache<string>({ maxEntries: 10, maxBytes: 12 });
     cache.set('é', 'abc', 1000); // 2-byte key + 5-byte JSON string

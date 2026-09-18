@@ -22,7 +22,15 @@ export class BoundedTtlCache<Payload> {
   set(key: string, payload: Payload, ttlMs: number): void {
     this.evictExpired();
     this.delete(key);
-    const bytes = Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(payload));
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(payload);
+    } catch {
+      // A cache miss is preferable to failing the caller for an uncacheable value.
+      return;
+    }
+    if (serialized === undefined) return;
+    const bytes = Buffer.byteLength(key) + Buffer.byteLength(serialized);
     if (bytes > this.limits.maxBytes || ttlMs <= 0) return;
     this.entries.set(key, { payload, bytes, expiresAt: Date.now() + ttlMs });
     this.bytes += bytes;
