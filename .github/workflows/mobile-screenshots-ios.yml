@@ -271,21 +271,16 @@ jobs:
       source_sha: ${{ steps.compute.outputs.source_sha }}
       shipped: ${{ steps.shipped.outputs.shipped }}
     steps:
-      # An automatic run has no human confirming the request, so a missing
-      # screenshot-account secret here is a misconfiguration, not intent — fail
-      # loudly before probe/ios-capture's fallback below would otherwise sign
-      # in as the shared test account. A dispatch keeps the fallback (a human
-      # asking for a capture by hand IS the intent); see the comment on
-      # SCREENSHOT_USER_EMAIL in the probe and ios-capture envs.
-      - name: Refuse an automatic capture with no screenshot credentials
-        if: github.event_name == 'workflow_run'
+      # Replay needs no credentials. Live captures use the dedicated test account.
+      - name: Require credentials for live recording
+        if: ${{ (inputs.fixtures || 'replay') != 'replay' }}
         env:
           SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL }}
           SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "$SCREENSHOT_USER_EMAIL" ] || [ -z "$SCREENSHOT_USER_PASSWORD" ]; then
-            echo "::error::SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD are not set; an automatic capture refuses to fall back to the documented test account"
+            echo "::error::SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD are not set; record/live capture requires the dedicated screenshot account"
             exit 1
           fi
 
