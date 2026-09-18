@@ -13,6 +13,10 @@ export type ErrorReportContext = {
   level?: 'fatal' | 'error' | 'warning' | 'info' | 'debug';
   tags?: Record<string, unknown>;
   extra?: Record<string, unknown>;
+  // Overrides Sentry's stack-based grouping. Use it when one call frame funnels
+  // unrelated failures (e.g. every GraphQL request), so each cause gets its own
+  // issue. Keep every entry low-cardinality: no ids, no user input.
+  fingerprint?: string[];
 };
 
 const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
@@ -127,6 +131,7 @@ type SentryScopeLike = {
   setLevel: (level: NonNullable<ErrorReportContext['level']>) => void;
   setTag: (key: string, value: string | number | boolean) => void;
   setExtra: (key: string, value: unknown) => void;
+  setFingerprint: (fingerprint: string[]) => void;
 };
 
 /**
@@ -143,6 +148,7 @@ export function applyErrorContextToScope(scope: SentryScopeLike, context?: Error
   for (const [key, value] of Object.entries(context?.extra ?? {})) {
     scope.setExtra(key, value);
   }
+  if (context?.fingerprint && context.fingerprint.length > 0) scope.setFingerprint(context.fingerprint);
 }
 
 /** Result of normalizing a captured value into something Sentry can render usefully. */
