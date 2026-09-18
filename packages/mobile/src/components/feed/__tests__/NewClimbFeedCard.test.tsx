@@ -211,15 +211,6 @@ describe('NewClimbFeedCard', () => {
     ]);
   });
 
-  it('adds a See all page when the group outran the cap, and it opens the setter', () => {
-    const { getByRole } = render(<NewClimbFeedCard item={group([climb, second], 12)} />);
-    fireEvent.click(getByRole('button', { name: 'authors.seeAllClimbs:12' }));
-    expect(mocks.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/climbs/setter/[username]',
-      params: { username: 'accountless' },
-    });
-  });
-
   it('leaves out the See all page when the card already holds every climb', () => {
     render(<NewClimbFeedCard item={group([climb, second])} />);
     expect(mocks.carousel).toHaveBeenCalledWith(
@@ -260,6 +251,26 @@ describe('NewClimbFeedCard', () => {
     render(<NewClimbFeedCard item={group([orphan, second], 12)} />);
     expect(mocks.carousel).toHaveBeenCalledWith(
       expect.not.arrayContaining([expect.objectContaining({ kind: 'see-all' })]),
+    );
+  });
+
+  it('sends See all to the group board, not the board the viewer happens to be on', () => {
+    const { getByRole } = render(<NewClimbFeedCard item={group([climb, second], 12)} />);
+    fireEvent.click(getByRole('button', { name: 'authors.seeAllClimbs:12' }));
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/setter/[username]',
+      params: { username: 'accountless', boardType: 'woods', layoutId: '1' },
+    });
+  });
+
+  it('carries the setter notes and playback pace into the drawer', () => {
+    const noted = { description: 'Start matched, no heel', framesPace: 1200 };
+    const { getByRole } = render(<NewClimbFeedCard item={single(noted)} />);
+    fireEvent.click(getByRole('button', { name: /Fresh holds/ }));
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining(noted) }),
+      expect.anything(),
+      { preview: true },
     );
   });
 

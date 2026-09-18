@@ -80,6 +80,10 @@ describe('Crew feed', () => {
       qualityAverage: 4.5,
       benchmarkDifficulty: 21,
     });
+    await db
+      .update(boardClimbs)
+      .set({ description: 'Start matched, no heel', framesPace: 1200 })
+      .where(eq(boardClimbs.uuid, 'crew-native'));
     await db.insert(boardseshTicks).values({
       uuid: 'crew-tick',
       userId: creatorId,
@@ -282,6 +286,14 @@ describe('Crew feed', () => {
           ...climb,
         })),
       );
+      // A zero benchmark difficulty, which imports use interchangeably with NULL
+      // to mean "not a benchmark". crew-pair-1 is the group's newest climb.
+      await db.insert(boardClimbStats).values({
+        boardType: 'kilter',
+        climbUuid: 'crew-pair-1',
+        angle: 40,
+        benchmarkDifficulty: 0,
+      });
     });
 
     it('folds one setter day into a single card, newest climb first', async () => {
@@ -340,8 +352,52 @@ describe('Crew feed', () => {
       const pairCards = legacy.items.filter((item) => item.id.startsWith('climb:crew-pair-'));
       expect(pairCards.map((item) => item.id).sort()).toEqual(['climb:crew-pair-0', 'climb:crew-pair-1']);
       expect(pairCards.every((item) => item.__typename === 'CrewClimbItem' && item.climb != null)).toBe(true);
-      // Still capped, so one setter cannot flood an old client either.
-      expect(legacy.items.filter((item) => item.id.startsWith('climb:crew-prolific-'))).toHaveLength(10);
+      // Uncapped: an unasked client pages over climbs, so it sees exactly what
+      // it sees today rather than silently losing the group's tail.
+      expect(legacy.items.filter((item) => item.id.startsWith('climb:crew-prolific-'))).toHaveLength(12);
+    });
+
+    it('paginates an unasked client over climbs, newest first and within the limit', async () => {
+      // Expanding groups after the page cut would return up to ten cards per
+      // group for a limit-card request, and would emit a group's older climbs
+      // ahead of a session that sorted between them.
+      const page = await crewFeedQueries.crewFeed(null, { input: { limit: 5 } }, ctx);
+      expect(page.items.length).toBeLessThanOrEqual(5);
+      const times = page.items.map((item) => item.occurredAt);
+      expect([...times].sort().reverse()).toEqual(times);
+      expect(page.items.every((item) => item.__typename !== 'CrewClimbGroupItem')).toBe(true);
+
+      // And the cursor still walks every climb exactly once.
+      const seen = new Set<string>();
+      let cursor = page.cursor;
+      for (const item of page.items) seen.add(item.id);
+      for (let hop = 0; hop < 12 && cursor; hop += 1) {
+        const next = await crewFeedQueries.crewFeed(null, { input: { limit: 5, cursor } }, ctx);
+        expect(next.items.length).toBeLessThanOrEqual(5);
+        for (const item of next.items) {
+          expect(seen.has(item.id)).toBe(false);
+          seen.add(item.id);
+        }
+        cursor = next.hasMore ? next.cursor : null;
+      }
+      expect([...seen].filter((id) => id.startsWith('climb:crew-prolific-'))).toHaveLength(12);
+    });
+
+    it('carries the setter notes and playback pace the redirector used to fetch', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
+      const lone = feed.items.find((item) => item.id === groupId('kilter', 'crew-native-setter', nativeAt));
+      expect(lone?.__typename === 'CrewClimbItem' && lone.climb).toMatchObject({
+        description: 'Start matched, no heel',
+        framesPace: 1200,
+      });
+    });
+
+    it('treats a zero benchmark difficulty as not a benchmark', async () => {
+      const feed = await crewFeedQueries.crewFeed(null, { input: { limit: 50, groupClimbs: true } }, ctx);
+      const pair = feed.items.find((item) => item.id === groupId('kilter', 'crew-pair', groupedAt));
+      // crew-pair-1 carries benchmark_difficulty 0, which imports use to mean
+      // "not a benchmark" exactly as NULL does.
+      expect(pair?.__typename === 'CrewClimbGroupItem' && pair.climbs[0].isBenchmark).toBe(false);
     });
 
     it('carries real ascents and stars so the drawer does not show zeros', async () => {

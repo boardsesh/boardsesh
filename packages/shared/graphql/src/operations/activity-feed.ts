@@ -187,6 +187,8 @@ export const CREW_CLIMB_FIELDS = gql`
     layoutId
     setterUsername
     frames
+    description
+    framesPace
     angle
     difficultyName
     ascensionistCount

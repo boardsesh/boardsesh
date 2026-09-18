@@ -26,10 +26,23 @@ import { setterPlaylistReturnTo } from '../../../../src/lib/boards/board-return-
 const PLACEHOLDER_BOARD = { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 };
 
 export default function SetterPlaylist() {
-  const { username } = useLocalSearchParams<{ username: string }>();
+  // `boardType`/`layoutId` are optional and name the board the CALLER was
+  // looking at. Without them this resolves against the viewer's active board,
+  // so arriving from a card for a setter on someone else's wall would filter
+  // their climbs to a board they never set on — an empty list, with the climbs
+  // the caller was trying to reach nowhere in it.
+  const { username, boardType, layoutId } = useLocalSearchParams<{
+    username: string;
+    boardType?: string;
+    layoutId?: string;
+  }>();
   const { t } = useTranslation('climbs');
   const router = useRouter();
-  const { renderBoard } = usePlaylistRenderBoard(null);
+  const sourceBoard = useMemo(
+    () => (boardType ? { boardType, layoutId: layoutId ? Number(layoutId) : null } : null),
+    [boardType, layoutId],
+  );
+  const { renderBoard } = usePlaylistRenderBoard(sourceBoard);
   const input = useMemo(() => setterPlaylistInput(username, renderBoard ?? PLACEHOLDER_BOARD), [username, renderBoard]);
   const query = useInfiniteSearchClimbs(input, !!renderBoard && !!username);
   const count = useSearchClimbsCount(input, !!renderBoard && !!username);

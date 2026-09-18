@@ -411,6 +411,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     angle: Int
     "Encoded hold frames for thumbnail"
     frames: String
+    "Setter notes shown in the play drawer"
+    description: String
+    "Authored playback pace (ms) for a multi-frame climb"
+    framesPace: Int
     "Setter username"
     setterUsername: String
     "Comment body preview"

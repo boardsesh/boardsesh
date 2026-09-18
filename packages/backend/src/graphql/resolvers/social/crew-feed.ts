@@ -19,8 +19,10 @@ import { getSessionFeed } from './session-feed';
 import { decodeCrewCursor, encodeCrewCursor, selectCrewCandidates, type CrewCandidate } from './crew-feed-pagination';
 import {
   buildCrewClimbCandidatesQuery,
+  buildCrewClimbRowCandidatesQuery,
   buildCrewGroupClimbsQuery,
   type CrewClimbCandidateRow,
+  type CrewClimbRowCandidateRow,
   type CrewClimbGroupKey,
   type CrewGroupClimbRow,
 } from './crew-feed-candidates';
@@ -144,11 +146,16 @@ async function enrichClimbs(timeById: Map<string, string>, viewerId: string): Pr
         }),
         setterUsername: climb.setterUsername,
         frames: climb.frames,
+        // Both were on the full climb the redirector used to fetch: the setter's
+        // notes render in the drawer, and framesPace is the authored playback
+        // speed for a multi-frame climb (the engine defaults to 750ms without it).
+        description: climb.description,
+        framesPace: climb.framesPace,
         angle,
         difficultyName,
         ascensionistCount: stats.ascensionistCount,
         qualityAverage: stats.qualityAverage,
-        isBenchmark: stats.benchmarkDifficulty != null,
+        isBenchmark: (stats.benchmarkDifficulty ?? 0) > 0,
         isNoMatch: resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
         createdAt: timeById.get(climb.uuid)!,
       },
@@ -196,37 +203,24 @@ async function loadGroupClimbs(
 }
 
 /**
- * The feed cards for a group's climbs.
+ * The feed cards for one group, for a client that ASKED for groups.
  *
- * `grouped` is opt-in and OFF by default, because a client that predates
- * `CrewClimbGroupItem` does not merely fail to render one — it dies on it. Its
- * query has no fragment for the member, so the item arrives as a bare
- * `__typename`; its `renderItem` is a two-way branch that falls through to the
- * session card and reads `item.session.socialEntityType`, which throws inside
- * the feed list and takes the whole Home tab down with the route's error
- * boundary. Every store build that has not taken the OTA yet is such a client.
- *
- * So an unasked client gets one `CrewClimbItem` per climb — exactly the shape it
- * already renders. It sees at most the group's ten newest rather than all of
- * them, which is a strictly smaller flood than it gets today; the rest stay
- * reachable from the setter's page.
+ * Grouping is opt-in because a client that predates `CrewClimbGroupItem` does
+ * not merely fail to render one — it dies on it. Its query has no fragment for
+ * the member, so the item arrives as a bare `__typename`; its `renderItem` is a
+ * two-way branch that falls through to the session card and reads
+ * `item.session.socialEntityType`, which throws inside the feed list and takes
+ * the whole Home tab down with the route's error boundary. Every store build
+ * that has not taken the OTA yet is such a client, and they page over climbs
+ * through `buildCrewClimbRowCandidatesQuery` instead of coming through here.
  */
 function toCrewClimbCards(
   id: string,
   occurredAt: string,
   climbs: ActivityFeedItem[],
   climbCount: number,
-  grouped: boolean,
 ): CrewFeedItem[] {
   if (climbs.length === 0) return [];
-  if (!grouped) {
-    return climbs.map((climb) => ({
-      __typename: 'CrewClimbItem',
-      id: `climb:${climb.climbUuid}`,
-      occurredAt: climb.createdAt,
-      climb,
-    }));
-  }
   if (climbs.length === 1 && climbCount === 1) {
     return [{ __typename: 'CrewClimbItem', id, occurredAt, climb: climbs[0] }];
   }
@@ -253,17 +247,36 @@ export const crewFeedQueries = {
     const zone = await resolveTimeZone(timeZone);
     const before = decodeCrewCursor(cursor, viewerId);
     const snapshotAt = before?.snapshotAt ?? new Date().toISOString();
+    // Two candidate shapes, because the page has to be cut over whatever the
+    // client will actually be handed: groups for a grouped client, climbs for a
+    // legacy one. Expanding groups after the cut would break both `limit` and
+    // the newest-first order the endpoint promises.
     const candidateResult = await withSerialPlan(dbRead, (tx) =>
-      tx.execute(buildCrewClimbCandidatesQuery({ viewerId, snapshotAt, before, limit, timeZone: zone })),
+      tx.execute(
+        grouped
+          ? buildCrewClimbCandidatesQuery({ viewerId, snapshotAt, before, limit, timeZone: zone })
+          : buildCrewClimbRowCandidatesQuery({ viewerId, snapshotAt, before, limit }),
+      ),
     );
-    const rows = rowsFromResult<CrewClimbCandidateRow>(candidateResult);
-    const groupsById = new Map(rows.map((row) => [row.groupId, row]));
-    const climbCandidates: CrewCandidate[] = rows.map((row) => ({
-      sourceId: row.groupId,
-      occurredAt: row.occurredAt,
-      kind: 'climb',
-      id: row.groupId,
-    }));
+    const groupsById = new Map<string, CrewClimbCandidateRow>();
+    let climbCandidates: CrewCandidate[];
+    if (grouped) {
+      const rows = rowsFromResult<CrewClimbCandidateRow>(candidateResult);
+      for (const row of rows) groupsById.set(row.groupId, row);
+      climbCandidates = rows.map((row) => ({
+        sourceId: row.groupId,
+        occurredAt: row.occurredAt,
+        kind: 'climb',
+        id: row.groupId,
+      }));
+    } else {
+      climbCandidates = rowsFromResult<CrewClimbRowCandidateRow>(candidateResult).map((row) => ({
+        sourceId: row.sourceId,
+        occurredAt: row.occurredAt,
+        kind: 'climb',
+        id: `climb:${row.sourceId}`,
+      }));
+    }
     let selection: ReturnType<typeof selectCrewCandidates> = { selected: [], hasMore: false };
     const sessionPage = await getSessionFeed({ followingOnly: true, includeDailyHighlights: true, limit }, ctx, {
       snapshotAt,
@@ -290,22 +303,33 @@ export const crewFeedQueries = {
         return sessionRows.filter((row) => selectedIds.has(row.session_id));
       },
     });
-    const selectedGroups = selection.selected.flatMap((candidate) => {
-      if (candidate.kind !== 'climb') return [];
+    const selectedClimbCandidates = selection.selected.filter((candidate) => candidate.kind === 'climb');
+    const selectedGroups = selectedClimbCandidates.flatMap((candidate) => {
       const group = groupsById.get(candidate.sourceId);
       return group ? [group] : [];
     });
-    const groupedClimbs = await loadGroupClimbs(selectedGroups, viewerId, snapshotAt, zone);
+    const groupedClimbs = grouped ? await loadGroupClimbs(selectedGroups, viewerId, snapshotAt, zone) : new Map();
+    // The legacy path enriches the selected climbs directly; `occurredAt` on the
+    // candidate is already the normalised publication instant.
+    const looseClimbs = grouped
+      ? new Map<string, ActivityFeedItem>()
+      : await enrichClimbs(
+          new Map(selectedClimbCandidates.map((candidate) => [candidate.sourceId, candidate.occurredAt])),
+          viewerId,
+        );
     const sessions = new Map(sessionPage.sessions.map((session) => [session.sessionId, session]));
     const items: CrewFeedItem[] = [];
     for (const candidate of selection.selected) {
       const { id, occurredAt } = candidate;
       if (candidate.kind === 'climb') {
+        if (!grouped) {
+          const climb = looseClimbs.get(candidate.sourceId);
+          if (climb) items.push({ __typename: 'CrewClimbItem', id, occurredAt, climb });
+          continue;
+        }
         const group = groupsById.get(candidate.sourceId);
         if (!group) continue;
-        items.push(
-          ...toCrewClimbCards(id, occurredAt, groupedClimbs.get(groupKeyOf(group)) ?? [], group.climbCount, grouped),
-        );
+        items.push(...toCrewClimbCards(id, occurredAt, groupedClimbs.get(groupKeyOf(group)) ?? [], group.climbCount));
       } else {
         const session = sessions.get(candidate.sourceId);
         if (session) items.push({ __typename: 'CrewSessionItem', id, occurredAt, session });
