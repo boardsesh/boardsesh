@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   boardClimbAliases,
   boardClimbs,
@@ -185,7 +185,10 @@ export async function importKilterDisplays(
           setter: climb.setter,
           grade: climbsByAngle.get(`${climbUuid}:${display.angle}`)?.grade ?? null,
         })
-        .onConflictDoNothing({ target: [boardClimbEvents.source, boardClimbEvents.externalOccurrenceKey] })
+        .onConflictDoNothing({
+          target: [boardClimbEvents.source, boardClimbEvents.externalOccurrenceKey],
+          where: isNotNull(boardClimbEvents.externalOccurrenceKey),
+        })
         .returning({ id: boardClimbEvents.id });
       return rows.length > 0;
     });

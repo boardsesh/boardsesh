@@ -342,6 +342,85 @@ describe('Kilter history integration', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('releases every operation on a socket while preserving another connected viewer', async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(fetchKilterLiveHistory).mockImplementation((_token, _wall, signal) => {
+      requestSignal = signal;
+      return new Promise((resolve) => signal?.addEventListener('abort', () => resolve([]), { once: true }));
+    });
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'shared-socket');
+    sync.watch(boardId, linkedUser, 'shared-socket');
+    const stopOther = sync.watch(boardId, linkedUser, 'other-socket');
+    await vi.waitFor(async () => expect(await publisher.zcard(`kilter-live:${boardId}:viewers`)).toBe(3));
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+
+    sync.releaseConnection('shared-socket');
+    sync.releaseConnection('shared-socket');
+    await vi.waitFor(async () => expect(await publisher.zcard(`kilter-live:${boardId}:viewers`)).toBe(1));
+    expect(requestSignal?.aborted).toBe(false);
+    stopOther();
+    await vi.waitFor(() => expect(requestSignal?.aborted).toBe(true));
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:owner`)).toBeNull());
+  });
+
+  it('releases a socket across all watched boards', async () => {
+    const [secondBoard] = await db
+      .insert(schema.userBoards)
+      .values({
+        uuid: randomUUID(),
+        slug: randomUUID(),
+        name: 'Another board',
+        ownerId: linkedUser,
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+      })
+      .returning();
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'shared-socket');
+    sync.watch(secondBoard.id, linkedUser, 'shared-socket');
+    try {
+      for (const watchedBoardId of [boardId, secondBoard.id]) {
+        await vi.waitFor(async () => expect(await publisher.zcard(`kilter-live:${watchedBoardId}:viewers`)).toBe(1));
+        await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${watchedBoardId}:next`)).not.toBeNull());
+      }
+      sync.releaseConnection('shared-socket');
+      for (const watchedBoardId of [boardId, secondBoard.id]) {
+        await vi.waitFor(async () => expect(await publisher.zcard(`kilter-live:${watchedBoardId}:viewers`)).toBe(0));
+        await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${watchedBoardId}:owner`)).toBeNull());
+      }
+    } finally {
+      await sync.shutdown();
+      await publisher.del(
+        `kilter-live:${secondBoard.id}:viewers`,
+        `kilter-live:${secondBoard.id}:owner`,
+        `kilter-live:${secondBoard.id}:next`,
+      );
+    }
+  });
+
+  it('reacts to remote credential broadcasts without waiting for the heartbeat', async () => {
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(fetchKilterLiveHistory).mockImplementation((_token, _wall, signal) => {
+      requestSignal = signal;
+      return new Promise((resolve) => signal?.addEventListener('abort', () => resolve([]), { once: true }));
+    });
+    const owner = poller();
+    const remote = poller();
+    owner.watch(boardId, linkedUser, 'owner-socket');
+    await vi.waitFor(() => expect(fetchKilterLiveHistory).toHaveBeenCalledTimes(1));
+    await db.delete(schema.auroraCredentials).where(eq(schema.auroraCredentials.userId, linkedUser));
+
+    // The remote instance has no local watchers: only its Redis broadcast can
+    // wake the owner before its 15-second heartbeat.
+    await remote.credentialsChanged();
+    await vi.waitFor(() => expect(requestSignal?.aborted).toBe(true), { timeout: 2000 });
+    await vi.waitFor(async () => expect(await publisher.get(`kilter-live:${boardId}:owner`)).toBeNull());
+    expect((await readBoardHistoryPage(boardId)).entries).toEqual([]);
+  });
+
   it('cleans up a failed Redis control subscription and retries successfully', async () => {
     const baselineListeners = subscriber.listenerCount('message');
     vi.spyOn(subscriber, 'subscribe').mockRejectedValueOnce(new Error('test subscribe failure'));

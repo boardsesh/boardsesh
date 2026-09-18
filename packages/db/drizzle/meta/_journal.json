@@ -1632,6 +1632,13 @@
       "when": 1789734585016,
       "tag": "0232_repair_moonboard_snapped_tick_angles",
       "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1789732517021,
+      "tag": "0233_kilter_history_indexes",
+      "breakpoints": true
     }
   ]
 }

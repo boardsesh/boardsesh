@@ -165,10 +165,12 @@ BEGIN
 
   -- The legacy Aurora tables exist only as empty stubs during the build, so the
   -- journal can apply to a bare cluster; 0038 must have dropped every one.
+  -- The live wall mapping added in 0232 is current application data.
   IF EXISTS (
     SELECT 1 FROM pg_tables
     WHERE schemaname = 'public'
       AND (tablename LIKE 'kilter\_%' OR tablename LIKE 'tension\_%')
+      AND tablename <> 'kilter_wall_sources'
   ) THEN
     RAISE EXCEPTION 'legacy kilter_*/tension_* tables survived into the image';
   END IF;

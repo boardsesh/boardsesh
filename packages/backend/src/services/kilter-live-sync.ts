@@ -86,7 +86,8 @@ export class KilterLiveSync {
 
   releaseConnection(connectionId: string): void {
     for (const [boardId, board] of this.boards) {
-      for (const [token, viewer] of board.viewers) {
+      const viewersToRemove = [...board.viewers];
+      for (const [token, viewer] of viewersToRemove) {
         if (viewer.connectionId === connectionId) void this.removeViewer(boardId, token);
       }
     }

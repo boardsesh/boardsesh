@@ -1,4 +1,5 @@
 import { pgTable, text, integer, bigint, bigserial, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { isNotNull, sql } from 'drizzle-orm';
 import { users } from '../auth/users';
 import { boardSessions } from './sessions';
 import { userBoards } from './boards';
@@ -57,11 +58,13 @@ export const boardClimbEvents = pgTable(
     boardConfirmedAtIdx: index('board_climb_events_board_confirmed_at_idx').on(table.boardId, table.confirmedAt),
     // Keyset paging + double-flush idempotency (onConflictDoNothing target).
     boardSeqUnique: uniqueIndex('board_climb_events_board_seq_unique').on(table.boardId, table.seq),
-    externalOccurrenceUnique: uniqueIndex('board_climb_events_external_occurrence_unique').on(
-      table.source,
-      table.externalOccurrenceKey,
-    ),
+    externalOccurrenceUnique: uniqueIndex('board_climb_events_external_occurrence_unique')
+      .on(table.source, table.externalOccurrenceKey)
+      .where(isNotNull(table.externalOccurrenceKey)),
     chronologicalIdx: index('board_climb_events_chronological_idx').on(table.boardId, table.confirmedAt, table.seq),
+    importedChronologicalIdx: index('board_climb_events_kilter_chronological_idx')
+      .on(table.boardId, table.confirmedAt, table.seq)
+      .where(sql`${table.source} = 'kilter'`),
     // Session recap: every climb on the wall during a session.
     sessionIdx: index('board_climb_events_session_idx').on(table.sessionId),
     // "How often was this climb on this wall" (future leaderboards).
