@@ -15,7 +15,9 @@ export function newClimbToClimb(item: ActivityFeedItem): Climb | null {
   if (!item.frames || !item.climbUuid) return null;
   return {
     uuid: item.climbUuid,
-    name: item.climbName ?? item.climbUuid,
+    // `||`, not `??`: a legacy import can carry an empty name, and a blank
+    // drawer title is worse than the uuid.
+    name: item.climbName || item.climbUuid,
     frames: item.frames,
     angle: item.angle ?? 0,
     // Carried from the feed, not zeroed. The drawer does NOT refetch a preview

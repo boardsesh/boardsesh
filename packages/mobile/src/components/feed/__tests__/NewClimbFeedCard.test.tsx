@@ -263,6 +263,16 @@ describe('NewClimbFeedCard', () => {
     );
   });
 
+  it('falls back to the uuid when a legacy import carries an empty name', () => {
+    const { getByRole } = render(<NewClimbFeedCard item={single({ climbName: '' })} />);
+    fireEvent.click(getByRole('button', { name: /40/ }));
+    expect(mocks.open).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ name: 'new' }) }),
+      expect.anything(),
+      { preview: true },
+    );
+  });
+
   it('carries the feed ascents and stars into the drawer instead of zeros', () => {
     const { getByRole } = render(<NewClimbFeedCard item={single({ ascensionistCount: 7, qualityAverage: 4.5 })} />);
     fireEvent.click(getByRole('button', { name: /Fresh holds/ }));
