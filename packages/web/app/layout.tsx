@@ -72,9 +72,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // e2e/debug affordance.
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
-      {/* suppressHydrationWarning: browser extensions (Grammarly, 1Password)
-          inject attributes onto <body> at runtime — unrelated to the theme swap
-          on <html>. */}
+      {/* suppressHydrationWarning on both elements: browser extensions
+          (Grammarly, 1Password) stamp attributes onto <html> and <body> at
+          runtime. Nothing in the app mutates either any more — the pre-paint
+          theme script went with the light scheme. */}
       <body suppressHydrationWarning>
         <Suspense fallback={null}>
           <AnalyticsClient />
