@@ -11,6 +11,11 @@ import { getHttpClient } from '../client';
  * Resolved once at module load: Hermes ships a partial Intl, so this is wrapped
  * — a device whose zone can't be read falls back to the server's own UTC
  * default rather than taking the feed down with it.
+ *
+ * Once, deliberately. A climber who crosses a zone mid-session keeps the zone
+ * the app started in until it restarts, which is the trade for not re-reading
+ * Intl on every render or wiring a foreground listener. The zone is part of the
+ * query key, so the restart re-fetches rather than serving the old grouping.
  */
 function deviceTimeZone(): string | undefined {
   try {
