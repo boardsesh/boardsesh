@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The home page uses the whole screen now, instead of a narrow column of cards down the middle. ([#5561](https://github.com/boardsesh/boardsesh/pull/5561))
 - Switch boards without briefly seeing your previous board’s workout climbs. ([#5330](https://github.com/boardsesh/boardsesh/pull/5330))
 - The gym finder and gym pages now read properly in the dark: cards you can actually see, a filter row that shows what you picked, and a real answer when a search comes up empty. ([#5563](https://github.com/boardsesh/boardsesh/pull/5563))
 - The Support page now shows you how to chip in without scrolling, and lists the ways to help that cost nothing. ([#5557](https://github.com/boardsesh/boardsesh/pull/5557))
@@ -17,6 +18,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- MoonBoard sends affected by the angle bug now show the angle you climbed. ([#5554](https://github.com/boardsesh/boardsesh/pull/5554))
 - Fixed a glitchy hexagon-shaped shadow around the lit bulb icon on Android when connected to a board ([#5538](https://github.com/boardsesh/boardsesh/pull/5538))
 - MoonBoard sends now stay at the angle you climbed. ([#5541](https://github.com/boardsesh/boardsesh/pull/5541))
 
