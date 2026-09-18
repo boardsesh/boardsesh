@@ -5,6 +5,13 @@ import MuiLink from '@mui/material/Link';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
+import {
+  DIRECTORY_PAGE_SIZE,
+  buildDirectoryHref,
+  paginationWindow,
+  type DirectoryFacet,
+  type DirectoryQuery,
+} from './directory-facets';
 
 /**
  * Every page control is the same pill: a surface fill and the one hairline.
@@ -25,13 +32,6 @@ const PAGE_PILL = {
   fontWeight: themeTokens.typography.fontWeight.semibold,
   '&:hover': { backgroundColor: 'var(--semantic-surface-elevated)', borderColor: 'var(--color-primary)' },
 } as const;
-import {
-  DIRECTORY_PAGE_SIZE,
-  buildDirectoryHref,
-  paginationWindow,
-  type DirectoryFacet,
-  type DirectoryQuery,
-} from './directory-facets';
 
 type GymDirectoryPaginationProps = {
   facet: DirectoryFacet;

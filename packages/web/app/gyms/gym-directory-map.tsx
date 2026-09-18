@@ -32,25 +32,6 @@ type GymDirectoryMapProps = {
   locale: Locale;
 };
 
-/**
- * THE ONE PLACE THE REPO'S `style`-PROP BAN CANNOT APPLY.
- *
- * `divIcon` and `bindPopup` take an HTML **string**, not a node — Leaflet parses
- * it and owns the element from then on. There is no MUI component to reach for
- * and no className that survives, so the markup below is built with inline
- * `style=` attributes by construction. What the rule still demands, and what
- * this file now honours, is that no literal colour survives: every value is a
- * CSS custom property from `app/components/index.css`, and they resolve because
- * Leaflet appends the marker inside the map container, which inherits `:root`.
- *
- * The rings stay LIGHT (`--neutral-900`), not the page ground. OSM's standard
- * raster tiles are a light basemap, so a dark ring around a violet pin would
- * disappear into the streets it sits on. Tuning the markers for the dark page
- * is the right move the day the tile source becomes a dark one; until then the
- * marker is tuned for the surface it is actually drawn on, and only the hex
- * literals are gone.
- */
-
 /** Leaflet popups take an HTML string, so every interpolated value is escaped. */
 function escapeHtml(value: string): string {
   return value
@@ -241,6 +222,25 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
 }
 
 type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * THE ONE PLACE THE REPO'S `style`-PROP BAN CANNOT APPLY.
+ *
+ * `divIcon` and `bindPopup` take an HTML **string**, not a node — Leaflet parses
+ * it and owns the element from then on. There is no MUI component to reach for
+ * and no className that survives, so the markup below is built with inline
+ * `style=` attributes by construction. What the rule still demands, and what
+ * this file now honours, is that no literal colour survives: every value is a
+ * CSS custom property from `app/components/index.css`, and they resolve because
+ * Leaflet appends the marker inside the map container, which inherits `:root`.
+ *
+ * The rings stay LIGHT (`--neutral-900`), not the page ground. OSM's standard
+ * raster tiles are a light basemap, so a dark ring around a violet pin would
+ * disappear into the streets it sits on. Tuning the markers for the dark page
+ * is the right move the day the tile source becomes a dark one; until then the
+ * marker is tuned for the surface it is actually drawn on, and only the hex
+ * literals are gone.
+ */
 
 function buildMarker(
   leaflet: typeof LeafletNamespace,
