@@ -49,6 +49,22 @@ export interface OutlineOptions {
   upsample?: number;
   /** Simplification tolerance in upsampled pixels. */
   tolerance?: number;
+  /**
+   * The tile's real pixel size, when it is not square.
+   *
+   * The mask grid is square because the model's input is square, but a tile is
+   * not: `tile_boxes` cuts `round(W / cols * (1 + overlap))` by the same in the
+   * other axis, so a 1024x768 photo tiled 2x2 gives 589x442 tiles that the
+   * `stretch` letterbox squashes into 312x312. Boxes survive that because they
+   * are multiplied back by the tile's size; a ring would not, because it is
+   * normalised by ONE radius while its two axes were scaled differently. On a
+   * 4:3 photo that is a 1.33x distortion — every round hold comes out an ellipse.
+   *
+   * Pass the tile's pixel dimensions and the ring is un-stretched before it is
+   * normalised. Omit them for a square tile, where it is a no-op.
+   */
+  tileWidth?: number;
+  tileHeight?: number;
 }
 
 /**
@@ -97,8 +113,15 @@ export function maskToOutline(mask: MaskGrid, box: Box, options: OutlineOptions 
   if (simplified.length < MIN_RING_POINTS) return undefined;
 
   // Out of window pixels, into units of r about the box centre.
-  const boxWidth = Math.max(0, box[2] - box[0]) * width;
-  const boxHeight = Math.max(0, box[3] - box[1]) * height;
+  //
+  // Everything is converted to TILE pixels first. Doing the normalisation in the
+  // square mask frame would divide two differently-scaled axes by one radius,
+  // which is the ellipse described on `tileWidth`.
+  const scaleX = options.tileWidth && options.tileWidth > 0 ? options.tileWidth / width : 1;
+  const scaleY = options.tileHeight && options.tileHeight > 0 ? options.tileHeight / height : 1;
+
+  const boxWidth = Math.max(0, box[2] - box[0]) * width * scaleX;
+  const boxHeight = Math.max(0, box[3] - box[1]) * height * scaleY;
   const radius = Math.sqrt((boxWidth * boxHeight) / Math.PI);
   if (!(radius > 0)) return undefined;
   const originX = ((box[0] + box[2]) / 2) * width - left;
@@ -106,7 +129,7 @@ export function maskToOutline(mask: MaskGrid, box: Box, options: OutlineOptions 
 
   const ring: number[] = [];
   for (const [x, y] of simplified) {
-    ring.push(round4((x - originX) / radius), round4((y - originY) / radius));
+    ring.push(round4(((x - originX) * scaleX) / radius), round4(((y - originY) * scaleY) / radius));
   }
   return ring;
 }

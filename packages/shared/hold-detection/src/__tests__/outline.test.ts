@@ -145,6 +145,47 @@ describe('maskToOutline', () => {
     expect(areaOf(ring as number[])).toBeLessThan(8);
   });
 
+  it('un-stretches a non-square tile, so a round hold stays round', () => {
+    // The mask grid is square because the model input is square, but a tile is
+    // not: a 1024x768 photo tiled 2x2 with 15% overlap gives 589x442 tiles that
+    // the `stretch` letterbox squashes into 312x312 — x by 1.888, y by 1.417.
+    //
+    // So a hold that is ROUND ON THE WALL does not arrive as a circle in the
+    // mask; it arrives squashed in x by 1.888/1.417 = 1.333. That is what this
+    // builds, and the ring must come back round. Without the un-stretch it stays
+    // squashed and every hold renders as an ellipse.
+    const size = 24;
+    const squash = 1.888 / 1.417;
+    const rows: string[] = [];
+    for (let y = 0; y < size; y += 1) {
+      let row = '';
+      for (let x = 0; x < size; x += 1) {
+        const dx = (x - (size - 1) / 2) * squash;
+        const dy = y - (size - 1) / 2;
+        row += Math.hypot(dx, dy) <= 8 ? '#' : '.';
+      }
+      rows.push(row);
+    }
+    const circle = gridFrom(rows);
+    const box: [number, number, number, number] = [4 / 24, 4 / 24, 20 / 24, 20 / 24];
+
+    const extent = (ring: number[]) => {
+      const pts = points(ring);
+      const xs = pts.map(([x]) => x);
+      const ys = pts.map(([, y]) => y);
+      return (Math.max(...xs) - Math.min(...xs)) / (Math.max(...ys) - Math.min(...ys));
+    };
+
+    const corrected = maskToOutline(circle, box, { tileWidth: 589, tileHeight: 442 }) as number[];
+    expect(extent(corrected)).toBeGreaterThan(0.93);
+    expect(extent(corrected)).toBeLessThan(1.07);
+
+    // Square tiles are the no-op case and must be unaffected by the correction.
+    const square = maskToOutline(circle, box, { tileWidth: 589, tileHeight: 589 }) as number[];
+    const untouched = maskToOutline(circle, box) as number[];
+    expect(square).toEqual(untouched);
+  });
+
   it('gives up on an empty mask rather than inventing a shape', () => {
     const empty = gridFrom(['....', '....', '....', '....']);
     expect(maskToOutline(empty, [0.25, 0.25, 0.75, 0.75])).toBeUndefined();
