@@ -134,6 +134,34 @@ describe('Crew feed', () => {
     expect(selected.hasMore).toBe(true);
   });
 
+  // A group id carries the setter's username, so it can hold any character a
+  // climber put in one. The JS merge and the SQL cursor have to break a tie the
+  // same way or a card falls through the page boundary.
+  it('breaks id ties on UTF-8 bytes, the way COLLATE "C" does', async () => {
+    const occurredAt = '2026-09-01T12:00:00.000000Z';
+    // U+1F600 sorts BELOW U+FF21 in UTF-16 code units and ABOVE it in UTF-8
+    // bytes; a plain `<` would order these the opposite way from Postgres.
+    const emoji = 'climbgroup:kilter:\u{1F600}:2026-09-01';
+    const bmp = 'climbgroup:kilter:\uFF21:2026-09-01';
+    const selected = selectCrewCandidates(
+      [
+        { id: emoji, kind: 'climb', sourceId: 'a', occurredAt },
+        { id: bmp, kind: 'climb', sourceId: 'b', occurredAt },
+      ],
+      1,
+    );
+    // Descending by byte order, so the emoji group leads.
+    expect(selected.selected[0].id).toBe(emoji);
+
+    const [ordered] = await db
+      .select({
+        first: sql<string>`(SELECT id FROM (VALUES (${emoji}), (${bmp})) AS ids(id) ORDER BY id COLLATE "C" DESC LIMIT 1)`,
+      })
+      .from(boardClimbs)
+      .limit(1);
+    expect(selected.selected[0].id).toBe(ordered.first);
+  });
+
   it('terminates pagination when both sources initially supply limit plus one candidates', () => {
     const limit = 2;
     const candidates: CrewCandidate[] = ['climb', 'session'].flatMap((kind) =>
