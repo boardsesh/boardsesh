@@ -248,6 +248,21 @@ describe('NewClimbFeedCard', () => {
     expect(litIndex(container)).toBe(0);
   });
 
+  it('sends See all to the profile when a native author has no setter username', () => {
+    const native = { ...climb, setterUsername: null, actorId: 'user-1' };
+    const { getByRole } = render(<NewClimbFeedCard item={group([native, second], 12)} />);
+    fireEvent.click(getByRole('button', { name: 'authors.seeAllClimbs:12' }));
+    expect(mocks.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'user-1' } });
+  });
+
+  it('drops See all entirely when there is nowhere to send the climber', () => {
+    const orphan = { ...climb, setterUsername: null, actorId: null };
+    render(<NewClimbFeedCard item={group([orphan, second], 12)} />);
+    expect(mocks.carousel).toHaveBeenCalledWith(
+      expect.not.arrayContaining([expect.objectContaining({ kind: 'see-all' })]),
+    );
+  });
+
   it('carries the feed ascents and stars into the drawer instead of zeros', () => {
     const { getByRole } = render(<NewClimbFeedCard item={single({ ascensionistCount: 7, qualityAverage: 4.5 })} />);
     fireEvent.click(getByRole('button', { name: /Fresh holds/ }));
