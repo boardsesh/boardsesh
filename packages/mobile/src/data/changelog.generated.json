@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-18T12:21:13.602Z",
+  "generatedAt": "2026-09-18T13:10:53.135Z",
   "entries": [
+    {
+      "prNumber": 5538,
+      "category": "fixed",
+      "title": "Fixed a glitchy hexagon-shaped shadow around the lit bulb icon on Android when connected to a board",
+      "mergedAt": "2026-09-18T13:08:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5538"
+    },
     {
       "prNumber": 5541,
       "category": "fixed",

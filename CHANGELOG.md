@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed a glitchy hexagon-shaped shadow around the lit bulb icon on Android when connected to a board ([#5538](https://github.com/boardsesh/boardsesh/pull/5538))
 - MoonBoard sends now stay at the angle you climbed. ([#5541](https://github.com/boardsesh/boardsesh/pull/5541))
 
 ## 2026-09-17
