@@ -9,6 +9,9 @@ import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import { selectHomeLcpHints } from './lib/popular-lcp-preload';
 import { getPublicBackendHttpUrl } from './lib/backend-url';
 import HomePageContent from './home-page-content';
+import HomeGymSearch from './components/home/home-gym-search';
+import HomeFeatureStrip from './components/home/home-feature-strip';
+import HomeSupportBlock from './components/home/home-support-block';
 
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
@@ -46,7 +49,18 @@ export default async function Home() {
       {preconnectOrigin && <link rel="preconnect" href={preconnectOrigin} />}
       {boardPreloadUrl && <link rel="preload" as="image" href={boardPreloadUrl} fetchPriority="high" />}
       <SiteJsonLd />
-      <HomePageContent initialPopularConfigs={popularConfigs} initialRecentBeta={recentBeta} />
+      {/* The three marketing sections are async server components, so they are
+          rendered HERE and handed down as slots: HomePageContent is a client
+          component (the hero reads the visitor's platform) and cannot await
+          them. This keeps their markup — the gym links especially — in the
+          first HTML a crawler sees. */}
+      <HomePageContent
+        initialPopularConfigs={popularConfigs}
+        initialRecentBeta={recentBeta}
+        gymSearch={<HomeGymSearch />}
+        featureStrip={<HomeFeatureStrip />}
+        supportBlock={<HomeSupportBlock />}
+      />
     </I18nProvider>
   );
 }
