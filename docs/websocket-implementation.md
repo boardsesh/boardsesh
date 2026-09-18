@@ -2366,3 +2366,11 @@ still implements its controlled `forcedActiveKey` mode, exercised by its own uni
 tests. It survives because `social/proposal-section.tsx` still renders the
 component (in uncontrolled mode); removing the controlled path is a separate
 cleanup, not part of the climbing teardown.
+
+### Kilter live history
+
+With `KILTER_LIVE_SYNC_ENABLED=1`, authenticated `boardNowPlaying` subscribers with linked Kilter accounts keep one cluster-coordinated REST poller alive for an exactly mapped public Kilter wall. Viewer leases renew every 15 seconds and expire after 60 seconds; polling starts immediately and repeats after 30–35 seconds. Subscription cancellation, socket close, unlink, and shutdown release eligibility. No upstream activity is published.
+
+`BoardHistoryUpdated { climbs, seq }` merges imported history without changing current climb, holder, queue, or statistics. `boardRecentHistory` merges recent native/imported history; `boardHistoryPage(boardId, limit, before)` returns durable chronological `entries` and opaque `nextCursor`. Both carry the same board access checks as existing presence reads. Legacy `boardRecentClimbs` and `boardHistory` remain native-only.
+
+The shared pagination hook loads one first durable page independently of Redis history, retries failures, and refreshes on reconnect/pull-to-refresh. See [Kilter live integration](kilter-live-history.md) for source matching, occurrence identity, credentials, and deployment order.

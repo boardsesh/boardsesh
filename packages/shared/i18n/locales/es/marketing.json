@@ -66,6 +66,16 @@
       "manage": "Gestionar",
       "viewPage": "Ver página"
     },
+    "gymSearch": {
+      "eyebrow": "Directorio de rocódromos",
+      "title": "Encuentra un plafón cerca de ti",
+      "lead_one": "{{formattedCount}} rocódromo, muro de club o garaje ya tiene un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "lead_other": "{{formattedCount}} rocódromos, muros de club y garajes ya tienen un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "leadNoCount": "Rocódromos, muros de club y garajes con un plafón en la pared ya están listados. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "geoHint": "¿Ubicación desactivada? Escribe una ciudad: mismos resultados, sin pedir permisos.",
+      "cardsUnavailable": "Ahora mismo no carga la lista de rocódromos. El directorio completo sigue ahí.",
+      "browseAll": "Ver el directorio completo de rocódromos"
+    },
     "recentBeta": {
       "title": "Beta fresca"
     }

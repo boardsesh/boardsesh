@@ -12,6 +12,7 @@
  */
 
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { mergeBoardHistory } from './history';
 import type { BoardPresenceState, BoardPresenceAction } from './types';
 
 /** Newest-first history is capped so a long session can't grow unbounded. */
@@ -57,27 +58,15 @@ function historyHasEntry(history: BoardPresenceClimb[], climb: BoardPresenceClim
  * those fields.
  */
 function mergeHistory(existing: BoardPresenceClimb[], incoming: BoardPresenceClimb[]): BoardPresenceClimb[] {
-  const byKey = new Map<string, BoardPresenceClimb>();
-  for (const climb of existing) {
-    byKey.set(`${climb.climbUuid}:${climb.seq}`, climb);
-  }
-  for (const climb of incoming) {
-    const key = `${climb.climbUuid}:${climb.seq}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, climb);
-    }
-  }
-  const merged = Array.from(byKey.values())
-    .sort((left, right) => right.seq - left.seq)
-    .slice(0, HISTORY_CAP);
-  if (merged.length === existing.length && merged.every((entry, index) => entry === existing[index])) {
-    return existing;
-  }
-  return merged;
+  return mergeBoardHistory(existing, incoming, HISTORY_CAP);
 }
 
 export function boardPresenceReducer(state: BoardPresenceState, action: BoardPresenceAction): BoardPresenceState {
   switch (action.type) {
+    case 'MERGE_HISTORY': {
+      const history = mergeHistory(state.history, action.payload);
+      return history === state.history ? state : { ...state, history };
+    }
     case 'APPLY_CLIMB_SET': {
       const incomingClimb = action.payload;
 
@@ -97,15 +86,11 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
         };
       }
 
-      if (historyHasEntry(state.history, incomingClimb)) {
-        return state;
-      }
-
       return {
         ...state,
         currentClimb: incomingClimb,
         previousClimb: state.currentClimb,
-        history: [incomingClimb, ...state.history].slice(0, HISTORY_CAP),
+        history: mergeHistory(state.history, [incomingClimb]),
         lastSeq: Math.max(state.lastSeq, incomingClimb.seq),
       };
     }
@@ -126,7 +111,7 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     }
 
     case 'BACKFILL_HISTORY': {
-      const backfill = action.payload;
+      const backfill = action.payload.filter((climb) => climb.source !== 'kilter');
       if (backfill.length === 0) {
         return state;
       }
@@ -139,7 +124,10 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
       // applied, because `lastSeq` also tracks clears. This prevents an older
       // backfill from resurrecting a wall that was cleared while catch-up was
       // in flight.
-      const newestHistoryClimb = mergedHistory[0] ?? null;
+      const newestHistoryClimb = backfill.reduce<BoardPresenceClimb | null>(
+        (newest, climb) => (!newest || climb.seq > newest.seq ? climb : newest),
+        null,
+      );
       const shouldAdoptHistoryClimb = newestHistoryClimb !== null && newestHistoryClimb.seq > state.lastSeq;
 
       // Nothing actually changed: the merge produced the same history array

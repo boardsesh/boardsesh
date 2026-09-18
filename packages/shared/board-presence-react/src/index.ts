@@ -49,6 +49,7 @@ export type {
 } from './create-board-presence-client';
 
 export { boardHistoryEntryKey, useBoardHistoryPagination } from './use-board-history-pagination';
+export { mergeBoardHistory } from '@boardsesh/board-presence';
 export type { BoardHistoryPageLoadedInfo, BoardHistoryPagination } from './use-board-history-pagination';
 
 export { useBoardClimbRecentSenders } from './use-board-climb-recent-senders';

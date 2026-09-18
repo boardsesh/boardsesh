@@ -592,6 +592,19 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+export type BoardHistoryPage = {
+  __typename?: 'BoardHistoryPage';
+  entries: Array<BoardPresenceClimb>;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+};
+
+/** Union of board-presence events streamed by `boardNowPlaying`. */
+export type BoardHistoryUpdated = {
+  __typename?: 'BoardHistoryUpdated';
+  climbs: Array<BoardPresenceClimb>;
+  seq: Scalars['Int']['output'];
+};
+
 /**
  * Everything the outline editor needs for one board config: the deployed shard's
  * traced silhouettes, plus the live overrides that supersede or annotate them.
@@ -694,10 +707,16 @@ export type BoardPresenceClimb = {
   seq: Scalars['Int']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
+  /** Origin of the display: boardsesh or kilter. Missing means boardsesh. */
+  source?: Maybe<Scalars['String']['output']>;
 };
 
-/** Union of board-presence events streamed by `boardNowPlaying`. */
-export type BoardPresenceEvent = BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
+export type BoardPresenceEvent =
+  | BoardClimbCleared
+  | BoardClimbSet
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
+  | BoardStatsUpdated;
 
 /** The first climber to send the hardest grade logged on this wall. */
 export type BoardPresenceHardestSend = {
@@ -5667,6 +5686,8 @@ export type Query = {
    * NOT_FOUND for anonymous callers.
    */
   boardHistory: Array<BoardPresenceClimb>;
+  /** Chronological durable history with an opaque, board-scoped pagination cursor. */
+  boardHistoryPage: BoardHistoryPage;
   /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
    * system-shared boards; private boards are masked as NOT_FOUND for anonymous
@@ -5717,6 +5738,8 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
+  /** Merged native and imported recent history; never represents current wall state. */
+  boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
@@ -6399,6 +6422,13 @@ export type QueryBoardHistoryArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryBoardHistoryPageArgs = {
+  before?: InputMaybe<Scalars['String']['input']>;
+  boardId: Scalars['Int']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
 };
@@ -6420,6 +6450,11 @@ export type QueryBoardQueuePreviewArgs = {
 
 /** Root query type for all read operations. */
 export type QueryBoardRecentClimbsArgs = {
+  boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
 };
 
@@ -9940,7 +9975,12 @@ export type DirectiveResolverFn<TResult = {}, TParent = {}, TContext = {}, TArgs
 
 /** Mapping of union types */
 export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = ResolversObject<{
-  BoardPresenceEvent: BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
+  BoardPresenceEvent:
+    | BoardClimbCleared
+    | BoardClimbSet
+    | BoardConnectionChanged
+    | BoardHistoryUpdated
+    | BoardStatsUpdated;
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
   CrewFeedItem: CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
@@ -10003,6 +10043,8 @@ export type ResolversTypes = ResolversObject<{
   BoardClimbSet: ResolverTypeWrapper<BoardClimbSet>;
   BoardConnectionChanged: ResolverTypeWrapper<BoardConnectionChanged>;
   BoardConnectionHolder: ResolverTypeWrapper<BoardConnectionHolder>;
+  BoardHistoryPage: ResolverTypeWrapper<BoardHistoryPage>;
+  BoardHistoryUpdated: ResolverTypeWrapper<BoardHistoryUpdated>;
   BoardHoldOutlines: ResolverTypeWrapper<BoardHoldOutlines>;
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
@@ -10453,6 +10495,8 @@ export type ResolversParentTypes = ResolversObject<{
   BoardClimbSet: BoardClimbSet;
   BoardConnectionChanged: BoardConnectionChanged;
   BoardConnectionHolder: BoardConnectionHolder;
+  BoardHistoryPage: BoardHistoryPage;
+  BoardHistoryUpdated: BoardHistoryUpdated;
   BoardHoldOutlines: BoardHoldOutlines;
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
@@ -11133,6 +11177,24 @@ export type BoardConnectionHolderResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type BoardHistoryPageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardHistoryPage'] = ResolversParentTypes['BoardHistoryPage'],
+> = ResolversObject<{
+  entries?: Resolver<Array<ResolversTypes['BoardPresenceClimb']>, ParentType, ContextType>;
+  nextCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardHistoryUpdatedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardHistoryUpdated'] = ResolversParentTypes['BoardHistoryUpdated'],
+> = ResolversObject<{
+  climbs?: Resolver<Array<ResolversTypes['BoardPresenceClimb']>, ParentType, ContextType>;
+  seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type BoardHoldOutlinesResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['BoardHoldOutlines'] = ResolversParentTypes['BoardHoldOutlines'],
@@ -11190,6 +11252,7 @@ export type BoardPresenceClimbResolvers<
   sentByUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   setter?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  source?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11198,7 +11261,7 @@ export type BoardPresenceEventResolvers<
   ParentType extends ResolversParentTypes['BoardPresenceEvent'] = ResolversParentTypes['BoardPresenceEvent'],
 > = ResolversObject<{
   __resolveType: TypeResolveFn<
-    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardStatsUpdated',
+    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardHistoryUpdated' | 'BoardStatsUpdated',
     ParentType,
     ContextType
   >;
@@ -13882,6 +13945,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryBoardHistoryArgs, 'boardId'>
   >;
+  boardHistoryPage?: Resolver<
+    ResolversTypes['BoardHistoryPage'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardHistoryPageArgs, 'boardId'>
+  >;
   boardLeaderboard?: Resolver<
     ResolversTypes['BoardLeaderboard'],
     ParentType,
@@ -13911,6 +13980,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryBoardRecentClimbsArgs, 'boardId'>
+  >;
+  boardRecentHistory?: Resolver<
+    Array<ResolversTypes['BoardPresenceClimb']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardRecentHistoryArgs, 'boardId'>
   >;
   boardsBySerialNumbers?: Resolver<
     Array<ResolversTypes['UserBoard']>,
@@ -15884,6 +15959,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardClimbSet?: BoardClimbSetResolvers<ContextType>;
   BoardConnectionChanged?: BoardConnectionChangedResolvers<ContextType>;
   BoardConnectionHolder?: BoardConnectionHolderResolvers<ContextType>;
+  BoardHistoryPage?: BoardHistoryPageResolvers<ContextType>;
+  BoardHistoryUpdated?: BoardHistoryUpdatedResolvers<ContextType>;
   BoardHoldOutlines?: BoardHoldOutlinesResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;

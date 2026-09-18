@@ -66,6 +66,16 @@
       "manage": "Gérer",
       "viewPage": "Voir la page"
     },
+    "gymSearch": {
+      "eyebrow": "Annuaire des salles",
+      "title": "Trouve une board près de chez toi",
+      "lead_one": "{{formattedCount}} salle, mur de club ou garage a déjà une board référencée. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
+      "lead_other": "{{formattedCount}} salles, murs de club et garages ont déjà une board référencée. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
+      "leadNoCount": "Des salles, des murs de club et des garages avec une board au mur sont déjà référencés. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
+      "geoHint": "Localisation désactivée ? Tape une ville : mêmes résultats, sans demande d'autorisation.",
+      "cardsUnavailable": "La liste des salles ne charge pas pour le moment. L'annuaire complet est toujours là.",
+      "browseAll": "Voir tout l'annuaire des salles"
+    },
     "recentBeta": {
       "title": "Beta fraîche"
     }

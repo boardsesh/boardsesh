@@ -66,6 +66,16 @@
       "manage": "Manage",
       "viewPage": "View page"
     },
+    "gymSearch": {
+      "eyebrow": "Gym directory",
+      "title": "Find a board near you",
+      "lead_one": "{{formattedCount}} gym, club wall or garage already has a board listed. Search by name or town, or let your browser find you.",
+      "lead_other": "{{formattedCount}} gyms, club walls and garages already have a board listed. Search by name or town, or let your browser find you.",
+      "leadNoCount": "Gyms, club walls and garages with a board on the wall are already listed. Search by name or town, or let your browser find you.",
+      "geoHint": "Location off? Type a town instead — same results, no permission prompt.",
+      "cardsUnavailable": "The gym list isn't loading right now. The full directory is still there.",
+      "browseAll": "Browse the full gym directory"
+    },
     "recentBeta": {
       "title": "Fresh beta"
     }

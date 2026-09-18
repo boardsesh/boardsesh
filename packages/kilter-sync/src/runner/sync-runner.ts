@@ -20,7 +20,6 @@ import {
   markWeeklyCursorDone,
   type SharedSyncClaimToken,
 } from '@boardsesh/db/queries';
-import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
   DEFAULT_DAEMON_OPTIONS,
   DaemonLease,
@@ -35,8 +34,9 @@ import type { LocationSyncSummary } from '@boardsesh/location-sync';
 
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { isTransientKilterError, KilterApiError } from '../api/errors';
-import { refreshAccessToken, type KeycloakClientConfig } from '../api/keycloak';
-import { passwordTokenProvider, refreshTokenProvider, type KilterTokenProvider } from '../api/token-provider';
+import type { KeycloakClientConfig } from '../api/keycloak';
+import { getStoredKilterAccessToken } from '../api/stored-token';
+import { passwordTokenProvider, type KilterTokenProvider } from '../api/token-provider';
 import { syncKilterUserData } from '../sync/user-sync';
 import { syncKilterCatalog, type KilterCatalogSummary } from '../sync/catalog-sync';
 import { repairKilterCatalogStats, type KilterStatsRepairSummary } from '../sync/stats-repair';
@@ -536,20 +536,7 @@ export class SyncRunner {
   /** Build a refresh-grant token provider from a linked user's stored credential. */
   async buildUserTokenProvider(userId: string): Promise<KilterTokenProvider> {
     const { db } = this.getClient();
-    const cred = await this.getCredential(db, userId);
-    if (!cred) throw new Error(`No kilter credential for user ${userId}`);
-    if (!cred.encryptedRefreshToken)
-      throw new Error(`Kilter credential for ${userId} has no refresh token — user must reconnect`);
-    return refreshTokenProvider({
-      encryptedRefreshToken: cred.encryptedRefreshToken,
-      client: this.getKeycloakClient(),
-      onRotatedRefreshToken: async (newRefreshToken) => {
-        await db
-          .update(auroraCredentials)
-          .set({ encryptedRefreshToken: encrypt(newRefreshToken), updatedAt: new Date() })
-          .where(and(eq(auroraCredentials.userId, userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
-      },
-    });
+    return () => getStoredKilterAccessToken(db, userId, this.getKeycloakClient());
   }
 
   /** Build a ROPC token provider for local testing (KILTER_TEST_USERNAME/PASSWORD). */
@@ -558,39 +545,8 @@ export class SyncRunner {
   }
 
   private async refreshTokenFor(cred: KilterCredentialRecord, db: RunnerDb): Promise<string> {
-    if (!cred.encryptedRefreshToken) {
-      throw new KilterApiError(
-        'invalid_grant',
-        `Kilter credential for ${cred.userId} has no refresh token — user must reconnect`,
-      );
-    }
-
-    const refreshToken = decrypt(cred.encryptedRefreshToken);
-    const response = await refreshAccessToken({
-      refreshToken,
-      client: this.getKeycloakClient(),
-    });
-
-    // Keycloak rotates refresh tokens on each refresh by default. Persist
-    // the new one (encrypted) so the next cycle uses the fresh value;
-    // re-using a stale refresh_token after rotation gets you invalid_grant.
-    // This is a deliberate immediate autocommit done before the rest of the
-    // sync runs — there's no transaction wrapping the cycle, so this write
-    // lands on its own. We do it eagerly to minimise the rotation-loss
-    // window: if the process crashes between Keycloak issuing the rotated
-    // token and this write committing, the old refresh_token is already
-    // invalid and the user must re-auth on the next cycle.
-    if (response.refresh_token && response.refresh_token !== refreshToken) {
-      await db
-        .update(auroraCredentials)
-        .set({
-          encryptedRefreshToken: encrypt(response.refresh_token),
-          updatedAt: new Date(),
-        })
-        .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
-    }
-
-    return response.access_token;
+    if (!cred.encryptedRefreshToken) throw new KilterApiError('invalid_grant', 'Kilter account must reconnect');
+    return getStoredKilterAccessToken(db, cred.userId, this.getKeycloakClient());
   }
 
   /**

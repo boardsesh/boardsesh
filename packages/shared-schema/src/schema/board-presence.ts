@@ -13,6 +13,8 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
   """
   type BoardPresenceClimb {
+    "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+    source: String
     "UUID of the climb lit on the wall"
     climbUuid: String!
     "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
@@ -119,7 +121,22 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   """
   Union of board-presence events streamed by \`boardNowPlaying\`.
   """
-  union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+  type BoardHistoryUpdated {
+    climbs: [BoardPresenceClimb!]!
+    seq: Int!
+  }
+
+  type BoardHistoryPage {
+    entries: [BoardPresenceClimb!]!
+    nextCursor: String
+  }
+
+  union BoardPresenceEvent =
+    | BoardClimbSet
+    | BoardClimbCleared
+    | BoardStatsUpdated
+    | BoardConnectionChanged
+    | BoardHistoryUpdated
 
   """
   The first climber to send the hardest grade logged on this wall.

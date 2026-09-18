@@ -180,6 +180,14 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
       await whenSeeded();
       return seedClimbs;
     },
+    async fetchRecentHistory() {
+      await whenSeeded();
+      return seedClimbs;
+    },
+    async fetchHistoryPage() {
+      await whenSeeded();
+      return { entries: seedClimbs, nextCursor: null };
+    },
     async fetchHistory() {
       await whenSeeded();
       return seedClimbs;
