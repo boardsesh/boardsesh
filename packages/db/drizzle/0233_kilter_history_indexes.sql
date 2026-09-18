@@ -1,3 +1,0 @@
-DROP INDEX "board_climb_events_external_occurrence_unique";--> statement-breakpoint
-CREATE INDEX "board_climb_events_kilter_chronological_idx" ON "board_climb_events" USING btree ("board_id","confirmed_at","seq") WHERE "board_climb_events"."source" = 'kilter';--> statement-breakpoint
-CREATE UNIQUE INDEX "board_climb_events_external_occurrence_unique" ON "board_climb_events" USING btree ("source","external_occurrence_key") WHERE "board_climb_events"."external_occurrence_key" is not null;

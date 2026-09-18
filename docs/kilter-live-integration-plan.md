@@ -32,7 +32,9 @@ The parser accepts timezone-qualified display timestamps, normalizes them to UTC
 
 Name, setter, and frames are shared across angles. An occurrence without catalog statistics at its displayed angle is retained with a null grade; it never borrows another angle's grade. Board/layout or wall-binding validation failures log their reason once per import batch. Duplicate occurrences and normal cancellation do not produce warnings.
 
-The occurrence key hashes the complete wall selection, upstream display ID, and normalized timestamp. If an ID is absent, climb UUID and angle replace it. `(source, external_occurrence_key)` uniqueness prevents repeated polls and overlapping workers from duplicating events. Each imported event receives a reserved board sequence and `source='kilter'` in `board_climb_events`. The external-occurrence unique index excludes null keys, and imported recent reads have a Kilter-only chronological index; native events do not add entries to either index.
+The occurrence key hashes the complete wall selection, upstream display ID, and normalized timestamp. If an ID is absent, climb UUID and angle replace it. `(source, external_occurrence_key)` uniqueness prevents repeated polls and overlapping workers from duplicating events. Each imported event receives a reserved board sequence and `source='kilter'` in `board_climb_events`.
+
+Partial indexes for external occurrence keys and imported chronological reads are deferred to [#5551](https://github.com/boardsesh/boardsesh/issues/5551).
 
 Imported recent history has its own Redis cache (`board:<id>:kilter-history`), retaining the newest 50 displays from seven days. The native history list is unchanged. Queries merge the two sources chronologically. A missing cache falls back to Postgres; subsequent polls rebuild it, including when every occurrence already exists. `BoardHistoryUpdated` changes client history only. Imported events are excluded from native display-count activity aggregates.
 
@@ -48,7 +50,7 @@ The shared pagination hook automatically loads exactly one first page when the s
 
 ## Rollout and verification
 
-1. Apply migrations `0232_kilter_live_history` and `0233_kilter_history_indexes` before deploying the backend and sync daemon.
+1. Apply migration `0232_kilter_live_history` before deploying the backend and sync daemon.
 2. Run the normal Kilter reference/location sync to populate exact source selectors.
 3. Enable `KILTER_LIVE_SYNC_ENABLED=1` on backend instances and restart them.
 4. Open an exact imported public Kilter board with a linked account; confirm history gains labeled entries while current wall state stays unchanged.

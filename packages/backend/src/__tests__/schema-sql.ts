@@ -989,8 +989,7 @@ CREATE TABLE "kilter_wall_sources" (
 
 ALTER TABLE "kilter_wall_sources" ADD CONSTRAINT "kilter_wall_sources_source_board_uuid_user_boards_uuid_fk" FOREIGN KEY ("source_board_uuid") REFERENCES "public"."user_boards"("uuid") ON DELETE cascade ON UPDATE no action;
 CREATE INDEX "kilter_wall_sources_board_idx" ON "kilter_wall_sources" USING btree ("source_board_uuid");
-CREATE INDEX "board_climb_events_kilter_chronological_idx" ON "board_climb_events" USING btree ("board_id","confirmed_at","seq") WHERE "board_climb_events"."source" = 'kilter';
-CREATE UNIQUE INDEX "board_climb_events_external_occurrence_unique" ON "board_climb_events" USING btree ("source","external_occurrence_key") WHERE "board_climb_events"."external_occurrence_key" is not null;
+CREATE UNIQUE INDEX "board_climb_events_external_occurrence_unique" ON "board_climb_events" USING btree ("source","external_occurrence_key");
 CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USING btree ("board_id","confirmed_at","seq");
 
 
