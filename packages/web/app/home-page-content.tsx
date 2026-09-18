@@ -108,20 +108,31 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             alt="Boardsesh"
             priority
           />
-          {/* `variant` keeps the visual size; `component` fixes the semantics.
-              MUI maps variant="h5" to a literal <h5>, so before this the
-              homepage server-rendered no <h1> at all — the highest-traffic
-              indexable page on the site had no top-level heading for a crawler
-              to read. Visual output is unchanged. */}
+          {/* `component` fixes the semantics: MUI maps a variant to its literal
+              tag, so this used to server-render no <h1> at all on the
+              highest-traffic indexable page on the site. The size is set here
+              rather than by variant — the hero is the one large thing on the
+              page and it was rendering at h5, smaller than the section headings
+              further down. */}
           <Typography
-            variant="h5"
+            variant="h3"
             component="h1"
             fontWeight={themeTokens.typography.fontWeight.bold}
-            sx={{ color: 'var(--bs-text-brand-primary)' }}
+            sx={{
+              color: 'var(--bs-text-brand-primary)',
+              fontSize: { xs: 30, sm: 40 },
+              lineHeight: 1.15,
+              letterSpacing: '-0.02em',
+              // Cap the measure so the title breaks in a deliberate place.
+              maxInlineSize: '18ch',
+            }}
           >
             {t('home.hero.title')}
           </Typography>
-          <Typography variant="body1" sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 320 }}>
+          <Typography
+            variant="body1"
+            sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 420, fontSize: { xs: 16, sm: 18 } }}
+          >
             {t('home.hero.subtitle')}
           </Typography>
           {/* Primary CTA: hand off to the Expo-web app (single sign-on when
@@ -165,13 +176,18 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
         <PopularBoardRail configs={initialPopularConfigs ?? []} />
 
         {/* Onboarding Cards */}
+        {/* The stack used to be a single column capped at 420px, which on a
+            1440px screen was a narrow ribbon of cards down the middle with
+            empty violet either side. A CSS grid (no JS breakpoint) gives two
+            columns once there is room and stays one column on a phone. The
+            section header spans the full width via gridColumn: '1 / -1'. */}
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
             gap: 1.5,
             width: '100%',
-            maxWidth: 420,
+            maxWidth: { xs: 420, md: 880 },
             mx: 'auto',
           }}
         >
@@ -179,6 +195,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             variant="body2"
             fontWeight={themeTokens.typography.fontWeight.semibold}
             sx={{
+              gridColumn: '1 / -1',
               color: 'var(--neutral-400)',
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
@@ -189,12 +206,16 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             {t('home.onboardingHeader')}
           </Typography>
 
-          <InstallAppCard platform={installPlatform} />
+          <Box sx={{ gridColumn: '1 / -1' }}>
+            <InstallAppCard platform={installPlatform} />
+          </Box>
 
           {/* Signed-in only: the gym you help run, with Manage / View links.
               Self-gates to null for signed-out visitors and for climbers with
               no gym. */}
-          <HomeGymCard />
+          <Box sx={{ gridColumn: '1 / -1' }}>
+            <HomeGymCard />
+          </Box>
 
           {/* The "find a gym" nudge the drawers used to carry, restored now that
               the directory exists. Everyone sees it, including the signed-out
@@ -203,7 +224,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<PlaceOutlined />}
             title={t('home.cards.gymTitle')}
             description={t('home.cards.gymDescription')}
-            accent="v11"
+            accent="brand"
             href="/gyms"
           />
 
@@ -211,7 +232,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<WarningAmberOutlined />}
             title={t('home.cards.auroraTitle')}
             description={t('home.cards.auroraDescription')}
-            accent="v11"
+            accent="brand"
             href="/aurora-migration"
           />
 
@@ -219,7 +240,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<LocalOfferOutlined />}
             title={t('home.cards.playlistTitle')}
             description={t('home.cards.playlistDescription')}
-            accent="v12"
+            accent="brand"
             href="/playlists"
           />
 
@@ -227,7 +248,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<BluetoothOutlined />}
             title={t('home.cards.bluetoothTitle')}
             description={t('home.cards.bluetoothDescription')}
-            accent="v12"
+            accent="spark"
             href={APP_URL}
             external
           />
@@ -236,7 +257,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<PeopleOutlined />}
             title={t('home.cards.crewTitle')}
             description={t('home.cards.crewDescription')}
-            accent="v13"
+            accent="spark"
             href={APP_URL}
             external
           />
@@ -245,7 +266,7 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
             icon={<DiscordIcon />}
             title={t('home.cards.discordTitle')}
             description={t('home.cards.discordDescription')}
-            accent="v13"
+            accent="info"
             href={DISCORD_INVITE_URL}
             external
             newTab

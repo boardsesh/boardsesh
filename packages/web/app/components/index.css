@@ -84,6 +84,14 @@
   --shadow-accent-glow: 0 6px 18px rgba(255, 138, 61, 0.35);
   --shadow-accent-glow-hover: 0 8px 22px rgba(255, 138, 61, 0.45);
 
+  /* Icon-chip tints for the homepage onboarding cards. THREE roles, by what the
+     card does — this site (brand), the app (amber spark), community/help (info)
+     — replacing six tints keyed to V-grade purples that had nothing to do with
+     what the card was for. ~10-12% alpha over the card surface. */
+  --home-accent-brand-surface: rgba(167, 139, 250, 0.12);
+  --home-accent-spark-surface: rgba(255, 138, 61, 0.12);
+  --home-accent-info-surface: rgba(165, 171, 214, 0.12);
+
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.1);
 

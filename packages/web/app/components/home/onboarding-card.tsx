@@ -7,7 +7,13 @@ import Typography from '@mui/material/Typography';
 import { themeTokens } from '@/app/theme/theme-config';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
-export type OnboardingCardAccent = 'action' | 'social' | 'help' | 'v11' | 'v12' | 'v13' | 'none';
+/**
+ * What the card is FOR, not what colour it is. There used to be six accents
+ * keyed to the V11-V13 project-zone purples; they were Material purples
+ * (#9C27B0 / #7B1FA2 / #6A1B9A) rather than Velvet ones, and which card got
+ * which grade said nothing about where the card went.
+ */
+export type OnboardingCardAccent = 'brand' | 'spark' | 'info' | 'none';
 
 export type OnboardingCardProps = {
   icon: React.ReactNode;
@@ -23,43 +29,31 @@ export type OnboardingCardProps = {
   /** Fallback for the store-install cards, which fire analytics and window.open. */
   onClick?: () => void;
   /**
-   * Category colour-coding for the icon chip. Cards that do similar jobs
-   * share an accent so the list is scannable. The whole card remains the
-   * CTA — the chip colour is metadata, not a CTA token. Defaults to
-   * 'action' (rose) for backwards compatibility.
+   * Which family the card belongs to, for the icon chip. Cards that do similar
+   * jobs share an accent so the list is scannable. The whole card remains the
+   * CTA — the chip colour is metadata, not a CTA token.
    */
   accent?: OnboardingCardAccent;
 };
 
-// Soft tint backgrounds (~10% alpha) for each accent. Inlined rather than
-// added as CSS vars — these only render here. The v11/v12/v13 accents tie
-// the onboarding stack to the project-zone V-grade scale that the brand
-// mark is built on (see designer brief §2a).
 const accentSurface: Record<OnboardingCardAccent, string> = {
-  action: 'var(--semantic-selected-light)', // existing rose tint
-  social: 'rgba(156, 39, 176, 0.10)', // V11 purple
-  help: themeTokens.colors.infoTint, // violet-slate (Velvet info) — same family as the rest
-  v11: 'rgba(156, 39, 176, 0.10)', // V11 #9C27B0
-  v12: 'rgba(123, 31, 162, 0.10)', // V12 #7B1FA2
-  v13: 'rgba(106, 27, 154, 0.10)', // V13 #6A1B9A
+  brand: 'var(--home-accent-brand-surface)',
+  spark: 'var(--home-accent-spark-surface)',
+  info: 'var(--home-accent-info-surface)',
   none: 'transparent',
 };
 
 function resolveAccentIconColor(accent: OnboardingCardAccent): string {
   switch (accent) {
-    case 'social':
-      return themeTokens.colors.purple;
-    case 'help':
+    case 'spark':
+      // Amber is fill-only in Velvet Send, so on a tint it is the GLYPH that
+      // carries it, never a filled chip with amber behind pale text.
+      return 'var(--color-accent)';
+    case 'info':
       return 'var(--color-info)';
-    case 'v11':
-      return '#9C27B0';
-    case 'v12':
-      return '#7B1FA2';
-    case 'v13':
-      return '#6A1B9A';
     case 'none':
       return 'inherit';
-    case 'action':
+    case 'brand':
     default:
       return 'var(--color-primary)';
   }
@@ -73,7 +67,7 @@ export default function OnboardingCard({
   href,
   external,
   newTab,
-  accent = 'action',
+  accent = 'brand',
 }: OnboardingCardProps) {
   const cardBody = (
     <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, px: 2.5 }}>
@@ -137,11 +131,15 @@ export default function OnboardingCard({
       variant="outlined"
       sx={{
         borderRadius: `${themeTokens.borderRadius.lg}px`,
-        border: '1px solid var(--neutral-200)',
+        // A card needs a FILL on the dark ground: a bare hairline outline on
+        // #110A20 is nearly invisible, and depth here is a lighter violet
+        // rather than a shadow.
+        backgroundColor: 'var(--semantic-surface)',
+        border: '1px solid var(--separator)',
         transition: themeTokens.transitions.fast,
         '&:hover': {
-          borderColor: 'var(--neutral-300)',
-          boxShadow: themeTokens.shadows.sm,
+          backgroundColor: 'var(--semantic-surface-elevated)',
+          borderColor: 'var(--color-primary)',
         },
       }}
     >
