@@ -14,7 +14,7 @@ Imports preserve Boardsesh history, current climb, holder, queue, and tick-deriv
 
 The location sync persists complete `(gymUuid, productLayoutUuid, wallUuid)` selectors in `kilter_wall_sources`. Source keys and deterministic source board UUIDs survive board merges. The backend follows up to three reverse merge links and requires exactly one listed source, matching layout, size, hold sets, and canonical gym association. It checks the binding again after the network request and inside the history transaction while holding the board row lock.
 
-Manual/config-only boards, ambiguous mappings, private boards, custom walls, unlisted sources, and incompatible configurations are skipped. Broader matching is tracked in [#5539](https://github.com/boardsesh/boardsesh/issues/5539). Serial or configuration equality alone does not prove wall identity.
+Manual/config-only boards, ambiguous mappings, private boards, custom walls, unlisted sources, and incompatible configurations are skipped. Broader matching is tracked in [#5539](https://github.com/boardsesh/boardsesh/issues/5539). Serial or configuration equality alone does not prove wall identity. Unmatched bindings are checked again after five minutes while eligible viewers remain; no token or REST history request is made before a match.
 
 ## Polling and credentials
 

@@ -14,6 +14,7 @@ import { importKilterDisplays, matchKilterWall } from './kilter-live-import';
 
 const HEARTBEAT_MS = 15_000;
 const LEASE_MS = 60_000;
+const UNMATCHED_WALL_RETRY_MS = 300_000;
 const CONTROL_CHANNEL = 'boardsesh:kilter-live:changed';
 const RENEW_OWNER = `if redis.call('GET', KEYS[1]) == ARGV[1] then
   redis.call('PEXPIRE', KEYS[1], ARGV[2]); return 1 end
@@ -270,7 +271,12 @@ export class KilterLiveSync {
     let delay = 30_000 + Math.floor(Math.random() * 5_001);
     try {
       const wall = await matchKilterWall(boardId);
-      if (!wall) return;
+      if (!wall) {
+        // Keep viewer leases alive, but recheck unresolved bindings less often.
+        // No credentials or upstream history are requested until a wall matches.
+        delay = UNMATCHED_WALL_RETRY_MS;
+        return;
+      }
       const isCurrent = async () => {
         if (controller.signal.aborted || this.stopped || !redisClientManager.isRedisConnected()) return false;
         const owner = await redisClientManager.getClients().publisher.get(`kilter-live:${boardId}:owner`);

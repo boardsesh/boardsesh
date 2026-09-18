@@ -236,6 +236,22 @@ describe('Kilter history integration', () => {
 });
 
 describe('subscription-driven polling', () => {
+  it('waits five minutes to retry an unmatched wall without requesting credentials or history', async () => {
+    await db
+      .update(schema.kilterWallSources)
+      .set({ isListed: false })
+      .where(eq(schema.kilterWallSources.sourceKey, sourceKey));
+    const startedAt = Date.now();
+    const sync = poller();
+    sync.watch(boardId, linkedUser, 'socket');
+    await vi.waitFor(async () =>
+      expect(Number(await publisher.get(`kilter-live:${boardId}:next`))).toBeGreaterThanOrEqual(startedAt + 300_000),
+    );
+    await sync.credentialsChanged();
+    expect(getStoredKilterAccessToken).not.toHaveBeenCalled();
+    expect(fetchKilterLiveHistory).not.toHaveBeenCalled();
+  });
+
   it('refreshes a rejected access token once and waits at least 30 seconds', async () => {
     vi.mocked(fetchKilterLiveHistory).mockRejectedValueOnce(new KilterLiveError(401)).mockResolvedValue([]);
     const startedAt = Date.now();
