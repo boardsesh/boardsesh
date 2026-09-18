@@ -49,6 +49,15 @@ type HomePageContentProps = {
 // The homepage hero is the one surface that carries the amber glow.
 const HERO_CTA_SX = { mt: 1, ...brandCtaSx({ size: 'large', glow: true }) };
 
+// The web hand-off reads as a link, so it takes the foreground violet rather
+// than the fill — #A78BFA on text, never behind white.
+const HERO_WEB_CTA_SX = {
+  textTransform: 'none',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  color: 'var(--color-primary)',
+  '&:hover': { backgroundColor: 'var(--semantic-selected-light)' },
+} as const;
+
 export default function HomePageContent({ initialPopularConfigs, initialRecentBeta = [] }: HomePageContentProps) {
   const { t } = useTranslation('marketing');
   const { platform: installPlatform, nativeStore } = useInstallPlatform();
@@ -135,15 +144,11 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
           >
             {t('home.hero.subtitle')}
           </Typography>
-          {/* Primary CTA: hand off to the Expo-web app (single sign-on when
-              logged in, the app's own login otherwise). */}
-          <StartClimbingButton
-            label={t('home.hero.startClimbing')}
-            ariaLabel={t('home.hero.startClimbingAria')}
-            size="large"
-            sx={HERO_CTA_SX}
-          />
-          {/* Secondary CTA: install the native app. */}
+          {/* Store-first, per the marketing wireframe: the app is the product
+              and the web is the way in for someone who has not installed it.
+              The install button stays platform-aware rather than showing both
+              store badges — an Android visitor should not be offered the App
+              Store. It self-suppresses entirely inside the native app. */}
           <Button
             variant="contained"
             size="large"
@@ -164,6 +169,16 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
           >
             {heroInstallLabel}
           </Button>
+          {/* Secondary: hand off to the Expo-web app (single sign-on when logged
+              in, the app's own login otherwise). A text link, not a second
+              filled pill — two equal-weight buttons is no hierarchy at all. */}
+          <StartClimbingButton
+            label={t('home.hero.startClimbingWeb')}
+            ariaLabel={t('home.hero.startClimbingAria')}
+            size="large"
+            variant="text"
+            sx={HERO_WEB_CTA_SX}
+          />
         </Box>
 
         {/* Recent beta videos from across the community — leads the discovery

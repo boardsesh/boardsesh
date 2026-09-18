@@ -34,8 +34,8 @@
     "hero": {
       "title": "Ab ans Board!",
       "subtitle": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest.",
-      "startClimbing": "Los klettern",
       "startClimbingAria": "In der App losklettern",
+      "startClimbingWeb": "Im Browser losklettern →",
       "ctaInstallIos": "Im App Store laden",
       "ctaInstallAndroid": "Bei Google Play holen",
       "ctaUpdate": "App aktualisieren"
