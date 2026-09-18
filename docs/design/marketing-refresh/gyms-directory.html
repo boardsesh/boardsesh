@@ -1126,9 +1126,9 @@
 
     <div class="wf-banner">
       <strong>WIREFRAME</strong> — <code>/gyms/*</code> directory + <code>/gym/[slug]</code> detail, ported to the dark
-      Velvet Send palette. Not production UI. <strong>Every gym name, address, distance and count below is a fictional
-      demo value.</strong> Violet markers link to the
-      <a href="#notes">design notes</a> at the bottom.
+      Velvet Send palette. Not production UI.
+      <strong>Every gym name, address, distance and count below is a fictional demo value.</strong> Violet markers link
+      to the <a href="#notes">design notes</a> at the bottom.
     </div>
 
     <!-- The ONE global header. There is no second in-page bar. -->
@@ -1153,16 +1153,16 @@
     <main class="container page-shell">
       <div class="view-label">
         <span class="wf-tag">View A — Directory</span>
-        <span class="what"><code>/gyms/kilter</code> · same renderer as <code>/gyms</code>, <code>/gyms/tension</code>,
-          <code>/gyms/moonboard</code></span>
+        <span class="what"
+          ><code>/gyms/kilter</code> · same renderer as <code>/gyms</code>, <code>/gyms/tension</code>,
+          <code>/gyms/moonboard</code></span
+        >
         <a class="note-ref" href="#note-1">1</a>
       </div>
 
       <nav class="breadcrumbs" aria-label="Breadcrumb">
-        <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span><span
-          aria-current="page"
-          >Kilter</span
-        >
+        <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span
+        ><span aria-current="page">Kilter</span>
         <a class="note-ref" href="#note-2">2</a>
       </nav>
 
@@ -1179,7 +1179,7 @@
       </section>
 
       <!-- Search: plain method="get" form. Works before hydration. -->
-      <form class="search-row" role="search" onsubmit="return false">
+      <form class="search-row" role="search" onsubmit="return false;">
         <label class="search-field focused" for="gym-q">
           <svg
             class="glyph"
@@ -1215,9 +1215,7 @@
           Use my location
         </button>
         <a class="note-ref" href="#note-6" style="align-self: center">6</a>
-        <p class="geo-hint">
-          Location off? Type a town instead — same results, no permission prompt.
-        </p>
+        <p class="geo-hint">Location off? Type a town instead — same results, no permission prompt.</p>
       </form>
 
       <!-- Facet chips: --separator borders, one clearly selected. -->
@@ -1253,8 +1251,15 @@
             <!-- Claimed, address + distance -->
             <li class="card gym-card">
               <div class="card-head">
-                <h3><a href="/gym/crimp-city-boulders">Crimp City Boulders</a> <a class="note-ref" href="#note-3">3</a></h3>
-                <span class="badge-claimed">✓ Claimed <a class="note-ref" href="#note-10" style="background: var(--success); color: var(--on-accent)">10</a></span>
+                <h3>
+                  <a href="/gym/crimp-city-boulders">Crimp City Boulders</a> <a class="note-ref" href="#note-3">3</a>
+                </h3>
+                <span class="badge-claimed"
+                  >✓ Claimed
+                  <a class="note-ref" href="#note-10" style="background: var(--success); color: var(--on-accent)"
+                    >10</a
+                  ></span
+                >
               </div>
               <p class="meta-line">
                 <svg class="glyph" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -1279,7 +1284,9 @@
                 </svg>
                 1.2 km away
               </p>
-              <div class="board-row"><span class="board-chip">Kilter <span class="angle">40°</span></span></div>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">40°</span></span>
+              </div>
             </li>
 
             <!-- Unclaimed, pin only (distance takes the location line) -->
@@ -1295,7 +1302,9 @@
                 </svg>
                 3.4 km away
               </p>
-              <div class="board-row"><span class="board-chip">Kilter <span class="angle">45°</span></span></div>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">45°</span></span>
+              </div>
               <p class="claim-link"><a href="/gym/the-plywood-palace?claim=1">Is this your gym?</a></p>
             </li>
 
@@ -1328,7 +1337,9 @@
                   <a class="note-ref" href="#note-9">9</a>
                 </h3>
               </div>
-              <div class="board-row"><span class="board-chip">Kilter <span class="angle">40°</span></span></div>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">40°</span></span>
+              </div>
               <p class="claim-link"><a href="/gym/fictional-state-university-wall?claim=1">Is this your gym?</a></p>
             </li>
 
@@ -1361,7 +1372,9 @@
                 </svg>
                 8.9 km away
               </p>
-              <div class="board-row"><span class="board-chip">Kilter <span class="angle">20°</span></span></div>
+              <div class="board-row">
+                <span class="board-chip">Kilter <span class="angle">20°</span></span>
+              </div>
             </li>
 
             <!-- Unclaimed, pin only -->
@@ -1491,8 +1504,8 @@
 
         <div class="demo-block">
           <div class="demo-title">
-            <span class="wf-tag">State — Error</span> Either fetch failed. The
-            <code>h1</code> survives; the body copy that quotes counts does not.
+            <span class="wf-tag">State — Error</span> Either fetch failed. The <code>h1</code> survives; the body copy
+            that quotes counts does not.
             <a class="note-ref" href="#note-13">13</a>
           </div>
           <div class="keeps-h1">
@@ -1506,9 +1519,7 @@
               </svg>
             </div>
             <h3>We can&rsquo;t reach the gym list right now</h3>
-            <p>
-              Something on our end is down. Give it a minute and reload, or head to a gym page you already know.
-            </p>
+            <p>Something on our end is down. Give it a minute and reload, or head to a gym page you already know.</p>
             <div class="state-actions">
               <button class="btn btn-filled" type="button">Reload</button>
               <a class="btn btn-outlined" href="/">Back to Boardsesh</a>
@@ -1536,10 +1547,8 @@
         </div>
 
         <nav class="breadcrumbs" aria-label="Breadcrumb">
-          <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span><span
-            aria-current="page"
-            >Crimp City Boulders</span
-          >
+          <a href="/">Home</a><span class="sep">›</span><a href="/gyms">Gyms</a><span class="sep">›</span
+          ><span aria-current="page">Crimp City Boulders</span>
           <a class="note-ref" href="#note-14">14</a>
         </nav>
 
@@ -1665,18 +1674,20 @@
           <span class="num">1</span>
           <div class="body">
             <strong>One header, one frame, one breadcrumb trail.</strong> The page sits directly under the single global
-            header bar; there is no second in-page bar and no in-page back arrow. The planned <code>PageShell</code>
-            primitive (<code>title</code>, <code>lead</code>, <code>breadcrumb</code>, <code>width</code>) owns the
-            frame and the <code>calc(var(--global-header-height) + 24px)</code> top padding. The directory takes
-            <code>width="wide"</code>; the gym page takes <code>width="prose"</code>. Breadcrumbs are real
-            <code>&lt;a href&gt;</code> anchors rendered with <code>LocaleLink</code> — so a
+            header bar; there is no second in-page bar and no in-page back arrow. The planned
+            <code>PageShell</code> primitive (<code>title</code>, <code>lead</code>, <code>breadcrumb</code>,
+            <code>width</code>) owns the frame and the <code>calc(var(--global-header-height) + 24px)</code> top
+            padding. The directory takes <code>width="wide"</code>; the gym page takes <code>width="prose"</code>.
+            Breadcrumbs are real <code>&lt;a href&gt;</code> anchors rendered with <code>LocaleLink</code> — so a
             <code>/de/gyms/kilter</code> visitor stays in German — and emit <code>BreadcrumbList</code> JSON-LD. Never
             <code>router.push</code> on a <code>&lt;div&gt;</code>. Three levels also gives the page its first two
             internal links before any result renders.
             <span class="bind"
               >Binds: <code>packages/web/app/gyms/directory-page.tsx</code> (<code>Container maxWidth="lg"</code> +
               <code>pt: 'calc(var(--global-header-height) + 32px)'</code>, repeated in the error branch); the same
-              literal in <code>packages/web/app/gym/[gym_slug]/page.tsx</code>; <code>@/app/components/i18n/locale-link</code>. The directory renders no breadcrumb at all today — that markup is net-new, not a restyle.</span
+              literal in <code>packages/web/app/gym/[gym_slug]/page.tsx</code>;
+              <code>@/app/components/i18n/locale-link</code>. The directory renders no breadcrumb at all today — that
+              markup is net-new, not a restyle.</span
             >
             <span class="oq"
               >Open: PageShell drops the padding to 24px where both routes hardcode 32px — pick one before the shell
@@ -1699,9 +1710,9 @@
             >
             <span class="oq"
               ><strong>Mandatory open question — indexing.</strong> All four routes are
-              <code>robots: { index: false, follow: true }</code> via <code>createNoIndexMetadata</code>. The doc comment
-              in <code>directory-page.tsx</code> ties lifting that to the duplicate-gym dedup queue and the gyms sitemap
-              shard (#4372 / #4381), <em>not</em> to visual quality — indexed duplicates outlive their merges in
+              <code>robots: { index: false, follow: true }</code> via <code>createNoIndexMetadata</code>. The doc
+              comment in <code>directory-page.tsx</code> ties lifting that to the duplicate-gym dedup queue and the gyms
+              sitemap shard (#4372 / #4381), <em>not</em> to visual quality — indexed duplicates outlive their merges in
               Google's cache. Design the page as the search surface it is meant to become, but a visual overhaul is the
               wrong PR to flip indexing in. Removing the noindex stays a one-line change, made on its own, after the
               queue drains.</span
@@ -1719,8 +1730,8 @@
             <code>--surface</code> fill, <code>--separator</code> hairline, 12px radius — so the fill does the work and
             the border only finishes the edge. Hover raises to <code>--surface-2</code>.
             <span class="bind"
-              >Binds: <code>packages/web/app/gyms/gym-directory-card.tsx</code> (the
-              <code>Box component="li"</code> sx block).</span
+              >Binds: <code>packages/web/app/gyms/gym-directory-card.tsx</code> (the <code>Box component="li"</code> sx
+              block).</span
             >
           </div>
         </div>
@@ -1735,8 +1746,8 @@
             plus a soft violet ring — the state has to survive being the only styled thing in a row of four. Counts are
             gyms, never boards, and the hint line says so.
             <span class="bind"
-              >Binds: <code>directory-page.tsx</code> facet <code>Chip</code> block;
-              <code>facetChipLabel</code> in <code>directory-copy.ts</code>; <code>gyms.facets.countHint</code>.</span
+              >Binds: <code>directory-page.tsx</code> facet <code>Chip</code> block; <code>facetChipLabel</code> in
+              <code>directory-copy.ts</code>; <code>gyms.facets.countHint</code>.</span
             >
             <span class="oq"
               >Open: only four facets exist (<code>all</code>, <code>kilter</code>, <code>moonboard</code>,
@@ -1756,8 +1767,8 @@
             shareable URL; the analytics island reads the <em>result</em> of that navigation so
             <code>resultsCount</code> is real rather than guessed at submit time.
             <span class="bind"
-              >Binds: <code>packages/web/app/gyms/gym-directory-search-form.tsx</code>;
-              <code>--input-*</code> vars in <code>packages/web/app/components/index.css</code>.</span
+              >Binds: <code>packages/web/app/gyms/gym-directory-search-form.tsx</code>; <code>--input-*</code> vars in
+              <code>packages/web/app/components/index.css</code>.</span
             >
           </div>
         </div>
@@ -1766,8 +1777,8 @@
           <span class="num">6</span>
           <div class="body">
             <strong>"Use my location" is opt-in, and it hides gyms.</strong> Both proximity paths hard-filter
-            <code>location IS NOT NULL</code>, so switching to near-me silently drops roughly a third of the catalog.
-            It carries the pinless notice, the radius group (10/25/50/100 km), and a one-tap "Show all gyms" back out.
+            <code>location IS NOT NULL</code>, so switching to near-me silently drops roughly a third of the catalog. It
+            carries the pinless notice, the radius group (10/25/50/100 km), and a one-tap "Show all gyms" back out.
             Denial or no support falls back to typing a town — the hint line makes that discoverable without a
             permission prompt. No <code>?lat</code>/<code>?lng</code> in the URL: a shareable link should not carry
             somebody's position.
@@ -1782,8 +1793,10 @@
         <div class="annotation" id="note-7">
           <span class="num">7</span>
           <div class="body">
-            <strong>Map markers hardcode <code>#fff</code> — and this is the one place the
-            <code>style</code>-prop ban cannot apply.</strong>
+            <strong
+              >Map markers hardcode <code>#fff</code> — and this is the one place the <code>style</code>-prop ban cannot
+              apply.</strong
+            >
             Leaflet's <code>divIcon</code> takes an HTML <em>string</em>, so the markup is built with inline
             <code>style=</code> attributes by construction; there is no MUI component to reach for. What the rule still
             demands is that no literal hex survive: the strings already interpolate
@@ -1798,8 +1811,8 @@
             >
             <span class="oq"
               >Open: OSM's standard raster tiles are light. A dark-styled marker set on a light tile is worse than what
-              ships today, so the marker change and a dark tile source have to land together — or the markers stay
-              tuned for the light tile and only the hex literals get tokenised.</span
+              ships today, so the marker change and a dark tile source have to land together — or the markers stay tuned
+              for the light tile and only the hex literals get tokenised.</span
             >
           </div>
         </div>
@@ -1811,12 +1824,11 @@
             is primary at every width and the coverage pill states the gap on the surface that has it — bottom-left,
             <code>pointerEvents: none</code>, because Leaflet's zoom control sits top-left and a label must never
             swallow a click on <code>+</code>. OSM attribution is not optional on a public page. At ≥960px the map is a
-            sticky right column; below that it collapses behind a Show map toggle and renders full-width above the
-            list.
+            sticky right column; below that it collapses behind a Show map toggle and renders full-width above the list.
             <span class="bind"
-              >Binds: <code>gym-directory-map.tsx</code> (the pill <code>Chip</code>,
-              <code>OSM_ATTRIBUTION</code>, <code>attributionControl: true</code>);
-              <code>WIDE_LAYOUT = '@media (min-width: 960px)'</code> in <code>gym-directory-near-me.tsx</code>.</span
+              >Binds: <code>gym-directory-map.tsx</code> (the pill <code>Chip</code>, <code>OSM_ATTRIBUTION</code>,
+              <code>attributionControl: true</code>); <code>WIDE_LAYOUT = '@media (min-width: 960px)'</code> in
+              <code>gym-directory-near-me.tsx</code>.</span
             >
           </div>
         </div>
@@ -1840,14 +1852,14 @@
         <div class="annotation" id="note-10">
           <span class="num">10</span>
           <div class="body">
-            <strong>Claim state: a badge or a quiet prompt, never a penalty.</strong> Claimed gyms get the green
-            "✓ Claimed" pill — on dark that is a tinted fill plus a border, since <code>--success</code> as text alone
-            is easy to miss at 11px. Unclaimed gyms get one quiet line ("Is this your gym?") and are otherwise
-            identical: never hidden, never ranked down, never greyed. The prompt fires the claim-funnel event with the
+            <strong>Claim state: a badge or a quiet prompt, never a penalty.</strong> Claimed gyms get the green "✓
+            Claimed" pill — on dark that is a tinted fill plus a border, since <code>--success</code> as text alone is
+            easy to miss at 11px. Unclaimed gyms get one quiet line ("Is this your gym?") and are otherwise identical:
+            never hidden, never ranked down, never greyed. The prompt fires the claim-funnel event with the
             server-settled <code>viewerState</code>, so a click that beats hydration still reports the truth.
             <span class="bind"
-              >Binds: <code>packages/web/app/gyms/gym-directory-claim-link.tsx</code>;
-              <code>gyms.card.claimCta</code>; <code>viewerState</code> derived in <code>directory-page.tsx</code> from
+              >Binds: <code>packages/web/app/gyms/gym-directory-claim-link.tsx</code>; <code>gyms.card.claimCta</code>;
+              <code>viewerState</code> derived in <code>directory-page.tsx</code> from
               <code>getPosthogDistinctId()</code>.</span
             >
           </div>
@@ -1858,8 +1870,8 @@
           <div class="body">
             <strong>Pagination is a crawl path, not 40 competing URLs.</strong> 24 per page, real
             <code>?page=N</code> anchors with <code>rel="prev"</code>/<code>rel="next"</code>, and a windowed number
-            range. One page per interaction by construction — there is no load-more loop that can drain the catalog
-            into one request. Page 41+ is a 404 rather than a clamp (a clamp serves a 200 whose URL and highlighted page
+            range. One page per interaction by construction — there is no load-more loop that can drain the catalog into
+            one request. Page 41+ is a 404 rather than a clamp (a clamp serves a 200 whose URL and highlighted page
             disagree), and every variant self-canonicalises to the route's own clean base.
             <span class="bind"
               >Binds: <code>packages/web/app/gyms/gym-directory-pagination.tsx</code>;
@@ -1940,13 +1952,12 @@
           <span class="num">16</span>
           <div class="body">
             <strong>Cross-cutting, no single region.</strong> (a) <strong>No hardcoded hex</strong> in the
-            implementation — every colour a CSS var from
-            <code>packages/web/app/components/index.css</code>; the Leaflet strings in note 8 are the only markup that
-            may carry inline <code>style</code>, and even there the values are vars. (b) <strong>i18n:</strong> every
-            visible string through the <code>gyms</code> catalog in all four locales, literal <code>t()</code> keys only
-            (the per-facet switch in <code>directory-copy.ts</code> exists precisely because
-            <code>t(variable)</code> hard-fails); Spanish uses <em>plafón</em> for board.
-            (c) <strong>Trademarks:</strong> "gyms with a Kilter board", never "Kilter gyms" — compatibility, never
+            implementation — every colour a CSS var from <code>packages/web/app/components/index.css</code>; the Leaflet
+            strings in note 8 are the only markup that may carry inline <code>style</code>, and even there the values
+            are vars. (b) <strong>i18n:</strong> every visible string through the <code>gyms</code> catalog in all four
+            locales, literal <code>t()</code> keys only (the per-facet switch in <code>directory-copy.ts</code> exists
+            precisely because <code>t(variable)</code> hard-fails); Spanish uses <em>plafón</em> for board. (c)
+            <strong>Trademarks:</strong> "gyms with a Kilter board", never "Kilter gyms" — compatibility, never
             endorsement — and MoonBoard, Kilter, Tension capitalised as shown. (d) <strong>390px:</strong> the card grid
             drops to one column, the map becomes a full-width block above the list behind the Show map toggle, and the
             facet row wraps. CSS media queries only — no <code>useMediaQuery</code>, which renders the wrong layout on

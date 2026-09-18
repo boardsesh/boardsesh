@@ -1103,8 +1103,8 @@
     <div class="wf-banner">
       <strong>SPEC WIREFRAME</strong> — <code>PageShell</code>: one shared page shell for <code>/about</code>,
       <code>/help</code>, <code>/support</code>, <code>/legal</code>, <code>/privacy</code>. This is a design contract,
-      not a page. Numbered violet markers link to the
-      <a href="#notes" style="color: #c4b5fd">design notes</a> at the bottom.
+      not a page. Numbered violet markers link to the <a href="#notes" style="color: #c4b5fd">design notes</a> at the
+      bottom.
     </div>
 
     <!-- The real MarketingHeader. Unchanged by this work — the shell sits UNDER it. -->
@@ -1131,10 +1131,10 @@
         <h1>The page shell</h1>
         <p class="doc-lead">
           Five pages currently ship five near-identical CSS modules and two different ideas about where the
-          <code>&lt;h1&gt;</code> lives. This replaces them with four server-safe primitives —
-          <code>PageShell</code>, <code>PageSection</code>, <code>Prose</code>, <code>PageCard</code> — and deletes the
-          second header bar that sits under the global one.<a class="note-ref" href="#note-1">1</a> Scope is these five
-          pages and nothing else.<a class="note-ref" href="#note-16">16</a>
+          <code>&lt;h1&gt;</code> lives. This replaces them with four server-safe primitives — <code>PageShell</code>,
+          <code>PageSection</code>, <code>Prose</code>, <code>PageCard</code> — and deletes the second header bar that
+          sits under the global one.<a class="note-ref" href="#note-1">1</a> Scope is these five pages and nothing
+          else.<a class="note-ref" href="#note-16">16</a>
         </p>
       </div>
 
@@ -1333,7 +1333,15 @@
           </div>
 
           <div class="clear-content">
-            <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--primary)">
+            <div
+              style="
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: var(--primary);
+              "
+            >
               Get involved
             </div>
             <div class="t-h1" style="margin-top: 6px">Support Boardsesh</div>
@@ -1345,9 +1353,7 @@
         </div>
 
         <div class="one-place">
-          <div class="hd">
-            This value appears in exactly ONE place<a class="note-ref" href="#note-6">6</a>
-          </div>
+          <div class="hd">This value appears in exactly ONE place<a class="note-ref" href="#note-6">6</a></div>
           <p>
             <code>padding-top: calc(var(--global-header-height) + 24px)</code> lives in
             <code>page-shell.module.css</code> and nowhere else. Three modules repeat it today, each with its own
@@ -1539,8 +1545,11 @@
           <h2>Five pages, one shell<a class="note-ref" href="#note-7">7</a></h2>
           <p>
             Each column is the whole page after the migration: the props it passes, the sketch it produces, and where
-            its <code>&lt;h1&gt;</code> comes from. Two of them do not have one today. Columns stack to one at
-            390px.<a class="note-ref" href="#note-14">14</a>
+            its <code>&lt;h1&gt;</code> comes from. Two of them do not have one today. Columns stack to one at 390px.<a
+              class="note-ref"
+              href="#note-14"
+              >14</a
+            >
           </p>
         </div>
 
@@ -1738,8 +1747,9 @@
           <li>
             <span class="what">privacy/page.tsx — local Section() and Paragraph()</span>
             <span class="why"
-              >Two helpers duplicating <code>PageSection</code> and <code>Prose</code> with <b>sx</b> literals
-              (<code>mb: 4</code>, <code>lineHeight: 1.7</code>) that match nothing else on the site.</span
+              >Two helpers duplicating <code>PageSection</code> and <code>Prose</code> with <b>sx</b> literals (<code
+                >mb: 4</code
+              >, <code>lineHeight: 1.7</code>) that match nothing else on the site.</span
             >
           </li>
           <li>
@@ -1760,8 +1770,8 @@
       </section>
 
       <footer class="shell-footer">
-        Footer stand-in for <code>SiteFooter</code>. The document ends here — the shell uses
-        <code>min-height</code>, never a bottom margin on its last child.<a class="note-ref" href="#note-12">12</a>
+        Footer stand-in for <code>SiteFooter</code>. The document ends here — the shell uses <code>min-height</code>,
+        never a bottom margin on its last child.<a class="note-ref" href="#note-12">12</a>
       </footer>
     </main>
 
@@ -1809,17 +1819,15 @@
         <div class="annotation" id="note-3">
           <span class="num">3</span>
           <div class="body">
-            <strong>
-              <code>--semantic-surface-elevated</code> does not exist and must be added.</strong
-            >
+            <strong> <code>--semantic-surface-elevated</code> does not exist and must be added.</strong>
             <code>theme-config.ts</code> has <code>darkTokens.semantic.surfaceElevated = '#2F234A'</code> (and
             <code>#FFFFFF</code> on light) but it was never exposed to the <code>.module.css</code> layer — only
             <code>--semantic-surface</code> and <code>--semantic-surface-overlay</code> made it across. Add the var in
             both the light and dark blocks of <code>index.css</code> in the same PR; without it
             <code>PageCard variant="elevated"</code> has no colour to reference and someone will hardcode the hex.
             <span class="bind"
-              >Binds: packages/web/app/theme/theme-config.ts:94 &amp; :264; packages/web/app/components/index.css:44 &amp;
-              :213.</span
+              >Binds: packages/web/app/theme/theme-config.ts:94 &amp; :264; packages/web/app/components/index.css:44
+              &amp; :213.</span
             >
           </div>
         </div>
@@ -1828,13 +1836,13 @@
           <span class="num">4</span>
           <div class="body">
             <strong>Depth is a lighter violet, never a shadow.</strong> The three existing modules separate their header
-            strip with <code>box-shadow: var(--shadow-xs)</code>. A black shadow against
-            <code>#110A20</code> has nothing to darken, so it reads as blur, not elevation. The ladder does the work:
-            <code>#110A20</code> → <code>#251B3A</code> → <code>#2F234A</code>, with
-            <code>rgba(185,170,215,0.2)</code> as the only border value in the shell.
+            strip with <code>box-shadow: var(--shadow-xs)</code>. A black shadow against <code>#110A20</code> has
+            nothing to darken, so it reads as blur, not elevation. The ladder does the work: <code>#110A20</code> →
+            <code>#251B3A</code> → <code>#2F234A</code>, with <code>rgba(185,170,215,0.2)</code> as the only border
+            value in the shell.
             <span class="bind"
-              >Binds: about.module.css <code>.header</code>; support.module.css <code>.header</code>;
-              theme-config.ts darkTokens.semantic.</span
+              >Binds: about.module.css <code>.header</code>; support.module.css <code>.header</code>; theme-config.ts
+              darkTokens.semantic.</span
             >
           </div>
         </div>
@@ -1889,10 +1897,9 @@
           <span class="num">8</span>
           <div class="body">
             <strong><code>titleVariant</code> changes the size, never the tag.</strong> Some pages want a 40px title and
-            some (legal boilerplate, a policy) want 24px — but the element is
-            <em>always</em> <code>&lt;h1&gt;</code>. Keeping those two decisions separate is what lets the support test
-            keep counting exactly one <code>h1</code> while <code>/legal</code> still looks like a document rather than
-            a landing page.
+            some (legal boilerplate, a policy) want 24px — but the element is <em>always</em> <code>&lt;h1&gt;</code>.
+            Keeping those two decisions separate is what lets the support test keep counting exactly one
+            <code>h1</code> while <code>/legal</code> still looks like a document rather than a landing page.
             <span class="bind">Binds: support/__tests__/support-content.test.tsx:89–95 (h1 count + text).</span>
           </div>
         </div>
@@ -1921,8 +1928,8 @@
             rule must already be on <code>PageSection</code> — any section with an <code>id</code> gets it, not just
             help's.
             <span class="bind"
-              >Binds: help-content.tsx <code>CLIMB_COUNTS_SECTION_ID</code>; help.module.css
-              <code>.section</code>; docs/kilter-sync.md.</span
+              >Binds: help-content.tsx <code>CLIMB_COUNTS_SECTION_ID</code>; help.module.css <code>.section</code>;
+              docs/kilter-sync.md.</span
             >
           </div>
         </div>
@@ -1962,8 +1969,8 @@
             <code>support.headerTitle</code>, <code>about.headerTitle</code> and <code>legal.headerTitle</code> exist
             only to label the deleted strip. Remove them from all four locale catalogs in the same PR —
             <code>catalog-completeness.test.ts</code> enforces parity per namespace, and
-            <code>vp run check:i18n:orphans</code> flags survivors. Leave
-            <code>docs.headerTitle</code> alone: <code>/docs</code> is not in this migration.
+            <code>vp run check:i18n:orphans</code> flags survivors. Leave <code>docs.headerTitle</code> alone:
+            <code>/docs</code> is not in this migration.
             <span class="bind"
               >Binds: packages/shared/i18n/locales/&lt;locale&gt;/marketing.json:74, :115, :152; @boardsesh/i18n
               catalog-completeness.test.ts.</span
@@ -1979,10 +1986,9 @@
           <span class="num">14</span>
           <div class="body">
             <strong>390px is a first-class width, not a fallback.</strong> Every grid in the shell starts at
-            <code>minmax(0, 1fr)</code> and widens at a breakpoint; no element carries a
-            <code>min-width</code> above 390px, and the support rails already prove the pattern
-            (<code>grid-template-columns</code> collapsing at 768px, CSS-only). Use CSS media queries throughout — JS
-            breakpoint detection is banned by the repo rules.
+            <code>minmax(0, 1fr)</code> and widens at a breakpoint; no element carries a <code>min-width</code> above
+            390px, and the support rails already prove the pattern (<code>grid-template-columns</code> collapsing at
+            768px, CSS-only). Use CSS media queries throughout — JS breakpoint detection is banned by the repo rules.
             <span class="bind"
               >Binds: CLAUDE.md ("Use CSS media queries… Avoid JS breakpoint detection"); support.module.css
               <code>.rails</code>.</span
@@ -1993,11 +1999,10 @@
         <div class="annotation" id="note-15">
           <span class="num">15</span>
           <div class="body">
-            <strong>No hex in the implementation.</strong> Every colour in
-            <code>page-shell.module.css</code> is a <code>var(--…)</code> from
-            <code>packages/web/app/components/index.css</code>; the hex values printed on this page are documentation of
-            what those vars resolve to in dark mode, not values to paste. Same for spacing and radii — they come from
-            <code>theme-config.ts</code> via the existing tokens.
+            <strong>No hex in the implementation.</strong> Every colour in <code>page-shell.module.css</code> is a
+            <code>var(--…)</code> from <code>packages/web/app/components/index.css</code>; the hex values printed on
+            this page are documentation of what those vars resolve to in dark mode, not values to paste. Same for
+            spacing and radii — they come from <code>theme-config.ts</code> via the existing tokens.
             <span class="bind"
               >Binds: CLAUDE.md ("Always use design tokens… no hardcoded values"); packages/web/app/components/index.css
               as the single source.</span

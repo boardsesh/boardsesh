@@ -310,7 +310,6 @@
     </style>
   </head>
   <body>
-
     <style>
       /* ============================================================
          Page-specific: /support. Nothing here overrides a token —
@@ -549,7 +548,9 @@
           <a href="/support">Support</a>
         </nav>
         <div class="header-right">
-          <span style="font-size: 13px; color: var(--tertiary-label)">global header placeholder — one bar, no second</span>
+          <span style="font-size: 13px; color: var(--tertiary-label)"
+            >global header placeholder — one bar, no second</span
+          >
           <a class="note-ref" href="#note-1">1</a>
         </div>
       </div>
@@ -716,18 +717,18 @@
       <div class="container">
         <h2>Design notes</h2>
         <p class="intro">
-          For the implementing agent. Each note carries the claim, why, and the file, test, or env var it binds to.
-          Copy shown here is indicative: every visible string ships through the <code>support.*</code> marketing keys.
+          For the implementing agent. Each note carries the claim, why, and the file, test, or env var it binds to. Copy
+          shown here is indicative: every visible string ships through the <code>support.*</code> marketing keys.
         </p>
 
         <div class="annotation" id="note-1">
           <span class="num">1</span>
           <div class="body">
-            <strong>One header bar, not two.</strong> The current page renders its own
-            <code>styles.header</code> row — back arrow, small logo, "Support" title — directly under the global
-            <code>MarketingHeader</code>, so every visit opens with two stacked bars and a duplicated logo. Delete that
-            block, the <code>BackButton</code>, and <code>support.headerTitle</code>'s use in the page body; the global
-            nav already tells you where you are. The page then starts at the hero, on the page ground.
+            <strong>One header bar, not two.</strong> The current page renders its own <code>styles.header</code> row —
+            back arrow, small logo, "Support" title — directly under the global <code>MarketingHeader</code>, so every
+            visit opens with two stacked bars and a duplicated logo. Delete that block, the <code>BackButton</code>, and
+            <code>support.headerTitle</code>'s use in the page body; the global nav already tells you where you are. The
+            page then starts at the hero, on the page ground.
             <span class="bind"
               >Binds: <code>support-content.tsx:27-36</code> (header JSX), <code>support.module.css</code>
               <code>.header</code> / <code>.headerTitle</code>, <code>site-chrome.tsx</code> (the real header).</span
@@ -742,11 +743,10 @@
         <div class="annotation" id="note-2">
           <span class="num">2</span>
           <div class="body">
-            <strong>Exactly one h1, and it is the hero.</strong> "Keep Boardsesh running" is the only
-            <code>h1</code> on the page; every section below is an <code>h2</code> and every rail an
-            <code>h3</code>. The current code already fakes this with
-            <code>variant="h2" component="h1"</code>; keep the semantics and let the type scale do the size. Nothing
-            else on the page may be promoted to <code>h1</code>, state demos included.
+            <strong>Exactly one h1, and it is the hero.</strong> "Keep Boardsesh running" is the only <code>h1</code> on
+            the page; every section below is an <code>h2</code> and every rail an <code>h3</code>. The current code
+            already fakes this with <code>variant="h2" component="h1"</code>; keep the semantics and let the type scale
+            do the size. Nothing else on the page may be promoted to <code>h1</code>, state demos included.
             <span class="bind"
               >Binds: <code>packages/web/app/support/__tests__/support-content.test.tsx:89-95</code> (asserts one
               <code>h1</code>, text equal to <code>support.hero.title</code>).</span
@@ -774,11 +774,10 @@
           <span class="num">4</span>
           <div class="body">
             <strong>The free-forever promise moves up, as a pull-quote.</strong> "Every part of Boardsesh stays open to
-            everyone, sponsor or not" currently sits at the tail of
-            <code>support.honesty.p2</code>, below the fold, in the same grey as the rest of the small print. It is the
-            single line that makes the ask honest, so it belongs beside the ask. A left violet rule and a size bump give
-            it weight without turning it into a card. The small print keeps the sentence too — the disclosure test reads
-            the catalog, not the layout.
+            everyone, sponsor or not" currently sits at the tail of <code>support.honesty.p2</code>, below the fold, in
+            the same grey as the rest of the small print. It is the single line that makes the ask honest, so it belongs
+            beside the ask. A left violet rule and a size bump give it weight without turning it into a card. The small
+            print keeps the sentence too — the disclosure test reads the catalog, not the layout.
             <span class="bind"
               >Binds: <code>support.honesty.p2</code>; a new key (e.g. <code>support.promise</code>) must be added to
               all four locales — <code>catalog-completeness.test.ts</code> enforces parity.</span
@@ -805,12 +804,13 @@
           <div class="body">
             <strong>Heading is count-neutral: "Ways to chip in".</strong> The shipped heading says "Two ways to chip in"
             above one rail, because the second is gated on an env var that is unset in production. A heading must never
-            promise a row it cannot render. Rewrite <code>support.rails.title</code> in all four locales; do not
-            branch the string on <code>stripeDonateUrl</code>, which would make the copy untestable and the translations
+            promise a row it cannot render. Rewrite <code>support.rails.title</code> in all four locales; do not branch
+            the string on <code>stripeDonateUrl</code>, which would make the copy untestable and the translations
             conditional.
             <span class="bind"
               >Binds: <code>support.rails.title</code> (currently "Two ways to chip in"),
-              <code>resolveStripeDonateUrl()</code> (<code>packages/web/app/support/stripe-donate-url.ts:14</code>).</span
+              <code>resolveStripeDonateUrl()</code>
+              (<code>packages/web/app/support/stripe-donate-url.ts:14</code>).</span
             >
           </div>
         </div>
