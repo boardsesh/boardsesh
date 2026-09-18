@@ -14,9 +14,10 @@ and `users { userId, boardAccounts { boardType, username } }`. A user with no
 linked accounts is returned with an empty array. Reads use a repeatable-read
 transaction so the snapshot cannot mix two versions of the follow list.
 
-`crewFeed(input: { limit, cursor })` returns a union of `CrewSessionItem` and
-`CrewClimbItem`, newest first. It includes existing session highlights and the
-last 30 days of canonical published climbs from currently followed authors.
+`crewFeed(input: { limit, cursor, timeZone })` returns a union of
+`CrewSessionItem`, `CrewClimbItem` and `CrewClimbGroupItem`, newest first. It
+includes existing session highlights and the last 30 days of canonical published
+climbs from currently followed authors.
 New-climb cards carry `renderBoard`, resolved from each climb's compatible sizes,
 so their thumbnail and preview use the same geometry (including Woods 8x10).
 Publication time wins over creation time, so publishing an old draft is new
@@ -24,13 +25,48 @@ activity. Imports use the source creation date; an old catalogue import is not
 new activity. Invalid timestamps, drafts, hidden/unlisted climbs, and inaccessible
 spray walls are excluded. New-climb metadata is checked again during enrichment.
 
+## Setter day groups
+
+One card covers everything a setter published on one day. The grouping key is
+`(board type, author, local day)`, where the author is
+`COALESCE(NULLIF(setter_username, ''), 'user:' || user_id)` — the username is
+what the card shows and what two of the three follow paths match on, and the
+user-id fallback keeps a native climb with no username from collapsing every
+such climb into one group under SQL's "all NULLs are one group" rule.
+
+`timeZone` is an IANA zone (the mobile client sends the device's) and decides
+where the day breaks: a climb published at 23:00 local belongs to that local day.
+It reaches `AT TIME ZONE`, so an unrecognised zone degrades to UTC rather than
+failing the feed — Postgres raises on a name it does not know.
+
+A card carries at most `CREW_CLIMB_GROUP_LIMIT` (10) climbs, newest first, plus
+`totalCount` for the rest; the client links those to the setter page. A group of
+exactly one is emitted as a `CrewClimbItem`, not a one-element group, so a client
+that predates `CrewClimbGroupItem` keeps rendering single new climbs instead of
+dropping them on a union member it cannot match. Keep that fallback until the
+store fleet has moved.
+
 Crew candidate selection starts with three author-index lookups (direct setter,
 native user, linked board account), combined with `UNION` to remove overlaps.
 A narrow `MATERIALIZED` CTE keeps publication-date validation outside those
 lookups, so every page parses dates only for followed climbs instead of scanning
 the whole catalogue. Do not inline that CTE or move date predicates into its
-branches. Visibility, the 30-day window, and the exact cursor are applied before
-the candidate limit; enrichment still rechecks current follows and visibility.
+branches — the second CTE (`crew_climb_rows`) is materialized for the same
+reason: the aggregate reads each row's parsed instant in its select, group,
+having and order clauses.
+
+Grouping runs **before** the page is cut, so a setter's day cannot be split
+across two pages. That forces the cursor into a `HAVING` over `max(pub)`: as a
+`WHERE` it would drop a group's newest members, move the group's timestamp
+backwards, and hand the same setter a second card on a later page. Do not move it
+back. A card's id is its group id, and the cursor carries that same id.
+
+Selected groups are then expanded by a second query that ranks each group's
+climbs with one window function over the same followed set and takes the top
+`perGroup`; enrichment is a single `IN` over the uuids that survive, so a page
+costs two queries however many climbs the groups hold. Visibility, the 30-day
+window, and the exact cursor are applied before the candidate limit; enrichment
+still rechecks current follows and visibility.
 The intermediate rows scale with the viewer's complete followed catalogue, not
 the page size. A viewer following prolific setters can therefore cost more than
 the measured 1,963-row sample. Do not cap this intermediate set: doing so before

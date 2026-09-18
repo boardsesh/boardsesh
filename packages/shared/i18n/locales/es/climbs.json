@@ -18,7 +18,9 @@
     "chooseBoard": "Elige un plafón",
     "retry": "Reintentar",
     "newClimb": "Nuevo bloque",
-    "setBy": "Equipado por {{setter}}"
+    "newClimbCount_one": "1 bloque nuevo",
+    "newClimbCount_other": "{{count}} bloques nuevos",
+    "seeAllClimbs": "Ver los {{count}}"
   },
   "sends_one": "{{formattedCount}} encadene",
   "sends_other": "{{formattedCount}} encadenes",
