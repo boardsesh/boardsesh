@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The Support page now shows you how to chip in without scrolling, and lists the ways to help that cost nothing. ([#5557](https://github.com/boardsesh/boardsesh/pull/5557))
 - A setter's new climbs from one day now arrive as a single card you swipe through ([#5537](https://github.com/boardsesh/boardsesh/pull/5537))
   Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen
   New-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade

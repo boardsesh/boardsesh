@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-18T13:10:53.135Z",
+  "generatedAt": "2026-09-18T13:17:47.660Z",
   "entries": [
+    {
+      "prNumber": 5557,
+      "category": "new",
+      "title": "The Support page now shows you how to chip in without scrolling, and lists the ways to help that cost nothing.",
+      "mergedAt": "2026-09-18T13:15:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5557"
+    },
     {
       "prNumber": 5538,
       "category": "fixed",
