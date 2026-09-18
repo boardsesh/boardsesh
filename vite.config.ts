@@ -539,6 +539,13 @@ export default defineConfig({
         command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
+      // Re-render the static design wireframes in docs/design/** to PNG at 1440
+      // and 390. Not cached: it writes PNGs next to their source HTML, and the
+      // point of running it is that the HTML just changed.
+      'design:mockups': {
+        command: 'tsx packages/web/scripts/capture-design-mockups.ts',
+        cache: false,
+      },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
@@ -1071,26 +1078,6 @@ export default defineConfig({
       },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
-        cache: false,
-      },
-      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
-      // shard against the stored baseline (scripts/compare-screenshots.ts).
-      'screenshot:compare': {
-        command: 'tsx scripts/compare-screenshots.ts',
-        cache: false,
-      },
-      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
-      // the compare above reads (scripts/screenshot-baseline.ts).
-      'screenshot:baseline': {
-        command: 'tsx scripts/screenshot-baseline.ts',
-        cache: false,
-      },
-      // Decides whether the probe's single pixel-compared shard should be
-      // overridden and the full 12-shard capture forced anyway, based on
-      // changed-file paths the probe shard itself can't see (locale-only or
-      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
-      'screenshot:probe-scope': {
-        command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
       'mobile:publish': {
