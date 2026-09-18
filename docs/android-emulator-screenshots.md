@@ -169,3 +169,14 @@ sees one) with no native-input change between the two. Otherwise it falls back t
   auto-login path (the default).
 - `--flow` runs the committed Maestro flows with `-e APP_ID=com.boardsesh.app.dev` so
   `launchApp` targets the dev-client package.
+
+### Framed store captures on Linux
+
+`vp run mobile:screenshots -- --platform android --dev-client --fixtures replay`
+uses the committed sanitized fixtures and writes both native captures and framed
+store PNGs. Keep `BOARDSESH_METRO_PORT` and `BOARDSESH_SCREENSHOT_READY_PORT`
+distinct from another worktree's servers. On hosts where the default emulator
+renderer crashes, boot with `BOARDSESH_EMULATOR_GPU=swangle_indirect` and
+`BOARDSESH_EMULATOR_EXTRA_ARGS='-feature -Vulkan'`. The emulator helper starts
+Xvfb automatically when no display is available. See the store release runbook
+for caption editing and the standalone framing command.

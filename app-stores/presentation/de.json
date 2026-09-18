@@ -1,0 +1,46 @@
+{
+  "board": {
+    "headline": "Sieh deinen nächsten Zug",
+    "description": "Lies die Griffe, prüfe den Grad und beleuchte deinen Boulder."
+  },
+  "boards": {
+    "headline": "Eine App für deine Boards",
+    "description": "Kompatibel mit Kilter und Tension, mit deinem Verlauf an einem Ort."
+  },
+  "home": {
+    "headline": "Bleib bei deiner Crew dabei",
+    "description": "Sieh die letzten Sessions und woran alle gerade arbeiten."
+  },
+  "climbs": {
+    "headline": "Finde dein nächstes Projekt",
+    "description": "Entdecke Boulder nach Grad, Winkel und mehr."
+  },
+  "session": {
+    "headline": "Jede Session zählt",
+    "description": "Blicke auf deine Boulder, Versuche und Begehungen zurück."
+  },
+  "workout": {
+    "headline": "Gib deiner Session einen Plan",
+    "description": "Erstelle ein Training für dein Board und dein Niveau."
+  },
+  "discover": {
+    "headline": "Entdecke neue Boulder",
+    "description": "Finde empfohlene und gespeicherte Playlists für dein Board."
+  },
+  "playlist": {
+    "headline": "Sammle deine nächsten Boulder",
+    "description": "Öffne eine Playlist und klettere die Boulder durch."
+  },
+  "logbook": {
+    "headline": "Erinnere dich an jede Begehung",
+    "description": "Behalte deine Begehungen und Versuche in einem Routenbuch."
+  },
+  "profile": {
+    "headline": "Sieh deine Fortschritte",
+    "description": "Verfolge deinen Verlauf, deine Grade und deine Session-Statistiken."
+  },
+  "wall": {
+    "headline": "Sieh, was gerade leuchtet",
+    "description": "Verfolge den aktuellen Boulder und die letzte Aktivität am Board."
+  }
+}

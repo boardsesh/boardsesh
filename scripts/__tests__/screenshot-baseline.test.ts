@@ -6,6 +6,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+  PRESENTATION_MANIFEST,
+  STORE_CAPTION_LOCALES,
+  sha256Screenshot,
+  rawSizeForPresentedScreenshot,
+} from '../lib/screenshot-presentation';
 import { EXPECTED_APP_STORE_DEVICE_SLUGS, EXPECTED_APP_STORE_LOCALES } from '../assert-screenshot-dimensions';
 import {
   BASELINE_TAG,
@@ -92,9 +98,36 @@ function writeTree(root: string, skip?: { locale?: string; deviceSlug?: string }
       mkdirSync(shardDir, { recursive: true });
       writeFileSync(join(shardDir, '01-discover.png'), `${locale}/${deviceSlug}/01`);
       writeFileSync(join(shardDir, '02-board.png'), `${locale}/${deviceSlug}/02`);
+      writeFileSync(
+        join(shardDir, PRESENTATION_MANIFEST),
+        JSON.stringify({
+          version: 1,
+          locale: STORE_CAPTION_LOCALES[locale],
+          files: Object.fromEntries(
+            ['01-discover.png', '02-board.png'].map((name) => {
+              const hash = sha256Screenshot(readFileSync(join(shardDir, name)));
+              return [name, { rawBytes: 123456, rawSha256: hash, framedSha256: hash }];
+            }),
+          ),
+        }),
+      );
     }
   }
   return root;
+}
+
+/** Release fixtures carry the raw capture sizes alongside the framed PNG hashes. */
+function serializeFramedManifest(manifest: BaselineManifest): string {
+  return JSON.stringify({
+    ...manifest,
+    presentationVersion: 1,
+    captures: Object.fromEntries(
+      Object.entries(manifest.files).map(([path, hash]) => [
+        path,
+        { rawBytes: 123456, rawSha256: hash, framedSha256: hash },
+      ]),
+    ),
+  });
 }
 
 describe('assetNameFor / parseAssetName', () => {
@@ -388,6 +421,70 @@ describe('publishBaseline', () => {
 });
 
 describe('fetchBaseline', () => {
+  it('rejects legacy raw baselines so the next capture regenerates all framed shards', () => {
+    const downloadDir = join(workDir, 'download');
+    mkdirSync(downloadDir, { recursive: true });
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    writeFileSync(
+      join(downloadDir, 'ios-manifest.json'),
+      JSON.stringify({
+        platform: 'ios',
+        commit: 'legacy',
+        runId: '1',
+        capturedAt: 'now',
+        files: { 'en-US/iphone-16-pro-max/01-discover.png': 'a'.repeat(64) },
+      }),
+    );
+    const runner = new FakeRunner();
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir: join(workDir, 'out'),
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+    expect(result.found).toBe(false);
+    expect(runner.calls.some((call) => call.command === 'unzip')).toBe(false);
+  });
+
+  it('rejects framed baselines with missing raw capture metadata', () => {
+    const downloadDir = join(workDir, 'download');
+    const outDir = join(workDir, 'out');
+    mkdirSync(downloadDir, { recursive: true });
+    const bytes = Buffer.from('framed png');
+    writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
+    writeFileSync(
+      join(downloadDir, 'ios-manifest.json'),
+      JSON.stringify({
+        platform: 'ios',
+        presentationVersion: 1,
+        captures: {},
+        commit: 'framed',
+        runId: '1',
+        capturedAt: 'now',
+        files: { 'en-US/iphone-16-pro-max/01-discover.png': sha256Screenshot(bytes) },
+      }),
+    );
+    const runner = new FakeRunner((invocation) => {
+      if (invocation.command === 'unzip') {
+        mkdirSync(outDir, { recursive: true });
+        writeFileSync(join(outDir, '01-discover.png'), bytes);
+      }
+      return ok();
+    });
+    const result = fetchBaseline({
+      platform: 'ios',
+      outDir,
+      asset: 'ios-en-US-iphone-16-pro-max.zip',
+      all: false,
+      runner,
+      downloadDir,
+    });
+    expect(result.found).toBe(false);
+    expect(existsSync(outDir)).toBe(false);
+  });
+
   it('reports found=false when the release or asset is missing', () => {
     const runner = new FakeRunner((invocation) => (invocation.args[1] === 'download' ? fail() : ok()));
 
@@ -415,7 +512,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     const runner = new FakeRunner((invocation) => {
       if (invocation.command === 'unzip') {
@@ -436,6 +533,7 @@ describe('fetchBaseline', () => {
 
     expect(result.found).toBe(true);
     expect(result.commit).toBe('cafebabe');
+    expect(rawSizeForPresentedScreenshot(join(outDir, '01-discover.png'))).toBe(123456);
     const unzip = runner.calls.find((call) => call.command === 'unzip');
     expect(unzip?.args.at(-1)).toBe(outDir);
     const download = runner.calls.find((call) => call.args[1] === 'download');
@@ -454,7 +552,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32) },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     // The fake unzip performs a REAL extraction (unlike the other fetchBaseline
     // tests) so the sha256 verification has actual bytes to hash — bytes that
@@ -493,7 +591,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': expectedSha256 },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     const runner = new FakeRunner((invocation) => {
       if (invocation.command === 'unzip') {
@@ -532,7 +630,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     const runner = new FakeRunner((invocation) => {
       if (invocation.command === 'unzip') {
@@ -564,7 +662,7 @@ describe('fetchBaseline', () => {
     writeFileSync(join(downloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
     writeFileSync(
       join(downloadDir, 'ios-manifest.json'),
-      JSON.stringify({
+      serializeFramedManifest({
         platform: 'ios',
         commit: 'cafebabe',
         runId: '3',
@@ -607,7 +705,7 @@ describe('fetchBaseline', () => {
         'de-DE/ipad-pro-11-inch-m5/01-discover.png': createHash('sha256').update(deDeBytes).digest('hex'),
       },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     const runner = new FakeRunner((invocation) => {
       if (invocation.command === 'unzip') {
@@ -647,7 +745,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': createHash('sha256').update(fileBytes).digest('hex') },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     const runner = new FakeRunner((invocation) => {
       if (invocation.command === 'unzip') {
@@ -704,7 +802,7 @@ describe('fetchBaseline', () => {
         'de-DE/ipad-pro-11-inch-m5/01-discover.png': 'bb'.repeat(32),
       },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const runner = new FakeRunner(() => ok());
 
     const result = fetchBaseline({
@@ -733,7 +831,7 @@ describe('fetchBaseline', () => {
       capturedAt: 'now',
       files: { 'en-US/iphone-16-pro-max/01-discover.png': knownSha256 },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     // The fake unzip extracts the manifest-known file plus one the manifest
     // never listed — an extra file must fail the fetch just like a hash
@@ -777,7 +875,7 @@ describe('fetchBaseline', () => {
         'en-US/iphone-16-pro-max/01-discover.png': 'aa'.repeat(32),
       },
     };
-    writeFileSync(join(downloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+    writeFileSync(join(downloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
     const outDir = join(workDir, 'baseline');
     // Shards unzip in sorted asset-name order — de-DE before en-US — so the
     // FIRST shard extracted matches its manifest hash and the SECOND is
@@ -820,7 +918,7 @@ describe('fetchBaseline', () => {
       if (invocation.command === 'gh' && invocation.args[1] === 'download') {
         capturedDownloadDir = invocation.args[invocation.args.indexOf('--dir') + 1];
         writeFileSync(join(capturedDownloadDir, 'ios-en-US-iphone-16-pro-max.zip'), 'zip-bytes');
-        writeFileSync(join(capturedDownloadDir, 'ios-manifest.json'), JSON.stringify(manifest));
+        writeFileSync(join(capturedDownloadDir, 'ios-manifest.json'), serializeFramedManifest(manifest));
         return ok();
       }
       if (invocation.command === 'unzip') {

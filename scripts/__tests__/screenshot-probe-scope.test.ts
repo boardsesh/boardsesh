@@ -84,8 +84,9 @@ describe('decideProbeScope', () => {
     expect(decision.reason).toContain('packages/shared/i18n/locales/de/common.json');
   });
 
-  it('covers exactly the five documented rules', () => {
+  it('covers all documented rules', () => {
     expect(PROBE_SCOPE_RULES.map((rule) => rule.name)).toEqual([
+      'screenshot-presentation',
       'shared-i18n-non-en-us-locale',
       'mobile-locales',
       'mobile-ipad-tablet',

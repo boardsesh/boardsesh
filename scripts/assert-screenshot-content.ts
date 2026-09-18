@@ -35,7 +35,8 @@
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { PRESENTATION_MANIFEST, rawSizeForPresentedScreenshot } from './lib/screenshot-presentation';
 import { pathToFileURL } from 'node:url';
 
 const LOG = '[screenshot:assert-content]';
@@ -122,7 +123,12 @@ export function readPngSizesRecursively(root: string): CandidateFile[] {
         continue;
       }
       if (entry.name.toLowerCase().endsWith('.png')) {
-        found.push({ relativePath: relative(root, entryPath), size: statSync(entryPath).size });
+        found.push({
+          relativePath: relative(root, entryPath),
+          size: existsSync(join(dirname(entryPath), PRESENTATION_MANIFEST))
+            ? rawSizeForPresentedScreenshot(entryPath)
+            : statSync(entryPath).size,
+        });
       }
     }
   };

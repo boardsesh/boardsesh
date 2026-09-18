@@ -1109,6 +1109,10 @@ export default defineConfig({
       // automatic App Store Connect upload: an absolute byte floor plus a ratio
       // against the last published baseline (scripts/assert-screenshot-content.ts),
       // mirroring the blank/mid-load checks the Android capture job already has.
+      'screenshot:frame': {
+        command: 'tsx scripts/frame-screenshots.ts',
+        cache: false,
+      },
       'screenshot:assert-content': {
         command: 'tsx scripts/assert-screenshot-content.ts',
         cache: false,

@@ -212,6 +212,15 @@ runs:
         if-no-files-found: warn
         retention-days: 1
 
+    - name: Upload native captures for review
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: raw-ios-${{ inputs.locale }}-${{ inputs.device-slug }}
+        path: app-stores/apple/raw-screenshots/**
+        if-no-files-found: ignore
+        retention-days: 7
+
     - name: Upload recorded fixtures
       if: ${{ always() && inputs.fixtures == 'record' }}
       uses: actions/upload-artifact@v4

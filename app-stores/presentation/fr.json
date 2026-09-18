@@ -1,0 +1,46 @@
+{
+  "board": {
+    "headline": "Visualise ton prochain mouvement",
+    "description": "Lis les prises, vérifie la cotation et allume ton bloc."
+  },
+  "boards": {
+    "headline": "Une app pour tes boards",
+    "description": "Compatible avec Kilter et Tension, avec tout ton historique réuni."
+  },
+  "home": {
+    "headline": "Retrouve les nouvelles du crew",
+    "description": "Découvre les dernières séances et les blocs que chacun travaille."
+  },
+  "climbs": {
+    "headline": "Trouve ton prochain projet",
+    "description": "Explore les blocs par cotation, inclinaison et bien plus."
+  },
+  "session": {
+    "headline": "Chaque séance compte",
+    "description": "Reviens sur tes blocs, tes essais et tes croix."
+  },
+  "workout": {
+    "headline": "Prépare ta séance",
+    "description": "Crée un entraînement adapté à ta board et à ton niveau."
+  },
+  "discover": {
+    "headline": "Découvre de nouveaux blocs",
+    "description": "Explore les playlists recommandées et enregistrées pour ta board."
+  },
+  "playlist": {
+    "headline": "Rassemble tes prochains blocs",
+    "description": "Ouvre une playlist et grimpe les blocs à ton rythme."
+  },
+  "logbook": {
+    "headline": "Garde chaque croix en mémoire",
+    "description": "Retrouve tes croix et tes essais dans un seul carnet."
+  },
+  "profile": {
+    "headline": "Suis ta progression",
+    "description": "Retrouve ton historique, tes cotations et les stats de tes séances."
+  },
+  "wall": {
+    "headline": "Regarde ce qui est allumé",
+    "description": "Suis le bloc actuel et l’activité récente de la board."
+  }
+}

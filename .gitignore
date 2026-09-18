@@ -138,6 +138,8 @@ packages/mobile/.app-cache/
 # Apple App Store screenshots are captured fresh by the Maestro pipeline
 # (vp run mobile:screenshots) and uploaded on demand — not committed.
 /app-stores/apple/screenshots/
+/app-stores/*/raw-screenshots/
+/app-stores/google/screenshots/**/contact-sheet.jpg
 # Google Play screenshots ARE committed: app-stores/google/screenshots/pixel-2/
 # is the source of truth the Mobile Store Metadata workflow uploads, refreshed by
 # mobile-screenshots-android.yml's commit-back. (Apple stays ephemeral because

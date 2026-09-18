@@ -70,6 +70,7 @@ import { tmpdir } from 'node:os';
 import { fixtureSnapshotDirectory } from './lib/screenshot-fixture-snapshot';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { STORE_CAPTION_LOCALES } from './lib/screenshot-presentation';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
 import {
   METRO_LOG_PATH,
@@ -1427,15 +1428,44 @@ function collectScreenshots(
   platform: 'ios' | 'android',
   deviceName: string,
   appStoreLocales: readonly string[] | null = null,
+  framed = true,
 ): string[] {
-  const storeRoot = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform], 'screenshots');
-  if (!appStoreLocales) {
-    return writeCapturedScreenshots(captureDir, join(storeRoot, deviceSlug(deviceName)));
-  }
-
+  const storeRoot = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform]);
   const saved: string[] = [];
-  for (const appStoreLocale of appStoreLocales) {
-    saved.push(...writeCapturedScreenshots(captureDir, join(storeRoot, appStoreLocale, deviceSlug(deviceName))));
+  for (const storeLocale of appStoreLocales ?? ['']) {
+    const shard = join(storeLocale, deviceSlug(deviceName));
+    const output = join(storeRoot, 'screenshots', shard);
+    if (!framed) {
+      saved.push(...writeCapturedScreenshots(captureDir, output));
+      continue;
+    }
+    const raw = join(storeRoot, 'raw-screenshots', shard);
+    writeCapturedScreenshots(captureDir, raw);
+    const status = runInherit(
+      'vp',
+      [
+        'run',
+        'screenshot:frame',
+        '--',
+        '--platform',
+        platform,
+        '--input',
+        raw,
+        '--output',
+        output,
+        '--device',
+        deviceSlug(deviceName),
+        '--locale',
+        STORE_CAPTION_LOCALES[storeLocale] ?? 'en-US',
+      ],
+      process.env,
+    );
+    if (status !== 0) throw new Error(`Screenshot framing failed for ${shard}`);
+    saved.push(
+      ...readdirSync(output)
+        .filter((name) => name.endsWith('.png'))
+        .map((name) => join(output, name)),
+    );
   }
   return saved;
 }
@@ -1676,7 +1706,13 @@ function captureIosDevice(
       return 1;
     }
 
-    const saved = collectScreenshots(captureDir, 'ios', device.name, localeTarget.appStoreLocales);
+    const saved = collectScreenshots(
+      captureDir,
+      'ios',
+      device.name,
+      localeTarget.appStoreLocales,
+      options.flow === 'app-store',
+    );
     if (saved.length === 0) {
       console.error(`${LOG} WARNING: flow completed but no PNGs were captured.`);
       return 1;
@@ -1961,7 +1997,7 @@ function runAndroid(options: ScreenshotOptions): number {
       return 1;
     }
 
-    const saved = collectScreenshots(captureDir, 'android', deviceName);
+    const saved = collectScreenshots(captureDir, 'android', deviceName, null, options.flow === 'app-store');
     if (saved.length === 0) {
       console.error(`${LOG} WARNING: flow completed but no PNGs were captured.`);
       return 1;
