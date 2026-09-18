@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import {
   buildBackendArgs,
   buildScreenshotEnv,
+  collectScreenshots,
   deviceSlug,
   findFrozenClockProblems,
   parseRecordingStatus,
@@ -477,6 +478,32 @@ describe('findDuplicateScreenshotGroups', () => {
 });
 
 describe('writeCapturedScreenshots', () => {
+  it.each(['ios', 'android'] as const)('rejects an empty %s capture before framing previous raw images', (platform) => {
+    const root = mkdtempSync(join(tmpdir(), 'screenshot-empty-capture-'));
+    try {
+      const captureDir = join(root, 'capture');
+      const outputRoot = join(root, 'stores');
+      const device = platform === 'ios' ? 'iPhone 16 Pro Max' : 'Pixel 2';
+      const locales = platform === 'ios' ? ['en-US'] : null;
+      const store = join(outputRoot, platform === 'ios' ? 'apple' : 'google');
+      const shard = join(...(locales ?? []), deviceSlug(device));
+      const rawDir = join(store, 'raw-screenshots', shard);
+      const framedDir = join(store, 'screenshots', shard);
+      for (const directory of [captureDir, rawDir, framedDir]) mkdirSync(directory, { recursive: true });
+      writeFileSync(join(rawDir, 'previous.png'), 'previous raw capture');
+      writeFileSync(join(framedDir, 'previous.png'), 'previous store image');
+
+      expect(() => collectScreenshots(captureDir, platform, device, locales, true, outputRoot)).toThrow(
+        'No PNG screenshots were captured',
+      );
+
+      expect(readFileSync(join(rawDir, 'previous.png'), 'utf8')).toBe('previous raw capture');
+      expect(readFileSync(join(framedDir, 'previous.png'), 'utf8')).toBe('previous store image');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('replaces the folder rather than merging into it', () => {
     const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
     const outputDir = mkdtempSync(join(tmpdir(), 'store-'));

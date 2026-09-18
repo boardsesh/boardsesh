@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "locale": "en-US",
+  "files": {
+    "00-tension-board-view.png": {
+      "rawBytes": 728191,
+      "rawSha256": "4b408240b9ea4ab0cf8f2ad2aa573d22df647334f52b9dc2f2110b0b301a1da5",
+      "framedSha256": "6726403b7ada2440c86ee0065b2c78f75b9afbbaddd25c7df9b527708d41c2f0"
+    },
+    "01-kilter-board-view.png": {
+      "rawBytes": 823262,
+      "rawSha256": "d084649d06325307105dd874d701bec1bda2b1ca233a18fe22ef45697f5797a0",
+      "framedSha256": "4460b65ccf6314c64307a85d32005278a7e7931290c73073cd88608675527d80"
+    },
+    "02-home.png": {
+      "rawBytes": 272049,
+      "rawSha256": "015de5a88c0015c4f69c28a07f81e3c5338dd2bfc83d7a0b391cda50868dddaa",
+      "framedSha256": "42afddf27b79ffe48541cd7c56e909a2a264a1ec048f858fe72fa434e60fcb03"
+    },
+    "03-climbs.png": {
+      "rawBytes": 420784,
+      "rawSha256": "091be72228c0655b7fdb88f7eaf317d9c22531e3c52ed6d33849fff886708ac0",
+      "framedSha256": "267769d896f51a553e7bb7de2599411799d7b2ed0ee28396a468a89532f5c68d"
+    },
+    "04-discover.png": {
+      "rawBytes": 168267,
+      "rawSha256": "6d9666b3c7faafc321e42088c320d874f8096be90a9f9aa0103a33c34ad8b58c",
+      "framedSha256": "8bc1d7ca9e2a1244b1609225f4ec3627c49cd792b81e85899ce29cad26752b7f"
+    },
+    "05-workout-generator.png": {
+      "rawBytes": 167573,
+      "rawSha256": "a905bf0b7902816bcf6022cc1ba5d5feffd3ff3903500f60f53480d53a6ee95c",
+      "framedSha256": "401c766ac9163ae1016fe6e6f1d06669a778d99876b74cb356f1a85cfab806a3"
+    },
+    "06-profile.png": {
+      "rawBytes": 190829,
+      "rawSha256": "8e5e8df06428866c75f5c8aaf672cf748105b926cf6050ccb15739b40e7b6fec",
+      "framedSha256": "cb2f9b0252c88afa6108039fe7017be53b8ffcb6513aade40b23a122375d2458"
+    },
+    "07-board-sheet.png": {
+      "rawBytes": 231857,
+      "rawSha256": "056365961c3c89a87fa632928f92a6989f301071931446afbb694c4f02ccc57d",
+      "framedSha256": "52451b3c7e1b0dd169084236b3c9cb75c1752ec8caff2e38539220739d1815bc"
+    }
+  }
+}

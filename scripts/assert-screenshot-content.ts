@@ -36,6 +36,11 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import {
+  PRESENTATION_MANIFEST,
+  rawSizeForPresentedScreenshot,
+  readPresentationManifest,
+} from './lib/screenshot-presentation';
 import { pathToFileURL } from 'node:url';
 
 const LOG = '[screenshot:assert-content]';
@@ -115,6 +120,9 @@ export function readPngSizesRecursively(root: string): CandidateFile[] {
   if (!existsSync(root) || !statSync(root).isDirectory()) return [];
   const found: CandidateFile[] = [];
   const walk = (directory: string): void => {
+    const presentation = existsSync(join(directory, PRESENTATION_MANIFEST))
+      ? readPresentationManifest(directory)
+      : null;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const entryPath = join(directory, entry.name);
       if (entry.isDirectory()) {
@@ -122,7 +130,10 @@ export function readPngSizesRecursively(root: string): CandidateFile[] {
         continue;
       }
       if (entry.name.toLowerCase().endsWith('.png')) {
-        found.push({ relativePath: relative(root, entryPath), size: statSync(entryPath).size });
+        found.push({
+          relativePath: relative(root, entryPath),
+          size: presentation ? rawSizeForPresentedScreenshot(entryPath, presentation) : statSync(entryPath).size,
+        });
       }
     }
   };

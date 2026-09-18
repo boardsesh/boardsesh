@@ -80,6 +80,14 @@ const APP_STORES_APPLE_PREFIX = 'app-stores/apple/';
  */
 export const PROBE_SCOPE_RULES: readonly ProbeScopeRule[] = [
   {
+    name: 'screenshot-presentation',
+    description: 'localized screenshot captions, fonts or frame layout',
+    matches: (path) =>
+      path.startsWith('app-stores/presentation/') ||
+      path === 'scripts/frame-screenshots.ts' ||
+      path === 'scripts/lib/screenshot-presentation.ts',
+  },
+  {
     name: 'shared-i18n-non-en-us-locale',
     description: 'a non-en-US shared i18n catalog under packages/shared/i18n/locales/**',
     matches: (path) =>

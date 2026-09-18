@@ -577,28 +577,11 @@ jobs:
         if: ${{ inputs.flow != 'onboarding' }}
         run: |
           set -euo pipefail
-          shots_dir=app-stores/google/screenshots
-          min_bytes=61440
-          fail=0
-          while IFS= read -r -d '' shot; do
-            size=$(stat -c%s "$shot")
-            if [ "$size" -lt "$min_bytes" ]; then
-              echo "::error::Blank/near-empty screenshot: $shot is ${size} bytes (< ${min_bytes}); likely a failed modal capture."
-              fail=1
-            else
-              echo "ok: $shot (${size} bytes)"
-            fi
-
-            committed=$(git ls-tree -l HEAD -- "$shot" | awk '{print $4}')
-            if [ -n "$committed" ]; then
-              min_relative=$((committed * 40 / 100))
-              if [ "$size" -lt "$min_relative" ]; then
-                echo "::error::Mid-load capture: $shot is ${size} bytes, under 40% of the committed ${committed} bytes"
-                fail=1
-              fi
-            fi
-          done < <(find "$shots_dir" -type f -name '*.png' -print0)
-          [ "$fail" -eq 0 ] || exit 1
+          baseline="$RUNNER_TEMP/committed-screenshots"
+          mkdir -p "$baseline"
+          git archive HEAD app-stores/google/screenshots | tar -x -C "$baseline"
+          vp run screenshot:assert-content -- --dir app-stores/google/screenshots \
+            --baseline-dir "$baseline/app-stores/google/screenshots"
 
       - name: Assert screenshot dimensions
         # The onboarding flow captures different screens than the Play Store set, so
@@ -678,14 +661,14 @@ jobs:
           # below (it discards working-tree changes) can't wipe them.
           staged="$RUNNER_TEMP/play-screenshots"
           rm -rf "$staged" && mkdir -p "$staged"
-          cp "$shots_dir"/*.png "$staged"/
+          cp "$shots_dir"/*.png "$shots_dir"/presentation.json "$staged"/
           for attempt in 1 2 3; do
             git fetch origin main
             # Land ONLY the screenshots on top of the latest main: hard-reset to
             # main, then re-apply the captured set.
             git reset --hard origin/main
             rm -rf "$shots_dir" && mkdir -p "$shots_dir"
-            cp "$staged"/*.png "$shots_dir"/
+            cp "$staged"/*.png "$staged"/presentation.json "$shots_dir"/
             git add "$shots_dir"
             if git diff --cached --quiet; then
               echo "Captured screenshots match main — nothing to commit."
@@ -700,6 +683,15 @@ jobs:
           done
           echo "::error::Could not push screenshots to main after 3 attempts."
           exit 1
+
+      - name: Upload native captures for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-android-screenshots
+          path: app-stores/google/raw-screenshots/**
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload screenshots artifact
         if: always()

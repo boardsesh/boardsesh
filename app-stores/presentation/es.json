@@ -1,0 +1,46 @@
+{
+  "board": {
+    "headline": "Visualiza tu próximo movimiento",
+    "description": "Lee las presas, consulta el grado e ilumina tu bloque."
+  },
+  "boards": {
+    "headline": "Una app para tus plafones",
+    "description": "Compatible con Kilter y Tension, con todo tu historial junto."
+  },
+  "home": {
+    "headline": "Ponte al día con tu grupo",
+    "description": "Descubre las últimas sesiones y los bloques que están probando."
+  },
+  "climbs": {
+    "headline": "Encuentra tu próximo proyecto",
+    "description": "Busca bloques por grado, ángulo y mucho más."
+  },
+  "session": {
+    "headline": "Haz que cada sesión cuente",
+    "description": "Repasa tus bloques, intentos y encadenes."
+  },
+  "workout": {
+    "headline": "Dale un plan a tu sesión",
+    "description": "Prepara un entrenamiento para tu plafón y tu nivel."
+  },
+  "discover": {
+    "headline": "Descubre nuevos bloques",
+    "description": "Explora listas recomendadas y guardadas para tu plafón."
+  },
+  "playlist": {
+    "headline": "Reúne tus próximos bloques",
+    "description": "Abre una lista y escala sus bloques."
+  },
+  "logbook": {
+    "headline": "Recuerda cada encadene",
+    "description": "Guarda tus encadenes e intentos en un solo logbook."
+  },
+  "profile": {
+    "headline": "Sigue tu progreso",
+    "description": "Consulta tu historial, grados y estadísticas de cada sesión."
+  },
+  "wall": {
+    "headline": "Mira qué hay en el plafón",
+    "description": "Sigue el bloque actual y la actividad reciente del plafón."
+  }
+}

@@ -113,6 +113,46 @@ once a native change has moved its fingerprint off main's.
 
 ## 3. Listing material
 
+### Screenshot captions and frames
+
+The `app-store` capture flow keeps native captures under
+`app-stores/{apple,google}/raw-screenshots/` and creates upload-ready framed PNGs
+under the existing `screenshots/` paths. CI retains the native captures in
+separate `raw-ios-*` / `raw-android-screenshots` review artifacts for seven days.
+The complete upright screen fits below
+a headline and a short explanation, using the dark Velvet palette. PNG sizes
+and filenames are unchanged. Onboarding and custom flows remain unframed.
+
+Edit copy in `app-stores/presentation/{en-US,es,fr,de}.json`. Apple uses the app
+locale; `es-ES` and `es-MX` share Spanish captions. Google Play stays English.
+The renderer uses the pinned, licensed Roboto fonts in that directory and
+escapes caption markup. Text overflow fails the capture instead of clipping.
+Caption, font, or renderer changes force the full iOS capture matrix.
+
+To reframe a saved native capture without booting a simulator:
+
+```sh
+vp run screenshot:frame -- --platform android \
+  --input app-stores/google/raw-screenshots \
+  --output app-stores/google/screenshots
+```
+
+For one Apple shard, pass `--platform ios --device iphone-16-pro-max --locale en-US`
+and distinct input/output device directories. Each output includes
+`contact-sheet.jpg` for review and `presentation.json` containing hashes and raw
+capture byte sizes. Store uploaders select only PNGs. Already framed inputs,
+unknown filenames, incomplete sets, bad dimensions, and blank raw captures fail.
+
+Duplicate-screen and renderer-readiness checks run before framing. Content gates
+use the original PNG byte counts, verified against the framed PNG hashes, so
+headlines cannot hide a blank or mid-load capture. Android commit-back includes
+the sidecar. The Apple baseline manifest carries the presentation version and
+raw capture metadata, and reconstructs the sidecars when fetched. Older raw-only
+baselines are rejected; the next probe therefore captures the full set before
+publishing a new baseline. The store-draft workflow attaches these same framed
+images when it creates an editable version.
+
+
 Listing text is automatic. **Mobile Store Metadata** (`mobile-store-metadata.yml`)
 runs on every `main` push that touches `fastlane/metadata/**`, the Fastfile, or
 the committed Play screenshots, and pushes listing text plus the Play icon and

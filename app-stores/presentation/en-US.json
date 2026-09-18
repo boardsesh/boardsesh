@@ -1,0 +1,46 @@
+{
+  "board": {
+    "headline": "See your next move",
+    "description": "Read the holds, check the grade, and light up your climb."
+  },
+  "boards": {
+    "headline": "One app for your boards",
+    "description": "Works with Kilter and Tension, with your climbing history together."
+  },
+  "home": {
+    "headline": "Catch up with your crew",
+    "description": "See recent sessions and the climbs everyone’s trying."
+  },
+  "climbs": {
+    "headline": "Find your next project",
+    "description": "Browse climbs by grade, angle, and more."
+  },
+  "session": {
+    "headline": "Make every session count",
+    "description": "Look back at your climbs, attempts, and sends."
+  },
+  "workout": {
+    "headline": "Give your session a plan",
+    "description": "Build a workout around your board and climbing level."
+  },
+  "discover": {
+    "headline": "Find fresh climbs",
+    "description": "Explore recommended and saved playlists for your board."
+  },
+  "playlist": {
+    "headline": "Keep your next climbs together",
+    "description": "Open a playlist and work through the climbs."
+  },
+  "logbook": {
+    "headline": "Remember every send",
+    "description": "Keep your sends and attempts in one logbook."
+  },
+  "profile": {
+    "headline": "See your progress",
+    "description": "Follow your climbing history, grades, and session stats."
+  },
+  "wall": {
+    "headline": "See what’s on the wall",
+    "description": "Follow the current climb and recent board activity."
+  }
+}

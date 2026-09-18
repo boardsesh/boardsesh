@@ -61,6 +61,15 @@ name: app-store screenshots (iPad)
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
+# The live rail settles independently from the session feed.
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- assertNotVisible:
+    id: 'live-sessions-error'
+- assertNotVisible:
+    id: 'live-sessions-offline'
 - takeScreenshot: 01-home
 
 # On the Wall — the wall-mounted kiosk HERO: the lit board + the current climb big
@@ -92,6 +101,13 @@ name: app-store screenshots (iPad)
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
+# Pixel stability alone can still describe the preceding tab.
+- extendedWaitUntil:
+    visible:
+      id: 'pre-session-footer'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
 - takeScreenshot: 03-workout-generator
 
 # Discover — the playlist library (smart "Your Picks" + saved playlists).

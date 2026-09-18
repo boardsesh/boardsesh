@@ -322,7 +322,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
         {/* The chrome pill owns board identity but collapses on scroll, so this
             keeps the full config (name · size · angle) persistently visible when a
             board is set, and prompts to pick one when none is. */}
-        <View style={styles.cardInset}>
+        <View style={styles.cardInset} testID="pre-session-board-summary">
           <BoardSummaryCard onPress={handleOpenBoardSwitcher} board={activeBoard ?? null} />
         </View>
 

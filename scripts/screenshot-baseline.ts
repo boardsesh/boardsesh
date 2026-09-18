@@ -52,6 +52,15 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { EXPECTED_APP_STORE_DEVICE_SLUGS, EXPECTED_APP_STORE_LOCALES } from './assert-screenshot-dimensions';
 
+import {
+  PRESENTATION_VERSION,
+  PRESENTATION_MANIFEST,
+  STORE_CAPTION_LOCALES,
+  readPresentationManifest,
+  rawSizeForPresentedScreenshot,
+  type PresentedScreenshot,
+} from './lib/screenshot-presentation';
+
 const LOG = '[screenshot:baseline]';
 
 /** The single rolling prerelease every baseline asset hangs off. */
@@ -84,6 +93,10 @@ export const systemCommandRunner: CommandRunner = {
 export type ScreenshotShardTree = Record<string, Record<string, string[]>>;
 
 export interface BaselineManifest {
+  /** Missing on legacy raw baselines, which fetch deliberately refuses. */
+  presentationVersion?: number;
+  /** Original capture sizes and hashes, keyed by the same paths as files. */
+  captures?: Record<string, PresentedScreenshot>;
   platform: BaselinePlatform;
   commit: string;
   runId: string;
@@ -314,17 +327,26 @@ export function packBaseline(options: PackOptions): PackResult {
 
   const zipFiles: string[] = [];
   const manifestFiles: Array<{ relativePath: string; sha256: string }> = [];
+  const captures: Record<string, PresentedScreenshot> = {};
   for (const locale of EXPECTED_APP_STORE_LOCALES) {
     for (const deviceSlug of EXPECTED_APP_STORE_DEVICE_SLUGS) {
       const shardDir = join(treeDir, locale, deviceSlug);
       const pngNames = tree[locale][deviceSlug];
+      const presentation = readPresentationManifest(shardDir);
+      if (Object.keys(presentation.files).sort().join() !== [...pngNames].sort().join()) {
+        throw new Error(`Presentation metadata does not cover ${shardDir}`);
+      }
+      for (const name of pngNames) {
+        rawSizeForPresentedScreenshot(join(shardDir, name), presentation);
+        captures[`${locale}/${deviceSlug}/${name}`] = presentation.files[name];
+      }
       const zipFile = join(outDir, assetNameFor(options.platform, locale, deviceSlug));
       runOrThrow(runner, 'zip', ['-j', '-X', '-q', zipFile, ...pngNames.map((name) => join(shardDir, name))]);
       zipFiles.push(zipFile);
       for (const name of pngNames) {
         manifestFiles.push({
           relativePath: `${locale}/${deviceSlug}/${name}`,
-          sha256: sha256Of(join(shardDir, name)),
+          sha256: presentation.files[name].framedSha256,
         });
       }
     }
@@ -337,6 +359,8 @@ export function packBaseline(options: PackOptions): PackResult {
     capturedAt: options.capturedAt ?? new Date().toISOString(),
     files: manifestFiles,
   });
+  manifest.presentationVersion = PRESENTATION_VERSION;
+  manifest.captures = captures;
   const manifestFile = join(outDir, manifestNameFor(options.platform));
   writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   return { zipFiles, manifestFile, manifest };
@@ -517,9 +541,9 @@ function fetchBaselineInner(
     }
   }
 
-  if (!manifest) {
+  if (!manifest || manifest.presentationVersion !== PRESENTATION_VERSION || !manifest.captures) {
     console.warn(
-      `::warning::${LOG} baseline manifest ${manifestName} is missing or unreadable; treating as no baseline.`,
+      `::warning::${LOG} baseline manifest ${manifestName} is missing, legacy, or unreadable; treating as no baseline.`,
     );
     return failFetch(outDir);
   }
@@ -582,7 +606,36 @@ function fetchBaselineInner(
       sha256ByFile[name] = sha256Of(join(target, name));
     }
     const verification = verifyShardAgainstManifest(manifest, target, shard.locale, shard.deviceSlug, sha256ByFile);
-    if (!verification.ok) {
+    let presentationOk = verification.ok;
+    if (presentationOk) {
+      try {
+        const files: Record<string, PresentedScreenshot> = {};
+        for (const name of Object.keys(sha256ByFile)) {
+          const entry = manifest.captures[`${shard.locale}/${shard.deviceSlug}/${name}`];
+          if (!entry || entry.framedSha256 !== sha256ByFile[name])
+            throw new Error(`Missing or stale raw-capture metadata: ${name}`);
+          files[name] = entry;
+        }
+        // Reconstruct the checked sidecar from the authoritative release manifest.
+        writeFileSync(
+          join(target, PRESENTATION_MANIFEST),
+          `${JSON.stringify(
+            {
+              version: PRESENTATION_VERSION,
+              locale: STORE_CAPTION_LOCALES[shard.locale],
+              files,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+        readPresentationManifest(target);
+      } catch (error) {
+        presentationOk = false;
+        verification.problems.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (!presentationOk) {
       for (const problem of verification.problems) {
         console.warn(`::warning::${LOG} baseline verification failed: ${problem}`);
       }
