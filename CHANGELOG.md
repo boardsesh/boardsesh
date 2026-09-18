@@ -16,6 +16,11 @@ manual changes). See docs/mobile-ota-updates.md.
   Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen
   New-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade
 
+### Improved
+
+- See recent climbs displayed through Kilter alongside your board history. ([#5540](https://github.com/boardsesh/boardsesh/pull/5540))
+  Older board history loads when you open the presence sheet.
+
 ### Fixed
 
 - MoonBoard sends affected by the angle bug now show the angle you climbed. ([#5554](https://github.com/boardsesh/boardsesh/pull/5554))

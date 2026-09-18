@@ -820,8 +820,18 @@ export const socialGymQueries = {
 
   searchGyms: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
-    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, requireSlug, latitude, longitude, radiusKm } =
-      validatedInput;
+    const {
+      query,
+      boardTypes,
+      layoutIds,
+      sizeIds,
+      multiBoardTypeOnly,
+      requireSlug,
+      prioritizeClaimed,
+      latitude,
+      longitude,
+      radiusKm,
+    } = validatedInput;
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const useProximity = latitude !== undefined && longitude !== undefined;
@@ -891,6 +901,9 @@ export const socialGymQueries = {
 
       const escapedQuery = query ? query.replace(/[%_\\]/g, '\\$&') : null;
       const likePattern = escapedQuery ? `%${escapedQuery}%` : null;
+      const claimedOrder = prioritizeClaimed
+        ? sql`${desc(ne(sql`gyms.owner_id`, SYSTEM_BOARD_OWNER_ID))}, `
+        : sql.empty();
 
       const countRows = await db.execute(
         likePattern
@@ -906,8 +919,8 @@ export const socialGymQueries = {
       // page, duplicating one row and skipping another across the boundary.
       const gymRows = await db.execute(
         likePattern
-          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`
-          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`,
+          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY ${claimedOrder}distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`
+          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY ${claimedOrder}distance_meters ASC, gyms.id ASC LIMIT ${limit} OFFSET ${offset}`,
       );
       const rows = rowsFromResult<Record<string, unknown>>(gymRows);
 
@@ -957,7 +970,11 @@ export const socialGymQueries = {
       .select()
       .from(dbSchema.gyms)
       .where(whereClause)
-      .orderBy(desc(dbSchema.gyms.createdAt), dbSchema.gyms.id)
+      .orderBy(
+        ...(prioritizeClaimed ? [desc(ne(dbSchema.gyms.ownerId, SYSTEM_BOARD_OWNER_ID))] : []),
+        desc(dbSchema.gyms.createdAt),
+        dbSchema.gyms.id,
+      )
       .limit(limit)
       .offset(offset);
 

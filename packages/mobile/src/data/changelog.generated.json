@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-18T22:32:04.778Z",
+  "generatedAt": "2026-09-18T22:54:14.081Z",
   "entries": [
+    {
+      "prNumber": 5540,
+      "category": "improved",
+      "title": "See recent climbs displayed through Kilter alongside your board history.",
+      "mergedAt": "2026-09-18T22:52:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5540",
+      "body": "Older board history loads when you open the presence sheet."
+    },
     {
       "prNumber": 5554,
       "category": "fixed",
