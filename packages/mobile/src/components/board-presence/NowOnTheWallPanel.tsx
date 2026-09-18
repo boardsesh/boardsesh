@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
   boardHistoryEntryKey,
+  mergeBoardHistory,
   useBoardHistoryPagination,
   useBoardPresenceActions,
   useBoardPresenceCurrent,
@@ -259,8 +260,10 @@ function NowOnTheWallPanelComponent(
   // via context), so show the spinner briefly, then clear it.
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const durableRefreshRef = useRef<(() => void) | undefined>(undefined);
   const handleRefresh = useCallback(() => {
     refresh('manual');
+    durableRefreshRef.current?.();
     setIsRefreshing(true);
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -298,27 +301,24 @@ function NowOnTheWallPanelComponent(
     },
     [boardPresenceBoardId],
   );
-  const { olderHistory, isLoadingOlder, hasMore, loadOlder } = useBoardHistoryPagination(
+  const { olderHistory, isLoadingOlder, hasMore, loadOlder, refreshHistory, loadError } = useBoardHistoryPagination(
     undefined,
     handleHistoryPageLoaded,
   );
-  // The hook dedupes each page only at resolve time; the live window can gain
-  // lower seqs AFTERWARDS (backfill / pull-to-refresh merge — seam 2 in the
-  // hook's header), so re-filter here or overlapping entries would render
-  // twice with duplicate list keys. Filter against the FULL feed history, not
-  // `visibleHistory`: the current climb is excluded from the list but its key
-  // must still suppress a durable copy of it leaking in from a page.
+  durableRefreshRef.current = refreshHistory;
+  // Keep richer live entries and hide the current climb's durable copy.
+  // Imported arrival sequences do not determine display chronology.
   const combinedHistory = useMemo(() => {
     if (olderHistory.length === 0) return visibleHistory;
     const liveKeys = new Set(history.map(boardHistoryEntryKey));
     const dedupedOlder = olderHistory.filter((climb) => !liveKeys.has(boardHistoryEntryKey(climb)));
-    return dedupedOlder.length === 0 ? visibleHistory : [...visibleHistory, ...dedupedOlder];
+    return mergeBoardHistory(visibleHistory, dedupedOlder);
   }, [visibleHistory, history, olderHistory]);
 
   // FlatList fires onEndReached immediately when the content is shorter than
   // the viewport, so without this gate every presentation of a quiet wall
-  // would auto-fire a durable history fetch (guaranteed-rejected for
-  // logged-out users). Require a real user scroll first.
+  // would drain durable pages after the automatic first page.
+  // Require a real user scroll before loading another page.
   const hasUserScrolledRef = useRef(false);
   const handleScrollBeginDrag = useCallback(() => {
     hasUserScrolledRef.current = true;
@@ -767,27 +767,9 @@ function NowOnTheWallPanelComponent(
             </Text>
           </View>
         )}
-        {/* A wall that's been quiet longer than the Redis window's TTL has an
-            EMPTY live window but durable boardHistory rows. An empty list
-            can't scroll, so the scroll-gated onEndReached above can never
-            fire — this button is then the only path into the durable log
-            (the hook supports a cursor-less first page). */}
-        {hasMore ? (
-          <Pressable
-            onPress={loadOlder}
-            disabled={isLoadingOlder}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.boardPresence.loadMore')}
-            style={styles.emptyLoadMore}
-          >
-            <Text variant="subheadline" color={brandColors.primary}>
-              {isLoadingOlder ? t('mobile.boardPresence.loadingMore') : t('mobile.boardPresence.loadMore')}
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
     ),
-    [currentClimb, systemColors, t, hasMore, isLoadingOlder, loadOlder, brandColors.primary],
+    [currentClimb, systemColors, t],
   );
 
   const listFooter = useMemo(
@@ -796,8 +778,19 @@ function NowOnTheWallPanelComponent(
         <View style={styles.historyFooter}>
           <ActivityIndicator size="small" accessibilityLabel={t('mobile.boardPresence.loadingMore')} />
         </View>
+      ) : hasMore ? (
+        <Pressable
+          onPress={loadOlder}
+          accessibilityRole="button"
+          accessibilityLabel={loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
+          style={styles.historyFooter}
+        >
+          <Text variant="subheadline" color={brandColors.primary}>
+            {loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
+          </Text>
+        </Pressable>
       ) : null,
-    [isLoadingOlder, t],
+    [isLoadingOlder, t, hasMore, loadOlder, loadError, brandColors.primary],
   );
 
   const listContentContainerStyle = useMemo(() => ({ paddingBottom: spacing[4] }), []);
@@ -1194,6 +1187,11 @@ function HistoryRowContent({
         <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
           {climb.name ?? ''}
         </Text>
+        {climb.source === 'kilter' ? (
+          <Text variant="caption1" color={secondaryColor}>
+            {t('mobile.boardPresence.kilterHistorySource')}
+          </Text>
+        ) : null}
         {litBy ? (
           <View style={styles.historyDriverRow}>
             {/* Past send — no Bluetooth glyph (nobody's driving it now); just a
@@ -1583,10 +1581,6 @@ const styles = StyleSheet.create({
   historyFooter: {
     paddingVertical: spacing[5],
     alignItems: 'center',
-  },
-  emptyLoadMore: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
   },
   footer: {
     flexDirection: 'row',

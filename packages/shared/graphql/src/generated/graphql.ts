@@ -589,6 +589,19 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+export type BoardHistoryPage = {
+  __typename?: 'BoardHistoryPage';
+  entries: Array<BoardPresenceClimb>;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+};
+
+/** Union of board-presence events streamed by `boardNowPlaying`. */
+export type BoardHistoryUpdated = {
+  __typename?: 'BoardHistoryUpdated';
+  climbs: Array<BoardPresenceClimb>;
+  seq: Scalars['Int']['output'];
+};
+
 /**
  * Everything the outline editor needs for one board config: the deployed shard's
  * traced silhouettes, plus the live overrides that supersede or annotate them.
@@ -691,10 +704,16 @@ export type BoardPresenceClimb = {
   seq: Scalars['Int']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
+  /** Origin of the display: boardsesh or kilter. Missing means boardsesh. */
+  source?: Maybe<Scalars['String']['output']>;
 };
 
-/** Union of board-presence events streamed by `boardNowPlaying`. */
-export type BoardPresenceEvent = BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
+export type BoardPresenceEvent =
+  | BoardClimbCleared
+  | BoardClimbSet
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
+  | BoardStatsUpdated;
 
 /** The first climber to send the hardest grade logged on this wall. */
 export type BoardPresenceHardestSend = {
@@ -5664,6 +5683,8 @@ export type Query = {
    * NOT_FOUND for anonymous callers.
    */
   boardHistory: Array<BoardPresenceClimb>;
+  /** Chronological durable history with an opaque, board-scoped pagination cursor. */
+  boardHistoryPage: BoardHistoryPage;
   /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
    * system-shared boards; private boards are masked as NOT_FOUND for anonymous
@@ -5714,6 +5735,8 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
+  /** Merged native and imported recent history; never represents current wall state. */
+  boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
@@ -6396,6 +6419,13 @@ export type QueryBoardHistoryArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryBoardHistoryPageArgs = {
+  before?: InputMaybe<Scalars['String']['input']>;
+  boardId: Scalars['Int']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
 };
@@ -6417,6 +6447,11 @@ export type QueryBoardQueuePreviewArgs = {
 
 /** Root query type for all read operations. */
 export type QueryBoardRecentClimbsArgs = {
+  boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
 };
 

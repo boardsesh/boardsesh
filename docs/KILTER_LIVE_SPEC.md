@@ -267,3 +267,11 @@ All items below are **LOW confidence / unresolved**, unless an explicit client o
 | `domain/candidate.dart` | Constructor `0x839fb0` | Retains the device and platform name used at connection |
 | `provider/bluetooth_provider.dart` | `connectToDevice` `0x83a270`, serial store `0x83a330`; notification callback `0x83cb80` | Connection serial storage; notifications do not decode serials |
 | `screen/components/bluetooth_device_dialog.dart` | Label closure `0x83d264`; wall predicate `0x83d6a4` | Name-derived serial used to look up a saved wall's display name |
+
+## 10. Authorized read verification — September 18, 2026
+
+**Confidence: HIGH for the sampled response only.** An authorized test-account request to `POST /api/recently-displayed-climbs/climbs`, using an exact public gym/layout/wall selection from the reference snapshot, returned HTTP 200 and an array of six entries. The request body contained only `gymUuid`, `productLayoutUuid`, and `wallUuid`.
+
+Entries included numeric `recentlyDisplayedClimbId` and timezone-qualified `recentlyDisplayedAt` with six fractional digits and a `+00` suffix. One observed climb had base `angle=20` and `derivativeAngle=50`; the display projection must prefer the derivative angle. `liveBoardUsername` was absent in the sampled entries. Ordinary `username` and `userUuid` are climb/setter metadata and must not be used as live actor identity.
+
+The probe made no activity writes. The sample does not establish retention limits, repeated-display ID reuse, custom-wall authorization, rate limits, or visibility guarantees. Event deduplication therefore includes both display ID and timestamp, scoped to all three selectors. See the [implemented integration](kilter-live-integration-plan.md) for rollout and persistence behavior.

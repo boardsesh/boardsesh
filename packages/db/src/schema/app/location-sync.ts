@@ -1,5 +1,26 @@
-import { pgTable, bigint, text, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, bigint, text, timestamp, index, boolean, integer } from 'drizzle-orm/pg-core';
 import { gyms } from './gyms';
+import { userBoards } from './boards';
+
+/** Exact public Kilter wall provenance. Source identity survives board merges. */
+export const kilterWallSources = pgTable(
+  'kilter_wall_sources',
+  {
+    sourceKey: text('source_key').primaryKey(),
+    sourceBoardUuid: text('source_board_uuid')
+      .notNull()
+      .references(() => userBoards.uuid),
+    gymUuid: text('gym_uuid').notNull(),
+    productLayoutUuid: text('product_layout_uuid').notNull(),
+    wallUuid: text('wall_uuid').notNull(),
+    layoutId: integer('layout_id').notNull(),
+    sizeId: integer('size_id').notNull(),
+    setIds: text('set_ids').notNull(),
+    isListed: boolean('is_listed').notNull().default(true),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({ sourceBoardIdx: index('kilter_wall_sources_board_idx').on(table.sourceBoardUuid) }),
+);
 
 /**
  * Maps upstream public-location source keys to the canonical Boardsesh gym row.

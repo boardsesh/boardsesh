@@ -224,7 +224,8 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   DEFAULT_GRADE_COLOR: '#999999',
 }));
 
-vi.mock('@boardsesh/board-presence-react', () => ({
+vi.mock('@boardsesh/board-presence-react', async () => ({
+  ...(await vi.importActual<typeof import('@boardsesh/board-presence-react')>('@boardsesh/board-presence-react')),
   useBoardPresenceCurrent: () => ({
     currentClimb: presence.currentClimb,
     previousClimb: null,
@@ -243,6 +244,8 @@ vi.mock('@boardsesh/board-presence-react', () => ({
       isLoadingOlder: historyPagination.isLoadingOlder,
       hasMore: historyPagination.hasMore,
       loadOlder: historyPagination.loadOlder,
+      refreshHistory: vi.fn(),
+      loadError: false,
     };
   },
   boardHistoryEntryKey: (climb: BoardPresenceClimb) => `${climb.climbUuid}:${climb.seq}`,

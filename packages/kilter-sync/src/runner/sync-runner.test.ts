@@ -97,6 +97,18 @@ type UpdateCall = { table: unknown; set: Record<string, unknown> };
 function createDbShim() {
   const updates: UpdateCall[] = [];
   const shim = {
+    async transaction<T>(callback: (transaction: RunnerDb) => Promise<T>): Promise<T> {
+      return callback(shim as unknown as RunnerDb);
+    },
+    select() {
+      const query = {
+        from: () => query,
+        where: () => query,
+        for: () => query,
+        limit: async () => [{ ...credential(), id: 1n }],
+      };
+      return query;
+    },
     update(table: unknown) {
       return {
         set(payload: Record<string, unknown>) {

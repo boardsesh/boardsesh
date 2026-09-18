@@ -14,7 +14,7 @@ function makeClimb(overrides: Partial<BoardPresenceClimb> & { seq: number }): Bo
     climbUuid: overrides.climbUuid ?? `climb-${overrides.seq}`,
     name: overrides.name ?? `Climb ${overrides.seq}`,
     grade: overrides.grade ?? 'V5',
-    sentAt: overrides.sentAt ?? `2026-06-09T00:00:0${overrides.seq % 10}.000Z`,
+    sentAt: overrides.sentAt ?? new Date(Date.UTC(2026, 5, 9) + overrides.seq * 1000).toISOString(),
     ...overrides,
   };
 }

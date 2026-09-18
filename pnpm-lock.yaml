@@ -183,6 +183,9 @@ importers:
       '@boardsesh/board-look':
         specifier: workspace:*
         version: link:../shared/board-look
+      '@boardsesh/board-presence':
+        specifier: workspace:*
+        version: link:../shared/board-presence
       '@boardsesh/board-render':
         specifier: workspace:*
         version: link:../shared/board-render

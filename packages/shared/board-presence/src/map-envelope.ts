@@ -17,6 +17,8 @@ import type { BoardPresenceAction } from './types';
  */
 export function mapBoardPresenceEnvelopeToAction(event: BoardPresenceEvent): BoardPresenceAction | null {
   switch (event.__typename) {
+    case 'BoardHistoryUpdated':
+      return { type: 'MERGE_HISTORY', payload: event.climbs };
     case 'BoardClimbSet':
       return { type: 'APPLY_CLIMB_SET', payload: event.climb };
     case 'BoardClimbCleared':

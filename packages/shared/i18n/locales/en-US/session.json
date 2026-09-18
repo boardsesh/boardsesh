@@ -453,7 +453,9 @@
         "headerSwitcherAria": "You're on {{board}}. Tap to move to another board here.",
         "headerSwitcherHintOpen": "Shows the other boards at this gym",
         "headerSwitcherHintClose": "Hides the other boards"
-      }
+      },
+      "kilterHistorySource": "Displayed via Kilter",
+      "retryHistory": "Try loading history again"
     },
     "toast": {
       "sessionEnded": "Session ended",

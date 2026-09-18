@@ -453,7 +453,9 @@
         "headerSwitcherAria": "Tu es sur {{board}}. Touche pour passer à une autre board ici.",
         "headerSwitcherHintOpen": "Affiche les autres boards de cette salle",
         "headerSwitcherHintClose": "Masque les autres boards"
-      }
+      },
+      "kilterHistorySource": "Allumé via Kilter",
+      "retryHistory": "Réessayer de charger l’historique"
     },
     "toast": {
       "sessionEnded": "Session terminée",

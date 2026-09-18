@@ -466,6 +466,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     before the live \`boardNowPlaying\` subscription takes over.
     """
     boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+    "Merged native and imported recent history; never represents current wall state."
+    boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+    "Chronological durable history with an opaque, board-scoped pagination cursor."
+    boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
 
     """
     Durable history of what was pushed to a board (survives past the 1 week
