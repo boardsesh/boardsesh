@@ -402,6 +402,7 @@ jobs:
               - 'packages/db/scripts/moonboard-helpers.ts'
               - 'packages/db/src/testing/moonboard-residual-dedup-replay.ts'
               - 'packages/db/src/testing/moonboard-angle-dedup-replay.ts'
+              - 'packages/db/src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts'
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
@@ -703,6 +704,7 @@ jobs:
           scripts/moonboard-reconciliation-report.test.ts
           scripts/report-moonboard-reconciliation.test.ts
           scripts/moonboard-reconciliation-report.integration.test.ts
+          src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts
           src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',

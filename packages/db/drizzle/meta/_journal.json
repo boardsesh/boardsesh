@@ -1625,6 +1625,13 @@
       "when": 1789548554331,
       "tag": "0231_round_vector",
       "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1789734585016,
+      "tag": "0232_repair_moonboard_snapped_tick_angles",
+      "breakpoints": true
     }
   ]
 }
