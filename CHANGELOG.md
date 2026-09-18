@@ -12,6 +12,10 @@ manual changes). See docs/mobile-ota-updates.md.
   Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen
   New-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade
 
+### Fixed
+
+- MoonBoard sends now stay at the angle you climbed. ([#5541](https://github.com/boardsesh/boardsesh/pull/5541))
+
 ## 2026-09-17
 
 ### New
