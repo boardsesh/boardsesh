@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-19T00:25:43.640Z",
+  "generatedAt": "2026-09-19T02:36:01.206Z",
   "entries": [
+    {
+      "prNumber": 5572,
+      "category": "new",
+      "title": "Find your next board night from the refreshed Boardsesh website.",
+      "mergedAt": "2026-09-19T02:34:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5572",
+      "body": "Browse gyms on a dark map, spot claimed listings, and see the app before installing.\nPreview boards at your gym and open that same board in the app."
+    },
     {
       "prNumber": 5570,
       "category": "new",

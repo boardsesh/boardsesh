@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Find your next board night from the refreshed Boardsesh website. ([#5572](https://github.com/boardsesh/boardsesh/pull/5572))
+  Browse gyms on a dark map, spot claimed listings, and see the app before installing.
+  Preview boards at your gym and open that same board in the app.
 - The homepage now has a real gym search: type a town or tap your location and find the walls near you that run a Kilter, Tension or MoonBoard. ([#5570](https://github.com/boardsesh/boardsesh/pull/5570))
 
 ## 2026-09-18
