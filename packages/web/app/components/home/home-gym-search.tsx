@@ -8,6 +8,7 @@ import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { PageCard, sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
+import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import {
   DIRECTORY_FACETS,
@@ -160,21 +161,10 @@ export default async function HomeGymSearch() {
                     href={FACET_BASE_PATHS[facet]}
                     label={facetChipLabel(tGyms, facet, facetCounts, formatNumber)}
                     variant="outlined"
-                    // Both states spelled out: MUI's default outlined chip is a
-                    // barely-there hairline that loses the whole row on the
-                    // near-black page ground.
-                    sx={{
-                      borderRadius: 'var(--border-radius-full)',
-                      height: 44,
-                      fontWeight: themeTokens.typography.fontWeight.semibold,
-                      backgroundColor: 'var(--semantic-surface)',
-                      borderColor: 'var(--control-border)',
-                      color: 'var(--neutral-900)',
-                      '&:hover': {
-                        backgroundColor: 'var(--semantic-surface-elevated)',
-                        borderColor: 'var(--color-primary)',
-                      },
-                    }}
+                    // Never selected here: these chips LEAVE the homepage for a
+                    // facet route rather than filtering in place, so there is no
+                    // current facet to mark.
+                    sx={filterChipSx()}
                   />
                 ))}
               </Box>

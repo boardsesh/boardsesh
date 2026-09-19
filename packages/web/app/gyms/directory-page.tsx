@@ -16,7 +16,8 @@ import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageCard, PageShell } from '@/app/components/ui/page-shell';
+import { PageCard, PageShell, StatePanel } from '@/app/components/ui/page-shell';
+import { filterChipSx } from '@/app/components/ui/filter-chip';
 import { themeTokens } from '@/app/theme/theme-config';
 import {
   BOARD_FACETS,
@@ -223,24 +224,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                     aria-current={isCurrentFacet ? 'page' : undefined}
                     label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
                     variant="outlined"
-                    // MUI's default outlined chip has no fill and a barely-there
-                    // border, which on the near-black page ground loses the whole
-                    // filter row. Both states are spelled out: a surface fill and
-                    // the one hairline unselected; the elevated surface plus a
-                    // violet border, label and ring when selected.
-                    sx={{
-                      borderRadius: 'var(--border-radius-full)',
-                      height: 44,
-                      fontWeight: themeTokens.typography.fontWeight.semibold,
-                      backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
-                      borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--control-border)',
-                      color: isCurrentFacet ? 'var(--color-primary)' : 'var(--neutral-900)',
-                      boxShadow: isCurrentFacet ? '0 0 0 3px var(--semantic-selected)' : 'none',
-                      '&:hover': {
-                        backgroundColor: 'var(--semantic-surface-elevated)',
-                        borderColor: 'var(--color-primary)',
-                      },
-                    }}
+                    sx={filterChipSx({ selected: isCurrentFacet })}
                   />
                 );
               })}
@@ -399,61 +383,6 @@ function DirectoryBreadcrumb({
  * the ways out. Neither branch had a design before — zero results rendered two
  * bare lines and a failed fetch rendered three.
  */
-function StatePanel({
-  tone,
-  icon,
-  title,
-  body,
-  actions,
-}: {
-  tone: 'brand' | 'warning';
-  icon: React.ReactElement<{ sx?: object }>;
-  title: string;
-  body: string;
-  actions: React.ReactNode;
-}) {
-  const glyphColor = tone === 'warning' ? 'var(--color-warning)' : 'var(--color-primary)';
-
-  return (
-    <PageCard
-      variant="elevated"
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        py: 5,
-        my: 2,
-      }}
-    >
-      <Box
-        aria-hidden="true"
-        sx={{
-          width: 52,
-          height: 52,
-          borderRadius: 'var(--border-radius-full)',
-          backgroundColor: 'var(--semantic-surface)',
-          border: '1px solid var(--separator)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: glyphColor,
-          mb: 2,
-        }}
-      >
-        {React.cloneElement(icon, { sx: { fontSize: 24 } })}
-      </Box>
-      <Typography variant="h6" component="p" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-        {title}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: '46ch' }}>
-        {body}
-      </Typography>
-      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center', mt: 2.5 }}>{actions}</Box>
-    </PageCard>
-  );
-}
-
 // Re-exported so the four route files import their whole contract from one
 // module. `BOARD_FACETS` is the list #4381's sitemap will enumerate.
 export { BOARD_FACETS, FACET_BASE_PATHS };
