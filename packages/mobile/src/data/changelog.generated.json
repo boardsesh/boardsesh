@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-19T10:50:50.670Z",
+  "generatedAt": "2026-09-19T11:36:49.134Z",
   "entries": [
+    {
+      "prNumber": 5587,
+      "category": "new",
+      "title": "Get hold suggestions for your spray wall without running the model on your phone.",
+      "mergedAt": "2026-09-19T11:25:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5587",
+      "body": "Leave a wall scan and return to its progress, or retry a failed scan."
+    },
+    {
+      "prNumber": 5588,
+      "category": "improved",
+      "title": "Section headings are now the same size, weight and spacing on every page. Previously a few were subtly different, and at some window widths two headings on the same page rendered at different sizes.",
+      "mergedAt": "2026-09-19T11:07:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5588"
+    },
     {
       "prNumber": 5584,
       "category": "new",

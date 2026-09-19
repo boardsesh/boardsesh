@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Get hold suggestions for your spray wall without running the model on your phone. ([#5587](https://github.com/boardsesh/boardsesh/pull/5587))
+  Leave a wall scan and return to its progress, or retry a failed scan.
 - The home page is shorter and repeats itself less. The app buttons now appear once at the top and once at the bottom instead of three times, and the gym search sends you straight to the full directory rather than teasing four gyms first. ([#5584](https://github.com/boardsesh/boardsesh/pull/5584))
 - See how your crew shares a queue, check what's on the wall, and find a board nearby. App previews now match your phone. ([#5578](https://github.com/boardsesh/boardsesh/pull/5578))
 - All your boards, one climbing history. ([#5579](https://github.com/boardsesh/boardsesh/pull/5579))
@@ -19,6 +21,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Section headings are now the same size, weight and spacing on every page. Previously a few were subtly different, and at some window widths two headings on the same page rendered at different sizes. ([#5588](https://github.com/boardsesh/boardsesh/pull/5588))
 - The app buttons are now the same size as each other wherever they appear, and the main button on the home page is bigger. Smaller buttons across the site also got taller, so they're easier to hit with a thumb. ([#5585](https://github.com/boardsesh/boardsesh/pull/5585))
 
 ### Fixed
