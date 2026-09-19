@@ -1219,9 +1219,10 @@ export async function main(
       );
     }
 
-    if (!(await canRollBack(token, projectId))) {
+    const changesImage = [...mutations.values()].some((mutation) => mutation.image !== undefined);
+    if (changesImage && !(await canRollBack(token, projectId))) {
       throw new Error(
-        'Refusing to deploy with a token that cannot roll back this project. ' +
+        'Refusing to change an image with a token that cannot roll back this project. ' +
           'The rollback path needs a Railway PROJECT token scoped to ' +
           `${projectId} (it reads \`projectToken\` for its scope); this one answers the apply ` +
           'calls but not that. Use the project token the production deploy uses.',

@@ -2000,6 +2000,23 @@ describe('apply mode', () => {
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(1);
   });
 
+  it('lets an account token apply and verify non-image configuration', async () => {
+    const stub = railwayStub({
+      projectScoped: false,
+      variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })),
+      instances: { [OTA_SERVICE_NAME]: { healthcheckTimeout: 300 } },
+    });
+
+    const { code, calls, error } = await runCli(['--apply'], stub, {}, { sleep: async () => {} });
+
+    expect(error).toBeNull();
+    expect(code).toBe(0);
+    expect(callsMatching(calls, 'projectToken')).toHaveLength(0);
+    expect(callsMatching(calls, 'variableUpsert')).toHaveLength(1);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(1);
+    expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(1);
+  });
+
   it('rolls the declared image once the caller opted in', async () => {
     const stub = railwayStub({
       instances: { [OTA_SERVICE_NAME]: { source: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` } } },

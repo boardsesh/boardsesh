@@ -410,7 +410,7 @@ function printHelp(): void {
   );
 }
 
-function describe(label: string, candidate: ReleaseCandidate | null): string {
+function formatCandidate(label: string, candidate: ReleaseCandidate | null): string {
   if (!candidate) return `  ${label}: none newer`;
   const cli = candidate.cliAvailable ? '' : '  ** no matching eoas release on npm — cannot bump yet **';
   return `  ${label}: ${candidate.version}${cli}\n    image ${candidate.imageTag}`;
@@ -454,8 +454,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   console.log(`[ota-image-bump] Deployed server ${report.current}, publishing with eoas ${report.currentCli}.`);
-  console.log(describe('newest stable', report.stable));
-  console.log(describe('newest prerelease', report.prerelease));
+  console.log(formatCandidate('newest stable', report.stable));
+  console.log(formatCandidate('newest prerelease', report.prerelease));
   return 0;
 }
 
