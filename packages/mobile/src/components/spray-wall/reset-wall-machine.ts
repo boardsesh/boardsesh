@@ -145,7 +145,7 @@ export function leavingKeepsDraft(state: ResetWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: ResetWallState): boolean {
-  return state.upload.running || state.detection.outcome === 'running';
+  return state.upload.running;
 }
 
 /**
@@ -179,7 +179,7 @@ export type ResetBackAction = 'step-back' | 'pop-route';
 export function resetBackAction(state: ResetWallState): ResetBackAction {
   // `photo` has nothing behind it and `compare` has nothing it may return to —
   // the draft is on the server by then. Both mean leaving.
-  return state.step === 'photo' || state.step === 'compare' ? 'pop-route' : 'step-back';
+  return state.draft || state.step === 'photo' || state.step === 'compare' ? 'pop-route' : 'step-back';
 }
 
 export function resetWallReducer(state: ResetWallState, action: ResetWallAction): ResetWallState {

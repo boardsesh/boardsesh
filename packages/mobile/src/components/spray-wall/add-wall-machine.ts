@@ -237,12 +237,12 @@ export function hasUnfinishedWall(state: AddWallState): boolean {
  * know better.
  */
 export function shouldConfirmLeave(state: AddWallState): boolean {
-  return isBusy(state) || leavingKeepsDraft(state);
+  return isBusy(state) || state.detection.outcome === 'running' || leavingKeepsDraft(state);
 }
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
-  return state.upload.running || state.detection.outcome === 'running' || state.publish.running;
+  return state.upload.running || state.publish.running;
 }
 
 export function addWallReducer(state: AddWallState, action: AddWallAction): AddWallState {

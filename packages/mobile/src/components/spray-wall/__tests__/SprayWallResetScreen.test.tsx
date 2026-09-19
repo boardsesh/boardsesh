@@ -8,8 +8,7 @@
 //
 //  - a wall the viewer cannot edit, or one with nothing published, has no reset
 //    to run;
-//  - an abandoned draft from an earlier session blocks this one and cannot be
-//    resumed, because the detections that made it reviewable were local;
+//  - an abandoned draft resumes its durable detection when its photo is valid;
 //  - and the anchors gate, which is the whole reason this flow is not the
 //    add-a-wall wizard: without four corners the matcher reports the entire wall
 //    as removed.
@@ -93,7 +92,23 @@ vi.mock('../SprayResetCompareScreen', () => ({
 }));
 
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
-vi.mock('../../../lib/spray/hold-suggestions', () => ({ suggestSprayHolds: vi.fn() }));
+vi.mock('../SprayDetectionStep', () => ({
+  SprayDetectionStep: ({
+    wallUuid,
+    versionId,
+    onManual,
+  }: {
+    wallUuid: string;
+    versionId: string;
+    onManual?: () => void;
+  }) =>
+    createElement('div', {
+      'data-testid': 'detection',
+      'data-wall': wallUuid,
+      'data-version': versionId,
+      'data-manual': Boolean(onManual),
+    }),
+}));
 vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () => false }));
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromLibrary: vi.fn(async () => pickResult.current),
@@ -151,7 +166,7 @@ describe('SprayWallResetScreen', () => {
     expect(renderScreen().getByText('sprayReset.nothingPublished')).toBeTruthy();
   });
 
-  it('offers to throw away an abandoned draft rather than resume one it cannot review', async () => {
+  it('offers to discard an abandoned draft without valid photo dimensions', async () => {
     wallQueryState.current = {
       data: { ...EDITABLE_WALL, versions: [{ id: '2', number: 2, status: 'DRAFT' }, ...EDITABLE_WALL.versions] },
       isPending: false,
@@ -163,6 +178,26 @@ describe('SprayWallResetScreen', () => {
       getByText('sprayReset.openDraft.discard').click();
     });
     expect(discardMutateAsync).toHaveBeenCalledWith('2');
+  });
+
+  it('resumes the existing reset detection without manual fallback or changing the published wall', async () => {
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        versions: [
+          { id: '2', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } },
+          ...EDITABLE_WALL.versions,
+        ],
+      },
+      isPending: false,
+    };
+    const { getByText, getByTestId } = renderScreen();
+    await act(async () => getByText('sprayDetection.resume').click());
+    expect(getByTestId('detection').getAttribute('data-wall')).toBe('wall-1');
+    expect(getByTestId('detection').getAttribute('data-version')).toBe('2');
+    expect(getByTestId('detection').getAttribute('data-manual')).toBe('false');
+    expect(discardMutateAsync).not.toHaveBeenCalled();
+    expect(EDITABLE_WALL.currentVersion.id).toBe('1');
   });
 
   it('opens on the photo step', () => {

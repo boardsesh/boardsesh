@@ -4015,6 +4015,7 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  requestSprayWallDetection: SprayWallDetection;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -4059,6 +4060,7 @@ export type Mutation = {
   resolveBoardForUuid: ResolvedBoard;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
+  retrySprayWallDetection: SprayWallDetection;
   /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
    * ownership to the claimant.
@@ -4700,6 +4702,11 @@ export type MutationRequestGymClaimArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestSprayWallDetectionArgs = {
+  input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationResolveBoardCandidatesForSerialArgs = {
   advertisedBoardType?: InputMaybe<Scalars['String']['input']>;
   boardType: Scalars['String']['input'];
@@ -4735,6 +4742,11 @@ export type MutationResolveBoardForUuidArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRetrySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6244,6 +6256,8 @@ export type Query = {
    * board config. Same visibility rules as `sprayWall`.
    */
   sprayWallByLayout?: Maybe<SprayWall>;
+  sprayWallDetection?: Maybe<SprayWallDetection>;
+  sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -6961,6 +6975,17 @@ export type QuerySprayWallByLayoutArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallDetectionForVersionArgs = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7446,6 +7471,11 @@ export type RequestGymClaimResult = {
   email?: Maybe<Scalars['String']['output']>;
   /** Which path the claim took. */
   status: GymClaimRequestStatus;
+};
+
+export type RequestSprayWallDetectionInput = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
 };
 
 /**
@@ -8574,6 +8604,22 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+export type SprayDetectionCandidate = {
+  __typename?: 'SprayDetectionCandidate';
+  confidence: Scalars['Float']['output'];
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+};
+
+export type SprayDetectionResult = {
+  __typename?: 'SprayDetectionResult';
+  candidates: Array<SprayDetectionCandidate>;
+  height: Scalars['Int']['output'];
+  width: Scalars['Int']['output'];
+};
+
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
@@ -8682,6 +8728,19 @@ export type SprayWallAddedDecisionInput = {
    * an unrelated hold as a successor, with nothing to notice it afterwards.
    */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SprayWallDetection = {
+  __typename?: 'SprayWallDetection';
+  createdAt: Scalars['String']['output'];
+  error?: Maybe<Scalars['String']['output']>;
+  finishedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  modelVersion: Scalars['String']['output'];
+  result?: Maybe<SprayDetectionResult>;
+  status: Scalars['String']['output'];
+  versionId: Scalars['ID']['output'];
+  wallUuid: Scalars['ID']['output'];
 };
 
 /**
@@ -13248,6 +13307,128 @@ export type GetFollowedAuthorsQuery = {
   };
 };
 
+export type SprayDetectionFieldsFragment = {
+  __typename?: 'SprayWallDetection';
+  id: string;
+  wallUuid: string;
+  versionId: string;
+  status: string;
+  modelVersion: string;
+  error?: string | null;
+  createdAt: string;
+  finishedAt?: string | null;
+  result?: {
+    __typename?: 'SprayDetectionResult';
+    width: number;
+    height: number;
+    candidates: Array<{
+      __typename?: 'SprayDetectionCandidate';
+      cx: number;
+      cy: number;
+      r: number;
+      confidence: number;
+      outline?: Array<number> | null;
+    }>;
+  } | null;
+};
+
+export type SprayDetectionQueryVariables = Exact<{
+  wallUuid: Scalars['ID']['input'];
+  versionId: Scalars['ID']['input'];
+}>;
+
+export type SprayDetectionQuery = {
+  __typename?: 'Query';
+  sprayWallDetectionForVersion?: {
+    __typename?: 'SprayWallDetection';
+    id: string;
+    wallUuid: string;
+    versionId: string;
+    status: string;
+    modelVersion: string;
+    error?: string | null;
+    createdAt: string;
+    finishedAt?: string | null;
+    result?: {
+      __typename?: 'SprayDetectionResult';
+      width: number;
+      height: number;
+      candidates: Array<{
+        __typename?: 'SprayDetectionCandidate';
+        cx: number;
+        cy: number;
+        r: number;
+        confidence: number;
+        outline?: Array<number> | null;
+      }>;
+    } | null;
+  } | null;
+};
+
+export type RequestSprayDetectionMutationVariables = Exact<{
+  input: RequestSprayWallDetectionInput;
+}>;
+
+export type RequestSprayDetectionMutation = {
+  __typename?: 'Mutation';
+  requestSprayWallDetection: {
+    __typename?: 'SprayWallDetection';
+    id: string;
+    wallUuid: string;
+    versionId: string;
+    status: string;
+    modelVersion: string;
+    error?: string | null;
+    createdAt: string;
+    finishedAt?: string | null;
+    result?: {
+      __typename?: 'SprayDetectionResult';
+      width: number;
+      height: number;
+      candidates: Array<{
+        __typename?: 'SprayDetectionCandidate';
+        cx: number;
+        cy: number;
+        r: number;
+        confidence: number;
+        outline?: Array<number> | null;
+      }>;
+    } | null;
+  };
+};
+
+export type RetrySprayDetectionMutationVariables = Exact<{
+  id: Scalars['ID']['input'];
+}>;
+
+export type RetrySprayDetectionMutation = {
+  __typename?: 'Mutation';
+  retrySprayWallDetection: {
+    __typename?: 'SprayWallDetection';
+    id: string;
+    wallUuid: string;
+    versionId: string;
+    status: string;
+    modelVersion: string;
+    error?: string | null;
+    createdAt: string;
+    finishedAt?: string | null;
+    result?: {
+      __typename?: 'SprayDetectionResult';
+      width: number;
+      height: number;
+      candidates: Array<{
+        __typename?: 'SprayDetectionCandidate';
+        cx: number;
+        cy: number;
+        r: number;
+        confidence: number;
+        outline?: Array<number> | null;
+      }>;
+    } | null;
+  };
+};
+
 export type GetTicksQueryVariables = Exact<{
   input: GetTicksInput;
 }>;
@@ -13960,6 +14141,54 @@ export const SessionSummaryFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<SessionSummaryFieldsFragment, unknown>;
+export const SprayDetectionFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SprayDetectionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SprayWallDetection' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'result' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'width' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'height' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'candidates' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'cx' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'cy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'r' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'confidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'outline' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SprayDetectionFieldsFragment, unknown>;
 export const GetDeleteAccountInfoDocument = {
   kind: 'Document',
   definitions: [
@@ -21444,6 +21673,259 @@ export const GetFollowedAuthorsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetFollowedAuthorsQuery, GetFollowedAuthorsQueryVariables>;
+export const SprayDetectionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SprayDetection' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'versionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sprayWallDetectionForVersion' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'wallUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'versionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'versionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SprayDetectionFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SprayDetectionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SprayWallDetection' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'result' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'width' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'height' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'candidates' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'cx' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'cy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'r' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'confidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'outline' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SprayDetectionQuery, SprayDetectionQueryVariables>;
+export const RequestSprayDetectionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RequestSprayDetection' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'RequestSprayWallDetectionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'requestSprayWallDetection' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SprayDetectionFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SprayDetectionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SprayWallDetection' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'result' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'width' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'height' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'candidates' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'cx' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'cy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'r' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'confidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'outline' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RequestSprayDetectionMutation, RequestSprayDetectionMutationVariables>;
+export const RetrySprayDetectionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RetrySprayDetection' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'retrySprayWallDetection' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'id' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'id' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'SprayDetectionFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'SprayDetectionFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'SprayWallDetection' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'error' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'result' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'width' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'height' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'candidates' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'cx' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'cy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'r' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'confidence' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'outline' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RetrySprayDetectionMutation, RetrySprayDetectionMutationVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

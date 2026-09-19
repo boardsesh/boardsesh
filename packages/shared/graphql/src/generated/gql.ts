@@ -143,6 +143,10 @@ type Documents = {
   '\n  query GetUserClimbs($input: UserClimbsInput!) {\n    userClimbs(input: $input) {\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n        renderBoard {\n          layoutId\n          sizeId\n          setIds\n        }\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetUserClimbsDocument;
   '\n  query SearchUsersAndSetters($input: SearchUsersInput!) {\n    searchUsersAndSetters(input: $input) {\n      results {\n        user {\n          id\n          displayName\n          avatarUrl\n          followerCount\n          followingCount\n          isFollowedByMe\n        }\n        setter {\n          username\n          climbCount\n          boardTypes\n          isFollowedByMe\n        }\n        recentAscentCount\n        matchReason\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.SearchUsersAndSettersDocument;
   '\n  query GetFollowedAuthors {\n    followedAuthors {\n      setterUsernames\n      users {\n        userId\n        boardAccounts {\n          boardType\n          username\n        }\n      }\n    }\n  }\n': typeof types.GetFollowedAuthorsDocument;
+  '\n  fragment SprayDetectionFields on SprayWallDetection {\n    id\n    wallUuid\n    versionId\n    status\n    modelVersion\n    error\n    createdAt\n    finishedAt\n    result {\n      width\n      height\n      candidates {\n        cx\n        cy\n        r\n        confidence\n        outline\n      }\n    }\n  }\n': typeof types.SprayDetectionFieldsFragmentDoc;
+  '\n  \n  query SprayDetection($wallUuid: ID!, $versionId: ID!) {\n    sprayWallDetectionForVersion(wallUuid: $wallUuid, versionId: $versionId) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.SprayDetectionDocument;
+  '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RequestSprayDetectionDocument;
+  '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RetrySprayDetectionDocument;
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n': typeof types.GetTicksDocument;
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n': typeof types.GetUserTicksDocument;
   '\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n': typeof types.GetUserTickCountsByBoardDocument;
@@ -410,6 +414,14 @@ const documents: Documents = {
     types.SearchUsersAndSettersDocument,
   '\n  query GetFollowedAuthors {\n    followedAuthors {\n      setterUsernames\n      users {\n        userId\n        boardAccounts {\n          boardType\n          username\n        }\n      }\n    }\n  }\n':
     types.GetFollowedAuthorsDocument,
+  '\n  fragment SprayDetectionFields on SprayWallDetection {\n    id\n    wallUuid\n    versionId\n    status\n    modelVersion\n    error\n    createdAt\n    finishedAt\n    result {\n      width\n      height\n      candidates {\n        cx\n        cy\n        r\n        confidence\n        outline\n      }\n    }\n  }\n':
+    types.SprayDetectionFieldsFragmentDoc,
+  '\n  \n  query SprayDetection($wallUuid: ID!, $versionId: ID!) {\n    sprayWallDetectionForVersion(wallUuid: $wallUuid, versionId: $versionId) {\n      ...SprayDetectionFields\n    }\n  }\n':
+    types.SprayDetectionDocument,
+  '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n':
+    types.RequestSprayDetectionDocument,
+  '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n':
+    types.RetrySprayDetectionDocument,
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n':
     types.GetTicksDocument,
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n':
@@ -1221,6 +1233,30 @@ export function graphql(
 export function graphql(
   source: '\n  query GetFollowedAuthors {\n    followedAuthors {\n      setterUsernames\n      users {\n        userId\n        boardAccounts {\n          boardType\n          username\n        }\n      }\n    }\n  }\n',
 ): (typeof documents)['\n  query GetFollowedAuthors {\n    followedAuthors {\n      setterUsernames\n      users {\n        userId\n        boardAccounts {\n          boardType\n          username\n        }\n      }\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  fragment SprayDetectionFields on SprayWallDetection {\n    id\n    wallUuid\n    versionId\n    status\n    modelVersion\n    error\n    createdAt\n    finishedAt\n    result {\n      width\n      height\n      candidates {\n        cx\n        cy\n        r\n        confidence\n        outline\n      }\n    }\n  }\n',
+): (typeof documents)['\n  fragment SprayDetectionFields on SprayWallDetection {\n    id\n    wallUuid\n    versionId\n    status\n    modelVersion\n    error\n    createdAt\n    finishedAt\n    result {\n      width\n      height\n      candidates {\n        cx\n        cy\n        r\n        confidence\n        outline\n      }\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  \n  query SprayDetection($wallUuid: ID!, $versionId: ID!) {\n    sprayWallDetectionForVersion(wallUuid: $wallUuid, versionId: $versionId) {\n      ...SprayDetectionFields\n    }\n  }\n',
+): (typeof documents)['\n  \n  query SprayDetection($wallUuid: ID!, $versionId: ID!) {\n    sprayWallDetectionForVersion(wallUuid: $wallUuid, versionId: $versionId) {\n      ...SprayDetectionFields\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n',
+): (typeof documents)['\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n',
+): (typeof documents)['\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

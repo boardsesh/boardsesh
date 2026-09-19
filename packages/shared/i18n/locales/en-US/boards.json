@@ -1,4 +1,14 @@
 {
+  "sprayDetection": {
+    "queued": "Your photo is queued for hold recognition.",
+    "running": "Finding holds in your photo…",
+    "connection": "Can't reach your recognition job. Try again when you're connected.",
+    "failed": "We couldn't finish finding holds. Your photo is saved.",
+    "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
+    "retry": "Try again",
+    "manual": "Place holds myself",
+    "resume": "Resume this reset"
+  },
   "mobile": {
     "edit": {
       "screenTitle": "Edit board",
@@ -827,9 +837,7 @@
       "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
     },
     "detect": {
-      "title": "Looking for holds",
-      "working": "Looking for holds…",
-      "tiles": "Pass {{done}} of {{total}}"
+      "title": "Looking for holds"
     },
     "review": {
       "found": "{{value}} holds to check",
@@ -869,7 +877,7 @@
     "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
     "openDraft": {
       "title": "There's a reset half done",
-      "body": "A photo from an earlier go is still open on this wall. Throw it away and start again — nothing on the wall has changed yet.",
+      "body": "Your saved photo is ready to resume. Nothing on the published wall changes until you confirm the reset.",
       "discard": "Throw it away and start again",
       "discarded": "That reset is gone. Take a new photo.",
       "discardFailed": "That reset wouldn't clear. Try again."
@@ -883,9 +891,6 @@
       "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
       "use": "Use these corners",
       "notConvex": "Those corners cross over each other. Put them round the wall in order."
-    },
-    "detect": {
-      "title": "Seeing what changed"
     },
     "leave": {
       "title": "Leave the reset?",

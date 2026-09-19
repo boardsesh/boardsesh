@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
 import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 import {
   MAX_HOLDS_PER_WALL,
   MAX_SPRAY_WALLS_PER_USER,
@@ -329,7 +330,7 @@ async function loadVisibleWall(uuid: string, userId: string | null | undefined):
 }
 
 /** Load a wall for a mutation and assert the caller may edit it. */
-async function loadEditableWall(ctx: ConnectionContext, uuid: string): Promise<LoadedWall> {
+export async function loadEditableWall(ctx: ConnectionContext, uuid: string): Promise<LoadedWall> {
   const loaded = await loadWall('uuid', uuid);
   if (!loaded) throw notFoundError();
   await requireBoardEditAccess(ctx, loaded.board);
@@ -571,7 +572,7 @@ async function resolveReadableVersion(
  * namespace — `0x53505259` is ASCII "SPRY". Mirrors
  * `CLIMB_DUPLICATE_LOCK_NAMESPACE` in `climbs/climb-similarity.ts`.
  */
-const SPRAY_WALL_LOCK_NAMESPACE = 0x53505259;
+const SPRAY_WALL_LOCK_NAMESPACE = SPRAY_WALL_WRITE_LOCK_NAMESPACE;
 
 /**
  * Serialize every write that changes a wall's holds or its published version.

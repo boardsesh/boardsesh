@@ -21,7 +21,8 @@ import { Image } from 'expo-image';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { sprayWallDetectionFinished, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
+import { sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
+import type { SprayDetectionCandidate } from '@boardsesh/shared-schema';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -32,13 +33,12 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
-import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
+import { SprayDetectionStep } from './SprayDetectionStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
 import { fetchSprayWallVersions, useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
@@ -116,12 +116,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   /**
    * The draft this wall already has, if any.
    *
-   * A wall carries ONE open draft, so an abandoned reset is in the way of the
-   * next one — and it cannot be resumed here: the detections were computed from
-   * a local photograph this session does not have, and reviewing a reset with no
-   * detections would propose taking every hold off the wall. So the honest offer
-   * is to throw the old draft away and start again, which is also the only thing
-   * that unblocks the wall.
+   * A wall carries one open draft. Its stored photo and recognition job survive
+   * leaving this screen; resuming never replaces the published wall.
    */
   const openDraft = useMemo(() => wall?.versions?.find((version) => version.status === 'DRAFT') ?? null, [wall]);
 
@@ -160,30 +156,10 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Steps 3 and 4 — upload, then suggest
   // ============================================
 
-  const runDetection = useCallback(
-    async (photo: { uri: string; width: number; height: number }, stored: { width: number; height: number }) => {
-      dispatch({ type: 'DETECTION_STARTED' });
-      const startedAt = Date.now();
-      const result = await suggestSprayHolds({
-        photo,
-        storedPhoto: stored,
-        onProgress: (done, total) => dispatch({ type: 'DETECTION_PROGRESS', done, total }),
-      });
-      trackSprayEvent(
-        sprayWallDetectionFinished({
-          outcome: result.outcome,
-          candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
-          durationMs: Date.now() - startedAt,
-        }),
-      );
-      if (result.outcome === 'ok') {
-        dispatch({ type: 'DETECTION_FINISHED', candidates: result.candidates });
-        return;
-      }
-      dispatch({ type: result.outcome === 'unavailable' ? 'DETECTION_UNAVAILABLE' : 'DETECTION_FAILED' });
-    },
-    [],
-  );
+  const runDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
+  const detectionCompleted = useCallback((candidates: SprayDetectionCandidate[]) => {
+    dispatch({ type: 'DETECTION_FINISHED', candidates });
+  }, []);
 
   const runUpload = useCallback(async () => {
     const photo = state.photo;
@@ -240,7 +216,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           photoHeight: stored.height,
         },
       });
-      await runDetection(photo, stored);
+      runDetection();
     } catch (error) {
       reportError(error);
       trackSprayEvent(
@@ -323,9 +299,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    *
    * The footer's Back was guarded and nothing else was: the header's back
    * button, the iOS back gesture and Android's Back key all remove the route
-   * outright — mid-upload, or with a draft on the server whose detections live
-   * only in this session. A silent exit there strands a draft nothing can resume
-   * and forces the owner to discard it and shoot the wall again.
+   * outright — including mid-upload or with unsaved review edits. Recognition
+   * itself now survives leaving: the stored draft resumes its durable job.
    *
    * `beforeRemove` is the one place all of them pass through — the footer's Back
    * included, since it pops the route like everything else. So this is the SOLE
@@ -435,6 +410,25 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredText}>
           {t('sprayReset.openDraft.body')}
         </Text>
+        {openDraft.photo?.width && openDraft.photo?.height ? (
+          <Button
+            title={t('sprayDetection.resume')}
+            onPress={() => {
+              const { width, height } = openDraft.photo ?? {};
+              if (!width || !height) return;
+              dispatch({
+                type: 'DRAFT_CREATED',
+                draft: {
+                  versionId: openDraft.id,
+                  versionNumber: openDraft.number,
+                  photoWidth: width,
+                  photoHeight: height,
+                },
+              });
+              runDetection();
+            }}
+          />
+        ) : null}
         <Button
           title={t('sprayReset.openDraft.discard')}
           variant="filled"
@@ -579,18 +573,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           </>
         ) : null}
 
-        {state.step === 'detect' ? (
-          <>
-            <Text variant="title3">{t('sprayReset.detect.title')}</Text>
-            <ProgressBlock
-              label={
-                state.detection.total > 0
-                  ? t('sprayWizard.detect.tiles', { done: state.detection.done, total: state.detection.total })
-                  : t('sprayWizard.detect.working')
-              }
-              progress={state.detection.total > 0 ? state.detection.done / state.detection.total : null}
-            />
-          </>
+        {state.step === 'detect' && state.draft ? (
+          <SprayDetectionStep wallUuid={wallUuid} versionId={state.draft.versionId} onComplete={detectionCompleted} />
         ) : null}
       </ScrollView>
 

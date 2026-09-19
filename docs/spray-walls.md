@@ -215,7 +215,16 @@ pairing — nearest added detection within 3 radii — as a `movedFromHoldId` hi
 for the review UI, so a remix can start from the successor. The suggestion
 changes nothing about what was matched.
 
-### Detection post-processing, and why one full-frame pass
+### Recognition service and shared post-processing
+
+The current rollout uses a dedicated homelab Node worker consuming pg-boss
+jobs from the writable primary. Mobile requests and resumes jobs over GraphQL;
+the physical standby is not a queue endpoint. See
+[deployment and exposure gates](spray-recognition-rollout.md) for the pinned
+segmentation model, tiling, outlines, retries and native-runtime cleanup.
+
+The box-model measurements below are historical evidence, not the current
+segmentation service's inference configuration.
 
 `@boardsesh/hold-detection` is the platform-free half of on-device detection:
 tile planning, preprocessing into the model's input tensor, decoding RF-DETR's
@@ -273,7 +282,7 @@ one more reason the score threshold is a slider rather than a shipped constant.
 | `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
-| `detect` | The registered on-device detector, if this binary has one. No detector, or a failure, lands in the editor with nothing to review. |
+| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued; published reset versions remain unchanged until review and confirmation. |
 | `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
@@ -1328,7 +1337,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Photo Picked` | `source` | Camera or library — the two feel different on a slow phone. |
 | `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
-| `Spray Holds Reviewed` | `holdCount`, `hadCandidates` | What the review step actually saved. The number the detector is judged on. |
+| `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
@@ -1351,6 +1360,11 @@ The whole surface is behind the mobile flag `spray-walls`
 reads as off, so the tile never flickers in for the first frames of a cold open.
 
 Three steps, each gated on a number rather than on a feeling:
+
+The service rollout additionally requires 24-hour observation windows, 20
+reviewed walls from five users before 10%, and ten reset previews before
+everyone. The complete, current gates are in
+[the service rollout runbook](spray-recognition-rollout.md).
 
 | Step | Audience | Gate before moving on |
 | --- | --- | --- |

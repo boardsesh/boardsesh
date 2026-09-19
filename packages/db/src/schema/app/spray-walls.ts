@@ -16,6 +16,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import type { SprayDetectionResult } from '@boardsesh/shared-schema';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
 import { boardClimbs } from '../boards/unified';
@@ -79,6 +80,14 @@ export const sprayWallVersionStatusEnum = pgEnum('spray_wall_version_status', ['
 
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export const sprayHoldSourceEnum = pgEnum('spray_hold_source', ['manual', 'auto']);
+
+export const sprayDetectionStatusEnum = pgEnum('spray_detection_status', [
+  'pending',
+  'running',
+  'done',
+  'failed',
+  'cancelled',
+]);
 
 /**
  * One physical wall. Its catalogue identity is `layout_id`; its owner, name,
@@ -331,6 +340,39 @@ export const sprayWallVersions = pgTable(
   },
   (table) => ({
     wallVersionUnique: uniqueIndex('spray_wall_versions_wall_version_idx').on(table.wallId, table.versionNumber),
+  }),
+);
+
+/** Proposals survive queue cleanup and app restarts; only the editor writes holds. */
+export const sprayWallDetections = pgTable(
+  'spray_wall_detections',
+  {
+    id: text('id').primaryKey(),
+    wallId: bigint('wall_id', { mode: 'number' })
+      .notNull()
+      .references(() => sprayWalls.id, { onDelete: 'cascade' }),
+    versionId: bigint('version_id', { mode: 'number' })
+      .notNull()
+      .references(() => sprayWallVersions.id, { onDelete: 'cascade' }),
+    requestedBy: text('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    photoKey: text('photo_key').notNull(),
+    photoWidth: integer('photo_width').notNull(),
+    photoHeight: integer('photo_height').notNull(),
+    modelVersion: text('model_version').notNull(),
+    weightsSha256: text('weights_sha256').notNull(),
+    jobId: text('job_id').notNull(),
+    status: sprayDetectionStatusEnum('status').default('pending').notNull(),
+    attemptToken: text('attempt_token'),
+    result: jsonb('result').$type<SprayDetectionResult>(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (table) => ({
+    versionIdx: index('spray_wall_detections_version_idx').on(table.versionId, table.createdAt),
+    requesterIdx: index('spray_wall_detections_requester_idx').on(table.requestedBy, table.createdAt),
+    pendingIdx: index('spray_wall_detections_pending_idx').on(table.status, table.createdAt),
   }),
 );
 

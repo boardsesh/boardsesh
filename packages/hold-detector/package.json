@@ -1,0 +1,28 @@
+{
+  "name": "@boardsesh/hold-detector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit",
+    "lint": "vp lint",
+    "lint-fix": "vp lint --fix"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@boardsesh/board-art-geometry": "workspace:*",
+    "@boardsesh/db": "workspace:*",
+    "@boardsesh/hold-detection": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "onnxruntime-node": "1.30.0",
+    "pg-boss": "12.33.0",
+    "sharp": "^0.34.5",
+    "tsx": "^4.23.1"
+  }
+}
