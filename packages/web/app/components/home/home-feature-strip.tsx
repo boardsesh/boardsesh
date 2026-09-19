@@ -89,10 +89,21 @@ export default async function HomeFeatureStrip() {
 
   return (
     <Box className={styles.strip}>
-      <PageSection title={t('home.features.title')} lead={t('home.features.lead')}>
+      <PageSection className={styles.section} title={t('home.features.title')} lead={t('home.features.lead')}>
         <Box component="ul" className={styles.grid}>
           {columns.map((column) => (
             <Box component="li" key={column.id} className={styles.feature} data-testid="home-feature-column">
+              <Box className={styles.featureCopy}>
+                <Box className={`${styles.chip} ${column.quietChip ? styles.chipInfo : ''}`} aria-hidden>
+                  {column.icon}
+                </Box>
+                <Typography variant="h5" component="h3" className={styles.featureTitle}>
+                  {column.title}
+                </Typography>
+                <Typography variant="body1" component="p" className={styles.featureBody}>
+                  {column.body}
+                </Typography>
+              </Box>
               <Box className={styles.shot}>
                 <Image
                   src={column.shot.src}
@@ -100,18 +111,9 @@ export default async function HomeFeatureStrip() {
                   width={column.shot.width}
                   height={SHOT_HEIGHT}
                   className={styles.shotImage}
-                  sizes="(max-width: 760px) 260px, 33vw"
+                  sizes="(max-width: 760px) 128px, 190px"
                 />
               </Box>
-              <Box className={`${styles.chip} ${column.quietChip ? styles.chipInfo : ''}`} aria-hidden>
-                {column.icon}
-              </Box>
-              <Typography variant="h5" component="h3" className={styles.featureTitle}>
-                {column.title}
-              </Typography>
-              <Typography variant="body1" component="p" className={styles.featureBody}>
-                {column.body}
-              </Typography>
             </Box>
           ))}
         </Box>

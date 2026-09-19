@@ -33,8 +33,9 @@
   "home": {
     "hero": {
       "title": "Une appli pour tes boards",
+      "eyebrow": "Compatible avec Kilter, Tension et MoonBoard",
       "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
-      "subtitle": "Notez vos croix sur Kilter, Tension et MoonBoard.",
+      "subtitle": "Prépare tes blocs avec ta crew. Garde toutes tes croix dans un seul carnet, quelle que soit ta board.",
       "startClimbingAria": "Commencer à grimper dans l'appli",
       "startClimbingWeb": "Commencer à grimper sur le web →",
       "ctaInstallIos": "Télécharger sur l'App Store",

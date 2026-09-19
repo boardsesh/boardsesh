@@ -64,7 +64,7 @@ export default function PopularBoardRail({ configs }: PopularBoardRailProps) {
   if (cards.length === 0) return null;
 
   return (
-    <Box component="section">
+    <Box component="section" className={styles.section} sx={{ minWidth: 0 }}>
       <Typography variant="body2" component="h2" className={styles.title}>
         {t('discovery.popular.title')}
       </Typography>

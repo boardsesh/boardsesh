@@ -26,6 +26,8 @@ import { useProfileHeaderShare } from '@/app/components/profile-header-bridge/pr
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import { APP_URL } from '@/app/lib/app-origin';
+import BrandLockup from './brand-lockup';
 import styles from './marketing-header.module.css';
 
 // Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
@@ -38,7 +40,8 @@ const BRAND_SX = {
   fontWeight: themeTokens.typography.fontWeight.bold,
   fontSize: themeTokens.typography.fontSize.lg,
   color: 'var(--bs-text-brand-primary)',
-  px: 0.5,
+  minWidth: 0,
+  px: 0,
   '&:hover': { backgroundColor: 'transparent' },
 } as const;
 
@@ -52,9 +55,6 @@ const NAV_LINK_SX = {
 
 /** Route prefixes that render a simple title header instead of the default marketing header */
 const TITLE_HEADER_PAGE_PREFIXES = ['/aurora-migration'] as const;
-
-/** Pages where the header floats transparently over the hero */
-const HIDDEN_HEADER_PAGES = ['/'];
 
 type CenteredHeaderProps = {
   left?: React.ReactNode;
@@ -200,8 +200,7 @@ export default function MarketingHeader() {
 
   const brandLink = (
     <Button component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} sx={BRAND_SX} disableRipple>
-      {/* i18n-ignore-next-line — brand name, never translated (CLAUDE.md) */}
-      Boardsesh
+      <BrandLockup eager />
     </Button>
   );
 
@@ -216,7 +215,7 @@ export default function MarketingHeader() {
   ];
 
   // Both treatments render the same four anchors. The inline row is always in
-  // the DOM (CSS hides it below 900px rather than unmounting it), so a crawler
+  // the DOM (CSS hides it below 1100px rather than unmounting it), so a crawler
   // reads the links on every page regardless of viewport — the menu below is a
   // touch affordance, not the only copy of them.
   const primaryNav = (
@@ -250,6 +249,14 @@ export default function MarketingHeader() {
               {label}
             </MenuItem>
           ))}
+          <MenuItem
+            component="a"
+            href={APP_URL}
+            onClick={() => setNavMenuAnchor(null)}
+            className={styles.mobileAppLink}
+          >
+            {t('header.startClimbing')}
+          </MenuItem>
         </Menu>
       </div>
     </>
@@ -274,8 +281,18 @@ export default function MarketingHeader() {
       </IconButton>
     </>
   ) : (
-    <Button component={LocaleLink} href="/auth/login" size="small" sx={{ textTransform: 'none', flexShrink: 0 }}>
-      {t('header.signIn')}
+    <Button
+      component={LocaleLink}
+      href="/auth/login"
+      aria-label={t('header.signIn')}
+      size="small"
+      className={styles.signIn}
+      sx={{ textTransform: 'none', flexShrink: 0 }}
+    >
+      <PersonOutlined className={styles.signInIcon} />
+      <Box component="span" className={styles.signInLabel}>
+        {t('header.signIn')}
+      </Box>
     </Button>
   );
 
@@ -333,24 +350,6 @@ export default function MarketingHeader() {
     );
   }
 
-  // Transparent bar over the homepage hero.
-  if (HIDDEN_HEADER_PAGES.includes(pathname)) {
-    return (
-      <header className={styles.headerTransparent} data-testid="marketing-header">
-        {brandLink}
-        {primaryNav}
-        <Box sx={{ flex: 1 }} />
-        {accountAction}
-        <StartClimbingButton
-          label={t('header.startClimbing')}
-          ariaLabel={t('ariaLabels.startClimbing')}
-          size="small"
-          sx={HEADER_START_CLIMBING_SX}
-        />
-      </header>
-    );
-  }
-
   // Translation keys live alongside the prefix list so the i18n linter can
   // statically follow `t('header.…')` to the catalog entry.
   const titleHeaderTitles: Record<(typeof TITLE_HEADER_PAGE_PREFIXES)[number], string> = {
@@ -369,12 +368,14 @@ export default function MarketingHeader() {
       {primaryNav}
       <Box sx={{ flex: 1 }} />
       {accountAction}
-      <StartClimbingButton
-        label={t('header.startClimbing')}
-        ariaLabel={t('ariaLabels.startClimbing')}
-        size="small"
-        sx={HEADER_START_CLIMBING_SX}
-      />
+      <Box className={styles.desktopAppLink}>
+        <StartClimbingButton
+          label={t('header.startClimbing')}
+          ariaLabel={t('ariaLabels.startClimbing')}
+          size="small"
+          sx={HEADER_START_CLIMBING_SX}
+        />
+      </Box>
     </header>
   );
 }

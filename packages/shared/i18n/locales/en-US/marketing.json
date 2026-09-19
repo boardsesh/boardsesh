@@ -33,8 +33,9 @@
   "home": {
     "hero": {
       "title": "One app for your boards",
+      "eyebrow": "Works with Kilter, Tension & MoonBoard",
       "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
-      "subtitle": "Track your sends across Kilter, Tension, and MoonBoard.",
+      "subtitle": "Line up climbs with your crew. Keep every send in one logbook, whichever board you’re on.",
       "startClimbingAria": "Start climbing in the app",
       "startClimbingWeb": "Start climbing on the web →",
       "ctaInstallIos": "Install from App Store",

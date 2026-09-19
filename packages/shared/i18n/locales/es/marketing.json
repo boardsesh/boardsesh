@@ -33,8 +33,9 @@
   "home": {
     "hero": {
       "title": "Una app para tus plafones",
+      "eyebrow": "Compatible con Kilter, Tension y MoonBoard",
       "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
-      "subtitle": "Registra tus encadenes en Kilter, Tension y MoonBoard.",
+      "subtitle": "Preparad la cola de bloques juntos. Guarda todos tus encadenes en un solo logbook, sea cual sea tu plafón.",
       "startClimbingAria": "Empieza a escalar en la app",
       "startClimbingWeb": "Empieza a escalar en la web →",
       "ctaInstallIos": "Descárgala en el App Store",

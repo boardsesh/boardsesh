@@ -12,6 +12,7 @@ import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { themeTokens } from '@/app/theme/theme-config';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
 
 const FOOTER_START_CLIMBING_SX = brandCtaSx();
@@ -93,10 +94,9 @@ export default function SiteFooter() {
     <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>
         <Box className={styles.intro}>
-          <Typography variant="h6" component="p" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, m: 0 }}>
-            {/* i18n-ignore-next-line — brand name, never translated (CLAUDE.md) */}
-            Boardsesh
-          </Typography>
+          <MuiLink component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} underline="none">
+            <BrandLockup />
+          </MuiLink>
           <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch' }}>
             {t('footer.tagline')}
           </Typography>

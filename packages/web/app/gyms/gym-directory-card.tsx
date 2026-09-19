@@ -81,7 +81,7 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
           component={LocaleLink}
           href={`/gym/${gym.slug}`}
           underline="hover"
-          sx={{ color: 'var(--color-primary)' }}
+          sx={{ color: 'text.primary', '&:hover': { color: 'var(--color-primary)' } }}
         >
           {gym.name}
         </MuiLink>
@@ -93,9 +93,9 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
         label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
         sx={{
           alignSelf: 'flex-start',
-          backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'var(--home-accent-info-surface)',
-          color: gym.isClaimed ? 'var(--color-success)' : 'var(--color-info)',
-          border: '1px solid currentColor',
+          backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
+          color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
+          border: '1px solid var(--separator)',
           '& .MuiChip-icon': { color: 'inherit' },
         }}
       />

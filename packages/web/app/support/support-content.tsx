@@ -64,54 +64,56 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         </Typography>
       </Box>
 
-      <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
-        <Prose>{t('support.why.p1')}</Prose>
-        <Prose>{t('support.why.p2')}</Prose>
-      </PageSection>
+      <Box className={styles.contributionGrid}>
+        <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
+          <Prose>{t('support.why.p1')}</Prose>
+          <Prose>{t('support.why.p2')}</Prose>
+        </PageSection>
 
-      <PageSection title={t('support.rails.title')}>
-        {/* The rails are the only cards on the page — that is what makes them
+        <PageSection title={t('support.rails.title')} className={styles.contributionOptions}>
+          {/* The rails are the only cards on the page — that is what makes them
             findable. Everything else is prose on the page ground. */}
-        <Box className={styles.rails}>
-          <PageCard variant="elevated" className={styles.rail}>
-            <Typography variant="h4" component="h3" className={styles.railTitle}>
-              <GitHub fontSize="small" />
-              {t('support.sponsors.title')}
-            </Typography>
-            <Typography variant="body1" component="p" color="text.secondary">
-              {t('support.sponsors.body')}
-            </Typography>
-            <Box className={styles.railCta}>
-              <Button
-                variant="contained"
-                color="primaryFill"
-                href={GITHUB_SPONSORS_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('support.sponsors.cta')}
-              </Button>
-            </Box>
-          </PageCard>
-
-          {stripeDonateUrl ? (
-            <PageCard variant="elevated" className={styles.rail} data-testid="support-one-time-rail">
+          <Box className={styles.rails}>
+            <PageCard variant="elevated" className={styles.rail}>
               <Typography variant="h4" component="h3" className={styles.railTitle}>
-                <CreditCardOutlined fontSize="small" />
-                {t('support.oneTime.title')}
+                <GitHub fontSize="small" />
+                {t('support.sponsors.title')}
               </Typography>
               <Typography variant="body1" component="p" color="text.secondary">
-                {t('support.oneTime.body')}
+                {t('support.sponsors.body')}
               </Typography>
               <Box className={styles.railCta}>
-                <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
-                  {t('support.oneTime.cta')}
+                <Button
+                  variant="contained"
+                  color="primaryFill"
+                  href={GITHUB_SPONSORS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('support.sponsors.cta')}
                 </Button>
               </Box>
             </PageCard>
-          ) : null}
-        </Box>
-      </PageSection>
+
+            {stripeDonateUrl ? (
+              <PageCard variant="elevated" className={styles.rail} data-testid="support-one-time-rail">
+                <Typography variant="h4" component="h3" className={styles.railTitle}>
+                  <CreditCardOutlined fontSize="small" />
+                  {t('support.oneTime.title')}
+                </Typography>
+                <Typography variant="body1" component="p" color="text.secondary">
+                  {t('support.oneTime.body')}
+                </Typography>
+                <Box className={styles.railCta}>
+                  <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
+                    {t('support.oneTime.cta')}
+                  </Button>
+                </Box>
+              </PageCard>
+            ) : null}
+          </Box>
+        </PageSection>
+      </Box>
 
       {/* The page's second column of substance. Without it, an environment with
           no Stripe link is one card and a lot of prose. */}
@@ -120,6 +122,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         lead={t('support.otherWays.body')}
         icon={<VolunteerActivismOutlined />}
         tone="neutral"
+        className={styles.communitySection}
       >
         <Box className={styles.helpGrid}>
           <Box className={styles.helpItem}>

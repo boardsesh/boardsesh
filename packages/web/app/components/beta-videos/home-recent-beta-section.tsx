@@ -66,16 +66,15 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
   if (links.length === 0) return null;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+    <Box component="section" sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
       <Typography
-        variant="body2"
-        fontWeight={themeTokens.typography.fontWeight.semibold}
+        variant="h3"
+        component="h2"
+        fontWeight={themeTokens.typography.fontWeight.bold}
         sx={{
-          color: 'var(--neutral-400)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          fontSize: themeTokens.typography.fontSize.xs,
-          px: 0.5,
+          color: 'text.primary',
+          letterSpacing: '-0.025em',
+          fontSize: { xs: 24, md: 32 },
         }}
       >
         {t('home.recentBeta.title')}

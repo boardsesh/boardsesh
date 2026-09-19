@@ -86,4 +86,20 @@ describe('HomeFeatureStrip', () => {
     expect(html).toContain('progress screen with send grades');
     expect(html).toContain(resolveMarketingKey('home.features.queue.shotAlt'));
   });
+
+  it('presents the benefit before each corresponding screenshot', async () => {
+    const html = await renderStrip();
+    // React can emit image preload hints before the section itself.
+    const featureMarkup = html.slice(html.indexOf('data-testid="home-feature-column"'));
+
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.queue.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/shared-queue.webp'),
+    );
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.party.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/party-mode-crew.webp'),
+    );
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.logbook.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/logbook-progress.webp'),
+    );
+  });
 });

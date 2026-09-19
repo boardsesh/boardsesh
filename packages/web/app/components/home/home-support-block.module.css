@@ -8,7 +8,7 @@
  * Colours are CSS vars from app/components/index.css. Never literals. */
 
 .block {
-  margin-top: var(--spacing-12);
+  min-width: 0;
 }
 
 .strip {
@@ -16,6 +16,18 @@
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: var(--spacing-8);
   align-items: center;
+  padding: var(--spacing-8);
+}
+
+.strip h2 {
+  font-size: 32px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.aside {
+  border-left: 1px solid var(--separator);
+  padding-left: var(--spacing-8);
 }
 
 .eyebrow {
@@ -54,7 +66,18 @@
     gap: var(--spacing-6);
   }
 
-  .block {
-    margin-top: var(--spacing-8);
+  .strip {
+    padding: var(--spacing-6);
+  }
+
+  .strip h2 {
+    font-size: 24px;
+  }
+
+  .aside {
+    border-left: 0;
+    border-top: 1px solid var(--separator);
+    padding-left: 0;
+    padding-top: var(--spacing-6);
   }
 }

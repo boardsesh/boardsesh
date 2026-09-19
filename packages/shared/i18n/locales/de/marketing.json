@@ -33,8 +33,9 @@
   "home": {
     "hero": {
       "title": "Eine App für deine Boards",
+      "eyebrow": "Kompatibel mit Kilter, Tension & MoonBoard",
       "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
-      "subtitle": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest.",
+      "subtitle": "Plane die nächsten Boulder mit deiner Crew. Halte jede Begehung in einem Routenbuch fest, egal an welchem Board du kletterst.",
       "startClimbingAria": "In der App losklettern",
       "startClimbingWeb": "Im Browser losklettern →",
       "ctaInstallIos": "Im App Store laden",

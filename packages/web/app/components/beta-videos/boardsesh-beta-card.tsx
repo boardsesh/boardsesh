@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import Instagram from '@mui/icons-material/Instagram';
 import { track } from '@/app/lib/analytics';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
@@ -47,6 +47,11 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
   priority = false,
 }) => {
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  // A cached failure can finish before hydration attaches onError. Inspect the
+  // actual image when React attaches it so SSR failures get the same fallback.
+  const checkThumbnail = useCallback((image: HTMLImageElement | null) => {
+    if (image?.complete && image.naturalWidth === 0) setThumbnailFailed(true);
+  }, []);
   const thumbnailSrc = !thumbnailFailed ? link.thumbnail : null;
   const isTikTok = isTikTokUrl(link.link);
   const isInstagram = !isTikTok && isInstagramUrl(link.link);
@@ -86,6 +91,7 @@ const BoardseshBetaCard: React.FC<BoardseshBetaCardProps> = ({
         >
           {thumbnailSrc ? (
             <img
+              ref={checkThumbnail}
               src={thumbnailSrc}
               alt={`Beta by ${link.foreign_username || 'unknown'}`}
               className={styles.thumbnail}

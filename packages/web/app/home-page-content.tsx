@@ -138,115 +138,101 @@ export default function HomePageContent({
         className={styles.main}
         sx={{
           flex: 1,
-          px: 2,
-          py: 2,
           pt: 'var(--global-header-height)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 3,
         }}
       >
         {/* Hero: Install-the-app CTA */}
-        <Box
-          className={styles.hero}
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-            gap: 2,
-          }}
-        >
-          {/* `component` fixes the semantics: MUI maps a variant to its literal
+        <Box className={styles.hero}>
+          <Box className={styles.heroCopy}>
+            <Typography component="p" className={styles.heroEyebrow}>
+              {t('home.hero.eyebrow')}
+            </Typography>
+            {/* `component` fixes the semantics: MUI maps a variant to its literal
               tag, so this used to server-render no <h1> at all on the
               highest-traffic indexable page on the site. The size is set here
               rather than by variant — the hero is the one large thing on the
               page and it was rendering at h5, smaller than the section headings
               further down. */}
-          <Typography
-            variant="h3"
-            component="h1"
-            className={styles.heroTitle}
-            fontWeight={themeTokens.typography.fontWeight.bold}
-            sx={{
-              color: 'var(--bs-text-brand-primary)',
-              lineHeight: 1.15,
-              letterSpacing: '-0.02em',
-              // Cap the measure so the title breaks in a deliberate place.
-              maxInlineSize: '15ch',
-            }}
-          >
-            {t('home.hero.title')}
-          </Typography>
-          <Typography
-            variant="body1"
-            sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: '54ch', fontSize: { xs: 16, sm: 19 } }}
-          >
-            {t('home.hero.subtitle')}
-          </Typography>
-          {/* Store-first, per the marketing wireframe: the app is the product
+            <Typography
+              variant="h3"
+              component="h1"
+              className={styles.heroTitle}
+              fontWeight={themeTokens.typography.fontWeight.bold}
+              sx={{
+                color: 'var(--bs-text-brand-primary)',
+              }}
+            >
+              {t('home.hero.title')}
+            </Typography>
+            <Typography variant="body1" className={styles.heroLead}>
+              {t('home.hero.subtitle')}
+            </Typography>
+            {/* Store-first, per the marketing wireframe: the app is the product
               and the web is the way in for someone who has not installed it.
               A phone browser gets the one store that matches it; a desktop
               browser gets both, because there is nothing to infer from. The
               whole row self-suppresses inside the native app. */}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center', mt: 1 }}>
-            {heroInstallButtons.map((button) => (
-              <Button
-                key={button.store}
-                variant={button.primary ? 'contained' : 'outlined'}
-                size="large"
-                startIcon={<HeroInstallIcon />}
-                onClick={() => {
-                  track(
-                    APP_INSTALL_CLICK_EVENT,
-                    buildAppInstallClickProperties({
-                      platform: button.store,
-                      source: button.source,
-                      placement: 'hero',
-                      mode: heroInstall.mode,
-                    }),
-                  );
-                  window.open(button.url, '_blank', 'noopener,noreferrer');
-                }}
-                sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
-              >
-                {button.label}
-              </Button>
-            ))}
-          </Box>
-          {/* Secondary: hand off to the Expo-web app (single sign-on when logged
+            <Box className={styles.heroActions}>
+              {heroInstallButtons.map((button) => (
+                <Button
+                  key={button.store}
+                  variant={button.primary ? 'contained' : 'outlined'}
+                  size="large"
+                  startIcon={<HeroInstallIcon />}
+                  onClick={() => {
+                    track(
+                      APP_INSTALL_CLICK_EVENT,
+                      buildAppInstallClickProperties({
+                        platform: button.store,
+                        source: button.source,
+                        placement: 'hero',
+                        mode: heroInstall.mode,
+                      }),
+                    );
+                    window.open(button.url, '_blank', 'noopener,noreferrer');
+                  }}
+                  sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
+                >
+                  {button.label}
+                </Button>
+              ))}
+            </Box>
+            {/* Secondary: hand off to the Expo-web app (single sign-on when logged
               in, the app's own login otherwise). A text link, not a second
               filled pill — two equal-weight buttons is no hierarchy at all. */}
-          <StartClimbingButton
-            label={t('home.hero.startClimbingWeb')}
-            ariaLabel={t('home.hero.startClimbingAria')}
-            size="large"
-            variant="text"
-            sx={HERO_WEB_CTA_SX}
-          />
+            <StartClimbingButton
+              label={t('home.hero.startClimbingWeb')}
+              ariaLabel={t('home.hero.startClimbingAria')}
+              size="large"
+              variant="text"
+              sx={HERO_WEB_CTA_SX}
+            />
+          </Box>
           <Box className={styles.heroPreview}>
             <Image
               src={resolveStaticAssetUrl('/images/app/play-view.webp')}
               alt={t('home.hero.playShotAlt')}
               width={603}
               height={1312}
-              sizes="(max-width: 600px) 42vw, 240px"
+              sizes="(max-width: 760px) 49vw, 260px"
               preload
-              className={styles.previewPhone}
+              className={`${styles.previewPhone} ${styles.previewPrimary}`}
             />
             <Image
               src={resolveStaticAssetUrl('/images/app/shared-queue.webp')}
               alt={t('home.features.queue.shotAlt')}
               width={603}
               height={1312}
-              sizes="(max-width: 600px) 42vw, 240px"
-              className={styles.previewPhone}
+              sizes="(max-width: 760px) 40vw, 210px"
+              className={`${styles.previewPhone} ${styles.previewSecondary}`}
             />
           </Box>
         </Box>
 
-        {/* Section order follows the marketing wireframe: find a board, jump
-            onto one, see what the crew is doing, then what the app adds. */}
+        {/* Explain the app before asking visitors to explore the catalogue. */}
+        {featureStrip}
 
         {/* "Find a board near you" — the gym directory teaser. Server-rendered,
             so its gym links are crawlable. */}
@@ -254,14 +240,10 @@ export default function HomePageContent({
 
         {/* Board discovery — a static, crawlable grid of the popular configs the
             page already SSR-fetches. */}
-        <PopularBoardRail configs={initialPopularConfigs ?? []} />
-
-        {/* Recent beta videos from across the community. */}
-        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
-
-        {/* "Board night, sorted" — what the app does that a shared phone on the
-            mat does not. */}
-        {featureStrip}
+        <Box className={styles.discovery}>
+          <PopularBoardRail configs={initialPopularConfigs ?? []} />
+          <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
+        </Box>
 
         {/* Onboarding Cards */}
         {/* The stack used to be a single column capped at 420px, which on a
@@ -270,25 +252,23 @@ export default function HomePageContent({
             columns once there is room and stays one column on a phone. The
             section header spans the full width via gridColumn: '1 / -1'. */}
         <Box
+          className={styles.onboarding}
           sx={{
             display: 'grid',
             gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
             gap: 1.5,
             width: '100%',
-            maxWidth: { xs: 420, md: 880 },
-            mx: 'auto',
           }}
         >
           <Typography
-            variant="body2"
+            variant="h3"
+            component="h2"
             fontWeight={themeTokens.typography.fontWeight.semibold}
             sx={{
               gridColumn: '1 / -1',
-              color: 'var(--neutral-400)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              fontSize: themeTokens.typography.fontSize.xs,
-              px: 0.5,
+              color: 'var(--neutral-900)',
+              fontSize: { xs: 24, md: 32 },
+              mb: 1.5,
             }}
           >
             {t('home.onboardingHeader')}
@@ -336,7 +316,7 @@ export default function HomePageContent({
             icon={<BluetoothOutlined />}
             title={t('home.cards.bluetoothTitle')}
             description={t('home.cards.bluetoothDescription')}
-            accent="spark"
+            accent="brand"
             href={APP_URL}
             external
           />
@@ -345,7 +325,7 @@ export default function HomePageContent({
             icon={<PeopleOutlined />}
             title={t('home.cards.crewTitle')}
             description={t('home.cards.crewDescription')}
-            accent="spark"
+            accent="brand"
             href={APP_URL}
             external
           />
@@ -354,7 +334,7 @@ export default function HomePageContent({
             icon={<DiscordIcon />}
             title={t('home.cards.discordTitle')}
             description={t('home.cards.discordDescription')}
-            accent="info"
+            accent="brand"
             href={DISCORD_INVITE_URL}
             external
             newTab

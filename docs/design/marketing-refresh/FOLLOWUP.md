@@ -1,6 +1,37 @@
 # Marketing refresh — follow-up brief
 
-## Completion update — 19 September 2026
+## Design polish — 19 September 2026
+
+The initial implementation below passed functional checks, but Marco rejected
+its visual polish: the logo had disappeared and the page felt disjointed. The
+final frontend PR (#5572) remains a draft while the second pass is reviewed.
+
+The second pass uses one composition across the site:
+
+- Restore the genuine board mark and wordmark in the shared header and footer.
+  Align their content with the page shell and keep mobile controls usable.
+- Explain the app first: a split desktop hero with real play/queue captures,
+  followed immediately by the three benefits. Discovery follows the product
+  story, rather than interrupting it. Mobile board links remain crawlable in a
+  compact horizontal rail; screenshots retain their native proportions.
+- Give headings, gutters, spacing, and surfaces a consistent hierarchy. The
+  support close is a single panel, not nested competing cards.
+- Balance the support page's explanation and contribution options in two
+  columns, with a two-by-two non-monetary help grid. Keep every donation promise
+  and disclosure visible and unchanged.
+- Group directory search and filters, and give gym names two readable columns
+  beside the map. Names use neutral text; violet indicates interaction and green
+  remains the claimed status, not a general decoration.
+
+Design, marketing, and independent QA reviewed the actual desktop and phone
+renders. Independent visual QA passed, including all four locales at narrow
+widths, iPhone store selection, genuine loaded logos, and map attribution. The
+mobile page is 19% shorter than the initial implementation. Missing beta
+thumbnails now recover even when the image fails before hydration. Seven browser
+regressions pin the revised hierarchy, logo loading, and mobile navigation.
+Passing tests is necessary, but is not the visual acceptance criterion.
+
+## Initial implementation update — 19 September 2026
 
 The historical handover below is superseded by the implementation in #5572 and
 the opt-in backend ordering in #5574. #5570 and #5571 have merged.

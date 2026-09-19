@@ -113,6 +113,17 @@ describe('HomePageContent', () => {
     setUserAgent(ORIGINAL_UA);
   });
 
+  it('explains the app before the gym catalogue and preserves both real hero captures', () => {
+    render(
+      <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
+    );
+    const featureSection = screen.getByTestId('features');
+    const gymSection = screen.getByTestId('gyms');
+    expect(featureSection.compareDocumentPosition(gymSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.features.queue.shotAlt'))).toBeTruthy();
+  });
+
   describe('hero install CTA', () => {
     it('renders both store buttons on desktop web', async () => {
       setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');

@@ -18,7 +18,7 @@
 
 .inner {
   margin: 0 auto;
-  padding: 0 var(--spacing-4);
+  padding: 0 var(--spacing-8);
   width: 100%;
 }
 
@@ -76,7 +76,7 @@
   }
 }
 
-.lead {
+.header .lead {
   margin-top: var(--spacing-3);
   color: var(--neutral-500);
 }
@@ -93,7 +93,7 @@
   margin-top: var(--spacing-8);
 }
 
-.sectionHeading {
+.section .sectionHeading {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
@@ -117,7 +117,7 @@
   color: var(--neutral-500);
 }
 
-.sectionLead {
+.section .sectionLead {
   margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-4);
   color: var(--neutral-500);
 }
@@ -166,6 +166,10 @@
 }
 
 @media (max-width: 600px) {
+  .inner {
+    padding: 0 var(--spacing-6);
+  }
+
   .pageShell {
     padding-bottom: var(--spacing-10);
   }

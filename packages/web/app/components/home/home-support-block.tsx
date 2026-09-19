@@ -71,7 +71,7 @@ export default async function HomeSupportBlock() {
           </PageSection>
         </Box>
 
-        <PageCard variant="elevated" component="aside" padding="sm">
+        <Box component="aside" className={styles.aside}>
           <Typography variant="h5" component="h3" className={styles.asideTitle}>
             {t('home.support.otherWays')}
           </Typography>
@@ -84,7 +84,7 @@ export default async function HomeSupportBlock() {
               </Box>
             ))}
           </Box>
-        </PageCard>
+        </Box>
       </PageCard>
     </Box>
   );

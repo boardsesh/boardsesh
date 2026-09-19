@@ -1,75 +1,57 @@
-/* Matches the inset the homepage's other section labels use (the "Recent
-   beta" and "Get started" headers in home-page-content.tsx / home-recent-
-   beta-section.tsx both set `px: 0.5`, i.e. --spacing-1 on both sides) so all
-   three line up under the same left edge instead of drifting by a stray
-   magic number. */
-.title {
-  color: var(--neutral-400);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: var(--font-size-xs);
+.section .title {
+  color: var(--neutral-900);
+  font-size: 32px;
+  line-height: 1.2;
   font-weight: 600;
-  margin-bottom: var(--spacing-2);
-  padding: 0 var(--spacing-1);
+  letter-spacing: -0.02em;
+  margin-bottom: var(--spacing-6);
 }
 
-/* An intentional grid, not a scroll rail: everything is on screen and in the
-   server HTML, so there is nothing to scroll to reveal.
-
-   `auto-fill` keeps the column *count* responsive on its own. What needed
-   bounding is the card: with bare `minmax(120px, 1fr)` columns the same board
-   thumbnail measured 184px on a 412px phone (2 columns) and 124.7px at 430px
-   (3 columns) — the narrower screen drew the bigger tile.
-
-   Capping the *column* at `minmax(120px, 160px)` fixes the size but stops the
-   grid filling its container: every column is exactly 160px, so all the
-   leftover piles up past the last one (measured 144px of dead space at a
-   1024px viewport, 66px at 430px) and the rail stops short of the page gutter
-   its sibling homepage sections run to. So cap the *card* instead and leave
-   the columns on `1fr`: the grid still fills the container, and slack only
-   shows up where a card has hit its 160px ceiling.
-
-   Measured in Chromium at 375/390/412/430/768/1024/1280/1440 (homepage box
-   model, main px: 2): card 124.7-160px, and at most 12px of slack per edge —
-   against 124.7-184px unbounded, or 144px dead at one edge when the column is
-   what's capped. */
+/* Every destination remains in the first HTML. A compact scrollable rail keeps
+   the catalogue from turning the mobile landing page into six rows of boards. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--spacing-3);
-  justify-items: center;
+  min-width: 0;
+  width: 100%;
+  grid-auto-flow: column;
+  grid-auto-columns: 160px;
+  gap: var(--spacing-4);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--separator) transparent;
+  padding-block: var(--spacing-1) var(--spacing-4);
 }
 
 .card {
   display: block;
-  width: 100%;
-  max-width: 160px;
+  min-width: 0;
   color: inherit;
   text-decoration: none;
+  scroll-snap-align: start;
 }
 
 .thumb {
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--separator);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: var(--semantic-surface);
-  margin-bottom: var(--spacing-2);
-  transition: box-shadow 150ms ease;
-  box-shadow:
-    var(--shadow-xs),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  margin-bottom: var(--spacing-3);
+  transition: border-color var(--motion-fast) var(--ease-standard);
 }
 
-.card:hover .thumb {
-  box-shadow: var(--shadow-md);
+.card:hover .thumb,
+.card:focus-visible .thumb {
+  border-color: var(--color-primary);
 }
 
 .name {
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--neutral-900);
   white-space: nowrap;
@@ -78,10 +60,21 @@
 }
 
 .meta {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--neutral-500);
-  margin-top: 2px;
+  margin-top: var(--spacing-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .section .title {
+    font-size: var(--font-size-2xl);
+    margin-bottom: var(--spacing-5);
+  }
+
+  .grid {
+    grid-auto-columns: 144px;
+  }
 }

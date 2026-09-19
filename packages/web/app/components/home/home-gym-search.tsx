@@ -115,11 +115,16 @@ export default async function HomeGymSearch() {
           {t('home.gymSearch.eyebrow')}
         </Typography>
 
-        <Typography variant="h5" component="h2" fontWeight={themeTokens.typography.fontWeight.bold}>
+        <Typography
+          variant="h3"
+          component="h2"
+          sx={{ fontSize: { xs: 24, md: 32 }, letterSpacing: '-0.025em' }}
+          fontWeight={themeTokens.typography.fontWeight.bold}
+        >
           {t('home.gymSearch.title')}
         </Typography>
 
-        <Typography variant="body1" color="text.secondary" sx={{ mt: 1, mb: 2, maxWidth: '68ch' }}>
+        <Typography variant="body1" color="text.secondary" sx={{ mt: 1.5, mb: 3, maxWidth: '60ch' }}>
           {/* The live catalogue size when we have it. When the count query is
               down we say the same thing without a number rather than printing a
               confident zero. */}
