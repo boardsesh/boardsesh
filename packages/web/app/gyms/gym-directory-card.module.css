@@ -1,6 +1,22 @@
+/*
+ * One reserved slot per result.
+ *
+ * Rows measured 109px, 154px and 155px on production depending on whether a
+ * gym has an address, a distance, both or neither, so the board chips stepped
+ * down the page and the list read as ragged rather than scannable. The column
+ * layout plus `margin-top: auto` on the chip row is what does the aligning:
+ * min-height alone reserves the space but leaves the chips hugging the text.
+ *
+ * The number is the tallest row's own content, in scale units rather than the
+ * measured pixels: the 44px name target, one location line, the chip row, and
+ * the row's padding.
+ */
 .row {
   list-style: none;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--spacing-16) * 2 + var(--spacing-6));
   padding: var(--spacing-4) 0;
   border-bottom: 1px solid var(--separator);
 }
@@ -55,5 +71,7 @@
   justify-content: space-between;
   align-items: center;
   gap: var(--spacing-2) var(--spacing-4);
-  margin-top: var(--spacing-2);
+  /* Bottom of the reserved slot, so every row's chips share one baseline. */
+  margin-top: auto;
+  padding-top: var(--spacing-2);
 }

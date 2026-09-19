@@ -89,7 +89,6 @@ function renderNearMe(searchQuery = '') {
       boardTypes={['kilter']}
       searchQuery={searchQuery}
       locale="en-US"
-      viewerState="signed-out"
       browsePins={[]}
       browsePinnedCount={15}
       browseShownCount={24}

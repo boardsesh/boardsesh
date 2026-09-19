@@ -1,4 +1,5 @@
 import React from 'react';
+import { visuallyHidden } from '@mui/utils';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -20,8 +21,11 @@ import {
  * is a link.
  */
 const PAGE_PILL = {
-  minWidth: 40,
-  height: 40,
+  // `minHeight`, never `height`: 40px was under the 44px target every other
+  // control on the site holds, and a fixed height cannot grow for a bigger
+  // text size or a translated Prev/Next label.
+  minWidth: 44,
+  minHeight: 44,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -94,18 +98,33 @@ export default async function GymDirectoryPagination({ facet, query, totalCount 
               color: 'var(--color-primary)',
             }}
           >
-            {t('pagination.current', { page })}
+            {/* The pill shows the number; the sentence is for screen readers
+                only. It used to render "Page 2, current page" as VISIBLE text,
+                which is three words of scaffolding inside a 40px pill and wrapped
+                the whole pager onto a second row. A hidden span rather than
+                `aria-label`, because this is a plain span: `aria-label` on an
+                element with no role is not reliably exposed. */}
+            <Box component="span" aria-hidden="true">
+              {page}
+            </Box>
+            <Box component="span" sx={visuallyHidden}>
+              {t('pagination.current', { page })}
+            </Box>
           </Typography>
         ) : (
           <MuiLink
             key={page}
             component={LocaleLink}
             href={buildDirectoryHref(facet, query, page)}
+            // Same split as the current pill: the number is what you read, the
+            // full "Page 3" is the accessible name, so a screen reader still
+            // hears which page a bare digit would leave ambiguous.
+            aria-label={t('pagination.page', { page })}
             underline="none"
             variant="body2"
             sx={{ ...PAGE_PILL, color: 'var(--neutral-900)' }}
           >
-            {t('pagination.page', { page })}
+            {page}
           </MuiLink>
         ),
       )}

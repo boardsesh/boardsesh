@@ -150,3 +150,42 @@ describe('backend failure', () => {
     expect(markup).toContain('Gyms with a Kilter board');
   });
 });
+
+describe('the closing claim prompt', () => {
+  const listedGym = {
+    uuid: 'gym-1',
+    slug: 'boulderwelt-muenchen-ost',
+    name: 'Boulderwelt München Ost',
+    address: null,
+    latitude: null,
+    longitude: null,
+    isClaimed: false,
+    boardSummaries: [],
+  };
+
+  // `viewerState` is the claim prompt's only prop, and nothing else on the page
+  // carries one any more — so counting it counts the prompt.
+  const claimPrompts = (markup: string) => (markup.match(/"viewerState"/g) ?? []).length;
+
+  it('renders once for the page, not once per unclaimed row', async () => {
+    fetchDirectoryPage.mockResolvedValue({
+      ok: true,
+      gyms: [listedGym, { ...listedGym, uuid: 'gym-2', slug: 'the-climbing-hangar' }],
+      totalCount: 2,
+    });
+
+    expect(claimPrompts(JSON.stringify(await renderGymDirectory('all', props)))).toBe(1);
+  });
+
+  it('stays off an empty result page, where there is nothing to claim', async () => {
+    fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [], totalCount: 0 });
+
+    expect(claimPrompts(JSON.stringify(await renderGymDirectory('all', props)))).toBe(0);
+  });
+
+  it('points at the search box it scrolls back to', async () => {
+    fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [listedGym], totalCount: 1 });
+
+    expect(JSON.stringify(await renderGymDirectory('all', props))).toContain('"id":"gym-directory-search"');
+  });
+});

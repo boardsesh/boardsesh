@@ -79,8 +79,11 @@
     "claimed": "Claimed",
     "unclaimed": "Unclaimed",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "{{distance}} km away",
-    "claimCta": "Is this your gym?"
+    "distance": "{{distance}} km away"
+  },
+  "claim": {
+    "body": "Is this your gym? Claim it and you set the boards, hours and links climbers see here.",
+    "action": "Find your gym"
   },
   "nearMe": {
     "cta": "Use my location",

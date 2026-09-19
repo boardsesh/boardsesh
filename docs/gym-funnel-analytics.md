@@ -58,7 +58,7 @@ no mobile counterpart. They live in their own module.
 
 | Event                    | Properties                                            | Fired by                                                                                                                                                                                                                                                                     |
 | ------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Gym Claim CTA Clicked`  | `placement`, `viewerState`, `gymUuid`                 | Every claim entry point: the gym-page call-out (`app/gym/[gym_slug]/gym-claim-cta.tsx`), the gym preview sheet (`app/components/gym-entity/gym-detail.tsx`), the directory card, and the create-gym duplicate list (`app/components/gym-entity/similar-gym-suggestions.tsx`) |
+| `Gym Claim CTA Clicked`  | `placement`, `viewerState`, `gymUuid`                 | Every claim entry point: the gym-page call-out (`app/gym/[gym_slug]/gym-claim-cta.tsx`), the gym preview sheet (`app/components/gym-entity/gym-detail.tsx`), the directory's closing claim prompt (`app/gyms/gym-directory-claim-link.tsx`), and the create-gym duplicate list (`app/components/gym-entity/similar-gym-suggestions.tsx`) |
 | `Gym Claim Submitted`    | `method`, `gymUuid`                                   | `ClaimGymDialog` on submit, before the mutation resolves                                                                                                                                                                                                                     |
 | `Gym Claim Result`       | `status`, `gymUuid`                                   | `ClaimGymDialog` once the mutation settles, success or failure                                                                                                                                                                                                               |
 | `Gym QR Scanned`         | `medium`, `gymSlug`                                   | The QR landing tracker on `/gym/[gym_slug]`, once, after `parseGymQrLanding` matches                                                                                                                                                                                         |
@@ -70,7 +70,7 @@ no mobile counterpart. They live in their own module.
 
 | Property       | Values                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------- |
-| `placement`    | `gym-page`, `preview-sheet`, `directory-card`, `similar-gyms`                            |
+| `placement`    | `gym-page`, `preview-sheet`, `directory-footer`, `similar-gyms`                          |
 | `viewerState`  | `signed-in`, `signed-out` — only the gym page can fire `signed-out`, see below           |
 | `method`       | `domain`, `admin` — mirrors the `GymClaimMethod` GraphQL enum                            |
 | `status`       | `email_sent`, `approved`, `admin_review`, `error`                                        |
@@ -284,15 +284,24 @@ query string, so a board scan cannot produce this event under any property name.
 one kind of drift this whole module exists to prevent — additive extras are
 tolerable, renames split funnels.
 
+**`directory-card` was renamed to `directory-footer`.** The directory used to
+repeat "Is this your gym?" on every unclaimed result row — 24 prompts a page —
+and the prompt now renders once, under the list. Same event, same funnel step,
+different denominator: one impression per page instead of one per row, so the
+click rate before and after is not the same measurement. The old value stops
+appearing the day this ships; any saved insight that filters on
+`placement = 'directory-card'` needs updating, and a series that spans the cut
+must be split at it rather than read as a trend. `gymUuid` is `null` on this
+placement: one prompt under 24 gyms is not about a gym.
+
 One addition in the other direction: **`GymClaimPlacement` gains
 `similar-gyms`.** `app/components/gym-entity/similar-gym-suggestions.tsx` is
 easy to mistake for a directory surface, but it is rendered only by
 `app/components/gym-entity/create-gym-form.tsx` — it is the duplicate check
 inside the create-gym flow, shown to someone who is about to add a gym that may
-already exist. Folding it into `directory-card` would merge "browsing the
+already exist. Folding it into the directory placement would merge "browsing the
 directory" with "about to create a duplicate", which are opposite intents and
-the two most interesting rows to tell apart. `directory-card` itself is reserved
-by #4374; the directory surface ships in a later PR of this epic.
+the two most interesting rows to tell apart.
 
 ## The gym-page install CTA (#4374 AC2)
 
