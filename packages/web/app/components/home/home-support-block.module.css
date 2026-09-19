@@ -19,13 +19,6 @@
   padding: var(--spacing-8);
 }
 
-.strip h2 {
-  font-size: 32px;
-  line-height: 1.25;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-}
-
 .aside {
   border-left: 1px solid var(--separator);
   padding-left: var(--spacing-8);

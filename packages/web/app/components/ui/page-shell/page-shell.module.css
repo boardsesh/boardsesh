@@ -102,7 +102,23 @@
   margin: 0 0 var(--spacing-3);
 }
 
-.section > h2 {
+/* THE section-heading type ramp. One declaration, and the only one — there were
+   nine. `.sectionHeading` (the flex row) and this are applied together by
+   PageSection; the class is exported separately so a heading that CANNOT be a
+   PageSection child can still read the same ramp. The grid-spanning "Where to
+   start" heading is the case that needs it: a nested <section> would break its
+   `grid-column: 1 / -1`.
+
+   Note the breakpoint. The inline `sx` copies this replaces used MUI's `md`
+   (900px) while every CSS copy used 760px, so between those two widths the page
+   rendered headings at two different sizes depending on which copy styled them.
+   760px wins because it is what the primitive and the rest of the sheet use. */
+/* Doubled on purpose. MUI's Typography variant class is a single class, so a
+   single class here TIES it and loses on injection order — the heading silently
+   falls back to the h3 variant (24px/700). The rule this replaced was
+   `.section > h2`, whose descendant combinator out-specified MUI by accident;
+   `.x.x` does it on purpose and works for a standalone heading too. */
+.sectionHeadingType.sectionHeadingType {
   font-size: 32px;
   font-weight: 600;
   line-height: 1.25;
@@ -140,7 +156,7 @@
 }
 
 @media (max-width: 760px) {
-  .section > h2 {
+  .sectionHeadingType.sectionHeadingType {
     font-size: 28px;
   }
 }

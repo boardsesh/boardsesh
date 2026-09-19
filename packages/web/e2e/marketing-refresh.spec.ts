@@ -268,8 +268,18 @@ for (const width of [320, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/');
     await expect(page.locator('h1')).toHaveCSS('font-size', width < 360 ? '36px' : '40px');
-    for (const name of ['Board night, sorted', 'Find a board near you']) {
-      await expect(page.getByRole('heading', { name, exact: true })).toHaveCSS('font-size', '28px');
+    // EVERY section heading, not two named ones. The nine hand-rolled copies of
+    // this ramp are down to one class, and the way they grew back last time was
+    // one component at a time — a named-heading assertion cannot see a tenth one
+    // arriving. Sizes come from `.sectionHeadingType` in page-shell.module.css;
+    // the h1 is asserted separately above and excluded here.
+    const sectionHeadings = page.locator('main h2');
+    expect(await sectionHeadings.count()).toBeGreaterThan(0);
+    for (const heading of await sectionHeadings.all()) {
+      await heading.scrollIntoViewIfNeeded();
+      await expect(heading).toHaveCSS('font-size', '28px');
+      await expect(heading).toHaveCSS('font-weight', '600');
+      await expect(heading).toHaveCSS('letter-spacing', '-0.56px');
     }
     const features = page.getByTestId('home-feature-column');
     await expect(features).toHaveCount(3);

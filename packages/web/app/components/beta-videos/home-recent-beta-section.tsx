@@ -5,7 +5,6 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { themeTokens } from '@/app/theme/theme-config';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_RECENT_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
 import { mapBetaLinkRow } from '@/app/lib/beta-video-url';
@@ -14,6 +13,7 @@ import type { BoardName } from '@/app/lib/types';
 import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import BoardseshBetaList from './boardsesh-beta-list';
+import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 
 type HomeRecentBetaSectionProps = {
   initialRecentBeta: RecentBetaLinkRow[];
@@ -67,17 +67,7 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
 
   return (
     <Box component="section" sx={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%' }}>
-      <Typography
-        variant="h3"
-        component="h2"
-        fontWeight={themeTokens.typography.fontWeight.semibold}
-        sx={{
-          color: 'text.primary',
-          letterSpacing: '-0.025em',
-          fontSize: { xs: 28, md: 32 },
-          lineHeight: 1.25,
-        }}
-      >
+      <Typography variant="h3" component="h2" className={sectionHeadingTypeClassName}>
         {t('home.recentBeta.title')}
       </Typography>
       <BoardseshBetaList
