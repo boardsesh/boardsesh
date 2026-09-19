@@ -2,7 +2,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 /**
  * The strip is a server component, so what matters is the FIRST server render:
@@ -14,19 +14,11 @@ import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
  */
 
 function resolveMarketingKey(dottedKey: string): string {
-  let node: unknown = enMarketing;
-  for (const segment of dottedKey.split('.')) {
-    if (node && typeof node === 'object' && segment in (node as Record<string, unknown>)) {
-      node = (node as Record<string, unknown>)[segment];
-    } else {
-      throw new Error(`missing marketing key: ${dottedKey}`);
-    }
-  }
-  if (typeof node !== 'string') throw new Error(`marketing key is not a string: ${dottedKey}`);
-  return node;
+  return tFromCatalog('marketing', dottedKey);
 }
 
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/static-asset-url', () => ({ resolveStaticAssetUrl: (path: string) => path }));
 
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({
@@ -76,15 +68,15 @@ describe('HomeFeatureStrip', () => {
     expect(html).toContain(`href="${IOS_APP_STORE_URL}"`);
     expect(html).toContain(`href="${ANDROID_PLAY_STORE_URL}"`);
     expect(html).toContain(resolveMarketingKey('home.features.cta'));
+    expect(html).toContain(resolveMarketingKey('home.features.ctaAndroid'));
+    expect(html.match(/aria-hidden="true"/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows the two real captures and a neutral placeholder for the third', async () => {
+  it('shows a real app capture for all three features', async () => {
     const html = await renderStrip();
 
-    // Two committed Play Store captures, cropped to the device. The queue
-    // column has no honest capture yet, so it gets a placeholder rather than a
-    // screenshot of some other screen — and never a generated image.
-    expect(html.match(/<img/g)).toHaveLength(2);
+    expect(html.match(/<img/g)).toHaveLength(3);
+    expect(html).toContain('/images/app/shared-queue.webp');
     expect(html).toContain('/images/app/party-mode-crew.webp');
     expect(html).toContain('/images/app/logbook-progress.webp');
     // Both captures carry alt text from the catalog. The comparison is on a
@@ -92,6 +84,22 @@ describe('HomeFeatureStrip', () => {
     // the raw catalog value would be a test of HTML escaping, not of alt text.
     expect(html).toContain('live sessions and recent sends');
     expect(html).toContain('progress screen with send grades');
-    expect(html).toContain(resolveMarketingKey('home.features.queue.shotPending'));
+    expect(html).toContain(resolveMarketingKey('home.features.queue.shotAlt'));
+  });
+
+  it('presents the benefit before each corresponding screenshot', async () => {
+    const html = await renderStrip();
+    // React can emit image preload hints before the section itself.
+    const featureMarkup = html.slice(html.indexOf('data-testid="home-feature-column"'));
+
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.queue.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/shared-queue.webp'),
+    );
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.party.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/party-mode-crew.webp'),
+    );
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.logbook.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/logbook-progress.webp'),
+    );
   });
 });

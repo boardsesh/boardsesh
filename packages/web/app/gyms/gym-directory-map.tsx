@@ -12,14 +12,7 @@ import { localeHref } from '@/app/lib/i18n/locale-href';
 import { themeTokens } from '@/app/theme/theme-config';
 import { boardChips } from './directory-card-model';
 import { clusterPins, type MapPin, type PinCluster } from './near-me-model';
-
-/**
- * OpenStreetMap's tile policy requires visible attribution. It is a legal
- * notice about a third party, not product copy, so it is not translated and
- * not something a locale is allowed to drop.
- */
-const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+import { attachDirectoryBasemap } from './gym-directory-basemap';
 
 const MAP_HEIGHT = 420;
 
@@ -67,6 +60,7 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
   const leafletRef = useRef<typeof LeafletNamespace | null>(null);
   const markerLayerRef = useRef<LeafletLayerGroup | null>(null);
   const [ready, setReady] = useState(false);
+  const [darkMap, setDarkMap] = useState(true);
 
   const clusters = useMemo(() => clusterPins(pins), [pins]);
 
@@ -79,6 +73,7 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
     // container the first one already claimed.
     let disposed = false;
     let initialising = false;
+    let disposeBasemap: (() => void) | undefined;
 
     const initialise = () => {
       if (initialising || mapRef.current) return;
@@ -93,10 +88,17 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
             // OSM's tile policy is not optional on a public page.
             attributionControl: true,
             scrollWheelZoom: false,
+            minZoom: 1,
+            maxZoom: 19,
+            maxBounds: [
+              [-85, -Infinity],
+              [85, Infinity],
+            ],
+            maxBoundsViscosity: 1,
           })
           .setView([25, 0], 2);
 
-        leaflet.tileLayer(OSM_TILE_URL, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map);
+        disposeBasemap = attachDirectoryBasemap(map, leaflet, setDarkMap);
 
         leafletRef.current = leaflet;
         mapRef.current = map;
@@ -121,6 +123,7 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
     return () => {
       disposed = true;
       observer.disconnect();
+      disposeBasemap?.();
       mapRef.current?.remove();
       mapRef.current = null;
       markerLayerRef.current = null;
@@ -165,6 +168,8 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
           border: '1px solid var(--separator)',
           overflow: 'hidden',
           backgroundColor: 'var(--semantic-surface)',
+          '--directory-marker-ring': darkMap ? 'var(--semantic-background)' : 'var(--neutral-900)',
+          '--directory-marker-core': darkMap ? 'var(--color-primary)' : 'var(--color-primary-fill)',
           // Leaflet paints its own pale grey ground behind the tile grid,
           // and it shows at every edge the tiles do not reach — panning, at the
           // poles, and for the split second before a tile lands. On a near-black
@@ -178,11 +183,11 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
             borderBottomColor: 'var(--separator)',
             color: 'var(--neutral-900)',
           },
-          '& .leaflet-control-attribution': {
+          '&& .leaflet-control-attribution': {
             backgroundColor: 'var(--semantic-surface-overlay)',
             color: 'var(--neutral-500)',
           },
-          '& .leaflet-control-attribution a': { color: 'var(--color-primary)' },
+          '&& .leaflet-control-attribution a': { color: 'var(--color-primary)' },
           '& .leaflet-popup-content-wrapper, & .leaflet-popup-tip': {
             backgroundColor: 'var(--semantic-surface-elevated)',
             color: 'var(--neutral-900)',
@@ -194,23 +199,15 @@ export default function GymDirectoryMap({ pins, pinnedCount, shownCount, locale 
       {/* The honest pill: partial pin coverage stated on the surface that has
           the gap, not buried in a footnote.
 
-          BOTTOM-left, and click-through. Leaflet's zoom control sits top-left
-          at the same z-index, and neither this wrapper nor the map container
-          opens a stacking context — so an overlapping pill wins on DOM order
-          and swallows the click on `+`. With scroll-wheel zoom deliberately
-          off, that left a desktop visitor unable to zoom at all. Bottom-right
-          is the attribution, so bottom-left is the one free corner, and
-          `pointerEvents: 'none'` is the belt to that braces: a label is not a
-          control and must never intercept one. */}
+          Below the map: provider credits can wrap across its entire bottom
+          edge, especially in translated layouts. A separate row never covers
+          attribution, zoom controls, or pins. */}
       <Chip
         size="small"
         label={t('map.pinnedPill', { pinned: pinnedCount, total: shownCount, count: shownCount })}
         sx={{
-          position: 'absolute',
-          bottom: themeTokens.spacing[2],
-          left: themeTokens.spacing[2],
-          zIndex: themeTokens.zIndex.dropdown,
-          pointerEvents: 'none',
+          mt: 1,
+          maxWidth: '100%',
           backgroundColor: 'var(--semantic-surface-elevated)',
           border: '1px solid var(--separator)',
           color: 'var(--neutral-900)',
@@ -234,12 +231,8 @@ type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
  * CSS custom property from `app/components/index.css`, and they resolve because
  * Leaflet appends the marker inside the map container, which inherits `:root`.
  *
- * The rings stay LIGHT (`--neutral-900`), not the page ground. OSM's standard
- * raster tiles are a light basemap, so a dark ring around a violet pin would
- * disappear into the streets it sits on. Tuning the markers for the dark page
- * is the right move the day the tile source becomes a dark one; until then the
- * marker is tuned for the surface it is actually drawn on, and only the hex
- * literals are gone.
+ * The ring follows the actual basemap through a scoped CSS variable: dark for
+ * OpenFreeMap, light if WebGL fails and the raster fallback takes over.
  */
 
 function buildMarker(
@@ -252,7 +245,7 @@ function buildMarker(
   if (!cluster.pin) {
     const icon = leaflet.divIcon({
       className: '',
-      html: `<div style="display:flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;background:var(--color-primary-fill);color:var(--color-on-primary);border:2px solid var(--neutral-900);border-radius:var(--border-radius-full);box-shadow:var(--shadow-sm);font-size:12px;font-weight:600;">${cluster.count}</div>`,
+      html: `<div style="display:flex;align-items:center;justify-content:center;min-width:32px;height:32px;padding:0 6px;background:var(--color-primary-fill);color:var(--color-on-primary);border:2px solid var(--directory-marker-ring);border-radius:var(--border-radius-full);font-size:12px;font-weight:600;">${cluster.count}</div>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16],
     });
@@ -269,7 +262,7 @@ function buildMarker(
   // asset pipeline, so every marker is a divIcon.
   const icon = leaflet.divIcon({
     className: '',
-    html: '<div style="width:16px;height:16px;background:var(--color-primary-fill);border:3px solid var(--neutral-900);border-radius:50%;box-shadow:var(--shadow-sm);"></div>',
+    html: '<div style="width:16px;height:16px;background:var(--directory-marker-core);border:3px solid var(--directory-marker-ring);border-radius:50%;"></div>',
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });

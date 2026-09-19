@@ -8,7 +8,7 @@ import ClimbSocialSection from '@/app/components/social/climb-social-section';
 import BoardseshBetaList from '@/app/components/beta-videos/boardsesh-beta-list';
 import { buildBoardArtLayers, toDarkArtUrl } from '@/app/components/board-renderer/util';
 import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
-import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
+import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, constructBoardSlugListUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -25,6 +25,7 @@ import FrontDoorBreadcrumb from './front-door-breadcrumb';
 type ClimbFrontDoorProps = {
   climb: Climb;
   boardDetails: BoardDetails;
+  boardSlug?: string;
   angle: number;
   canonicalAngle: number;
   angleStats: ClimbStatsForAngle[];
@@ -122,6 +123,7 @@ const emptySectionSx = { m: 0, color: 'var(--neutral-400)' };
 export default async function ClimbFrontDoor({
   climb,
   boardDetails,
+  boardSlug,
   angle,
   canonicalAngle,
   angleStats,
@@ -177,6 +179,7 @@ export default async function ClimbFrontDoor({
         boardName={formatBoardDisplayName(boardDetails.board_name)}
         angle={angle}
         boardListUrl={boardListUrl}
+        navigationBoardListUrl={boardSlug ? constructBoardSlugListUrl(encodeURIComponent(boardSlug), angle) : undefined}
         leaf={{ label: climbName, url: canonicalClimbUrl }}
         emitJsonLd={!noindex && isCanonicalAngle}
       />
@@ -272,6 +275,7 @@ export default async function ClimbFrontDoor({
 
       <AngleCrossLinks
         boardDetails={boardDetails}
+        boardSlug={boardSlug}
         climbUuid={climb.uuid}
         climbName={climbName}
         currentAngle={angle}
@@ -314,6 +318,7 @@ export default async function ClimbFrontDoor({
             round trip) reads meanwhile: prose, never a bare spinner. */}
         <SimilarClimbsList
           boardType={boardDetails.board_name as BoardName}
+          boardSlug={boardSlug}
           layoutId={boardDetails.layout_id}
           viewerBoardDetails={boardDetails}
           climbUuid={climb.uuid}

@@ -32,10 +32,12 @@
   },
   "home": {
     "hero": {
-      "title": "¡A escalar!",
-      "subtitle": "Registra tus encadenes en Kilter, Tension y MoonBoard.",
-      "startClimbing": "Empieza a escalar",
+      "title": "Una app para tus plafones",
+      "eyebrow": "Compatible con Kilter, Tension, MoonBoard y más",
+      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
+      "subtitle": "Preparad la cola de bloques juntos. Guarda todos tus encadenes en un solo logbook, sea cual sea tu plafón.",
       "startClimbingAria": "Empieza a escalar en la app",
+      "startClimbingWeb": "Empieza a escalar en la web →",
       "ctaInstallIos": "Descárgala en el App Store",
       "ctaInstallAndroid": "Disponible en Google Play",
       "ctaUpdate": "Actualiza la app"
@@ -76,6 +78,17 @@
       "cardsUnavailable": "Ahora mismo no carga la lista de rocódromos. El directorio completo sigue ahí.",
       "browseAll": "Ver el directorio completo de rocódromos"
     },
+    "boards": {
+      "title": "Plafones populares",
+      "lead": "Encuentra el plafón en el que escalas y ábrelo en la app con tu grupo.",
+      "ranking": "Ordenados por escaladores que han registrado encadenes en cada plafón. Las vistas previas no se actualizan en directo.",
+      "climbers_one": "{{formattedCount}} escalador",
+      "climbers_other": "{{formattedCount}} escaladores",
+      "preview": "Vista previa del plafón: {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Bloque seleccionado: {{climb}}",
+      "open": "Abrir este plafón"
+    },
     "recentBeta": {
       "title": "Beta fresca"
     },
@@ -85,7 +98,7 @@
       "queue": {
         "title": "Cola compartida",
         "body": "Turnaos sin el típico «¿quién va ahora?». Todos añaden, todos ven el orden.",
-        "shotPending": "Captura en camino"
+        "shotAlt": "La cola compartida de Boardsesh con bloques listos para la sesión"
       },
       "party": {
         "title": "Modo Fiesta",
@@ -97,7 +110,8 @@
         "body": "Apunta encadenes e intentos sobre la marcha, y trae contigo tu historial de Kilter o Tension.",
         "shotAlt": "La pantalla de progreso de la app con los grados encadenados y el calendario de sesiones"
       },
-      "cta": "Consigue la app"
+      "cta": "Consigue la app",
+      "ctaAndroid": "Disponible en Google Play"
     },
     "support": {
       "eyebrow": "Gratis, y así se queda",

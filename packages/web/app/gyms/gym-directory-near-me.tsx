@@ -235,7 +235,11 @@ export default function GymDirectoryNearMe({
               pressed": after a denial the control has to offer the retry again,
               not a "show all" for a near-me list that never rendered. */}
           {showingNearMeResults ? (
-            <Button variant="outlined" onClick={handleShowAll} sx={{ textTransform: 'none' }}>
+            <Button
+              variant="outlined"
+              onClick={handleShowAll}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
+            >
               {t('nearMe.showAll')}
             </Button>
           ) : (
@@ -244,7 +248,7 @@ export default function GymDirectoryNearMe({
               startIcon={<MyLocationOutlined />}
               onClick={handleUseMyLocation}
               disabled={loading || fallbackReason === 'unsupported'}
-              sx={{ textTransform: 'none' }}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
             >
               {loading ? t('nearMe.locating') : t('nearMe.cta')}
             </Button>
@@ -270,6 +274,8 @@ export default function GymDirectoryNearMe({
                   // hairlines with no legible "this one".
                   sx={{
                     textTransform: 'none',
+                    minHeight: 44,
+                    fontSize: 14,
                     borderColor: 'var(--separator)',
                     backgroundColor: 'var(--semantic-surface)',
                     color: 'var(--neutral-900)',
@@ -351,15 +357,15 @@ export default function GymDirectoryNearMe({
           {/* Toggle BELOW the breakpoint only. At 960px and up the map is the
               wireframe's sticky second column and renders with the page.
               ACCEPTED COST, stated rather than mitigated: every wide-screen
-              view therefore requests OSM tiles before anyone asks for a map.
-              That is the page's only third-party request, it carries the
+              view therefore requests OpenFreeMap tiles (OSM raster fallback)
+              before anyone asks for a map. The request carries the
               visitor's IP, and it becomes public traffic when #4382 drops the
               noindex. */}
           <Button
             variant="outlined"
             startIcon={<MapOutlined />}
             onClick={() => setMapOpen((open) => !open)}
-            sx={{ textTransform: 'none', mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
+            sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
           >
             {mapOpen ? t('map.hideMap') : t('map.showMap')}
           </Button>

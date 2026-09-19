@@ -1,5 +1,46 @@
-/* Only the donation rails and the help grid live here; the page frame, sections
- * and card surfaces come from app/components/ui/page-shell. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: var(--spacing-12) var(--spacing-4);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--color-primary-fill) 34%, transparent),
+    color-mix(in srgb, var(--color-primary-fill) 14%, transparent) 38%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.disclosure {
+  border-top: 1px solid var(--separator);
+  padding-top: var(--spacing-6);
+  color: var(--neutral-500);
+}
+
+.disclosure p {
+  font-size: var(--font-size-sm);
+}
+
+.disclosure h2 {
+  font-size: var(--font-size-base);
+  color: var(--neutral-500);
+}
+
+.disclosure svg {
+  font-size: var(--font-size-base);
+}
 
 /* The ask, directly under the hero. A filled button, not a link four sections
    down — the old page made you read two paragraphs before it showed you one. */
@@ -12,25 +53,36 @@
   margin-top: var(--spacing-5);
 }
 
-.heroActionNote {
-  color: var(--neutral-500);
-}
-
 /* The free-forever promise, pulled up out of the small print where it was doing
    no work. A rule and a size bump, not a card: it is a claim, not an action. */
 .promise {
-  margin-top: var(--spacing-8);
-  margin-bottom: var(--spacing-8);
-  padding-left: var(--spacing-4);
-  border-left: 3px solid var(--color-primary);
+  margin-bottom: var(--spacing-12);
+  padding: var(--spacing-5) 0;
+  border-top: 1px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
+  text-align: center;
 }
 
-/* auto-fit, not a fixed two-column grid: the Stripe rail is env-gated and absent
-   in most environments, and `repeat(2, 1fr)` left the single remaining rail
-   sitting in half a row looking unfinished. */
+.contributionGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: var(--spacing-12);
+  align-items: start;
+}
+
+.contributionGrid .contributionOptions {
+  margin-top: 0;
+}
+
+.communitySection {
+  margin-top: var(--spacing-16);
+}
+
+/* Contribution options stack within the right-hand column. The optional
+   Stripe option never leaves an empty grid cell when it is not configured. */
 .rails {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-4);
 }
 
@@ -54,12 +106,11 @@
   padding-top: var(--spacing-3);
 }
 
-/* Four columns of non-monetary help. Plain columns with a hairline, not cards —
-   the rails above are the cards, and a page of equal-weight cards has no ask. */
+/* Four ways to help make two balanced rows, never a stranded fourth column. */
 .helpGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--spacing-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-8) var(--spacing-12);
   margin-top: var(--spacing-4);
 }
 
@@ -71,6 +122,42 @@
   border-top: 1px solid var(--separator);
 }
 
+.helpItem h3 {
+  font-size: var(--font-size-xl);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.helpItem p {
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+.helpCta a,
+.railCta a,
+.standaloneLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--font-size-base);
+}
+
 .helpCta {
   margin-top: auto;
+}
+
+@media (max-width: 760px) {
+  .hero {
+    padding: var(--spacing-8) 0;
+  }
+
+  .contributionGrid,
+  .helpGrid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-8);
+  }
+
+  .communitySection {
+    margin-top: var(--spacing-12);
+  }
 }

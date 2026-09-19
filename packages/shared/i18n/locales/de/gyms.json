@@ -56,6 +56,7 @@
     "countHint": "Die Zahlen zählen Hallen, nicht Boards: Eine Halle mit drei Kilter-Wänden zählt einmal."
   },
   "search": {
+    "geoHint": "Standort deaktiviert? Gib einen Ort ein. Keine Berechtigung nötig.",
     "label": "Hallen suchen",
     "placeholder": "Name der Halle oder Ort",
     "submit": "Suchen"
@@ -75,6 +76,8 @@
     "home": "Zurück zu Boardsesh"
   },
   "card": {
+    "claimed": "Beansprucht",
+    "unclaimed": "Nicht beansprucht",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km entfernt",
     "claimCta": "Ist das deine Halle?"

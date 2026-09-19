@@ -1,20 +1,25 @@
-/* "Board night, sorted" — the homepage feature strip.
- *
- * Three columns at 1440, one at 760 and below. The live page wrapped its
- * onboarding stack in `maxWidth: 420, mx: 'auto'`, which turned a desktop into
- * a narrow ribbon with empty violet either side (design note 11). The collapse
- * is a CSS media query on purpose — no JS breakpoint detection.
- *
- * Colours are CSS vars from app/components/index.css. Never literals. */
-
 .strip {
-  margin-top: var(--spacing-12);
+  min-width: 0;
+}
+
+.section > h2 {
+  font-size: 32px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--spacing-3);
+}
+
+.section > p {
+  max-width: 60ch;
+  margin-bottom: var(--spacing-8);
+  line-height: 1.65;
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--spacing-8);
+  gap: var(--spacing-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -23,72 +28,66 @@
 .feature {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-4);
+  gap: var(--spacing-8);
+  padding: var(--spacing-6);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
+  background: color-mix(in srgb, var(--semantic-surface) 55%, var(--semantic-background));
 }
 
-/* The phone capture. 9:16 because the source crops are 738x1312 device shots —
-   they are never scaled past their natural width, so a narrow column stays
-   crisp rather than soft. */
+.featureCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+}
+
+/* Equal stages, not equal image widths: each genuine capture retains its own
+   device proportions. The UI stays visible rather than being cropped to fit. */
 .shot {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 336px;
   width: 100%;
-  max-width: 260px;
-  aspect-ratio: 9 / 16;
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-lg);
-  overflow: hidden;
-  background: var(--semantic-surface);
+  margin-top: auto;
 }
 
 .shotImage {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* A column with no honest capture yet gets this instead of a screenshot of
-   something else. No AI-generated images, ever. */
-.shotPending {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4);
-  border: 1px dashed var(--separator);
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--separator);
   border-radius: var(--border-radius-lg);
-  background: var(--semantic-surface-elevated);
-  color: var(--neutral-500);
-  font-size: var(--font-size-sm);
-  text-align: center;
 }
 
-/* Three colour roles, not six. Brand violet for what the app does with your
-   crew; info (violet-slate) for the quiet one. */
 .chip {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--border-radius-md);
-  background: var(--home-accent-brand-surface);
+  width: 36px;
+  height: 36px;
   color: var(--color-primary);
 }
 
 .chipInfo {
-  background: var(--home-accent-info-surface);
-  color: var(--color-info);
+  color: var(--color-primary);
 }
 
-.featureTitle {
+.feature .featureTitle {
   margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
-.featureBody {
+.feature .featureBody {
   margin: 0;
   color: var(--neutral-500);
+  font-size: var(--font-size-base);
+  line-height: 1.65;
 }
 
 .cta {
@@ -97,20 +96,58 @@
   align-items: center;
   justify-content: center;
   gap: var(--spacing-4);
-  margin-top: var(--spacing-10);
+  margin-top: var(--spacing-8);
+}
+
+.cta > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--font-size-base);
 }
 
 @media (max-width: 760px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--spacing-10);
+  .section > h2 {
+    font-size: 28px;
   }
 
-  .strip {
-    margin-top: var(--spacing-8);
+  .section > p {
+    margin-bottom: var(--spacing-6);
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-4);
+  }
+
+  .feature {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-6);
+    padding: var(--spacing-5);
+  }
+
+  .featureCopy {
+    gap: var(--spacing-2);
+  }
+
+  .feature .featureTitle {
+    font-size: var(--font-size-xl);
+  }
+
+  .feature .featureBody {
+    font-size: var(--font-size-base);
+    line-height: 1.6;
+  }
+
+  .shot {
+    height: 200px;
+    align-items: center;
+    margin-top: 0;
   }
 
   .cta {
-    margin-top: var(--spacing-8);
+    margin-top: var(--spacing-6);
   }
 }

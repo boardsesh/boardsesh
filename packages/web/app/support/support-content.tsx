@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import Button from '@mui/material/Button';
@@ -16,6 +17,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
+import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
 import styles from './support.module.css';
 
 const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
@@ -32,23 +34,29 @@ type SupportContentProps = {
 export default function SupportContent({ stripeDonateUrl }: SupportContentProps) {
   const { t } = useTranslation('marketing');
   return (
-    <PageShell title={t('support.hero.title')} lead={t('support.hero.subtitle')} headerAlign="center">
-      {/* The ask, in the first screen. On the old page it was a bare text link
-          below two paragraphs of prose and a section heading. */}
-      <Box className={styles.heroActions}>
-        <Button
-          variant="contained"
-          color="primaryFill"
-          size="large"
-          href={GITHUB_SPONSORS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          startIcon={<GitHub />}
-        >
-          {t('support.sponsors.cta')}
-        </Button>
-      </Box>
-
+    <PageShell
+      title={t('support.hero.title')}
+      lead={t('support.hero.subtitle')}
+      width="wide"
+      headerAlign="center"
+      headerClassName={styles.hero}
+      eyebrow={<Image src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')} width={52} height={52} alt="" />}
+      headerActions={
+        <Box className={styles.heroActions}>
+          <Button
+            variant="contained"
+            color="primaryFill"
+            size="large"
+            href={GITHUB_SPONSORS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            startIcon={<GitHub />}
+          >
+            {t('support.sponsors.cta')}
+          </Button>
+        </Box>
+      }
+    >
       {/* The promise belongs next to the ask, not buried in the small print. */}
       <Box className={styles.promise}>
         <Typography variant="h5" component="p">
@@ -56,54 +64,56 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         </Typography>
       </Box>
 
-      <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
-        <Prose>{t('support.why.p1')}</Prose>
-        <Prose>{t('support.why.p2')}</Prose>
-      </PageSection>
+      <Box className={styles.contributionGrid}>
+        <PageSection title={t('support.why.title')} icon={<FavoriteBorderOutlined />}>
+          <Prose>{t('support.why.p1')}</Prose>
+          <Prose>{t('support.why.p2')}</Prose>
+        </PageSection>
 
-      <PageSection title={t('support.rails.title')}>
-        {/* The rails are the only cards on the page — that is what makes them
+        <PageSection title={t('support.rails.title')} className={styles.contributionOptions}>
+          {/* The rails are the only cards on the page — that is what makes them
             findable. Everything else is prose on the page ground. */}
-        <Box className={styles.rails}>
-          <PageCard variant="elevated" className={styles.rail}>
-            <Typography variant="h4" component="h3" className={styles.railTitle}>
-              <GitHub fontSize="small" />
-              {t('support.sponsors.title')}
-            </Typography>
-            <Typography variant="body1" component="p" color="text.secondary">
-              {t('support.sponsors.body')}
-            </Typography>
-            <Box className={styles.railCta}>
-              <Button
-                variant="contained"
-                color="primaryFill"
-                href={GITHUB_SPONSORS_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('support.sponsors.cta')}
-              </Button>
-            </Box>
-          </PageCard>
-
-          {stripeDonateUrl ? (
-            <PageCard variant="elevated" className={styles.rail} data-testid="support-one-time-rail">
+          <Box className={styles.rails}>
+            <PageCard variant="elevated" className={styles.rail}>
               <Typography variant="h4" component="h3" className={styles.railTitle}>
-                <CreditCardOutlined fontSize="small" />
-                {t('support.oneTime.title')}
+                <GitHub fontSize="small" />
+                {t('support.sponsors.title')}
               </Typography>
               <Typography variant="body1" component="p" color="text.secondary">
-                {t('support.oneTime.body')}
+                {t('support.sponsors.body')}
               </Typography>
               <Box className={styles.railCta}>
-                <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
-                  {t('support.oneTime.cta')}
+                <Button
+                  variant="contained"
+                  color="primaryFill"
+                  href={GITHUB_SPONSORS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('support.sponsors.cta')}
                 </Button>
               </Box>
             </PageCard>
-          ) : null}
-        </Box>
-      </PageSection>
+
+            {stripeDonateUrl ? (
+              <PageCard variant="elevated" className={styles.rail} data-testid="support-one-time-rail">
+                <Typography variant="h4" component="h3" className={styles.railTitle}>
+                  <CreditCardOutlined fontSize="small" />
+                  {t('support.oneTime.title')}
+                </Typography>
+                <Typography variant="body1" component="p" color="text.secondary">
+                  {t('support.oneTime.body')}
+                </Typography>
+                <Box className={styles.railCta}>
+                  <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
+                    {t('support.oneTime.cta')}
+                  </Button>
+                </Box>
+              </PageCard>
+            ) : null}
+          </Box>
+        </PageSection>
+      </Box>
 
       {/* The page's second column of substance. Without it, an environment with
           no Stripe link is one card and a lot of prose. */}
@@ -112,6 +122,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         lead={t('support.otherWays.body')}
         icon={<VolunteerActivismOutlined />}
         tone="neutral"
+        className={styles.communitySection}
       >
         <Box className={styles.helpGrid}>
           <Box className={styles.helpItem}>
@@ -172,21 +183,26 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         </Box>
       </PageSection>
 
-      <PageSection title={t('support.honesty.title')} icon={<InfoOutlined />} tone="accent">
-        <Prose>{t('support.honesty.p1')}</Prose>
-        <Prose>{t('support.honesty.p2')}</Prose>
+      <PageSection title={t('support.thanks.title')} icon={<GroupOutlined />} tone="neutral">
+        <Prose>{t('support.thanks.body')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/docs">
-            {t('support.docsLink')}
+          <MuiLink component={LocaleLink} href="/about" className={styles.standaloneLink}>
+            {t('support.aboutLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection title={t('support.thanks.title')} icon={<GroupOutlined />} tone="neutral">
-        <Prose>{t('support.thanks.body')}</Prose>
+      <PageSection
+        className={styles.disclosure}
+        title={t('support.honesty.title')}
+        icon={<InfoOutlined />}
+        tone="neutral"
+      >
+        <Prose>{t('support.honesty.p1')}</Prose>
+        <Prose>{t('support.honesty.p2')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/about">
-            {t('support.aboutLink')}
+          <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
+            {t('support.docsLink')}
           </MuiLink>
         </Prose>
       </PageSection>

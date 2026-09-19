@@ -8,9 +8,12 @@ import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
 import NearMeOutlined from '@mui/icons-material/NearMeOutlined';
+import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
+import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
+import GymBoardPreviews from '@/app/components/board-entity/gym-board-previews';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageCard } from '@/app/components/ui/page-shell';
 import type { Locale } from '@/app/lib/i18n/config';
@@ -28,6 +31,8 @@ type GymDirectoryCardProps = {
   viewerState: GymClaimViewerState;
   /** Formats the distance for the active locale. */
   locale: Locale;
+  /** Public physical installations, fetched only for the homepage teaser. */
+  boardPreviews?: BoardDiscoveryBoard[];
 };
 
 /**
@@ -35,23 +40,27 @@ type GymDirectoryCardProps = {
  *
  * The card renders only schema-real fields: name, board chips, and a location
  * line WHEN THERE IS ONE. No photo, no description, no hours, no "verified"
- * treatment — the long tail of gyms will never have those, and a card design
- * that leans on them quietly demotes every gym nobody has filled in. Unclaimed
- * gyms render identically to claimed ones, with one extra quiet prompt and no
- * ranking or styling penalty.
+ * treatment. Claim badges report who maintains a listing; sparse and unclaimed
+ * listings retain the same card surface and their claim prompt.
  *
  * A CLIENT component, though it is still server-rendered into the first HTML
  * response like every other one: near-me results are fetched in the browser, so
  * one card has to render on both sides. The alternative was a second card
  * component for near-me that would drift from this one within a release.
  */
-export default function GymDirectoryCard({ gym, origin, viewerState, locale }: GymDirectoryCardProps) {
+export default function GymDirectoryCard({ gym, origin, viewerState, locale, boardPreviews }: GymDirectoryCardProps) {
   const { t } = useTranslation('gyms');
   // Shared across the 24 cards on the page rather than constructed per card.
   const formatNumber = numberFormatFor(locale);
-  const chips = boardChips(gym.boardSummaries);
   const location = cardLocation(gym, origin);
   const distanceKm = distanceChipKm(gym, origin, location);
+  const visibleBoardPreviews = boardPreviews?.filter((board) => board.gymUuid === gym.uuid).slice(0, 3);
+  const chips = boardChips(gym.boardSummaries).filter(
+    (chip) =>
+      !visibleBoardPreviews?.some(
+        (board) => board.boardType === chip.boardType && Math.round(board.angle) === chip.angle,
+      ),
+  );
 
   return (
     /* A FILL, not a hairline. The card used to be `1px solid var(--neutral-200)`
@@ -65,6 +74,7 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
       padding="sm"
       sx={{
         listStyle: 'none',
+        minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: 1,
@@ -75,18 +85,39 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
         },
       }}
     >
-      <Typography variant="subtitle1" component="h3" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+      <Typography
+        variant="subtitle1"
+        component="h3"
+        sx={{
+          fontSize: themeTokens.typography.fontSize.xl,
+          lineHeight: 1.3,
+          fontWeight: themeTokens.typography.fontWeight.semibold,
+        }}
+      >
         {/* A real anchor, server-rendered: this is how a crawler and a
             middle-click both reach the gym page. */}
         <MuiLink
           component={LocaleLink}
           href={`/gym/${gym.slug}`}
           underline="hover"
-          sx={{ color: 'var(--color-primary)' }}
+          sx={{ color: 'text.primary', '&:hover': { color: 'var(--color-primary)' } }}
         >
           {gym.name}
         </MuiLink>
       </Typography>
+
+      <Chip
+        size="small"
+        icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
+        label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
+        sx={{
+          alignSelf: 'flex-start',
+          backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
+          color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
+          border: '1px solid var(--separator)',
+          '& .MuiChip-icon': { color: 'inherit' },
+        }}
+      />
 
       {location && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -138,6 +169,8 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
           ))}
         </Box>
       )}
+
+      {visibleBoardPreviews && visibleBoardPreviews.length > 0 && <GymBoardPreviews boards={visibleBoardPreviews} />}
 
       {!gym.isClaimed && (
         <GymDirectoryClaimLink gymUuid={gym.uuid} gymSlug={gym.slug ?? ''} viewerState={viewerState} />

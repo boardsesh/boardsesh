@@ -4,10 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
-import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import AndroidOutlined from '@mui/icons-material/AndroidOutlined';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -51,6 +48,11 @@ export default function InstallAppCard({ platform }: { platform: InstallPlatform
   if (platform === 'unknown') return <InstallAppShadowCard />;
   if (platform === 'native') return null;
 
+  // 'desktop-web' falls through to the generic card below: the hero already
+  // offers both stores, and a second place doing the same is noise. The card's
+  // copy is store-agnostic ("Get the Boardsesh app"), so pointing it at the
+  // App Store is a default rather than a claim about the visitor's phone.
+
   if (platform === 'android-web') {
     return (
       <OnboardingCard
@@ -66,6 +68,12 @@ export default function InstallAppCard({ platform }: { platform: InstallPlatform
         }}
       />
     );
+  }
+
+  if (platform !== 'other-web' && platform !== 'desktop-web') {
+    const exhaustivePlatform: never = platform;
+    void exhaustivePlatform;
+    return null;
   }
 
   return (

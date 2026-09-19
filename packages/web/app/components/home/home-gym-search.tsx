@@ -22,19 +22,16 @@ import { fetchDirectoryPage, fetchFacetCounts } from '@/app/gyms/directory-data'
 import GymDirectoryCard from '@/app/gyms/gym-directory-card';
 import GymDirectorySearchForm from '@/app/gyms/gym-directory-search-form';
 import { themeTokens } from '@/app/theme/theme-config';
+import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import HomeGymSearchNearMe from './home-gym-search-near-me';
 
 /** Gym cards the homepage teases. Four fits the mockup's row and one screen. */
 const TEASER_CARD_COUNT = 4;
 
 /**
- * The unfiltered first page of the directory.
- *
- * Byte-for-byte the query `/gyms` itself runs, on purpose: `fetchDirectoryPage`
- * caches on its arguments, so the homepage teaser and the directory's own first
- * page share one cache entry instead of each paying for a backend round trip.
- * We throw away all but the first four rows, which costs nothing over the wire
- * that the directory was not already paying.
+ * An unfiltered homepage preview. Claimed-first ordering is requested separately
+ * and applied by the backend before pagination. Query arguments keep its cache
+ * entry separate from the directory's newest-first first page.
  */
 const TEASER_QUERY: DirectoryQuery = {
   query: '',
@@ -85,7 +82,7 @@ export default async function HomeGymSearch() {
   // `viewerState`, and in series it would add a round trip in front of the
   // whole block.
   const [pageResult, facetCountsResult, distinctId] = await Promise.all([
-    fetchDirectoryPage(TEASER_QUERY),
+    fetchDirectoryPage(TEASER_QUERY, { prioritizeClaimed: true, limit: TEASER_CARD_COUNT }),
     fetchFacetCounts(),
     getPosthogDistinctId(),
   ]);
@@ -99,6 +96,14 @@ export default async function HomeGymSearch() {
 
   const facetCounts = facetCountsResult.ok ? facetCountsResult.counts : null;
   const gyms = pageResult.ok ? pageResult.gyms.slice(0, TEASER_CARD_COUNT) : [];
+  // Four bounded, independently cached queries; never drain the directory or
+  // subscribe to board presence from a marketing page. One failed preview
+  // leaves that gym's original card intact.
+  const previewsByGym = new Map(
+    await Promise.all(
+      gyms.map(async (gym) => [gym.uuid, await getBoardDiscovery({ gymUuid: gym.uuid, limit: 3 })] as const),
+    ),
+  );
 
   return (
     // Its own provider, so the block is self-contained: the reused directory
@@ -112,6 +117,7 @@ export default async function HomeGymSearch() {
           component="p"
           sx={{
             color: 'var(--color-primary)',
+            fontSize: themeTokens.typography.fontSize.sm,
             fontWeight: themeTokens.typography.fontWeight.semibold,
             letterSpacing: '0.06em',
           }}
@@ -119,11 +125,16 @@ export default async function HomeGymSearch() {
           {t('home.gymSearch.eyebrow')}
         </Typography>
 
-        <Typography variant="h5" component="h2" fontWeight={themeTokens.typography.fontWeight.bold}>
+        <Typography
+          variant="h3"
+          component="h2"
+          sx={{ fontSize: { xs: 28, md: 32 }, lineHeight: 1.25, letterSpacing: '-0.025em' }}
+          fontWeight={themeTokens.typography.fontWeight.semibold}
+        >
           {t('home.gymSearch.title')}
         </Typography>
 
-        <Typography variant="body1" color="text.secondary" sx={{ mt: 1, mb: 2, maxWidth: '68ch' }}>
+        <Typography variant="body1" color="text.secondary" sx={{ mt: 1.5, mb: 3, maxWidth: '60ch' }}>
           {/* The live catalogue size when we have it. When the count query is
               down we say the same thing without a number rather than printing a
               confident zero. */}
@@ -153,7 +164,7 @@ export default async function HomeGymSearch() {
         >
           <GymDirectorySearchForm facet="all" query={EMPTY_FORM_QUERY} locale={locale} />
           <HomeGymSearchNearMe locale={locale} />
-          <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ flexBasis: '100%', fontSize: 14, lineHeight: 1.5 }}>
             {t('home.gymSearch.geoHint')}
           </Typography>
         </PageCard>
@@ -182,7 +193,7 @@ export default async function HomeGymSearch() {
                 // near-black page ground.
                 sx={{
                   borderRadius: 'var(--border-radius-full)',
-                  height: 36,
+                  height: 44,
                   fontWeight: themeTokens.typography.fontWeight.semibold,
                   backgroundColor: 'var(--semantic-surface)',
                   borderColor: 'var(--separator)',
@@ -218,17 +229,16 @@ export default async function HomeGymSearch() {
                 origin={null}
                 viewerState={viewerState}
                 locale={locale}
+                boardPreviews={previewsByGym.get(gym.uuid)}
               />
             ))}
           </Box>
-        ) : (
-          /* The backend is down, or the catalogue really is empty. Either way
-             the block keeps its heading, its search box and its link out — one
-             quiet line, no empty hole and no thrown render. */
+        ) : !pageResult.ok ? (
+          /* A successful empty catalogue is not a backend outage. */
           <Typography variant="body2" color="text.secondary">
             {t('home.gymSearch.cardsUnavailable')}
           </Typography>
-        )}
+        ) : null}
 
         {/* The crawlable `/gyms` anchor. It survives every failure above on
             purpose: whatever else this block cannot show, it always hands both
@@ -241,6 +251,7 @@ export default async function HomeGymSearch() {
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
+              minHeight: 44,
               gap: 0.5,
               color: 'var(--color-primary)',
               fontWeight: themeTokens.typography.fontWeight.semibold,

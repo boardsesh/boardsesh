@@ -22,10 +22,9 @@ vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRender
  * generators via `buildCanonicalClimbViewUrl`. Slugging from names would point
  * a size-27 climber's row at size 10's board.
  *
- * The row also always emits the canonical config-tuple URL, never the `/b`
- * form: `getContextAwareClimbViewUrl` would keep a visitor on
- * `/b/{slug}/{angle}/playlists/{uuid}` inside the `/b` tree, and the front
- * door's whole point is that these links are the canonical, indexable ones.
+ * Ordinary discovery emits the canonical config-tuple URL. A named-board
+ * front door explicitly supplies its slug to preserve the shared physical
+ * board when a reader opens a climb and continues into the app.
  */
 function makeBoardDetails(sizeId: number): BoardDetails {
   return {
@@ -67,6 +66,30 @@ function rowHref(boardDetails: BoardDetails, climb: Climb = makeClimb()) {
 }
 
 describe('StaticClimbRow climb-view href', () => {
+  it('preserves the physical board identity when explicitly supplied', () => {
+    render(
+      <StaticClimbRow
+        climb={makeClimb()}
+        boardDetails={makeBoardDetails(10)}
+        boardSlug="the-gym-kilter"
+        pathname="/b/the-gym-kilter/40/list"
+      />,
+    );
+    expect(screen.getByRole('link').getAttribute('href')).toBe('/b/the-gym-kilter/40/view/test-climb-ABC123');
+  });
+
+  it('retains the physical board and climb angle while encoding its slug', () => {
+    render(
+      <StaticClimbRow
+        climb={makeClimb({ angle: 25 })}
+        boardDetails={makeBoardDetails(10)}
+        boardSlug="gym #1"
+        pathname="/b/gym%20%231/40/list"
+      />,
+    );
+    expect(screen.getByRole('link').getAttribute('href')).toBe('/b/gym%20%231/25/view/test-climb-ABC123');
+  });
+
   it('emits the qualified size slug for the shadowed Kilter size', () => {
     expect(rowHref(makeBoardDetails(27))).toBe(
       '/kilter/original/12x12-square-without-kickboard/screw_bolt/40/view/test-climb-ABC123',

@@ -2,7 +2,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 /**
  * The homepage's ask, rendered server-side: every link a real anchor, and copy
@@ -14,16 +14,7 @@ import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
  */
 
 function resolveMarketingKey(dottedKey: string): string {
-  let node: unknown = enMarketing;
-  for (const segment of dottedKey.split('.')) {
-    if (node && typeof node === 'object' && segment in (node as Record<string, unknown>)) {
-      node = (node as Record<string, unknown>)[segment];
-    } else {
-      throw new Error(`missing marketing key: ${dottedKey}`);
-    }
-  }
-  if (typeof node !== 'string') throw new Error(`marketing key is not a string: ${dottedKey}`);
-  return node;
+  return tFromCatalog('marketing', dottedKey);
 }
 
 vi.mock('server-only', () => ({}));

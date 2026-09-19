@@ -88,11 +88,20 @@ function reportDirectoryFailure(operation: string, error: unknown): void {
  * One page of directory results. One request per page view — no drain-until-
  * done loop, here or in the client.
  */
-export async function fetchDirectoryPage(query: DirectoryQuery): Promise<DirectoryPageResult> {
-  const offset = (query.page - 1) * DIRECTORY_PAGE_SIZE;
+export async function fetchDirectoryPage(
+  query: DirectoryQuery,
+  options: { prioritizeClaimed?: boolean; limit?: number } = {},
+): Promise<DirectoryPageResult> {
+  const limit = options.limit ?? DIRECTORY_PAGE_SIZE;
+  const offset = (query.page - 1) * limit;
 
   try {
-    const response = await runDirectoryQuery({ input: toSearchGymsInput(query, offset, DIRECTORY_PAGE_SIZE) });
+    const response = await runDirectoryQuery({
+      input: {
+        ...toSearchGymsInput(query, offset, limit),
+        ...(options.prioritizeClaimed ? { prioritizeClaimed: true } : {}),
+      },
+    });
     const connection = response.searchGyms;
     return {
       ok: true,

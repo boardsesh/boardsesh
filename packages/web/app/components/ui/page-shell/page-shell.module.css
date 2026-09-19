@@ -18,7 +18,7 @@
 
 .inner {
   margin: 0 auto;
-  padding: 0 var(--spacing-4);
+  padding: 0 var(--spacing-8);
   width: 100%;
 }
 
@@ -56,11 +56,29 @@
   color: var(--neutral-500);
 }
 
-.title {
+.header .title {
   margin: 0;
+  font-size: 40px;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
-.lead {
+.header .titleCompact {
+  font-size: 24px;
+}
+
+@media (max-width: 760px) {
+  .header .title {
+    font-size: 32px;
+  }
+
+  .header .titleCompact {
+    font-size: 21px;
+  }
+}
+
+.header .lead {
   margin-top: var(--spacing-3);
   color: var(--neutral-500);
 }
@@ -77,11 +95,19 @@
   margin-top: var(--spacing-8);
 }
 
-.sectionHeading {
+.section .sectionHeading {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-3);
+}
+
+.section > h2 {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .sectionIcon {
@@ -101,12 +127,23 @@
   color: var(--neutral-500);
 }
 
-.sectionLead {
+.section .sectionLead {
   margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-4);
   color: var(--neutral-500);
 }
 
 /* ---- prose ---- */
+
+.paragraph {
+  max-width: 68ch;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  .section > h2 {
+    font-size: 28px;
+  }
+}
 
 .paragraph + .paragraph {
   margin-top: var(--spacing-3);
@@ -146,6 +183,10 @@
 }
 
 @media (max-width: 600px) {
+  .inner {
+    padding: 0 var(--spacing-6);
+  }
+
   .pageShell {
     padding-bottom: var(--spacing-10);
   }
@@ -160,5 +201,11 @@
 
   .cardPaddingMd {
     padding: var(--spacing-4);
+  }
+}
+
+@media (max-width: 359px) {
+  .inner {
+    padding-inline: var(--spacing-4);
   }
 }

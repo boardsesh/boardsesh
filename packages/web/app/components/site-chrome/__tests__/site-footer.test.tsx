@@ -76,6 +76,15 @@ describe('SiteFooter', () => {
     expect(container.querySelector('[data-testid="site-footer"]')).toBeTruthy();
   });
 
+  it('closes the page with the same genuine mark and wordmark linked home', () => {
+    render(<SiteFooter />);
+    const brandLink = screen.getByLabelText('Boardsesh home');
+    expect(brandLink.getAttribute('href')).toBe('/');
+    expect(brandLink.textContent).toBe('Boardsesh');
+    expect(brandLink.querySelector('img')?.getAttribute('src')).toContain('boardsesh-mark');
+    expect(brandLink.querySelector('img')?.getAttribute('alt')).toBe('');
+  });
+
   it('links to every static page in the sitemap', () => {
     const { container } = render(<SiteFooter />);
 

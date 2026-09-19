@@ -1,10 +1,4 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Boards populaires",
-      "meta": "{{boards}} boards · {{sends}} croix"
-    }
-  },
   "mobile": {
     "edit": {
       "screenTitle": "Modifier la board",

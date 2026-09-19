@@ -19,6 +19,8 @@ export type PageShellProps = {
   /** Visual scale of the title only. The element stays an <h1> either way. */
   titleVariant?: 'h1' | 'h2';
   headerAlign?: 'start' | 'center';
+  headerClassName?: string;
+  headerActions?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -42,6 +44,8 @@ export default function PageShell({
   width = 'prose',
   titleVariant = 'h1',
   headerAlign = 'start',
+  headerClassName: customHeaderClassName,
+  headerActions,
   children,
 }: PageShellProps) {
   const innerClassName = `${styles.inner} ${width === 'wide' ? styles.wide : styles.prose}`;
@@ -50,10 +54,14 @@ export default function PageShell({
   return (
     <Box component="main" className={styles.pageShell}>
       <Box className={innerClassName}>
-        <Box component="header" className={headerClassName}>
+        <Box component="header" className={`${headerClassName} ${customHeaderClassName ?? ''}`}>
           {breadcrumb ? <Box className={styles.breadcrumb}>{breadcrumb}</Box> : null}
           {eyebrow ? <Box className={styles.eyebrow}>{eyebrow}</Box> : null}
-          <Typography variant={titleVariant === 'h1' ? 'h2' : 'h3'} component="h1" className={styles.title}>
+          <Typography
+            variant={titleVariant === 'h1' ? 'h2' : 'h3'}
+            component="h1"
+            className={`${styles.title} ${titleVariant === 'h2' ? styles.titleCompact : ''}`}
+          >
             {title}
           </Typography>
           {lead ? (
@@ -61,6 +69,7 @@ export default function PageShell({
               {lead}
             </Typography>
           ) : null}
+          {headerActions}
         </Box>
         {children}
       </Box>

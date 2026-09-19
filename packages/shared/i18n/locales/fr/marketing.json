@@ -32,10 +32,12 @@
   },
   "home": {
     "hero": {
-      "title": "Au mur !",
-      "subtitle": "Notez vos croix sur Kilter, Tension et MoonBoard.",
-      "startClimbing": "Commencer à grimper",
+      "title": "Une appli pour tes boards",
+      "eyebrow": "Compatible avec Kilter, Tension, MoonBoard et bien d’autres",
+      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
+      "subtitle": "Prépare tes blocs avec ta crew. Garde toutes tes croix dans un seul carnet, quelle que soit ta board.",
       "startClimbingAria": "Commencer à grimper dans l'appli",
+      "startClimbingWeb": "Commencer à grimper sur le web →",
       "ctaInstallIos": "Télécharger sur l'App Store",
       "ctaInstallAndroid": "Disponible sur Google Play",
       "ctaUpdate": "Mettre à jour l'appli"
@@ -76,6 +78,17 @@
       "cardsUnavailable": "La liste des salles ne charge pas pour le moment. L'annuaire complet est toujours là.",
       "browseAll": "Voir tout l'annuaire des salles"
     },
+    "boards": {
+      "title": "Boards populaires",
+      "lead": "Trouve la board où tu grimpes, puis ouvre-la dans l’appli avec ton crew.",
+      "ranking": "Classées selon le nombre de grimpeurs ayant enregistré des croix sur chaque board. Les aperçus ne sont pas actualisés en direct.",
+      "climbers_one": "{{formattedCount}} grimpeur",
+      "climbers_other": "{{formattedCount}} grimpeurs",
+      "preview": "Aperçu de la board : {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Bloc sélectionné : {{climb}}",
+      "open": "Ouvrir cette board"
+    },
     "recentBeta": {
       "title": "Beta fraîche"
     },
@@ -85,7 +98,7 @@
       "queue": {
         "title": "File partagée",
         "body": "Tournez sans le fameux « c'est à qui ? ». Chacun ajoute, tout le monde voit l'ordre.",
-        "shotPending": "Capture en préparation"
+        "shotAlt": "La file partagée de Boardsesh avec les blocs prévus pour la session"
       },
       "party": {
         "title": "Mode Party",
@@ -97,7 +110,8 @@
         "body": "Notez croix et essais au fil de la séance, et ramenez votre historique Kilter ou Tension avec vous.",
         "shotAlt": "L'écran de progression de l'appli avec les cotations enchaînées et le calendrier des séances"
       },
-      "cta": "Télécharger l'appli"
+      "cta": "Télécharger l'appli",
+      "ctaAndroid": "Disponible sur Google Play"
     },
     "support": {
       "eyebrow": "Gratuit, et ça ne changera pas",

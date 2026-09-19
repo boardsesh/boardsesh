@@ -12,6 +12,7 @@ import { isChromeLessPath } from '@/app/lib/chrome-less-routes';
 import { usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { themeTokens } from '@/app/theme/theme-config';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import BrandLockup from './brand-lockup';
 import styles from './site-footer.module.css';
 
 const FOOTER_START_CLIMBING_SX = brandCtaSx();
@@ -19,6 +20,11 @@ const FOOTER_START_CLIMBING_SX = brandCtaSx();
 const LINK_SX = {
   color: 'text.secondary',
   textDecorationColor: 'currentcolor',
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 44,
+  fontSize: themeTokens.typography.fontSize.base,
+  lineHeight: 1.5,
   '&:hover': { color: 'text.primary' },
 } as const;
 
@@ -26,7 +32,7 @@ const GROUP_HEADING_SX = {
   m: 0,
   color: 'text.primary',
   fontWeight: themeTokens.typography.fontWeight.semibold,
-  fontSize: themeTokens.typography.fontSize.xs,
+  fontSize: themeTokens.typography.fontSize.sm,
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
 } as const;
@@ -93,11 +99,10 @@ export default function SiteFooter() {
     <Box component="footer" className={styles.footer} data-testid="site-footer">
       <Box className={styles.inner}>
         <Box className={styles.intro}>
-          <Typography variant="h6" component="p" sx={{ fontWeight: themeTokens.typography.fontWeight.bold, m: 0 }}>
-            {/* i18n-ignore-next-line — brand name, never translated (CLAUDE.md) */}
-            Boardsesh
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch' }}>
+          <MuiLink component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} underline="none">
+            <BrandLockup />
+          </MuiLink>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch', fontSize: 16, lineHeight: 1.6 }}>
             {t('footer.tagline')}
           </Typography>
           <StartClimbingButton
@@ -125,7 +130,7 @@ export default function SiteFooter() {
       </Box>
 
       <Box className={styles.bottom}>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 14, lineHeight: 1.6 }}>
           {t('footer.trademarkNote')}
         </Typography>
         <CompactLanguageSwitcher />

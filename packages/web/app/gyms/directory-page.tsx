@@ -197,54 +197,59 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           {facetDetail(t, facet, facetCounts, formatNumber)}
         </Typography>
 
-        <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+        <PageCard sx={{ mb: 4, '& form': { mb: 1.5 } }}>
+          <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            {t('search.geoHint')}
+          </Typography>
 
-        <Box component="section" sx={{ mb: 3 }}>
-          <Typography
-            variant="subtitle2"
-            component="h2"
-            sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
-          >
-            {t('facets.heading')}
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            {DIRECTORY_FACETS.map((candidate) => {
-              const isCurrentFacet = candidate === facet;
-              return (
-                <Chip
-                  key={candidate}
-                  clickable
-                  component={LocaleLink}
-                  href={buildFacetSwitchHref(candidate, query)}
-                  aria-current={isCurrentFacet ? 'page' : undefined}
-                  label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
-                  variant="outlined"
-                  // MUI's default outlined chip has no fill and a barely-there
-                  // border, which on the near-black page ground loses the whole
-                  // filter row. Both states are spelled out: a surface fill and
-                  // the one hairline unselected; the elevated surface plus a
-                  // violet border, label and ring when selected.
-                  sx={{
-                    borderRadius: 'var(--border-radius-full)',
-                    height: 36,
-                    fontWeight: themeTokens.typography.fontWeight.semibold,
-                    backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
-                    borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--separator)',
-                    color: isCurrentFacet ? 'var(--color-primary)' : 'var(--neutral-900)',
-                    boxShadow: isCurrentFacet ? '0 0 0 3px var(--semantic-selected)' : 'none',
-                    '&:hover': {
-                      backgroundColor: 'var(--semantic-surface-elevated)',
-                      borderColor: 'var(--color-primary)',
-                    },
-                  }}
-                />
-              );
-            })}
+          <Box component="section">
+            <Typography
+              variant="subtitle2"
+              component="h2"
+              sx={{ fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1 }}
+            >
+              {t('facets.heading')}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {DIRECTORY_FACETS.map((candidate) => {
+                const isCurrentFacet = candidate === facet;
+                return (
+                  <Chip
+                    key={candidate}
+                    clickable
+                    component={LocaleLink}
+                    href={buildFacetSwitchHref(candidate, query)}
+                    aria-current={isCurrentFacet ? 'page' : undefined}
+                    label={facetChipLabel(t, candidate, facetCounts, formatNumber)}
+                    variant="outlined"
+                    // MUI's default outlined chip has no fill and a barely-there
+                    // border, which on the near-black page ground loses the whole
+                    // filter row. Both states are spelled out: a surface fill and
+                    // the one hairline unselected; the elevated surface plus a
+                    // violet border, label and ring when selected.
+                    sx={{
+                      borderRadius: 'var(--border-radius-full)',
+                      height: 44,
+                      fontWeight: themeTokens.typography.fontWeight.semibold,
+                      backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
+                      borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--separator)',
+                      color: isCurrentFacet ? 'var(--color-primary)' : 'var(--neutral-900)',
+                      boxShadow: isCurrentFacet ? '0 0 0 3px var(--semantic-selected)' : 'none',
+                      '&:hover': {
+                        backgroundColor: 'var(--semantic-surface-elevated)',
+                        borderColor: 'var(--color-primary)',
+                      },
+                    }}
+                  />
+                );
+              })}
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              {t('facets.countHint')}
+            </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            {t('facets.countHint')}
-          </Typography>
-        </Box>
+        </PageCard>
 
         {/* The map column and near-me mode wrap the results block rather than
             sitting above it: the map is a second COLUMN beside this list at
@@ -303,13 +308,8 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               component="ul"
               sx={{
                 display: 'grid',
-                // Three at wide widths, same as before the map existed. This is
-                // the surface whose whole job is surfacing gyms, so more of
-                // them above the fold wins over a grid that never reflows —
-                // the one-off shift when somebody opens the map on a narrow
-                // screen is the cheaper cost. The near-me grid stays at two,
-                // because it genuinely renders beside an open map.
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                // Two readable columns beside the map, matching near-me results.
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
                 gap: 2,
                 m: 0,
                 p: 0,
@@ -339,7 +339,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                   component={LocaleLink}
                   href={FACET_BASE_PATHS[candidate]}
                   underline="hover"
-                  sx={{ color: 'var(--color-primary)' }}
+                  sx={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
                 >
                   {facetLinkLabel(t, candidate)}
                 </MuiLink>

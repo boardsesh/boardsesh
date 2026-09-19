@@ -47,7 +47,10 @@ export default function GymDirectoryClaimLink({ gymUuid, gymSlug, viewerState }:
         // CSS var, not a direct themeTokens read: a token read at module scope
         // is scheme-static and would stay light-mode grey in dark mode.
         color: 'var(--neutral-500)',
-        fontSize: themeTokens.typography.fontSize.xs,
+        fontSize: themeTokens.typography.fontSize.sm,
+        display: 'inline-flex',
+        alignItems: 'center',
+        minHeight: 44,
       }}
     >
       {t('card.claimCta')}

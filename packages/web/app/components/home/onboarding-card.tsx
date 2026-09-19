@@ -93,11 +93,12 @@ export default function OnboardingCard({
           sx={{
             color: 'var(--neutral-900)',
             lineHeight: themeTokens.typography.lineHeight.tight,
+            fontSize: themeTokens.typography.fontSize.lg,
           }}
         >
           {title}
         </Typography>
-        <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mt: 0.25 }}>
+        <Typography variant="body2" sx={{ color: 'var(--neutral-500)', mt: 0.5, fontSize: 16, lineHeight: 1.6 }}>
           {description}
         </Typography>
       </Box>

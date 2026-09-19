@@ -69,8 +69,8 @@
   right: 0;
   background: var(--overlay-dark);
   color: white;
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-1) var(--spacing-2);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -85,8 +85,8 @@
   right: 0;
   background: var(--overlay-dark);
   color: white;
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-1) var(--spacing-2);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -94,7 +94,10 @@
   line-height: 1.4;
   text-decoration: none;
   cursor: pointer;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
 }
 
 .platformBadge {

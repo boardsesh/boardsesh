@@ -32,10 +32,12 @@
   },
   "home": {
     "hero": {
-      "title": "Get on the board!",
-      "subtitle": "Track your sends across Kilter, Tension, and MoonBoard.",
-      "startClimbing": "Start climbing",
+      "title": "One app for your boards",
+      "eyebrow": "Works with Kilter, Tension, MoonBoard & More",
+      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
+      "subtitle": "Line up climbs with your crew. Keep every send in one logbook, whichever board you’re on.",
       "startClimbingAria": "Start climbing in the app",
+      "startClimbingWeb": "Start climbing on the web →",
       "ctaInstallIos": "Install from App Store",
       "ctaInstallAndroid": "Get it on Google Play",
       "ctaUpdate": "Update the app"
@@ -76,6 +78,17 @@
       "cardsUnavailable": "The gym list isn't loading right now. The full directory is still there.",
       "browseAll": "Browse the full gym directory"
     },
+    "boards": {
+      "title": "Popular boards",
+      "lead": "Find the board you climb on, then open it in the app with your crew.",
+      "ranking": "Ranked by climbers who have logged sends on each board. Previews are snapshots, not live updates.",
+      "climbers_one": "{{formattedCount}} climber",
+      "climbers_other": "{{formattedCount}} climbers",
+      "preview": "Board preview: {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Selected climb: {{climb}}",
+      "open": "Open this board"
+    },
     "recentBeta": {
       "title": "Fresh beta"
     },
@@ -85,7 +98,7 @@
       "queue": {
         "title": "Shared queue",
         "body": "Take turns without the awkward “who’s next?”. Everyone adds, everyone sees the order.",
-        "shotPending": "Fresh capture on the way"
+        "shotAlt": "The Boardsesh shared queue with climbs lined up for the session"
       },
       "party": {
         "title": "Party mode",
@@ -97,7 +110,8 @@
         "body": "Log sends and attempts as you go, and bring your Kilter or Tension history across with you.",
         "shotAlt": "The app's progress screen with send grades and a session calendar"
       },
-      "cta": "Get the app"
+      "cta": "Get the app",
+      "ctaAndroid": "Get it on Google Play"
     },
     "support": {
       "eyebrow": "Free, and staying that way",

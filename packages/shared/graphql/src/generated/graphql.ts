@@ -589,6 +589,42 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/** A public, listed physical board at a public gym. No owner or controller identity is exposed. */
+export type BoardDiscoveryBoard = {
+  __typename?: 'BoardDiscoveryBoard';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  /** Null when there is no verified live holder, including unavailable Redis. Not a live subscription. */
+  currentClimb?: Maybe<BoardDiscoveryClimb>;
+  gymName: Scalars['String']['output'];
+  gymSlug: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  layoutId: Scalars['Int']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  slug: Scalars['String']['output'];
+  /** Distinct climbers with a send or flash recorded on this physical board. */
+  uniqueClimbers: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+/** A redacted snapshot of the last confirmed climb while its sender still holds the board. */
+export type BoardDiscoveryClimb = {
+  __typename?: 'BoardDiscoveryClimb';
+  angle: Scalars['Int']['output'];
+  frames: Scalars['String']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  uuid: Scalars['ID']['output'];
+};
+
+export type BoardDiscoveryInput = {
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  /** Maximum number of boards, from 1 to 12 (default 8). */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
 export type BoardHistoryPage = {
   __typename?: 'BoardHistoryPage';
   entries: Array<BoardPresenceClimb>;
@@ -5670,6 +5706,8 @@ export type Query = {
    * user/name/avatar (clients render a "?").
    */
   boardConnection?: Maybe<BoardConnectionHolder>;
+  /** Public physical boards ranked by distinct climbers before limiting; optionally within one public gym. */
+  boardDiscovery: Array<BoardDiscoveryBoard>;
   /**
    * Durable history of what was pushed to a board (survives past the 1 week
    * Redis window (BOARD_HISTORY_TTL)), newest-first by `seq`. For keyset
@@ -6409,6 +6447,11 @@ export type QueryBoardClimbRecentSendersArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardConnectionArgs = {
   boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardDiscoveryArgs = {
+  input?: InputMaybe<BoardDiscoveryInput>;
 };
 
 /** Root query type for all read operations. */
