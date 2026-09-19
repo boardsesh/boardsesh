@@ -40,6 +40,7 @@ const session = vi.hoisted(() => ({
 }));
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../SessionVisibilityControl', () => ({ SessionVisibilityControl: () => null }));
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

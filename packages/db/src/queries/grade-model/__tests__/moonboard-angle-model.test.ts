@@ -39,7 +39,7 @@ void describe('buildMoonboardDualAngleSampleSql', () => {
   void test('only pairs ascent-backed grades at both of MoonBoard’s two angles', () => {
     const text = sqlText(buildMoonboardDualAngleSampleSql());
     assert.match(text, /board_type = 'moonboard'/);
-    assert.match(text, /display_difficulty IS NOT NULL/);
+    assert.match(text, /difficulty_average IS NOT NULL/);
     assert.match(text, /ascensionist_count > 0/);
     // Both angles required — a single-angle climb is an estimate TARGET, never
     // training data, or the model would learn from its own output.

@@ -11,6 +11,7 @@ import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
+import { readBoardHistoryPage, readMergedRecentHistory } from '../../../services/board-history';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { BoardClimbRecentSendersArgsSchema } from '../../../validation/schemas';
 import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
@@ -34,6 +35,24 @@ const RECENT_CLIMB_SENDERS_LIMIT = 5;
 const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
 export const boardPresenceQueries = {
+  boardRecentHistory: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, 60, 'boardRecentHistory');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
+    return readMergedRecentHistory(boardId);
+  },
+  boardHistoryPage: async (
+    _: unknown,
+    { boardId, limit, before }: { boardId: number; limit?: number | null; before?: string | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, 60, 'boardHistoryPage');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    await assertSprayBoardIsReadable(board, ctx.userId);
+    return readBoardHistoryPage(boardId, limit ?? 50, before);
+  },
   /**
    * Backfill the recent "now on the wall" history for a board from the Redis
    * FIFO (last ~50, 1-week window). Used by late joiners before the live
@@ -115,7 +134,10 @@ export const boardPresenceQueries = {
     }
 
     const cappedLimit = Math.min(Math.max(limit ?? 50, 1), 100);
-    const boardMatch = eq(dbSchema.boardClimbEvents.boardId, boardId);
+    const boardMatch = and(
+      eq(dbSchema.boardClimbEvents.boardId, boardId),
+      eq(dbSchema.boardClimbEvents.source, 'boardsesh'),
+    );
     // Join the sender (nullable — a user can be deleted, leaving userId null) so
     // history rows carry the same display identity + profile link as the live
     // feed. Profile fields win over the auth-account name/image, matching the

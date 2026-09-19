@@ -73,6 +73,23 @@ describe('createQueryClient default retry', () => {
     expect(retry(0, rateLimited)).toBe(false);
   });
 
+  it('never retries a GRAPHQL_VALIDATION_FAILED rejection (schema mismatch, #5370)', () => {
+    const retry = createQueryClient().getDefaultOptions().queries?.retry;
+    if (typeof retry !== 'function') throw new Error('expected retry to be a function');
+    const validationFailed = Object.assign(new Error('Cannot query field "layoutId" on type "Board".'), {
+      response: {
+        status: 400,
+        errors: [
+          {
+            message: 'Cannot query field "layoutId" on type "Board".',
+            extensions: { code: 'GRAPHQL_VALIDATION_FAILED', http: { status: 400 } },
+          },
+        ],
+      },
+    });
+    expect(retry(0, validationFailed)).toBe(false);
+  });
+
   it('retries an ordinary error up to 2 times, matching the previous retry: 2 behavior', () => {
     const retry = createQueryClient().getDefaultOptions().queries?.retry;
     if (typeof retry !== 'function') throw new Error('expected retry to be a function');

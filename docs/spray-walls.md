@@ -215,12 +215,17 @@ pairing — nearest added detection within 3 radii — as a `movedFromHoldId` hi
 for the review UI, so a remix can start from the successor. The suggestion
 changes nothing about what was matched.
 
-### Detection post-processing, and why one full-frame pass
+### Recognition service and shared post-processing
 
-This section records the original box-model experiment, not the current mobile
-runtime. Recognition is moving to a queued homelab service; the native runtime
-and benchmark have been removed. See [native cleanup](spray-recognition-native-cleanup.md)
-and rollout issue #5451 for the service integration and deployment gates.
+The current rollout uses a dedicated homelab Node worker consuming pg-boss
+jobs from the writable primary. Mobile requests and resumes jobs over GraphQL;
+the physical standby is not a queue endpoint. See
+[deployment and exposure gates](spray-recognition-rollout.md) for the pinned
+segmentation model, tiling, outlines, retries and native-runtime cleanup.
+
+The box-model measurements below are historical evidence, not the current
+segmentation service's inference configuration. The native runtime and benchmark
+have been removed; see [native cleanup](spray-recognition-native-cleanup.md).
 
 `@boardsesh/hold-detection` is the platform-free detection post-processing:
 tile planning, preprocessing into the model's input tensor, decoding RF-DETR's
@@ -278,7 +283,7 @@ one more reason the score threshold is a slider rather than a shipped constant.
 | `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
-| `detect` | This release branch retains the legacy optional-detector seam until the service integration lands. No native detector is registered; new walls open manual editing. The service PR replaces this seam with queued recognition and resume/retry. |
+| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued; published reset versions remain unchanged until review and confirmation. |
 | `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
@@ -1333,7 +1338,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Photo Picked` | `source` | Camera or library — the two feel different on a slow phone. |
 | `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
-| `Spray Holds Reviewed` | `holdCount`, `hadCandidates` | What the review step actually saved. The number the detector is judged on. |
+| `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
@@ -1356,6 +1361,11 @@ The whole surface is behind the mobile flag `spray-walls`
 reads as off, so the tile never flickers in for the first frames of a cold open.
 
 Three steps, each gated on a number rather than on a feeling:
+
+The service rollout additionally requires 24-hour observation windows, 20
+reviewed walls from five users before 10%, and ten reset previews before
+everyone. The complete, current gates are in
+[the service rollout runbook](spray-recognition-rollout.md).
 
 | Step | Audience | Gate before moving on |
 | --- | --- | --- |
@@ -1629,6 +1639,62 @@ One screen-level difference: a wall reached cold — a share link, a fork of
 somebody else's wall climb — has no registry entry yet, so `CreateClimbScreen`
 holds a spinner on `useSprayWall`'s load state instead of settling on "can't set
 climbs here" and never looking again.
+
+## Offline: a wall on the device
+
+A wall lives in a garage or a basement, which is exactly where there is no
+signal, so SW-15 (#5448) mirrors it. The mechanics live in
+[`sync-table-manifest.md`](sync-table-manifest.md#spray_walls--syncspraywallsboardtype-layoutid-sizeid-board-data-per-board)
+and [`offline-reads.md`](offline-reads.md); what matters here is what a wall
+specifically needs that a catalogue board does not.
+
+**Everything but the picture is a row.** The on-device `spray_walls` table
+(SQLite migration v8, keyed on `layout_id`) holds the canonical frame, the
+published version number, that version's homography, and the holds alive at it —
+the same `aliveHolds` answer the render query gives. `syncSprayWalls` pages it on
+`(updated_at, spray_walls.id)`, behind the by-layout visibility rule: owner, gym
+member, or a public wall. **Unlisted is not an exemption on that key**, for the
+reason spelled out under "Photo privacy" — a layout id comes out of a sequence,
+so honouring unlisted there would let one account walk it and collect every
+unlisted wall. The uuid paths (`sprayWall`, `sprayWallRenderData`) are where a
+share link works.
+
+The climbs come through the ordinary per-board tables, and
+`board_climbs.missing_hold_count` is mirrored with them (v7) so the Intact /
+Lost-holds filter works with no signal. It is synced WITHOUT a catalogue
+refresh-revision bump; the reasoning is in `table-config.ts` next to the column.
+
+**The picture is a file, and its URL is not storable.** The photo is in the
+private bucket, so the sync payload carries a 15-minute presigned URL as a
+*transient* field — handed to the device and never written, because
+`presignVersionPhoto`'s rule ("minted per read and never stored") does not stop
+being true on a phone. The bytes land under `Paths.document/spray-wall-photos/`,
+named after `photo_key`. Deliberately NOT `Paths.cache`: the renderer's own photo
+cache lives there and the OS may reclaim it whenever it likes, which is the one
+thing an offline copy must not do. A download that fails records a pending marker
+and rewinds that wall's cursor so the next pull re-offers the row with a live
+signature, bounded by an attempt count — the dead URL cannot be retried.
+
+**A wall's storage is reclaimed on four paths**, because a photograph outliving
+its row is invisible until a phone fills up: a reset prunes the generation it
+replaced, removing the board deletes the row and its file, a tombstone deletes
+the file through the captured `photo_key`, and sign-out takes the rows and the
+whole directory. `storage-usage.ts` does not count the directory and says so.
+
+**Sign-out is the exception to "board data is a shared cache."** Every other
+board table survives a sign-out because a Kilter catalogue is identical whoever
+is signed in. A wall is not: `spray_walls` is the one board table
+`USER_DATA_TABLES_TO_CLEAR` includes, the wall's climbs, stats and grades go with
+it (`SPRAY_SCOPED_BOARD_TABLES`, `board_type = 'spray'` rows only — those rows
+carry the climb names, frames and grades of somebody's garage, and
+`searchClimbsLocal` reads reference data with no owner stamp), the photographs go
+too, and `getSprayWallLocal` refuses to serve unless the `local_user_id` stamp
+names the climber asking — the defence that survives a wipe that failed.
+
+**One known gap, tracked as #5490.** The delete tombstone is scoped to the wall's
+owner, so a gym member or public-wall viewer who mirrored a wall never receives
+it: `syncSprayWalls` stops serving them the wall, but nothing tells their device
+to drop what it has until they sign out or remove the board.
 
 ## Where spray is excluded
 

@@ -12,7 +12,7 @@ Three buckets fall out of that, and every query key belongs to exactly one. The 
 
 ### Bucket 1 — SQLite (`offlineAwareRequest`)
 
-Anything already in `TABLE_CONFIGS` (`packages/shared/offline-sync/src/sync/table-config.ts`): climbs, stats, grades, ticks/logbook, playlists and playlist climbs, favorites, follows.
+Anything already in `TABLE_CONFIGS` (`packages/shared/offline-sync/src/sync/table-config.ts`): climbs, stats, grades, ticks/logbook, playlists and playlist climbs, favorites, follows, and the mirrored spray wall (`spray_walls`, #5448).
 
 The expensive half of this shipped a year ago. `pullSync` syncs every `USER_DATA_TABLES` entry on each cycle for every authenticated user with the engine on — unconditionally, not gated on any board being downloaded (`pull-client.ts`, the `USER_DATA_TABLES` loop). The rows are on disk today. What is missing is **readers**: `offlineAwareRequest` (`packages/mobile/src/lib/graphql/offline-request.ts`) has six registrations, all of them board reference data.
 
@@ -28,7 +28,9 @@ Budgets: target under 100 KB serialized, hard cap 512 KB with lowest-priority-fi
 
 ### Bucket 3 — honest offline states, no storage at all
 
-Feeds (`sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
+Feeds (`crewFeed`, `sessionGroupedFeed`, `activityFeed`), session detail, board presence, `searchUsers`, `bulkVoteSummaries`, `comments`, `gymMembers`, `nearbyBoards`/`nearbyGyms`, `betaLinkPreview`.
+
+`crewFeed` is viewer-scoped and live: it mixes followed climbers' sessions with recently published climbs by followed authors. It is not persisted or replayed offline, even though follows and author metadata are stored locally for climb search.
 
 These have "now" semantics or are unbounded, so a stale copy is worse than an honest gap. They used to be worse than that: `networkMode: 'offlineFirst'` (`query-provider.tsx`) means an offline network-only query fires once, fails, then **pauses**, and a *hung* request never even failed. Since #4862 the interactive GraphQL client has a 20 s deadline and, while the connectivity store says the app is effectively offline (device offline, backend unreachable, or offline mode), the fetch chokepoint rejects instantly with a `BackendUnavailableError` that React Query does not retry — so these queries settle in `status: 'error'` within milliseconds instead of spinning, and `useOfflineQueryState` / `OfflineState` render the honest placard for the right reason ("No signal" vs "Can't reach Boardsesh right now" vs "Offline mode is on"). See `docs/offline-sync-plan.md` → "Backend reachability".
 
@@ -45,6 +47,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['userPlaylists']`, `['playlistClimbs', …]`, `['playlist', uuid]`                       | SQLite                      | `playlists` + `playlist_climbs`; reader missing                    |
 | `['favoriteStatus', …]`                                                                  | SQLite                      | `user_favorites`; reader missing                                   |
 | `['followers', id]`, `['following', id]`                                                 | SQLite                      | `user_follows`; reader missing                                     |
+| `getSprayWallLocal(layoutId)` — no query key                                             | SQLite                      | `spray_walls`; read back through the SW-07 registry, not React Query, which is why its `invalidateKeys` entry is deliberately empty |
 | `['profile']`                                                                            | Persisted cache             | No table, one row                                                  |
 | `['myBoards', …]`                                                                        | Persisted cache             | Behind the live query, ahead of the `offlineBoardsV1` MMKV cards   |
 | `['myGyms']`                                                                             | Persisted cache             | Small, identity-shaped                                             |
@@ -52,6 +55,7 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['publicProfile', selfId]`                                                              | Persisted cache             | Own profile only, 24 h                                             |
 | `['userTicks', userId]`                                                                  | Neither (for now)           | See "Deliberately deferred"                                        |
 | `['activityFeed']`, `['sessionGroupedFeed']`, `['sessionDetail', …]`                     | Neither                     | "Now" semantics                                                    |
+| `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |
@@ -69,6 +73,19 @@ So every user-scoped local read must satisfy all three of these, not one of them
 3. **Completeness gate.** Serving from local requires a `checkpoint:user_data_complete` marker written by `pullSync` once every `USER_DATA_TABLES` entry has reached its tail. A checkpoint alone proves only that the first page landed — the same reasoning `markScopeDownloadComplete` already documents for board scopes. The marker lives under the `checkpoint:` prefix deliberately, so `deleteUserCheckpoints` clears it on sign-out for free.
 
 Note what the gate is **not**: it is not "is this board downloaded". User tables sync independently of board downloads, so gating a tick read on a board download would refuse to answer from a fully synced table.
+
+### Spray walls are board data that has to be scoped like user data
+
+A wall is a photograph of somebody's garage, not a public catalogue, so `spray_walls` (#5448) is the one board
+reference table gated at all — and its three layers are not the three above:
+
+1. **The server gate is the real decision.** `syncSprayWalls` applies the by-layout visibility rule — owner, gym member, or a public wall — so a wall the climber may not see never lands in the local database at all. Nothing on the device can leak what was never downloaded, and no local predicate could reconstruct that rule anyway.
+2. **Owner stamp.** Board reference data normally survives sign-out as a shared cache, which is right for a Kilter catalogue and wrong for a wall, so `spray_walls` is the one reference table in `USER_DATA_TABLES_TO_CLEAR`, and `getSprayWallLocal` refuses to serve unless `assertLocalUserDataOwner` answers `'ok'`. It refuses on `unstamped` too: there is no wall row a device with no known owner should hand out. The photographs go with the rows — `clearStoredSprayPhotos` runs on both sign-out branches, because deleting the rows alone would leave the previous account's picture decodable on a shared phone with nothing left on disk to say whose it was.
+3. **No row predicate is possible.** A wall carries no user column; its visibility is a join through `user_boards` and `gym_members` that only the server can evaluate. That is why layers 1 and 2 have to be strict — the same position `playlists` is in, and the same answer.
+
+The wall's **climbs** are wiped on the same argument. A `spray_walls` row is not the only private thing a mirrored wall leaves on disk: its `board_climbs`, `board_climb_stats` and `board_climb_grades` rows carry the climb names, descriptions, frames and grades of somebody's garage, and `searchClimbsLocal` reads board reference data with no owner stamp — deliberately, because a Kilter catalogue is a shared cache. So the selective wipe also deletes those three tables' `board_type = 'spray'` rows (`SPRAY_SCOPED_BOARD_TABLES` in `connection.ts`), together with every spray scope's markers so no cursor outlives its rows. The catalogue boards stay, which is the whole point of the selective wipe.
+
+The read is deliberately **not** gated on `isUserDataComplete`. That marker is about the user tables having reached their tail, and a downloaded wall is board data — gating on it would refuse a wall that is fully on disk.
 
 The persisted cache adds its own layer on top: the blob carries a `userId` stamp validated against resolved auth on every transition, it is deleted inside the single `clearPersistedUserStores` call site rather than by a parallel delete, and `needsFullCleanup` has to fire on a logged-out cold start **when a blob exists** — the "the cache is empty" comment that justifies skipping cleanup today is only true because nothing hydrates yet.
 

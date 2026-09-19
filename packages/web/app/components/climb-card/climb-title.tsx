@@ -8,7 +8,6 @@ import Skeleton from '@mui/material/Skeleton';
 import ClimbIcons from './climb-icons';
 import MarqueeText from './marquee-text';
 import { themeTokens } from '@/app/theme/theme-config';
-import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { resolveAnyFeetLabel, resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
@@ -201,7 +200,6 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     showGradeWhileLoading = false,
   }) => {
     const { t } = useTranslation('climbs');
-    const isDark = useIsDarkMode();
     const { formatGrade, getGradeColor, loaded: gradeFormatLoaded } = useGradeFormat();
 
     const resolvedSubtitleSx = ellipsis ? subtitleEllipsisSx : subtitleSx;
@@ -210,7 +208,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     const displayDifficulty = climb?.communityGrade || climb?.difficulty;
     const formattedGrade = formatGrade(displayDifficulty);
     const nameFontSize = titleFontSize ?? themeTokens.typography.fontSize.sm;
-    const gradeColor = formattedGrade ? getGradeColor(displayDifficulty, isDark) : undefined;
+    const gradeColor = formattedGrade ? getGradeColor(displayDifficulty) : undefined;
 
     // ALL useMemo hooks must be called unconditionally (before any early return)
     const nameSx = useMemo(

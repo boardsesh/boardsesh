@@ -84,6 +84,19 @@ function renderListToString() {
 }
 
 describe('StaticClimbList server render', () => {
+  it.each([false, true])('keeps physical-board links in the server HTML with virtualize=%s', (virtualize) => {
+    const html = renderToString(
+      <StaticClimbList
+        climbs={twentyClimbs}
+        boardDetails={makeBoardDetails()}
+        boardSlug="gym-wall"
+        virtualize={virtualize}
+      />,
+    );
+    expect(html).toContain('href="/b/gym-wall/40/view/test-boulder-0-CLIMB0"');
+    expect(html).not.toMatch(/href="\/kilter\//);
+  });
+
   it('emits real climb anchors in the server HTML', () => {
     const html = renderListToString();
     const anchors = html.match(/href="\/kilter\//g) ?? [];

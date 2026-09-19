@@ -19,11 +19,9 @@ export default function HoldIndicator({ count, max, color, label }: HoldIndicato
     <MuiTooltip title={label}>
       <Stack direction="row" alignItems="center" spacing={0.5} aria-label={label} sx={{ cursor: 'default' }}>
         <Box
-          sx={(theme) => {
-            let opacity = 1;
-            if (!active) {
-              opacity = theme.palette.mode === 'dark' ? 0.4 : 0.25;
-            }
+          sx={() => {
+            // 0.4 on the dark ground; www renders one scheme.
+            const opacity = active ? 1 : 0.4;
             return {
               width: 10,
               height: 10,

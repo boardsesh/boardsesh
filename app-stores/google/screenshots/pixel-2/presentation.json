@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "locale": "en-US",
+  "files": {
+    "00-board-family.png": {
+      "rawBytes": 287034,
+      "rawSha256": "c221f88e3e219a6b4a63dd867ec45d79b486b1438efcf99125f5cb643540ff42",
+      "framedSha256": "2760a01d7a5815a9dbc123a2185b15b7e2e31211377fd4b5b38a2c1a919dd3f5",
+      "sources": {
+        "00-tension-board-view.png": {
+          "rawBytes": 727893,
+          "rawSha256": "c00368af79dd66da81562a6615f72c9fb1b302cb2b8d23059965534eb46f58b8"
+        },
+        "01-kilter-board-view.png": {
+          "rawBytes": 835725,
+          "rawSha256": "e1236cb2603779b6af06f155b99eed92185ed62b2a24b02632041a7a2ed7e53b"
+        },
+        "08-moonboard-board-view.png": {
+          "rawBytes": 287034,
+          "rawSha256": "986d9ae7bda9f472f51da3075f2b070c69ff0826b5038a6c09d59ad81c210e8a"
+        }
+      }
+    },
+    "01-more-boards.png": {
+      "rawBytes": 382789,
+      "rawSha256": "fa9996c2799683fe93e07671a18687789e7d42cfab76d3e37fb18e7e78cddd1f",
+      "framedSha256": "c1c3b09cca92b97a0fa99730ac86f53c476f42c2bf262be32023dd90574e8836",
+      "sources": {
+        "11-woods-board-view.png": {
+          "rawBytes": 636575,
+          "rawSha256": "42889b30b166b0c25e3e31b538b695fa1def0960777f9bca2fe65e4e600fb30f"
+        },
+        "12-grasshopper-board-view.png": {
+          "rawBytes": 765153,
+          "rawSha256": "c53151d529d82ce1b3c9d770aeee8f0329a7670ea22334552531601a9ad39624"
+        },
+        "13-moonboard-2024-view.png": {
+          "rawBytes": 382789,
+          "rawSha256": "465187810582c7f20d00639a23de11f1b26d6a9ad3bb949382fc541b9bab4737"
+        }
+      }
+    },
+    "02-live-queue.png": {
+      "rawBytes": 565383,
+      "rawSha256": "adf394f57ee250c5e6aa90974181ac9fa0edfa55734433f1053902298fa92966",
+      "framedSha256": "1b43b3b4460d8f6ad8405cec4867526c4692e63fbe03b001e0fdfb3184cf28cc"
+    },
+    "03-wall-status.png": {
+      "rawBytes": 399592,
+      "rawSha256": "1dc0ac23e2f066419493905b4bdc61684bedccaec958fb86e3a492a9b6d71afd",
+      "framedSha256": "4fca58ea18c146fbe31bfa24055d82de0f701cc2cb3f853e81ffd05477179afb"
+    },
+    "04-climbs.png": {
+      "rawBytes": 419946,
+      "rawSha256": "b5153c73fa675ed0bac006a1b14c70ad89de21065df1d3f7912178780a60cf98",
+      "framedSha256": "b763a89966a8f3902228b8cde822a856f0f62646ba67ad2c7c214b60b1080189"
+    },
+    "05-discover.png": {
+      "rawBytes": 178769,
+      "rawSha256": "3556c184e5d365d22ca97142fdeff336ba5057df7f81fbf4605df45f6855ca6e",
+      "framedSha256": "6c4157b3f04d1e4c09e8b67c1847b214e82ac7177e60821643e65f956e164d09"
+    },
+    "06-workout-generator.png": {
+      "rawBytes": 162442,
+      "rawSha256": "5359882211c836d78bfc75b5f65887859fdc9db068f4038a0017e9a1b9358947",
+      "framedSha256": "0ea306f156e78e42c20f025d58956956e014d54d4e5279099d1f1380e01c00cc"
+    },
+    "07-profile.png": {
+      "rawBytes": 128398,
+      "rawSha256": "7cedd0cba29ac932b2b99477df0fb8f304749a4b3f78b3821748ce021b0f6ed6",
+      "framedSha256": "cd3e4a3efc25e97ba025a0ec584d0e97d2041dcc637dd82c2dbe33343dcd730c",
+      "sources": {
+        "14-logbook.png": {
+          "rawBytes": 217110,
+          "rawSha256": "78a0bf9e972fb28ae57a3a642ffddcc30c2ea93d49b9e6283cfa6b998e669be3"
+        },
+        "06-profile.png": {
+          "rawBytes": 184787,
+          "rawSha256": "fb35e85e75beeef9e8a821e3fbe0716841b541a81e0cac1fa450497ae8c8c2a3"
+        },
+        "15-session-detail.png": {
+          "rawBytes": 128398,
+          "rawSha256": "5f316dee58749a2aeb7017589d65c5ce31de048a05a9a2ec2dfbfde82bd131e0"
+        }
+      }
+    }
+  }
+}

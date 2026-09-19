@@ -4,6 +4,39 @@ import type { BetaLinksGqlRow } from '../beta-video-url';
 
 import type { SocialEntityType } from './comments';
 
+export type CrewFeedInput = {
+  cursor?: string | null;
+  limit?: number;
+  /**
+   * IANA zone the per-setter day boundary is drawn in. A climb published at
+   * 23:00 local belongs to that local day, not to whatever UTC calls it.
+   * Defaults to UTC when absent or unrecognised.
+   */
+  timeZone?: string | null;
+  /**
+   * Opt in to `CrewClimbGroupItem`. Off by default — see the SDL: a client that
+   * predates the member crashes on it rather than ignoring it.
+   */
+  groupClimbs?: boolean | null;
+};
+
+/** How many of a group's climbs the feed carries; the rest live on the setter page. */
+export const CREW_CLIMB_GROUP_LIMIT = 10;
+
+export type CrewFeedItem =
+  | { __typename: 'CrewSessionItem'; id: string; occurredAt: string; session: SessionFeedItem }
+  | { __typename: 'CrewClimbItem'; id: string; occurredAt: string; climb: ActivityFeedItem }
+  | {
+      __typename: 'CrewClimbGroupItem';
+      id: string;
+      occurredAt: string;
+      /** At most `CREW_CLIMB_GROUP_LIMIT`, newest first. */
+      climbs: ActivityFeedItem[];
+      /** Every climb in the group, including the ones past the cap. */
+      totalCount: number;
+    };
+export type CrewFeedResult = { items: CrewFeedItem[]; cursor: string | null; hasMore: boolean };
+
 /**
  * The board configuration a logged climb should be drawn on (GraphQL
  * `RenderBoardConfig`). Resolved server-side against the climber's own boards —
@@ -143,10 +176,15 @@ export type ActivityFeedItem = {
   climbUuid?: string | null;
   boardType?: string | null;
   layoutId?: number | null;
+  renderBoard?: RenderBoardConfig | null;
   gradeName?: string | null;
   status?: string | null;
   angle?: number | null;
   frames?: string | null;
+  /** Setter notes; the drawer renders them under the board. */
+  description?: string | null;
+  /** Authored playback pace (ms) for a multi-frame climb. */
+  framesPace?: number | null;
   setterUsername?: string | null;
   commentBody?: string | null;
   isMirror?: boolean | null;
@@ -155,6 +193,10 @@ export type ActivityFeedItem = {
   difficulty?: number | null;
   difficultyName?: string | null;
   quality?: number | null;
+  /** Community ascents at the resolved angle; drives the drawer's send count. */
+  ascensionistCount?: number | null;
+  /** Blended community star average (1-5) at the resolved angle. */
+  qualityAverage?: number | null;
   attemptCount?: number | null;
   comment?: string | null;
   commentCount?: number | null;

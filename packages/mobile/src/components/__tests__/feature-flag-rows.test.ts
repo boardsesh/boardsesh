@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   buildFeatureFlagRows,
   findStaleFeatureFlagOverrideKeys,
   resolveFeatureFlagOverrideAction,
 } from '../feature-flag-rows';
 import { FEATURE_FLAG_DEFINITIONS } from '../../providers/feature-flags-provider';
+
+// `__DEV__` is a compile-time define here as well as under Metro, so the
+// production rendering of a policy-controlled row is only reachable this way.
+const build = vi.hoisted(() => ({ dev: false }));
+vi.mock('../../lib/is-dev-build', () => ({ isDevBuild: () => build.dev }));
+
+beforeEach(() => {
+  build.dev = false;
+});
 
 function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: Record<string, boolean>): string {
   const row = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags).find(
@@ -34,6 +43,27 @@ describe('buildFeatureFlagRows', () => {
     const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'garmin-watch': false }, {});
     expect(rows.find((row) => row.key === 'garmin-watch')?.choice).toBe('off');
     expect(rows.find((row) => row.key === 'strava-integration')?.choice).toBe('default');
+  });
+
+  it('does not render a policy-controlled override as a forced choice on a store build', () => {
+    // The provider drops this override outside a dev build, so a row that showed
+    // 'on' here would be a toggle that lies about what the app is doing.
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links': true }, {});
+    const row = rows.find((candidate) => candidate.key === 'donation-links');
+
+    expect(row?.choice).toBe('default');
+    expect(row?.effectiveLabel).toBe(
+      'Live default: not set · Effective: off · override ignored on this build (region-gated)',
+    );
+  });
+
+  it('renders a policy-controlled override normally in a dev client', () => {
+    build.dev = true;
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'donation-links': true }, {});
+    const row = rows.find((candidate) => candidate.key === 'donation-links');
+
+    expect(row?.choice).toBe('on');
+    expect(row?.effectiveLabel).toBe('Live default: not set · Effective: on');
   });
 
   it('gives every boolean row the Default/On/Off options, in order', () => {

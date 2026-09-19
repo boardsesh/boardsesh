@@ -40,6 +40,7 @@ const sheet = vi.hoisted(() => ({ isEnding: false as boolean, onConfirm: null as
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../SessionVisibilityControl', () => ({ SessionVisibilityControl: () => null }));
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

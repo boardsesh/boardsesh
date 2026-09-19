@@ -60,6 +60,7 @@ export type BoardPresenceAction =
   | { type: 'APPLY_CLIMB_SET'; payload: BoardPresenceClimb }
   | { type: 'APPLY_CLIMB_CLEARED'; payload: { clearedAt: string; seq: number } }
   | { type: 'BACKFILL_HISTORY'; payload: BoardPresenceClimb[] }
+  | { type: 'MERGE_HISTORY'; payload: BoardPresenceClimb[] }
   // Live stats push from the subscription (the freshly recomputed snapshot).
   | { type: 'APPLY_STATS_UPDATED'; payload: { stats: BoardPresenceStats; seq: number } }
   // One-time initial fetch seed; only fills the tiles before any live push.

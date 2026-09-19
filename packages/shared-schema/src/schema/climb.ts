@@ -60,7 +60,7 @@ export const climbTypeDefs = /* GraphQL */ `
     framesPace: Int
     "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle. Null when no grade row exists."
+    "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle, and moonboard_wide_angle_estimate is a MoonBoard grade borrowed from another board's angle-effect shape (moonboard-wide-angles flag angles). Null when no grade row exists."
     boardseshConfidence: String
     "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
     renderBoard: RenderBoardConfig
@@ -156,7 +156,7 @@ export const climbTypeDefs = /* GraphQL */ `
     framesPace: Int
     "Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'), round-tripped through the queue. Neither estimate tier may be treated as ascent-backed."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'), round-tripped through the queue. No estimate tier may be treated as ascent-backed."
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
@@ -209,6 +209,8 @@ export const climbTypeDefs = /* GraphQL */ `
     setIds: String!
     "Board angle in degrees"
     angle: Int!
+    "A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored."
+    sprayWallUuid: String
     "Page number for pagination (1-indexed)"
     page: Int
     "Number of results per page"
@@ -233,6 +235,8 @@ export const climbTypeDefs = /* GraphQL */ `
     name: String
     "Filter by setter usernames"
     setter: [String!]
+    "Only climbs by followed setters or followed users, including linked board accounts. Requires authentication."
+    onlyFollowedAuthors: Boolean
     "Filter by setter ID"
     setterId: Int
     "Only show benchmark climbs"
@@ -292,6 +296,8 @@ export const climbTypeDefs = /* GraphQL */ `
   Used to power the setter filter autocomplete in the search drawer.
   """
   input SetterStatsInput {
+    "Restrict counts and usernames to followed authors. Requires authentication."
+    onlyFollowedAuthors: Boolean
     "Board type (e.g., 'kilter', 'tension')"
     boardName: String!
     "Layout ID"

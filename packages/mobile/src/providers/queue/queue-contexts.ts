@@ -17,6 +17,12 @@ export type StartSessionConfig = {
   color?: string;
   discoverable?: boolean;
   isPermanent?: boolean;
+  /**
+   * "Show this session live". Defaults to public; only an explicit `false`
+   * reaches the server, so a session started with the switch on sends the same
+   * input it always did.
+   */
+  isPublic?: boolean;
 };
 
 type QueueContextValue = {

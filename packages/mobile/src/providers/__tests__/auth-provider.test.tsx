@@ -285,7 +285,15 @@ const getDatabaseHandleMock = vi.fn((): unknown => null);
 // Two different wipes: the selective one (downloaded board catalogs kept) and the
 // full one an explicit sign-out runs. Which one a given path picks is the regression
 // guard of issue #3621, so both are recorded rather than stubbed anonymously.
-const clearUserDataMock = vi.hoisted(() => vi.fn(async () => {}));
+const clearStoredSprayPhotosMock = vi.hoisted(() => vi.fn(() => {}));
+// The wall photographs live on the filesystem, not in SQLite, so the row wipe
+// cannot take them — sign-out has to call this too or the previous account's
+// picture stays decodable on a shared phone (#5448).
+vi.mock('../../lib/spray/spray-photo-store', () => ({
+  clearStoredSprayPhotos: clearStoredSprayPhotosMock,
+}));
+
+const clearUserDataMock = vi.hoisted(() => vi.fn(async (): Promise<void> => {}));
 const purgeLocalDataForSignOutMock = vi.hoisted(() =>
   vi.fn(async () => ({ pendingDiscarded: 0, deadLettersDiscarded: 0, hadDownloads: false, vacuumed: true })),
 );
@@ -1171,6 +1179,8 @@ describe('AuthProvider sign-out offline data wipe', () => {
     authSignOutMock.mockReset();
     getDatabaseHandleMock.mockReset();
     clearUserDataMock.mockClear();
+    clearUserDataMock.mockResolvedValue(undefined);
+    clearStoredSprayPhotosMock.mockClear();
     purgeLocalDataForSignOutMock.mockClear();
     purgeLocalDataForSignOutMock.mockResolvedValue({
       pendingDiscarded: 0,
@@ -1219,6 +1229,62 @@ describe('AuthProvider sign-out offline data wipe', () => {
 
     expect(purgeLocalDataForSignOutMock).toHaveBeenCalledTimes(1);
     expect(clearUserDataMock).not.toHaveBeenCalled();
+  });
+
+  // Both branches, because the row wipe has two and a photograph left behind by
+  // either one is the same leak. The selective branch is the one a forced
+  // sign-out takes, which is the common case.
+  it('deletes the stored wall photographs on an explicit sign-out', async () => {
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('deletes the stored wall photographs when a 401 forces a sign-out', async () => {
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clearUserDataMock).toHaveBeenCalled());
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  // The database cleanup is the one step here that is EXPECTED to fail — a
+  // locked database is the documented case — and the photographs are the half
+  // that cannot be recovered afterwards: once `spray_walls` is gone, nothing on
+  // disk names the files.
+  it('still deletes the photographs when the explicit wipe rejects', async () => {
+    purgeLocalDataForSignOutMock.mockRejectedValue(new Error('database is locked'));
+    const result = await renderSignedIn();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearStoredSprayPhotosMock).toHaveBeenCalled();
+  });
+
+  it('still deletes the photographs when the selective wipe rejects', async () => {
+    clearUserDataMock.mockRejectedValue(new Error('database is locked'));
+    await renderSignedIn();
+    await waitFor(() => expect(setOnForcedSignOutMock).toHaveBeenCalled());
+    const forceSignOut = setOnForcedSignOutMock.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+
+    await act(async () => {
+      forceSignOut?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(clearStoredSprayPhotosMock).toHaveBeenCalled());
   });
 
   it('wipes the downloaded catalogs when the account is deleted', async () => {

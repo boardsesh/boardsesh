@@ -197,6 +197,8 @@ beforeEach(() => {
   // `clearAllMocks` wipes calls, not implementations — and one case below gives
   // `replace` a real one that unmounts the harness.
   router.replace.mockReset();
+  router.back.mockReset();
+  openClimbInPlayDrawer.mockReset();
   router.canGoBack.mockReturnValue(true);
   resolveBoardForSession.mockResolvedValue(RESOLVED_BOARD);
   fetchAllMyBoards.mockResolvedValue([]);
@@ -260,10 +262,20 @@ describe('useBoardRouteTarget', () => {
     expect(replaceOrder).toBeLessThan(openOrder);
   });
 
-  // The in-app pop is the mirror image: popping first would take the screen the
-  // drawer is supposed to return to with it.
-  it('opens the drawer before popping back for an in-app target', async () => {
+  // The in-app pop leaves FIRST, for the same reason the replace does: opening
+  // navigates to `/play`, and `back()` acts on whatever is on top. Asserted
+  // against a modelled stack rather than call order, because call order is
+  // exactly what the old, broken version got right — it opened the drawer and
+  // then popped it straight back off, stranding the redirector on its spinner.
+  it('pops the redirector without dismissing the drawer it just opened', async () => {
     climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    const stack = ['/(tabs)/climbs/[climbUuid]'];
+    openClimbInPlayDrawer.mockImplementation(() => {
+      stack.push('/play');
+    });
+    router.back.mockImplementation(() => {
+      stack.pop();
+    });
 
     render(
       createElement(Harness, {
@@ -273,9 +285,8 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
-    const [openOrder] = openClimbInPlayDrawer.mock.invocationCallOrder;
-    const [backOrder] = router.back.mock.invocationCallOrder;
-    expect(openOrder).toBeLessThan(backOrder);
+    expect(router.back).toHaveBeenCalled();
+    expect(stack).toEqual(['/play']);
   });
 
   // A second URL through the same mounted screen is what the web build does when

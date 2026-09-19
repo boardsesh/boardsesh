@@ -1,13 +1,17 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Entrena mejor en tu plafón",
-      "description": "Registra tus encadenes en Kilter, Tension y MoonBoard. Una sola app para todos tus plafones.",
-      "ogDescription": "Compatible con Kilter, Tension y MoonBoard. Sigue sesiones, controla los LED, escala en grupo."
+      "title": "App de escalada compatible con Kilter, Tension y MoonBoard",
+      "description": "Comparte una cola en directo con tu grupo y sigue tus encadenes en cada plafón. Compatible con Kilter, Tension, MoonBoard y más.",
+      "ogDescription": "Comparte una cola en directo con tu grupo y sigue tus encadenes en cada plafón. Compatible con Kilter, Tension, MoonBoard y más."
     },
     "about": {
-      "title": "Acerca de",
+      "title": "Creada por escaladores, abierta a todo el mundo",
       "description": "Una sola app para todos los plafones. Código abierto y dirigida por la comunidad."
+    },
+    "support": {
+      "title": "Dona y mantén los servidores en marcha",
+      "description": "Boardsesh es gratis y de código abierto. Echa una mano con las facturas de hosting, base de datos e infraestructura que lo mantienen en marcha."
     },
     "help": {
       "title": "Ayuda",
@@ -28,32 +32,28 @@
   },
   "home": {
     "hero": {
-      "title": "¡A escalar!",
-      "subtitle": "Registra tus encadenes en Kilter, Tension y MoonBoard.",
-      "startClimbing": "Empieza a escalar",
+      "title": "Tus plafones. Una app.",
+      "eyebrow": "Compatible con Kilter, Tension, MoonBoard y más",
+      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
+      "subtitle": "Cambia de plafón sin cambiar de app.",
       "startClimbingAria": "Empieza a escalar en la app",
+      "startClimbingWeb": "Empieza a escalar en la web →",
       "ctaInstallIos": "Descárgala en el App Store",
       "ctaInstallAndroid": "Disponible en Google Play",
-      "ctaUpdate": "Actualiza la app"
+      "ctaUpdate": "Actualiza la app",
+      "tensionShotAlt": "Un bloque en un plafón Tension en Boardsesh",
+      "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh",
+      "proof": "{{formattedClimbers}} escaladores encendieron {{formattedClimbs}} bloques en plafones reales en los últimos 30 días.",
+      "proofNoCount": "Gratis, de código abierto y pagado por los escaladores que lo usan."
     },
     "onboardingHeader": "Hazlo tuyo",
-    "install": {
-      "iosTitle": "Descarga la app de Boardsesh",
-      "iosDescription": "Ilumina las presas de tu plafón directamente desde el móvil",
-      "androidLiveTitle": "Descarga la app de Boardsesh",
-      "androidLiveDescription": "Ya disponible en Google Play"
-    },
     "cards": {
       "auroraTitle": "¿Vienes de Kilter?",
       "auroraDescription": "Trae tu historial en un solo paso",
-      "crewTitle": "Encuentra tu grupo",
-      "crewDescription": "Sigue a amigos y mira qué están escalando",
       "playlistTitle": "Crea una playlist",
       "playlistDescription": "Prepara tus problemas antes de ir al rocódromo",
       "bluetoothTitle": "Conecta tu plafón",
       "bluetoothDescription": "Vincula por Bluetooth e ilumina tu siguiente problema",
-      "discordTitle": "Únete al grupo en Discord",
-      "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene",
       "gymTitle": "Encuentra un rocódromo cerca",
       "gymDescription": "Mira qué muros tienen un plafón Kilter, uno Tension o un MoonBoard"
     },
@@ -62,33 +62,62 @@
       "manage": "Gestionar",
       "viewPage": "Ver página"
     },
+    "gymSearch": {
+      "eyebrow": "Directorio de rocódromos",
+      "title": "Encuentra un plafón cerca de ti",
+      "lead_one": "{{formattedCount}} rocódromo, muro de club o garaje ya tiene un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "lead_other": "{{formattedCount}} rocódromos, muros de club y garajes ya tienen un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "leadNoCount": "Rocódromos, muros de club y garajes con un plafón en la pared ya están listados. Busca por nombre o ciudad, o deja que el navegador te localice.",
+      "geoHint": "¿Ubicación desactivada? Escribe una ciudad: mismos resultados, sin pedir permisos.",
+      "browseAll": "Ver el directorio completo de rocódromos"
+    },
+    "boards": {
+      "title": "Plafones populares",
+      "lead": "Encuentra el plafón en el que escalas y ábrelo en la app con tu grupo.",
+      "ranking": "Ordenados por escaladores que han registrado encadenes en cada plafón. Las vistas previas no se actualizan en directo.",
+      "climbers_one": "{{formattedCount}} escalador",
+      "climbers_other": "{{formattedCount}} escaladores",
+      "preview": "Vista previa del plafón: {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Bloque seleccionado: {{climb}}",
+      "open": "Abrir este plafón"
+    },
     "recentBeta": {
       "title": "Beta fresca"
+    },
+    "features": {
+      "title": "Noche de plafón, resuelta",
+      "lead": "Del primer bloque al último encadene, comparte toda la sesión.",
+      "queue": {
+        "title": "Tu grupo. Una cola en directo.",
+        "body": "Añade bloques con tu grupo a la misma cola.",
+        "shotAlt": "La cola compartida de Boardsesh con los próximos bloques del grupo"
+      },
+      "wall": {
+        "title": "Mira qué hay en el muro.",
+        "body": "Ve qué bloque está iluminado mientras buscas el siguiente.",
+        "shotAlt": "El bloque iluminado sigue visible mientras buscas otros bloques"
+      },
+      "profile": {
+        "title": "Todos tus plafones. Un perfil.",
+        "body": "Ve tus encadenes y tu progreso en cada plafón.",
+        "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+      }
+    },
+    "support": {
+      "eyebrow": "Gratis, y así se queda",
+      "title": "Boardsesh sale adelante porque los escaladores echan una mano",
+      "p1": "Sin anuncios, sin pantallas bloqueadas, sin segunda categoría. Todo Boardsesh sigue abierto para cualquiera, patrocines o no, incluido el autoalojamiento.",
+      "p2": "El alojamiento, la base de datos y las facturas que hay detrás las paga la gente que lo usa.",
+      "chipIn": "Echa una mano",
+      "source": "Mira el código",
+      "otherWays": "¿No te sobra el dinero?"
     }
   },
   "about": {
-    "headerTitle": "Acerca de",
     "hero": {
-      "title": "Registra, Entrena y Escala en Grupo",
-      "subtitle": "Una sola app para todos los plafones"
-    },
-    "vision": {
-      "title": "Nuestra Visión",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Cada plafón tiene su propia app y su propio jardín cerrado. Tu entrenamiento no debería estar encerrado en ninguno de ellos.",
-      "p2": "Boardsesh funciona con todas para que tú solo te dediques a escalar."
-    },
-    "features": {
-      "title": "Qué te ofrece Boardsesh",
-      "queueLabel": "Gestión de cola.",
-      "queueDescription": "Turnaos sin el típico «¿quién va ahora?»",
-      "partyLabel": "Modo Fiesta.",
-      "partyDescription": "Comparte una sesión y escala en grupo en tiempo real",
-      "multiBoardLabel": "Multi-plafón.",
-      "multiBoardDescription": "Compatible con Kilter, Tension, MoonBoard y más",
-      "communityLabel": "Dirigida por la comunidad.",
-      "communityDescription": "Construida y mejorada por gente que realmente escala",
-      "selfHostedLabel": "Auto-alojable.",
-      "selfHostedDescription": "Monta tu propia instancia si te apetece"
+      "title": "Hecho por escaladores. Abierto para todos.",
+      "subtitle": "Hecho por escaladores hartos de tener una app por plafón."
     },
     "openSource": {
       "title": "Código Abierto",
@@ -102,10 +131,93 @@
     },
     "community": {
       "title": "Únete a la Comunidad",
-      "body": "Tanto si escribes código, abres problemas o solo quieres contarnos qué está roto, queremos saber de ti."
+      "body": "Tanto si escribes código, abres problemas o solo quieres contarnos qué está roto, queremos saber de ti.",
+      "discord": "Únete al grupo en Discord",
+      "support": "Apoya Boardsesh"
     },
     "legalLink": "Política Legal y de Propiedad Intelectual",
-    "footer": "Hecho por escaladores. Abierto para todos."
+    "footer": "Hecho por escaladores. Abierto para todos.",
+    "profile": {
+      "title": "Todos tus plafones. Un perfil.",
+      "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+    },
+    "story": {
+      "title": "Por qué existe esto",
+      "p1": "Cada plafón trae su propia app, su propio inicio de sesión y su propio registro. Escalas un Kilter en tu rocódromo y un MoonBoard de vacaciones y acabas con dos historiales que nunca se juntan.",
+      "p2": "Luego una de esas apps desapareció de la noche a la mañana y los escaladores perdieron su registro con ella. Eso pasa cuando una sola empresa controla la única forma de usar un material que ya has pagado.",
+      "link": "Qué pasó y cómo sacar tus datos"
+    },
+    "who": {
+      "title": "Quién lo hace",
+      "body": "Empezó en 2024 con un escalador y un repositorio, y sigue siendo de esos proyectos en los que se trabaja por las tardes. Los fallos los encuentra alguien de pie delante del muro, no un equipo de QA.",
+      "cta": "Mira quién ha contribuido"
+    },
+    "next": {
+      "title": "Qué viene ahora",
+      "body": "Más plafones, mejor modo sin conexión y poder sacar tus datos tan fácil como entraron. La hoja de ruta es pública y se discute en Discord.",
+      "cta": "Lee la hoja de ruta"
+    }
+  },
+  "support": {
+    "hero": {
+      "title": "Mantén Boardsesh en marcha",
+      "subtitle": "Gratis, de código abierto y pagado por escaladores"
+    },
+    "promise": "Sin pantallas bloqueadas, sin segunda categoría, sin anuncios. Echar una mano paga la factura, nada más.",
+    "why": {
+      "title": "Por qué existe esta página",
+      "p1": "Boardsesh es gratis y de código abierto, y siempre lo será. Pero mantenerlo cuesta dinero de verdad: el hosting, la base de datos y la infraestructura suman cada vez que se une más gente.",
+      "p2": "Prometemos no echar a perder Boardsesh, y auto-alojarlo siempre será una opción. Si te sirve y te lo puedes permitir, echar una mano mantiene las luces encendidas."
+    },
+    "rails": {
+      "title": "Formas de echar una mano"
+    },
+    "sponsors": {
+      "title": "GitHub Sponsors",
+      "body": "Apoya Boardsesh cada mes. Lo más fácil si ya tienes cuenta de GitHub.",
+      "cta": "Patrocina en GitHub"
+    },
+    "oneTime": {
+      "title": "Donación única",
+      "body": "Paga con tarjeta, Apple Pay o Google Pay desde el navegador. Sin crear ninguna cuenta.",
+      "cta": "Dona una vez"
+    },
+    "otherWays": {
+      "title": "Otras formas de ayudar",
+      "body": "El dinero es la más lenta de todas. Cualquiera de las cuatro hace avanzar la app.",
+      "bug": {
+        "title": "Informa de un fallo",
+        "body": "Cuéntanos qué se rompió, en qué plafón y qué esperabas que pasara.",
+        "cta": "Abre una issue en GitHub →"
+      },
+      "translate": {
+        "title": "Traduce una pantalla",
+        "body": "Los catálogos en español, francés y alemán están en el repo. Corrige una frase o añade un idioma.",
+        "cta": "Explora los catálogos de idiomas →"
+      },
+      "patch": {
+        "title": "Manda un parche",
+        "body": "Toda la app es pública: web, móvil, backend y los datos de plafones que hay detrás.",
+        "cta": "Mira cómo está hecho →"
+      },
+      "discord": {
+        "title": "Únete al Discord",
+        "body": "Pregunta en qué se está trabajando, discute sobre grados, dinos qué falta.",
+        "cta": "Pásate a saludar →"
+      }
+    },
+    "honesty": {
+      "title": "La letra pequeña",
+      "p1": "Las donaciones no son deducibles de impuestos. Boardsesh no es una ONG, solo escaladores pagando la factura del servidor.",
+      "p2": "Tu dinero va al hosting, la base de datos y la infraestructura. No compra nada extra en la app: todo Boardsesh sigue abierto para todo el mundo, dones o no."
+    },
+    "thanks": {
+      "title": "Gracias",
+      "body": "A quienes ya patrocinan Boardsesh, abren issues, mandan parches o traducen una pantalla: gracias. Así es como esto sigue en marcha."
+    },
+    "aboutLink": "Conoce más sobre el proyecto →",
+    "docsLink": "Mira cómo está construido en la documentación →",
+    "footer": "Gratis para todos, financiado por quien puede echar una mano."
   },
   "privacy": {
     "title": "Política de Privacidad",
@@ -184,7 +296,6 @@
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos."
   },
   "legal": {
-    "headerTitle": "Legal",
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
       "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). No tiene fines comerciales y está mantenida íntegramente por voluntarios.",
@@ -286,9 +397,7 @@
       "item1": "Monta una cola y ve pasando bloques con tu gente.",
       "item2": "Abre una sesión compartida para que todos los móviles muevan la misma cola.",
       "item3": "Enciende las presas por Bluetooth en plafones Kilter, Tension y MoonBoard.",
-      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio.",
-      "cta": "Abrir la app",
-      "ctaAriaLabel": "Abrir la app de Boardsesh"
+      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio."
     },
     "aurora": {
       "title": "Si vienes de las apps de Aurora",
@@ -297,12 +406,28 @@
       "item2": "Tus ascensiones siguen siendo tuyas. Nunca escribimos nada que no hayas registrado.",
       "link": "Leer la guía de migración"
     },
+    "climbCounts": {
+      "title": "¿Por qué la app de Kilter muestra más bloques?",
+      "intro": "Las dos apps tienen los mismos bloques. Solo los cuentan de otra forma.",
+      "item1": "Boardsesh cuenta cada bloque una vez y te muestra su grado y sus encadenes en el ángulo que elijas.",
+      "item2": "La app de Kilter cuenta un bloque una vez por cada ángulo en el que se ha registrado, así que un bloque con encadenes a 40° y a 45° cuenta como dos.",
+      "item3": "Por eso el mismo plafón puede mostrar hasta cerca del doble de bloques en la app de Kilter."
+    },
     "ask": {
       "title": "¿Sigues atascado?",
-      "intro": "Pregúntanos. Leemos los tres.",
+      "intro": "Pregunta en el Discord. Ahí es donde antes te responden.",
       "discord": "Preguntar en Discord",
       "github": "Reportar un fallo en GitHub",
-      "docs": "Leer la documentación para desarrolladores"
+      "docs": "Leer la documentación para desarrolladores",
+      "bugLead": "¿Has encontrado un fallo?",
+      "devLead": "¿Estás construyendo sobre la API?"
+    },
+    "topics": {
+      "label": "Temas de ayuda",
+      "using": "Usar Boardsesh",
+      "logbook": "Trae tu logbook",
+      "counts": "Recuento de bloques",
+      "ask": "Pide ayuda"
     }
   },
   "docs": {
@@ -371,5 +496,10 @@
         "body": "La conexión WebSocket puede interrumpirse por cambios de red. Implementa la lógica de reconexión con las opciones de reintento de graphql-ws y usa la sincronización delta para mantener la coherencia del estado."
       }
     }
+  },
+  "preview": {
+    "label": "Vista previa de la app",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

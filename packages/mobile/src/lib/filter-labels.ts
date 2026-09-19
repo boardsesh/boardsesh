@@ -53,6 +53,7 @@ export function buildFilterLabels(t: TFunction<'climbs'>): ClimbFilterLabels {
     // rating filters can't be read as two community thresholds.
     myRating: (count) => t('mobile.search.myRating', { count }),
     onlyRatedByMe: () => t('mobile.filter.ratedByMeShort'),
+    onlyFollowedAuthors: () => t('authors.followingClimbs'),
     more: (count) => t('mobile.search.more', { count }),
     // i18n-keep mobile.search.settersCount
     setters: (count) => t('mobile.search.settersCount', { count }),

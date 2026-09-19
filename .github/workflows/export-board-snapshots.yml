@@ -25,6 +25,13 @@ on:
     - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
     inputs:
+      storage_target:
+        description: 'Storage destination. R2 is for a complete migration rehearsal only.'
+        type: choice
+        options:
+          - tigris
+          - r2
+        default: tigris
       gzip_only:
         description: 'Skip the identity (v1) pass; only refresh the gzip (v1-gzip) artifacts'
         type: boolean
@@ -45,9 +52,6 @@ on:
 concurrency:
   group: export-board-snapshots
   cancel-in-progress: false
-  # GitHub's default single pending slot replaces an older pending run. Keep a
-  # FIFO queue so a frequent scan can never displace the nightly full export.
-  queue: max
 
 jobs:
   export:
@@ -64,22 +68,53 @@ jobs:
     environment: Production
     # Production DB/S3 credentials are NOT declared here: job-level env would leak
     # them to actions/checkout, the setup actions, and `vp install` before the
-    # export ever runs. They're scoped to the two export steps below instead.
+    # export ever runs. They're intentionally repeated on the three export steps.
     env:
-      # Tigris serves public objects only on the bucket's virtual-host
-      # domain — the S3 endpoint's path-style URLs 403 unauthenticated GETs
-      # even on a public bucket, so manifest entry URLs must be built here.
-      # Not a secret (it's in every manifest the app fetches). Keep in sync
-      # with EXPO_PUBLIC_SNAPSHOT_BASE_URL in the mobile workflows.
-      SNAPSHOT_PUBLIC_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io
+      # Scheduled and ordinary manual exports remain on Tigris until the R2
+      # rehearsal passes and the mobile readers move in a separate cutover.
+      SNAPSHOT_PUBLIC_BASE_URL: ${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || 'https://boardsesh-board-snapshots.t3.tigrisfiles.io' }}
       # Keep the export's stability window in lockstep with the backend if
       # it's ever configured off-default (empty → the shared 30s default).
       SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Validate R2 migration rehearsal
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_target == 'r2' }}
+        env:
+          GZIP_ONLY: ${{ inputs.gzip_only }}
+          BOARD: ${{ inputs.board }}
+          LAYOUT: ${{ inputs.layout }}
+          REFRESH_THRESHOLD: ${{ inputs.refresh_threshold }}
+          SNAPSHOTS_R2_AWS_ENDPOINT_URL: ${{ secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL }}
+          SNAPSHOTS_R2_AWS_ACCESS_KEY_ID: ${{ secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID }}
+          SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          if [ "$GZIP_ONLY" = 'true' ] || [ -n "$BOARD" ] || [ -n "$LAYOUT" ] || [ -n "$REFRESH_THRESHOLD" ]; then
+            echo '::error::An R2 rehearsal must be a complete export: gzip_only=false and all filters blank.'
+            exit 1
+          fi
+          for required_name in SNAPSHOTS_R2_AWS_ENDPOINT_URL SNAPSHOTS_R2_AWS_ACCESS_KEY_ID SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY; do
+            if [ -z "${!required_name}" ]; then
+              echo "::error::Missing Production secret: $required_name"
+              exit 1
+            fi
+          done
+          node -e '
+            const raw = process.env.SNAPSHOTS_R2_AWS_ENDPOINT_URL ?? "";
+            let endpoint;
+            try { endpoint = new URL(raw); } catch { process.exitCode = 1; }
+            const suffix = ".r2.cloudflarestorage.com";
+            if (!endpoint || endpoint.protocol !== "https:" || !endpoint.hostname.endsWith(suffix) ||
+                endpoint.hostname === suffix.slice(1) || endpoint.username || endpoint.password || endpoint.port ||
+                endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
+              console.error("::error::SNAPSHOTS_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.");
+              process.exitCode = 1;
+            }
+          '
 
-      - uses: voidzero-dev/setup-vp@v1
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -117,6 +152,11 @@ jobs:
           # as fallback for any other S3-compatible store.
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
+          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
         run: |
           args=()
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
@@ -145,6 +185,11 @@ jobs:
           # as fallback for any other S3-compatible store.
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
+          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
         run: |
           args=(--gzip --key-prefix board-snapshots/v1-gzip)
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
@@ -179,4 +224,79 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+          SNAPSHOTS_S3_BUCKET_NAME: ${{ inputs.storage_target == 'r2' && 'boardsesh-board-snapshots' || '' }}
+          SNAPSHOTS_AWS_ACCESS_KEY_ID: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ACCESS_KEY_ID || '' }}
+          SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
+          SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
+          SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
         run: node --import tsx src/scripts/export-board-catalog.ts
+
+      - name: Verify every R2 artifact through the public domain
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_target == 'r2' }}
+        timeout-minutes: 20
+        env:
+          SNAPSHOT_R2_BASE_URL: https://snapshots.boardsesh.com/board-snapshots
+          SNAPSHOT_VERIFY_KEY: ${{ github.run_id }}
+        run: |
+          verify_headers() {
+            header_file="$1"
+            required_pattern="$2"
+            if ! tr -d '\r' < "$header_file" | grep -Eiq "$required_pattern"; then
+              echo "::error::Missing expected response header matching: $required_pattern"
+              cat "$header_file"
+              exit 1
+            fi
+          }
+
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "$work_dir"' EXIT
+          sample_artifact=''
+          for prefix in v1 v1-gzip v1-catalog; do
+            manifest_url="$SNAPSHOT_R2_BASE_URL/$prefix/manifest.json?verify=$SNAPSHOT_VERIFY_KEY"
+            headers="$work_dir/$prefix.headers"
+            cached_headers="$work_dir/$prefix.cached.headers"
+            manifest="$work_dir/$prefix.json"
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              -H 'Origin: https://app.boardsesh.com' -D "$headers" -o "$manifest" "$manifest_url"
+            verify_headers "$headers" '^access-control-allow-origin: \*$'
+            verify_headers "$headers" '^cache-control: .*max-age=300'
+            verify_headers "$headers" '^cf-ray:'
+            for ((cache_attempt = 1; cache_attempt <= 13; cache_attempt += 1)); do
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                -H 'Origin: https://app.boardsesh.com' -D "$cached_headers" -o /dev/null "$manifest_url"
+              if tr -d '\r' < "$cached_headers" | grep -Eiq '^cf-cache-status: HIT$'; then break; fi
+              if [ "$cache_attempt" = 13 ]; then
+                echo '::error::Snapshot manifest did not reach cf-cache-status: HIT after 13 probes over 60 seconds.'
+                cat "$cached_headers"
+                exit 1
+              fi
+              sleep 5
+            done
+
+            if [ "$prefix" = 'v1-catalog' ]; then
+              jq -e --arg base "$SNAPSHOT_R2_BASE_URL/" \
+                '.artifact.url | startswith($base)' "$manifest" >/dev/null
+              jq -r '.artifact.url' "$manifest" > "$work_dir/$prefix.urls"
+            else
+              jq -e --arg base "$SNAPSHOT_R2_BASE_URL/" \
+                '(.entries | length > 0) and all(.entries[]; (.url | startswith($base)) and ((.grades.url? // $base) | startswith($base)))' \
+                "$manifest" >/dev/null
+              jq -r '.entries[] | .url, (.grades.url? // empty)' "$manifest" > "$work_dir/$prefix.urls"
+            fi
+
+            while IFS= read -r artifact_url; do
+              [ -n "$artifact_url" ] || continue
+              artifact_headers="$work_dir/artifact.headers"
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                -H 'Origin: https://app.boardsesh.com' -I -D "$artifact_headers" -o /dev/null "$artifact_url"
+              verify_headers "$artifact_headers" '^access-control-allow-origin: \*$'
+              verify_headers "$artifact_headers" '^cache-control: .*immutable'
+              verify_headers "$artifact_headers" '^cf-ray:'
+              if [ -z "$sample_artifact" ]; then sample_artifact="$artifact_url"; fi
+            done < "$work_dir/$prefix.urls"
+          done
+
+          no_origin_headers="$work_dir/no-origin.headers"
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            -I -D "$no_origin_headers" -o /dev/null "$sample_artifact"
+          verify_headers "$no_origin_headers" '^access-control-allow-origin: \*$'

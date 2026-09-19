@@ -3,10 +3,8 @@ import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { setupWorkerDatabase } from './worker-db';
 
-// Same mocking stance as save-tick-climb-catalog.test.ts: mock only the post-
-// insert side effects (which would otherwise pull in Redis and the social event
-// bus) and let the resolver run against the worker database. What is under test
-// is the PERSISTED angle, so every assertion reads boardsesh_ticks back.
+// Read persisted angles from Postgres and observe recompute keys; unrelated
+// event delivery stays mocked so this suite focuses on the saved ascent.
 type CapturedEventOptions = {
   distinctId: string;
   properties?: Record<string, string | number | boolean | null | undefined>;
@@ -35,14 +33,12 @@ import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 
 const USER_ID = 'u-moonboard-angle';
 const PREFIX = 'MBANG-';
-
-// One climb per shape the resolver has to tell apart.
 const MOON_GRADED_40 = `${PREFIX}MOON-40`; // catalog climb graded at 40 only
-const MOON_PHANTOM_25 = `${PREFIX}MOON-PHANTOM`; // graded 40, phantom stats row at 25 (the prod shape)
+const MOON_PHANTOM_25 = `${PREFIX}MOON-PHANTOM`; // graded 40, only tick counts at 25
 const MOON_BOTH_ANGLES = `${PREFIX}MOON-BOTH`; // graded 40, REAL catalog data at 25 too (post-#3849)
 const MOON_NULL_ANGLE = `${PREFIX}MOON-NULLANGLE`; // angle-agnostic climb row (post-#3851)
 const MOON_UNKNOWN = `${PREFIX}MOON-NOT-IN-CATALOG`; // never inserted into board_climbs
-const MOON_USER_CREATED = `${PREFIX}MOON-USERSET`; // a climber's own problem, re-angled to 40 (the moonboard_wrong_angle_stats_cleanup migration fences this off)
+const MOON_USER_CREATED = `${PREFIX}MOON-USERSET`; // a climber's own problem, re-angled to 40
 const MOON_BENCHMARK_ONLY = `${PREFIX}MOON-BENCH`; // graded 40; at 25 ONLY benchmark_difficulty is set
 const MOON_QUALITY_ONLY = `${PREFIX}MOON-QUAL`; // graded 40; at 25 ONLY upstream_quality_average is set
 const KILTER_NULL_ANGLE = `${PREFIX}KILTER-NULLANGLE`;
@@ -102,12 +98,6 @@ async function insertClimb(
   `);
 }
 
-/**
- * A stats row whose ONLY non-NULL catalog column is the one named. Each of the
- * four legs of statsRowCarriesRealCatalogData has to be able to keep a tick in
- * place on its own — insertGradedStatsRow sets three of them at once, so it
- * cannot prove any single leg is load-bearing.
- */
 async function insertSingleSignalStatsRow(
   uuid: string,
   angle: number,
@@ -126,12 +116,6 @@ async function insertSingleSignalStatsRow(
   `);
 }
 
-/**
- * What createClimb actually writes for a user-created climb: a stats row
- * carrying fa_username and nothing else. That row scores FALSE under
- * statsRowCarriesRealCatalogData — which is exactly why the resolver needs its
- * own user_id fence rather than leaning on the catalog-data predicate.
- */
 async function insertFaOnlyStatsRow(uuid: string, angle: number): Promise<void> {
   await db.execute(sql`
     INSERT INTO board_climb_stats
@@ -142,9 +126,6 @@ async function insertFaOnlyStatsRow(uuid: string, angle: number): Promise<void> 
   `);
 }
 
-/**
- * A stats row carrying real catalog data — a graded angle of the problem.
- */
 async function insertGradedStatsRow(uuid: string, boardType: string, angle: number): Promise<void> {
   await db.execute(sql`
     INSERT INTO board_climb_stats
@@ -155,10 +136,6 @@ async function insertGradedStatsRow(uuid: string, boardType: string, angle: numb
   `);
 }
 
-/**
- * The #3529 damage shape: a stats row minted purely by a stranded tick — zero
- * upstream count, every catalog column NULL.
- */
 async function insertPhantomStatsRow(uuid: string, boardType: string, angle: number): Promise<void> {
   await db.execute(sql`
     INSERT INTO board_climb_stats
@@ -173,7 +150,7 @@ function snapEvents() {
   return captureBackendEventMock.mock.calls.filter((call) => call[0] === 'MoonBoard Tick Angle Snapped');
 }
 
-describe('MoonBoard tick angle resolution (#3529)', () => {
+describe('MoonBoard ticks preserve the requested angle (#5534)', () => {
   beforeAll(async () => {
     await setupWorkerDatabase();
 
@@ -196,9 +173,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
 
     await insertClimb(MOON_NULL_ANGLE, 'moonboard', null);
     await insertGradedStatsRow(MOON_NULL_ANGLE, 'moonboard', 40);
-
-    // A climber's own MoonBoard problem: set at 25, later re-angled to 40.
-    // editClimb leaves the old angle's stats row (fa_username only) behind.
     await insertClimb(MOON_USER_CREATED, 'moonboard', 40, USER_ID);
     await insertFaOnlyStatsRow(MOON_USER_CREATED, 40);
     await insertFaOnlyStatsRow(MOON_USER_CREATED, 25);
@@ -227,38 +201,25 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
   beforeEach(() => {
     captureBackendEventMock.mockClear();
     queueClimbStatsRecomputeMock.mockClear();
+    recomputeClimbStatsNowMock.mockClear();
   });
 
   afterEach(async () => {
     await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid LIKE ${`${PREFIX}%`}`);
     await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
   });
-
-  // 1. The headline behaviour.
-  it('snaps a MoonBoard tick to the angle the climb is graded at', async () => {
+  it('saves a MoonBoard tick at 25 degrees despite a legacy catalog angle of 40', async () => {
     await tickMutations.saveTick(
       undefined,
       { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_GRADED_40, angle: 25 }) },
       authCtx(),
     );
 
-    expect(await storedAngles(MOON_GRADED_40)).toEqual([40]);
-    // The recompute must be queued at the STORED angle, not the requested one —
-    // otherwise the count is re-derived into the phantom key all over again.
-    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 40);
-    expect(queueClimbStatsRecomputeMock).not.toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 25);
-
-    const events = snapEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0][1].distinctId).toBe(USER_ID);
-    expect(events[0][1].properties).toMatchObject({
-      climbUuid: MOON_GRADED_40,
-      requestedAngle: 25,
-      effectiveAngle: 40,
-    });
+    expect(await storedAngles(MOON_GRADED_40)).toEqual([25]);
+    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledExactlyOnceWith('moonboard', MOON_GRADED_40, 25);
+    expect(recomputeClimbStatsNowMock).toHaveBeenCalledExactlyOnceWith('moonboard', MOON_GRADED_40, 25);
+    expect(snapEvents()).toHaveLength(0);
   });
-
-  // 2. Control: the snap must not rewrite an angle that was already right.
   it('leaves a MoonBoard tick at an angle the climb IS graded at', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -269,27 +230,16 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_GRADED_40)).toEqual([40]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 3. The prod shape, and the test that proves the predicate is about CATALOG
-  // DATA rather than row existence. Every one of the ~100 affected climbs in
-  // prod already HAS a stats row at the wrong angle — that phantom row is the
-  // bug — so a bare `EXISTS(stats row at requested angle)` rule would return 25
-  // here and the code fix would be inert on exactly the population it exists for.
-  it('snaps even when a PHANTOM stats row already sits at the requested angle', async () => {
+  it('preserves the requested angle when its stats row carries only tick counts', async () => {
     await tickMutations.saveTick(
       undefined,
       { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_PHANTOM_25, angle: 25 }) },
       authCtx(),
     );
 
-    expect(await storedAngles(MOON_PHANTOM_25)).toEqual([40]);
-    expect(snapEvents()).toHaveLength(1);
+    expect(await storedAngles(MOON_PHANTOM_25)).toEqual([25]);
+    expect(snapEvents()).toHaveLength(0);
   });
-
-  // 4. The forward-compat guard for #3849/#3851: once a MoonBoard problem
-  // carries REAL catalog data at both 25 and 40, a per-angle tick must pass
-  // through untouched. Simplifying the rule to "always snap to
-  // board_climbs.angle" turns this red.
   it('leaves a two-angle MoonBoard climb alone when the requested angle carries catalog data', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -300,12 +250,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_BOTH_ANGLES)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 4b. #3852 (moonboard-wide-angles): a tick at an angle outside MOONBOARD_ANGLES
-  // (25°/40°) can only have come from the wide-angle picker, which only exists
-  // behind the feature flag — there's no "stale narrow-UI mismatch" to correct at
-  // 35°, so rule (d) must not fire even though the climb is graded at 40 with no
-  // stats yet at 35.
   it('leaves a MoonBoard tick alone at an angle outside the narrow 25/40 set', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -316,10 +260,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_GRADED_40)).toEqual([35]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 5. The OTHER forward-compat guard, and the real removal trigger: #3851 sets
-  // board_climbs.angle = NULL on the canonical climb, at which point rule (d)
-  // must go inert on its own with no code change and no flag.
   it('leaves a MoonBoard tick alone when the climb row carries no angle (post-#3851 shape)', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -330,14 +270,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_NULL_ANGLE)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 5b. USER-CREATED climbs are fenced off, matching the moonboard_wrong_angle_stats_cleanup migration's
-  // `bc.user_id IS NULL` on statements A and B. createClimb writes a non-null
-  // board_climbs.angle plus an fa_username-only stats row, and editClimb changes
-  // the angle while deliberately leaving the old angle's row behind — so this
-  // shape scores FALSE under statsRowCarriesRealCatalogData and would otherwise
-  // be snapped. Deleting the `ownerUserId != null` guard from the resolver turns
-  // this red.
   it('leaves a tick on a USER-CREATED MoonBoard climb at the angle the climber sent', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -349,14 +281,7 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(snapEvents()).toHaveLength(0);
     expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith('moonboard', MOON_USER_CREATED, 25);
   });
-
-  // 5c/5d. Each remaining leg of the catalog-data predicate on its own.
-  // insertGradedStatsRow sets upstream count + display_difficulty +
-  // upstream_quality_average together, so it can never show that
-  // benchmark_difficulty or upstream_quality_average is individually
-  // load-bearing. Deleting either leg from real-catalog-data.ts turns the
-  // matching test red.
-  it('treats a benchmark_difficulty-only stats row as real catalog data', async () => {
+  it('preserves the requested angle with only a catalog benchmark grade there', async () => {
     await tickMutations.saveTick(
       undefined,
       { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_BENCHMARK_ONLY, angle: 25 }) },
@@ -367,7 +292,7 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(snapEvents()).toHaveLength(0);
   });
 
-  it('treats an upstream_quality_average-only stats row as real catalog data', async () => {
+  it('preserves the requested angle with only a catalog quality rating there', async () => {
     await tickMutations.saveTick(
       undefined,
       { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_QUALITY_ONLY, angle: 25 }) },
@@ -377,10 +302,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_QUALITY_ONLY)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 6. Blast-radius fence. Kilter and Tension grade every angle independently,
-  // so their ticks must never be touched — including the case where the climb
-  // row happens to carry an angle.
   it('never touches Kilter ticks, with or without an angle on the climb row', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -397,8 +318,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(KILTER_ANGLED_40)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 7. A send must never fail on this. The #3528 log-only stance has to survive.
   it('saves at the requested angle when the climb is not in the catalog at all', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -409,10 +328,7 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     expect(await storedAngles(MOON_UNKNOWN)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
-
-  // 8. The mobile home feed opens a beta video at the beta row's angle, so a
-  // beta pinned to 25 on a 40-graded problem opens a page it isn't graded at.
-  it('moves the beta-link angle with the snapped tick', async () => {
+  it('keeps an attached beta video at the requested angle', async () => {
     await tickMutations.saveTick(
       undefined,
       {
@@ -426,43 +342,65 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
       authCtx(),
     );
 
-    expect(await storedAngles(MOON_GRADED_40)).toEqual([40]);
-    expect(await betaLinkAngles(MOON_GRADED_40)).toEqual([40]);
+    expect(await storedAngles(MOON_GRADED_40)).toEqual([25]);
+    expect(await betaLinkAngles(MOON_GRADED_40)).toEqual([25]);
   });
-
-  // 9. updateTick has the same hole: it wrote validatedInput.angle verbatim.
-  it('snaps an updateTick angle edit too, and queues no phantom old-angle recompute', async () => {
+  it('edits 40 to 25 degrees, moves linked beta, and recomputes both angles', async () => {
     const saved = (await tickMutations.saveTick(
       undefined,
-      { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_GRADED_40, angle: 40 }) },
+      {
+        input: tickInput({
+          boardType: 'moonboard',
+          climbUuid: MOON_GRADED_40,
+          angle: 40,
+          videoUrl: 'https://www.tiktok.com/@climber/video/7300000000000000002',
+        }),
+      },
       authCtx(),
     )) as { uuid: string };
     queueClimbStatsRecomputeMock.mockClear();
+    recomputeClimbStatsNowMock.mockClear();
 
-    await tickMutations.updateTick(undefined, { uuid: saved.uuid, input: { angle: 25 } }, authCtx());
+    const updated = (await tickMutations.updateTick(
+      undefined,
+      { uuid: saved.uuid, input: { angle: 25 } },
+      authCtx(),
+    )) as { angle: number };
 
-    expect(await storedAngles(MOON_GRADED_40)).toEqual([40]);
-    // The angle never actually moved, so the old-angle second recompute must not
-    // fire — one call, at 40.
-    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledTimes(1);
-    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 40);
-    // Reported off the RETURNING row, after the UPDATE landed — same stance as
-    // saveTick, so one event name means one thing across both mutations.
-    const events = snapEvents();
-    expect(events).toHaveLength(1);
-    expect(events[0][1].properties).toMatchObject({
-      climbUuid: MOON_GRADED_40,
-      requestedAngle: 25,
-      effectiveAngle: 40,
-    });
+    expect(updated.angle).toBe(25);
+    expect(await storedAngles(MOON_GRADED_40)).toEqual([25]);
+    expect(await betaLinkAngles(MOON_GRADED_40)).toEqual([25]);
+    for (const recompute of [queueClimbStatsRecomputeMock, recomputeClimbStatsNowMock]) {
+      expect(recompute).toHaveBeenCalledTimes(2);
+      expect(recompute).toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 40);
+      expect(recompute).toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 25);
+    }
+    expect(snapEvents()).toHaveLength(0);
   });
 
-  // 10. An edit that OMITS the angle field must not reach the resolver at all.
-  // That is the shape web's logbook edit sends (logbook-feed-item.tsx handleSave
-  // has no `angle` key), and on it a historical tick predating the fix stays
-  // where the climber put it. Mobile's LogbookEditSheet always sends the tick's
-  // current angle, so its comment-only save does NOT take this path — see the
-  // note on updateTick's resolve branch.
+  it.each([{ comment: 'crimpy' }, { comment: 'crimpy', angle: 25 }])(
+    'preserves 25 degrees on a comment edit: %j',
+    async (input) => {
+      const saved = (await tickMutations.saveTick(
+        undefined,
+        { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_GRADED_40, angle: 25 }) },
+        authCtx(),
+      )) as { uuid: string };
+      queueClimbStatsRecomputeMock.mockClear();
+      recomputeClimbStatsNowMock.mockClear();
+
+      const updated = (await tickMutations.updateTick(undefined, { uuid: saved.uuid, input }, authCtx())) as {
+        angle: number;
+        comment: string;
+      };
+      expect(updated).toMatchObject({ angle: 25, comment: 'crimpy' });
+      expect(await storedAngles(MOON_GRADED_40)).toEqual([25]);
+      expect(queueClimbStatsRecomputeMock).toHaveBeenCalledExactlyOnceWith('moonboard', MOON_GRADED_40, 25);
+      expect(recomputeClimbStatsNowMock).toHaveBeenCalledExactlyOnceWith('moonboard', MOON_GRADED_40, 25);
+      expect(snapEvents()).toHaveLength(0);
+    },
+  );
+
   it('leaves the angle untouched on an edit that does not mention the angle', async () => {
     await tickMutations.saveTick(
       undefined,
@@ -475,7 +413,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     const [existing] = Array.isArray(existingResult)
       ? existingResult
       : (existingResult as { rows: Array<{ uuid: string }> }).rows;
-    // Move it to an angle nothing grades, the way a pre-fix tick sits in prod.
     await db.execute(sql`
       UPDATE boardsesh_ticks SET angle = 15 WHERE climb_uuid = ${MOON_BOTH_ANGLES} AND user_id = ${USER_ID}
     `);
@@ -483,9 +420,6 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     await tickMutations.updateTick(undefined, { uuid: existing.uuid, input: { comment: 'crimpy' } }, authCtx());
 
     expect(await storedAngles(MOON_BOTH_ANGLES)).toEqual([15]);
-    // And nothing is reported: the tick sits at an angle nothing grades, but we
-    // did not move it, so the counter must stay silent. The post-UPDATE report
-    // compares against `validatedInput.angle`, which this edit never sets.
     expect(snapEvents()).toHaveLength(0);
   });
 });

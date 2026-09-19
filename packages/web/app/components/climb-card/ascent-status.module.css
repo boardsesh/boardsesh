@@ -1,4 +1,9 @@
-/* Ascent status badge — frosted glass circle, bottom-right */
+/* Ascent status badge — frosted glass circle, bottom-right.
+ *
+ * The dark tint is load-bearing, not decoration: these badges sit on board art,
+ * and on bright art (Woods especially) blur alone leaves the icon to fight the
+ * image. It used to live in a dark-scheme override; www renders one scheme, so
+ * it belongs on the base rule. */
 .badge {
   position: absolute;
   bottom: 2px;
@@ -10,6 +15,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1;
+  background-color: var(--overlay-light);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -26,11 +32,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1;
+  background-color: var(--overlay-light);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-}
-
-:global(html[data-theme='dark']) .badge,
-:global(html[data-theme='dark']) .badgeMirrored {
-  background-color: var(--overlay-light);
 }

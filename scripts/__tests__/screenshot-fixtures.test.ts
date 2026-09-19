@@ -12,17 +12,31 @@ import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_SIZE_NOTE_BYTES,
   IGNORED_VARIABLE_PATHS,
+  MISS_VARIABLES_LOG_LIMIT,
+  collectBatchItems,
+  findScreenshotBackendNotes,
   REDACTED_PER_RUN_VALUE,
   RE_RECORD_COMMAND,
   SCREENSHOT_BACKEND_LOG_PREFIX,
   canonicalJson,
   emptyManifest,
+  finalizeRecordingFrozenNow,
   findScreenshotBackendProblems,
   findSensitiveVariableKeys,
   fixtureSizeNote,
+  formatMissVariables,
   formatScreenshotBackendLine,
   graphqlFixtureKey,
+  findUnpseudonymisedPersonFields,
+  isPseudonymDisplayName,
   normalizeDocument,
+  pseudonymDisplayName,
+  pseudonymHandle,
+  pseudonymiseResponse,
+  PSEUDONYM_ADJECTIVES,
+  PSEUDONYM_EMAIL_DOMAIN,
+  PSEUDONYM_HANDLE_PATTERN,
+  PSEUDONYM_NOUNS,
   parseScreenshotBackendLogLine,
   redactIgnoredVariablePaths,
   resolveOperationName,
@@ -66,6 +80,41 @@ function validManifest(): ScreenshotFixtureManifest {
     ],
   };
 }
+
+describe('finalizeRecordingFrozenNow', () => {
+  it('bumps the floor past the newest response, by at least a second', () => {
+    // A 20-minute-long shard: the floor was minted at the start, but the last
+    // response lands well after it.
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [
+      '2026-09-08T13:10:00.000Z',
+      '2026-09-08T13:18:23.456Z',
+      '2026-09-08T13:12:00.000Z',
+    ]);
+    expect(Date.parse(result)).toBeGreaterThan(Date.parse('2026-09-08T13:18:24.456Z'));
+    // Whole seconds only, like every other frozenNow.
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+  });
+
+  it('keeps the floor unchanged when every response predates it', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:00:00Z', '2026-09-08T13:07:49Z']);
+    expect(result).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged with no responses at all (record mode, nothing hit yet)', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', [])).toBe('2026-09-08T13:07:50Z');
+  });
+
+  it('keeps the floor unchanged when a response lands exactly on it', () => {
+    expect(finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:07:50.000Z'])).toBe(
+      '2026-09-08T13:07:50Z',
+    );
+  });
+
+  it('guarantees at least a full second of margin even off a whole-second response', () => {
+    const result = finalizeRecordingFrozenNow('2026-09-08T13:07:50Z', ['2026-09-08T13:09:00.000Z']);
+    expect(Date.parse(result) - Date.parse('2026-09-08T13:09:00.000Z')).toBeGreaterThanOrEqual(1000);
+  });
+});
 
 describe('normalizeDocument', () => {
   it('collapses every whitespace run to a single space and trims', () => {
@@ -306,9 +355,70 @@ describe('static keys', () => {
 });
 
 describe('validateScreenshotFixtureManifest', () => {
+  it('accepts only explicit unique test-account UUIDs and preserves the allowlist', () => {
+    const approvedTestUserIds = ['33333333-3333-4333-8333-333333333333'];
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), approvedTestUserIds });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(sortManifestEntries(result.manifest).approvedTestUserIds).toEqual(approvedTestUserIds);
+    for (const invalid of [
+      null,
+      '*',
+      ['*'],
+      ['marco@example.com'],
+      [12],
+      [...approvedTestUserIds, ...approvedTestUserIds],
+      [`${approvedTestUserIds[0]}\n`],
+    ]) {
+      expect(validateScreenshotFixtureManifest({ ...validManifest(), approvedTestUserIds: invalid })).toMatchObject({
+        ok: false,
+        reason: expect.stringContaining('approvedTestUserIds'),
+      });
+    }
+  });
+
   it('accepts a complete manifest', () => {
     const result = validateScreenshotFixtureManifest(validManifest());
     expect(result.ok).toBe(true);
+  });
+
+  const capture = {
+    sharedSessionId: '00000000-0000-4000-8000-000000000001',
+    boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+  };
+
+  it('accepts optional replay capture metadata and preserves it while sorting', () => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(sortManifestEntries(result.manifest).capture).toEqual(capture);
+  });
+
+  it('preserves the deterministic historical recap target', () => {
+    const profileCapture = { ...capture, profileSessionId: '00000000-0000-4000-8000-000000000102' };
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture: profileCapture });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(sortManifestEntries(result.manifest).capture).toEqual(profileCapture);
+  });
+
+  it.each([
+    [null, 'capture must be an object'],
+    [[], 'capture must be an object'],
+    [{ ...capture, sharedSessionId: 'not-a-session-id' }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: undefined }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: `${capture.sharedSessionId}\n` }, 'capture.sharedSessionId'],
+    [{ ...capture, profileSessionId: 'not-a-session' }, 'capture.profileSessionId'],
+    [{ ...capture, profileSessionId: null }, 'capture.profileSessionId'],
+    [{ ...capture, profileSessionId: `${capture.sharedSessionId}\n` }, 'capture.profileSessionId'],
+    [{ ...capture, boards: 'The Cellar|Kilter Board Homewall' }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar'] }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar', ' '] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 12] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\nBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\u007fBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter|Another board'] }, 'capture.boards[1]'],
+  ])('rejects invalid capture metadata %j', (invalidCapture, reason) => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture: invalidCapture });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason as string) });
   });
 
   const rejections: Array<[string, () => unknown, string]> = [
@@ -464,6 +574,18 @@ describe('emptyManifest / sortManifestEntries', () => {
     // Non-destructive: re-recording must not shuffle the caller's own arrays.
     expect(shuffled.graphql[0].operationName).toBe('SyncTicks');
   });
+
+  it('canonicalizes approved account order without mutating the original list or inventing an absent list', () => {
+    const approvedTestUserIds = ['44444444-4444-4444-8444-444444444444', '33333333-3333-4333-8333-333333333333'];
+    const manifest = { ...validManifest(), approvedTestUserIds };
+    const sorted = sortManifestEntries(manifest);
+    expect(sorted.approvedTestUserIds).toEqual([...approvedTestUserIds].reverse());
+    expect(sorted).toEqual(
+      sortManifestEntries({ ...manifest, approvedTestUserIds: [...approvedTestUserIds].reverse() }),
+    );
+    expect(approvedTestUserIds[0]).toBe('44444444-4444-4444-8444-444444444444');
+    expect(sortManifestEntries(validManifest())).not.toHaveProperty('approvedTestUserIds');
+  });
 });
 
 describe('log grammar', () => {
@@ -482,7 +604,39 @@ describe('log grammar', () => {
     ],
     [
       'HIT graphql SyncTicks 0123456789ab',
-      { event: 'hit', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab' },
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        composed: null,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
+    ],
+    [
+      'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4',
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 0,
+        uncoveredIds: [],
+      },
+    ],
+    [
+      'HIT graphql ClimbStatsForClimbs 0123456789ab composed=4 uncovered=2 ids=climb-y,climb-z',
+      {
+        event: 'hit',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        composed: 4,
+        uncoveredCount: 2,
+        uncoveredIds: ['climb-y', 'climb-z'],
+      },
     ],
     [
       'HIT static /static/avatars/a.jpg?size=64',
@@ -491,37 +645,63 @@ describe('log grammar', () => {
     ['HIT auth credentials', { event: 'hit', kind: 'auth', route: 'credentials' }],
     ['HIT auth refresh', { event: 'hit', kind: 'auth', route: 'refresh' }],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=no-fixture',
-      { event: 'miss', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab', reason: 'no-fixture' },
+      'MISS graphql SyncTicks 0123456789ab reason=no-fixture variables={"cursor":null}',
+      {
+        event: 'miss',
+        kind: 'graphql',
+        operationName: 'SyncTicks',
+        hash12: '0123456789ab',
+        reason: 'no-fixture',
+        unrecordedIds: [],
+        variables: '{"cursor":null}',
+      },
     ],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=document-changed',
+      'MISS graphql SyncTicks 0123456789ab reason=document-changed variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'document-changed',
+        unrecordedIds: [],
+        variables: '{}',
       },
     ],
     [
-      'MISS graphql anonymous 0123456789ab reason=anonymous-operation',
+      'MISS graphql anonymous 0123456789ab reason=anonymous-operation variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'anonymous',
         hash12: '0123456789ab',
         reason: 'anonymous-operation',
+        unrecordedIds: [],
+        variables: '{}',
       },
     ],
     [
-      'MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture',
+      'MISS graphql SyncTicks 0123456789ab reason=unreadable-fixture variables={}',
       {
         event: 'miss',
         kind: 'graphql',
         operationName: 'SyncTicks',
         hash12: '0123456789ab',
         reason: 'unreadable-fixture',
+        unrecordedIds: [],
+        variables: '{}',
+      },
+    ],
+    [
+      'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
+      {
+        event: 'miss',
+        kind: 'graphql',
+        operationName: 'ClimbStatsForClimbs',
+        hash12: '0123456789ab',
+        reason: 'unrecorded-ids',
+        unrecordedIds: ['climb-y', 'climb-z'],
+        variables: '{"boardName":"kilter","climbUuids":["climb-y","climb-z"]}',
       },
     ],
     ['MISS static /static/avatars/a.jpg', { event: 'miss', kind: 'static', subject: '/static/avatars/a.jpg' }],
@@ -560,6 +740,10 @@ describe('log grammar', () => {
     ],
     ['REDACTED graphql Me', { event: 'redacted', operationName: 'Me' }],
     [
+      'PSEUDONYMISED graphql GetSessionGroupedFeed 0123456789ab persons=21',
+      { event: 'pseudonymised', operationName: 'GetSessionGroupedFeed', hash12: '0123456789ab', persons: 21 },
+    ],
+    [
       'NOTE graphql SyncTicks seen with 21 distinct variable sets',
       { event: 'note', operationName: 'SyncTicks', note: variantCountNote(21) },
     ],
@@ -578,7 +762,47 @@ describe('log grammar', () => {
     const parsed = parseScreenshotBackendLogLine(
       `09-08 09:00:00.123 I ReactNative: ${SCREENSHOT_BACKEND_LOG_PREFIX} HIT graphql SyncTicks 0123456789ab`,
     );
-    expect(parsed).toEqual({ event: 'hit', kind: 'graphql', operationName: 'SyncTicks', hash12: '0123456789ab' });
+    expect(parsed).toEqual({
+      event: 'hit',
+      kind: 'graphql',
+      operationName: 'SyncTicks',
+      hash12: '0123456789ab',
+      composed: null,
+      uncoveredCount: 0,
+      uncoveredIds: [],
+    });
+  });
+
+  it('still parses a MISS line from a build that predates the variables field', () => {
+    // An unparsed MISS is an INVISIBLE miss: findScreenshotBackendProblems would
+    // skip it and pass a capture that shot an error placard.
+    expect(
+      parseScreenshotBackendLogLine(
+        `${SCREENSHOT_BACKEND_LOG_PREFIX} MISS graphql SyncTicks 0123456789ab reason=no-fixture`,
+      ),
+    ).toEqual({
+      event: 'miss',
+      kind: 'graphql',
+      operationName: 'SyncTicks',
+      hash12: '0123456789ab',
+      reason: 'no-fixture',
+      unrecordedIds: [],
+      variables: '',
+    });
+  });
+
+  it('elides a batch of variables too long to belong in a log line', () => {
+    const climbUuids = Array.from({ length: 60 }, (_, index) => `climb-${index}`);
+    const formatted = formatMissVariables('ClimbStatsForClimbs', { boardName: 'kilter', climbUuids });
+    expect(formatted).toHaveLength(MISS_VARIABLES_LOG_LIMIT + 1);
+    expect(formatted.endsWith('…')).toBe(true);
+    expect(formatted.startsWith('{"boardName":"kilter"')).toBe(true);
+  });
+
+  it('keeps the variables verbatim when they fit, ignored paths stripped', () => {
+    expect(formatMissVariables('SyncTicks', { cursor: null })).toBe('{"cursor":null}');
+    // The push token is hashed out of the key, so it must not reach the line either.
+    expect(formatMissVariables('RegisterToken', { token: 'apns-token', platform: 'ios' })).toBe('{"platform":"ios"}');
   });
 
   it('ignores lines that are not ours, and an unknown reason', () => {
@@ -612,12 +836,31 @@ describe('findScreenshotBackendProblems', () => {
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
-  it('counts an auth hit toward the no-HIT-lines check, and does not treat a WS error as a problem', () => {
+  it('does not credit an auth-only hit toward the no-HIT-graphql check, and does not treat a WS error as a problem', () => {
     const log = [
       line('HIT auth credentials'),
       line('WS error RSV1 must be clear'),
       line('WS error RSV1 must be clear'),
     ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+    ]);
+  });
+
+  it('never counts a PSEUDONYMISED line as a problem — it is the recorder doing its job', () => {
+    const log = [
+      line('READY mode=record port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=0 static=0'),
+      line(
+        'RECORDED graphql GetSessionGroupedFeed 0123456789ab -> graphql/GetSessionGroupedFeed/0123456789abcdef.json',
+      ),
+      line('PSEUDONYMISED graphql GetSessionGroupedFeed 0123456789ab persons=21'),
+    ].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'record' })).toEqual([]);
+    expect(findScreenshotBackendNotes(log)).toEqual([]);
+  });
+
+  it('clears the no-HIT-graphql check once a single graphql hit lands, auth hit or not', () => {
+    const log = [line('HIT auth credentials'), line('HIT graphql Me 0000aaaa1111')].join('\n');
     expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
   });
 
@@ -636,6 +879,49 @@ describe('findScreenshotBackendProblems', () => {
     expect(problems[0].endsWith('`.')).toBe(true);
   });
 
+  it('prints the variables of the first occurrence, so a miss is diagnosable from the artifact alone', () => {
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line(
+        'MISS graphql GetSessionGroupedFeed 0123456789ab reason=no-fixture variables={"input":{"cursor":"eyJvIjo4MH0"}}',
+      ),
+      line(
+        'MISS graphql GetSessionGroupedFeed 0123456789ab reason=no-fixture variables={"input":{"cursor":"eyJvIjo4MH0"}}',
+      ),
+    ].join('\n');
+    const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('variables 0123456789ab = {"input":{"cursor":"eyJvIjo4MH0"}}');
+    expect(problems[0]).toContain('×2');
+  });
+
+  it('fails a batch where NOT ONE id was covered — that is a screen nobody recorded', () => {
+    const log = [
+      line('HIT graphql Me 0000aaaa1111'),
+      line(
+        'MISS graphql ClimbStatsForClimbs 0123456789ab reason=unrecorded-ids ids=climb-y,climb-z variables={"boardName":"kilter"}',
+      ),
+    ].join('\n');
+    const [problem] = findScreenshotBackendProblems(log, { mode: 'replay' });
+    expect(problem).toContain('ClimbStatsForClimbs asked for a batch where NO id was recorded: climb-y, climb-z');
+    expect(problem).toContain('was never captured');
+    expect(problem).toContain(RE_RECORD_COMMAND);
+  });
+
+  it('does not fail a capture for a partly-covered batch', () => {
+    // Draw distance, a shuffled pool — routine, and it cannot blank a visible
+    // row (the list's own counts render when there is no canonical row).
+    const log = [line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z')].join(
+      '\n',
+    );
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
+  it('counts a composed batch hit as a graphql hit', () => {
+    const log = [line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=6')].join('\n');
+    expect(findScreenshotBackendProblems(log, { mode: 'replay' })).toEqual([]);
+  });
+
   it('names the drift when the document moved, not a missing fixture', () => {
     const log = [
       line('HIT graphql Me 0000aaaa1111'),
@@ -650,7 +936,7 @@ describe('findScreenshotBackendProblems', () => {
     const log = line('READY mode=replay port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=12 static=3');
     const problems = findScreenshotBackendProblems(log, { mode: 'replay' });
     expect(problems).toEqual([
-      'no HIT lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
+      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
     ]);
   });
 
@@ -706,5 +992,362 @@ describe('findScreenshotBackendProblems', () => {
   it('does not demand HIT lines from a recording run', () => {
     const log = line('READY mode=record port=8090 fixtures=/tmp/fx frozenNow=2026-09-08T09:00:00Z graphql=0 static=0');
     expect(findScreenshotBackendProblems(log, { mode: 'record' })).toEqual([]);
+  });
+});
+
+describe('collectBatchItems', () => {
+  const itemsById = new Map<string, unknown[]>([
+    [
+      'climb-a',
+      [
+        { climbUuid: 'climb-a', angle: 0 },
+        { climbUuid: 'climb-a', angle: 20 },
+      ],
+    ],
+    ['climb-b', [{ climbUuid: 'climb-b', angle: 40 }]],
+    // Requested while recording, and the backend had nothing for it.
+    ['climb-c', []],
+  ]);
+
+  it("returns every id's rows in request order", () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-b', angle: 40 },
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+    ]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-b', 'climb-a']);
+  });
+
+  it('answers a repeated id once, so a duplicate cannot duplicate rows', () => {
+    // Nothing upstream promises the app's own chunk holds each id once, and no
+    // real backend would answer the same climb twice.
+    const { items, answeredIds } = collectBatchItems(itemsById, ['climb-a', 'climb-b', 'climb-a']);
+    expect(items).toEqual([
+      { climbUuid: 'climb-a', angle: 0 },
+      { climbUuid: 'climb-a', angle: 20 },
+      { climbUuid: 'climb-b', angle: 40 },
+    ]);
+    expect(answeredIds).toEqual(['climb-a', 'climb-b']);
+  });
+
+  it('reports an id nothing recorded once, however often it was asked for', () => {
+    const { unrecordedIds } = collectBatchItems(itemsById, ['climb-z', 'climb-a', 'climb-z']);
+    expect(unrecordedIds).toEqual(['climb-z']);
+  });
+
+  it('treats an id recorded with no rows as answered, not unrecorded', () => {
+    const { items, unrecordedIds, answeredIds } = collectBatchItems(itemsById, ['climb-c']);
+    expect(items).toEqual([]);
+    expect(unrecordedIds).toEqual([]);
+    expect(answeredIds).toEqual(['climb-c']);
+  });
+});
+
+describe('findScreenshotBackendNotes', () => {
+  const line = (body: string): string => `${SCREENSHOT_BACKEND_LOG_PREFIX} ${body}`;
+
+  it('is silent when every batch was fully covered', () => {
+    const log = [
+      line('HIT graphql SyncTicks 0123456789ab'),
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18'),
+    ].join('\n');
+    expect(findScreenshotBackendNotes(log)).toEqual([]);
+  });
+
+  it('counts the batches and the ids per operation', () => {
+    const log = [
+      line('HIT graphql ClimbStatsForClimbs 0123456789ab composed=18 uncovered=2 ids=climb-y,climb-z'),
+      line('HIT graphql ClimbStatsForClimbs aaaabbbbcccc composed=9 uncovered=1 ids=climb-q'),
+      line('HIT graphql GetBulkVoteSummaries ddddeeeeffff composed=20 uncovered=3 ids=one,two,three'),
+      line('HIT graphql ClimbStatsForClimbs 111122223333 composed=4'),
+    ].join('\n');
+    const notes = findScreenshotBackendNotes(log);
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toBe(
+      'ClimbStatsForClimbs answered 2 batch(es) with 3 uncovered id(s) — rows mounted beyond the fold; ' +
+        're-record if a visible row shows blank stats.',
+    );
+    expect(notes[1]).toContain('GetBulkVoteSummaries answered 1 batch(es) with 3 uncovered id(s)');
+  });
+});
+
+// The fixture set is committed to a PUBLIC repo and the capture walks public
+// feeds, so a real climber's name reaching disk is the one failure here that
+// cannot be undone by a re-record — it is already in git history. Every case
+// below is either "this must be replaced" or "this must NOT be", and the second
+// half matters as much: a rule that also renamed climbs or playlists would
+// shoot the wrong screenshots and nobody would know which half was wrong.
+
+const OWN_USER_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_USER_ID = '22222222-2222-2222-2222-222222222222';
+
+describe('pseudonymiseResponse', () => {
+  it('preserves approved test-account identity only for exact matching IDs, including wall senders', () => {
+    const approvedId = '33333333-3333-4333-8333-333333333333';
+    const approvedProfile = { id: approvedId, displayName: 'Demo Climber', avatarUrl: 'https://cdn/approved.jpg' };
+    const recorded = {
+      approvedProfile,
+      sameNameStranger: { userId: OTHER_USER_ID, displayName: 'Demo Climber', avatarUrl: 'https://cdn/stranger.jpg' },
+      wall: {
+        sentByUserId: approvedId,
+        sentByDisplayName: 'Demo Climber',
+        sentByAvatarUrl: 'https://cdn/approved.jpg',
+      },
+      otherWall: {
+        sentByUserId: OTHER_USER_ID,
+        sentByDisplayName: 'Demo Climber',
+        sentByAvatarUrl: 'https://cdn/stranger.jpg',
+      },
+      nested: { id: approvedId, child: { userId: OTHER_USER_ID, displayName: 'Nested Stranger' } },
+    };
+    const options = { ownUserId: OWN_USER_ID, approvedTestUserIds: [approvedId] };
+    const result = pseudonymiseResponse(recorded, options);
+    expect(result.response).toEqual({
+      approvedProfile,
+      sameNameStranger: { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID), avatarUrl: null },
+      wall: recorded.wall,
+      otherWall: {
+        sentByUserId: OTHER_USER_ID,
+        sentByDisplayName: pseudonymDisplayName(OTHER_USER_ID),
+        sentByAvatarUrl: null,
+      },
+      nested: { id: approvedId, child: { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID) } },
+    });
+    expect(findUnpseudonymisedPersonFields(result.response, options)).toEqual([]);
+    expect(findUnpseudonymisedPersonFields(result.response, { ownUserId: OWN_USER_ID })).toHaveLength(4);
+    expect(findUnpseudonymisedPersonFields(recorded, options)).toHaveLength(5);
+    expect(pseudonymiseResponse(result.response, options).fields).toBe(0);
+  });
+
+  it('replaces another climber’s name, handle, avatar and email, keyed on their id', () => {
+    const { response, persons, fields } = pseudonymiseResponse(
+      {
+        data: {
+          participants: [
+            {
+              userId: OTHER_USER_ID,
+              displayName: 'Xin Wei Chow',
+              username: 'xwchow',
+              avatarUrl: 'https://ws.boardsesh.com/static/avatars/22222222.jpg',
+              email: 'xin@example.com',
+              sends: 4,
+            },
+          ],
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    const participant = (response as { data: { participants: Record<string, unknown>[] } }).data.participants[0];
+    expect(participant.displayName).toBe(pseudonymDisplayName(OTHER_USER_ID));
+    expect(participant.username).toBe(pseudonymHandle(OTHER_USER_ID));
+    expect(participant.avatarUrl).toBeNull();
+    expect(participant.email).toBe(`${pseudonymHandle(OTHER_USER_ID)}@${PSEUDONYM_EMAIL_DOMAIN}`);
+    // Everything that is not a personal field is untouched.
+    expect(participant.userId).toBe(OTHER_USER_ID);
+    expect(participant.sends).toBe(4);
+    expect(persons).toBe(1);
+    expect(fields).toBe(4);
+  });
+
+  it('leaves our own account exactly as recorded', () => {
+    const profile = {
+      id: OWN_USER_ID,
+      displayName: 'Test User',
+      email: 'test@boardsesh.com',
+      avatarUrl: 'https://ws.boardsesh.com/static/avatars/own.jpg',
+    };
+    const { response, persons, fields } = pseudonymiseResponse({ data: { profile } }, { ownUserId: OWN_USER_ID });
+    expect((response as { data: { profile: unknown } }).data.profile).toEqual(profile);
+    expect(persons).toBe(0);
+    expect(fields).toBe(0);
+  });
+
+  it('gives one person the same pseudonym under every field name and in every fixture', () => {
+    // Bonsai is BOTH a session participant and a playlist creator in the
+    // committed set; a feed where the same climber reads as two different
+    // people is exactly what a per-field hash would produce.
+    const first = pseudonymiseResponse(
+      { data: { participants: [{ userId: OTHER_USER_ID, displayName: 'Bonsai' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const second = pseudonymiseResponse(
+      { data: { playlists: [{ id: 'playlist-1', name: 'Warm up', creatorId: OTHER_USER_ID, creatorName: 'Bonsai' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const participantName = (first.response as { data: { participants: { displayName: string }[] } }).data
+      .participants[0].displayName;
+    const playlist = (second.response as { data: { playlists: Record<string, unknown>[] } }).data.playlists[0];
+    expect(participantName).toBe(playlist.creatorName);
+    // …and the playlist's OWN name is not a person's name.
+    expect(playlist.name).toBe('Warm up');
+  });
+
+  it('never touches a climb, playlist, board or grade name', () => {
+    const catalogue = {
+      data: {
+        climb: { uuid: 'climb-1', name: 'Wax On', setter_username: 'kilterjackie', faUsername: 'ElliLevene' },
+        playlist: { id: 'p1', uuid: 'p1', name: 'Projects 45' },
+        board: { uuid: 'b1', name: "Marco's Board", ownerId: '00000000-0000-0000-0000-000000000000' },
+        grade: { difficultyId: 21, name: '7A/V6' },
+      },
+    };
+    const { response, persons, fields } = pseudonymiseResponse(catalogue, { ownUserId: OWN_USER_ID });
+    expect(response).toEqual(catalogue);
+    expect(persons).toBe(0);
+    expect(fields).toBe(0);
+  });
+
+  it('leaves a board Boardsesh itself owns alone — the all-zero id is not a person', () => {
+    const board = {
+      uuid: 'b1',
+      name: 'Gym wall',
+      ownerId: '00000000-0000-0000-0000-000000000000',
+      ownerDisplayName: 'Boardsesh',
+      ownerAvatarUrl: null,
+    };
+    expect(pseudonymiseResponse({ data: { board } }, { ownUserId: OWN_USER_ID }).response).toEqual({ data: { board } });
+  });
+
+  it('rewrites a beta link’s Instagram handle, hashing the handle itself', () => {
+    const { response, persons } = pseudonymiseResponse(
+      {
+        data: {
+          recentBetaLinks: [
+            {
+              climbName: 'Trampoline',
+              betaLink: {
+                climbUuid: 'climb-1',
+                link: 'https://www.instagram.com/p/DbuOJjnzruX/',
+                foreignUsername: 'shoulderb0ard',
+                thumbnail: '/static/beta-link-thumbnails/instagram/DbuOJjnzruX.jpg',
+              },
+            },
+          ],
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    const betaLink = (response as { data: { recentBetaLinks: { betaLink: Record<string, unknown> }[] } }).data
+      .recentBetaLinks[0].betaLink;
+    expect(betaLink.foreignUsername).toBe(pseudonymHandle('shoulderb0ard'));
+    expect(betaLink.foreignUsername).toMatch(PSEUDONYM_HANDLE_PATTERN);
+    expect(persons).toBe(1);
+    // The post URL and its thumbnail key are public and the static fixture is
+    // keyed on that shortcode — rewriting them would break the asset lookup.
+    expect(betaLink.link).toBe('https://www.instagram.com/p/DbuOJjnzruX/');
+    expect(betaLink.thumbnail).toBe('/static/beta-link-thumbnails/instagram/DbuOJjnzruX.jpg');
+  });
+
+  it('is idempotent — a second pass changes nothing and reports nothing', () => {
+    const recorded = {
+      data: {
+        participants: [{ userId: OTHER_USER_ID, displayName: 'Travis Pagel', avatarUrl: 'https://x/y.jpg' }],
+        betaLink: { climbUuid: 'c', foreignUsername: 'kilter.kroz' },
+      },
+    };
+    const once = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    const twice = pseudonymiseResponse(once.response, { ownUserId: OWN_USER_ID });
+    expect(twice.response).toEqual(once.response);
+    expect(twice.persons).toBe(0);
+    expect(twice.fields).toBe(0);
+  });
+
+  it('never mutates the response it was handed', () => {
+    const recorded = { data: { participants: [{ userId: OTHER_USER_ID, displayName: 'Loren Wood' }] } };
+    pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(recorded.data.participants[0].displayName).toBe('Loren Wood');
+  });
+
+  it('leaves a null personal field null rather than inventing a person', () => {
+    const recorded = { data: { participants: [{ userId: OTHER_USER_ID, displayName: null, avatarUrl: null }] } };
+    const { response, fields } = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(response).toEqual(recorded);
+    expect(fields).toBe(0);
+  });
+
+  it('attributes a shared field name to the person id, not the row id', () => {
+    // `{ id, userId, displayName }` is a comment: the name is the commenter's,
+    // so the pseudonym must hash from userId or the same climber would read
+    // differently on every comment they left.
+    const { response } = pseudonymiseResponse(
+      { data: { comments: [{ id: 'comment-1', userId: OTHER_USER_ID, displayName: 'Lee Jet' }] } },
+      { ownUserId: OWN_USER_ID },
+    );
+    const comment = (response as { data: { comments: { displayName: string }[] } }).data.comments[0];
+    expect(comment.displayName).toBe(pseudonymDisplayName(OTHER_USER_ID));
+    expect(comment.displayName).not.toBe(pseudonymDisplayName('comment-1'));
+  });
+
+  it('pseudonymises everyone, including us, when the account id is not known yet', () => {
+    // A recording that somehow wrote a fixture before authenticating has no
+    // `accountUserId`. Failing towards MORE pseudonymisation is the safe side.
+    const { fields } = pseudonymiseResponse(
+      { data: { profile: { id: OWN_USER_ID, displayName: 'Test User' } } },
+      { ownUserId: null },
+    );
+    expect(fields).toBe(1);
+  });
+});
+
+describe('the pseudonym word space', () => {
+  it('generates a two-word name it can recognise again', () => {
+    expect(isPseudonymDisplayName(pseudonymDisplayName(OTHER_USER_ID))).toBe(true);
+    expect(isPseudonymDisplayName('Xin Wei Chow')).toBe(false);
+    expect(isPseudonymDisplayName('Bonsai')).toBe(false);
+    // Right shape, wrong words.
+    expect(isPseudonymDisplayName('Purple Wombat')).toBe(false);
+  });
+
+  it('generates a handle matching the pattern the guard greps for', () => {
+    expect(pseudonymHandle('shoulderb0ard')).toMatch(PSEUDONYM_HANDLE_PATTERN);
+    expect(PSEUDONYM_HANDLE_PATTERN.test('kilter.kroz')).toBe(false);
+  });
+
+  it('holds no duplicate word, so the space really is as large as it looks', () => {
+    expect(new Set(PSEUDONYM_ADJECTIVES).size).toBe(PSEUDONYM_ADJECTIVES.length);
+    expect(new Set(PSEUDONYM_NOUNS).size).toBe(PSEUDONYM_NOUNS.length);
+  });
+
+  it('spreads ids across the whole space rather than piling onto one word', () => {
+    const names = new Set<string>();
+    for (let index = 0; index < 400; index += 1) names.add(pseudonymDisplayName(`user-${index}`));
+    // A hash that ignored half its bits would collapse far below this.
+    expect(names.size).toBeGreaterThan(300);
+  });
+});
+
+describe('findUnpseudonymisedPersonFields', () => {
+  it('names the path and value of a real name, handle or avatar left behind', () => {
+    const offenders = findUnpseudonymisedPersonFields(
+      {
+        data: {
+          participants: [
+            { userId: OTHER_USER_ID, displayName: 'Scott Pedersen', avatarUrl: 'https://x/y.jpg' },
+            { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID), avatarUrl: null },
+          ],
+          betaLink: { climbUuid: 'c', foreignUsername: 'kilter.kroz' },
+        },
+      },
+      { ownUserId: OWN_USER_ID },
+    );
+    expect(offenders).toEqual([
+      'data.participants[0].displayName = "Scott Pedersen"',
+      'data.participants[0].avatarUrl = "https://x/y.jpg"',
+      'data.betaLink.foreignUsername = "kilter.kroz"',
+    ]);
+  });
+
+  it('finds nothing in what pseudonymiseResponse just produced', () => {
+    const recorded = {
+      data: {
+        participants: [{ userId: OTHER_USER_ID, displayName: 'Ivan Buryak', avatarUrl: 'https://x/y.jpg' }],
+        betaLink: { climbUuid: 'c', foreignUsername: 'dong_board' },
+        profile: { id: OWN_USER_ID, displayName: 'Test User', email: 'test@boardsesh.com' },
+      },
+    };
+    const { response } = pseudonymiseResponse(recorded, { ownUserId: OWN_USER_ID });
+    expect(findUnpseudonymisedPersonFields(response, { ownUserId: OWN_USER_ID })).toEqual([]);
   });
 });

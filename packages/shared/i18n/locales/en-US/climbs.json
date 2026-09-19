@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Check a box to filter climbs. Tap a name to browse.",
+    "selectedCount": "{{count}} selected",
+    "viaUserFollow": "Via a person you follow",
+    "followingHint": "Includes linked accounts of people you follow. Follow saves a setter directly.",
+    "follow": "Follow",
+    "unfollow": "Unfollow",
+    "following": "Following",
+    "allSetters": "All setters",
+    "followingClimbs": "Climbs by people I follow",
+    "playlistSubtitle": "All climbs on this board · Newest first",
+    "signIn": "Sign in to follow this setter",
+    "syncNeeded": "Connect once to sync your follows and linked setters.",
+    "followError": "Couldn't update this follow. Try again.",
+    "loadError": "Couldn't load these climbs.",
+    "empty": "No climbs by this setter on this board yet.",
+    "chooseBoard": "Choose a board",
+    "retry": "Try again",
+    "newClimb": "New climb",
+    "newClimbCount_one": "1 new climb",
+    "newClimbCount_other": "{{count}} new climbs",
+    "seeAllClimbs": "See all {{count}}"
+  },
   "sends_one": "{{formattedCount}} send",
   "sends_other": "{{formattedCount}} sends",
   "metadata": {
@@ -142,6 +165,11 @@
       "label": "Estimated",
       "body": "Nobody's climbed this at this angle yet — the grade is worked out from how it goes at the other one.",
       "bodyRange": "Nobody's climbed this at this angle yet — likely {{low}}–{{high}}, worked out from how it goes at the other angle."
+    },
+    "moonboardWideAngle": {
+      "label": "Rough estimate",
+      "body": "Nobody's climbed this angle yet — this is a rough estimate based on how other boards typically change at steeper or shallower angles.",
+      "bodyRange": "Nobody's climbed this angle yet — likely {{low}}–{{high}}, a rough estimate based on how other boards typically change at steeper or shallower angles."
     },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh grade",
@@ -442,6 +470,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
+      "countNote": "Each climb counts once, not once per angle.",
       "sort": {
         "ascents": "Ascents",
         "quality": "Quality",

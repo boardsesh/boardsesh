@@ -1,6 +1,6 @@
 // Collapse state for the beta-video shelves. Every surface that renders a row
-// of `BetaVideoCard`s — the home shelf, the play-drawer section, "Beta from this
-// crew" on session detail, and the profile shelf — shares this one key, so
+// of `BetaVideoCard`s — the play-drawer section, "Beta from this crew" on
+// session detail, and the profile shelf — shares this one key, so
 // folding the row away in one place folds it everywhere (issue #4229).
 //
 // Backed by the existing `section-expand-store` map rather than a store of its
@@ -11,7 +11,7 @@ import { useCallback } from 'react';
 import { hapticSelection } from './haptics';
 import { setSectionExpanded, useSectionExpanded } from './section-expand-store';
 
-/** Shared across all four beta shelves. Sits alongside the climb-card section
+/** Shared across every beta shelf. Sits alongside the climb-card section
  *  keys (`logbook`, `boardseshGrade`, `community`, `similarClimbs`) in the same map. */
 export const BETA_SHELF_SECTION_KEY = 'betaVideos';
 

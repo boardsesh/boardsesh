@@ -1,0 +1,70 @@
+{
+  "board": {
+    "headline": "See your next move",
+    "description": "Read the holds, check the grade, and light up your climb."
+  },
+  "boards": {
+    "headline": "One app for your boards",
+    "description": "Works with Kilter and Tension, with your climbing history together."
+  },
+  "home": {
+    "headline": "Catch up with your crew",
+    "description": "See recent sessions and the climbs everyone’s trying."
+  },
+  "climbs": {
+    "headline": "Find your next project",
+    "description": "Browse climbs by grade, angle, and more."
+  },
+  "session": {
+    "headline": "Make every session count",
+    "description": "Look back at your climbs, attempts, and sends."
+  },
+  "workout": {
+    "headline": "Give your session a plan",
+    "description": "Build a workout around your board and climbing level."
+  },
+  "discover": {
+    "headline": "Find fresh climbs",
+    "description": "Explore recommended and saved playlists for your board."
+  },
+  "playlist": {
+    "headline": "Keep your next climbs together",
+    "description": "Open a playlist and work through the climbs."
+  },
+  "logbook": {
+    "headline": "Remember every send",
+    "description": "Keep your sends and attempts in one logbook."
+  },
+  "profile": {
+    "headline": "All your boards.\nOne profile.",
+    "description": "See your sends and progress across every board."
+  },
+  "wall": {
+    "headline": "Follow your board’s activity",
+    "description": "See recent sends and stats for your board."
+  },
+  "boardFamily": {
+    "headline": "Your boards. One app.",
+    "description": "Switch boards without switching apps."
+  },
+  "liveQueue": {
+    "headline": "Your crew.\nOne live queue.",
+    "description": "Add climbs together. Everyone stays in sync."
+  },
+  "liveClimb": {
+    "headline": "Pick a climb.\nEveryone sees it.",
+    "description": "The current climb updates for everyone in your session."
+  },
+  "wallStatus": {
+    "headline": "See what’s on the wall.",
+    "description": "Know which climb is lit while you browse your next one."
+  },
+  "moreBoards": {
+    "headline": "More boards. Same app.",
+    "description": "Works with Woods Board, Grasshopper, and MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "All your boards.\nOne logbook.",
+    "description": "Keep your sends and sessions together across boards."
+  }
+}

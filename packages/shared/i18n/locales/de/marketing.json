@@ -1,13 +1,17 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Trainiere schlauer an deinem Board",
-      "description": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest. Eine App für alle deine Boards.",
-      "ogDescription": "Funktioniert mit Kilter, Tension und MoonBoard. Sessions festhalten, LEDs steuern, zusammen klettern."
+      "title": "Kletter-App: kompatibel mit Kilter, Tension und MoonBoard",
+      "description": "Teile eine Live-Warteschlange mit deiner Crew und verfolge deine Begehungen an allen Boards. Kompatibel mit Kilter, Tension, MoonBoard und mehr.",
+      "ogDescription": "Teile eine Live-Warteschlange mit deiner Crew und verfolge deine Begehungen an allen Boards. Kompatibel mit Kilter, Tension, MoonBoard und mehr."
     },
     "about": {
-      "title": "Über uns",
+      "title": "Von Kletterer*innen, offen für alle",
       "description": "Eine App für jedes Kletterboard. Open Source, von der Community getragen."
+    },
+    "support": {
+      "title": "Spenden und die Server am Laufen halten",
+      "description": "Boardsesh ist kostenlos und Open Source. Hilf mit bei den Rechnungen für Hosting, Datenbank und Infrastruktur, die es am Laufen halten."
     },
     "help": {
       "title": "Hilfe",
@@ -28,32 +32,28 @@
   },
   "home": {
     "hero": {
-      "title": "Ab ans Board!",
-      "subtitle": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest.",
-      "startClimbing": "Los klettern",
+      "title": "Deine Boards. Eine App.",
+      "eyebrow": "Kompatibel mit Kilter, Tension, MoonBoard & mehr",
+      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
+      "subtitle": "Wechsle das Board, ohne die App zu wechseln.",
       "startClimbingAria": "In der App losklettern",
+      "startClimbingWeb": "Im Browser losklettern →",
       "ctaInstallIos": "Im App Store laden",
       "ctaInstallAndroid": "Bei Google Play holen",
-      "ctaUpdate": "App aktualisieren"
+      "ctaUpdate": "App aktualisieren",
+      "tensionShotAlt": "Ein Boulder an einem Tension Board in Boardsesh",
+      "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh",
+      "proof": "{{formattedClimbers}} Kletterer*innen haben in den letzten 30 Tagen {{formattedClimbs}} Boulder an echten Boards beleuchtet.",
+      "proofNoCount": "Kostenlos, Open Source und bezahlt von den Kletterer*innen, die es nutzen."
     },
     "onboardingHeader": "Mach's zu deinem",
-    "install": {
-      "iosTitle": "Hol dir die Boardsesh-App",
-      "iosDescription": "Beleuchtet Griffe auf deinem Board direkt vom Handy aus",
-      "androidLiveTitle": "Hol dir die Boardsesh-App",
-      "androidLiveDescription": "Jetzt bei Google Play"
-    },
     "cards": {
       "auroraTitle": "Kommst du von Kilter?",
       "auroraDescription": "Hol Routenbuch und Historie in einem Schritt rüber",
-      "crewTitle": "Find deine Crew",
-      "crewDescription": "Folg deinen Leuten und sieh, was sie klettern",
       "playlistTitle": "Bau eine Playlist",
       "playlistDescription": "Stell deine Boulder zusammen, bevor du in die Halle kommst",
       "bluetoothTitle": "Verbinde dein Board",
       "bluetoothDescription": "Per Bluetooth koppeln und den nächsten Boulder beleuchten",
-      "discordTitle": "Komm auf Discord zur Crew",
-      "discordDescription": "Beta teilen, Fehler melden und mitbestimmen, was als Nächstes kommt",
       "gymTitle": "Finde eine Halle in deiner Nähe",
       "gymDescription": "Sieh, welche Wände ein Kilter Board, Tension Board oder MoonBoard haben"
     },
@@ -62,33 +62,62 @@
       "manage": "Verwalten",
       "viewPage": "Seite ansehen"
     },
+    "gymSearch": {
+      "eyebrow": "Hallenverzeichnis",
+      "title": "Finde ein Board in deiner Nähe",
+      "lead_one": "{{formattedCount}} Halle, Vereinswand oder Garage hat schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "lead_other": "{{formattedCount}} Hallen, Vereinswände und Garagen haben schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "leadNoCount": "Hallen, Vereinswände und Garagen mit einem Board an der Wand sind schon eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
+      "geoHint": "Ortung aus? Tipp einfach eine Stadt ein: gleiche Ergebnisse, ohne Berechtigungsabfrage.",
+      "browseAll": "Zum kompletten Hallenverzeichnis"
+    },
+    "boards": {
+      "title": "Beliebte Boards",
+      "lead": "Finde das Board, an dem du kletterst, und öffne es mit deiner Crew in der App.",
+      "ranking": "Sortiert nach Kletterer*innen mit eingetragenen Begehungen an diesem Board. Die Vorschauen sind Momentaufnahmen, keine Live-Ansichten.",
+      "climbers_one": "{{formattedCount}} Kletterer*in",
+      "climbers_other": "{{formattedCount}} Kletterer*innen",
+      "preview": "Board-Vorschau: {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Ausgewählter Boulder: {{climb}}",
+      "open": "Dieses Board öffnen"
+    },
     "recentBeta": {
       "title": "Frische Beta"
+    },
+    "features": {
+      "title": "Board-Abend, geregelt",
+      "lead": "Vom ersten Boulder bis zur letzten Begehung bleibt eure Session zusammen.",
+      "queue": {
+        "title": "Deine Crew. Eine Live-Warteschlange.",
+        "body": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron.",
+        "shotAlt": "Die gemeinsame Boardsesh-Warteschlange mit den nächsten Bouldern deiner Crew"
+      },
+      "wall": {
+        "title": "Sieh, was gerade leuchtet.",
+        "body": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst.",
+        "shotAlt": "Der beleuchtete Boulder bleibt sichtbar, während du weitere Boulder suchst"
+      },
+      "profile": {
+        "title": "Alle deine Boards. Ein Profil.",
+        "body": "Sieh Begehungen und Fortschritte an jedem Board.",
+        "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+      }
+    },
+    "support": {
+      "eyebrow": "Kostenlos, und das bleibt so",
+      "title": "Boardsesh läuft, weil Kletterer*innen beisteuern",
+      "p1": "Keine Werbung, keine gesperrten Screens, keine zweite Klasse. Ganz Boardsesh bleibt für alle offen, ob du sponserst oder nicht, Selbsthosting inklusive.",
+      "p2": "Hosting, Datenbank und die Rechnungen dahinter zahlen die Leute, die es benutzen.",
+      "chipIn": "Beisteuern",
+      "source": "Code ansehen",
+      "otherWays": "Kein Geld übrig?"
     }
   },
   "about": {
-    "headerTitle": "Über uns",
     "hero": {
-      "title": "Festhalten, trainieren, zusammen klettern",
-      "subtitle": "Eine App für jedes Kletterboard"
-    },
-    "vision": {
-      "title": "Unsere Vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jedes Board hat seine eigene App und seinen eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
-      "p2": "Boardsesh läuft mit allen, damit du einfach klettern kannst."
-    },
-    "features": {
-      "title": "Was Boardsesh kann",
-      "queueLabel": "Warteschlange.",
-      "queueDescription": "Abwechseln ohne das peinliche „wer ist dran?“",
-      "partyLabel": "Party-Modus.",
-      "partyDescription": "Teil eine Session und klettert in Echtzeit zusammen",
-      "multiBoardLabel": "Mehrere Boards.",
-      "multiBoardDescription": "Funktioniert mit Kilter, Tension, MoonBoard und mehr",
-      "communityLabel": "Von der Community.",
-      "communityDescription": "Gebaut und verbessert von Leuten, die wirklich klettern",
-      "selfHostedLabel": "Selbst hostbar.",
-      "selfHostedDescription": "Betreib deine eigene Instanz, wenn dir danach ist"
+      "title": "Von Kletterer*innen gebaut. Offen für alle.",
+      "subtitle": "Von Kletterer*innen gebaut, die genug hatten von einer App pro Board."
     },
     "openSource": {
       "title": "Open Source",
@@ -102,13 +131,95 @@
     },
     "community": {
       "title": "Komm in die Community",
-      "body": "Ob du Code schreibst, Boulder schraubst oder uns einfach sagen willst, was kaputt ist — wir hören gern von dir."
+      "body": "Ob du Code schreibst, Boulder schraubst oder uns einfach sagen willst, was kaputt ist — wir hören gern von dir.",
+      "discord": "Tritt der Crew auf Discord bei",
+      "support": "Unterstütze Boardsesh"
     },
     "legalLink": "Rechtliches & Richtlinie zum geistigen Eigentum",
-    "footer": "Von Kletterer*innen gebaut. Offen für alle."
+    "footer": "Von Kletterer*innen gebaut. Offen für alle.",
+    "profile": {
+      "title": "Alle deine Boards. Ein Profil.",
+      "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+    },
+    "story": {
+      "title": "Warum es das gibt",
+      "p1": "Jedes Board bringt seine eigene App mit, seinen eigenen Login und sein eigenes Logbuch. Du kletterst ein Kilter in deiner Halle und im Urlaub ein MoonBoard — und hast zwei Verläufe, die nie zusammenfinden.",
+      "p2": "Dann war eine dieser Apps über Nacht weg, und die Logbücher gleich mit. Das passiert, wenn eine einzige Firma den einzigen Zugang zu Hardware besitzt, die dir längst gehört.",
+      "link": "Was passiert ist — und wie du deine Daten rausbekommst"
+    },
+    "who": {
+      "title": "Wer daran baut",
+      "body": "Angefangen hat es 2024 mit einem Kletterer und einem Repo, und es ist immer noch so ein Projekt, an dem abends gearbeitet wird. Fehler findet, wer an der Wand steht — kein QA-Team.",
+      "cta": "Schau, wer beigetragen hat"
+    },
+    "next": {
+      "title": "Was als Nächstes kommt",
+      "body": "Mehr Boards, besser offline, und deine Daten so leicht wieder raus wie rein. Die Roadmap ist öffentlich, diskutiert wird auf Discord.",
+      "cta": "Lies die Roadmap"
+    }
+  },
+  "support": {
+    "hero": {
+      "title": "Halt Boardsesh am Laufen",
+      "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
+    },
+    "promise": "Keine gesperrten Screens, keine zweite Klasse, keine Werbung. Beisteuern zahlt die Rechnung, sonst nichts.",
+    "why": {
+      "title": "Warum es diese Seite gibt",
+      "p1": "Boardsesh ist kostenlos und Open Source, und das bleibt auch so. Der Betrieb kostet trotzdem echtes Geld: Hosting, Datenbank und Infrastruktur summieren sich, je mehr Leute dazukommen.",
+      "p2": "Wir versprechen, Boardsesh nicht zu verschlimmbessern, und Selbsthosten bleibt immer eine Option. Wenn dir die App etwas bringt und du es übrig hast, hältst du damit die Server am Netz."
+    },
+    "rails": {
+      "title": "So kannst du beisteuern"
+    },
+    "sponsors": {
+      "title": "GitHub Sponsors",
+      "body": "Unterstütz Boardsesh monatlich. Am einfachsten, wenn du schon einen GitHub-Account hast.",
+      "cta": "Auf GitHub sponsern"
+    },
+    "oneTime": {
+      "title": "Einmalige Spende",
+      "body": "Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
+      "cta": "Einmal spenden"
+    },
+    "otherWays": {
+      "title": "Andere Wege zu helfen",
+      "body": "Geld ist davon das Langsamste. Jeder der vier Wege bringt die App weiter.",
+      "bug": {
+        "title": "Fehler melden",
+        "body": "Sag uns, was kaputt war, an welchem Board, und was du erwartet hättest.",
+        "cta": "Issue auf GitHub öffnen →"
+      },
+      "translate": {
+        "title": "Einen Screen übersetzen",
+        "body": "Die spanischen, französischen und deutschen Kataloge liegen im Repo. Korrigier einen Satz oder füg eine Sprache dazu.",
+        "cta": "Sprachkataloge ansehen →"
+      },
+      "patch": {
+        "title": "Code schicken",
+        "body": "Die ganze App ist öffentlich: Web, Mobile, Backend und die Board-Daten dahinter.",
+        "cta": "Ansehen, wie es gebaut ist →"
+      },
+      "discord": {
+        "title": "Dem Discord beitreten",
+        "body": "Frag, woran gerade gearbeitet wird, streite über Grade, sag uns, was fehlt.",
+        "cta": "Sag mal Hallo →"
+      }
+    },
+    "honesty": {
+      "title": "Das Kleingedruckte",
+      "p1": "Spenden sind nicht steuerlich absetzbar. Boardsesh ist kein Verein, nur Kletterer*innen, die die Serverrechnung zahlen.",
+      "p2": "Dein Geld geht in Hosting, Datenbank und Infrastruktur. Es kauft nichts extra in der App: Boardsesh bleibt komplett offen für alle, ob du spendest oder nicht."
+    },
+    "thanks": {
+      "title": "Danke",
+      "body": "An alle, die Boardsesh schon unterstützen, Fehler melden, Code schicken oder einen Screen übersetzen: danke. Ihr haltet das Ding in Bewegung."
+    },
+    "aboutLink": "Mehr über das Projekt →",
+    "docsLink": "Sieh in der Doku, wie es gebaut ist →",
+    "footer": "Kostenlos für alle, finanziert von denen, die können."
   },
   "legal": {
-    "headerTitle": "Rechtliches",
     "intro": {
       "title": "Rechtliches & Richtlinie zum geistigen Eigentum",
       "p1": "Boardsesh ist eine kostenlose, quelloffene, von der Community gebaute Alternative, um standardisierte LED-Trainingsboards (Kilter Board, Tension Board, MoonBoard und andere) zu durchstöbern und zu bedienen. Das Projekt ist nicht kommerziell und wird ausschließlich von Freiwilligen betreut.",
@@ -210,9 +321,7 @@
       "item1": "Bau dir eine Queue und arbeite sie mit deiner Crew ab.",
       "item2": "Starte eine gemeinsame Session, damit alle Handys dieselbe Queue steuern.",
       "item3": "Beleuchte das Board per Bluetooth an Kilter-, Tension- und MoonBoard-Wänden.",
-      "item4": "Trag deine Begehungen ein und halte dein Logbuch an einem Ort.",
-      "cta": "App öffnen",
-      "ctaAriaLabel": "Die Boardsesh-App öffnen"
+      "item4": "Trag deine Begehungen ein und halte dein Logbuch an einem Ort."
     },
     "aurora": {
       "title": "Du kommst von den Aurora-Apps?",
@@ -221,12 +330,28 @@
       "item2": "Deine Begehungen bleiben deine. Wir schreiben nie etwas zurück, was du nicht selbst eingetragen hast.",
       "link": "Zum Migrations-Guide"
     },
+    "climbCounts": {
+      "title": "Warum zeigt die Kilter-App mehr Boulder?",
+      "intro": "Beide Apps haben dieselben Boulder. Sie zählen sie nur anders.",
+      "item1": "Boardsesh zählt jeden Boulder einmal und zeigt dir Grad und Begehungen für den Winkel, den du wählst.",
+      "item2": "Die Kilter-App zählt einen Boulder einmal pro Winkel, in dem er eingetragen wurde. Ein Boulder mit Begehungen bei 40° und 45° zählt also doppelt.",
+      "item3": "Deshalb kann dasselbe Board in der Kilter-App bis zu etwa doppelt so viele Boulder anzeigen."
+    },
     "ask": {
       "title": "Kommst du nicht weiter?",
-      "intro": "Frag uns. Wir lesen alle drei.",
+      "intro": "Frag im Discord. Da bekommst du am schnellsten eine Antwort.",
       "discord": "Auf Discord fragen",
       "github": "Fehler auf GitHub melden",
-      "docs": "Entwickler-Doku lesen"
+      "docs": "Entwickler-Doku lesen",
+      "bugLead": "Etwas kaputt gefunden?",
+      "devLead": "Du baust auf der API?"
+    },
+    "topics": {
+      "label": "Hilfethemen",
+      "using": "Boardsesh nutzen",
+      "logbook": "Bring dein Routenbuch mit",
+      "counts": "Boulder-Anzahl",
+      "ask": "Hilfe finden"
     }
   },
   "docs": {
@@ -371,5 +496,10 @@
       "body2Link": "GitHub",
       "body2End": " siehst du genau, welche Daten die App erhebt und wie sie verarbeitet werden."
     }
+  },
+  "preview": {
+    "label": "App-Vorschau",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

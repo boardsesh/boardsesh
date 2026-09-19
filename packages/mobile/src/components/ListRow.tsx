@@ -20,6 +20,8 @@ type ListRowProps = {
   style?: ViewStyle;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** Let the subtitle wrap onto more lines instead of truncating to one. */
+  wrapSubtitle?: boolean;
 };
 
 export function ListRow({
@@ -35,6 +37,7 @@ export function ListRow({
   style,
   accessibilityLabel,
   accessibilityHint,
+  wrapSubtitle = false,
 }: ListRowProps) {
   const { systemColors } = useTheme();
 
@@ -52,7 +55,7 @@ export function ListRow({
             {title}
           </Text>
           {subtitle && (
-            <Text variant="subheadline" style={styles.subtitle} numberOfLines={1}>
+            <Text variant="subheadline" style={styles.subtitle} numberOfLines={wrapSubtitle ? undefined : 1}>
               {subtitle}
             </Text>
           )}

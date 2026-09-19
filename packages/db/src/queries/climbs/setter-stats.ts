@@ -4,6 +4,7 @@ import type { DbInstance } from '../../client/postgres';
 import { boardClimbs } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
 import type { BoardRouteParams } from './types';
+import { followedAuthorCondition } from './followed-authors';
 
 /**
  * One row in the setter-stats result: a setter's username and how many
@@ -73,12 +74,14 @@ export const getSetterStats = async (
   db: DbInstance,
   params: BoardRouteParams,
   searchQuery?: string,
+  followingUserId?: string,
 ): Promise<SetterStat[]> => {
   // MoonBoard leaves required_set_ids NULL until the backfill runs; better to offer
   // a setter than to hide one. Mirrors `allowNullRequiredSets` in create-climb-filters.
   const allowNullRequiredSets = params.board_name === 'moonboard';
 
   const whereConditions = [
+    ...(followingUserId !== undefined ? [followedAuthorCondition(followingUserId)] : []),
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),
     eq(boardClimbs.isListed, true),

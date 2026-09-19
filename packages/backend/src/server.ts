@@ -79,8 +79,10 @@ import { startApnsHeartbeat, stopApnsHeartbeat } from './services/apns/heartbeat
 import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './services/apns/cleanup';
 import { buildContentStateFromQueueState } from './services/apns/content-state';
 import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
+import { kilterLiveSync } from './services/kilter-live-sync';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
+import { startBackendMemoryMonitoring } from './services/memory-monitor';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
@@ -832,6 +834,7 @@ export async function startServer(): Promise<ServerResources> {
    */
   async function shutdownServices(): Promise<void> {
     eventBroker.shutdown();
+    await kilterLiveSync.shutdown().catch((error: unknown) => logger.warn('[KilterLive] Shutdown failed', { error }));
 
     // Detach the board-queue-preview producer first: it clears any pending
     // debounce timers, so no preview publish can race the Redis/DB teardown
@@ -880,6 +883,8 @@ export async function startServer(): Promise<ServerResources> {
       logger.error('[Server] Error during RoomManager shutdown:', error);
     }
   }
+
+  intervals.push(startBackendMemoryMonitoring());
 
   // Periodic flush as backup (every 60 seconds)
   const flushInterval = setInterval(async () => {

@@ -348,6 +348,12 @@
       "lengthPillAria": "Duración del descanso, {{value}}",
       "lengthPillHint": "Añade 30 segundos. Mantén pulsado para elegir cualquier duración."
     },
+    "sessionVisibility": {
+      "title": "Mostrar esta sesión en directo",
+      "descriptionOn": "Tu grupo y quienes escalan en este plafón pueden verla y unirse.",
+      "descriptionOff": "Solo quien tenga tu enlace de invitación puede unirse.",
+      "updateError": "No se pudo cambiar quién ve esta sesión. Inténtalo de nuevo."
+    },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
@@ -447,7 +453,9 @@
         "headerSwitcherAria": "Estás en {{board}}. Toca para cambiar a otro plafón de aquí.",
         "headerSwitcherHintOpen": "Muestra los otros plafones de este rocódromo",
         "headerSwitcherHintClose": "Oculta los otros plafones"
-      }
+      },
+      "kilterHistorySource": "Iluminado desde Kilter",
+      "retryHistory": "Volver a cargar el historial"
     },
     "toast": {
       "sessionEnded": "Sesión terminada",

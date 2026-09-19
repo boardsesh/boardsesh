@@ -5,6 +5,8 @@ import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
+import { useStoredUserId } from '../../../hooks/use-current-user-id';
+import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -66,7 +68,8 @@ export function useInfiniteSearchClimbs(
   options?: InfiniteSearchClimbsOptions,
 ) {
   const { boardName, layoutId, sizeId, setIds } = input;
-  const keepPreviousResults = options?.keepPreviousResults === true;
+  const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
+  const keepPreviousResults = options?.keepPreviousResults === true && !input.onlyFollowedAuthors;
   // Memoized per board on purpose. While a placeholder is showing, React Query
   // reuses it without calling this function again as long as its identity is
   // unchanged. A board switch must therefore mint a new function, or the old
@@ -96,17 +99,19 @@ export function useInfiniteSearchClimbs(
   const crossAngleStats = useFeatureFlag('cross-angle-stats') === true;
   const searchInput: ClimbSearchInput = { ...input, crossAngleStats };
   return useInfiniteQuery({
-    queryKey: getSearchClimbsQueryKey(searchInput),
+    queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
       offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
         input: { ...searchInput, page: pageParam },
       }),
     // getNextPageParam receives RAW pre-select pages in React Query v5.
-    getNextPageParam: (lastPage, allPages) => (lastPage.searchClimbs.hasMore ? allPages.length : undefined),
+    getNextPageParam: (lastPage, allPages) =>
+      screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
     placeholderData,
-    enabled,
+    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    networkMode: input.onlyFollowedAuthors ? 'always' : undefined,
     staleTime: options?.staleTime,
     gcTime: options?.gcTime,
   });

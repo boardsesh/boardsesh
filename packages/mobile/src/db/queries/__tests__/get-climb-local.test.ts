@@ -91,3 +91,35 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     expect(climb?.boardseshConfidence).toBeNull();
   });
 });
+
+describe('getClimbLocal — spray-wall hold integrity', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('carries missing_hold_count through to the climb', async () => {
+    // The detail screen is where the lost-holds badge is drawn, and it is a
+    // different read from the list — the filter tests cover `searchClimbsLocal`
+    // and would not notice this column being dropped from the projection here.
+    await insertClimb(db, 'broken');
+    await db.runAsync('UPDATE board_climbs SET missing_hold_count = 2 WHERE uuid = ?', ['broken']);
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'broken' });
+
+    expect(climb?.missingHoldCount).toBe(2);
+  });
+
+  it('reads null for a climb no reset has touched', async () => {
+    // Nullable on purpose, matching the server: "no reset has taken anything off
+    // this climb" and "this is not a spray climb" are the same NULL, and neither
+    // is the statement "0 holds lost".
+    await insertClimb(db, 'intact');
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'intact' });
+
+    expect(climb?.missingHoldCount).toBeNull();
+  });
+});

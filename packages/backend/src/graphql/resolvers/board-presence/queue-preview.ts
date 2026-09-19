@@ -1,6 +1,7 @@
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
 import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
@@ -55,7 +56,12 @@ export const boardQueuePreviewSubscriptions = {
    * publish converges (same accepted race as boardNowPlaying's backfill).
    */
   boardQueuePreview: {
-    subscribe: async function* (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) {
+    subscribe: withSubscriptionCleanup(async function* (
+      lifetime,
+      _: unknown,
+      { boardId }: { boardId: number },
+      ctx: ConnectionContext,
+    ) {
       // 30/min, parity with boardNowPlaying (the seed does DB work). Anon WS
       // callers are keyed per-connection — see the query resolver's note.
       await applyRateLimit(ctx, 30, 'boardQueuePreview');
@@ -64,9 +70,11 @@ export const boardQueuePreviewSubscriptions = {
 
       const boardKey = String(boardId);
 
-      const asyncIterable = await createEagerAsyncIterator<BoardQueuePreview>(
-        (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
-        `boardQueuePreview:${boardId}`,
+      const asyncIterable = await lifetime.own(
+        createEagerAsyncIterator<BoardQueuePreview>(
+          (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
+          `boardQueuePreview:${boardId}`,
+        ),
       );
       // One concrete iterator, shared by the loop and the finally below, so
       // cleanup always targets the iterator that owns the subscription.
@@ -82,16 +90,10 @@ export const boardQueuePreviewSubscriptions = {
           yield { boardQueuePreview: result.value };
         }
       } finally {
-        // graphql-ws can call `.return()` on this generator while the seed
-        // snapshot above is still being computed (client disconnects during
-        // setup). The queued return then completes at the seed `yield` —
-        // before the loop ever starts — so without this finally the eager
-        // iterator would never be closed and the pubsub callback + Redis
-        // channel subscription would leak permanently (anon-triggerable by
-        // reload churn). Closing here covers every exit path; `.return()` is
-        // idempotent, so a loop that already finished cleanly is unaffected.
+        // The lifetime wrapper closes immediately on disconnect, even during
+        // the seed lookup. Keep generator-exit cleanup too; return is idempotent.
         await eagerIterator.return?.(undefined);
       }
-    },
+    }),
   },
 };

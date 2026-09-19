@@ -1,7 +1,8 @@
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionDetail } from '@boardsesh/shared-schema';
-import { formatTickAbsoluteTime } from '@boardsesh/profile-stats';
+import { formatTickAbsoluteTime, getLayoutDisplayName } from '@boardsesh/profile-stats';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Card } from '../Card';
@@ -11,7 +12,8 @@ import { FeedSocialRow } from '../you/FeedSocialRow';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { formatSessionWhen } from '../../lib/format-session-when';
-import { StatTile, GradeTile } from './session-stat-tiles';
+import { gradeChartColor } from '../you/profile-chart-colors';
+import { useGradeFormat } from '../../hooks/use-grade-format';
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}m`;
@@ -34,11 +36,8 @@ type SessionSummaryCardProps = {
 };
 
 /**
- * One merged header unit for the session-detail screen: avatars + title + date +
- * board · duration + goal, the Sends/Flashes/Attempts/Hardest tiles, and the
- * session-level reactions — all inside a single Card. Replaces the old stack of a
- * separate hero, a tiles card, and a standalone social row. Only the hardest-grade
- * tile carries colour, so the grade stays the one accent.
+ * A compact recap: session context, sends and hardest grade lead. Long notes
+ * live after the grade chart so the session's results remain easy to scan.
  */
 export function SessionSummaryCard({
   session,
@@ -48,28 +47,39 @@ export function SessionSummaryCard({
   voteSummary,
   onEditSession,
 }: SessionSummaryCardProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const { t } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
+  const { t: tFeed } = useTranslation('feed');
+  const { formatGrade } = useGradeFormat();
 
   // Named sessions show the full date+time on line 2; unnamed sessions already
   // carry the date in the title, so line 2 becomes a human "Sunday morning".
   const whenLine = titleIsDate
     ? formatSessionWhen(session.lastTickAt, tSession)
     : formatTickAbsoluteTime(session.lastTickAt, 'MMM D, YYYY · h:mm A');
-  const board = session.boardTypes.join(' · ');
+  const board = Array.from(
+    new Set(
+      session.boardTypes.flatMap((boardType) => {
+        const boardTicks = session.ticks.filter((tick) => tick.boardType === boardType);
+        return boardTicks.length > 0
+          ? boardTicks.map((tick) => getLayoutDisplayName(tick.boardType, tick.layoutId))
+          : [formatBoardDisplayName(boardType)];
+      }),
+    ),
+  ).join(' · ');
   const duration =
     session.durationMinutes != null && session.durationMinutes > 0 ? formatDuration(session.durationMinutes) : null;
 
   return (
     <Card style={styles.card}>
       <View style={styles.headerRow}>
-        <AvatarGroup participants={session.participants} size={44} />
+        <AvatarGroup participants={session.participants} size={32} />
         <View style={styles.headerText}>
-          <Text variant="title2" numberOfLines={1}>
+          <Text variant="title3" numberOfLines={2}>
             {title}
           </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
             {whenLine}
           </Text>
         </View>
@@ -111,29 +121,44 @@ export function SessionSummaryCard({
         </View>
       ) : null}
 
-      {session.goal ? (
-        <View style={styles.goal}>
-          <Icon name="flag" size={14} color={systemColors.secondaryLabel} />
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.goalText}>
-            {session.goal}
+      <View style={styles.headlineStats}>
+        <View style={styles.headlineStat}>
+          <Text variant="largeTitle" style={styles.statNumber}>
+            {session.totalSends}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {t('mobile.sessions.weekly.sends')}
           </Text>
         </View>
-      ) : null}
-
-      {session.notes && session.notes.trim().length > 0 ? (
-        <View style={styles.notes}>
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {tSession('summary.recapTitle')}
+        {session.hardestGrade ? (
+          <View style={[styles.headlineStat, styles.gradeStat, { borderLeftColor: systemColors.separator }]}>
+            <View style={styles.gradeValue}>
+              <View
+                style={[styles.gradeAccent, { backgroundColor: gradeChartColor(session.hardestGrade, colorScheme) }]}
+              />
+              <Text variant="largeTitle" color={systemColors.label} style={[styles.statNumber, styles.gradeNumber]}>
+                {formatGrade(session.hardestGrade) ?? session.hardestGrade}
+              </Text>
+            </View>
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {tFeed('sessionFeedCard.hardest')}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.secondaryStats}>
+        <View style={styles.metaItem}>
+          <Icon name="flash" size={14} color={systemColors.secondaryLabel} />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.secondaryNumber}>
+            {tSession('detail.flashesCount', { count: session.totalFlashes })}
           </Text>
-          <Text variant="body">{session.notes}</Text>
         </View>
-      ) : null}
-
-      <View style={styles.tiles}>
-        <StatTile value={session.totalSends} label={t('mobile.sessions.weekly.sends')} icon="tick" />
-        <StatTile value={session.totalFlashes} label={t('mobile.sessions.weekly.flashes')} icon="flash" />
-        <StatTile value={session.totalAttempts} label={t('mobile.sessions.weekly.attempts')} icon="circle" />
-        {session.hardestGrade ? <GradeTile grade={session.hardestGrade} /> : null}
+        <View style={styles.metaItem}>
+          <Icon name="circle" size={14} color={systemColors.secondaryLabel} />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.secondaryNumber}>
+            {tSession('detail.attemptsCount', { count: session.totalAttempts })}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.social}>
@@ -149,16 +174,52 @@ export function SessionSummaryCard({
   );
 }
 
+/** Full goal and recap remain readable below the session's grade distribution. */
+export function SessionNotesCard({ session }: { session: Pick<SessionDetail, 'goal' | 'notes'> }) {
+  const { systemColors } = useTheme();
+  const { t } = useTranslation('session');
+  const notes = session.notes?.trim();
+  if (!session.goal && !notes) return null;
+  return (
+    <Card style={styles.card}>
+      {session.goal ? (
+        <View style={styles.goal}>
+          <Icon name="flag" size={14} color={systemColors.secondaryLabel} />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.goalText}>
+            {session.goal}
+          </Text>
+        </View>
+      ) : null}
+      {notes ? (
+        <View style={styles.notes}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {t('summary.recapTitle')}
+          </Text>
+          <Text variant="body">{notes}</Text>
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
   card: { marginHorizontal: spacing[4], marginTop: spacing[4], gap: spacing[1] },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[3] },
   headerText: { flex: 1 },
-  editButton: { padding: spacing[1] },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginTop: spacing[1] },
+  editButton: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing[2], marginTop: spacing[1] },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
   goal: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[2], marginTop: spacing[2] },
   goalText: { flex: 1 },
   notes: { marginTop: spacing[2], gap: spacing[1] },
-  tiles: { flexDirection: 'row', gap: spacing[2], marginTop: spacing[3] },
-  social: { marginTop: spacing[3] },
+  headlineStats: { flexDirection: 'row', marginTop: spacing[3] },
+  headlineStat: { flex: 1, minWidth: 0, gap: spacing[1] },
+  gradeStat: { paddingLeft: spacing[4], borderLeftWidth: StyleSheet.hairlineWidth },
+  gradeValue: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], minWidth: 0 },
+  gradeAccent: { width: spacing[1], height: spacing[6], borderRadius: spacing[1], flexShrink: 0 },
+  gradeNumber: { flexShrink: 1, minWidth: 0 },
+  statNumber: { fontWeight: '700', fontVariant: ['tabular-nums'] },
+  secondaryNumber: { fontWeight: '600', fontVariant: ['tabular-nums'] },
+  secondaryStats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[4], marginTop: spacing[3] },
+  social: { marginTop: spacing[2] },
 });

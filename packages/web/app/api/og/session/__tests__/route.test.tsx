@@ -16,26 +16,17 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
 vi.mock('@/app/theme/theme-config', () => ({
   themeTokens: {
     neutral: {
-      300: '#D0D0D0',
+      300: '#2A2A2A',
       400: '#B0B0B0',
-      500: '#909090',
-      600: '#6C6C6C',
-      700: '#4C4C4C',
-      900: '#101010',
+      500: '#8A8A8A',
+      600: '#B0B0B0',
+      700: '#D0D0D0',
+      900: '#F5F5F5',
     },
     colors: {
       primary: '#123456',
       accentGreen: '#22AA88',
       accentRose: '#CC6677',
-    },
-  },
-  darkTokens: {
-    neutral: {
-      300: '#2A2A2A',
-      500: '#8A8A8A',
-      600: '#B0B0B0',
-      700: '#D0D0D0',
-      900: '#F5F5F5',
     },
     semantic: {
       background: '#000000',

@@ -14,14 +14,10 @@ vi.mock('react-i18next', () => ({
 
 // --- Mocks ---
 
-vi.mock('@/app/hooks/use-is-dark-mode', () => ({
-  useIsDarkMode: () => false,
-}));
-
 const defaultGradeFormatReturn: {
   gradeFormat: 'v-grade' | 'font';
   formatGrade: (d: string | null | undefined) => string | null;
-  getGradeColor: (d: string | null | undefined, darkMode?: boolean) => string | undefined;
+  getGradeColor: (d: string | null | undefined) => string | undefined;
   loaded: boolean;
   setGradeFormat: ReturnType<typeof vi.fn>;
 } = {
@@ -404,7 +400,7 @@ describe('ClimbTitle', () => {
         setGradeFormat: vi.fn(),
       });
       render(<ClimbTitle climb={makeClimb({ difficulty: '6a/V3' })} gradePosition="right" />);
-      expect(getGradeColorSpy).toHaveBeenCalledWith('6a/V3', false);
+      expect(getGradeColorSpy).toHaveBeenCalledWith('6a/V3');
     });
   });
 

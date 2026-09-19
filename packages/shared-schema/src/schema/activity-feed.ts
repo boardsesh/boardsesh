@@ -1,4 +1,60 @@
 export const activityFeedTypeDefs = /* GraphQL */ `
+  input CrewFeedInput {
+    cursor: String
+    limit: Int
+    """
+    IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+    A climb published at 23:00 local belongs to that local day, not to whatever
+    UTC calls it. Defaults to UTC when absent or unrecognised.
+    """
+    timeZone: String
+    """
+    Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+    member has no fragment for it, so the item would arrive as a bare __typename
+    and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+    """
+    groupClimbs: Boolean
+  }
+
+  type CrewSessionItem {
+    id: ID!
+    occurredAt: String!
+    session: SessionFeedItem!
+  }
+
+  type CrewClimbItem {
+    id: ID!
+    occurredAt: String!
+    climb: ActivityFeedItem!
+  }
+
+  """
+  Several climbs one setter published on one local day, newest first.
+
+  Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+  two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+  gets one CrewClimbItem per climb instead, because a client that predates this
+  member does not ignore it: with no fragment for it the item arrives as a bare
+  __typename and its feed list throws on the missing payload.
+  """
+  type CrewClimbGroupItem {
+    id: ID!
+    "When the newest climb in the group was published."
+    occurredAt: String!
+    "At most 10, newest first. totalCount says how many there really are."
+    climbs: [ActivityFeedItem!]!
+    "Every climb in the group, including the ones past the 10-climb cap."
+    totalCount: Int!
+  }
+
+  union CrewFeedItem = CrewSessionItem | CrewClimbItem | CrewClimbGroupItem
+
+  type CrewFeedResult {
+    items: [CrewFeedItem!]!
+    cursor: String
+    hasMore: Boolean!
+  }
+
   # ============================================
   # Activity Feed Types
   # ============================================
@@ -65,7 +121,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     consensusDifficultyName: String
     "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     "Average quality rating from all users"
     qualityAverage: Float
@@ -345,6 +401,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     boardType: String
     "Layout ID"
     layoutId: Int
+    "Board geometry for this climb, including its compatible size"
+    renderBoard: RenderBoardConfig
     "Grade name"
     gradeName: String
     "Ascent status (flash, send, attempt)"
@@ -353,6 +411,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     angle: Int
     "Encoded hold frames for thumbnail"
     frames: String
+    "Setter notes shown in the play drawer"
+    description: String
+    "Authored playback pace (ms) for a multi-frame climb"
+    framesPace: Int
     "Setter username"
     setterUsername: String
     "Comment body preview"
@@ -369,6 +431,10 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Quality rating"
     quality: Int
+    "Community ascent count for this climb at its resolved angle"
+    ascensionistCount: Int
+    "Blended community star average (1-5) at the resolved angle"
+    qualityAverage: Float
     "Number of attempts"
     attemptCount: Int
     "User comment on the ascent"
@@ -468,7 +534,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!
@@ -547,7 +613,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     difficultyName: String
     "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!

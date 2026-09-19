@@ -94,7 +94,7 @@ export async function joinSession(
     updateQueueStateImmediate,
     leaveSession: leaveSessionFn,
   } = callbacks;
-  const { username, avatarUrl, initialQueue, initialCurrentClimb, sessionName, participantId } = options;
+  const { username, avatarUrl, initialQueue, initialCurrentClimb, sessionName, participantId, isPublic } = options;
 
   const client = clients.get(connectionId);
   if (!client) {
@@ -211,7 +211,9 @@ export async function joinSession(
   // Existing sessions stay Redis-only for join/leave activity.
   if (isNewSession) {
     const previous = pendingJoinPersists.get(sessionId) ?? Promise.resolve();
-    const chained = previous.then(() => ensureSessionRecordExists(sessionId, boardPath, client.userId, sessionName));
+    const chained = previous.then(() =>
+      ensureSessionRecordExists(sessionId, boardPath, client.userId, sessionName, isPublic),
+    );
 
     pendingJoinPersists.set(sessionId, chained);
     try {
@@ -1052,12 +1054,19 @@ function localParticipantToSessionUser(participant: LocalSessionParticipant): Se
 
 /**
  * Ensure a session record exists in Postgres for durable history/summary reads.
+ *
+ * ON CONFLICT DO NOTHING is load-bearing for `isPublic`: whichever caller
+ * inserts first decides the session's visibility, and no later join can flip
+ * it. The HTTP `createSession` path relies on that to make a private session
+ * private from its first insert — it writes the row up front, before the
+ * creator's WebSocket join reaches this function.
  */
-async function ensureSessionRecordExists(
+export async function ensureSessionRecordExists(
   sessionId: string,
   boardPath: string,
   userId: string | null,
   sessionName?: string,
+  isPublic: boolean = true,
 ): Promise<void> {
   const now = new Date();
   await db
@@ -1073,6 +1082,7 @@ async function ensureSessionRecordExists(
       createdByUserId: userId,
       name: sessionName || null,
       startedAt: now,
+      isPublic,
     })
     .onConflictDoNothing();
 }

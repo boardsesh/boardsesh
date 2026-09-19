@@ -273,12 +273,10 @@ jobs:
             #     pnpm-workspace.yaml, the root package.json, and patches/**
             #     (pnpm resolves patchedDependencies
             #     before the deps stage can install at all).
-            #   * the three repo-root scripts services.web.extraSourceFiles
-            #     copies into the context. Only tailscale-hostname.ts is
-            #     load-bearing (packages/web/scripts imports it and Next's
-            #     production type-check compiles that directory); the other two
-            #     are listed because the context copies them and W-26/#4442 will
-            #     drop the set together.
+            #   * the repo-root scripts services.web.extraSourceFiles copies
+            #     into the context. packages/web/scripts imports the hostname
+            #     and design preview helpers, and Next's production type-check
+            #     compiles that directory. Keep every copied input covered.
             #   * the generator itself. A cheap contract test below verifies
             #     vite.config.ts still maps `docker-context:web` to it, so an
             #     unrelated task edit does not launch this four-minute build.
@@ -352,6 +350,8 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
+              - 'scripts/lib/design-previews.ts'
+              - 'scripts/lib/dev-object-store.ts'
               - '.github/workflows/ci.yml'
               - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
@@ -402,6 +402,7 @@ jobs:
               - 'packages/db/scripts/moonboard-helpers.ts'
               - 'packages/db/src/testing/moonboard-residual-dedup-replay.ts'
               - 'packages/db/src/testing/moonboard-angle-dedup-replay.ts'
+              - 'packages/db/src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts'
               - 'packages/db/src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
@@ -703,6 +704,7 @@ jobs:
           scripts/moonboard-reconciliation-report.test.ts
           scripts/report-moonboard-reconciliation.test.ts
           scripts/moonboard-reconciliation-report.integration.test.ts
+          src/queries/climb-stats/__tests__/moonboard-snapped-angle-repair.integration.test.ts
           src/queries/climb-stats/__tests__/moonboard-residual-dedup-replay.integration.test.ts
       # A trigger function with no pinned search_path cannot resolve an
       # unqualified type or table while pg_restore holds search_path at '',
@@ -740,6 +742,19 @@ jobs:
             echo "::error::Generated GraphQL files are out of date. Run 'vp run codegen' locally and commit the result."
             exit 1
           fi
+      # Installed app builds keep sending the queries they shipped with, so a
+      # removed field, argument, type or enum value fails their requests with
+      # GRAPHQL_VALIDATION_FAILED (#5370). Runs after the drift check, so the
+      # committed SDL compared here is the regenerated one. A deliberate removal
+      # opts out with the `schema-breaking-ok` label; adding a label does not
+      # re-trigger this workflow, so re-run the job (or push) afterwards.
+      - name: Block client-breaking schema changes
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'schema-breaking-ok')
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref FETCH_HEAD
 
   # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
   # from the whole board catalogue plus the compiled renderer and every board photo

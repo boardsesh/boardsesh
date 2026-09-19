@@ -185,6 +185,44 @@ describe('buildBoardseshGradeView', () => {
     });
   });
 
+  it('builds a moonboardWideAngleEstimate view for a wide-angle MoonBoard grade', () => {
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({
+        confidence: 'moonboard_wide_angle_estimate',
+        universalGrade: null,
+        localGrade: 21,
+        gradeLow: 19.5,
+        gradeHigh: 22.5,
+        ascensionistCount: 0,
+        computedAt: '2026-04-01T00:00:00Z',
+      }),
+      'v-grade',
+    );
+    expect(view).toMatchObject({
+      kind: 'moonboardWideAngleEstimate',
+      gradeValue: 21,
+      range: { low: 'V5', high: 'V7' },
+      computedAt: '2026-04-01T00:00:00Z',
+    });
+    if (view.kind === 'moonboardWideAngleEstimate') expect(view.grade.label).toBe('V5+');
+  });
+
+  it('drops the range when the wide-angle estimate band is too wide to print', () => {
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({
+        confidence: 'moonboard_wide_angle_estimate',
+        universalGrade: null,
+        localGrade: 21,
+        gradeLow: 15,
+        gradeHigh: 27,
+      }),
+      'v-grade',
+    );
+    expect(view).toMatchObject({ kind: 'moonboardWideAngleEstimate', range: null });
+  });
+
   it('passes computedAt through unchanged for confirmed and provisional tiers', () => {
     const confirmed = buildBoardseshGradeView('kilter', makeGrade({ computedAt: '2026-03-15T00:00:00Z' }), 'v-grade');
     expect(confirmed).toMatchObject({ kind: 'confirmed', computedAt: '2026-03-15T00:00:00Z' });
@@ -347,6 +385,15 @@ describe('buildBoardseshGradeSummary', () => {
     const view = buildBoardseshGradeView(
       'moonboard',
       makeGrade({ confidence: 'moonboard_angle_estimate', universalGrade: null, localGrade: 20 }),
+      'v-grade',
+    );
+    expect(buildBoardseshGradeSummary(view, { crowdLabel: 'V6' })).toBe('≈V5');
+  });
+
+  it('marks a MoonBoard wide-angle estimate with ≈ and no seal', () => {
+    const view = buildBoardseshGradeView(
+      'moonboard',
+      makeGrade({ confidence: 'moonboard_wide_angle_estimate', universalGrade: null, localGrade: 20 }),
       'v-grade',
     );
     expect(buildBoardseshGradeSummary(view, { crowdLabel: 'V6' })).toBe('≈V5');

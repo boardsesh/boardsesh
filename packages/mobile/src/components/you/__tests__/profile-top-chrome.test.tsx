@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { ProfileTabKey, ProfileTopChromeProps } from '../ProfileTopChrome';
 
@@ -151,8 +151,6 @@ function makeProps(over: Partial<ProfileTopChromeProps> = {}) {
   return {
     activeTab: 'progress' as ProfileTabKey,
     onSelectTab: vi.fn(),
-    hasActiveFilters: false,
-    onOpenFilters: vi.fn(),
     onHeightChange: vi.fn(),
     ...over,
   };
@@ -162,7 +160,6 @@ const userMenuAction = (root: HTMLElement) =>
   root.querySelector('[data-action="ariaLabels.userMenu"]') as HTMLButtonElement | null;
 const filterAction = (root: HTMLElement) =>
   root.querySelector('[data-action="mobile.filter.title"]') as HTMLButtonElement | null;
-const filterIcon = (root: HTMLElement) => root.querySelector('[data-icon="filter"]') as HTMLElement | null;
 
 describe('ProfileTopChrome', () => {
   beforeEach(() => {
@@ -174,33 +171,8 @@ describe('ProfileTopChrome', () => {
   describe('glass variant', () => {
     it('renders the avatar menu in the left island', () => {
       const { container } = render(<ProfileTopChrome {...makeProps()} />);
+      expect(filterAction(container)).toBeNull();
       expect(userMenuAction(container)?.getAttribute('data-avatar-variant')).toBe('glass');
-    });
-
-    it('renders the filter island only on the Progress sub-tab', () => {
-      const { container, rerender } = render(<ProfileTopChrome {...makeProps({ activeTab: 'progress' })} />);
-      expect(filterAction(container)).not.toBeNull();
-
-      rerender(<ProfileTopChrome {...makeProps({ activeTab: 'sessions' })} />);
-      expect(filterAction(container)).toBeNull();
-
-      rerender(<ProfileTopChrome {...makeProps({ activeTab: 'logbook' })} />);
-      expect(filterAction(container)).toBeNull();
-    });
-
-    it('tints the filter glyph with the brand colour only when filters are active', () => {
-      const { container, rerender } = render(<ProfileTopChrome {...makeProps({ hasActiveFilters: false })} />);
-      expect(filterIcon(container)?.getAttribute('data-icon-color')).toBe('#000');
-
-      rerender(<ProfileTopChrome {...makeProps({ hasActiveFilters: true })} />);
-      expect(filterIcon(container)?.getAttribute('data-icon-color')).toBe('#6D28D9');
-    });
-
-    it('opens the filter sheet when the filter island is pressed', () => {
-      const onOpenFilters = vi.fn();
-      const { container } = render(<ProfileTopChrome {...makeProps({ onOpenFilters })} />);
-      fireEvent.click(filterAction(container)!);
-      expect(onOpenFilters).toHaveBeenCalledTimes(1);
     });
 
     it('passes the profile tab options and selectedKey to the segmented control', () => {
@@ -256,30 +228,8 @@ describe('ProfileTopChrome', () => {
 
     it('renders the material avatar menu', () => {
       const { container } = render(<ProfileTopChrome {...makeProps()} />);
-      expect(userMenuAction(container)?.getAttribute('data-avatar-variant')).toBe('material');
-    });
-
-    it('renders the filter Appbar.Action only on the Progress sub-tab', () => {
-      const { container, rerender } = render(<ProfileTopChrome {...makeProps({ activeTab: 'progress' })} />);
-      expect(filterAction(container)).not.toBeNull();
-
-      rerender(<ProfileTopChrome {...makeProps({ activeTab: 'sessions' })} />);
       expect(filterAction(container)).toBeNull();
-    });
-
-    it('tints the filter action with the brand colour only when filters are active', () => {
-      const { container, rerender } = render(<ProfileTopChrome {...makeProps({ hasActiveFilters: false })} />);
-      expect(filterAction(container)?.getAttribute('data-icon-color')).toBe('#000');
-
-      rerender(<ProfileTopChrome {...makeProps({ hasActiveFilters: true })} />);
-      expect(filterAction(container)?.getAttribute('data-icon-color')).toBe('#6D28D9');
-    });
-
-    it('opens the filter sheet from the filter Appbar.Action', () => {
-      const onOpenFilters = vi.fn();
-      const { container } = render(<ProfileTopChrome {...makeProps({ onOpenFilters })} />);
-      fireEvent.click(filterAction(container)!);
-      expect(onOpenFilters).toHaveBeenCalledTimes(1);
+      expect(userMenuAction(container)?.getAttribute('data-avatar-variant')).toBe('material');
     });
 
     it('passes the profile tab options and selectedKey to MaterialTabs', () => {

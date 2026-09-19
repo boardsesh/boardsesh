@@ -1,6 +1,240 @@
 {
-  "generatedAt": "2026-09-16T09:09:02.296Z",
+  "generatedAt": "2026-09-19T13:39:22.967Z",
   "entries": [
+    {
+      "prNumber": 5597,
+      "category": "new",
+      "title": "The home page now tells you how many climbers are actually using Boardsesh — how many people lit a climb on a real board in the last month, and how many climbs that was.",
+      "mergedAt": "2026-09-19T13:29:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5597"
+    },
+    {
+      "prNumber": 5594,
+      "category": "fixed",
+      "title": "The gym directory stops shouting \"Is this your gym?\" at you on every single listing — it asks once, at the bottom, where it belongs.",
+      "mergedAt": "2026-09-19T13:29:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5594",
+      "body": "Gym rows line up: board chips sit on one baseline whether a gym listed its address or not.\nPage buttons are big enough to hit on a phone, and the pager fits on one row again."
+    },
+    {
+      "prNumber": 5590,
+      "category": "improved",
+      "title": "Buttons in the \"something went wrong\" and \"no results\" panels on the gyms page are now big enough to hit comfortably on a phone.",
+      "mergedAt": "2026-09-19T11:28:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5590"
+    },
+    {
+      "prNumber": 5589,
+      "category": "improved",
+      "title": "The three feature cards on the home page now have a visible edge, like every other card on the site. They used to blend into the background, especially at the bottom of each card.",
+      "mergedAt": "2026-09-19T11:28:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5589"
+    },
+    {
+      "prNumber": 5587,
+      "category": "new",
+      "title": "Get hold suggestions for your spray wall without running the model on your phone.",
+      "mergedAt": "2026-09-19T11:25:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5587",
+      "body": "Leave a wall scan and return to its progress, or retry a failed scan."
+    },
+    {
+      "prNumber": 5588,
+      "category": "improved",
+      "title": "Section headings are now the same size, weight and spacing on every page. Previously a few were subtly different, and at some window widths two headings on the same page rendered at different sizes.",
+      "mergedAt": "2026-09-19T11:07:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5588"
+    },
+    {
+      "prNumber": 5584,
+      "category": "new",
+      "title": "The home page is shorter and repeats itself less. The app buttons now appear once at the top and once at the bottom instead of three times, and the gym search sends you straight to the full directory rather than teasing four gyms first.",
+      "mergedAt": "2026-09-19T10:49:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5584"
+    },
+    {
+      "prNumber": 5585,
+      "category": "improved",
+      "title": "The app buttons are now the same size as each other wherever they appear, and the main button on the home page is bigger. Smaller buttons across the site also got taller, so they're easier to hit with a thumb.",
+      "mergedAt": "2026-09-19T10:49:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5585"
+    },
+    {
+      "prNumber": 5583,
+      "category": "fixed",
+      "title": "Buttons, filters and page controls now have a visible edge. Previously their outline was faint enough to disappear against the dark background, which made it hard to tell what was tappable — especially outdoors or on a dim phone screen.",
+      "mergedAt": "2026-09-19T08:41:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5583"
+    },
+    {
+      "prNumber": 5578,
+      "category": "new",
+      "title": "See how your crew shares a queue, check what's on the wall, and find a board nearby. App previews now match your phone.",
+      "mergedAt": "2026-09-19T06:05:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5578"
+    },
+    {
+      "prNumber": 5579,
+      "category": "new",
+      "title": "All your boards, one climbing history.",
+      "mergedAt": "2026-09-19T05:35:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5579",
+      "body": "See each board’s sends on your profile, keep board names beside logged climbs, and find your session’s hardest send at a glance."
+    },
+    {
+      "prNumber": 5572,
+      "category": "new",
+      "title": "Find your next board night from the refreshed Boardsesh website.",
+      "mergedAt": "2026-09-19T02:34:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5572",
+      "body": "Browse gyms on a dark map, spot claimed listings, and see the app before installing.\nPreview boards at your gym and open that same board in the app."
+    },
+    {
+      "prNumber": 5570,
+      "category": "new",
+      "title": "The homepage now has a real gym search: type a town or tap your location and find the walls near you that run a Kilter, Tension or MoonBoard.",
+      "mergedAt": "2026-09-19T00:24:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5570"
+    },
+    {
+      "prNumber": 5540,
+      "category": "improved",
+      "title": "See recent climbs displayed through Kilter alongside your board history.",
+      "mergedAt": "2026-09-18T22:52:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5540",
+      "body": "Older board history loads when you open the presence sheet."
+    },
+    {
+      "prNumber": 5554,
+      "category": "fixed",
+      "title": "MoonBoard sends affected by the angle bug now show the angle you climbed.",
+      "mergedAt": "2026-09-18T22:14:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5554"
+    },
+    {
+      "prNumber": 5561,
+      "category": "new",
+      "title": "The home page uses the whole screen now, instead of a narrow column of cards down the middle.",
+      "mergedAt": "2026-09-18T22:13:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5561"
+    },
+    {
+      "prNumber": 5330,
+      "category": "new",
+      "title": "Switch boards without briefly seeing your previous board’s workout climbs.",
+      "mergedAt": "2026-09-18T22:12:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5330"
+    },
+    {
+      "prNumber": 5563,
+      "category": "new",
+      "title": "The gym finder and gym pages now read properly in the dark: cards you can actually see, a filter row that shows what you picked, and a real answer when a search comes up empty.",
+      "mergedAt": "2026-09-18T22:10:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5563"
+    },
+    {
+      "prNumber": 5557,
+      "category": "new",
+      "title": "The Support page now shows you how to chip in without scrolling, and lists the ways to help that cost nothing.",
+      "mergedAt": "2026-09-18T13:15:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5557"
+    },
+    {
+      "prNumber": 5538,
+      "category": "fixed",
+      "title": "Fixed a glitchy hexagon-shaped shadow around the lit bulb icon on Android when connected to a board",
+      "mergedAt": "2026-09-18T13:08:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5538"
+    },
+    {
+      "prNumber": 5541,
+      "category": "fixed",
+      "title": "MoonBoard sends now stay at the angle you climbed.",
+      "mergedAt": "2026-09-18T10:54:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5541"
+    },
+    {
+      "prNumber": 5537,
+      "category": "new",
+      "title": "A setter's new climbs from one day now arrive as a single card you swipe through",
+      "mergedAt": "2026-09-18T09:30:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5537",
+      "body": "Tapping a new climb opens it straight in the play drawer instead of a stuck loading screen\nNew-climb cards line up with the rest of the feed, with the setter's avatar and a colour-coded grade"
+    },
+    {
+      "prNumber": 5529,
+      "category": "new",
+      "title": "Swipe playlist climbs into your queue or another playlist.",
+      "mergedAt": "2026-09-17T11:44:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5529",
+      "body": "Find climbs from setters you follow in Discover for your active board."
+    },
+    {
+      "prNumber": 5523,
+      "category": "new",
+      "title": "The Acknowledgements screen now points at boardsesh.com/support if you want to chip in and keep Boardsesh free.",
+      "mergedAt": "2026-09-17T07:52:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5523"
+    },
+    {
+      "prNumber": 5528,
+      "category": "improved",
+      "title": "Load your Crew feed and scroll to older climbs faster.",
+      "mergedAt": "2026-09-17T07:51:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5528"
+    },
+    {
+      "prNumber": 5527,
+      "category": "new",
+      "title": "Follow setters you love, even without a Boardsesh account.",
+      "mergedAt": "2026-09-17T07:09:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5527",
+      "body": "Find their climbs faster and catch their new problems in your Crew feed.\nTap a setter to climb through their newest problems."
+    },
+    {
+      "prNumber": 5521,
+      "category": "new",
+      "title": "Chip in for the server bills: a new support page explains what Boardsesh costs to run and how to help, through GitHub Sponsors or a one-off donation.",
+      "mergedAt": "2026-09-16T11:40:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5521"
+    },
+    {
+      "prNumber": 5506,
+      "category": "improved",
+      "title": "The filter sheet and the Help page now explain why Kilter's app shows more climbs than Boardsesh: it counts each climb once per angle.",
+      "mergedAt": "2026-09-16T11:39:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5506"
+    },
+    {
+      "prNumber": 5465,
+      "category": "fixed",
+      "title": "MoonBoard climbs now get a Boardsesh grade estimate at every angle,",
+      "mergedAt": "2026-09-16T11:38:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5465",
+      "body": "including angles beyond the board's usual 25°/40°.\nFiltering by grade range now works at angles nobody's climbed yet, instead\nof coming back empty."
+    },
+    {
+      "prNumber": 5507,
+      "category": "fixed",
+      "title": "A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout.",
+      "mergedAt": "2026-09-16T11:36:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5507"
+    },
+    {
+      "prNumber": 5518,
+      "category": "new",
+      "title": "See who's climbing right now on Home and jump into their session.",
+      "mergedAt": "2026-09-16T11:30:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5518",
+      "body": "The board sheet shows sessions happening on that wall, ready to join.\nKeep a session to yourself: turn off \"Show this session live\" when you start."
+    },
+    {
+      "prNumber": 5502,
+      "category": "fixed",
+      "title": "Board art on the web now fills in once a slow load finishes, instead of leaving you with rings.",
+      "mergedAt": "2026-09-16T09:13:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5502"
+    },
     {
       "prNumber": 5499,
       "category": "new",
@@ -44,20 +278,6 @@
       "title": "No user can reach a spray wall until SW-09 ships the front door.",
       "mergedAt": "2026-09-16T02:43:39Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5479"
-    },
-    {
-      "prNumber": 5391,
-      "category": "fixed",
-      "title": "Mirror a climb from the lock screen and the wall flips with it, straight away.",
-      "mergedAt": "2026-09-15T14:05:12Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5391"
-    },
-    {
-      "prNumber": 5361,
-      "category": "fixed",
-      "title": "Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix.",
-      "mergedAt": "2026-09-15T14:05:02Z",
-      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5361"
     },
     {
       "prNumber": 5467,
@@ -5201,6 +5421,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-19T21:21:37+10:00",
+      "sha": "cbbcf711e01781cd83ea2c9703aa56e20be94ee0",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "cf3e0cfe4cbfbb75e927b490e76c959f9502c9c9",
+        "ios": "8bfa62b061b0d5f9137cca65d24e9c7fdbea5dff"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-16T11:38:10+10:00",

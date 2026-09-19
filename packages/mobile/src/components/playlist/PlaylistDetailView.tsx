@@ -37,12 +37,15 @@ import { Button } from '../Button';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
 import { PlaylistBoardBackdrop } from './PlaylistBoardBackdrop';
+import { screenshotModeLoadMore } from '../../lib/screenshot-mode';
 import { buildHeroGradient } from './playlist-gradient';
 import { resolvePlaylistEmojiIcon } from './playlist-icon';
 import { PLAYLIST_COLORS, normalizePlaylistColor } from './playlist-colors';
 import { withAlpha } from '../../theme/colors';
 import { toQueueClimb, toSchemaClimb } from '../../lib/climb-types';
+import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useQueueActions } from '../../providers/queue-provider';
 import type { PlaylistRenderBoard, PlaylistBoardBanner } from '../../lib/playlists/use-playlist-render-board';
 import {
   getPlaylistRenderBoardTarget,
@@ -254,15 +257,30 @@ export function PlaylistDetailView({
   );
   const actionNode = actions?.(collapsed);
 
-  const handleEndReached = useCallback(() => {
+  const loadNextPage = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // One page in screenshot mode — the same cap `screenshotModeNextPageParam`
+  // applies to the app's own infinite queries, but from the consumer side:
+  // both lists behind this view (`usePlaylistClimbs`, `useSmartPlaylist`) live
+  // in the renderer-agnostic `@boardsesh/playlists-react`, which web also
+  // consumes and which must not read a mobile build flag. `screenshotModeLoadMore`
+  // is the same wrapper Discover and the profile beta shelf use, and it returns
+  // one shared no-op, so a screenshot build hands the list a stable identity.
+  const handleEndReached = useMemo(() => screenshotModeLoadMore(loadNextPage), [loadNextPage]);
 
   // Stable per-row activate handler so the memoized `ClimbListRow`s aren't handed
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
-  const { openClimbActions } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist } = useDrawerHost();
+  const { addToQueue } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
+  const handleAddToQueue = useCallback(
+    (climb: SchemaClimb) => {
+      void addToQueue(climbToQueueItem(climb));
+    },
+    [addToQueue],
+  );
 
   // Activate-all only needs to know whether the board-switch banner is present;
   // row taps still open the drawer so it can explain incompatible climbs.
@@ -325,6 +343,15 @@ export function PlaylistDetailView({
     },
     [openClimbActions, resolvedRowsByClimbUuid],
   );
+  const handleOpenPlaylist = useCallback(
+    (climb: SchemaClimb) => {
+      const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
+      if (!resolved || resolved.kind !== 'renderable') return;
+      const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
+      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle });
+    },
+    [openAddToPlaylist, resolvedRowsByClimbUuid],
+  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: Climb; index: number }) => {
@@ -358,11 +385,23 @@ export function PlaylistDetailView({
           angle={resolvedRow.renderBoard.angle}
           onPress={handleActivate}
           onOpenActions={handleOpenActions}
+          onAddToQueue={handleAddToQueue}
+          onOpenPlaylist={handleOpenPlaylist}
           unsupported={resolvedRow.incompatible}
         />
       );
     },
-    [resolvedRowsByClimbUuid, editMode, dragControls, onRemoveClimb, onReorderClimb, handleActivate, handleOpenActions],
+    [
+      resolvedRowsByClimbUuid,
+      editMode,
+      dragControls,
+      onRemoveClimb,
+      onReorderClimb,
+      handleActivate,
+      handleOpenActions,
+      handleAddToQueue,
+      handleOpenPlaylist,
+    ],
   );
 
   // Cog shown beside the playlist name only in edit mode — opens the

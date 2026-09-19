@@ -64,7 +64,7 @@ type Climb {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle. Null when no grade row exists."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle, and moonboard_wide_angle_estimate is a MoonBoard grade borrowed from another board's angle-effect shape (moonboard-wide-angles flag angles). Null when no grade row exists."
   boardseshConfidence: String
   "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
   renderBoard: RenderBoardConfig
@@ -160,7 +160,7 @@ input ClimbInput {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'), round-tripped through the queue. Neither estimate tier may be treated as ascent-backed."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'), round-tripped through the queue. No estimate tier may be treated as ascent-backed."
   boardseshConfidence: String
   "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
   compatibleSizeIds: [Int!]
@@ -213,6 +213,8 @@ input ClimbSearchInput {
   setIds: String!
   "Board angle in degrees"
   angle: Int!
+  "A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored."
+  sprayWallUuid: String
   "Page number for pagination (1-indexed)"
   page: Int
   "Number of results per page"
@@ -237,6 +239,8 @@ input ClimbSearchInput {
   name: String
   "Filter by setter usernames"
   setter: [String!]
+  "Only climbs by followed setters or followed users, including linked board accounts. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Filter by setter ID"
   setterId: Int
   "Only show benchmark climbs"
@@ -296,6 +300,8 @@ Input for fetching setter usernames with their climb counts.
 Used to power the setter filter autocomplete in the search drawer.
 """
 input SetterStatsInput {
+  "Restrict counts and usernames to followed authors. Requires authentication."
+  onlyFollowedAuthors: Boolean
   "Board type (e.g., 'kilter', 'tension')"
   boardName: String!
   "Layout ID"
@@ -563,6 +569,8 @@ input CreateSessionInput {
   boardIds: [Int!]
   "Hex color for multi-session display"
   color: String
+  "Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way."
+  isPublic: Boolean
 }
 
 # ============================================
@@ -670,6 +678,8 @@ input UpdateSessionInput {
   name: String
   "New end-of-session recap. Omit to leave unchanged; null or empty string clears it."
   notes: String
+  "New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works."
+  isPublic: Boolean
 }
 
 """
@@ -682,6 +692,111 @@ type UpdateSessionResult {
   name: String
   "Canonical session recap after the update (null when cleared)"
   notes: String
+  "Canonical visibility after the update"
+  isPublic: Boolean!
+}
+
+# ============================================
+# Live Sessions
+# ============================================
+
+"""
+Why a live session was listed for this viewer.
+"""
+enum LiveSessionReason {
+  "The viewer follows the session's creator or somebody on its live roster"
+  FOLLOWING_USER
+  "The session is on a board the viewer follows"
+  FOLLOWED_BOARD
+  "The session is on the board the viewer asked about"
+  SELECTED_BOARD
+}
+
+"""
+A climber shown on a live session card.
+"""
+type LiveSessionUser {
+  "Database user id"
+  userId: ID!
+  "Profile display name, falling back to the account name"
+  displayName: String
+  "Profile avatar, falling back to the account image"
+  avatarUrl: String
+}
+
+"""
+The board a live session is on. Only returned when the viewer may see the
+board: it is not deleted, and it is public or the viewer owns it.
+"""
+type LiveSessionBoard {
+  "Board uuid (user_boards.uuid)"
+  uuid: ID!
+  "Board name"
+  name: String!
+  "Board slug for /b/<slug> links"
+  slug: String
+  "Board type (kilter, tension, moonboard, ...)"
+  boardType: String!
+  "Name of the gym the board belongs to, when it has one and shows its location"
+  gymName: String
+}
+
+"""
+The climb currently on the wall in a live session. Redacted to catalog
+fields; only returned for public sessions.
+"""
+type LiveSessionClimb {
+  "Climb name"
+  name: String!
+  "Grade label"
+  grade: String
+}
+
+"""
+A session that is happening right now: explicitly started, not ended, and
+with somebody connected (or a dormant session touched in the last 20 minutes).
+"""
+type LiveSession {
+  "Session id — pass to joinSession"
+  sessionId: ID!
+  "Session name"
+  name: String
+  "Session goal text"
+  goal: String
+  "Hex color for multi-session display"
+  color: String
+  "When the session was started (ISO 8601)"
+  startedAt: String!
+  "Last durable activity on the session (ISO 8601)"
+  lastActivity: String!
+  "The climber who started the session"
+  host: LiveSessionUser
+  "Signed-in climbers on the live roster, followed climbers first, at most 5"
+  participants: [LiveSessionUser!]!
+  "Distinct participants on the live roster, including anonymous ones"
+  participantCount: Int!
+  "User ids on the live roster that the viewer follows"
+  followedParticipantIds: [ID!]!
+  "Whether the viewer started this session or is on its live roster"
+  viewerIsMember: Boolean!
+  "Whether the session is public"
+  isPublic: Boolean!
+  "The session's board, when the viewer may see it"
+  board: LiveSessionBoard
+  "Board type from the session's board path or board"
+  boardType: String
+  "Board angle from the session's board path or board"
+  angle: Int
+  "Logged sends (flash + send) in the session"
+  sendCount: Int!
+  "Logged flashes in the session"
+  flashCount: Int!
+  "Grade of the hardest logged send"
+  hardestSendGrade: String
+  "The climb on the wall right now (public sessions only)"
+  currentClimb: LiveSessionClimb
+  "Why this session was listed"
+  reasons: [LiveSessionReason!]!
 }
 
 """
@@ -849,7 +964,7 @@ type BoardseshGrade {
   gradeLow: Float
   "High end of the 95% band on the surfaced grade"
   gradeHigh: Float
-  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
   confidence: String!
   "Ascent count that produced this row"
   ascensionistCount: Int!
@@ -878,7 +993,7 @@ type BoardseshGradeForAngle {
   gradeLow: Float
   "High end of the 95% band on the surfaced grade"
   gradeHigh: Float
-  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here"
+  "Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here"
   confidence: String!
   "Ascent count that produced this row"
   ascensionistCount: Int!
@@ -1079,7 +1194,7 @@ type Tick {
   effectiveDifficulty: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists."
   boardseshConfidence: String
   "Whether this is a benchmark climb"
   isBenchmark: Boolean!
@@ -1220,6 +1335,62 @@ input AttachBetaLinkInput {
   tickUuid: ID
 }
 
+input CrewFeedInput {
+  cursor: String
+  limit: Int
+  """
+  IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+  A climb published at 23:00 local belongs to that local day, not to whatever
+  UTC calls it. Defaults to UTC when absent or unrecognised.
+  """
+  timeZone: String
+  """
+  Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+  member has no fragment for it, so the item would arrive as a bare __typename
+  and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+  """
+  groupClimbs: Boolean
+}
+
+type CrewSessionItem {
+  id: ID!
+  occurredAt: String!
+  session: SessionFeedItem!
+}
+
+type CrewClimbItem {
+  id: ID!
+  occurredAt: String!
+  climb: ActivityFeedItem!
+}
+
+"""
+Several climbs one setter published on one local day, newest first.
+
+Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+gets one CrewClimbItem per climb instead, because a client that predates this
+member does not ignore it: with no fragment for it the item arrives as a bare
+__typename and its feed list throws on the missing payload.
+"""
+type CrewClimbGroupItem {
+  id: ID!
+  "When the newest climb in the group was published."
+  occurredAt: String!
+  "At most 10, newest first. totalCount says how many there really are."
+  climbs: [ActivityFeedItem!]!
+  "Every climb in the group, including the ones past the 10-climb cap."
+  totalCount: Int!
+}
+
+union CrewFeedItem = CrewSessionItem | CrewClimbItem | CrewClimbGroupItem
+
+type CrewFeedResult {
+  items: [CrewFeedItem!]!
+  cursor: String
+  hasMore: Boolean!
+}
+
 # ============================================
 # Activity Feed Types
 # ============================================
@@ -1286,7 +1457,7 @@ type AscentFeedItem {
   consensusDifficultyName: String
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   "Average quality rating from all users"
   qualityAverage: Float
@@ -1566,6 +1737,8 @@ type ActivityFeedItem {
   boardType: String
   "Layout ID"
   layoutId: Int
+  "Board geometry for this climb, including its compatible size"
+  renderBoard: RenderBoardConfig
   "Grade name"
   gradeName: String
   "Ascent status (flash, send, attempt)"
@@ -1574,6 +1747,10 @@ type ActivityFeedItem {
   angle: Int
   "Encoded hold frames for thumbnail"
   frames: String
+  "Setter notes shown in the play drawer"
+  description: String
+  "Authored playback pace (ms) for a multi-frame climb"
+  framesPace: Int
   "Setter username"
   setterUsername: String
   "Comment body preview"
@@ -1590,6 +1767,10 @@ type ActivityFeedItem {
   difficultyName: String
   "Quality rating"
   quality: Int
+  "Community ascent count for this climb at its resolved angle"
+  ascensionistCount: Int
+  "Blended community star average (1-5) at the resolved angle"
+  qualityAverage: Float
   "Number of attempts"
   attemptCount: Int
   "User comment on the ascent"
@@ -1689,7 +1870,7 @@ type SessionFeedTickHighlight {
   difficultyName: String
   "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!
@@ -1768,7 +1949,7 @@ type SessionDetailTick {
   difficultyName: String
   "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!
@@ -2205,9 +2386,15 @@ input DiscoverPlaylistsInput {
   name: String
   "Filter by creator IDs"
   creatorIds: [ID!]
+  "Exclude these creators. The viewer's own playlists, for a discovery surface."
+  excludeCreatorIds: [ID!]
+  "Only playlists with at least this many climbs"
+  minClimbs: Int
+  "Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist."
+  maxClimbs: Int
   "Filter by generated recommendation status"
   generatedRecommendation: Boolean
-  "Sort by: 'recent' (default) or 'popular'"
+  "Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size)"
   sortBy: String
   "Page number"
   page: Int
@@ -2377,6 +2564,57 @@ type SmartPlaylistCount {
   type: SmartPlaylistType!
   "Number of climbs the smart playlist would contain"
   count: Int!
+}
+
+"A redacted snapshot of the last confirmed climb while its sender still holds the board."
+type BoardDiscoveryClimb {
+  uuid: ID!
+  name: String
+  frames: String!
+  angle: Int!
+}
+
+"""
+Headline usage numbers for the marketing site.
+
+Counted from board_climb_events, which records every climb pushed to a board's
+LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+board attribution was under 1% before 2026-04 and would shrink the number the
+further back it reached.
+"""
+type CommunityStats {
+  "Distinct climbers who lit a climb on a real board in the last 30 days."
+  climbersLast30Days: Int!
+  "Climbs lit on real boards in the last 30 days."
+  litLast30Days: Int!
+  computedAt: String!
+}
+
+"A public, listed physical board at a public gym. No owner or controller identity is exposed."
+type BoardDiscoveryBoard {
+  uuid: ID!
+  slug: String!
+  name: String!
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+  gymUuid: ID!
+  gymName: String!
+  gymSlug: String!
+  locationName: String
+  "Distinct climbers with a send or flash recorded on this physical board."
+  uniqueClimbers: Int!
+  "Null when there is no verified live holder, including unavailable Redis. Not a live subscription."
+  currentClimb: BoardDiscoveryClimb
+}
+
+input BoardDiscoveryInput {
+  gymUuid: ID
+  "Maximum number of boards, from 1 to 12 (default 8)."
+  limit: Int
 }
 
 # ============================================
@@ -3182,6 +3420,8 @@ input SearchGymsInput {
   multiBoardTypeOnly: Boolean
   "Only gyms that have a URL slug, i.e. that can be linked to at /gym/[slug]. Opt-in: omitting it leaves the emitted SQL untouched for existing callers."
   requireSlug: Boolean
+  "Show claimed gyms first, preserving the existing order within each group. Opt-in; other callers keep their current ordering."
+  prioritizeClaimed: Boolean
   "Latitude for proximity search"
   latitude: Float
   "Longitude for proximity search"
@@ -4332,6 +4572,22 @@ input ReportClimbInput {
 type ReportClimbResult {
   status: ReportClimbStatus!
   proposal: Proposal!
+}
+
+type FollowedBoardAccount {
+  boardType: String!
+  username: String!
+}
+
+type FollowedAuthorUser {
+  userId: ID!
+  boardAccounts: [FollowedBoardAccount!]!
+}
+
+"Complete snapshot of the authenticated viewer's followed authors."
+type FollowedAuthors {
+  setterUsernames: [String!]!
+  users: [FollowedAuthorUser!]!
 }
 
 # ============================================
@@ -5755,6 +6011,42 @@ input UpdateSprayWallInput {
   angle: Int
 }
 
+type SprayDetectionCandidate {
+  cx: Float!
+  cy: Float!
+  r: Float!
+  confidence: Float!
+  outline: [Float!]
+}
+type SprayDetectionResult {
+  width: Int!
+  height: Int!
+  candidates: [SprayDetectionCandidate!]!
+}
+type SprayWallDetection {
+  id: ID!
+  wallUuid: ID!
+  versionId: ID!
+  status: String!
+  modelVersion: String!
+  result: SprayDetectionResult
+  error: String
+  createdAt: String!
+  finishedAt: String
+}
+input RequestSprayWallDetectionInput {
+  wallUuid: ID!
+  versionId: ID!
+}
+extend type Query {
+  sprayWallDetection(id: ID!): SprayWallDetection
+  sprayWallDetectionForVersion(wallUuid: ID!, versionId: ID!): SprayWallDetection
+}
+extend type Mutation {
+  requestSprayWallDetection(input: RequestSprayWallDetectionInput!): SprayWallDetection!
+  retrySprayWallDetection(id: ID!): SprayWallDetection!
+}
+
 """
 One hold the client found in the NEW photo, already mapped through that photo's
 homography into the wall's canonical frame.
@@ -6047,6 +6339,24 @@ type Query {
   mySessions: [DiscoverableSession!]!
 
   """
+  Sessions climbing right now that the viewer has a reason to care about:
+  started or joined by someone they follow, on a board they follow, on
+  `boardUuid` when given, or their own. Private sessions only appear to the
+  people in them. Viewer's own sessions first, then sessions with followed
+  climbers, then bigger crews, then most recent. Requires authentication.
+  `limit` defaults to 10, max 20.
+  """
+  followedLiveSessions(boardUuid: ID, limit: Int): [LiveSession!]!
+
+  """
+  Sessions climbing right now on one board. Same access rule as
+  `boardHistory`: anonymous callers only reach public and system-shared
+  boards and only see public sessions; followed-climber reasons need
+  authentication.
+  """
+  boardLiveSessions(boardId: Int!): [LiveSession!]!
+
+  """
   Get a session summary (stats, grade distribution, participants).
   Available for ended sessions or active sessions with ticks.
   """
@@ -6143,17 +6453,20 @@ type Query {
   Get the Boardsesh grade for a climb at a specific angle. When that angle
   has no ascents, the climb's other angles are projected onto it and the
   result comes back tiered cross_angle_estimate — or, on MoonBoard, tiered
-  moonboard_angle_estimate, transposed from the board's other fixed angle.
-  Returns null when none of those exist (too few ascents, or fewer than two
-  other ascent-backed angles to project from).
+  moonboard_angle_estimate (transposed from the board's other fixed angle)
+  or moonboard_wide_angle_estimate (borrowed from another board's
+  angle-effect shape, at a moonboard-wide-angles flag angle). Returns null
+  when none of those exist (too few ascents, or fewer than two other
+  ascent-backed angles to project from).
   """
   boardseshGrade(boardName: String!, climbUuid: String!, angle: Int!): BoardseshGrade
 
   """
   Get the Boardsesh grade for a climb at every angle, ordered by angle
   ascending: the computed grades, plus a cross_angle_estimate for each board
-  angle nobody has climbed (moonboard_angle_estimate on MoonBoard). Empty
-  when the climb has no grades at all (e.g. too few ascents).
+  angle nobody has climbed (moonboard_angle_estimate or
+  moonboard_wide_angle_estimate on MoonBoard). Empty when the climb has no
+  grades at all (e.g. too few ascents).
   """
   boardseshGradesForAngles(boardName: String!, climbUuid: String!): [BoardseshGradeForAngle!]!
 
@@ -6432,6 +6745,10 @@ type Query {
   Requires authentication.
   """
   activityFeed(input: ActivityFeedInput): ActivityFeedResult!
+  "Complete followed-author snapshot for the authenticated viewer."
+  followedAuthors: FollowedAuthors!
+  "Sessions and the last 30 days of published climbs from followed authors."
+  crewFeed(input: CrewFeedInput): CrewFeedResult!
 
   """
   Get trending feed of recent activity (public, no auth required).
@@ -6460,6 +6777,10 @@ type Query {
   before the live `boardNowPlaying` subscription takes over.
   """
   boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+  "Merged native and imported recent history; never represents current wall state."
+  boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+  "Chronological durable history with an opaque, board-scoped pagination cursor."
+  boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
 
   """
   Durable history of what was pushed to a board (survives past the 1 week
@@ -6574,6 +6895,12 @@ type Query {
   Search public boards.
   """
   searchBoards(input: SearchBoardsInput!): UserBoardConnection!
+
+  "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
+  boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
+
+  "Headline usage numbers for the marketing site. Public, cached, no auth."
+  communityStats: CommunityStats!
 
   """
   Get popular board configurations ranked by climb count.
@@ -7028,6 +7355,29 @@ type Query {
   Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
   """
   syncClimbGrades(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
+
+  """
+  Pull the spray wall at a layout, changed since the cursor (reference data).
+
+  Carries the wall's canonical frame, its published version number, the holds
+  alive at that version, that version's homography, and the private-bucket
+  photo key plus a short-lived presigned URL for the bytes. Gated on the
+  by-layout visibility rule — owner, gym member, or a public wall — so an
+  unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+  is not the capability a wall uuid is. An unreadable, unscoped or non-spray
+  request gets an ordinary empty page rather than an error; an UNAUTHENTICATED
+  one is rejected, like every other sync pull.
+
+  sizeId is accepted for symmetry with the other per-board pulls and is a
+  no-op: a wall is its own size, so layoutId already names exactly one wall.
+  """
+  syncSprayWalls(
     boardType: String!
     layoutId: Int
     sizeId: Int
@@ -9017,6 +9367,8 @@ A climb reported as lit on a physical board. Denormalised for display (mirrors
 the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
 """
 type BoardPresenceClimb {
+  "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+  source: String
   "UUID of the climb lit on the wall"
   climbUuid: String!
   "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
@@ -9123,7 +9475,22 @@ type BoardConnectionChanged {
 """
 Union of board-presence events streamed by `boardNowPlaying`.
 """
-union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+type BoardHistoryUpdated {
+  climbs: [BoardPresenceClimb!]!
+  seq: Int!
+}
+
+type BoardHistoryPage {
+  entries: [BoardPresenceClimb!]!
+  nextCursor: String
+}
+
+union BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
 
 """
 The first climber to send the hardest grade logged on this wall.
@@ -9249,11 +9616,11 @@ NOTE on gate 2: this deliberately widens `isPublic`'s meaning from
 (user-approved product decision). `is_public` is the ONLY session
 visibility knob: `discoverable` controls nearby-search listing, not
 privacy — every session is joinable by anyone with its link, and no
-invite/approval mechanism exists. Today nothing sets `is_public = false`
-(`CreateSessionInput` has no such field), so every session on an
-anon-readable board is previewable after its first wall report; the gate is
-enforced now so the contract already holds when a session-privacy control
-ships.
+invite/approval mechanism exists. A creator sets `is_public = false`
+through `CreateSessionInput.isPublic` or `UpdateSessionInput.isPublic`;
+that hides the session's queue here and drops it from the live-sessions
+listings (`followedLiveSessions` / `boardLiveSessions`) for everyone
+who is not in it.
 
 Every item is redacted to climb-catalog fields only (see
 `BoardQueuePreviewItem`) — no addedBy/tickedBy/user identities ever leave

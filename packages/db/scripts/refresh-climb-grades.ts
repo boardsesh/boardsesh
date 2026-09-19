@@ -612,6 +612,19 @@ async function computeBoard(
           AND bc.is_listed = true
           AND COALESCE(bc.is_draft, false) = false
           AND s.climb_uuid > ${lastClimbUuid}
+          -- MoonBoard's catalog import leaves a placeholder stats row at a
+          -- problem's non-graded fixed angle: 0 ascents, but display_difficulty
+          -- and difficulty_average both populated from MoonBoard's own implied
+          -- label for that angle (not from ascents -- see userDifficultyId in
+          -- moonboard-catalog-helpers.ts). Left in, that label reads as real
+          -- crowd evidence here and produces a fabricated setter_only grade,
+          -- which then wins the upsert over the same-board transpose job's
+          -- real moonboard_angle_estimate row for that angle (ON CONFLICT keys
+          -- on climb+angle, not model_version -- see deleteStaleGrades above).
+          -- Kilter/Tension deliberately keep their genuine 0-ascent rows (a
+          -- climb nobody has sent yet still needs its setter_only grade), so
+          -- this exclusion is scoped to MoonBoard only.
+          AND (${boardType} != 'moonboard' OR COALESCE(s.ascensionist_count, 0) > 0)
         ORDER BY s.climb_uuid, s.angle
         LIMIT ${READ_PAGE_ROWS}
       `),
@@ -988,12 +1001,27 @@ async function insertRefreshKeys(db: DbWriter, boardType: string, computed: Comp
   }
 }
 
+/**
+ * Reaps only rows THIS pipeline published (`model_version = GRADE_MODEL_VERSION`).
+ *
+ * MoonBoard shares `board_climb_grades` with two other, independent jobs —
+ * moonboard-angle-model.ts (`moonboard-angle-v1`, transposes between 25°/40°)
+ * and moonboard-wide-angle-model.ts (`moonboard-wide-angle-v1`, borrowed-shape
+ * estimates outside 25°/40°) — each covering angles this pipeline never
+ * computes a row for (see the CROWD_MEAN_BOARDS comment). Before this scope
+ * was added, running this job deleted both of their tiers wholesale as
+ * "stale", because the un-scoped query only knew about rows this job itself
+ * had just recomputed. Every board's rows already carry their producing
+ * job's own `model_version` stamp, so scoping here is safe for every board,
+ * not just MoonBoard's three-way split.
+ */
 async function deleteStaleGrades(db: DbWriter, boardType: string): Promise<number> {
   const rows = rowsOf<{ deleted: number }>(
     await db.execute(sql`
       WITH deleted AS (
         DELETE FROM board_climb_grades g
         WHERE g.board_type = ${boardType}
+          AND g.model_version = ${GRADE_MODEL_VERSION}
           AND NOT EXISTS (
             SELECT 1
             FROM pg_temp.boardsesh_grade_refresh_keys k

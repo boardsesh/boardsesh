@@ -48,6 +48,8 @@ export type ActivityFeedItem = {
   actorId?: Maybe<Scalars['String']['output']>;
   /** Board angle */
   angle?: Maybe<Scalars['Int']['output']>;
+  /** Community ascent count for this climb at its resolved angle */
+  ascensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Number of attempts */
   attemptCount?: Maybe<Scalars['Int']['output']>;
   /** Board type (kilter, tension, moonboard) */
@@ -66,6 +68,8 @@ export type ActivityFeedItem = {
   commentCount?: Maybe<Scalars['Int']['output']>;
   /** When this feed item was created (ISO 8601) */
   createdAt: Scalars['String']['output'];
+  /** Setter notes shown in the play drawer */
+  description?: Maybe<Scalars['String']['output']>;
   /** Difficulty rating */
   difficulty?: Maybe<Scalars['Int']['output']>;
   /** Human-readable difficulty name */
@@ -76,6 +80,8 @@ export type ActivityFeedItem = {
   entityType: SocialEntityType;
   /** Encoded hold frames for thumbnail */
   frames?: Maybe<Scalars['String']['output']>;
+  /** Authored playback pace (ms) for a multi-frame climb */
+  framesPace?: Maybe<Scalars['Int']['output']>;
   /** Grade name */
   gradeName?: Maybe<Scalars['String']['output']>;
   /** Feed item ID */
@@ -92,6 +98,10 @@ export type ActivityFeedItem = {
   metadata?: Maybe<Scalars['String']['output']>;
   /** Quality rating */
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Blended community star average (1-5) at the resolved angle */
+  qualityAverage?: Maybe<Scalars['Float']['output']>;
+  /** Board geometry for this climb, including its compatible size */
+  renderBoard?: Maybe<RenderBoardConfig>;
   /** Setter username */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Ascent status (flash, send, attempt) */
@@ -330,7 +340,7 @@ export type AscentFeedItem = {
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -582,6 +592,55 @@ export type BoardConnectionHolder = {
   userId?: Maybe<Scalars['ID']['output']>;
 };
 
+/** A public, listed physical board at a public gym. No owner or controller identity is exposed. */
+export type BoardDiscoveryBoard = {
+  __typename?: 'BoardDiscoveryBoard';
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  /** Null when there is no verified live holder, including unavailable Redis. Not a live subscription. */
+  currentClimb?: Maybe<BoardDiscoveryClimb>;
+  gymName: Scalars['String']['output'];
+  gymSlug: Scalars['String']['output'];
+  gymUuid: Scalars['ID']['output'];
+  layoutId: Scalars['Int']['output'];
+  locationName?: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  slug: Scalars['String']['output'];
+  /** Distinct climbers with a send or flash recorded on this physical board. */
+  uniqueClimbers: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+/** A redacted snapshot of the last confirmed climb while its sender still holds the board. */
+export type BoardDiscoveryClimb = {
+  __typename?: 'BoardDiscoveryClimb';
+  angle: Scalars['Int']['output'];
+  frames: Scalars['String']['output'];
+  name?: Maybe<Scalars['String']['output']>;
+  uuid: Scalars['ID']['output'];
+};
+
+export type BoardDiscoveryInput = {
+  gymUuid?: InputMaybe<Scalars['ID']['input']>;
+  /** Maximum number of boards, from 1 to 12 (default 8). */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type BoardHistoryPage = {
+  __typename?: 'BoardHistoryPage';
+  entries: Array<BoardPresenceClimb>;
+  nextCursor?: Maybe<Scalars['String']['output']>;
+};
+
+/** Union of board-presence events streamed by `boardNowPlaying`. */
+export type BoardHistoryUpdated = {
+  __typename?: 'BoardHistoryUpdated';
+  climbs: Array<BoardPresenceClimb>;
+  seq: Scalars['Int']['output'];
+};
+
 /**
  * Everything the outline editor needs for one board config: the deployed shard's
  * traced silhouettes, plus the live overrides that supersede or annotate them.
@@ -684,10 +743,16 @@ export type BoardPresenceClimb = {
   seq: Scalars['Int']['output'];
   /** Catalog route setter display name (who set the climb) */
   setter?: Maybe<Scalars['String']['output']>;
+  /** Origin of the display: boardsesh or kilter. Missing means boardsesh. */
+  source?: Maybe<Scalars['String']['output']>;
 };
 
-/** Union of board-presence events streamed by `boardNowPlaying`. */
-export type BoardPresenceEvent = BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
+export type BoardPresenceEvent =
+  | BoardClimbCleared
+  | BoardClimbSet
+  | BoardConnectionChanged
+  | BoardHistoryUpdated
+  | BoardStatsUpdated;
 
 /** The first climber to send the hardest grade logged on this wall. */
 export type BoardPresenceHardestSend = {
@@ -744,11 +809,11 @@ export type BoardPresenceStats = {
  * (user-approved product decision). `is_public` is the ONLY session
  * visibility knob: `discoverable` controls nearby-search listing, not
  * privacy — every session is joinable by anyone with its link, and no
- * invite/approval mechanism exists. Today nothing sets `is_public = false`
- * (`CreateSessionInput` has no such field), so every session on an
- * anon-readable board is previewable after its first wall report; the gate is
- * enforced now so the contract already holds when a session-privacy control
- * ships.
+ * invite/approval mechanism exists. A creator sets `is_public = false`
+ * through `CreateSessionInput.isPublic` or `UpdateSessionInput.isPublic`;
+ * that hides the session's queue here and drops it from the live-sessions
+ * listings (`followedLiveSessions` / `boardLiveSessions`) for everyone
+ * who is not in it.
  *
  * Every item is redacted to climb-catalog fields only (see
  * `BoardQueuePreviewItem`) — no addedBy/tickedBy/user identities ever leave
@@ -862,7 +927,7 @@ export type BoardseshGrade = {
   ascensionistCount: Scalars['Int']['output'];
   /** When this grade was computed (ISO timestamp) */
   computedAt: Scalars['String']['output'];
-  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here */
+  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here */
   confidence: Scalars['String']['output'];
   /** Geometry (Climb2Vec) grade estimate from the hold layout alone, independent of crowd data; null when unscored */
   contentGrade?: Maybe<Scalars['Float']['output']>;
@@ -892,7 +957,7 @@ export type BoardseshGradeForAngle = {
   ascensionistCount: Scalars['Int']['output'];
   /** When this grade was computed (ISO timestamp) */
   computedAt: Scalars['String']['output'];
-  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) — neither estimate tier has ascents here */
+  /** Confidence tier: confirmed | provisional | setter_only | cross_angle_estimate (projected from the climb's other angles) | moonboard_angle_estimate (a MoonBoard grade transposed from the board's other fixed angle) | moonboard_wide_angle_estimate (a MoonBoard grade borrowed from another board's angle-effect shape) — no estimate tier has ascents here */
   confidence: Scalars['String']['output'];
   /** Geometry (Climb2Vec) grade estimate from the hold layout alone, independent of crowd data; null when unscored */
   contentGrade?: Maybe<Scalars['Float']['output']>;
@@ -967,7 +1032,7 @@ export type Climb = {
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
-  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle. Null when no grade row exists. */
+  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers cover an angle with no ascents: cross_angle_estimate is projected from the climb's other angles, moonboard_angle_estimate is a MoonBoard grade transposed from the board's other fixed angle, and moonboard_wide_angle_estimate is a MoonBoard grade borrowed from another board's angle-effect shape (moonboard-wide-angles flag angles). Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -1091,7 +1156,7 @@ export type ClimbInput = {
   benchmark_difficulty?: InputMaybe<Scalars['String']['input']>;
   /** Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board. */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'), round-tripped through the queue. Neither estimate tier may be treated as ascent-backed. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'), round-tripped through the queue. No estimate tier may be treated as ascent-backed. */
   boardseshConfidence?: InputMaybe<Scalars['String']['input']>;
   /** Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch. */
   boardseshDifficulty?: InputMaybe<Scalars['Float']['input']>;
@@ -1227,6 +1292,8 @@ export type ClimbSearchInput = {
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
   onlyDrafts?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Only climbs by followed setters or followed users, including linked board accounts. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show climbs the user has rated at this angle (requires auth) */
   onlyRatedByMe?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show tall/steep climbs */
@@ -1261,6 +1328,8 @@ export type ClimbSearchInput = {
   sortOrder?: InputMaybe<Scalars['String']['input']>;
   /** Seed for the 'random' sort; keeps OFFSET pagination stable across pages for one shuffle */
   sortSeed?: InputMaybe<Scalars['String']['input']>;
+  /** A spray wall's uuid, presented as a capability. Only meaningful when boardName is 'spray': an UNLISTED wall's climbs are listable by a caller holding its uuid, the same way saveClimb accepts it as the right to set on one. A private wall does not open for it, and a uuid naming another wall is ignored. */
+  sprayWallUuid?: InputMaybe<Scalars['String']['input']>;
   /** Restrict results using this drawn zone */
   zoneBox?: InputMaybe<ZoneBoxInput>;
   /** How the zone should match climb holds. Defaults to allHolds when omitted. */
@@ -1516,6 +1585,24 @@ export type CommunitySetting = {
   value: Scalars['String']['output'];
 };
 
+/**
+ * Headline usage numbers for the marketing site.
+ *
+ * Counted from board_climb_events, which records every climb pushed to a board's
+ * LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+ * in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+ * board attribution was under 1% before 2026-04 and would shrink the number the
+ * further back it reached.
+ */
+export type CommunityStats = {
+  __typename?: 'CommunityStats';
+  /** Distinct climbers who lit a climb on a real board in the last 30 days. */
+  climbersLast30Days: Scalars['Int']['output'];
+  computedAt: Scalars['String']['output'];
+  /** Climbs lit on real boards in the last 30 days. */
+  litLast30Days: Scalars['Int']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerInfo = {
@@ -1696,6 +1783,8 @@ export type CreateSessionInput = {
   goal?: InputMaybe<Scalars['String']['input']>;
   /** Whether session is exempt from auto-end */
   isPermanent?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** GPS latitude for session discovery */
   latitude: Scalars['Float']['input'];
   /** GPS longitude for session discovery */
@@ -1728,6 +1817,66 @@ export type CreateSprayWallVersionInput = {
   /** photoId from POST /api/spray-wall-photos. */
   photoId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
+};
+
+/**
+ * Several climbs one setter published on one local day, newest first.
+ *
+ * Sent only when the client asked with CrewFeedInput.groupClimbs, and only for
+ * two or more climbs — a lone climb stays a CrewClimbItem. An unasked client
+ * gets one CrewClimbItem per climb instead, because a client that predates this
+ * member does not ignore it: with no fragment for it the item arrives as a bare
+ * __typename and its feed list throws on the missing payload.
+ */
+export type CrewClimbGroupItem = {
+  __typename?: 'CrewClimbGroupItem';
+  /** At most 10, newest first. totalCount says how many there really are. */
+  climbs: Array<ActivityFeedItem>;
+  id: Scalars['ID']['output'];
+  /** When the newest climb in the group was published. */
+  occurredAt: Scalars['String']['output'];
+  /** Every climb in the group, including the ones past the 10-climb cap. */
+  totalCount: Scalars['Int']['output'];
+};
+
+export type CrewClimbItem = {
+  __typename?: 'CrewClimbItem';
+  climb: ActivityFeedItem;
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+};
+
+export type CrewFeedInput = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Opt in to CrewClimbGroupItem. Off by default: a client that predates the
+   * member has no fragment for it, so the item would arrive as a bare __typename
+   * and crash its feed list. An unasked client gets one CrewClimbItem per climb.
+   */
+  groupClimbs?: InputMaybe<Scalars['Boolean']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * IANA zone the per-setter day boundary is drawn in (e.g. "Australia/Sydney").
+   * A climb published at 23:00 local belongs to that local day, not to whatever
+   * UTC calls it. Defaults to UTC when absent or unrecognised.
+   */
+  timeZone?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CrewFeedItem = CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
+
+export type CrewFeedResult = {
+  __typename?: 'CrewFeedResult';
+  cursor?: Maybe<Scalars['String']['output']>;
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<CrewFeedItem>;
+};
+
+export type CrewSessionItem = {
+  __typename?: 'CrewSessionItem';
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+  session: SessionFeedItem;
 };
 
 /** Event when the current climb changes. */
@@ -1803,10 +1952,16 @@ export type DiscoverPlaylistsInput = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   /** Filter by creator IDs */
   creatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  /** Exclude these creators. The viewer's own playlists, for a discovery surface. */
+  excludeCreatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** Filter by generated recommendation status */
   generatedRecommendation?: InputMaybe<Scalars['Boolean']['input']>;
   /** Layout ID (optional — omit to discover across all layouts) */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist. */
+  maxClimbs?: InputMaybe<Scalars['Int']['input']>;
+  /** Only playlists with at least this many climbs */
+  minClimbs?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Page number */
@@ -1815,7 +1970,7 @@ export type DiscoverPlaylistsInput = {
   pageSize?: InputMaybe<Scalars['Int']['input']>;
   /** Board size ID for generated recommendation filters */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
-  /** Sort by: 'recent' (default) or 'popular' */
+  /** Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size) */
   sortBy?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -2111,6 +2266,25 @@ export type FollowPlaylistInput = {
 export type FollowSetterInput = {
   /** The setter's Aurora username */
   setterUsername: Scalars['String']['input'];
+};
+
+export type FollowedAuthorUser = {
+  __typename?: 'FollowedAuthorUser';
+  boardAccounts: Array<FollowedBoardAccount>;
+  userId: Scalars['ID']['output'];
+};
+
+/** Complete snapshot of the authenticated viewer's followed authors. */
+export type FollowedAuthors = {
+  __typename?: 'FollowedAuthors';
+  setterUsernames: Array<Scalars['String']['output']>;
+  users: Array<FollowedAuthorUser>;
+};
+
+export type FollowedBoardAccount = {
+  __typename?: 'FollowedBoardAccount';
+  boardType: Scalars['String']['output'];
+  username: Scalars['String']['output'];
 };
 
 /** An ascent from a followed user, enriched with user and climb data. */
@@ -3325,6 +3499,104 @@ export type LinkBoardToGymInput = {
   gymUuid?: InputMaybe<Scalars['String']['input']>;
 };
 
+/**
+ * A session that is happening right now: explicitly started, not ended, and
+ * with somebody connected (or a dormant session touched in the last 20 minutes).
+ */
+export type LiveSession = {
+  __typename?: 'LiveSession';
+  /** Board angle from the session's board path or board */
+  angle?: Maybe<Scalars['Int']['output']>;
+  /** The session's board, when the viewer may see it */
+  board?: Maybe<LiveSessionBoard>;
+  /** Board type from the session's board path or board */
+  boardType?: Maybe<Scalars['String']['output']>;
+  /** Hex color for multi-session display */
+  color?: Maybe<Scalars['String']['output']>;
+  /** The climb on the wall right now (public sessions only) */
+  currentClimb?: Maybe<LiveSessionClimb>;
+  /** Logged flashes in the session */
+  flashCount: Scalars['Int']['output'];
+  /** User ids on the live roster that the viewer follows */
+  followedParticipantIds: Array<Scalars['ID']['output']>;
+  /** Session goal text */
+  goal?: Maybe<Scalars['String']['output']>;
+  /** Grade of the hardest logged send */
+  hardestSendGrade?: Maybe<Scalars['String']['output']>;
+  /** The climber who started the session */
+  host?: Maybe<LiveSessionUser>;
+  /** Whether the session is public */
+  isPublic: Scalars['Boolean']['output'];
+  /** Last durable activity on the session (ISO 8601) */
+  lastActivity: Scalars['String']['output'];
+  /** Session name */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Distinct participants on the live roster, including anonymous ones */
+  participantCount: Scalars['Int']['output'];
+  /** Signed-in climbers on the live roster, followed climbers first, at most 5 */
+  participants: Array<LiveSessionUser>;
+  /** Why this session was listed */
+  reasons: Array<LiveSessionReason>;
+  /** Logged sends (flash + send) in the session */
+  sendCount: Scalars['Int']['output'];
+  /** Session id — pass to joinSession */
+  sessionId: Scalars['ID']['output'];
+  /** When the session was started (ISO 8601) */
+  startedAt: Scalars['String']['output'];
+  /** Whether the viewer started this session or is on its live roster */
+  viewerIsMember: Scalars['Boolean']['output'];
+};
+
+/**
+ * The board a live session is on. Only returned when the viewer may see the
+ * board: it is not deleted, and it is public or the viewer owns it.
+ */
+export type LiveSessionBoard = {
+  __typename?: 'LiveSessionBoard';
+  /** Board type (kilter, tension, moonboard, ...) */
+  boardType: Scalars['String']['output'];
+  /** Name of the gym the board belongs to, when it has one and shows its location */
+  gymName?: Maybe<Scalars['String']['output']>;
+  /** Board name */
+  name: Scalars['String']['output'];
+  /** Board slug for /b/<slug> links */
+  slug?: Maybe<Scalars['String']['output']>;
+  /** Board uuid (user_boards.uuid) */
+  uuid: Scalars['ID']['output'];
+};
+
+/**
+ * The climb currently on the wall in a live session. Redacted to catalog
+ * fields; only returned for public sessions.
+ */
+export type LiveSessionClimb = {
+  __typename?: 'LiveSessionClimb';
+  /** Grade label */
+  grade?: Maybe<Scalars['String']['output']>;
+  /** Climb name */
+  name: Scalars['String']['output'];
+};
+
+/** Why a live session was listed for this viewer. */
+export type LiveSessionReason =
+  /** The session is on a board the viewer follows */
+  | 'FOLLOWED_BOARD'
+  /** The viewer follows the session's creator or somebody on its live roster */
+  | 'FOLLOWING_USER'
+  /** The session is on the board the viewer asked about */
+  | 'SELECTED_BOARD';
+
+/** A climber shown on a live session card. */
+export type LiveSessionUser = {
+  __typename?: 'LiveSessionUser';
+  /** Profile avatar, falling back to the account image */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the account name */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** Database user id */
+  userId: Scalars['ID']['output'];
+};
+
 export type LocationSyncEntityType = 'BOARD' | 'GYM';
 
 /** Input for merging duplicate gyms into a canonical survivor (admin only). */
@@ -3770,6 +4042,7 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  requestSprayWallDetection: SprayWallDetection;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -3814,6 +4087,7 @@ export type Mutation = {
   resolveBoardForUuid: ResolvedBoard;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
+  retrySprayWallDetection: SprayWallDetection;
   /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
    * ownership to the claimant.
@@ -4455,6 +4729,11 @@ export type MutationRequestGymClaimArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestSprayWallDetectionArgs = {
+  input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationResolveBoardCandidatesForSerialArgs = {
   advertisedBoardType?: InputMaybe<Scalars['String']['input']>;
   boardType: Scalars['String']['input'];
@@ -4490,6 +4769,11 @@ export type MutationResolveBoardForUuidArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRetrySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5461,6 +5745,8 @@ export type Query = {
    * user/name/avatar (clients render a "?").
    */
   boardConnection?: Maybe<BoardConnectionHolder>;
+  /** Public physical boards ranked by distinct climbers before limiting; optionally within one public gym. */
+  boardDiscovery: Array<BoardDiscoveryBoard>;
   /**
    * Durable history of what was pushed to a board (survives past the 1 week
    * Redis window (BOARD_HISTORY_TTL)), newest-first by `seq`. For keyset
@@ -5474,6 +5760,8 @@ export type Query = {
    * NOT_FOUND for anonymous callers.
    */
   boardHistory: Array<BoardPresenceClimb>;
+  /** Chronological durable history with an opaque, board-scoped pagination cursor. */
+  boardHistoryPage: BoardHistoryPage;
   /**
    * Get leaderboard for a board. Anonymous access is allowed for public and
    * system-shared boards; private boards are masked as NOT_FOUND for anonymous
@@ -5482,6 +5770,13 @@ export type Query = {
    * midnight boundary).
    */
   boardLeaderboard: BoardLeaderboard;
+  /**
+   * Sessions climbing right now on one board. Same access rule as
+   * `boardHistory`: anonymous callers only reach public and system-shared
+   * boards and only see public sessions; followed-climber reasons need
+   * authentication.
+   */
+  boardLiveSessions: Array<LiveSession>;
   /**
    * Lightweight stats for a board's wall feed — durable counts derived from
    * `boardsesh_ticks` stamped with this board_id, plus the live window.
@@ -5517,6 +5812,8 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
+  /** Merged native and imported recent history; never represents current wall state. */
+  boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
    * Searches all boards (including unlisted/non-public).
@@ -5534,16 +5831,19 @@ export type Query = {
    * Get the Boardsesh grade for a climb at a specific angle. When that angle
    * has no ascents, the climb's other angles are projected onto it and the
    * result comes back tiered cross_angle_estimate — or, on MoonBoard, tiered
-   * moonboard_angle_estimate, transposed from the board's other fixed angle.
-   * Returns null when none of those exist (too few ascents, or fewer than two
-   * other ascent-backed angles to project from).
+   * moonboard_angle_estimate (transposed from the board's other fixed angle)
+   * or moonboard_wide_angle_estimate (borrowed from another board's
+   * angle-effect shape, at a moonboard-wide-angles flag angle). Returns null
+   * when none of those exist (too few ascents, or fewer than two other
+   * ascent-backed angles to project from).
    */
   boardseshGrade?: Maybe<BoardseshGrade>;
   /**
    * Get the Boardsesh grade for a climb at every angle, ordered by angle
    * ascending: the computed grades, plus a cross_angle_estimate for each board
-   * angle nobody has climbed (moonboard_angle_estimate on MoonBoard). Empty
-   * when the climb has no grades at all (e.g. too few ascents).
+   * angle nobody has climbed (moonboard_angle_estimate or
+   * moonboard_wide_angle_estimate on MoonBoard). Empty when the climb has no
+   * grades at all (e.g. too few ascents).
    */
   boardseshGradesForAngles: Array<BoardseshGradeForAngle>;
   /** Browse proposals across all climbs with filters. */
@@ -5586,6 +5886,10 @@ export type Query = {
   communityRoles: Array<CommunityRoleAssignment>;
   /** Get community settings for a scope. */
   communitySettings: Array<CommunitySetting>;
+  /** Headline usage numbers for the marketing site. Public, cached, no auth. */
+  communityStats: CommunityStats;
+  /** Sessions and the last 30 days of published climbs from followed authors. */
+  crewFeed: CrewFeedResult;
   /**
    * Get the user's default board (first owned, then most used).
    * Requires authentication.
@@ -5622,6 +5926,17 @@ export type Query = {
    * capped at five.
    */
   findSimilarGyms: Array<SimilarGym>;
+  /** Complete followed-author snapshot for the authenticated viewer. */
+  followedAuthors: FollowedAuthors;
+  /**
+   * Sessions climbing right now that the viewer has a reason to care about:
+   * started or joined by someone they follow, on a board they follow, on
+   * `boardUuid` when given, or their own. Private sessions only appear to the
+   * people in them. Viewer's own sessions first, then sessions with followed
+   * climbers, then bigger crews, then most recent. Requires authentication.
+   * `limit` defaults to 10, max 20.
+   */
+  followedLiveSessions: Array<LiveSession>;
   /** Get followers of a user. */
   followers: FollowConnection;
   /** Get users that a user is following. */
@@ -5970,6 +6285,8 @@ export type Query = {
    * board config. Same visibility rules as `sprayWall`.
    */
   sprayWallByLayout?: Maybe<SprayWall>;
+  sprayWallDetection?: Maybe<SprayWallDetection>;
+  sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -6020,6 +6337,22 @@ export type Query = {
   syncPlaylists: SyncResult;
   /** Pull the authenticated user's setter-follows changed since the cursor. */
   syncSetterFollows: SyncResult;
+  /**
+   * Pull the spray wall at a layout, changed since the cursor (reference data).
+   *
+   * Carries the wall's canonical frame, its published version number, the holds
+   * alive at that version, that version's homography, and the private-bucket
+   * photo key plus a short-lived presigned URL for the bytes. Gated on the
+   * by-layout visibility rule — owner, gym member, or a public wall — so an
+   * unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+   * is not the capability a wall uuid is. An unreadable, unscoped or non-spray
+   * request gets an ordinary empty page rather than an error; an UNAUTHENTICATED
+   * one is rejected, like every other sync pull.
+   *
+   * sizeId is accepted for symmetry with the other per-board pulls and is a
+   * no-op: a wall is its own size, so layoutId already names exactly one wall.
+   */
+  syncSprayWalls: SyncResult;
   /** Pull the authenticated user's ticks changed since the cursor. */
   syncTicks: SyncResult;
   /** Pull the authenticated user's user-follows changed since the cursor. */
@@ -6160,7 +6493,19 @@ export type QueryBoardConnectionArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryBoardDiscoveryArgs = {
+  input?: InputMaybe<BoardDiscoveryInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryBoardHistoryArgs = {
+  before?: InputMaybe<Scalars['String']['input']>;
+  boardId: Scalars['Int']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardHistoryPageArgs = {
   before?: InputMaybe<Scalars['String']['input']>;
   boardId: Scalars['Int']['input'];
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -6169,6 +6514,11 @@ export type QueryBoardHistoryArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardLeaderboardArgs = {
   input: BoardLeaderboardInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardLiveSessionsArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -6183,6 +6533,11 @@ export type QueryBoardQueuePreviewArgs = {
 
 /** Root query type for all read operations. */
 export type QueryBoardRecentClimbsArgs = {
+  boardId: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardRecentHistoryArgs = {
   boardId: Scalars['Int']['input'];
 };
 
@@ -6290,6 +6645,11 @@ export type QueryCommunitySettingsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryCrewFeedArgs = {
+  input?: InputMaybe<CrewFeedInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryDiscoverPlaylistsArgs = {
   input: DiscoverPlaylistsInput;
 };
@@ -6315,6 +6675,12 @@ export type QueryFavoritesArgs = {
 /** Root query type for all read operations. */
 export type QueryFindSimilarGymsArgs = {
   input: FindSimilarGymsInput;
+};
+
+/** Root query type for all read operations. */
+export type QueryFollowedLiveSessionsArgs = {
+  boardUuid?: InputMaybe<Scalars['ID']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -6638,6 +7004,17 @@ export type QuerySprayWallByLayoutArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallDetectionForVersionArgs = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -6714,6 +7091,15 @@ export type QuerySyncPlaylistsArgs = {
 export type QuerySyncSetterFollowsArgs = {
   cursor?: InputMaybe<SyncCursorInput>;
   limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncSprayWallsArgs = {
+  boardType: Scalars['String']['input'];
+  cursor?: InputMaybe<SyncCursorInput>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
+  limit?: Scalars['Int']['input'];
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -7116,6 +7502,11 @@ export type RequestGymClaimResult = {
   status: GymClaimRequestStatus;
 };
 
+export type RequestSprayWallDetectionInput = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
 /**
  * Result of resolving a BLE serial that may map to several boards. Exactly one
  * of `board` / `candidates` is set: `board` when the serial is unambiguous
@@ -7340,6 +7731,8 @@ export type SearchGymsInput = {
   multiBoardTypeOnly?: InputMaybe<Scalars['Boolean']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+  /** Show claimed gyms first, preserving the existing order within each group. Opt-in; other callers keep their current ordering. */
+  prioritizeClaimed?: InputMaybe<Scalars['Boolean']['input']>;
   /** Search query */
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
@@ -7507,7 +7900,7 @@ export type SessionDetailTick = {
   /** Stored beta videos attached to this climb, batched with the session detail (no live enrichment). Populated by the session-detail query; absent on other selections that reuse this type (e.g. the live SessionStatsUpdated subscription). */
   betaLinks?: Maybe<Array<BetaLink>>;
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -7621,7 +8014,7 @@ export type SessionFeedTickHighlight = {
   angle: Scalars['Int']['output'];
   attemptCount: Scalars['Int']['output'];
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'). Both estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'). All three estimate tiers are for an angle nobody has climbed and are not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -8050,6 +8443,8 @@ export type SetterStatsInput = {
   boardName: Scalars['String']['input'];
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  /** Restrict counts and usernames to followed authors. Requires authentication. */
+  onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Case-insensitive substring filter on setter username (for autocomplete) */
   search?: InputMaybe<Scalars['String']['input']>;
   /** Comma-separated set IDs */
@@ -8238,6 +8633,22 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+export type SprayDetectionCandidate = {
+  __typename?: 'SprayDetectionCandidate';
+  confidence: Scalars['Float']['output'];
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+};
+
+export type SprayDetectionResult = {
+  __typename?: 'SprayDetectionResult';
+  candidates: Array<SprayDetectionCandidate>;
+  height: Scalars['Int']['output'];
+  width: Scalars['Int']['output'];
+};
+
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
@@ -8346,6 +8757,19 @@ export type SprayWallAddedDecisionInput = {
    * an unrelated hold as a successor, with nothing to notice it afterwards.
    */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SprayWallDetection = {
+  __typename?: 'SprayWallDetection';
+  createdAt: Scalars['String']['output'];
+  error?: Maybe<Scalars['String']['output']>;
+  finishedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  modelVersion: Scalars['String']['output'];
+  result?: Maybe<SprayDetectionResult>;
+  status: Scalars['String']['output'];
+  versionId: Scalars['ID']['output'];
+  wallUuid: Scalars['ID']['output'];
 };
 
 /**
@@ -8938,7 +9362,7 @@ export type Tick = {
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate'. Both estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists. */
+  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate' | 'moonboard_angle_estimate' | 'moonboard_wide_angle_estimate'. All three estimate tiers are for an angle nobody has climbed and must not prefill a climber's first grade. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -9244,6 +9668,8 @@ export type UpdateProfileInput = {
  * unchanged; passing null or an empty string clears it.
  */
 export type UpdateSessionInput = {
+  /** New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works. */
+  isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** New session title. Omit to leave unchanged; null or empty string clears it. */
   name?: InputMaybe<Scalars['String']['input']>;
   /** New end-of-session recap. Omit to leave unchanged; null or empty string clears it. */
@@ -9255,6 +9681,8 @@ export type UpdateSessionInput = {
 /** Result of an updateSession mutation, echoing the canonical post-update values. */
 export type UpdateSessionResult = {
   __typename?: 'UpdateSessionResult';
+  /** Canonical visibility after the update */
+  isPublic: Scalars['Boolean']['output'];
   /** Canonical session title after the update (null when cleared) */
   name?: Maybe<Scalars['String']['output']>;
   /** Canonical session recap after the update (null when cleared) */
@@ -9677,9 +10105,15 @@ export type DirectiveResolverFn<TResult = {}, TParent = {}, TContext = {}, TArgs
 
 /** Mapping of union types */
 export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = ResolversObject<{
-  BoardPresenceEvent: BoardClimbCleared | BoardClimbSet | BoardConnectionChanged | BoardStatsUpdated;
+  BoardPresenceEvent:
+    | BoardClimbCleared
+    | BoardClimbSet
+    | BoardConnectionChanged
+    | BoardHistoryUpdated
+    | BoardStatsUpdated;
   CommentEvent: CommentAdded | CommentDeleted | CommentUpdated;
   ControllerEvent: ControllerPing | ControllerQueueSync | LedUpdate;
+  CrewFeedItem: CrewClimbGroupItem | CrewClimbItem | CrewSessionItem;
   QueueEvent:
     | ClimbMirrored
     | CurrentClimbChanged
@@ -9739,6 +10173,11 @@ export type ResolversTypes = ResolversObject<{
   BoardClimbSet: ResolverTypeWrapper<BoardClimbSet>;
   BoardConnectionChanged: ResolverTypeWrapper<BoardConnectionChanged>;
   BoardConnectionHolder: ResolverTypeWrapper<BoardConnectionHolder>;
+  BoardDiscoveryBoard: ResolverTypeWrapper<BoardDiscoveryBoard>;
+  BoardDiscoveryClimb: ResolverTypeWrapper<BoardDiscoveryClimb>;
+  BoardDiscoveryInput: BoardDiscoveryInput;
+  BoardHistoryPage: ResolverTypeWrapper<BoardHistoryPage>;
+  BoardHistoryUpdated: ResolverTypeWrapper<BoardHistoryUpdated>;
   BoardHoldOutlines: ResolverTypeWrapper<BoardHoldOutlines>;
   BoardLeaderboard: ResolverTypeWrapper<BoardLeaderboard>;
   BoardLeaderboardEntry: ResolverTypeWrapper<BoardLeaderboardEntry>;
@@ -9787,6 +10226,7 @@ export type ResolversTypes = ResolversObject<{
   CommunityRoleAssignment: ResolverTypeWrapper<CommunityRoleAssignment>;
   CommunityRoleType: CommunityRoleType;
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
+  CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
   ControllerInfo: ResolverTypeWrapper<ControllerInfo>;
   ControllerPing: ResolverTypeWrapper<ControllerPing>;
@@ -9801,6 +10241,12 @@ export type ResolversTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbGroupItem: ResolverTypeWrapper<CrewClimbGroupItem>;
+  CrewClimbItem: ResolverTypeWrapper<CrewClimbItem>;
+  CrewFeedInput: CrewFeedInput;
+  CrewFeedItem: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CrewFeedItem']>;
+  CrewFeedResult: ResolverTypeWrapper<Omit<CrewFeedResult, 'items'> & { items: Array<ResolversTypes['CrewFeedItem']> }>;
+  CrewSessionItem: ResolverTypeWrapper<CrewSessionItem>;
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
@@ -9834,6 +10280,9 @@ export type ResolversTypes = ResolversObject<{
   FollowListInput: FollowListInput;
   FollowPlaylistInput: FollowPlaylistInput;
   FollowSetterInput: FollowSetterInput;
+  FollowedAuthorUser: ResolverTypeWrapper<FollowedAuthorUser>;
+  FollowedAuthors: ResolverTypeWrapper<FollowedAuthors>;
+  FollowedBoardAccount: ResolverTypeWrapper<FollowedBoardAccount>;
   FollowingAscentFeedItem: ResolverTypeWrapper<FollowingAscentFeedItem>;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: ResolverTypeWrapper<FollowingAscentsFeedResult>;
@@ -9920,6 +10369,11 @@ export type ResolversTypes = ResolversObject<{
   LedCommandInput: LedCommandInput;
   LedUpdate: ResolverTypeWrapper<LedUpdate>;
   LinkBoardToGymInput: LinkBoardToGymInput;
+  LiveSession: ResolverTypeWrapper<LiveSession>;
+  LiveSessionBoard: ResolverTypeWrapper<LiveSessionBoard>;
+  LiveSessionClimb: ResolverTypeWrapper<LiveSessionClimb>;
+  LiveSessionReason: LiveSessionReason;
+  LiveSessionUser: ResolverTypeWrapper<LiveSessionUser>;
   LocationSyncEntityType: LocationSyncEntityType;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
@@ -10005,6 +10459,7 @@ export type ResolversTypes = ResolversObject<{
   ReportSprayWallInput: ReportSprayWallInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: ResolverTypeWrapper<RequestGymClaimResult>;
+  RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolverTypeWrapper<ResolvedBoard>;
@@ -10069,10 +10524,13 @@ export type ResolversTypes = ResolversObject<{
   SmartPlaylistType: SmartPlaylistType;
   SocialEntityType: SocialEntityType;
   SortMode: SortMode;
+  SprayDetectionCandidate: ResolverTypeWrapper<SprayDetectionCandidate>;
+  SprayDetectionResult: ResolverTypeWrapper<SprayDetectionResult>;
   SprayHoldSource: SprayHoldSource;
   SprayRemixSeed: ResolverTypeWrapper<SprayRemixSeed>;
   SprayWall: ResolverTypeWrapper<SprayWall>;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetection: ResolverTypeWrapper<SprayWallDetection>;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
@@ -10175,6 +10633,11 @@ export type ResolversParentTypes = ResolversObject<{
   BoardClimbSet: BoardClimbSet;
   BoardConnectionChanged: BoardConnectionChanged;
   BoardConnectionHolder: BoardConnectionHolder;
+  BoardDiscoveryBoard: BoardDiscoveryBoard;
+  BoardDiscoveryClimb: BoardDiscoveryClimb;
+  BoardDiscoveryInput: BoardDiscoveryInput;
+  BoardHistoryPage: BoardHistoryPage;
+  BoardHistoryUpdated: BoardHistoryUpdated;
   BoardHoldOutlines: BoardHoldOutlines;
   BoardLeaderboard: BoardLeaderboard;
   BoardLeaderboardEntry: BoardLeaderboardEntry;
@@ -10221,6 +10684,7 @@ export type ResolversParentTypes = ResolversObject<{
   CommitSprayWallVersionInput: CommitSprayWallVersionInput;
   CommunityRoleAssignment: CommunityRoleAssignment;
   CommunitySetting: CommunitySetting;
+  CommunityStats: CommunityStats;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
   ControllerInfo: ControllerInfo;
   ControllerPing: ControllerPing;
@@ -10235,6 +10699,12 @@ export type ResolversParentTypes = ResolversObject<{
   CreateSessionInput: CreateSessionInput;
   CreateSprayWallInput: CreateSprayWallInput;
   CreateSprayWallVersionInput: CreateSprayWallVersionInput;
+  CrewClimbGroupItem: CrewClimbGroupItem;
+  CrewClimbItem: CrewClimbItem;
+  CrewFeedInput: CrewFeedInput;
+  CrewFeedItem: ResolversUnionTypes<ResolversParentTypes>['CrewFeedItem'];
+  CrewFeedResult: Omit<CrewFeedResult, 'items'> & { items: Array<ResolversParentTypes['CrewFeedItem']> };
+  CrewSessionItem: CrewSessionItem;
   CurrentClimbChanged: CurrentClimbChanged;
   DeleteAccountInfo: DeleteAccountInfo;
   DeleteAccountInput: DeleteAccountInput;
@@ -10264,6 +10734,9 @@ export type ResolversParentTypes = ResolversObject<{
   FollowListInput: FollowListInput;
   FollowPlaylistInput: FollowPlaylistInput;
   FollowSetterInput: FollowSetterInput;
+  FollowedAuthorUser: FollowedAuthorUser;
+  FollowedAuthors: FollowedAuthors;
+  FollowedBoardAccount: FollowedBoardAccount;
   FollowingAscentFeedItem: FollowingAscentFeedItem;
   FollowingAscentsFeedInput: FollowingAscentsFeedInput;
   FollowingAscentsFeedResult: FollowingAscentsFeedResult;
@@ -10339,6 +10812,10 @@ export type ResolversParentTypes = ResolversObject<{
   LedCommandInput: LedCommandInput;
   LedUpdate: LedUpdate;
   LinkBoardToGymInput: LinkBoardToGymInput;
+  LiveSession: LiveSession;
+  LiveSessionBoard: LiveSessionBoard;
+  LiveSessionClimb: LiveSessionClimb;
+  LiveSessionUser: LiveSessionUser;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: MergeGymsResult;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
@@ -10414,6 +10891,7 @@ export type ResolversParentTypes = ResolversObject<{
   ReportSprayWallInput: ReportSprayWallInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: RequestGymClaimResult;
+  RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResolveBoardResult: ResolveBoardResult;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolvedBoard;
@@ -10473,9 +10951,12 @@ export type ResolversParentTypes = ResolversObject<{
   SmartPlaylistCount: SmartPlaylistCount;
   SmartPlaylistMeta: SmartPlaylistMeta;
   SmartPlaylistResult: SmartPlaylistResult;
+  SprayDetectionCandidate: SprayDetectionCandidate;
+  SprayDetectionResult: SprayDetectionResult;
   SprayRemixSeed: SprayRemixSeed;
   SprayWall: SprayWall;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetection: SprayWallDetection;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
@@ -10547,6 +11028,7 @@ export type ActivityFeedItemResolvers<
   actorDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   actorId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  ascensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   attemptCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10556,11 +11038,13 @@ export type ActivityFeedItemResolvers<
   commentBody?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   commentCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficulty?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficultyName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   entityId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   entityType?: Resolver<ResolversTypes['SocialEntityType'], ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  framesPace?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   gradeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   isBenchmark?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
@@ -10569,6 +11053,8 @@ export type ActivityFeedItemResolvers<
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   metadata?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   quality?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
+  renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['ActivityFeedItemType'], ParentType, ContextType>;
@@ -10837,6 +11323,56 @@ export type BoardConnectionHolderResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type BoardDiscoveryBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardDiscoveryBoard'] = ResolversParentTypes['BoardDiscoveryBoard'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  currentClimb?: Resolver<Maybe<ResolversTypes['BoardDiscoveryClimb']>, ParentType, ContextType>;
+  gymName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymSlug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  locationName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  uniqueClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardDiscoveryClimbResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardDiscoveryClimb'] = ResolversParentTypes['BoardDiscoveryClimb'],
+> = ResolversObject<{
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  frames?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardHistoryPageResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardHistoryPage'] = ResolversParentTypes['BoardHistoryPage'],
+> = ResolversObject<{
+  entries?: Resolver<Array<ResolversTypes['BoardPresenceClimb']>, ParentType, ContextType>;
+  nextCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardHistoryUpdatedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardHistoryUpdated'] = ResolversParentTypes['BoardHistoryUpdated'],
+> = ResolversObject<{
+  climbs?: Resolver<Array<ResolversTypes['BoardPresenceClimb']>, ParentType, ContextType>;
+  seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type BoardHoldOutlinesResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['BoardHoldOutlines'] = ResolversParentTypes['BoardHoldOutlines'],
@@ -10894,6 +11430,7 @@ export type BoardPresenceClimbResolvers<
   sentByUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   setter?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  source?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -10902,7 +11439,7 @@ export type BoardPresenceEventResolvers<
   ParentType extends ResolversParentTypes['BoardPresenceEvent'] = ResolversParentTypes['BoardPresenceEvent'],
 > = ResolversObject<{
   __resolveType: TypeResolveFn<
-    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardStatsUpdated',
+    'BoardClimbCleared' | 'BoardClimbSet' | 'BoardConnectionChanged' | 'BoardHistoryUpdated' | 'BoardStatsUpdated',
     ParentType,
     ContextType
   >;
@@ -11328,6 +11865,16 @@ export type CommunitySettingResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type CommunityStatsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CommunityStats'] = ResolversParentTypes['CommunityStats'],
+> = ResolversObject<{
+  climbersLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  computedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  litLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ControllerEventResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ControllerEvent'] = ResolversParentTypes['ControllerEvent'],
@@ -11386,6 +11933,54 @@ export type ControllerRegistrationResolvers<
 > = ResolversObject<{
   apiKey?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   controllerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewClimbGroupItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewClimbGroupItem'] = ResolversParentTypes['CrewClimbGroupItem'],
+> = ResolversObject<{
+  climbs?: Resolver<Array<ResolversTypes['ActivityFeedItem']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewClimbItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewClimbItem'] = ResolversParentTypes['CrewClimbItem'],
+> = ResolversObject<{
+  climb?: Resolver<ResolversTypes['ActivityFeedItem'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewFeedItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewFeedItem'] = ResolversParentTypes['CrewFeedItem'],
+> = ResolversObject<{
+  __resolveType: TypeResolveFn<'CrewClimbGroupItem' | 'CrewClimbItem' | 'CrewSessionItem', ParentType, ContextType>;
+}>;
+
+export type CrewFeedResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewFeedResult'] = ResolversParentTypes['CrewFeedResult'],
+> = ResolversObject<{
+  cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  items?: Resolver<Array<ResolversTypes['CrewFeedItem']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CrewSessionItemResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CrewSessionItem'] = ResolversParentTypes['CrewSessionItem'],
+> = ResolversObject<{
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  session?: Resolver<ResolversTypes['SessionFeedItem'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11544,6 +12139,33 @@ export type FollowConnectionResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   users?: Resolver<Array<ResolversTypes['PublicUserProfile']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedAuthorUserResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedAuthorUser'] = ResolversParentTypes['FollowedAuthorUser'],
+> = ResolversObject<{
+  boardAccounts?: Resolver<Array<ResolversTypes['FollowedBoardAccount']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedAuthorsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedAuthors'] = ResolversParentTypes['FollowedAuthors'],
+> = ResolversObject<{
+  setterUsernames?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  users?: Resolver<Array<ResolversTypes['FollowedAuthorUser']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type FollowedBoardAccountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['FollowedBoardAccount'] = ResolversParentTypes['FollowedBoardAccount'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12177,6 +12799,64 @@ export type LedUpdateResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type LiveSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSession'] = ResolversParentTypes['LiveSession'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  board?: Resolver<Maybe<ResolversTypes['LiveSessionBoard']>, ParentType, ContextType>;
+  boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  color?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  currentClimb?: Resolver<Maybe<ResolversTypes['LiveSessionClimb']>, ParentType, ContextType>;
+  flashCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  followedParticipantIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  goal?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hardestSendGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  host?: Resolver<Maybe<ResolversTypes['LiveSessionUser']>, ParentType, ContextType>;
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  lastActivity?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  participantCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  participants?: Resolver<Array<ResolversTypes['LiveSessionUser']>, ParentType, ContextType>;
+  reasons?: Resolver<Array<ResolversTypes['LiveSessionReason']>, ParentType, ContextType>;
+  sendCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  startedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  viewerIsMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionBoard'] = ResolversParentTypes['LiveSessionBoard'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionClimbResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionClimb'] = ResolversParentTypes['LiveSessionClimb'],
+> = ResolversObject<{
+  grade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type LiveSessionUserResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['LiveSessionUser'] = ResolversParentTypes['LiveSessionUser'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type MergeGymsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['MergeGymsResult'] = ResolversParentTypes['MergeGymsResult'],
@@ -12681,6 +13361,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestGymClaimArgs, 'input'>
   >;
+  requestSprayWallDetection?: Resolver<
+    ResolversTypes['SprayWallDetection'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestSprayWallDetectionArgs, 'input'>
+  >;
   resolveBoardCandidatesForSerial?: Resolver<
     ResolversTypes['ResolveBoardResult'],
     ParentType,
@@ -12713,6 +13399,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationResolveProposalArgs, 'input'>
+  >;
+  retrySprayWallDetection?: Resolver<
+    ResolversTypes['SprayWallDetection'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRetrySprayWallDetectionArgs, 'id'>
   >;
   reviewGymClaim?: Resolver<
     ResolversTypes['Boolean'],
@@ -13447,17 +14139,35 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryBoardConnectionArgs, 'boardId'>
   >;
+  boardDiscovery?: Resolver<
+    Array<ResolversTypes['BoardDiscoveryBoard']>,
+    ParentType,
+    ContextType,
+    Partial<QueryBoardDiscoveryArgs>
+  >;
   boardHistory?: Resolver<
     Array<ResolversTypes['BoardPresenceClimb']>,
     ParentType,
     ContextType,
     RequireFields<QueryBoardHistoryArgs, 'boardId'>
   >;
+  boardHistoryPage?: Resolver<
+    ResolversTypes['BoardHistoryPage'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardHistoryPageArgs, 'boardId'>
+  >;
   boardLeaderboard?: Resolver<
     ResolversTypes['BoardLeaderboard'],
     ParentType,
     ContextType,
     RequireFields<QueryBoardLeaderboardArgs, 'input'>
+  >;
+  boardLiveSessions?: Resolver<
+    Array<ResolversTypes['LiveSession']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardLiveSessionsArgs, 'boardId'>
   >;
   boardPresenceStats?: Resolver<
     ResolversTypes['BoardPresenceStats'],
@@ -13476,6 +14186,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryBoardRecentClimbsArgs, 'boardId'>
+  >;
+  boardRecentHistory?: Resolver<
+    Array<ResolversTypes['BoardPresenceClimb']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardRecentHistoryArgs, 'boardId'>
   >;
   boardsBySerialNumbers?: Resolver<
     Array<ResolversTypes['UserBoard']>,
@@ -13579,6 +14295,8 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
+  communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
+  crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
   discoverPlaylists?: Resolver<
@@ -13610,6 +14328,13 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryFindSimilarGymsArgs, 'input'>
+  >;
+  followedAuthors?: Resolver<ResolversTypes['FollowedAuthors'], ParentType, ContextType>;
+  followedLiveSessions?: Resolver<
+    Array<ResolversTypes['LiveSession']>,
+    ParentType,
+    ContextType,
+    Partial<QueryFollowedLiveSessionsArgs>
   >;
   followers?: Resolver<
     ResolversTypes['FollowConnection'],
@@ -13966,6 +14691,18 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallByLayoutArgs, 'layoutId'>
   >;
+  sprayWallDetection?: Resolver<
+    Maybe<ResolversTypes['SprayWallDetection']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallDetectionArgs, 'id'>
+  >;
+  sprayWallDetectionForVersion?: Resolver<
+    Maybe<ResolversTypes['SprayWallDetection']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallDetectionForVersionArgs, 'versionId' | 'wallUuid'>
+  >;
   sprayWallRenderData?: Resolver<
     Maybe<ResolversTypes['SprayWallRenderData']>,
     ParentType,
@@ -14037,6 +14774,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySyncSetterFollowsArgs, 'limit'>
+  >;
+  syncSprayWalls?: Resolver<
+    ResolversTypes['SyncResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySyncSprayWallsArgs, 'boardType' | 'limit'>
   >;
   syncTicks?: Resolver<
     ResolversTypes['SyncResult'],
@@ -14861,6 +15604,28 @@ export type SmartPlaylistResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayDetectionCandidateResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayDetectionCandidate'] = ResolversParentTypes['SprayDetectionCandidate'],
+> = ResolversObject<{
+  confidence?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cx?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cy?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  r?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayDetectionResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayDetectionResult'] = ResolversParentTypes['SprayDetectionResult'],
+> = ResolversObject<{
+  candidates?: Resolver<Array<ResolversTypes['SprayDetectionCandidate']>, ParentType, ContextType>;
+  height?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  width?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayRemixSeedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayRemixSeed'] = ResolversParentTypes['SprayRemixSeed'],
@@ -14892,6 +15657,22 @@ export type SprayWallResolvers<
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   viewerCanEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallDetectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallDetection'] = ResolversParentTypes['SprayWallDetection'],
+> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  error?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  finishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  modelVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  result?: Resolver<Maybe<ResolversTypes['SprayDetectionResult']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  versionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -15248,6 +16029,7 @@ export type UpdateSessionResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UpdateSessionResult'] = ResolversParentTypes['UpdateSessionResult'],
 > = ResolversObject<{
+  isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -15434,6 +16216,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardClimbSet?: BoardClimbSetResolvers<ContextType>;
   BoardConnectionChanged?: BoardConnectionChangedResolvers<ContextType>;
   BoardConnectionHolder?: BoardConnectionHolderResolvers<ContextType>;
+  BoardDiscoveryBoard?: BoardDiscoveryBoardResolvers<ContextType>;
+  BoardDiscoveryClimb?: BoardDiscoveryClimbResolvers<ContextType>;
+  BoardHistoryPage?: BoardHistoryPageResolvers<ContextType>;
+  BoardHistoryUpdated?: BoardHistoryUpdatedResolvers<ContextType>;
   BoardHoldOutlines?: BoardHoldOutlinesResolvers<ContextType>;
   BoardLeaderboard?: BoardLeaderboardResolvers<ContextType>;
   BoardLeaderboardEntry?: BoardLeaderboardEntryResolvers<ContextType>;
@@ -15469,12 +16255,18 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommentUpdated?: CommentUpdatedResolvers<ContextType>;
   CommunityRoleAssignment?: CommunityRoleAssignmentResolvers<ContextType>;
   CommunitySetting?: CommunitySettingResolvers<ContextType>;
+  CommunityStats?: CommunityStatsResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
   ControllerInfo?: ControllerInfoResolvers<ContextType>;
   ControllerPing?: ControllerPingResolvers<ContextType>;
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
+  CrewClimbGroupItem?: CrewClimbGroupItemResolvers<ContextType>;
+  CrewClimbItem?: CrewClimbItemResolvers<ContextType>;
+  CrewFeedItem?: CrewFeedItemResolvers<ContextType>;
+  CrewFeedResult?: CrewFeedResultResolvers<ContextType>;
+  CrewSessionItem?: CrewSessionItemResolvers<ContextType>;
   CurrentClimbChanged?: CurrentClimbChangedResolvers<ContextType>;
   DeleteAccountInfo?: DeleteAccountInfoResolvers<ContextType>;
   DiscoverPlaylistsResult?: DiscoverPlaylistsResultResolvers<ContextType>;
@@ -15487,6 +16279,9 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   EventsReplayResponse?: EventsReplayResponseResolvers<ContextType>;
   FavoritesCount?: FavoritesCountResolvers<ContextType>;
   FollowConnection?: FollowConnectionResolvers<ContextType>;
+  FollowedAuthorUser?: FollowedAuthorUserResolvers<ContextType>;
+  FollowedAuthors?: FollowedAuthorsResolvers<ContextType>;
+  FollowedBoardAccount?: FollowedBoardAccountResolvers<ContextType>;
   FollowingAscentFeedItem?: FollowingAscentFeedItemResolvers<ContextType>;
   FollowingAscentsFeedResult?: FollowingAscentsFeedResultResolvers<ContextType>;
   FollowingClimbAscentsResult?: FollowingClimbAscentsResultResolvers<ContextType>;
@@ -15533,6 +16328,10 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   LeaderChanged?: LeaderChangedResolvers<ContextType>;
   LedCommand?: LedCommandResolvers<ContextType>;
   LedUpdate?: LedUpdateResolvers<ContextType>;
+  LiveSession?: LiveSessionResolvers<ContextType>;
+  LiveSessionBoard?: LiveSessionBoardResolvers<ContextType>;
+  LiveSessionClimb?: LiveSessionClimbResolvers<ContextType>;
+  LiveSessionUser?: LiveSessionUserResolvers<ContextType>;
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
@@ -15616,8 +16415,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SmartPlaylistCount?: SmartPlaylistCountResolvers<ContextType>;
   SmartPlaylistMeta?: SmartPlaylistMetaResolvers<ContextType>;
   SmartPlaylistResult?: SmartPlaylistResultResolvers<ContextType>;
+  SprayDetectionCandidate?: SprayDetectionCandidateResolvers<ContextType>;
+  SprayDetectionResult?: SprayDetectionResultResolvers<ContextType>;
   SprayRemixSeed?: SprayRemixSeedResolvers<ContextType>;
   SprayWall?: SprayWallResolvers<ContextType>;
+  SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
   SprayWallModerationResult?: SprayWallModerationResultResolvers<ContextType>;
   SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;

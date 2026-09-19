@@ -92,6 +92,8 @@ export function sprayWallDetectionFinished(
 }
 
 export type SprayHoldsReviewedProps = {
+  /** Recorded together with the saved count; older clients omit it. */
+  candidateCount?: number;
   /** What the review step actually saved — the number the detector is judged on. */
   holdCount: number;
   /**

@@ -13,6 +13,7 @@ import {
 } from './migration-journal.js';
 import { migrationExecutionContractFromEnvironment, reserveMigrationOwnerSession } from './migration-owner-role.js';
 import { runMigrationWithRuntimeAclContract } from './migration-runtime-acl.js';
+import { initializeJobQueueSchema } from '../src/job-queue-schema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -106,11 +107,15 @@ async function runMigrations() {
           runtimeRole: migrationContract.runtimeRole,
           schemas: migrationContract.runtimeSchemas,
         },
-        () => migrate(db, { migrationsFolder }),
+        async () => {
+          await migrate(db, { migrationsFolder });
+          await initializeJobQueueSchema(db, migrationContract.runtimeRole, process.env.MIGRATION_DETECTOR_ROLE);
+        },
       );
       console.info(`🔒 Reconciled runtime ACLs for ${migrationContract.runtimeRole}`);
     } else {
       await migrate(db, { migrationsFolder });
+      await initializeJobQueueSchema(db);
     }
 
     // Per-entry, hash-keyed verification (#2933). The old check asserted

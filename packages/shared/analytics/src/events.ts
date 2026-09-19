@@ -135,6 +135,20 @@ export const SHARED_EVENTS = {
   WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
+  // Live sessions ("Climbing now" rail on Home, "Climbing here now" block in
+  // the board sheet). `surface` is 'home_rail' | 'board_sheet' on all four
+  // surface events. Funnel: Shelf Viewed { surface, count, state } → Card
+  // Tapped { surface, reason, viewerIsMember, participantCount } → Live Session
+  // Joined { source } (fired by the join screen, so it only counts joins that
+  // started on a live-session card). Start Session Prompt Tapped { surface,
+  // variant } is the empty-state invitation.
+  LiveSessionsShelfViewed: 'Live Sessions Shelf Viewed',
+  LiveSessionCardTapped: 'Live Session Card Tapped',
+  LiveSessionJoined: 'Live Session Joined',
+  StartSessionPromptTapped: 'Start Session Prompt Tapped',
+  // The creator's "show this session live" switch. { isPublic, phase:
+  // 'pre_session' | 'in_session' }.
+  SessionVisibilityChanged: 'Session Visibility Changed',
   // Canonical board URLs — the two halves of one funnel: www hands a reader
   // off at `Climb Handoff Clicked`, the app receives them at
   // `Board Route Handoff`. Both carry `environment: 'production-web'` for the

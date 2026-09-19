@@ -1,0 +1,70 @@
+{
+  "board": {
+    "headline": "Sieh deinen nächsten Zug",
+    "description": "Lies die Griffe, prüfe den Grad und beleuchte deinen Boulder."
+  },
+  "boards": {
+    "headline": "Eine App für deine Boards",
+    "description": "Kompatibel mit Kilter und Tension, mit deinem Verlauf an einem Ort."
+  },
+  "home": {
+    "headline": "Bleib bei deiner Crew dabei",
+    "description": "Sieh die letzten Sessions und woran alle gerade arbeiten."
+  },
+  "climbs": {
+    "headline": "Finde dein nächstes Projekt",
+    "description": "Entdecke Boulder nach Grad, Winkel und mehr."
+  },
+  "session": {
+    "headline": "Jede Session zählt",
+    "description": "Blicke auf deine Boulder, Versuche und Begehungen zurück."
+  },
+  "workout": {
+    "headline": "Gib deiner Session einen Plan",
+    "description": "Erstelle ein Training für dein Board und dein Niveau."
+  },
+  "discover": {
+    "headline": "Entdecke neue Boulder",
+    "description": "Finde empfohlene und gespeicherte Playlists für dein Board."
+  },
+  "playlist": {
+    "headline": "Sammle deine nächsten Boulder",
+    "description": "Öffne eine Playlist und klettere die Boulder durch."
+  },
+  "logbook": {
+    "headline": "Erinnere dich an jede Begehung",
+    "description": "Behalte deine Begehungen und Versuche in einem Routenbuch."
+  },
+  "profile": {
+    "headline": "Alle deine Boards.\nEin Profil.",
+    "description": "Sieh Begehungen und Fortschritte an jedem Board."
+  },
+  "wall": {
+    "headline": "Verfolge die Aktivität am Board",
+    "description": "Sieh die letzten Begehungen und die Statistiken für dein Board."
+  },
+  "boardFamily": {
+    "headline": "Deine Boards. Eine App.",
+    "description": "Wechsle das Board, ohne die App zu wechseln."
+  },
+  "liveQueue": {
+    "headline": "Deine Crew.\nEine Live-Warteschlange.",
+    "description": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron."
+  },
+  "liveClimb": {
+    "headline": "Wähle einen Boulder.\nAlle sehen ihn.",
+    "description": "Der aktuelle Boulder wird für alle in deiner Session aktualisiert."
+  },
+  "wallStatus": {
+    "headline": "Sieh, was gerade leuchtet.",
+    "description": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst."
+  },
+  "moreBoards": {
+    "headline": "Mehr Boards. Dieselbe App.",
+    "description": "Kompatibel mit Woods Board, Grasshopper und MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "Alle deine Boards.\nEin Routenbuch.",
+    "description": "Deine Begehungen und Sessions von allen Boards an einem Ort."
+  }
+}

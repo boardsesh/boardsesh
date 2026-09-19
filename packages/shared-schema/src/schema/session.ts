@@ -140,6 +140,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     boardIds: [Int!]
     "Hex color for multi-session display"
     color: String
+    "Whether the session shows up in live-sessions listings and on public board queue previews. Absent or null means public. Joining by invite link works either way."
+    isPublic: Boolean
   }
 
   # ============================================
@@ -247,6 +249,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     name: String
     "New end-of-session recap. Omit to leave unchanged; null or empty string clears it."
     notes: String
+    "New visibility. Omit or null to leave unchanged. Private hides the session from live-sessions listings and public board queue previews; joining by invite link still works."
+    isPublic: Boolean
   }
 
   """
@@ -259,6 +263,111 @@ export const sessionTypeDefs = /* GraphQL */ `
     name: String
     "Canonical session recap after the update (null when cleared)"
     notes: String
+    "Canonical visibility after the update"
+    isPublic: Boolean!
+  }
+
+  # ============================================
+  # Live Sessions
+  # ============================================
+
+  """
+  Why a live session was listed for this viewer.
+  """
+  enum LiveSessionReason {
+    "The viewer follows the session's creator or somebody on its live roster"
+    FOLLOWING_USER
+    "The session is on a board the viewer follows"
+    FOLLOWED_BOARD
+    "The session is on the board the viewer asked about"
+    SELECTED_BOARD
+  }
+
+  """
+  A climber shown on a live session card.
+  """
+  type LiveSessionUser {
+    "Database user id"
+    userId: ID!
+    "Profile display name, falling back to the account name"
+    displayName: String
+    "Profile avatar, falling back to the account image"
+    avatarUrl: String
+  }
+
+  """
+  The board a live session is on. Only returned when the viewer may see the
+  board: it is not deleted, and it is public or the viewer owns it.
+  """
+  type LiveSessionBoard {
+    "Board uuid (user_boards.uuid)"
+    uuid: ID!
+    "Board name"
+    name: String!
+    "Board slug for /b/<slug> links"
+    slug: String
+    "Board type (kilter, tension, moonboard, ...)"
+    boardType: String!
+    "Name of the gym the board belongs to, when it has one and shows its location"
+    gymName: String
+  }
+
+  """
+  The climb currently on the wall in a live session. Redacted to catalog
+  fields; only returned for public sessions.
+  """
+  type LiveSessionClimb {
+    "Climb name"
+    name: String!
+    "Grade label"
+    grade: String
+  }
+
+  """
+  A session that is happening right now: explicitly started, not ended, and
+  with somebody connected (or a dormant session touched in the last 20 minutes).
+  """
+  type LiveSession {
+    "Session id — pass to joinSession"
+    sessionId: ID!
+    "Session name"
+    name: String
+    "Session goal text"
+    goal: String
+    "Hex color for multi-session display"
+    color: String
+    "When the session was started (ISO 8601)"
+    startedAt: String!
+    "Last durable activity on the session (ISO 8601)"
+    lastActivity: String!
+    "The climber who started the session"
+    host: LiveSessionUser
+    "Signed-in climbers on the live roster, followed climbers first, at most 5"
+    participants: [LiveSessionUser!]!
+    "Distinct participants on the live roster, including anonymous ones"
+    participantCount: Int!
+    "User ids on the live roster that the viewer follows"
+    followedParticipantIds: [ID!]!
+    "Whether the viewer started this session or is on its live roster"
+    viewerIsMember: Boolean!
+    "Whether the session is public"
+    isPublic: Boolean!
+    "The session's board, when the viewer may see it"
+    board: LiveSessionBoard
+    "Board type from the session's board path or board"
+    boardType: String
+    "Board angle from the session's board path or board"
+    angle: Int
+    "Logged sends (flash + send) in the session"
+    sendCount: Int!
+    "Logged flashes in the session"
+    flashCount: Int!
+    "Grade of the hardest logged send"
+    hardestSendGrade: String
+    "The climb on the wall right now (public sessions only)"
+    currentClimb: LiveSessionClimb
+    "Why this session was listed"
+    reasons: [LiveSessionReason!]!
   }
 
   """

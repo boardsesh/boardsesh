@@ -13,6 +13,8 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   the ESP32 LedUpdate payload) plus server-derived attribution and ordering.
   """
   type BoardPresenceClimb {
+    "Origin of the display: boardsesh or kilter. Missing means boardsesh."
+    source: String
     "UUID of the climb lit on the wall"
     climbUuid: String!
     "Queue item UUID that triggered the send, if any (disambiguates duplicates)"
@@ -119,7 +121,22 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   """
   Union of board-presence events streamed by \`boardNowPlaying\`.
   """
-  union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+  type BoardHistoryUpdated {
+    climbs: [BoardPresenceClimb!]!
+    seq: Int!
+  }
+
+  type BoardHistoryPage {
+    entries: [BoardPresenceClimb!]!
+    nextCursor: String
+  }
+
+  union BoardPresenceEvent =
+    | BoardClimbSet
+    | BoardClimbCleared
+    | BoardStatsUpdated
+    | BoardConnectionChanged
+    | BoardHistoryUpdated
 
   """
   The first climber to send the hardest grade logged on this wall.
@@ -245,11 +262,11 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   (user-approved product decision). \`is_public\` is the ONLY session
   visibility knob: \`discoverable\` controls nearby-search listing, not
   privacy — every session is joinable by anyone with its link, and no
-  invite/approval mechanism exists. Today nothing sets \`is_public = false\`
-  (\`CreateSessionInput\` has no such field), so every session on an
-  anon-readable board is previewable after its first wall report; the gate is
-  enforced now so the contract already holds when a session-privacy control
-  ships.
+  invite/approval mechanism exists. A creator sets \`is_public = false\`
+  through \`CreateSessionInput.isPublic\` or \`UpdateSessionInput.isPublic\`;
+  that hides the session's queue here and drops it from the live-sessions
+  listings (\`followedLiveSessions\` / \`boardLiveSessions\`) for everyone
+  who is not in it.
 
   Every item is redacted to climb-catalog fields only (see
   \`BoardQueuePreviewItem\`) — no addedBy/tickedBy/user identities ever leave

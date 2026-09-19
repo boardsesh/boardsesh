@@ -102,14 +102,10 @@ describe('recomputeClimbStats', () => {
     expect(seedSql).toContain("seed_tick.status IN ('flash','send')");
     expect(seedSql).toContain('seed_tick.kilter_detached_at IS NULL');
     expect(seedSql).toContain('quality_normalized');
-    // MoonBoard wrong-angle guard (#3529). Behaviour is asserted against real
-    // Postgres further down; what this pins is that the guard reads
-    // board_climbs.angle from the OUTER FROM (the single-key seed's shape) and
-    // tests for real catalog data rather than a bare stats row.
-    expect(seedSql).toMatch(/bc\.angle IS NULL/);
-    expect(seedSql).toMatch(/bc\.angle =/);
-    expect(seedSql).toMatch(/COALESCE\(s\.upstream_ascensionist_count, 0\) > 0/);
-    expect(seedSql).toMatch(/s\.upstream_quality_average IS NOT NULL/);
+    // A legacy catalog angle must not prevent a legitimate send from seeding
+    // its own stats key. Real Postgres coverage below checks the resulting row.
+    expect(seedSql).not.toMatch(/bc\.angle/);
+    expect(seedSql).not.toContain('upstream_quality_average');
   });
 
   it('runs the guard, seed and recompute SQL inside one transaction', async () => {
@@ -218,16 +214,24 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(/AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)\s+AS avg_quality/);
     expect(sql).toMatch(/AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)\s+AS avg_difficulty/);
 
-    // difficulty/display are CASE-guarded on `owned OR derive_from_ticks`
+    // difficulty/display are CASE-guarded on `graded OR derive_from_ticks`
     // (#4798): Aurora's averages survive untouched on a synced climb, while a
     // row we have never graded — or one we graded ourselves and upstream has not
     // stamped since — takes the tick average.
+    //
+    // `boardsesh_graded`, not `boardsesh_owned`: the owned leg answers TWO
+    // questions and only the quality/FA half is `user_id IS NOT NULL`. The grade
+    // half additionally fences spray walls out (SW-05c), whose setter grade is
+    // seeded and authoritative — see `ownedGradeIsOursSql`.
     expect(sql).toMatch(
-      /difficulty_average\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/,
+      /difficulty_average\s*=\s*CASE[\s\S]+?boardsesh_graded FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/,
     );
     expect(sql).toMatch(
-      /display_difficulty\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/,
+      /display_difficulty\s*=\s*CASE[\s\S]+?boardsesh_graded FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/,
     );
+    // …and that fence is in the owner CTE, beside the unfenced `boardsesh_owned`
+    // the quality and FA branches still use.
+    expect(sql).toMatch(/owner AS \([\s\S]+?bc\.board_type <> 'spray'[\s\S]+?AS boardsesh_graded/);
     // The marker column is written on the same branch, stamped now() when the
     // derive produced a grade and NULLed when it did not (last graded tick gone).
     expect(sql).toMatch(
@@ -375,9 +379,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     `);
   }
 
-  // `angle` is the MoonBoard-shaped case (#3529): the catalog mints one
-  // board_climbs row per (problem, angle), so those rows carry a non-null angle.
-  // Kilter/Tension catalog rows leave it null, which is why it defaults to null.
+  // Legacy MoonBoard catalog rows can retain an angle after canonicalization.
   async function seedClimb(boardType: string, uuid: string, ownerUserId: string | null, angle: number | null = null) {
     await db.execute(sql`
       INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, user_id, angle)
@@ -1432,7 +1434,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
   // at an angle the catalog has no stats row for still gets one. Anyone who
   // "hardens" the guard from (climb) to (climb, angle) breaks real ticks, and
   // this is the test that tells them.
-  it('single + bulk: a real climb sent at an angle with no stats row STILL seeds one', async () => {
+  it('single + bulk: a real climb sent at an angle with no stats row seeds one', async () => {
     await seedUser('u-newangle', 'Nia');
     for (const uuid of ['CLIMB-ANGLES-SINGLE', 'CLIMB-ANGLES-BULK']) {
       await seedClimb('kilter', uuid, null);
@@ -1507,26 +1509,12 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(await normalizedFlags('CLIMB-NORM-BULK', 30)).toEqual([true]);
   });
 
-  // -------------------------------------------------------------------------
-  // MoonBoard wrong-angle seed guard (#3529)
-  //
-  // MoonBoard identity is angle-bearing (one board_climbs row per problem AND
-  // angle, each with a non-null board_climbs.angle), so a tick logged from a
-  // board set to the other angle names a climb the catalog does not grade at
-  // that angle. Seeding there mints a row nothing can render. This is the
-  // defence-in-depth layer for ticks that did NOT come through saveTick:
-  // pre-fix rows, bulk/self-heal recomputes over them, future importers.
-  //
-  // "Carries real catalog data" — not "a row exists" — is the whole predicate.
-  // Every affected climb in prod already has a stats row at the wrong angle.
-  // -------------------------------------------------------------------------
-
-  it('single-key: does NOT seed a MoonBoard stats row at an angle the climb is not graded at', async () => {
+  // MoonBoard sends at an angle absent from the catalog still seed counts and ratings.
+  it('single-key: seeds MoonBoard counts and quality at a new angle without deriving a catalog grade', async () => {
     await seedUser('u-moon-wrong', 'Mira');
     await seedClimb('moonboard', 'MOON-WRONG', null, 40);
-    await seedStats('moonboard', 'MOON-WRONG', 40, { upstream: 6 });
-    // Tick inserted directly, bypassing saveTick — this is a pre-migration prod
-    // row, or anything else that writes boardsesh_ticks without the resolver.
+    await seedStats('moonboard', 'MOON-WRONG', 40, { upstream: 6, displayDifficulty: 17.5 });
+    // Importers and historical rows can reach recompute without saveTick.
     await seedTick({
       boardType: 'moonboard',
       climbUuid: 'MOON-WRONG',
@@ -1534,21 +1522,31 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       userId: 'u-moon-wrong',
       status: 'send',
       origin: 'native',
+      quality: 4,
+      difficulty: 20,
       climbedAt: '2026-01-01 00:00:00',
     });
 
     await recomputeClimbStatsCore(db, 'moonboard', 'MOON-WRONG', 25);
 
-    expect(await statsRowCount('moonboard', 'MOON-WRONG', 25)).toBe(0);
-    // And the graded angle is untouched by the refusal.
+    expect(await statsRowCount('moonboard', 'MOON-WRONG', 25)).toBe(1);
+    const seeded = await statsRow('moonboard', 'MOON-WRONG', 25);
+    expect(Number(seeded.bs)).toBe(1);
+    expect(Number(seeded.total)).toBe(1);
+    expect(Number(seeded.quality)).toBe(4);
+    expect(seeded.difficulty).toBeNull();
+    expect(seeded.display_difficulty).toBeNull();
+    expect(seeded.tick_graded_at).toBeNull();
+    // The source catalog angle keeps its upstream count and grade.
     const graded = await statsRow('moonboard', 'MOON-WRONG', 40);
     expect(Number(graded.total)).toBe(6);
+    expect(Number(graded.display_difficulty)).toBe(17.5);
   });
 
-  it('bulk: does NOT seed a MoonBoard stats row at an angle the climb is not graded at', async () => {
+  it('bulk: seeds MoonBoard counts and quality at a new angle without deriving a catalog grade', async () => {
     await seedUser('u-moon-wrong-bulk', 'Milo');
     await seedClimb('moonboard', 'MOON-WRONG-BULK', null, 40);
-    await seedStats('moonboard', 'MOON-WRONG-BULK', 40, { upstream: 6 });
+    await seedStats('moonboard', 'MOON-WRONG-BULK', 40, { upstream: 6, displayDifficulty: 17.5 });
     await seedTick({
       boardType: 'moonboard',
       climbUuid: 'MOON-WRONG-BULK',
@@ -1556,19 +1554,24 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       userId: 'u-moon-wrong-bulk',
       status: 'send',
       origin: 'native',
+      quality: 4,
+      difficulty: 20,
       climbedAt: '2026-01-01 00:00:00',
     });
 
     await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-WRONG-BULK', angle: 25 }]);
 
-    expect(await statsRowCount('moonboard', 'MOON-WRONG-BULK', 25)).toBe(0);
+    expect(await statsRowCount('moonboard', 'MOON-WRONG-BULK', 25)).toBe(1);
+    const seeded = await statsRow('moonboard', 'MOON-WRONG-BULK', 25);
+    expect(Number(seeded.bs)).toBe(1);
+    expect(Number(seeded.total)).toBe(1);
+    expect(Number(seeded.quality)).toBe(4);
+    expect(seeded.difficulty).toBeNull();
+    expect(seeded.display_difficulty).toBeNull();
+    expect(seeded.tick_graded_at).toBeNull();
   });
 
-  // The refusal must not extend to an angle the catalog actually grades. Note
-  // the fixture has NO stats row anywhere, so the seed genuinely has to fire —
-  // a fixture that already had a row would pass whatever the guard did, since
-  // the seed is ON CONFLICT DO NOTHING.
-  it('single-key: STILL seeds a MoonBoard row at the angle the climb IS graded at', async () => {
+  it('single-key: seeds a MoonBoard row at the angle the climb IS graded at', async () => {
     await seedUser('u-moon-right', 'Moe');
     await seedClimb('moonboard', 'MOON-RIGHT', null, 40);
     await seedTick({
@@ -1588,10 +1591,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(seeded.total)).toBe(1);
   });
 
-  // The post-#3851 shape: an angle-agnostic canonical climb (angle IS NULL)
-  // seeds at whatever angle the climber ticked, exactly like Kilter/Tension.
-  // This is what makes the guard remove itself once the re-import lands.
-  it('single-key: STILL seeds when the MoonBoard climb row carries no angle (post-#3851)', async () => {
+  it('single-key: seeds when the MoonBoard climb row carries no angle (post-#3851)', async () => {
     await seedUser('u-moon-null', 'Nell');
     await seedClimb('moonboard', 'MOON-NULLANGLE', null, null);
     await seedTick({
@@ -1610,14 +1610,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(seeded.bs)).toBe(1);
   });
 
-  // USER-CREATED climbs are outside the guard entirely, matching
-  // resolveMoonBoardTickAngle and the moonboard_wrong_angle_stats_cleanup migration's `bc.user_id IS NULL` fence.
-  // Nothing grades a climber's own problem per angle, so a tick at any angle is
-  // legitimate and must seed a row. Deliberately NO stats row is pre-seeded at
-  // 25: with one present, ON CONFLICT DO NOTHING makes the assertion pass
-  // whether the guard fires or not. Deleting `bc.user_id IS NOT NULL` from the
-  // seed guard turns this red.
-  it('single-key: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+  it('single-key: seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
     await seedUser('u-moon-owner', 'Ona');
     await seedClimb('moonboard', 'MOON-USER-SET', 'u-moon-owner', 40);
     await seedTick({
@@ -1636,14 +1629,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(seeded.bs)).toBe(1);
   });
 
-  // The bulk twin of the case above. The bulk seed carries the same predicate in
-  // a different SHAPE (board_climbs lives inside an EXISTS rather than the outer
-  // FROM), so a leg can go missing from one statement while the other keeps it —
-  // which is exactly what happened to `bc.user_id IS NOT NULL` until QA caught
-  // it. Every self-heal and backfill runs through this path, so the hole here is
-  // wider than the single-key one. Same no-pre-seeded-row discipline: with a row
-  // present, ON CONFLICT DO NOTHING would pass whatever the guard did.
-  it('bulk: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+  it('bulk: seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
     await seedUser('u-moon-owner-bulk', 'Obi');
     await seedClimb('moonboard', 'MOON-USER-SET-BULK', 'u-moon-owner-bulk', 40);
     await seedTick({
@@ -1658,17 +1644,12 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
 
     await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-USER-SET-BULK', angle: 25 }]);
 
-    // Row count first, so dropping the fence reads as "expected 0 to be 1"
-    // rather than as an undefined-property TypeError one line further down.
     expect(await statsRowCount('moonboard', 'MOON-USER-SET-BULK', 25)).toBe(1);
     const seeded = await statsRow('moonboard', 'MOON-USER-SET-BULK', 25);
     expect(Number(seeded.bs)).toBe(1);
   });
 
-  // The post-#3849 shape: once the catalog grades BOTH angles, a per-angle tick
-  // seeds normally again. Dropping the "carries real catalog data" leg for a
-  // blunt `bc.angle = angle` equality turns this red.
-  it('single-key: STILL seeds at a second angle that carries real catalog data', async () => {
+  it('single-key: seeds at a second angle that carries real catalog data', async () => {
     await seedUser('u-moon-both', 'Bex');
     await seedClimb('moonboard', 'MOON-BOTH-ANGLES', null, 40);
     await seedStats('moonboard', 'MOON-BOTH-ANGLES', 25, { upstream: 4 });

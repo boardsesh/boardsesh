@@ -6,6 +6,7 @@ import {
 } from '@boardsesh/shared-schema';
 import { createCircuitBreaker } from './circuit-breaker';
 import { logger } from '../utils/logger';
+import { BoundedTtlCache } from '../utils/bounded-ttl-cache';
 
 export { INSTAGRAM_URL_REGEX, isInstagramUrl, getInstagramMediaId, normalizeBetaVideoUrl };
 
@@ -237,7 +238,7 @@ function looksLikeLoginWall(html: string): boolean {
   );
 }
 
-const metaCache = new Map<string, { data: InstagramMetaResult; expiresAt: number }>();
+const metaCache = new BoundedTtlCache<InstagramMetaResult>({ maxEntries: 1000, maxBytes: 4 * 1024 * 1024 });
 const inflight = new Map<string, Promise<InstagramMetaResult>>();
 
 const circuit = createCircuitBreaker({
@@ -255,6 +256,11 @@ export function clearInstagramMetaCache(): void {
   metaCache.clear();
   inflight.clear();
   circuit.reset();
+}
+
+export function maintainInstagramMetaCache() {
+  metaCache.evictExpired();
+  return { ...metaCache.getStats(), inFlight: inflight.size };
 }
 
 async function fetchInstagramMetaUncached(url: string): Promise<UncachedResult> {
@@ -346,11 +352,8 @@ async function fetchInstagramMetaUncached(url: string): Promise<UncachedResult> 
 }
 
 export async function fetchInstagramMeta(url: string): Promise<InstagramMetaResult> {
-  const now = Date.now();
   const cached = metaCache.get(url);
-  if (cached && cached.expiresAt > now) {
-    return cached.data;
-  }
+  if (cached) return cached;
 
   // Circuit open: short-circuit to transient_error without making a network
   // call. The resolver layer keeps serving cached thumbnails during this
@@ -368,7 +371,7 @@ export async function fetchInstagramMeta(url: string): Promise<InstagramMetaResu
       const ttl = internal.status === 'transient_error' ? INSTAGRAM_TRANSIENT_TTL_MS : INSTAGRAM_META_TTL_MS;
       const result: InstagramMetaResult =
         internal.status === 'transient_error' ? { status: 'transient_error' } : internal;
-      metaCache.set(url, { data: result, expiresAt: Date.now() + ttl });
+      metaCache.set(url, result, ttl);
       if (internal.status === 'transient_error' && internal.tripBreaker) {
         circuit.recordFailure();
       }

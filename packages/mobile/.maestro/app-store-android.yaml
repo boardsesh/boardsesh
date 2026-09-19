@@ -9,9 +9,9 @@ name: app-store screenshots android
 # expo-dev-launcher reopens the last bundle, so there's no "Open in Boardsesh?"
 # deep-link dialog to dismiss.
 #
-# Google Play caps phone screenshots at 8. This set leads with lit Tension and Kilter
-# walls, followed by the six core app surfaces. Party, playlist, logbook, and session
-# detail stay out of the Android listing because there is no room for them here.
+# The original eight captures remain available with legacy fixture bundles. A
+# third pinned board and shared-session fixtures add optional campaign candidates
+# below; select up to eight when publishing the Google Play phone listing.
 #
 # WAITING (why the waits stay generous even though the app is already home): the
 # orchestrator's launchDevClientToHome waits for Metro's `$screen /home` marker
@@ -31,15 +31,15 @@ name: app-store screenshots android
 # EXPO_PUBLIC_SCREENSHOT_MODE=1 — the dev-client ships no bundled JS of its own,
 # so nothing is "built with" it; the running bundle just reads it from Metro):
 #   ://climbs?screenshotOpenFirst=1       -> auto-opens the first climb's board view
-#   ://climbs?screenshotBoardIndex=0|1    -> switches to a named screenshot wall first
+#   ://climbs?screenshotBoardIndex=0..5  -> switches to a named screenshot wall first
 #   ://climbs?screenshotOpenBoardSheet=1  -> opens the board-presence "now on the wall" sheet
 # The board itself is auto-selected on boot in screenshot mode (ScreenshotBoardAutoActivator
 # activates SCREENSHOT_BOARDS[0], the wall pinned by name in screenshot-mode.ts), so the
 # board-backed shots need no in-flow board-pick step.
 #
-# The numeric screenshot names set the Play Store display order. Every board-view launch
-# names its board explicitly: the screenshot app persists the last active wall between
-# launches, so omitting an index could capture the preceding wall twice.
+# Numeric names identify the raw captures; presentation recipes choose the listing
+# order. Every board-view launch names its board explicitly: the screenshot app
+# persists the last active wall, so omitting an index could capture that wall twice.
 
 # Tension board view — lead with the second pinned wall (SCREENSHOT_BOARDS[1]) to show
 # the app lights more than one board system. A fresh launch keeps the play drawer from a
@@ -95,6 +95,15 @@ name: app-store screenshots android
     timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
+# The live rail settles independently from the session feed.
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- assertNotVisible:
+    id: 'live-sessions-error'
+- assertNotVisible:
+    id: 'live-sessions-offline'
 - takeScreenshot: 02-home
 
 # Climbs — the main browse surface. Wait for a real row so the list is not captured
@@ -118,6 +127,27 @@ name: app-store screenshots android
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd:
     timeout: 30000
+# Pixel stability alone can still describe the preceding tab.
+- extendedWaitUntil:
+    visible:
+      id: 'pre-session-footer'
+    timeout: 90000
+# FlashList can preserve a scrolled preview position after rows load.
+- scrollUntilVisible:
+    element:
+      id: 'pre-session-board-summary'
+    direction: UP
+    timeout: 60000
+# Bring the workout choices, target grade, and warm-up controls above the tray.
+- repeat:
+    times: 2
+    commands:
+      - swipe:
+          start: '15%, 65%'
+          end: '15%, 40%'
+          duration: 1000
+- waitForAnimationToEnd:
+    timeout: 30000
 - takeScreenshot: 05-workout-generator
 
 # Profile — progress tab. A plain link clears any screenshot-specific route params.
@@ -133,9 +163,51 @@ name: app-store screenshots android
     notVisible:
       id: 'horizontal-scroll-section-loading'
     timeout: 60000
+# Return to the all-board overview, even when the mounted tab retained a scroll position.
+- scrollUntilVisible:
+    element:
+      id: 'profile-board-overview'
+    direction: UP
+    centerElement: false
+    visibilityPercentage: 100
+    timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 06-profile
+
+# One history across boards. Old fixture bundles retain their original captures.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PROFILE_SESSION_ID != '' && Number(SCREENSHOT_BOARD_COUNT) >= 6}
+    commands:
+      - openLink: com.boardsesh.app://profile?screenshotTab=logbook
+      - extendedWaitUntil:
+          visible:
+            id: 'logbook-screen'
+          timeout: 90000
+      - extendedWaitUntil:
+          visible:
+            id: 'logbook-board-kilter'
+          timeout: 60000
+      - assertVisible:
+          id: 'logbook-board-tension'
+      - assertVisible:
+          id: 'logbook-board-moonboard'
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 14-logbook
+      - openLink: com.boardsesh.app://profile/session/${SCREENSHOT_PROFILE_SESSION_ID}
+      - extendedWaitUntil:
+          visible:
+            id: 'session-detail-screen'
+          timeout: 90000
+      - extendedWaitUntil:
+          visible:
+            id: 'session-grade-chart'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 15-session-detail
 
 # Board sheet — relaunch to keep the prior route from leaking into the sheet, then open it
 # deterministically through the screenshot-mode parameter.
@@ -158,3 +230,167 @@ name: app-store screenshots android
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 07-board-sheet
+
+# The third pinned selector is the MoonBoard in the campaign fixture bundle.
+# Count comes from the effective Metro board list, including explicit --boards.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != '' && Number(SCREENSHOT_BOARD_COUNT) >= 3}
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 08-moonboard-board-view
+
+# More compatible boards, using the three extra selectors in the campaign bundle.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != '' && Number(SCREENSHOT_BOARD_COUNT) >= 6}
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 11-woods-board-view
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 12-grasshopper-board-view
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 13-moonboard-2024-view
+
+# The wall stays on the seeded first climb while this climber picks a different
+# local queue head. Capture the real live wall-status header before joining a crew.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != ''}
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - tapOn: 'Guessing Games'
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - tapOn: 'Close'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible: 'On the wall: Lightest Pair of Shorts, .*'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible: 'Guessing Games'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - takeScreenshot: 10-wall-status
+
+# This scenario uses sanitized session snapshots supplied with the fixture bundle.
+# An empty ID keeps legacy replay and record runs on the original flow.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != ''}
+    commands:
+      - launchApp
+      - openLink: com.boardsesh.app://home
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://join/${SCREENSHOT_SHARED_SESSION_ID}
+      - extendedWaitUntil:
+          visible: 'Join session'
+          timeout: 60000
+      - tapOn: 'Join session'
+      - extendedWaitUntil:
+          visible: 'Friday board crew'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible: '[2-9] climbing'
+          timeout: 60000
+      - tapOn: 'Lightest Pair of Shorts'
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - tapOn: 'Queue, .* climbs'
+      - extendedWaitUntil:
+          visible: '6 climbs'
+          timeout: 60000
+      # Drag the header, not a climb row: a row drag reorders the shared queue.
+      - swipe:
+          from:
+            text: 'Up next'
+          direction: UP
+          duration: 700
+      - extendedWaitUntil:
+          visible: 'Wax On'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - takeScreenshot: 09-live-queue

@@ -326,9 +326,16 @@ describe('removeBoardScopeData — markers', () => {
         'checkpoint:board_climbs:kilter:1:5',
         'checkpoint:board_climb_stats:kilter:1:5',
         'checkpoint:board_climb_grades:kilter:1:5',
+        // The spray wall mirrored for this scope (#5448). Derived from
+        // BOARD_DATA_TABLES like the three above, so it is here for every scope
+        // key and not only a spray one — teardown deleting a key that was never
+        // written costs nothing, and the alternative is a per-table branch that
+        // is exactly how board_climb_grades' checkpoint got left behind once.
+        'checkpoint:spray_walls:kilter:1:5',
         'schema-refresh:board_climbs:kilter:1:5',
         'schema-refresh:board_climb_stats:kilter:1:5',
         'schema-refresh:board_climb_grades:kilter:1:5',
+        'schema-refresh:spray_walls:kilter:1:5',
         'scope-complete:kilter:1:5',
         // Its Started twin: leaving this behind would drop a re-added board out
         // of the download funnel forever (issue #4316).
@@ -343,6 +350,125 @@ describe('removeBoardScopeData — markers', () => {
         'grades-bootstrap-attempts:kilter:1:5',
       ]),
     );
+  });
+
+  // Removing a downloaded spray wall (#5448). The wall's row lives in
+  // `spray_walls`, and its photograph lives in a directory no sweeper walks — so
+  // a teardown that took only the climbs would leave the whole wall behind:
+  // holds, geometry, name, and a multi-megabyte JPEG nothing on disk names.
+  describe('the spray wall', () => {
+    const SPRAY_WALL: OfflineBoardScope = { boardType: 'spray', layoutId: 4, sizeId: 4 };
+
+    async function insertWall(layoutId: number, photoKey: string | null): Promise<void> {
+      await db.runAsync(
+        `INSERT INTO spray_walls (layout_id, board_uuid, name, photo_key, updated_at, sync_seq)
+         VALUES (?, ?, ?, ?, '2026-06-01T00:00:00Z', 1)`,
+        [layoutId, `board-${layoutId}`, `Wall ${layoutId}`, photoKey],
+      );
+    }
+
+    const wallLayoutIds = async () =>
+      (await db.getAllAsync<{ layout_id: number }>('SELECT layout_id FROM spray_walls ORDER BY layout_id')).map(
+        (row) => row.layout_id,
+      );
+
+    it('deletes the wall row and hands its photo key to the platform', async () => {
+      await insertWall(4, 'spray-walls/wall-4/photo-2.jpg');
+      await insertClimb({ uuid: 'wall-climb', boardType: 'spray', layoutId: 4, compatibleSizeIds: [4] });
+      const removedPhotos: string[] = [];
+
+      const result = await removeBoardScopeData({
+        db,
+        scope: SPRAY_WALL,
+        scopeKey: 'spray:4:4',
+        retainedScopes: [],
+        removeSprayPhoto: (photoKey) => {
+          removedPhotos.push(photoKey);
+        },
+      });
+
+      expect(await wallLayoutIds()).toEqual([]);
+      expect(result.sprayWallsDeleted).toBe(1);
+      expect(removedPhotos).toEqual(['spray-walls/wall-4/photo-2.jpg']);
+    });
+
+    it('counts the wall towards removedAnyRows even with no climbs on it', async () => {
+      // A wall downloaded before anybody set a climb on it is still a download to
+      // reclaim, and `removedAnyRows: false` is what the caller reads as "nothing
+      // happened".
+      await insertWall(4, null);
+
+      const result = await removeBoardScopeData({
+        db,
+        scope: SPRAY_WALL,
+        scopeKey: 'spray:4:4',
+        retainedScopes: [],
+      });
+
+      expect(result.sprayWallsDeleted).toBe(1);
+      expect(result.removedAnyRows).toBe(true);
+    });
+
+    it('never touches a wall when a CATALOGUE scope sharing its layout number is removed', async () => {
+      // `spray_walls.layout_id` is the spray sequence's id space. Kilter layout 1
+      // and wall 1 are different things, and an unguarded delete would take a
+      // climber's wall off the phone because they removed an unrelated board.
+      await insertWall(1, 'spray-walls/wall-1/photo-1.jpg');
+      const removedPhotos: string[] = [];
+
+      const result = await removeBoardScopeData({
+        db,
+        scope: KILTER_12X12,
+        scopeKey: 'kilter:1:5',
+        retainedScopes: [],
+        removeSprayPhoto: (photoKey) => {
+          removedPhotos.push(photoKey);
+        },
+      });
+
+      expect(await wallLayoutIds()).toEqual([1]);
+      expect(result.sprayWallsDeleted).toBe(0);
+      expect(removedPhotos).toEqual([]);
+    });
+
+    it('removes only the wall being torn down', async () => {
+      await insertWall(4, 'spray-walls/wall-4/photo-1.jpg');
+      await insertWall(5, 'spray-walls/wall-5/photo-1.jpg');
+
+      await removeBoardScopeData({ db, scope: SPRAY_WALL, scopeKey: 'spray:4:4', retainedScopes: [] });
+
+      expect(await wallLayoutIds()).toEqual([5]);
+    });
+
+    it('still deletes the row when the platform has no photo store', async () => {
+      // Web, and every caller that did not pass the seam. The bytes are not there
+      // to delete; the row must go regardless.
+      await insertWall(4, 'spray-walls/wall-4/photo-1.jpg');
+
+      const result = await removeBoardScopeData({ db, scope: SPRAY_WALL, scopeKey: 'spray:4:4', retainedScopes: [] });
+
+      expect(await wallLayoutIds()).toEqual([]);
+      expect(result.sprayWallsDeleted).toBe(1);
+    });
+
+    it('does not fail the teardown when the photo delete throws', async () => {
+      // The row is already committed. A filesystem error must not turn a
+      // completed removal into a rejected promise the caller reports as failure.
+      await insertWall(4, 'spray-walls/wall-4/photo-1.jpg');
+
+      const result = await removeBoardScopeData({
+        db,
+        scope: SPRAY_WALL,
+        scopeKey: 'spray:4:4',
+        retainedScopes: [],
+        removeSprayPhoto: () => {
+          throw new Error('disk is read-only');
+        },
+      });
+
+      expect(result.sprayWallsDeleted).toBe(1);
+      expect(await wallLayoutIds()).toEqual([]);
+    });
   });
 
   // The caller removes the MMKV setting before calling this, so a crash in between

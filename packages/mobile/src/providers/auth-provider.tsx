@@ -37,6 +37,7 @@ import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-s
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
+import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
@@ -267,6 +268,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
       }
     } finally {
+      // The wall photographs (#5448), in `finally` and NOT after the wipe above.
+      // The database cleanup is the one step here that is expected to fail — a
+      // locked database is the documented case — and a throw there used to jump
+      // straight past this, leaving the previous account's private garage photos
+      // in durable storage on a shared phone. The filesystem wipe does not need
+      // the database to have succeeded, and it is the half that cannot be
+      // recovered later: once `spray_walls` is gone, nothing names the files.
+      clearStoredSprayPhotos();
       setSigningOut(false);
     }
   }, []);

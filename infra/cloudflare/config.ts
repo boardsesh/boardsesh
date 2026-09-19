@@ -817,6 +817,9 @@ export const MEDIA_HOSTNAME = 'media.boardsesh.com';
  */
 export const ASSETS_STAGING_HOSTNAME = 'assets-r2.boardsesh.com';
 
+/** Public R2 custom domain for the mobile board-snapshot artifacts. */
+export const SNAPSHOTS_HOSTNAME = 'snapshots.boardsesh.com';
+
 export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
 /**
@@ -855,8 +858,16 @@ export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
  */
 export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}")`;
 
+export const SNAPSHOTS_CACHE_RULE_DESCRIPTION =
+  'boardsesh:snapshots-edge-cache (managed by scripts/cloudflare-apply.ts)';
+export const SNAPSHOTS_CACHE_EXPRESSION =
+  `(http.host eq "${SNAPSHOTS_HOSTNAME}" ` + `and starts_with(http.request.uri.path, "/board-snapshots/"))`;
+export const SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION =
+  'boardsesh:snapshots-cors-header (managed by scripts/cloudflare-apply.ts)';
+export const SNAPSHOTS_CORS_HEADER_EXPRESSION = `http.host eq "${SNAPSHOTS_HOSTNAME}"`;
+
 /**
- * CORS for a bucket of public images.
+ * CORS for public, immutable objects fetched directly by clients.
  *
  * `origins: ['*']` is deliberate, and tightening it to a list of our own origins
  * would be a mistake. R2 echoes the matching origin back, so a list makes the
@@ -866,7 +877,7 @@ export const ASSETS_CORS_HEADER_EXPRESSION = `(http.host eq "${ASSETS_HOSTNAME}"
  * has no such variance. See RESPONSE_HEADER_RULE_PHASE for the other half of
  * this problem.
  */
-export const PUBLIC_IMAGE_CORS: R2Cors = {
+export const PUBLIC_READ_CORS: R2Cors = {
   allowedOrigins: ['*'],
   allowedMethods: ['GET', 'HEAD'],
   maxAgeSeconds: 86_400,
@@ -875,12 +886,10 @@ export const PUBLIC_IMAGE_CORS: R2Cors = {
 /**
  * R2 buckets this repo owns, and whether each one is public.
  *
- * `customDomain` is the entire access-control story for an R2 bucket. R2
- * implements no object ACLs and no bucket policies, so there is no way to make
- * one prefix private: attaching a custom domain publishes EVERY object in the
- * bucket. That is why user data exports live in their own bucket rather than
- * under a prefix, and why `customDomain: null` is a hard assertion here rather
- * than a default — the apply fails if such a bucket ever grows a domain.
+ * R2 has two independent public access paths: custom domains and its managed
+ * `r2.dev` URL. It implements no object ACLs or bucket policies, so enabling
+ * either path publishes EVERY object in the bucket. Every declaration keeps
+ * `r2.dev` disabled; private buckets also declare no custom domain.
  *
  * Buckets are created when absent and NEVER deleted by this tool. Deleting
  * object storage is not something a converge loop should be able to do.
@@ -896,6 +905,8 @@ export interface R2BucketDesired {
   name: string;
   /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
   customDomain: string | null;
+  /** The development URL is never a supported public path; custom domains carry production traffic. */
+  r2DevDomainEnabled: false;
   /**
    * Bucket CORS policy. Omitted means "this repo does not manage CORS here" —
    * NOT "no CORS" — so a bucket whose policy is set elsewhere is left alone
@@ -911,9 +922,9 @@ export interface R2BucketDesired {
 
 export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // Avatars, gym images, beta-link thumbnails and every resize variant.
-  { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME },
+  { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME, r2DevDomainEnabled: false },
   // User data exports and MoonBoard OCR submissions. MUST stay domain-less.
-  { name: 'boardsesh-user-private', customDomain: null },
+  { name: 'boardsesh-user-private', customDomain: null, r2DevDomainEnabled: false },
   // Repo-owned board art, icons and brand marks — the catalogue behind
   // assets.boardsesh.com, moving off Tigris (which serves it HTTP/1.1 from a
   // single region, measured 614 ms TTFB and 4.62 s for 24 images from Sydney,
@@ -922,7 +933,23 @@ export const desiredR2Buckets: readonly R2BucketDesired[] = [
   // Still pointed at the staging hostname: this entry creates the bucket and
   // lets the publisher prove it. `assets.boardsesh.com` moves in a separate
   // change, after that dry run passes. See docs/static-assets.md.
-  { name: 'boardsesh-static-assets', customDomain: ASSETS_STAGING_HOSTNAME, cors: PUBLIC_IMAGE_CORS },
+  {
+    name: 'boardsesh-static-assets',
+    customDomain: ASSETS_STAGING_HOSTNAME,
+    r2DevDomainEnabled: false,
+    cors: PUBLIC_READ_CORS,
+  },
+  // Mobile bootstrap databases and manifests. Readers stay on Tigris until a
+  // complete R2 export has passed the migration checks in docs/board-snapshots.md.
+  {
+    name: 'boardsesh-board-snapshots',
+    customDomain: SNAPSHOTS_HOSTNAME,
+    r2DevDomainEnabled: false,
+    cors: PUBLIC_READ_CORS,
+  },
+  // XPRem owns object access for OTA updates. The bucket must stay private;
+  // updates.boardsesh.com is the application endpoint, not an object domain.
+  { name: 'boardsesh-ota-v3', customDomain: null, r2DevDomainEnabled: false },
 ];
 
 export const desiredCloudflareState: CloudflareDesiredState = {
@@ -1066,6 +1093,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    {
+      description: SNAPSHOTS_CACHE_RULE_DESCRIPTION,
+      expression: SNAPSHOTS_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
   ],
   wafRules: [
     // MUST stay first — see the ordering contract on CloudflareDesiredState.wafRules.
@@ -1143,6 +1181,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     {
       description: ASSETS_CORS_HEADER_RULE_DESCRIPTION,
       expression: ASSETS_CORS_HEADER_EXPRESSION,
+      action: 'rewrite',
+      action_parameters: {
+        headers: {
+          'access-control-allow-origin': { operation: 'set', value: '*' },
+        },
+      },
+      enabled: true,
+    },
+    {
+      description: SNAPSHOTS_CORS_HEADER_RULE_DESCRIPTION,
+      expression: SNAPSHOTS_CORS_HEADER_EXPRESSION,
       action: 'rewrite',
       action_parameters: {
         headers: {

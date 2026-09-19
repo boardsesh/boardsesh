@@ -1,9 +1,13 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Boards populaires",
-      "meta": "{{boards}} boards · {{sends}} croix"
-    }
+  "sprayDetection": {
+    "queued": "Ta photo attend la reconnaissance des prises.",
+    "running": "Recherche des prises sur ta photo…",
+    "connection": "La reconnaissance est inaccessible. Réessaie une fois connecté·e.",
+    "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
+    "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
+    "retry": "Réessayer",
+    "manual": "Placer les prises à la main",
+    "resume": "Reprendre cette réinitialisation"
   },
   "mobile": {
     "edit": {
@@ -833,9 +837,7 @@
       "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
     },
     "detect": {
-      "title": "Recherche des prises",
-      "working": "Recherche des prises…",
-      "tiles": "Passe {{done}} sur {{total}}"
+      "title": "Recherche des prises"
     },
     "review": {
       "found": "{{value}} prises à vérifier",
@@ -875,7 +877,7 @@
     "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
     "openDraft": {
       "title": "Une réinitialisation est à moitié faite",
-      "body": "Une photo d'un essai précédent est encore ouverte sur ce mur. Jette-la et recommence : rien n'a encore changé sur le mur.",
+      "body": "Ta photo est enregistrée pour reprendre. Le mur publié ne change pas avant ta confirmation.",
       "discard": "La jeter et recommencer",
       "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
       "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie."
@@ -889,9 +891,6 @@
       "body": "Fais glisser les quatre cercles sur les coins du mur. Ce n'est pas optionnel : c'est ça qui aligne ta nouvelle photo avec chaque bloc déjà posé sur le mur.",
       "use": "Utiliser ces coins",
       "notConvex": "Ces coins se croisent. Place-les autour du mur dans l'ordre."
-    },
-    "detect": {
-      "title": "On regarde ce qui a changé"
     },
     "leave": {
       "title": "Quitter la réinitialisation ?",

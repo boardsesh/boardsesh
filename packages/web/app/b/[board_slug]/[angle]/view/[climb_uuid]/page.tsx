@@ -184,6 +184,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
         ))}
         <ClimbFrontDoor
           climb={currentClimb}
+          boardSlug={board.slug}
           boardDetails={boardDetails}
           angle={parsedParams.angle}
           canonicalAngle={canonicalAngle}

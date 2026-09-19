@@ -28,6 +28,24 @@ export const queriesTypeDefs = /* GraphQL */ `
     mySessions: [DiscoverableSession!]!
 
     """
+    Sessions climbing right now that the viewer has a reason to care about:
+    started or joined by someone they follow, on a board they follow, on
+    \`boardUuid\` when given, or their own. Private sessions only appear to the
+    people in them. Viewer's own sessions first, then sessions with followed
+    climbers, then bigger crews, then most recent. Requires authentication.
+    \`limit\` defaults to 10, max 20.
+    """
+    followedLiveSessions(boardUuid: ID, limit: Int): [LiveSession!]!
+
+    """
+    Sessions climbing right now on one board. Same access rule as
+    \`boardHistory\`: anonymous callers only reach public and system-shared
+    boards and only see public sessions; followed-climber reasons need
+    authentication.
+    """
+    boardLiveSessions(boardId: Int!): [LiveSession!]!
+
+    """
     Get a session summary (stats, grade distribution, participants).
     Available for ended sessions or active sessions with ticks.
     """
@@ -124,17 +142,20 @@ export const queriesTypeDefs = /* GraphQL */ `
     Get the Boardsesh grade for a climb at a specific angle. When that angle
     has no ascents, the climb's other angles are projected onto it and the
     result comes back tiered cross_angle_estimate — or, on MoonBoard, tiered
-    moonboard_angle_estimate, transposed from the board's other fixed angle.
-    Returns null when none of those exist (too few ascents, or fewer than two
-    other ascent-backed angles to project from).
+    moonboard_angle_estimate (transposed from the board's other fixed angle)
+    or moonboard_wide_angle_estimate (borrowed from another board's
+    angle-effect shape, at a moonboard-wide-angles flag angle). Returns null
+    when none of those exist (too few ascents, or fewer than two other
+    ascent-backed angles to project from).
     """
     boardseshGrade(boardName: String!, climbUuid: String!, angle: Int!): BoardseshGrade
 
     """
     Get the Boardsesh grade for a climb at every angle, ordered by angle
     ascending: the computed grades, plus a cross_angle_estimate for each board
-    angle nobody has climbed (moonboard_angle_estimate on MoonBoard). Empty
-    when the climb has no grades at all (e.g. too few ascents).
+    angle nobody has climbed (moonboard_angle_estimate or
+    moonboard_wide_angle_estimate on MoonBoard). Empty when the climb has no
+    grades at all (e.g. too few ascents).
     """
     boardseshGradesForAngles(boardName: String!, climbUuid: String!): [BoardseshGradeForAngle!]!
 
@@ -413,6 +434,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     Requires authentication.
     """
     activityFeed(input: ActivityFeedInput): ActivityFeedResult!
+    "Complete followed-author snapshot for the authenticated viewer."
+    followedAuthors: FollowedAuthors!
+    "Sessions and the last 30 days of published climbs from followed authors."
+    crewFeed(input: CrewFeedInput): CrewFeedResult!
 
     """
     Get trending feed of recent activity (public, no auth required).
@@ -441,6 +466,10 @@ export const queriesTypeDefs = /* GraphQL */ `
     before the live \`boardNowPlaying\` subscription takes over.
     """
     boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
+    "Merged native and imported recent history; never represents current wall state."
+    boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
+    "Chronological durable history with an opaque, board-scoped pagination cursor."
+    boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
 
     """
     Durable history of what was pushed to a board (survives past the 1 week
@@ -555,6 +584,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     Search public boards.
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!
+
+    "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
+    boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
+
+    "Headline usage numbers for the marketing site. Public, cached, no auth."
+    communityStats: CommunityStats!
 
     """
     Get popular board configurations ranked by climb count.
@@ -1009,6 +1044,29 @@ export const queriesTypeDefs = /* GraphQL */ `
     Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
     """
     syncClimbGrades(
+      boardType: String!
+      layoutId: Int
+      sizeId: Int
+      cursor: SyncCursorInput
+      limit: Int! = 500
+    ): SyncResult!
+
+    """
+    Pull the spray wall at a layout, changed since the cursor (reference data).
+
+    Carries the wall's canonical frame, its published version number, the holds
+    alive at that version, that version's homography, and the private-bucket
+    photo key plus a short-lived presigned URL for the bytes. Gated on the
+    by-layout visibility rule — owner, gym member, or a public wall — so an
+    unlisted wall does NOT resolve here: a layout id comes out of a sequence and
+    is not the capability a wall uuid is. An unreadable, unscoped or non-spray
+    request gets an ordinary empty page rather than an error; an UNAUTHENTICATED
+    one is rejected, like every other sync pull.
+
+    sizeId is accepted for symmetry with the other per-board pulls and is a
+    no-op: a wall is its own size, so layoutId already names exactly one wall.
+    """
+    syncSprayWalls(
       boardType: String!
       layoutId: Int
       sizeId: Int

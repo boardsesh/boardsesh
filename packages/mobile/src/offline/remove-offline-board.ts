@@ -23,6 +23,8 @@ import {
 import { getSetting, setOfflineBoardEnabled, forgetOfflineBoardScope } from '../settings';
 import { reportScopeDownloadAbandoned } from './offline-sync-adapter';
 import { reportHandledError } from '../lib/error-reporting';
+import { deleteStoredSprayPhoto } from '../lib/spray/spray-photo-store';
+import { clearSprayPhotoPending } from './spray-photo-retry';
 import { sweepOverlaysForScope } from '../lib/sweep-caches';
 
 /** The query keys that read board reference rows, derived from the tables we delete from. */
@@ -108,11 +110,27 @@ export async function removeOfflineBoard(params: {
       // the `scope-started:` marker: after this call nothing can tell an
       // abandoned download from a board that was never downloaded.
       onDownloadAbandoned: reportScopeDownloadAbandoned,
+      // The wall photograph, for a spray scope (#5448). The engine reads the key
+      // inside its transaction and hands it here; without this the JPEG would
+      // outlive every row that names it, in a directory no sweeper walks.
+      removeSprayPhoto: deleteStoredSprayPhoto,
     });
   } finally {
     // Unconditional: a latch left set would block this layout's downloads for the
     // rest of the app session.
     releasePurge();
+  }
+
+  // The wall's pending-photo marker (#5448). `scopeSyncMetaKeys` cannot carry it:
+  // that list is derived from the scope key, and this marker is keyed by layout
+  // id. Left behind, its attempt count carries into the next download of the same
+  // wall and could spend the retry budget before the first try.
+  if (scope.boardType === 'spray') {
+    try {
+      await clearSprayPhotoPending(db, scope.layoutId);
+    } catch (error) {
+      reportHandledError(error, { tags: { source: 'offline-sync', kind: 'spray-photo-pending-clear' } });
+    }
   }
 
   // The rendered PNGs for this board are cache, not data, so they are swept

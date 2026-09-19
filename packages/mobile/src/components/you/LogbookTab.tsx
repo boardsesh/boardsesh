@@ -547,6 +547,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       {/* Fixed top toolbar — all logbook actions concentrated here, below the
           floating chrome. Sibling of the list, so list virtualization is intact. */}
       <View style={[styles.toolbar, { paddingTop: topInset }]}>
+        <View style={styles.heading}>
+          <Text variant="title2" accessibilityRole="header">
+            {t('tabs.logbook')}
+          </Text>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('mobile.filter.allBoards')}
+          </Text>
+        </View>
         {showSortChips ? (
           // iOS Liquid Glass: search sits on its own row, and the chip row below
           // carries the filter entry + sort + active-filter chips (so no separate
@@ -665,6 +673,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         </View>
       ) : (
         <FlashList
+          testID="logbook-screen"
           data={listRows}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
@@ -740,6 +749,15 @@ const styles = StyleSheet.create({
   toolbar: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+  },
+  heading: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing[2],
+    paddingTop: spacing[2],
+    paddingBottom: spacing[3],
   },
   toolbarRow: {
     flexDirection: 'row',

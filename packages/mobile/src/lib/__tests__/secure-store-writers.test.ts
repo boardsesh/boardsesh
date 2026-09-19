@@ -64,6 +64,19 @@ describe('SecureStore writers write v2 first, then mirror to legacy', () => {
     expectDualNamespaceWrite(store.setItemAsync, 'boardsesh_active_session_id', 'session-123');
   });
 
+  it('session-store setStoredSessionVisibility', async () => {
+    const store = await secureStore();
+    const { setStoredSessionVisibility } = await import('../session-store');
+
+    await setStoredSessionVisibility('session-123', false);
+
+    expectDualNamespaceWrite(
+      store.setItemAsync,
+      'boardsesh_session_visibility',
+      '{"sessionId":"session-123","isPublic":false}',
+    );
+  });
+
   it('last-grade-store setLastUsedGradeId', async () => {
     const store = await secureStore();
     const { setLastUsedGradeId } = await import('../last-grade-store');

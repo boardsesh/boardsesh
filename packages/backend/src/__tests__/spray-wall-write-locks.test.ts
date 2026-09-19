@@ -41,7 +41,18 @@ const SPRAY_AUTHORING_SOURCE = readFileSync(
  * is written and deleted alongside its `spray_wall_holds` row — a writer that
  * allocated catalogue ids outside the lock could hand the same id to two drafts.
  */
-const GUARDED_TABLES = ['sprayWallVersions', 'sprayWallHolds', 'boardHoles', 'boardPlacements', 'sprayWalls'];
+const GUARDED_TABLES = [
+  'sprayWallVersions',
+  'sprayWallHolds',
+  'boardHoles',
+  'boardPlacements',
+  'sprayWalls',
+  // The feed retraction is part of the same decision: it runs in the writer's
+  // transaction so a visibility flip and the rows it retracts land together.
+  // Listed here since the purge moved from raw SQL to drizzle (SW-05c), so the
+  // pattern below still sees it as a write.
+  'feedItems',
+];
 
 const WRITE_PATTERN = new RegExp(String.raw`\.(insert|update|delete)\(dbSchema\.(${GUARDED_TABLES.join('|')})\)`);
 

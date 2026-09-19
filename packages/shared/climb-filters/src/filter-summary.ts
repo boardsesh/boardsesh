@@ -12,6 +12,7 @@ export type FilterSummaryLabels = {
   // Optional — only emit a summary part when a label is supplied. Callers that
   // never set these fields can omit them.
   setters?: (count: number) => string;
+  onlyFollowedAuthors?: () => string;
   gradeAccuracy?: (value: string) => string;
   tallOnly?: () => string;
   wideOnly?: () => string;
@@ -40,6 +41,7 @@ export type BaseFilters = {
   defaultSortBy?: string;
   name?: string;
   setter?: string[];
+  onlyFollowedAuthors?: boolean;
   gradeAccuracy?: string;
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
@@ -63,6 +65,7 @@ export function getBaseFilterParts(
   sortLabel?: (sortBy: string) => string | undefined,
 ): string[] {
   const parts: string[] = [];
+  if (filters.onlyFollowedAuthors && labels.onlyFollowedAuthors) parts.push(labels.onlyFollowedAuthors());
 
   if (filters.name && filters.name.length > 0) {
     parts.push(`"${filters.name}"`);

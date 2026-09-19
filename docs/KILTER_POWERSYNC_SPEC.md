@@ -2,7 +2,7 @@
 
 **Covered version**: Kilter Board mobile app, current as of 2026-05-23
 **Re-verified**: 2026-06-01 against the decompiled APK (`libapp.so` / `libpowersync.so` string dumps)
-**Sibling docs**: [KILTER_HTTP_API_SPEC.md](KILTER_HTTP_API_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [aurora-sync.md](aurora-sync.md)
+**Sibling docs**: [KILTER_HTTP_API_SPEC.md](KILTER_HTTP_API_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [aurora-sync.md](aurora-sync.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
 
 > Kilter mirrors part of its Postgres database into the client over [PowerSync](https://www.powersync.com), an open-source sync layer. To consume Kilter user data from Boardsesh — the analogue of what `@boardsesh/aurora-sync` does for Tension/Decoy/So-iLL — Boardsesh acts as a **PowerSync client** against `sync1.kiltergrips.com`. This document describes Kilter's PowerSync setup.
 >

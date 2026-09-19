@@ -22,7 +22,7 @@ import {
 } from '../../../db/queries/climbs/index';
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import { isSprayBoardType, sprayLayoutIsReadable } from './spray-read-access';
+import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
@@ -224,6 +224,7 @@ export const climbQueries = {
     // Build search parameters via the shared mapper — same falsy-collapse
     // rules as the web SSR path. Don't inline the field-by-field copy here.
     const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
+    if (parsedInput.onlyFollowedAuthors) requireAuthenticated(ctx);
 
     if (DEBUG) {
       logger.info(
@@ -253,9 +254,19 @@ export const climbQueries = {
     // The pre-baked empty result is the same shape the drafts branch above returns,
     // which is deliberate: an unreadable wall must be indistinguishable from an
     // empty one.
+    //
+    // `sprayWallUuid` is the one exemption, and it is a capability rather than a
+    // filter: a climber handed an unlisted wall's link may already SET on it
+    // (`saveClimb` takes the same uuid as proof), so refusing to LIST what they set
+    // made the wall write-only for them.
     if (
       isSprayBoardType(parsedInput.boardName) &&
-      !(await sprayLayoutIsReadable(parsedInput.boardName, parsedInput.layoutId, ctx.userId))
+      !(await sprayLayoutIsReadableWithCapability(
+        parsedInput.boardName,
+        parsedInput.layoutId,
+        ctx.userId,
+        parsedInput.sprayWallUuid,
+      ))
     ) {
       return {
         params,
@@ -311,6 +322,7 @@ export const climbQueries = {
   ): Promise<SetterStat[]> => {
     await applyRateLimit(ctx, 60, 'setter-stats');
     const validated = validateInput(SetterStatsInputSchema, input, 'input');
+    if (validated.onlyFollowedAuthors) requireAuthenticated(ctx);
 
     if (!isValidBoardName(validated.boardName)) {
       throw new Error(`Invalid board name: ${validated.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
@@ -339,7 +351,12 @@ export const climbQueries = {
       return [];
     }
 
-    const rows = await getSetterStats(dbRead, params, validated.search);
+    const rows = await getSetterStats(
+      dbRead,
+      params,
+      validated.search,
+      validated.onlyFollowedAuthors ? ctx.userId! : undefined,
+    );
 
     return rows.map((row) => ({
       setterUsername: row.setter_username,

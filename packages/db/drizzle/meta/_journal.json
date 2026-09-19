@@ -1618,6 +1618,34 @@
       "when": 1789527241015,
       "tag": "0230_low_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1789548554331,
+      "tag": "0231_round_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 232,
+      "version": "7",
+      "when": 1789734585016,
+      "tag": "0232_repair_moonboard_snapped_tick_angles",
+      "breakpoints": true
+    },
+    {
+      "idx": 233,
+      "version": "7",
+      "when": 1789769886465,
+      "tag": "0233_kilter_live_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1789811265842,
+      "tag": "0234_shallow_the_phantom",
+      "breakpoints": true
     }
   ]
 }

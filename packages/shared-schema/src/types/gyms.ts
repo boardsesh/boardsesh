@@ -304,6 +304,8 @@ export type SearchGymsInput = {
   radiusKm?: number;
   /** Only gyms with a slug, i.e. linkable at /gym/[slug]. Opt-in; omitting it leaves the emitted SQL unchanged. */
   requireSlug?: boolean;
+  /** Claimed gyms first, then the existing newest-first or proximity order. */
+  prioritizeClaimed?: boolean;
   limit?: number;
   offset?: number;
 };

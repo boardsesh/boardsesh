@@ -57,12 +57,11 @@ export default defineConfig({
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
 
-    /* Pin the emulated OS colour scheme to dark. The pre-paint theme-init
-     * script (app/theme/theme-init-script.ts) falls back to
-     * prefers-color-scheme when no saved preference exists — no spec seeds one —
-     * so without this the runner's default (light) would flip every screenshot.
-     * Dark keeps the pre-paint theme deterministic and matches the historical
-     * SSR default. */
+    /* www renders one scheme, so the page no longer reads prefers-color-scheme
+     * at all. This stays as belt-and-braces: it keeps the emulated OS setting
+     * aligned with what the page actually paints, so native form controls,
+     * scrollbars and date pickers in a screenshot match the dark chrome the
+     * `color-scheme: dark` declaration in index.css asks for. */
     colorScheme: 'dark',
 
     /* Trace every retry, not just the first. With `retries: 3`, the previous

@@ -6,6 +6,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
 import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
+import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
 import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
@@ -21,6 +22,7 @@ import { favoriteMutations } from './favorites/mutations';
 import { playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
 import { sessionQueries } from './sessions/queries';
+import { liveSessionQueries } from './sessions/live-sessions';
 import { sessionMutations } from './sessions/mutations';
 import { pushTokenMutations } from './sessions/push-tokens';
 import { sessionSubscriptions } from './sessions/subscriptions';
@@ -37,10 +39,14 @@ import { setterFollowQueries, setterFollowMutations } from './social/setter-foll
 import { socialFeedQueries } from './social/feed';
 import { activityFeedQueries } from './social/activity-feed';
 import { sessionFeedQueries } from './social/session-feed';
+import { followedAuthorQueries } from './social/followed-authors';
+import { crewFeedQueries } from './social/crew-feed';
 import { sessionEditMutations } from './social/session-mutations';
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
+import { boardDiscoveryQueries } from './social/board-discovery';
+import { communityStatsQueries } from './social/community-stats';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
 import { gymActivityStatsMutations } from './social/gym-activity-stats';
 import { socialGymMatchQueries } from './social/gym-matching';
@@ -83,9 +89,11 @@ export const resolvers = {
   // Root operation types
   Query: {
     ...sessionQueries,
+    ...liveSessionQueries,
     ...boardQueries,
     ...holdOutlineQueries,
     ...sprayWallQueries,
+    ...sprayDetectionQueries,
     ...sprayWallModerationQueries,
     ...climbQueries,
     ...tickQueries,
@@ -101,6 +109,8 @@ export const resolvers = {
     ...socialCommentQueries,
     ...socialVoteQueries,
     ...socialBoardQueries,
+    ...boardDiscoveryQueries,
+    ...communityStatsQueries,
     ...socialGymQueries,
     ...socialGymMatchQueries,
     ...socialGymStrayBoardQueries,
@@ -112,6 +122,8 @@ export const resolvers = {
     ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
+    ...followedAuthorQueries,
+    ...crewFeedQueries,
     ...socialNotificationQueries,
     ...socialProposalQueries,
     ...socialRoleQueries,
@@ -130,6 +142,7 @@ export const resolvers = {
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,
+    ...sprayDetectionMutations,
     ...sprayWallModerationMutations,
     ...pushTokenMutations,
     ...queueMutations,

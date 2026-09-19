@@ -13,8 +13,14 @@
  * Crawls merged PRs against `main` AND `release/next` via paginated `gh api
  * graphql` (public data, works with the default Actions token). Native work ships
  * through the release train, so a main-only crawl would silently drop every
- * native release note. Sync and merge-back PRs between the two branches are
- * skipped — they carry no notes of their own, and their contents are already
+ * native release note.
+ *
+ * Which of those two streams belongs in THIS changelog is decided by
+ * reachability, not by branch name: a PR is included only when its merge commit
+ * is an ancestor of HEAD. So a bundle published from `main` never advertises a
+ * feature that only exists on the train, and the same PR appears on main the
+ * moment the merge-back lands. Sync and merge-back PRs between the two branches
+ * are skipped — they carry no notes of their own, and their contents are already
  * counted through the PR that originally merged them. Bounded by a START date so
  * history stays small — only PRs merged on/after that date can carry Release
  * Notes anyway.
@@ -32,7 +38,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   buildEntries,
   buildNativeReleases,
@@ -142,6 +148,8 @@ const MERGED_PRS_QUERY = `query($owner: String!, $name: String!, $baseRefName: S
         updatedAt
         url
         headRefName
+        headRepositoryOwner { login }
+        mergeCommit { oid }
         labels(first: 20) { nodes { name } }
       }
     }
@@ -156,8 +164,13 @@ type RawPrNode = {
   updatedAt: string | null;
   url: string;
   headRefName?: string;
+  headRepositoryOwner?: { login?: string } | null;
+  mergeCommit?: { oid?: string } | null;
   labels?: { nodes?: { name?: string }[] };
 };
+
+/** A crawled PR plus the merge commit that decides whether it is in this tree. */
+export type CrawledPullRequest = RawPullRequest & { mergeCommitOid: string | null };
 type PrConnection = {
   pageInfo?: { hasNextPage?: boolean; endCursor?: string };
   nodes?: RawPrNode[];
@@ -168,14 +181,20 @@ type PrConnection = {
  * sync (main → release/next) and a merge-back (release/next → main) both carry
  * other people's commits, so counting them would duplicate every entry on the
  * train.
+ *
+ * The head OWNER matters as much as the branch name: a contributor's fork has a
+ * `main` too, and a PR from `their-fork:main` is an ordinary contribution. Only a
+ * branch of that name in THIS repository is plumbing.
  */
-export function isBranchPlumbingPullRequest(headRefName: string | undefined): boolean {
-  return headRefName !== undefined && (CHANGELOG_BASE_BRANCHES as readonly string[]).includes(headRefName);
+export function isBranchPlumbingPullRequest(headRefName?: string, headOwner?: string | null): boolean {
+  if (headRefName === undefined) return false;
+  if (headOwner !== REPO_OWNER) return false;
+  return (CHANGELOG_BASE_BRANCHES as readonly string[]).includes(headRefName);
 }
 
-function fetchMergedPullRequests(): RawPullRequest[] | null {
+function fetchMergedPullRequests(): CrawledPullRequest[] | null {
   const cutoff = new Date(CRAWL_START_DATE).getTime();
-  const pullRequests: RawPullRequest[] = [];
+  const pullRequests: CrawledPullRequest[] = [];
   // A PR can be crawled once per base branch it is queried under; dedupe by
   // number so a retarget can never produce two entries for one PR.
   const seen = new Set<number>();
@@ -194,8 +213,76 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
   );
 }
 
+/**
+ * PURE (given an injected reachability test): keep only the PRs whose merge
+ * commit is in the history being published.
+ *
+ * This is the whole reason the changelog can be crawled from two base branches at
+ * once. A bundle published from `main` must not advertise a feature that lives
+ * only on `release/next` — store users would read a What's New entry for code
+ * their binary does not contain — and after the merge-back the same PR becomes
+ * reachable from main and appears, once, with no second rule needed.
+ *
+ * Fails OPEN per PR: a merged PR whose merge commit GitHub does not report (null
+ * oid) is kept rather than silently dropped. `isReachable` is expected to have
+ * already failed open as a whole if the repository history is unreadable.
+ */
+export function filterToReachable<T extends { mergeCommitOid: string | null }>(
+  pullRequests: readonly T[],
+  isReachable: (oid: string) => boolean,
+): T[] {
+  return pullRequests.filter((pullRequest) =>
+    pullRequest.mergeCommitOid === null ? true : isReachable(pullRequest.mergeCommitOid),
+  );
+}
+
+/**
+ * PURE: apply the reachability filter, or keep everything when the history is
+ * unreadable (`reachable === null` — a shallow clone, or no git at all).
+ *
+ * The fail-open half is why this is its own function rather than an inline
+ * ternary: "the git call failed, so publish a slightly over-inclusive changelog"
+ * is a decision worth a test, and `reachableCommits()` itself cannot have one
+ * without a fixture repository.
+ */
+export function selectPullRequestsInHistory<T extends { mergeCommitOid: string | null }>(
+  pullRequests: readonly T[],
+  reachable: ReadonlySet<string> | null,
+): T[] {
+  if (reachable === null) return [...pullRequests];
+  return filterToReachable(pullRequests, (oid) => reachable.has(oid));
+}
+
+/**
+ * The commits reachable from HEAD, as a set of full SHAs — one `git rev-list`
+ * rather than a `git merge-base --is-ancestor` per PR, which would be hundreds of
+ * subprocesses. Returns null when the history can't be read (a shallow clone, no
+ * git), which the caller treats as "include everything": publishing a slightly
+ * generous changelog is a far smaller failure than silently emptying it.
+ *
+ * mobile-ota-production.yml checks out with `fetch-depth: 0`, so the real
+ * publishing path always has the full history here.
+ */
+function reachableCommits(): Set<string> | null {
+  try {
+    const stdout = execFileSync('git', ['rev-list', 'HEAD'], {
+      cwd: resolve(here, '..'),
+      encoding: 'utf8',
+      // 41 bytes per line, ~12k commits today ≈ 0.5 MB; this allows ~800k, and a
+      // repo that outgrows it throws ENOBUFS into the catch below, which fails
+      // OPEN (every PR kept) rather than truncating the set and dropping entries.
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    const commits = new Set(stdout.split('\n').filter(Boolean));
+    return commits.size > 0 ? commits : null;
+  } catch (error) {
+    console.warn(`[changelog] could not read git history (${String(error)}); keeping every crawled PR.`);
+    return null;
+  }
+}
+
 /** Crawl one base branch, appending to `collected`. Returns false on a fetch failure. */
-function crawlBaseBranch(baseRefName: string, collected: RawPullRequest[], seen: Set<number>): boolean {
+function crawlBaseBranch(baseRefName: string, collected: CrawledPullRequest[], seen: Set<number>): boolean {
   const cutoff = new Date(CRAWL_START_DATE).getTime();
   let cursor: string | null = null;
   try {
@@ -221,10 +308,11 @@ function crawlBaseBranch(baseRefName: string, collected: RawPullRequest[], seen:
       if (!connection) break;
 
       for (const node of connection.nodes ?? []) {
-        if (isBranchPlumbingPullRequest(node.headRefName)) continue;
+        if (isBranchPlumbingPullRequest(node.headRefName, node.headRepositoryOwner?.login)) continue;
         if (seen.has(node.number)) continue;
         seen.add(node.number);
         collected.push({
+          mergeCommitOid: node.mergeCommit?.oid ?? null,
           number: node.number,
           title: node.title,
           body: node.body,
@@ -270,7 +358,17 @@ function main(): void {
     return;
   }
 
-  const entries = buildEntries(pullRequests);
+  // Only what this tree actually contains — see filterToReachable.
+  const reachable = reachableCommits();
+  const inThisHistory = selectPullRequestsInHistory(pullRequests, reachable);
+  if (reachable !== null && inThisHistory.length !== pullRequests.length) {
+    console.log(
+      `[changelog] ${pullRequests.length - inThisHistory.length} merged PR(s) are not in this branch's history ` +
+        '(released from the other line) — excluded.',
+    );
+  }
+
+  const entries = buildEntries(inThisHistory);
   const nativeReleases = buildNativeReleases(gatherFingerprintTags());
   const candidate: ChangelogData = { generatedAt: existing.generatedAt, entries, nativeReleases };
   const contentUnchanged = isContentEqual(candidate, existing);
@@ -303,4 +401,9 @@ function main(): void {
   );
 }
 
-main();
+// Run only when executed directly (node --import tsx scripts/generate-changelog.ts),
+// not when the unit test imports the pure helpers — importing used to crawl the
+// live API and rewrite the committed changelog.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

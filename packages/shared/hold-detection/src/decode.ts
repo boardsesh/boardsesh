@@ -1,3 +1,4 @@
+import { type OutlineOptions, maskToOutline } from './outline';
 import type { Box, Detection, RfDetrOutputs } from './types';
 
 export interface DecodeOptions {
@@ -5,6 +6,12 @@ export interface DecodeOptions {
   scoreThreshold: number;
   /** Stamped onto every detection so `mergeTiles` can say where one came from. */
   tileIndex?: number;
+  /**
+   * Trace each surviving query's mask into an outline, when the model emitted
+   * one. Off by default: a detection-only model has no masks to trace, and
+   * tracing costs real work per detection.
+   */
+  outlines?: boolean | OutlineOptions;
 }
 
 /**
@@ -28,7 +35,9 @@ export interface DecodeOptions {
  * which crop produced them.
  */
 export function decodeRfDetr(outputs: RfDetrOutputs, options: DecodeOptions): Detection[] {
-  const { scoreThreshold, tileIndex = 0 } = options;
+  const { scoreThreshold, tileIndex = 0, outlines = false } = options;
+  const maskPlan = outlines === false ? null : planMasks(outputs);
+  const outlineOptions = typeof outlines === 'object' ? outlines : undefined;
   const queries = readQueryCount(outputs);
   const classes = outputs.logitsShape[outputs.logitsShape.length - 1];
 
@@ -47,9 +56,50 @@ export function decodeRfDetr(outputs: RfDetrOutputs, options: DecodeOptions): De
     const width = outputs.boxes[query * 4 + 2];
     const height = outputs.boxes[query * 4 + 3];
     const box: Box = [centreX - width / 2, centreY - height / 2, centreX + width / 2, centreY + height / 2];
-    detections.push({ box, score, tileIndex });
+
+    // Traced here, in the tile's own normalised frame, because that is the only
+    // place the query index still lines up with a slice of the mask tensor.
+    let outline: number[] | undefined;
+    if (maskPlan) {
+      const start = query * maskPlan.cells;
+      outline = maskToOutline(
+        {
+          logits: subarray(outputs.masks as ArrayLike<number>, start, maskPlan.cells),
+          width: maskPlan.width,
+          height: maskPlan.height,
+        },
+        box,
+        outlineOptions,
+      );
+    }
+    detections.push(outline ? { box, score, tileIndex, outline } : { box, score, tileIndex });
   }
   return detections;
+}
+
+/**
+ * The mask tensor's per-query geometry, or null when this model has no masks.
+ *
+ * Shape is `[1, queries, h, w]`; anything else is a model whose masks this
+ * decoder does not understand, and guessing at it would produce silhouettes
+ * traced from the wrong numbers. Returning null degrades to circles instead.
+ */
+function planMasks(outputs: RfDetrOutputs): { width: number; height: number; cells: number } | null {
+  const { masks, masksShape } = outputs;
+  if (!masks || !masksShape || masksShape.length < 3) return null;
+  const width = masksShape[masksShape.length - 1];
+  const height = masksShape[masksShape.length - 2];
+  if (!(width > 0) || !(height > 0)) return null;
+  return { width, height, cells: width * height };
+}
+
+/** `subarray` when the runtime handed back a typed array, a copy when it did not. */
+function subarray(source: ArrayLike<number>, start: number, length: number): ArrayLike<number> {
+  const typed = source as { subarray?: (from: number, to: number) => ArrayLike<number> };
+  if (typeof typed.subarray === 'function') return typed.subarray(start, start + length);
+  const copy = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) copy[index] = source[start + index];
+  return copy;
 }
 
 function readQueryCount(outputs: RfDetrOutputs): number {

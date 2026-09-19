@@ -159,7 +159,7 @@ Common commands:
 
 ### Database hosting (Railway)
 
-We host Postgres on Railway but treat it as portable — anything we write should run on a `docker run postgres:17`. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Exit runbook: `docs/neon-migration.md`.
+We host Postgres on Railway but treat it as portable. No Railway-specific addons, env vars, build steps, or schema mutations via dashboard. `pg_dump`/`pg_restore` must be sufficient to lift-and-shift. Same rule for object storage / video / analytics: prefer S3-compatible APIs, OpenTelemetry exporters, standard connection strings. Exit runbook: `docs/neon-migration.md`.
 
 ## GitHub Issue Fix Workflow
 
@@ -186,6 +186,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
+- `docs/partner-api.md` — the partner-facing contract for training apps (Sequence first): Boardsesh as the OAuth 2.0 authorization server (PKCE S256 only, `bsa_`/`bsr_` opaque tokens, grant-level revocation), `POST /v1/partner/workouts` with the block schema and the per-block `support: native | freeform` degrade rule, the `/w/{id}` launch link, and the signed `workout.completed` webhook with its retry table; `docs/partner-workouts-internal.md` — the design behind it: the seven tables, why consent is on web and the token endpoint on the backend, why partner tokens never pass through `validateToken`, the pending-workout store and how each block type maps onto the generator or the rest timer today, why pg-boss is the job queue and which sweeps it absorbs first, the PR order (AASA `NOT /oauth/*` first), and what waits on #5379/#5380
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 
 ## Architecture Overview
@@ -366,7 +367,7 @@ Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `e
 `vp run mobile:screenshots` (`scripts/mobile-screenshots.ts`) drives Maestro over iOS simulators. The app it installs is a Debug **dev-client** that loads its JS from **Metro** at runtime — the screenshot behaviour (`EXPO_PUBLIC_SCREENSHOT_MODE`, theme, locale, workout) is baked into the Metro JS bundle, **not** the native binary. So the native `.app` is reusable: only the JS regenerates per run.
 
 - Pass `--app-path <Boardsesh.app>` to install a prebuilt/cached app (CI's common path). Without it, the script builds one via `vp run mobile:build-sim-app` (`scripts/mobile-build-sim-app.ts` → `expo prebuild` + `pod install` + `xcodebuild build -sdk iphonesimulator -configuration Debug`; **not** `expo run:ios`, whose launch step hangs in CI). Use `--clean` for a deterministic from-scratch build.
-- The default Apple capture is `--devices common --locales all`: iPhone 16 Pro Max, iPhone 14 Plus, and iPhone 16 Pro for the store-ready app locales `en-US`, `es`, `fr`, and `de`. The Spanish app locale is written to both App Store Connect folders, `es-ES` and `es-MX`; French and German map to `fr-FR` and `de-DE`.
+- The default Apple capture is `--devices common --locales all`: iPhone 16 Pro Max, iPad Pro 13-inch (M5), and iPad Pro 11-inch (M5) for the store-ready app locales `en-US`, `es`, `fr`, and `de`. The Spanish app locale is written to both App Store Connect folders, `es-ES` and `es-MX`; French and German map to `fr-FR` and `de-DE`.
 - `.github/workflows/mobile-screenshots-ios.yml` caches the `.app` (`actions/cache`) keyed on **native inputs only**: `packages/mobile/app.config.ts`, `plugins/**`, `modules/**`, `locales/**` (the iOS `InfoPlist.strings` sources), `package.json`, `patches/**`, the root `package.json` (which pins `@expo/cli`), and `pnpm-workspace.yaml` (native overrides and patch mappings), plus `runner.os`/`runner.arch`. JS/TS-only and web-only changes (including `pnpm-lock.yaml` churn) are a cache hit and skip the ~30-min native build; any native-input change busts the key and rebuilds. Bump the `-v1-` salt to force a rebuild. A native-dep change must invalidate the key — when adding native config, confirm it's covered by one of those globs.
 
 ### Android emulator screenshots (local, dev-client + Metro)

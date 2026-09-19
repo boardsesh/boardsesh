@@ -1,0 +1,179 @@
+.main {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-inline: var(--spacing-8);
+  padding-bottom: var(--spacing-16);
+  gap: calc(var(--spacing-16) + var(--spacing-4));
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-10);
+  padding-block: var(--spacing-12) var(--spacing-4);
+  min-width: 0;
+}
+
+.heroCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-6);
+  padding-bottom: var(--spacing-6);
+}
+
+.hero .heroEyebrow {
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.hero .heroTitle {
+  max-width: 12ch;
+  font-size: clamp(44px, 4.8vw, 64px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.hero .heroLead {
+  color: var(--bs-text-brand-muted);
+  max-width: 42ch;
+  font-size: var(--font-size-lg);
+  line-height: 1.65;
+}
+
+/* Sits between the subtitle and the buttons, quieter than both — it is evidence,
+   not a second pitch. */
+.heroProof {
+  margin-top: var(--spacing-2);
+  color: var(--neutral-500);
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.previewGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-5);
+  min-width: 0;
+}
+.previewGroup > :last-child {
+  align-self: center;
+}
+.heroPreview {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 490px;
+  aspect-ratio: 490 / 680;
+}
+.heroPreview:has([data-preview-platform='android']) {
+  aspect-ratio: 490 / 570;
+}
+.heroPreview::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -8% 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--color-primary-fill) 30%, transparent),
+    color-mix(in srgb, var(--color-primary-fill) 10%, transparent) 48%,
+    transparent 72%
+  );
+  pointer-events: none;
+}
+.previewPhone {
+  position: absolute;
+  display: block;
+}
+.previewLeft {
+  width: 46%;
+  top: 0;
+  left: 0;
+}
+.previewRight {
+  width: 46%;
+  top: 0;
+  right: 0;
+}
+.previewPrimary {
+  width: 53%;
+  top: 16%;
+  left: 23.5%;
+}
+
+.onboarding {
+  border-top: 1px solid var(--separator);
+  padding-top: var(--spacing-12);
+}
+
+@media (max-width: 760px) {
+  .main {
+    padding-inline: var(--spacing-6);
+    padding-bottom: var(--spacing-10);
+    gap: calc(var(--spacing-12) + var(--spacing-2));
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-8);
+    padding-block: var(--spacing-10) 0;
+  }
+
+  .heroCopy {
+    gap: var(--spacing-4);
+    padding-bottom: 0;
+  }
+
+  .hero .heroTitle {
+    font-size: 40px;
+    max-width: 14ch;
+  }
+
+  .hero .heroLead {
+    font-size: 17px;
+    line-height: 1.6;
+  }
+
+  .heroPreview {
+    justify-self: center;
+    max-width: 390px;
+  }
+
+  .heroActions {
+    margin-top: var(--spacing-1);
+    gap: var(--spacing-2);
+  }
+
+  .heroActions > a,
+  .heroActions > button {
+    font-size: var(--font-size-base);
+    padding-inline: var(--spacing-4);
+  }
+
+  .onboarding {
+    padding-top: var(--spacing-8);
+  }
+}
+
+@media (max-width: 359px) {
+  .main {
+    padding-inline: var(--spacing-4);
+  }
+
+  .hero .heroTitle {
+    font-size: 36px;
+  }
+}

@@ -17,7 +17,7 @@ The fix (#4127) copies values into a keychain **service** we had never used, `bo
 | **v2** | `boardsesh.v2` | `AFTER_FIRST_UNLOCK` | #4127 and later |
 | **legacy** | default (`app`) | whatever each item was born with | every build, including pre-#4127 |
 
-19 keys are carried: 3 auth (`boardsesh_jwt`, `boardsesh_refresh_token`, `boardsesh_token_expires_at`) and the 16 in `PREFERENCE_SECURE_KEYS`. Two are deliberately excluded, both documented at the source in `preference-secure-keys.ts`.
+20 keys are carried: 3 auth (`boardsesh_jwt`, `boardsesh_refresh_token`, `boardsesh_token_expires_at`) and the 17 in `PREFERENCE_SECURE_KEYS`. Two are deliberately excluded, both documented at the source in `preference-secure-keys.ts`.
 
 ## Phase 1: both namespaces at once
 
@@ -30,7 +30,7 @@ Everything goes through `packages/mobile/src/lib/secure-store-io.ts`.
 
 The migration itself is `keychain-namespace-migration.ts`: per key, read v2 → read legacy → write v2 → **read it back** before calling it migrated. Nothing is ever destroyed, so every interruption leaves a key either legacy-only (retry next launch) or in both namespaces — never neither.
 
-Auth keys migrate from `auth-store`'s own first read, inside its credential mutation queue so the pass cannot interleave with a sign-in or sign-out. The 16 preference keys migrate from a root component and stand down on any key this process has already written or deleted (`wasSecureKeyTouchedThisProcess`).
+Auth keys migrate from `auth-store`'s own first read, inside its credential mutation queue so the pass cannot interleave with a sign-in or sign-out. The 17 preference keys migrate from a root component and stand down on any key this process has already written or deleted (`wasSecureKeyTouchedThisProcess`).
 
 ## The freshness stamp
 
@@ -137,7 +137,7 @@ The better endgame, if a native train allows it: patch expo-secure-store's `upda
 | `packages/mobile/src/lib/secure-store-io.ts` | read / write / write-to-either / delete, the tombstone |
 | `packages/mobile/src/lib/secure-store-stamp.ts` | the stamp: fingerprint, wire format, freshness rule |
 | `packages/mobile/src/lib/keychain-namespace-migration.ts` | the per-key pass, the repair, the once-runner |
-| `packages/mobile/src/lib/preference-secure-keys.ts` | the 16 non-auth keys, and the two exclusions |
+| `packages/mobile/src/lib/preference-secure-keys.ts` | the 17 non-auth keys, and the two exclusions |
 | `packages/mobile/src/lib/auth-store.ts` | the 3 auth keys, the credential mutation queue, sign-out verification, the deferred-reconcile retry |
 | `packages/mobile/src/components/KeychainNamespaceMigration.tsx` | the foreground listener that drives both scopes' deferred retries |
 

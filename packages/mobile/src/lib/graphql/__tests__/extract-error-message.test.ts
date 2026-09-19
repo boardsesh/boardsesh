@@ -4,9 +4,51 @@ import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
   isGraphqlRateLimitedError,
+  isGraphqlValidationFailedError,
+  readGraphqlValidationFailedMessage,
 } from '../extract-error-message';
 
 describe('GraphQL error extraction', () => {
+  it('detects GRAPHQL_VALIDATION_FAILED and reads its message', () => {
+    const error = {
+      response: {
+        status: 400,
+        errors: [
+          { message: 'Some other error' },
+          {
+            message: 'Unknown argument "layoutId" on field "Query.board".',
+            extensions: { code: 'GRAPHQL_VALIDATION_FAILED' },
+          },
+        ],
+      },
+    };
+
+    expect(isGraphqlValidationFailedError(error)).toBe(true);
+    expect(readGraphqlValidationFailedMessage(error)).toBe('Unknown argument "layoutId" on field "Query.board".');
+  });
+
+  it('reads the message from every shape the predicate matches', () => {
+    const message = 'Cannot query field "layoutId" on type "Board".';
+    const clientError = { response: { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] } };
+    const shapes = [
+      { cause: clientError },
+      { errors: [{ message, extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }] },
+      Object.assign(new Error(message), { extensions: { code: 'GRAPHQL_VALIDATION_FAILED' } }),
+    ];
+
+    for (const shape of shapes) {
+      expect(isGraphqlValidationFailedError(shape)).toBe(true);
+      expect(readGraphqlValidationFailedMessage(shape)).toBe(message);
+    }
+  });
+
+  it('does not treat other GraphQL codes as validation failures', () => {
+    const error = { response: { errors: [{ message: 'nope', extensions: { code: 'BAD_USER_INPUT' } }] } };
+
+    expect(isGraphqlValidationFailedError(error)).toBe(false);
+    expect(isGraphqlValidationFailedError(new Error('boom'))).toBe(false);
+  });
+
   it('extracts the first graphql-request response message', () => {
     const error = {
       response: {

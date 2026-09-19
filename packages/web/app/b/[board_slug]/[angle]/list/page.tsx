@@ -139,6 +139,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
       ))}
       <StaticListFrontDoor
         boardDetails={boardDetails}
+        boardSlug={board.slug}
         angle={parsedParams.angle}
         climbs={climbs}
         hasMore={hasMore}

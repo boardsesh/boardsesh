@@ -17,6 +17,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultRepoRoot = resolve(dirname(scriptPath), '..');
 
 const services = {
+  'hold-detector': {
+    dockerfile: 'Dockerfile.hold-detector',
+    rootPackageName: '@boardsesh/hold-detector',
+  },
   backend: {
     dockerfile: 'Dockerfile.backend',
     rootPackageName: 'boardsesh-backend',
@@ -44,6 +48,9 @@ const services = {
       'scripts/build-expo-web-export.sh',
       'scripts/lib/patch-expo-web-pwa-manifest.mjs',
       'scripts/lib/tailscale-hostname.ts',
+      // The design capture script is also included by Next's type-check.
+      'scripts/lib/design-previews.ts',
+      'scripts/lib/dev-object-store.ts',
     ],
   },
   sync: {

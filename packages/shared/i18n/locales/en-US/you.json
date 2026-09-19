@@ -19,8 +19,7 @@
       "weekly": {
         "sessions": "Sessions",
         "sends": "Sends",
-        "flashes": "Flashes",
-        "attempts": "Attempts"
+        "flashes": "Flashes"
       },
       "streak": "{{count}} week streak",
       "sectionToday": "Today",
@@ -29,9 +28,6 @@
       "emptyTitle": "No sessions yet",
       "emptyBody": "Start a session and your climbs land here.",
       "emptyCta": "Start a session"
-    },
-    "progress": {
-      "empty": "Nothing logged yet — your stats show up once you start ticking climbs."
     },
     "social": {
       "title": "Social",

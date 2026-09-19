@@ -1,4 +1,55 @@
 export const boardEntitiesTypeDefs = /* GraphQL */ `
+  "A redacted snapshot of the last confirmed climb while its sender still holds the board."
+  type BoardDiscoveryClimb {
+    uuid: ID!
+    name: String
+    frames: String!
+    angle: Int!
+  }
+
+  """
+  Headline usage numbers for the marketing site.
+
+  Counted from board_climb_events, which records every climb pushed to a board's
+  LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+  in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+  board attribution was under 1% before 2026-04 and would shrink the number the
+  further back it reached.
+  """
+  type CommunityStats {
+    "Distinct climbers who lit a climb on a real board in the last 30 days."
+    climbersLast30Days: Int!
+    "Climbs lit on real boards in the last 30 days."
+    litLast30Days: Int!
+    computedAt: String!
+  }
+
+  "A public, listed physical board at a public gym. No owner or controller identity is exposed."
+  type BoardDiscoveryBoard {
+    uuid: ID!
+    slug: String!
+    name: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+    gymUuid: ID!
+    gymName: String!
+    gymSlug: String!
+    locationName: String
+    "Distinct climbers with a send or flash recorded on this physical board."
+    uniqueClimbers: Int!
+    "Null when there is no verified live holder, including unavailable Redis. Not a live subscription."
+    currentClimb: BoardDiscoveryClimb
+  }
+
+  input BoardDiscoveryInput {
+    gymUuid: ID
+    "Maximum number of boards, from 1 to 12 (default 8)."
+    limit: Int
+  }
+
   # ============================================
   # Board Entity Types
   # ============================================

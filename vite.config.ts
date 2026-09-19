@@ -140,6 +140,7 @@ export default defineConfig({
       './packages/moonboard-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
       './packages/scheduler/vite.config.ts',
+      './packages/hold-detector/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
@@ -539,6 +540,15 @@ export default defineConfig({
         command: 'tsx packages/web/scripts/check-untranslated-strings.ts',
         cache: false,
       },
+      // Render design previews, publish them to dev storage, and update links.
+      'design:mockups': {
+        command: 'tsx packages/web/scripts/capture-design-mockups.ts',
+        cache: false,
+      },
+      'design:publish': {
+        command: 'tsx scripts/publish-design-previews.ts',
+        cache: false,
+      },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
@@ -824,6 +834,10 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/mobile run typecheck',
         dependsOn: ['build:shared', 'build:constants', 'mobile:web-runtime:install'],
       },
+      'typecheck:hold-detector': {
+        command: 'pnpm --filter @boardsesh/hold-detector run typecheck',
+        dependsOn: ['build:db', 'build:shared'],
+      },
       'typecheck:kilter': {
         command: 'pnpm --filter @boardsesh/kilter-sync run typecheck',
         dependsOn: ['build:kilter'],
@@ -906,6 +920,7 @@ export default defineConfig({
           'typecheck:board-render',
           'typecheck:board-art-geometry',
           'typecheck:hold-detection',
+          'typecheck:hold-detector',
           'typecheck:spray-wall-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',
@@ -1059,6 +1074,29 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-backend.ts',
         cache: false,
       },
+      // Fold the per-shard fixture sets a recording fan-out produced into the
+      // single snapshot published to dev storage. See docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-fetch': {
+        command: 'tsx scripts/screenshot-fixtures-fetch.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-publish': {
+        command: 'tsx scripts/screenshot-fixtures-publish.ts',
+        cache: false,
+      },
+      'mobile:screenshot-fixtures-merge': {
+        command: 'tsx scripts/screenshot-fixtures-merge.ts',
+        cache: false,
+      },
+      // Replace every climber but the recording account with a stable stand-in
+      // across an already-recorded set. The recorder does this itself now; this
+      // is the one-off for a set recorded before it did (and the `--check` a
+      // downloaded recording artifact should pass). See
+      // docs/mobile-screenshot-fixtures.md.
+      'mobile:screenshot-fixtures-pseudonymise': {
+        command: 'tsx scripts/screenshot-fixtures-pseudonymise.ts',
+        cache: false,
+      },
       'mobile:build-sim-app': {
         command: 'tsx scripts/mobile-build-sim-app.ts',
         cache: false,
@@ -1081,6 +1119,38 @@ export default defineConfig({
       },
       'check:screenshot-dimensions': {
         command: 'tsx scripts/assert-screenshot-dimensions.ts',
+        cache: false,
+      },
+      // Content gate run right after the dimension gate in ios-finalize, before the
+      // automatic App Store Connect upload: an absolute byte floor plus a ratio
+      // against the last published baseline (scripts/assert-screenshot-content.ts),
+      // mirroring the blank/mid-load checks the Android capture job already has.
+      'screenshot:frame': {
+        command: 'tsx scripts/frame-screenshots.ts',
+        cache: false,
+      },
+      'screenshot:assert-content': {
+        command: 'tsx scripts/assert-screenshot-content.ts',
+        cache: false,
+      },
+      // Probe gate for the iOS screenshot fan-out: compares one freshly captured
+      // shard against the stored baseline (scripts/compare-screenshots.ts).
+      'screenshot:compare': {
+        command: 'tsx scripts/compare-screenshots.ts',
+        cache: false,
+      },
+      // Packs / publishes / fetches the `screenshots-baseline` prerelease assets
+      // the compare above reads (scripts/screenshot-baseline.ts).
+      'screenshot:baseline': {
+        command: 'tsx scripts/screenshot-baseline.ts',
+        cache: false,
+      },
+      // Decides whether the probe's single pixel-compared shard should be
+      // overridden and the full 12-shard capture forced anyway, based on
+      // changed-file paths the probe shard itself can't see (locale-only or
+      // iPad-only changes). See scripts/screenshot-probe-scope.ts.
+      'screenshot:probe-scope': {
+        command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
       'mobile:publish': {

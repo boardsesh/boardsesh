@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 import { APP_URL } from '@/app/lib/app-origin';
+import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 // --- Mocks ---
 
@@ -62,7 +63,7 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 }));
 
 // The rail is deliberately NOT mocked — its anchors are the point of the page
-// now, and mocking it would make the "SSR popular configs" cases vacuous. Only
+// now, and mocking it would make the physical-board identity cases vacuous. Only
 // the board artwork inside it is stubbed out.
 vi.mock('@/app/components/board-renderer/board-renderer', () => ({
   default: () => <div data-testid="board-thumb" />,
@@ -113,15 +114,38 @@ describe('HomePageContent', () => {
     setUserAgent(ORIGINAL_UA);
   });
 
+  it('explains the app before discovery and shows three real board captures', () => {
+    render(
+      <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
+    );
+    const featureSection = screen.getByTestId('features');
+    const gymSection = screen.getByTestId('gyms');
+    expect(featureSection.compareDocumentPosition(gymSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.tensionShotAlt'))).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
+  });
+
   describe('hero install CTA', () => {
-    it('shows the App Store install CTA on iOS/desktop web and opens the store on click', async () => {
+    it('renders both store buttons on desktop web', async () => {
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
+      render(<HomePageContent {...defaultProps} />);
+      expect(await screen.findByRole('link', { name: /install from app store/i })).toBeTruthy();
+      fireEvent.click(await screen.findByRole('link', { name: /get it on google play/i }));
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
+    });
+
+    it('shows the App Store install CTA on iOS web and opens the store on click', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /install from app store/i });
+      const button = await screen.findByRole('link', { name: /install from app store/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
         source: 'app-store',
@@ -137,10 +161,12 @@ describe('HomePageContent', () => {
       setUserAgent(ANDROID_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /get it on google play/i });
+      const button = await screen.findByRole('link', { name: /get it on google play/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -154,10 +180,11 @@ describe('HomePageContent', () => {
       mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /update the app/i });
+      const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
         source: 'app-store',
@@ -171,10 +198,12 @@ describe('HomePageContent', () => {
       mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /update the app/i });
+      const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -184,34 +213,7 @@ describe('HomePageContent', () => {
     });
   });
 
-  describe('install app card', () => {
-    it('shows the iOS App Store CTA on a regular browser', async () => {
-      setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByText(/Get the Boardsesh app/i)).toBeTruthy();
-      });
-      expect(screen.getByText(/Lights up holds on your board straight from your phone/i)).toBeTruthy();
-    });
-
-    it('shows the Google Play CTA on Android UA', async () => {
-      setUserAgent(ANDROID_UA);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByText(/Now on Google Play/i)).toBeTruthy();
-      });
-      expect(screen.getByText(/Get the Boardsesh app/i)).toBeTruthy();
-    });
-
-    it('hides the install card once running in the native Capacitor app', async () => {
-      mockIsNativeApp.mockReturnValue(true);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.queryByText(/Get the Boardsesh app/i)).toBeNull();
-        expect(screen.queryByText(/Now on Google Play/i)).toBeNull();
-      });
-    });
-
+  describe('install handling', () => {
     it('waits for the Capacitor bridge before classifying a WebView as web', async () => {
       setUserAgent(ANDROID_UA);
       mockIsCapacitorWebView.mockReturnValue(true);
@@ -225,54 +227,37 @@ describe('HomePageContent', () => {
       });
 
       render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        // Card must not render since we now know we're native.
-        expect(screen.queryByText(/Now on Google Play/i)).toBeNull();
-      });
+      expect(await screen.findByRole('link', { name: /update the app/i })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: /get it on google play/i })).toBeNull();
       expect(mockWaitForCapacitor).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('SSR popular configs', () => {
-    const KILTER_CONFIG = {
-      boardType: 'kilter',
-      layoutId: 1,
-      layoutName: 'Original',
-      sizeId: 10,
-      sizeName: '12 x 12 Square',
-      sizeDescription: 'With kickboard',
-      setIds: [1, 20],
-      setNames: ['Bolt Ons', 'Screw Ons'],
-      climbCount: 500,
-      totalAscents: 5000,
-      boardCount: 10,
-      displayName: 'Kilter Original 12x12',
-    };
-
-    it('renders one crawlable board link per SSR config', () => {
+  describe('SSR physical boards', () => {
+    it('renders one crawlable named-board link per physical installation', () => {
       setUserAgent(IOS_SAFARI_UA);
       render(
         <HomePageContent
           {...defaultProps}
-          initialPopularConfigs={[KILTER_CONFIG, { ...KILTER_CONFIG, sizeId: 27, displayName: 'Kilter no kick' }]}
+          initialBoards={[discoveryBoard(), discoveryBoard({ uuid: 'board-two', slug: 'southside-kilter' })]}
         />,
       );
 
       const boardLinks = screen
         .getAllByRole('link')
         .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
-      expect(boardLinks).toHaveLength(2);
+        .filter((href) => href.startsWith('/b/'));
+      expect(boardLinks).toEqual(['/b/northside-kilter', '/b/southside-kilter']);
     });
 
     it('renders no board links and does not crash when the backend returned nothing', () => {
       setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} initialPopularConfigs={[]} />);
+      render(<HomePageContent {...defaultProps} initialBoards={[]} />);
 
       const boardLinks = screen
         .getAllByRole('link')
         .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
+        .filter((href) => href.startsWith('/b/'));
       expect(boardLinks).toHaveLength(0);
     });
   });

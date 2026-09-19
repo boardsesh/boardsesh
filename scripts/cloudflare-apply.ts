@@ -231,6 +231,11 @@ interface R2CustomDomainListing {
   domains?: { domain: string; enabled?: boolean }[];
 }
 
+interface R2ManagedDomain {
+  domain: string;
+  enabled: boolean;
+}
+
 /** Cloudflare's R2 CORS shape: GET and PUT both use it. */
 interface R2CorsListing {
   rules?: {
@@ -302,24 +307,30 @@ async function fetchR2State(
   const state = new Map<string, LiveR2Bucket>();
   for (const bucket of desired) {
     if (!existing.has(bucket.name)) {
-      state.set(bucket.name, { name: bucket.name, exists: false, customDomains: [], cors: null });
+      state.set(bucket.name, {
+        name: bucket.name,
+        exists: false,
+        customDomains: [],
+        r2DevDomainEnabled: false,
+        cors: null,
+      });
       continue;
     }
-    const domains = await cfRequest<R2CustomDomainListing>(
-      token,
-      'GET',
-      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}/domains/custom`,
-    );
+    const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}`;
+    const [domains, managedDomain, corsState] = await Promise.all([
+      cfRequest<R2CustomDomainListing>(token, 'GET', `${bucketPath}/domains/custom`),
+      cfRequest<R2ManagedDomain>(token, 'GET', `${bucketPath}/domains/managed`),
+      bucket.cors ? fetchR2Cors(token, accountId, bucket.name) : Promise.resolve(null),
+    ]);
     state.set(bucket.name, {
       name: bucket.name,
       exists: true,
-      customDomains: (domains.domains ?? []).map((entry) => entry.domain),
-      ...(bucket.cors
-        ? await fetchR2Cors(token, accountId, bucket.name).then((read) => ({
-            cors: read.cors,
-            corsRuleCount: read.ruleCount,
-          }))
-        : { cors: null }),
+      customDomains: (domains.domains ?? []).map((entry) => ({
+        domain: entry.domain,
+        enabled: entry.enabled ?? true,
+      })),
+      r2DevDomainEnabled: managedDomain.enabled,
+      ...(corsState ? { cors: corsState.cors, corsRuleCount: corsState.ruleCount } : { cors: null }),
     });
   }
   return state;
@@ -395,14 +406,28 @@ async function applyR2Bucket(
     return;
   }
 
-  if (desired.customDomain && !live.customDomains.includes(desired.customDomain)) {
-    await cfRequest(
-      token,
-      'POST',
-      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}/domains/custom`,
-      { domain: desired.customDomain, zoneId, enabled: true },
-    );
-    console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+  const bucketPath = `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}`;
+
+  if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
+    await cfRequest(token, 'PUT', `${bucketPath}/domains/managed`, { enabled: false });
+    console.log(`[cf-apply] disabled public r2.dev URL for R2 bucket ${desired.name}`);
+  }
+
+  if (desired.customDomain) {
+    const liveDomain = live.customDomains.find((entry) => entry.domain === desired.customDomain);
+    if (!liveDomain) {
+      await cfRequest(token, 'POST', `${bucketPath}/domains/custom`, {
+        domain: desired.customDomain,
+        zoneId,
+        enabled: true,
+      });
+      console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+    } else if (!liveDomain.enabled) {
+      await cfRequest(token, 'PUT', `${bucketPath}/domains/custom/${encodeURIComponent(desired.customDomain)}`, {
+        enabled: true,
+      });
+      console.log(`[cf-apply] enabled ${desired.customDomain} on R2 bucket ${desired.name}`);
+    }
   }
 
   // Guarded here as well as in the diff, not instead of it. This function is
@@ -663,6 +688,8 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   // leaves the zone partially converged. Safe because the plan is ordered
   // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
   const appliedPhases = new Set<string>();
+  // Each bucket is fully converged on its first planned attribute.
+  const appliedR2Buckets = new Set<string>();
   for (const change of changes) {
     if (change.blocked) {
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);
@@ -674,7 +701,13 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
     if (change.resource === 'r2-bucket') {
       const bucket = desiredR2Buckets.find((candidate) => candidate.name === change.r2BucketName);
       if (!bucket || !accountId || !r2State) throw new Error(`Unresolvable R2 change: ${change.summary}`);
+      if (appliedR2Buckets.has(bucket.name)) {
+        console.log(`[cf-apply] skipped: ${change.summary} (${bucket.name} already converged)`);
+        continue;
+      }
       await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
+      appliedR2Buckets.add(bucket.name);
+      console.log(`[cf-apply] applied: ${change.summary}`);
       continue;
     }
 

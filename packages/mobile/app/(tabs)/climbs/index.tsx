@@ -72,6 +72,7 @@ import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
+import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
@@ -92,6 +93,7 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import {
@@ -647,6 +649,7 @@ function ClimbListInner() {
     data: searchPages,
     isLoading: isClimbsLoading,
     isError: isClimbsError,
+    error: climbSearchError,
     isFetchingNextPage,
     isRefetching,
     fetchNextPage,
@@ -823,6 +826,11 @@ function ClimbListInner() {
   // heart subscribes to per-uuid.
   useClimbListFavorites({ boardName, angle, climbUuids: visibleClimbUuids });
 
+  // Screenshot mode only (dead-stripped otherwise): ask for the whole loaded
+  // page's canonical stats in one batch, so a recorded capture covers every
+  // climb the replay can mount rather than only the rows FlashList had drawn.
+  useScreenshotClimbStatsPrefetch({ boardName, layoutId, angle, climbUuids: visibleClimbUuids });
+
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
     void refetch();
@@ -997,7 +1005,7 @@ function ClimbListInner() {
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     if (!activeBoard || !searchReady || visibleClimbs.length === 0) return;
-    publishScreenshotWallClimbs(buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null), null);
+    publishScreenshotWallClimbs(buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null, activeBoard), null);
   }, [activeBoard, searchReady, visibleClimbs]);
 
   // Screenshot mode: open the first climb in one of the drawer's two wall-state
@@ -1688,6 +1696,13 @@ function ClimbListInner() {
           ListEmptyComponent={
             showInitialSkeletons ? (
               <ClimbListSkeletonRows count={INITIAL_SKELETON_ROW_COUNT} />
+            ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
+              <View style={styles.emptyContainer}>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('authors.syncNeeded')}
+                </Text>
+                <Button title={t('authors.retry')} onPress={() => void refetch()} />
+              </View>
             ) : offlineFilterUnavailable ? (
               <View style={styles.emptyContainer}>
                 {/* The glyph carries the same blame as the title: a wifi-slash over

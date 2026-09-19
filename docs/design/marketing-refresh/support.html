@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Support Page Wireframe — Dark</title>
+    <style>
+      /* ============================================================
+         Velvet Send (web, dark) — the ONLY scheme www renders.
+         Tokens lifted from docs/ai-design-guidelines.md +
+         packages/web/app/theme/theme-config.ts (darkTokens).
+         ============================================================ */
+      :root {
+        color-scheme: dark;
+
+        /* Surface ladder — depth is a lighter violet, never a shadow. */
+        --bg: #110a20; /* page ground */
+        --surface: #251b3a; /* cards, panels */
+        --surface-2: #2f234a; /* raised: rails, inputs, selected */
+
+        /* Text ramp (dark: 50 darkest → 900 lightest) */
+        --label: #f3effa; /* primary text        (neutral-900) */
+        --secondary-label: #aca5bd; /* secondary text      (neutral-500) */
+        --tertiary-label: #6f6882; /* disabled/decorative (neutral-400) */
+
+        --separator: rgba(185, 170, 215, 0.2); /* the one hairline */
+
+        /* Brand — two jobs, two tokens. NEVER collapse them. */
+        --primary: #a78bfa; /* FOREGROUND: text, links, icons, borders */
+        --primary-fill: #7c3aed; /* FILL: button background, white text 5.70:1 */
+        --primary-fill-hover: #6d28d9;
+        --on-primary: #ffffff;
+
+        /* Amber is fill-only, dark ink, at most once per page. */
+        --accent: #ff8a3d;
+        --on-accent: #16111f;
+
+        --success: #34d399;
+        --warning: #fbbf24;
+        --error: #f87171;
+
+        --radius-card: 12px;
+        --radius-btn: 10px;
+        --radius-full: 9999px;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--label);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.5;
+        font-size: 16px;
+      }
+      a {
+        color: var(--primary);
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      /* Prose measure — long-form copy never runs wider than this. */
+      .prose {
+        max-width: 68ch;
+      }
+
+      /* ---- type scale: ONE large thing per page ---- */
+      h1 {
+        font-size: 40px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+      h3 {
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+      @media (max-width: 600px) {
+        h1 {
+          font-size: 30px;
+        }
+        h2 {
+          font-size: 21px;
+        }
+      }
+
+      /* ---- buttons ---- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 0 20px;
+        border-radius: var(--radius-btn);
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .btn-filled {
+        background: var(--primary-fill);
+        color: var(--on-primary);
+      }
+      .btn-filled:hover {
+        background: var(--primary-fill-hover);
+      }
+      .btn-outlined {
+        border-color: var(--separator);
+        color: var(--primary);
+        background: transparent;
+      }
+      .btn-outlined:hover {
+        border-color: var(--primary);
+        background: rgba(167, 139, 250, 0.08);
+      }
+
+      /* ---- cards: only for things you can act on ---- */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--separator);
+        border-radius: var(--radius-card);
+        padding: 20px;
+      }
+      .card-raised {
+        background: var(--surface-2);
+      }
+
+      /* ---- wireframe chrome (meta UI, NOT product UI) ---- */
+      .wf-banner {
+        background: #060310;
+        color: var(--label);
+        font-size: 13px;
+        padding: 8px 16px;
+        text-align: center;
+        border-bottom: 1px solid var(--separator);
+      }
+      .wf-banner strong {
+        color: var(--accent);
+      }
+      .wf-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--warning);
+        border: 1px dashed var(--warning);
+        border-radius: 4px;
+        padding: 1px 6px;
+        vertical-align: middle;
+      }
+      .note-ref {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 3px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 11px;
+        font-weight: 700;
+        text-decoration: none;
+        vertical-align: super;
+        line-height: 1;
+        margin-left: 4px;
+      }
+      /* Placeholder for imagery we do not have yet. NEVER an AI-generated image. */
+      .img-slot {
+        background: var(--surface-2);
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--tertiary-label);
+        font-size: 12px;
+        padding: 12px;
+      }
+
+      /* ---- global header placeholder (the real MarketingHeader) ---- */
+      .global-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(37, 27, 58, 0.72);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--separator);
+        padding: 12px 0;
+      }
+      .global-header .container {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #7c3aed, #a78bfa);
+        flex-shrink: 0;
+      }
+      .brand-name {
+        font-weight: 700;
+        font-size: 17px;
+      }
+      .global-header nav {
+        display: flex;
+        gap: 18px;
+        font-size: 15px;
+      }
+      .global-header nav a {
+        color: var(--secondary-label);
+        text-decoration: none;
+      }
+      .global-header nav a:hover {
+        color: var(--label);
+      }
+      .header-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      @media (max-width: 760px) {
+        .global-header nav {
+          display: none;
+        }
+      }
+
+      /* ---- design notes ---- */
+      .notes {
+        background: #060310;
+        border-top: 1px solid var(--separator);
+        margin-top: 64px;
+        padding: 40px 0 64px;
+      }
+      .notes h2 {
+        margin-bottom: 8px;
+      }
+      .notes .intro {
+        color: var(--secondary-label);
+        font-size: 14px;
+        margin-bottom: 24px;
+        max-width: 68ch;
+      }
+      .annotation {
+        display: flex;
+        gap: 12px;
+        padding: 14px 0;
+        border-top: 1px solid var(--separator);
+      }
+      .annotation .num {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        border-radius: var(--radius-full);
+        background: var(--primary-fill);
+        color: var(--on-primary);
+        font-size: 12px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .annotation .body {
+        font-size: 14px;
+        color: var(--secondary-label);
+      }
+      .annotation .body strong {
+        color: var(--label);
+      }
+      .annotation code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: var(--surface);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .bind,
+      .oq {
+        display: block;
+        margin-top: 6px;
+        font-size: 13px;
+      }
+      .bind {
+        color: var(--tertiary-label);
+      }
+      .oq {
+        color: var(--warning);
+      }
+    </style>
+  </head>
+  <body>
+    <style>
+      /* ============================================================
+         Page-specific: /support. Nothing here overrides a token —
+         it only composes the preamble's primitives.
+         ============================================================ */
+
+      main {
+        padding-bottom: 8px;
+      }
+
+      /* ---- hero: sits on --bg, never in a card ---- */
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 72px 0 56px;
+      }
+      /* Soft violet glow behind the ask. Decorative, low alpha, no shadow. */
+      .hero::before {
+        content: '';
+        position: absolute;
+        inset: -40% 0 auto 50%;
+        width: 900px;
+        height: 620px;
+        transform: translateX(-50%);
+        background: radial-gradient(
+          ellipse at center,
+          rgba(124, 58, 237, 0.34) 0%,
+          rgba(124, 58, 237, 0.14) 38%,
+          rgba(17, 10, 32, 0) 70%
+        );
+        pointer-events: none;
+      }
+      .hero .container {
+        position: relative;
+      }
+      .hero-inner {
+        max-width: 42ch;
+      }
+      .hero .brand-mark {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+        margin-bottom: 22px;
+      }
+      .hero h1 {
+        margin-bottom: 12px;
+      }
+      .hero-sub {
+        font-size: 19px;
+        color: var(--secondary-label);
+        margin-bottom: 26px;
+      }
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+      }
+      .hero-actions .quiet {
+        font-size: 14px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- the free-forever promise: a pull-quote, not a card ---- */
+      .promise {
+        border-left: 3px solid var(--primary);
+        padding: 4px 0 4px 18px;
+        margin: 8px 0 56px;
+        max-width: 54ch;
+        font-size: 21px;
+        font-weight: 600;
+        line-height: 1.4;
+        color: var(--label);
+      }
+      .promise span {
+        display: block;
+        margin-top: 8px;
+        font-size: 15px;
+        font-weight: 400;
+        color: var(--secondary-label);
+      }
+
+      section.band {
+        padding: 0 0 52px;
+      }
+      section.band > .container > h2 {
+        margin-bottom: 14px;
+      }
+      .prose p + p {
+        margin-top: 14px;
+      }
+      .prose p {
+        color: var(--secondary-label);
+      }
+
+      /* ---- donation rails: the ONLY cards on this page ---- */
+      /* auto-fit + minmax so ONE rail fills the row instead of leaving a hole. */
+      .rails {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin-top: 4px;
+      }
+      .rail {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 24px;
+      }
+      .rail h3 {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .rail p {
+        color: var(--secondary-label);
+        font-size: 15px;
+      }
+      .rail .btn {
+        margin-top: auto;
+        align-self: flex-start;
+      }
+      .glyph {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: rgba(167, 139, 250, 0.18);
+        border: 1px solid var(--separator);
+        flex-shrink: 0;
+      }
+
+      /* ---- other ways to help ---- */
+      .help-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 4px 32px;
+        margin-top: 8px;
+        border-top: 1px solid var(--separator);
+      }
+      .help-item {
+        padding: 18px 0;
+        border-bottom: 1px solid var(--separator);
+      }
+      .help-item h3 {
+        margin-bottom: 4px;
+      }
+      .help-item p {
+        font-size: 14px;
+        color: var(--secondary-label);
+        margin-bottom: 6px;
+      }
+      .help-item a {
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .help-item a:hover {
+        text-decoration: underline;
+      }
+
+      /* ---- thanks + small print ---- */
+      .thanks {
+        max-width: 68ch;
+        font-size: 17px;
+      }
+      .thanks a {
+        display: inline-block;
+        margin-top: 10px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .smallprint {
+        border-top: 1px solid var(--separator);
+        margin-top: 40px;
+        padding-top: 18px;
+        max-width: 68ch;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--secondary-label);
+      }
+      .smallprint p + p {
+        margin-top: 8px;
+      }
+      .smallprint a {
+        color: var(--secondary-label);
+      }
+      .page-footer {
+        padding: 28px 0 56px;
+        font-size: 14px;
+        color: var(--tertiary-label);
+      }
+
+      /* ---- wireframe-only state demo chrome ---- */
+      .demo-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        font-size: 13px;
+        color: var(--tertiary-label);
+        margin: 28px 0 10px;
+      }
+      .demo-block {
+        border: 1px dashed var(--separator);
+        border-radius: var(--radius-card);
+        padding: 16px;
+      }
+
+      @media (max-width: 600px) {
+        .hero {
+          padding: 44px 0 36px;
+        }
+        .promise {
+          font-size: 18px;
+        }
+      }
+    </style>
+
+    <div class="wf-banner">
+      <strong>WIREFRAME</strong> — redesign of the <code>/support</code> donations page. Not production UI. Copy is
+      indicative; the real strings live in the <code>support.*</code> keys of the marketing catalog. Numbered violet
+      markers link to the <a href="#notes" style="color: #c4b5fd">design notes</a> at the bottom.
+    </div>
+
+    <!-- The ONE bar on this page: the real MarketingHeader. The page's own
+         header/back-arrow bar is deleted. -->
+    <header class="global-header">
+      <div class="container">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <span class="brand-name">Boardsesh</span>
+        <nav>
+          <a href="/gyms">Gyms</a>
+          <a href="/about">About</a>
+          <a href="/docs">Docs</a>
+          <a href="/support">Support</a>
+        </nav>
+        <div class="header-right">
+          <span style="font-size: 13px; color: var(--tertiary-label)"
+            >global header placeholder — one bar, no second</span
+          >
+          <a class="note-ref" href="#note-1">1</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ① Hero on the page ground, with the ask in it -->
+      <section class="hero">
+        <div class="container">
+          <div class="hero-inner">
+            <div class="brand-mark" aria-hidden="true"></div>
+            <h1>Keep Boardsesh running <a class="note-ref" href="#note-2">2</a></h1>
+            <p class="hero-sub">Free, open source, and paid for by climbers.</p>
+            <div class="hero-actions">
+              <a class="btn btn-filled" href="https://github.com/sponsors/boardsesh">Sponsor on GitHub</a>
+              <span class="quiet">Monthly, cancel whenever. <a class="note-ref" href="#note-3">3</a></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ② The promise, moved up next to the ask -->
+      <div class="container">
+        <p class="promise">
+          Every part of Boardsesh stays open to everyone, sponsor or not.
+          <span>No locked screens, no waiting list, no second tier. Chipping in pays the bill, nothing else.</span>
+          <a class="note-ref" href="#note-4">4</a>
+        </p>
+      </div>
+
+      <!-- ③ Why this page exists — prose at measure, no card -->
+      <section class="band">
+        <div class="container">
+          <h2>Why this page exists <a class="note-ref" href="#note-5">5</a></h2>
+          <div class="prose">
+            <p>
+              Boardsesh is free and open source, and it always will be. Running it costs real money: hosting, the
+              database, and infrastructure bills grow as more climbers join.
+            </p>
+            <p>
+              We will not enshittify Boardsesh, and self-hosting stays an option. If you get something out of it and can
+              spare it, chipping in keeps the lights on.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ④ Donation rails: the only cards on the page. BOTH STATES shown. -->
+      <section class="band">
+        <div class="container">
+          <h2>Ways to chip in <a class="note-ref" href="#note-6">6</a></h2>
+          <p class="prose" style="color: var(--secondary-label); margin-bottom: 18px">
+            Pick whichever is less friction for you. Both land in the same place.
+          </p>
+
+          <div class="demo-title">
+            <span class="wf-tag">State A</span> Both rails — <code>STRIPE_DONATE_URL</code> set
+            <a class="note-ref" href="#note-7">7</a>
+          </div>
+          <div class="demo-block">
+            <div class="rails">
+              <div class="card card-raised rail">
+                <h3><span class="glyph" aria-hidden="true"></span> GitHub Sponsors</h3>
+                <p>Back Boardsesh every month. Easiest if you already have a GitHub account.</p>
+                <a class="btn btn-filled" href="https://github.com/sponsors/boardsesh">Sponsor on GitHub</a>
+              </div>
+              <div class="card card-raised rail">
+                <h3><span class="glyph" aria-hidden="true"></span> One-time donation</h3>
+                <p>Pay by card, Apple Pay, or Google Pay in your browser. No account needed.</p>
+                <a class="btn btn-outlined" href="#">Give once</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-title">
+            <span class="wf-tag">State B — production today</span> One rail — <code>STRIPE_DONATE_URL</code> unset
+            <a class="note-ref" href="#note-8">8</a>
+          </div>
+          <div class="demo-block">
+            <div class="rails">
+              <div class="card card-raised rail">
+                <h3><span class="glyph" aria-hidden="true"></span> GitHub Sponsors</h3>
+                <p>Back Boardsesh every month. Easiest if you already have a GitHub account.</p>
+                <a class="btn btn-filled" href="https://github.com/sponsors/boardsesh">Sponsor on GitHub</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ⑤ Other ways to help — substance that does not depend on Stripe -->
+      <section class="band">
+        <div class="container">
+          <h2>Other ways to help <a class="note-ref" href="#note-9">9</a></h2>
+          <p class="prose" style="color: var(--secondary-label)">
+            Money is the slowest of these. Any of the four moves the app along.
+          </p>
+          <div class="help-grid">
+            <div class="help-item">
+              <h3>Report a bug</h3>
+              <p>Tell us what broke, on which board, and what you expected instead.</p>
+              <a href="https://github.com/boardsesh/boardsesh/issues">Open an issue on GitHub →</a>
+            </div>
+            <div class="help-item">
+              <h3>Translate a screen</h3>
+              <p>Spanish, French, and German catalogs live in the repo. Fix a phrase or add a locale.</p>
+              <a href="https://github.com/boardsesh/boardsesh">Browse the locale catalogs →</a>
+            </div>
+            <div class="help-item">
+              <h3>Send a patch</h3>
+              <p>The whole app is public: web, mobile, backend, and the board data behind them.</p>
+              <a href="/docs">See how it is built in the developer docs →</a>
+            </div>
+            <div class="help-item">
+              <h3>Join the Discord</h3>
+              <p>Ask what is being worked on, argue about grades, tell us what is missing.</p>
+              <a href="https://discord.gg/boardsesh">Come say hi →</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ⑥ Thanks + small print -->
+      <section class="band">
+        <div class="container">
+          <h2>Thanks <a class="note-ref" href="#note-10">10</a></h2>
+          <div class="thanks">
+            <p style="color: var(--secondary-label)">
+              To everyone already sponsoring Boardsesh, reporting bugs, sending patches, or translating a screen: thank
+              you. You keep this thing moving.
+            </p>
+            <a href="/about">Read more about the project →</a>
+          </div>
+
+          <div class="smallprint">
+            <p>
+              <strong style="color: var(--label)">The small print.</strong> Donations are not tax-deductible. Boardsesh
+              is not a charity, just climbers paying the server bill. <a class="note-ref" href="#note-11">11</a>
+            </p>
+            <p>
+              Your money goes to hosting, the database, and infrastructure. It buys nothing extra in the app: every part
+              of Boardsesh stays open to everyone, sponsor or not.
+              <a class="note-ref" href="#note-12">12</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="container page-footer">
+        Free for everyone, funded by whoever can chip in. <a class="note-ref" href="#note-14">14</a>
+      </div>
+
+      <!-- Placeholder for the one image this page could earn. Real photo only. -->
+      <div class="container" style="margin-bottom: 8px">
+        <div class="img-slot" style="height: 120px">
+          Optional, not in v1: a real photo of a board session (never an AI image). Cut it if it pushes the rails below
+          the fold.
+          <a class="note-ref" href="#note-13">13</a>
+        </div>
+      </div>
+    </main>
+
+    <section class="notes" id="notes">
+      <div class="container">
+        <h2>Design notes</h2>
+        <p class="intro">
+          For the implementing agent. Each note carries the claim, why, and the file, test, or env var it binds to. Copy
+          shown here is indicative: every visible string ships through the <code>support.*</code> marketing keys.
+        </p>
+
+        <div class="annotation" id="note-1">
+          <span class="num">1</span>
+          <div class="body">
+            <strong>One header bar, not two.</strong> The current page renders its own <code>styles.header</code> row —
+            back arrow, small logo, "Support" title — directly under the global <code>MarketingHeader</code>, so every
+            visit opens with two stacked bars and a duplicated logo. Delete that block, the <code>BackButton</code>, and
+            <code>support.headerTitle</code>'s use in the page body; the global nav already tells you where you are. The
+            page then starts at the hero, on the page ground.
+            <span class="bind"
+              >Binds: <code>support-content.tsx:27-36</code> (header JSX), <code>support.module.css</code>
+              <code>.header</code> / <code>.headerTitle</code>, <code>site-chrome.tsx</code> (the real header).</span
+            >
+            <span class="oq"
+              >Open: <code>support.headerTitle</code> is not in <code>SUPPORT_COPY_KEYS</code>, so dropping the key is
+              safe for the disclosure test — confirm nothing else reads it before deleting it from four catalogs.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-2">
+          <span class="num">2</span>
+          <div class="body">
+            <strong>Exactly one h1, and it is the hero.</strong> "Keep Boardsesh running" is the only <code>h1</code> on
+            the page; every section below is an <code>h2</code> and every rail an <code>h3</code>. The current code
+            already fakes this with <code>variant="h2" component="h1"</code>; keep the semantics and let the type scale
+            do the size. Nothing else on the page may be promoted to <code>h1</code>, state demos included.
+            <span class="bind"
+              >Binds: <code>packages/web/app/support/__tests__/support-content.test.tsx:89-95</code> (asserts one
+              <code>h1</code>, text equal to <code>support.hero.title</code>).</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-3">
+          <span class="num">3</span>
+          <div class="body">
+            <strong>The ask is in the hero, as a real button.</strong> Today you read the whole hero, two prose
+            paragraphs, and a section heading before you reach a bare MUI text link. Move the filled violet
+            <code>Sponsor on GitHub</code> button into the hero, above the fold, and let the rails repeat it further
+            down for the reader who scrolled. Active verb, no arrow glyph baked into the label — the button shape
+            already says it is an action.
+            <span class="bind"
+              >Binds: <code>GITHUB_SPONSORS_URL</code> (<code>support-content.tsx:17</code>),
+              <code>support.sponsors.cta</code>; <code>--primary-fill</code> from <code>theme-config.ts</code>, never a
+              hardcoded hex.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-4">
+          <span class="num">4</span>
+          <div class="body">
+            <strong>The free-forever promise moves up, as a pull-quote.</strong> "Every part of Boardsesh stays open to
+            everyone, sponsor or not" currently sits at the tail of <code>support.honesty.p2</code>, below the fold, in
+            the same grey as the rest of the small print. It is the single line that makes the ask honest, so it belongs
+            beside the ask. A left violet rule and a size bump give it weight without turning it into a card. The small
+            print keeps the sentence too — the disclosure test reads the catalog, not the layout.
+            <span class="bind"
+              >Binds: <code>support.honesty.p2</code>; a new key (e.g. <code>support.promise</code>) must be added to
+              all four locales — <code>catalog-completeness.test.ts</code> enforces parity.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-5">
+          <span class="num">5</span>
+          <div class="body">
+            <strong>Prose at <code>.prose</code> measure, on the page ground.</strong> The whole page is currently one
+            <code>MuiCard</code> on a pale background, so a hero, three sections of prose, and two rails all share one
+            flat plane and nothing reads as more important than anything else. Cards are for things you can act on. The
+            "why" copy is reading, so it gets a measure (about 68ch) and no container at all.
+            <span class="bind"
+              >Binds: <code>support-content.tsx:39-44</code> (the wrapping <code>MuiCard</code>/<code>CardContent</code>
+              to remove), <code>support.why.p1</code> / <code>support.why.p2</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-6">
+          <span class="num">6</span>
+          <div class="body">
+            <strong>Heading is count-neutral: "Ways to chip in".</strong> The shipped heading says "Two ways to chip in"
+            above one rail, because the second is gated on an env var that is unset in production. A heading must never
+            promise a row it cannot render. Rewrite <code>support.rails.title</code> in all four locales; do not branch
+            the string on <code>stripeDonateUrl</code>, which would make the copy untestable and the translations
+            conditional.
+            <span class="bind"
+              >Binds: <code>support.rails.title</code> (currently "Two ways to chip in"),
+              <code>resolveStripeDonateUrl()</code>
+              (<code>packages/web/app/support/stripe-donate-url.ts:14</code>).</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-7">
+          <span class="num">7</span>
+          <div class="body">
+            <strong>Rails are the only cards, and they get real buttons.</strong>
+            <code>.card.card-raised</code> on <code>--surface-2</code> so they lift off the ground rather than
+            disappearing into a parent card, as they do today. GitHub Sponsors is the filled button, one-time is
+            outlined: one primary action per section. The card CTAs are <code>&lt;a class="btn"&gt;</code> with a 44px
+            min-height, not <code>MuiLink</code> text.
+            <span class="bind"
+              >Binds: <code>support.module.css</code> <code>.rail</code> / <code>.railCta</code> (both replaced),
+              <code>support.sponsors.*</code>, <code>support.oneTime.*</code>. In prod these are MUI
+              <code>Button</code>s with theme tokens, never the <code>style</code> prop.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-8">
+          <span class="num">8</span>
+          <div class="body">
+            <strong>The grid degrades honestly to one rail.</strong>
+            <code>grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))</code> replaces the current fixed
+            <code>repeat(2, minmax(0, 1fr))</code>, which leaves a 50% hole whenever the Stripe rail is hidden — the
+            production state today. With <code>auto-fit</code> one rail fills the row and the section still looks
+            finished. State B above is what boardsesh.com renders right now; both states are drawn so the reviewer can
+            check the degrade rather than imagine it.
+            <span class="bind"
+              >Binds: <code>STRIPE_DONATE_URL</code> (<code>stripe-donate-url.ts:14</code>, server-read, never
+              <code>NEXT_PUBLIC_</code>); <code>support-content.tsx:85-100</code> (the conditional rail,
+              <code>data-testid="support-one-time-rail"</code>).</span
+            >
+            <span class="oq"
+              >Open: the Stripe Payment Link does not exist yet. Until someone creates it and sets the var on the
+              Railway web service, State B is the only state that ships — so State B has to be the one that is
+              reviewed.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-9">
+          <span class="num">9</span>
+          <div class="body">
+            <strong>"Other ways to help" is the page's second column of substance.</strong> With one donation rail the
+            page had almost nothing in it. Four contribution routes — report a bug, translate a screen, send a patch,
+            join the Discord — give the page weight that does not depend on an env var, and they are the routes that
+            actually move the app. Wording must promise nothing in return: "report a bug" and "translate a screen" are
+            safe, anything shaped like a thank-you gift is not.
+            <span class="bind"
+              >Binds: new <code>support.help.*</code> keys in four locales;
+              <code>donation-disclosure.test.ts</code> bans
+              <code>unlock|early access|priority support|perk|reward|exclusive</code> across
+              <code>SUPPORT_COPY_KEYS</code> — add the new keys to that list so they are policed too.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-10">
+          <span class="num">10</span>
+          <div class="body">
+            <strong>Crawlable <code>/about</code> and <code>/docs</code> survive the redesign.</strong> The thanks block
+            keeps the <code>/about</code> link and the "send a patch" card carries <code>/docs</code>. Both must be real
+            <code>LocaleLink</code> anchors with descriptive text, not buttons or click handlers, or the page loses its
+            internal-link floor and the test goes red.
+            <span class="bind"
+              >Binds: <code>support-content.test.tsx:99-104</code> (hrefs contain <code>/about</code> and
+              <code>/docs</code>); <code>support.aboutLink</code>, <code>support.docsLink</code>;
+              <code>LocaleLink</code> from <code>@/app/components/i18n/locale-link</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-11">
+          <span class="num">11</span>
+          <div class="body">
+            <strong>Small print looks like small print, and keeps its literal phrase.</strong> 13px,
+            <code>--secondary-label</code>, one hairline above it, no card and no icon. What it may not do is soften:
+            the string "not tax-deductible" is pinned per locale and asserted on the rendered text, so it survives any
+            rewrite. Shrinking it visually is fine; paraphrasing it is not.
+            <span class="bind"
+              >Binds: <code>support.honesty.p1</code>; <code>donation-disclosure.test.ts</code>
+              <code>NOT_TAX_DEDUCTIBLE</code> (en-US <code>/not tax-deductible/i</code>, plus es/fr/de);
+              <code>support-content.test.tsx:75-79</code>.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-12">
+          <span class="num">12</span>
+          <div class="body">
+            <strong>"Buys nothing extra" stays, and no figures ever appear.</strong> The second small-print line keeps
+            the buys-nothing promise verbatim. Separately: no hosting cost, no climber count, no revenue number anywhere
+            on this page. Naming a figure invites "so you are nearly there?" and dates the copy the day the bill
+            changes, which is why the ask is qualitative in every state.
+            <span class="bind"
+              >Binds: <code>support.honesty.p2</code>; <code>donation-disclosure.test.ts</code> perks regex. No binding
+              to any metric — deliberately, there is none to bind.</span
+            >
+          </div>
+        </div>
+
+        <div class="annotation" id="note-13">
+          <span class="num">13</span>
+          <div class="body">
+            <strong>Imagery is optional and must be a real photo.</strong> The page reads fine with none: the brand mark
+            plus the hero glow carry it. If a photo is added later it goes below the rails, never above them, and it is
+            a real session shot — AI-generated images are banned in this repo. The glow itself is a CSS
+            <code>radial-gradient</code>, not an asset, so it costs nothing to ship.
+            <span class="bind"
+              >Binds: repo rule "No AI-generated images" (<code>CLAUDE.md</code>); hero glow is pure CSS on
+              <code>--primary-fill</code> at low alpha.</span
+            >
+            <span class="oq">Open: is there a usable photo at all? If not, ship without the slot.</span>
+          </div>
+        </div>
+
+        <div class="annotation" id="note-14">
+          <span class="num">14</span>
+          <div class="body">
+            <strong>Reading order, top to bottom.</strong> Ask, promise, reason, rails, other help, thanks, small print,
+            footer. The shipped order buries the ask under two paragraphs and puts the promise last. Anyone who arrives
+            already convinced can act in the first screen; anyone who wants the reasoning finds it immediately after,
+            and the legal text sits where legal text belongs.
+            <span class="bind"
+              >Binds: section order in <code>support-content.tsx:38-145</code>; i18n key order in
+              <code>marketing.json</code> should follow the new order so translators read it the way users do.</span
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

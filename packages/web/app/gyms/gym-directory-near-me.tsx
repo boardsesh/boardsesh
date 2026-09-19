@@ -17,7 +17,7 @@ import {
   type SearchGymsDirectoryQueryResponse,
   type SearchGymsDirectoryQueryVariables,
 } from '@boardsesh/graphql/operations';
-import { gymDirectorySearched, type GymClaimViewerState } from '@boardsesh/analytics';
+import { gymDirectorySearched } from '@boardsesh/analytics';
 import { useGeolocation } from '@/app/hooks/use-geolocation';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -54,7 +54,6 @@ type GymDirectoryNearMeProps = {
   /** The visitor's `?q=` text, carried into the near-me query unchanged. */
   searchQuery: string;
   locale: Locale;
-  viewerState: GymClaimViewerState;
   /** Pins for the server-rendered page, so browse mode has a populated map. */
   browsePins: MapPin[];
   browsePinnedCount: number;
@@ -96,7 +95,6 @@ export default function GymDirectoryNearMe({
   boardTypes,
   searchQuery,
   locale,
-  viewerState,
   browsePins,
   browsePinnedCount,
   browseShownCount,
@@ -235,7 +233,11 @@ export default function GymDirectoryNearMe({
               pressed": after a denial the control has to offer the retry again,
               not a "show all" for a near-me list that never rendered. */}
           {showingNearMeResults ? (
-            <Button variant="outlined" onClick={handleShowAll} sx={{ textTransform: 'none' }}>
+            <Button
+              variant="outlined"
+              onClick={handleShowAll}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
+            >
               {t('nearMe.showAll')}
             </Button>
           ) : (
@@ -244,7 +246,7 @@ export default function GymDirectoryNearMe({
               startIcon={<MyLocationOutlined />}
               onClick={handleUseMyLocation}
               disabled={loading || fallbackReason === 'unsupported'}
-              sx={{ textTransform: 'none' }}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
             >
               {loading ? t('nearMe.locating') : t('nearMe.cta')}
             </Button>
@@ -262,7 +264,27 @@ export default function GymDirectoryNearMe({
               aria-labelledby="gym-near-me-radius-label"
             >
               {NEAR_ME_RADIUS_OPTIONS_KM.map((option) => (
-                <ToggleButton key={option} value={option} sx={{ textTransform: 'none' }}>
+                <ToggleButton
+                  key={option}
+                  value={option}
+                  // Same two states as the facet chips, for the same reason: on
+                  // the near-black ground a default toggle group is a row of
+                  // hairlines with no legible "this one".
+                  sx={{
+                    textTransform: 'none',
+                    minHeight: 44,
+                    fontSize: 14,
+                    borderColor: 'var(--control-border)',
+                    backgroundColor: 'var(--semantic-surface)',
+                    color: 'var(--neutral-900)',
+                    '&.Mui-selected': {
+                      backgroundColor: 'var(--semantic-surface-elevated)',
+                      borderColor: 'var(--color-primary)',
+                      color: 'var(--color-primary)',
+                    },
+                    '&.Mui-selected:hover': { backgroundColor: 'var(--semantic-surface-elevated)' },
+                  }}
+                >
                   {radiusOptionLabel(t, option)}
                 </ToggleButton>
               ))}
@@ -309,7 +331,7 @@ export default function GymDirectoryNearMe({
           display: 'grid',
           gap: 3,
           gridTemplateColumns: 'minmax(0, 1fr)',
-          [WIDE_LAYOUT]: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 360px)', alignItems: 'start' },
+          [WIDE_LAYOUT]: { gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', alignItems: 'start' },
         }}
       >
         {/* The list column is FIRST in the DOM at every width. The map is never
@@ -322,7 +344,6 @@ export default function GymDirectoryNearMe({
               origin={origin}
               radiusKm={radiusKm}
               locale={locale}
-              viewerState={viewerState}
             />
           ) : (
             children
@@ -333,15 +354,15 @@ export default function GymDirectoryNearMe({
           {/* Toggle BELOW the breakpoint only. At 960px and up the map is the
               wireframe's sticky second column and renders with the page.
               ACCEPTED COST, stated rather than mitigated: every wide-screen
-              view therefore requests OSM tiles before anyone asks for a map.
-              That is the page's only third-party request, it carries the
+              view therefore requests OpenFreeMap tiles (OSM raster fallback)
+              before anyone asks for a map. The request carries the
               visitor's IP, and it becomes public traffic when #4382 drops the
               noindex. */}
           <Button
             variant="outlined"
             startIcon={<MapOutlined />}
             onClick={() => setMapOpen((open) => !open)}
-            sx={{ textTransform: 'none', mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
+            sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
           >
             {mapOpen ? t('map.hideMap') : t('map.showMap')}
           </Button>
@@ -398,10 +419,9 @@ type NearMeResultsProps = {
   origin: { latitude: number; longitude: number } | null;
   radiusKm: NearMeRadiusKm;
   locale: Locale;
-  viewerState: GymClaimViewerState;
 };
 
-function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, viewerState }: NearMeResultsProps) {
+function NearMeResults({ gyms, totalCount, origin, radiusKm, locale }: NearMeResultsProps) {
   const { t } = useTranslation('gyms');
   const formatNumber = numberFormatFor(locale);
   // The request is capped at the backend's 50 and near-me has no pagination, so
@@ -436,12 +456,9 @@ function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, viewerState
           {t('nearMe.empty')}
         </Typography>
       ) : (
-        <Box
-          component="ul"
-          sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2, m: 0, p: 0 }}
-        >
+        <Box component="ul" sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 0, m: 0, p: 0 }}>
           {gyms.map((gym) => (
-            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
+            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
           ))}
         </Box>
       )}

@@ -1,0 +1,27 @@
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: var(--semantic-background);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--separator);
+}
+
+.artwork {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: var(--spacing-2);
+}
+
+.preview .fallback {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--spacing-2);
+}

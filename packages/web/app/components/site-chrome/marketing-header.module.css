@@ -6,20 +6,46 @@
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-6);
   height: var(--global-header-height);
-  padding: 0 16px;
+  padding: 0 max(var(--spacing-8), calc((100% - 1200px) / 2 + var(--spacing-8)));
   padding-top: var(--safe-area-inset-top);
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.6));
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--semantic-background) 88%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--separator);
   touch-action: manipulation;
 }
 
 .header button,
 .header a {
   touch-action: manipulation;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.header button {
+  min-width: 44px;
+}
+
+.nav a {
+  display: inline-flex;
+  align-items: center;
+}
+
+.nav a[aria-current='page'] {
+  color: var(--neutral-900);
+  text-decoration: underline;
+  text-decoration-color: var(--color-primary);
+  text-underline-offset: 6px;
+}
+
+.desktopAppLink {
+  flex-shrink: 0;
+}
+
+.mobileAppLink.mobileAppLink {
+  display: none;
 }
 
 .headerActions {
@@ -34,9 +60,9 @@
  * screen is.
  *
  * The inline row stays mounted at every width (hidden, not removed) so the
- * anchors are in the first server-rendered HTML for a crawler. Below 900px it
- * is `display: none` and the menu button takes over; from 900px up the button
- * is the one that disappears. 900px is where the brand, four links, the
+ * anchors are in the first server-rendered HTML for a crawler. Below 1100px it
+ * is `display: none` and the menu button takes over; from 1100px up the button
+ * is the one that disappears. 1100px is where the brand, four links, the
  * account slot and the "Start climbing" pill all fit on one row without the
  * nav pushing the CTA off the end.
  */
@@ -51,9 +77,10 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  order: 1;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1100px) {
   .nav {
     display: flex;
   }
@@ -79,41 +106,51 @@
   pointer-events: none;
 }
 
-.headerTransparent {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: var(--global-header-height);
-  padding: 0 16px;
-  padding-top: var(--safe-area-inset-top);
-  background: transparent;
-  border-bottom: none;
-  pointer-events: none;
-  touch-action: manipulation;
+.header .signInIcon {
+  display: none;
 }
 
-.headerTransparent > * {
-  pointer-events: auto;
+.header .signIn {
+  min-width: 44px;
 }
 
-/* The menu button costs the narrowest phones ~30px they did not have to spend
-   before. Tighten the header's own gaps rather than let it squeeze the CTA.
-   Declared after both bar rules so it wins on equal specificity. */
-@media (max-width: 599px) {
-  .header,
-  .headerTransparent {
-    gap: 8px;
+@media (max-width: 1099px) {
+  .header {
+    gap: var(--spacing-3);
   }
 }
 
-:global(html[data-theme='dark']) .header {
-  background: linear-gradient(to bottom, rgba(26, 26, 26, 0.85), rgba(26, 26, 26, 0.6));
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+@media (max-width: 899px) {
+  .header .signInIcon {
+    display: block;
+  }
+
+  .signInLabel {
+    display: none;
+  }
+}
+
+/* On phones the menu carries the app hand-off, leaving room for the brand and
+   full-sized account/navigation touch targets in every supported language. */
+@media (max-width: 599px) {
+  .header {
+    gap: var(--spacing-2);
+    padding-inline: var(--spacing-6);
+  }
+
+  .desktopAppLink {
+    display: none;
+  }
+
+  .mobileAppLink.mobileAppLink {
+    display: flex;
+    color: var(--color-primary);
+  }
+}
+
+@media (max-width: 359px) {
+  .header {
+    gap: var(--spacing-1);
+    padding-inline: var(--spacing-4);
+  }
 }

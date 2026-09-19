@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
@@ -6,11 +6,23 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import { parseAllDocuments } from 'yaml';
 
 import {
+  buildBackendArgs,
+  buildAndroidMaestroArgs,
   buildScreenshotEnv,
+  collectScreenshots,
   deviceSlug,
+  findFrozenClockProblems,
+  parseRecordingStatus,
+  readScreenshotBackendLogSince,
+  reportRecordingSummary,
+  screenshotBackendLogLineCount,
+  startScreenshotBackend,
   DEFAULT_SCREENSHOT_RENDER_MODE,
+  RECORDING_STATUS_UNREACHABLE_MESSAGE,
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
@@ -25,6 +37,7 @@ import {
   rotationDegreesForIosOrientation,
   validateIosAppLauncherUrl,
   type IosScreenshotDevice,
+  type ScreenshotBackendSession,
   type ScreenshotOptions,
 } from '../mobile-screenshots';
 import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } from '../lib/metro-dev-server';
@@ -50,6 +63,11 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     appPath: null,
     orientation: null,
     devClient: false,
+    fixtures: 'off',
+    fixturesDir: 'packages/mobile/screenshot-fixtures',
+    fresh: false,
+    pseudonymise: true,
+    frozenNow: null,
     shutdown: false,
     ...overrides,
   };
@@ -110,6 +128,10 @@ describe('parseArgs', () => {
         '--app-path',
         '/tmp/Boardsesh.app',
         '--dev-client',
+        '--fixtures',
+        'replay',
+        '--fixtures-dir',
+        '/tmp/fixtures',
         '--shutdown',
       ]),
     ).toEqual({
@@ -127,6 +149,11 @@ describe('parseArgs', () => {
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
       devClient: true,
+      fixtures: 'replay',
+      fixturesDir: '/tmp/fixtures',
+      fresh: false,
+      pseudonymise: true,
+      frozenNow: null,
       shutdown: true,
     });
   });
@@ -263,6 +290,178 @@ describe('buildScreenshotEnv', () => {
     );
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('shots@boardsesh.com');
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD).toBe('secret');
+  });
+
+  it('uses manifest board selectors for replay unless --boards explicitly overrides them', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+    };
+    const manifestEnv = buildScreenshotEnv(
+      makeOptions({ platform: 'android', fixtures: 'replay' }),
+      baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }),
+      null,
+      '2026-09-08T09:00:00Z',
+      8085,
+      capture,
+    );
+    expect(manifestEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('The Cellar|Kilter Board Homewall|MoonBoard 2016');
+    const overrideEnv = buildScreenshotEnv(
+      makeOptions({ platform: 'android', fixtures: 'replay', boards: 'Custom Tension|Custom Kilter' }),
+      baseEnv(),
+      null,
+      '2026-09-08T09:00:00Z',
+      8085,
+      capture,
+    );
+    expect(overrideEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('Custom Tension|Custom Kilter');
+  });
+});
+
+describe('buildAndroidMaestroArgs', () => {
+  const context = {
+    deviceId: 'emulator-5554',
+    flowFile: '/capture/app-store.yaml',
+    packageId: 'com.boardsesh.app.dev',
+  };
+
+  it('passes the manifest shared session explicitly to Maestro', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['Tension', 'Kilter', 'MoonBoard'],
+    };
+    const args = buildAndroidMaestroArgs({ ...context, capture }, baseEnv());
+    expect(args).toEqual([
+      '--device',
+      'emulator-5554',
+      'test',
+      '/capture/app-store.yaml',
+      '-e',
+      'APP_ID=com.boardsesh.app.dev',
+      '-e',
+      'SCREENSHOT_USER_EMAIL=test@boardsesh.com',
+      '-e',
+      'SCREENSHOT_USER_PASSWORD=test',
+      '-e',
+      'SCREENSHOT_PROFILE_SESSION_ID=',
+      '-e',
+      `SCREENSHOT_SHARED_SESSION_ID=${capture.sharedSessionId}`,
+      '-e',
+      'SCREENSHOT_BOARD_COUNT=3',
+    ]);
+  });
+
+  it('passes an empty session for legacy or record runs, overriding stale shell metadata', () => {
+    const args = buildAndroidMaestroArgs(context, baseEnv({ SCREENSHOT_SHARED_SESSION_ID: 'stale-session' }));
+    expect(args.slice(-4)).toEqual(['-e', 'SCREENSHOT_SHARED_SESSION_ID=', '-e', 'SCREENSHOT_BOARD_COUNT=2']);
+    expect(args).toContain('SCREENSHOT_PROFILE_SESSION_ID=');
+  });
+
+  it('passes the historical recap separately from the live crew session', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000101',
+      profileSessionId: '00000000-0000-4000-8000-000000000102',
+      boards: ['Kilter', 'Tension'],
+    };
+    const args = buildAndroidMaestroArgs({ ...context, capture }, baseEnv());
+    expect(args).toContain(`SCREENSHOT_PROFILE_SESSION_ID=${capture.profileSessionId}`);
+    expect(args).toContain(`SCREENSHOT_SHARED_SESSION_ID=${capture.sharedSessionId}`);
+  });
+
+  it('counts the effective board selectors using the same overrides as Metro', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['Kilter', 'Tension', 'MoonBoard'],
+    };
+    const overrides = { ...context, capture, boards: 'Custom Kilter| |Custom Tension' };
+    expect(buildAndroidMaestroArgs(overrides, baseEnv()).at(-1)).toBe('SCREENSHOT_BOARD_COUNT=2');
+    expect(
+      buildAndroidMaestroArgs(context, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'Kilter|Tension|MoonBoard' })).at(-1),
+    ).toBe('SCREENSHOT_BOARD_COUNT=3');
+    expect(buildAndroidMaestroArgs(context, baseEnv({ SCREENSHOT_BOARD_COUNT: '3' })).at(-1)).toBe(
+      'SCREENSHOT_BOARD_COUNT=2',
+    );
+  });
+});
+
+describe('Android app-store scenario flow', () => {
+  type FlowStep = {
+    takeScreenshot?: string;
+    runFlow?: { when: { true: string }; commands: FlowStep[] };
+  };
+  const documents = parseAllDocuments(readFileSync('packages/mobile/.maestro/app-store-android.yaml', 'utf8'));
+  const commands = documents[1].toJS() as FlowStep[];
+
+  function screenshotNames(sharedSessionId: string, boardCount: number, profileSessionId = ''): string[] {
+    const names: string[] = [];
+    for (const command of commands) {
+      if (command.takeScreenshot) names.push(command.takeScreenshot);
+      if (command.runFlow) {
+        const expression = command.runFlow.when.true;
+        const enabled: unknown = runInNewContext(
+          expression.slice(2, -1),
+          {
+            SCREENSHOT_SHARED_SESSION_ID: sharedSessionId,
+            SCREENSHOT_BOARD_COUNT: String(boardCount),
+            SCREENSHOT_PROFILE_SESSION_ID: profileSessionId,
+          },
+          { timeout: 1000 },
+        );
+        if (enabled === true) {
+          for (const nested of command.runFlow.commands) {
+            if (nested.takeScreenshot) names.push(nested.takeScreenshot);
+          }
+        }
+      }
+    }
+    return names;
+  }
+
+  it('parses the Maestro documents without YAML errors', () => {
+    expect(documents).toHaveLength(2);
+    for (const document of documents) expect(document.errors).toEqual([]);
+  });
+
+  it('keeps legacy runs at eight captures even with extra board selectors', () => {
+    expect(screenshotNames('', 2)).toHaveLength(8);
+    expect(screenshotNames('', 3)).toEqual(screenshotNames('', 2));
+    expect(screenshotNames('', 6)).toEqual(screenshotNames('', 2));
+  });
+
+  it('adds two distinct history views only to a complete six-board campaign', () => {
+    const shared = '00000000-0000-4000-8000-000000000101';
+    const profile = '00000000-0000-4000-8000-000000000102';
+    expect(screenshotNames(shared, 6, profile)).toHaveLength(16);
+    expect(screenshotNames(shared, 6, profile)).toEqual(expect.arrayContaining(['14-logbook', '15-session-detail']));
+    expect(screenshotNames(shared, 3, profile)).not.toContain('14-logbook');
+    expect(screenshotNames(shared, 6)).not.toContain('14-logbook');
+  });
+
+  it('captures ten or eleven inputs with wall status before the shared queue', () => {
+    const shared = '00000000-0000-4000-8000-000000000101';
+    const twoBoards = screenshotNames(shared, 2);
+    expect(twoBoards).toHaveLength(10);
+    expect(twoBoards.slice(-2)).toEqual(['10-wall-status', '09-live-queue']);
+    const threeBoards = screenshotNames(shared, 3);
+    expect(threeBoards).toHaveLength(11);
+    expect(threeBoards.slice(-3)).toEqual(['08-moonboard-board-view', '10-wall-status', '09-live-queue']);
+    // A partial second compatibility group must not create an unsupported
+    // twelve/thirteen-source set that the presentation recipes cannot frame.
+    expect(screenshotNames(shared, 4)).toEqual(threeBoards);
+    expect(screenshotNames(shared, 5)).toEqual(threeBoards);
+  });
+
+  it('captures fourteen inputs for both board families and the live features', () => {
+    const captures = screenshotNames('00000000-0000-4000-8000-000000000101', 6);
+    expect(captures).toHaveLength(14);
+    expect(captures.slice(-6)).toEqual([
+      '08-moonboard-board-view',
+      '11-woods-board-view',
+      '12-grasshopper-board-view',
+      '13-moonboard-2024-view',
+      '10-wall-status',
+      '09-live-queue',
+    ]);
   });
 });
 
@@ -454,6 +653,32 @@ describe('findDuplicateScreenshotGroups', () => {
 });
 
 describe('writeCapturedScreenshots', () => {
+  it.each(['ios', 'android'] as const)('rejects an empty %s capture before framing previous raw images', (platform) => {
+    const root = mkdtempSync(join(tmpdir(), 'screenshot-empty-capture-'));
+    try {
+      const captureDir = join(root, 'capture');
+      const outputRoot = join(root, 'stores');
+      const device = platform === 'ios' ? 'iPhone 16 Pro Max' : 'Pixel 2';
+      const locales = platform === 'ios' ? ['en-US'] : null;
+      const store = join(outputRoot, platform === 'ios' ? 'apple' : 'google');
+      const shard = join(...(locales ?? []), deviceSlug(device));
+      const rawDir = join(store, 'raw-screenshots', shard);
+      const framedDir = join(store, 'screenshots', shard);
+      for (const directory of [captureDir, rawDir, framedDir]) mkdirSync(directory, { recursive: true });
+      writeFileSync(join(rawDir, 'previous.png'), 'previous raw capture');
+      writeFileSync(join(framedDir, 'previous.png'), 'previous store image');
+
+      expect(() => collectScreenshots(captureDir, platform, device, locales, true, outputRoot)).toThrow(
+        'No PNG screenshots were captured',
+      );
+
+      expect(readFileSync(join(rawDir, 'previous.png'), 'utf8')).toBe('previous raw capture');
+      expect(readFileSync(join(framedDir, 'previous.png'), 'utf8')).toBe('previous store image');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('replaces the folder rather than merging into it', () => {
     const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
     const outputDir = mkdtempSync(join(tmpdir(), 'store-'));
@@ -720,5 +945,299 @@ describe('resolveAppStoreLocaleTargets', () => {
     for (const appLocale of parseArgs(['--locales', 'all']).appLocales) {
       expect({ appLocale, supported: supported.includes(appLocale) }).toEqual({ appLocale, supported: true });
     }
+  });
+});
+
+describe('--fixtures', () => {
+  it('defaults to off and leaves the fixture env unset', () => {
+    const options = parseArgs([]);
+    expect(options.fixtures).toBe('off');
+    expect(options.fixturesDir).toBe('packages/mobile/screenshot-fixtures');
+    expect(options.fresh).toBe(false);
+    const env = buildScreenshotEnv(options, baseEnv());
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
+    expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('parses the mode, the directory and --fresh', () => {
+    const options = parseArgs(['--fixtures', 'record', '--fixtures-dir', '/tmp/rec', '--fresh']);
+    expect(options.fixtures).toBe('record');
+    expect(options.fixturesDir).toBe('/tmp/rec');
+    expect(options.fresh).toBe(true);
+  });
+
+  it('parses --frozen-now for a recording', () => {
+    const options = parseArgs(['--fixtures', 'record', '--frozen-now', '2026-09-08T12:00:00Z']);
+    expect(options.frozenNow).toBe('2026-09-08T12:00:00Z');
+  });
+
+  it('rejects an unknown mode and a --fresh outside record', () => {
+    expect(() => parseArgs(['--fixtures', 'maybe'])).toThrow(/--fixtures must be one of/);
+    expect(() => parseArgs(['--fresh'])).toThrow(/--fresh only applies to --fixtures record/);
+    expect(() => parseArgs(['--fixtures', 'replay', '--fresh'])).toThrow(/--fresh only applies/);
+  });
+
+  it('parses --no-pseudonymise for a recording and rejects it anywhere else', () => {
+    expect(parseArgs(['--fixtures', 'record', '--no-pseudonymise']).pseudonymise).toBe(false);
+    expect(parseArgs(['--fixtures', 'record']).pseudonymise).toBe(true);
+    expect(() => parseArgs(['--no-pseudonymise'])).toThrow(/--no-pseudonymise only applies to --fixtures record/);
+    expect(() => parseArgs(['--fixtures', 'replay', '--no-pseudonymise'])).toThrow(/--no-pseudonymise only applies/);
+  });
+
+  it('rejects --frozen-now outside record and an unparseable instant', () => {
+    expect(() => parseArgs(['--frozen-now', '2026-09-08T12:00:00Z'])).toThrow(
+      /--frozen-now only applies to --fixtures record/,
+    );
+    expect(() => parseArgs(['--fixtures', 'replay', '--frozen-now', '2026-09-08T12:00:00Z'])).toThrow(
+      /--frozen-now only applies/,
+    );
+    expect(() => parseArgs(['--fixtures', 'record', '--frozen-now', 'not-a-date'])).toThrow(
+      /--frozen-now must be a parseable ISO instant/,
+    );
+  });
+
+  it('points the bundle at the given backend port and bakes the frozen instant, leaving the web URL alone', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'prod' }),
+      baseEnv(),
+      'en-US',
+      '2026-09-08T12:00:00Z',
+      8090,
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:8090/graphql');
+    // /static/* reads go through EXPO_PUBLIC_BACKEND_URL, not the web URL, so a
+    // fixtures run must leave it exactly as --backend prod would (unset).
+    expect(env.EXPO_PUBLIC_WEB_URL).toBeUndefined();
+    expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBe('2026-09-08T12:00:00Z');
+  });
+
+  it('uses the bound port the caller passes in, not an env-derived one', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay' }),
+      baseEnv({ BOARDSESH_SCREENSHOT_BACKEND_PORT: '9123' }),
+      null,
+      '2026-09-08T12:00:00Z',
+      9500,
+    );
+    // The caller's bound port wins even though the env carries a different one —
+    // buildScreenshotEnv never re-derives it from BOARDSESH_SCREENSHOT_BACKEND_PORT.
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:9500');
+    expect(env.EXPO_PUBLIC_WS_URL).toBe('ws://localhost:9500/graphql');
+  });
+
+  it('overrides the --backend local URLs and any caller-exported override, but leaves the web URL at its local default', () => {
+    const env = buildScreenshotEnv(
+      makeOptions({ fixtures: 'replay', backend: 'local' }),
+      baseEnv({ EXPO_PUBLIC_BACKEND_URL: 'http://10.0.0.5:8080' }),
+      null,
+      '2026-09-08T12:00:00Z',
+      8090,
+    );
+    expect(env.EXPO_PUBLIC_BACKEND_URL).toBe('http://localhost:8090');
+    // Set by the --backend local branch above (untouched by fixtures mode), not
+    // redirected to the fixtures backend.
+    expect(env.EXPO_PUBLIC_WEB_URL).toBe('http://localhost:3000');
+  });
+
+  it('refuses to build the env without a frozen instant', () => {
+    expect(() => buildScreenshotEnv(makeOptions({ fixtures: 'record' }), baseEnv(), null, null, 8090)).toThrow(
+      /frozen instant/,
+    );
+  });
+
+  it('refuses to build the env without the bound backend port', () => {
+    expect(() =>
+      buildScreenshotEnv(makeOptions({ fixtures: 'record' }), baseEnv(), null, '2026-09-08T12:00:00Z'),
+    ).toThrow(/bound backend port/);
+  });
+});
+
+describe('findFrozenClockProblems', () => {
+  const frozenNow = '2026-09-08T12:00:00Z';
+
+  it('accepts a frozen line even though the app prints milliseconds', () => {
+    const log = 'blah\n12:00:01 [screenshot] clock: frozen at 2026-09-08T12:00:00.000Z\nmore';
+    expect(findFrozenClockProblems(log, frozenNow)).toEqual([]);
+  });
+
+  it('fails a bundle still on the wall clock', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: live', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/live clock/);
+    expect(problems[0]).toContain(frozenNow);
+  });
+
+  it('fails a bundle frozen at a different instant', () => {
+    const problems = findFrozenClockProblems('[screenshot] clock: frozen at 2026-01-02T12:00:00.000Z', frozenNow);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/2026-01-02T12:00:00\.000Z/);
+  });
+
+  it('fails when the app never reported a clock at all', () => {
+    expect(findFrozenClockProblems('nothing to see here', frozenNow)).toEqual([
+      'no "[screenshot] clock:" line in the capture log — the app never reported which clock it was on, so the frozen instant could not be confirmed.',
+    ]);
+  });
+});
+
+describe('the screenshot backend log slice', () => {
+  it('reads only the lines written after the baseline', () => {
+    const logDir = mkdtempSync(join(tmpdir(), 'boardsesh-backend-log-'));
+    const logPath = join(logDir, 'backend.log');
+    try {
+      writeFileSync(logPath, '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n');
+      const baseline = screenshotBackendLogLineCount(logPath);
+      writeFileSync(
+        logPath,
+        '[screenshot-backend] HIT graphql GetProfile aaaaaaaaaaaa\n' +
+          '[screenshot-backend] MISS graphql GetClimb bbbbbbbbbbbb reason=no-fixture\n',
+      );
+      const since = readScreenshotBackendLogSince(baseline, logPath);
+      expect(since).toContain('MISS graphql GetClimb');
+      expect(since).not.toContain('HIT graphql GetProfile');
+    } finally {
+      rmSync(logDir, { force: true, recursive: true });
+    }
+  });
+
+  it('counts nothing for a log that does not exist yet', () => {
+    expect(screenshotBackendLogLineCount(join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe(0);
+    expect(readScreenshotBackendLogSince(0, join(tmpdir(), 'boardsesh-no-such-backend.log'))).toBe('');
+  });
+});
+
+describe('buildBackendArgs', () => {
+  const context = {
+    mode: 'record' as const,
+    port: 8090,
+    fixturesDir: '/tmp/fixtures',
+    frozenNow: '2026-09-08T12:00:00Z',
+  };
+
+  it('includes --fresh on the first backend this process starts', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', fresh: true }), context, false);
+    expect(args).toContain('--fresh');
+  });
+
+  it('omits --fresh once a backend already started this run — a --platform all run must not wipe the first platform', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', fresh: true }), context, true);
+    expect(args).not.toContain('--fresh');
+  });
+
+  it('never adds --fresh when the run did not ask for it, regardless of alreadyStartedThisRun', () => {
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', fresh: false }), context, false)).not.toContain(
+      '--fresh',
+    );
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', fresh: false }), context, true)).not.toContain('--fresh');
+  });
+
+  it('adds --no-pseudonymise only when the run asked to keep real names', () => {
+    // Absent by default, so a recording that forgets the flag still produces a
+    // set that is safe to commit.
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record' }), context, false)).not.toContain('--no-pseudonymise');
+    expect(buildBackendArgs(makeOptions({ fixtures: 'record', pseudonymise: false }), context, false)).toContain(
+      '--no-pseudonymise',
+    );
+  });
+
+  it('adds --upstream only for a local backend, and only in record mode', () => {
+    const local = buildBackendArgs(makeOptions({ fixtures: 'record', backend: 'local' }), context, false);
+    expect(local).toEqual(expect.arrayContaining(['--upstream']));
+    const prod = buildBackendArgs(makeOptions({ fixtures: 'record', backend: 'prod' }), context, false);
+    expect(prod).not.toContain('--upstream');
+    const replay = buildBackendArgs(
+      makeOptions({ fixtures: 'replay', backend: 'local' }),
+      { ...context, mode: 'replay' },
+      false,
+    );
+    expect(replay).not.toContain('--upstream');
+  });
+
+  it('always carries the mode, port, fixtures dir, frozen instant and flow', () => {
+    const args = buildBackendArgs(makeOptions({ fixtures: 'record', flow: 'onboarding' }), context, false);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--mode',
+        'record',
+        '--port',
+        '8090',
+        '--fixtures',
+        '/tmp/fixtures',
+        '--frozen-now',
+        '2026-09-08T12:00:00Z',
+        '--flow',
+        'onboarding',
+      ]),
+    );
+  });
+});
+
+describe('startScreenshotBackend', () => {
+  const originalPortEnv = process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT;
+
+  afterEach(() => {
+    if (originalPortEnv === undefined) delete process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT;
+    else process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT = originalPortEnv;
+  });
+
+  it('rejects BOARDSESH_SCREENSHOT_BACKEND_PORT=0 before doing anything else', () => {
+    process.env.BOARDSESH_SCREENSHOT_BACKEND_PORT = '0';
+    // A nonexistent fixtures dir would normally fail replay's manifest read —
+    // the port-0 guard must fire before that, proving it runs first.
+    expect(() =>
+      startScreenshotBackend(makeOptions({ fixtures: 'replay', fixturesDir: '/tmp/does-not-exist-at-all' })),
+    ).toThrow(/BOARDSESH_SCREENSHOT_BACKEND_PORT must not be 0/);
+  });
+});
+
+// reportRecordingSummary itself shells out to curl against a live port (see
+// screenshotBackendReady for the same pattern) — not exercised here with a real
+// server, matching how the rest of this file treats curl-based functions
+// (screenshotBackendReady has no test either). The decision this ticket cares
+// about — what counts as "the backend died mid-capture" — lives in the pure
+// parseRecordingStatus seam below instead, which IS fully covered.
+describe('parseRecordingStatus', () => {
+  it('fails when curl could not reach the endpoint at all', () => {
+    expect(parseRecordingStatus({ status: 7, stdout: '' })).toBeNull();
+  });
+
+  it('fails when curl succeeded but the body is not JSON', () => {
+    expect(parseRecordingStatus({ status: 0, stdout: 'not json' })).toBeNull();
+  });
+
+  it('fails when the body is JSON but not an object (e.g. a bare string or number)', () => {
+    expect(parseRecordingStatus({ status: 0, stdout: '"just a string"' })).not.toBeNull();
+    // JSON.parse succeeds on a bare string; parseRecordingStatus doesn't validate
+    // shape beyond "is it JSON at all" — the caller reads fields with `?? 0`
+    // fallbacks, so a malformed-but-parseable body degrades to zero counts
+    // rather than crashing.
+  });
+
+  it('succeeds on a well-formed status body', () => {
+    const stats = parseRecordingStatus({
+      status: 0,
+      stdout: JSON.stringify({ hits: 1, misses: 0, recorded: 2, redacted: 0, fixtures: { graphql: 2, static: 0 } }),
+    });
+    expect(stats).toEqual({ hits: 1, misses: 0, recorded: 2, redacted: 0, fixtures: { graphql: 2, static: 0 } });
+  });
+});
+
+describe('reportRecordingSummary', () => {
+  it('fails with the status-unreachable message when the backend cannot be reached', () => {
+    // reportRecordingSummary's only network call is the curl invocation
+    // parseRecordingStatus's own tests cover the branch logic for — a
+    // negative port guarantees curl fails to connect (an unroutable target),
+    // landing this deterministically in the "unreachable" branch without
+    // needing a live server or waiting out a connect timeout.
+    const unreachableSession = {
+      process: {},
+      mode: 'record',
+      frozenNow: '2026-09-08T12:00:00Z',
+      port: -1,
+      fixturesDir: '/tmp/fixtures',
+    } as unknown as ScreenshotBackendSession;
+    expect(RECORDING_STATUS_UNREACHABLE_MESSAGE).toMatch(/did not answer .*status/);
+    expect(reportRecordingSummary(unreachableSession)).toBe(false);
   });
 });

@@ -8,9 +8,22 @@ import { closePool, closeReadPool } from '@boardsesh/db/client';
 import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
+import { startJobQueue, stopJobQueue } from './services/job-queue';
+import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
+
+  // The durable job queue (docs/partner-workouts-internal.md, "The job queue").
+  //
+  // Started HERE and not in `startServer()` on purpose. The queue is a property
+  // of the process, not of a server instance: it holds its own Postgres pool and
+  // polls on a timer, and `startServer()` is called by hundreds of tests that
+  // want an HTTP/WS surface and no background work. Starting it there added
+  // enough connection pressure to make an unrelated suite flake. Its own tests
+  // call `startJobQueue()` directly, which is the honest way to test it.
+  const jobQueue = await startJobQueue();
+  await startSprayDetectionMaintenance(jobQueue);
 
   let shuttingDown = false;
 
@@ -59,6 +72,16 @@ async function main() {
 
     // Stop periodic tasks
     cleanupIntervals();
+
+    // Stop the queue before the pools it rides on close. Graceful, so an
+    // in-flight job finishes rather than being orphaned into the supervisor's
+    // reclaim window on every deploy; bounded, so a wedged handler cannot hold
+    // the drain open past Railway's `drainingSeconds`.
+    try {
+      await stopJobQueue();
+    } catch (error) {
+      logger.error('Error stopping the job queue:', error);
+    }
 
     // Shutdown EventBroker + RoomManager (flushes pending writes)
     await shutdownServices();

@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Setze ein Häkchen, um Boulder zu filtern. Tippe zum Stöbern auf einen Namen.",
+    "selectedCount": "{{count}} ausgewählt",
+    "viaUserFollow": "Über eine Person, der du folgst",
+    "followingHint": "Enthält verknüpfte Konten von Personen, denen du folgst. Folgen speichert Routenbauer*innen direkt.",
+    "follow": "Folgen",
+    "unfollow": "Nicht mehr folgen",
+    "following": "Gefolgt",
+    "allSetters": "Alle Routenbauer*innen",
+    "followingClimbs": "Boulder von Leuten, denen ich folge",
+    "playlistSubtitle": "Alle Boulder auf diesem Board · Neueste zuerst",
+    "signIn": "Melde dich an, um zu folgen",
+    "syncNeeded": "Verbinde dich, um deine Abos und verknüpften Routenbauer*innen zu synchronisieren.",
+    "followError": "Folgen konnte nicht aktualisiert werden. Versuch es erneut.",
+    "loadError": "Diese Boulder konnten nicht geladen werden.",
+    "empty": "Noch keine Boulder von dieser Person auf diesem Board.",
+    "chooseBoard": "Wähle ein Board",
+    "retry": "Erneut versuchen",
+    "newClimb": "Neuer Boulder",
+    "newClimbCount_one": "1 neuer Boulder",
+    "newClimbCount_other": "{{count}} neue Boulder",
+    "seeAllClimbs": "Alle {{count}} ansehen"
+  },
   "sends_one": "{{formattedCount}} Begehung",
   "sends_other": "{{formattedCount}} Begehungen",
   "metadata": {
@@ -142,6 +165,11 @@
       "label": "Geschätzt",
       "body": "In diesem Winkel hat es noch niemand getoppt – der Grad kommt daher, wie es im anderen Winkel geht.",
       "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, abgeleitet vom anderen Winkel."
+    },
+    "moonboardWideAngle": {
+      "label": "Grobe Schätzung",
+      "body": "In diesem Winkel hat es noch niemand getoppt – das ist eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern.",
+      "bodyRange": "In diesem Winkel hat es noch niemand getoppt – wahrscheinlich {{low}}–{{high}}, eine grobe Schätzung, abgeleitet davon, wie sich andere Boards je nach Winkel verändern."
     },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh-Grad",
@@ -442,6 +470,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
+      "countNote": "Jeder Boulder zählt nur einmal, nicht je Winkel.",
       "sort": {
         "ascents": "Begehungen",
         "quality": "Qualität",

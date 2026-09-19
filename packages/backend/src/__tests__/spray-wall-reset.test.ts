@@ -352,9 +352,16 @@ describe('proposeSprayWallReset', () => {
     const photoId = registerUploadedPhoto(wall.uuid);
     const version = (await sprayWallMutations.createSprayWallVersion(
       {},
-      { input: { wallUuid: wall.uuid, photoId } },
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
       ctxFor(OWNER),
     )) as { id: string };
+
+    // `createSprayWallVersion` refuses an unanchored version 2 outright (SW-05c),
+    // so the row has to be made by hand — which is the only way it can exist now:
+    // a draft created before that gate landed, or a hand-edited row. These two
+    // checks are what stands between such a row and a committed reset, so they
+    // are still the ones worth pinning.
+    await db.execute(sql`UPDATE spray_wall_versions SET anchors = NULL WHERE id = ${version.id}`);
 
     await expect(
       sprayWallQueries.proposeSprayWallReset(

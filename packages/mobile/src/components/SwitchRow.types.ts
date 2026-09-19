@@ -10,6 +10,11 @@ export type SwitchRowProps = {
   label: string;
   /** Optional secondary line, rendered as native secondary text. */
   description?: string;
+  /**
+   * Let a long description wrap instead of truncating to one line. Only the web
+   * row truncates by default; the iOS Toggle and the Compose Row already wrap.
+   */
+  wrapDescription?: boolean;
   /** Current on/off state. */
   value: boolean;
   /** Fired with the next state when the row is toggled (no-op when disabled). */

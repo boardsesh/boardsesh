@@ -2,7 +2,7 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { useEffect, useState } from 'react';
-import { THEME_INIT_SCRIPT } from './theme/theme-init-script';
+import { themeTokens } from './theme/theme-config';
 
 // This is a Next.js root error boundary that renders when the root layout
 // itself fails. It lives outside the normal provider tree, so we can't rely
@@ -65,20 +65,13 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
 
   return (
     <html lang={copy.htmlLang} data-theme="dark" suppressHydrationWarning>
-      <head>
-        {/* Same pre-paint theme correction as the root layout — this boundary
-            renders its own document, outside the provider tree. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-      </head>
-      {/* TODO(theme): this page hardcodes dark styles, so the init script above
-          corrects data-theme but nothing here reads it yet — light-mode users
-          still see a dark error page. Make these styles data-theme-aware to
-          finish the job. */}
+      {/* This boundary renders its own document, outside the provider tree, so
+          it carries the dark ground inline rather than through the theme. */}
       <body
         style={{
           margin: 0,
-          backgroundColor: '#15101e',
-          color: '#F3F4F6',
+          backgroundColor: themeTokens.semantic.background,
+          color: themeTokens.neutral[900],
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         }}
       >
@@ -94,15 +87,15 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           }}
         >
           <p style={{ fontSize: 18, fontWeight: 500, margin: '0 0 8px' }}>{copy.title}</p>
-          <p style={{ fontSize: 14, color: '#9CA3AF', margin: '0 0 24px' }}>{copy.subtitle}</p>
+          <p style={{ fontSize: 14, color: themeTokens.neutral[500], margin: '0 0 24px' }}>{copy.subtitle}</p>
           <button
             onClick={() => reset()}
             style={{
               padding: '12px 24px',
               borderRadius: 8,
               border: 'none',
-              backgroundColor: '#6d28d9',
-              color: '#fff',
+              backgroundColor: themeTokens.colors.primaryFill,
+              color: themeTokens.colors.onPrimary,
               fontSize: 16,
               cursor: 'pointer',
               WebkitTapHighlightColor: 'transparent',

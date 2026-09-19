@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Coche une case pour filtrer les blocs. Touche un nom pour les parcourir.",
+    "selectedCount": "Sélection : {{count}}",
+    "viaUserFollow": "Via une personne que tu suis",
+    "followingHint": "Inclut les comptes liés des personnes que tu suis. Suivre enregistre directement cet ouvreur ou cette ouvreuse.",
+    "follow": "Suivre",
+    "unfollow": "Ne plus suivre",
+    "following": "Abonnements",
+    "allSetters": "Tous les ouvreurs",
+    "followingClimbs": "Blocs des personnes que je suis",
+    "playlistSubtitle": "Tous les blocs sur cette board · Les plus récents d’abord",
+    "signIn": "Connecte-toi pour suivre cet ouvreur",
+    "syncNeeded": "Connecte-toi pour synchroniser tes abonnements et les ouvreurs associés.",
+    "followError": "Impossible de modifier cet abonnement. Réessaie.",
+    "loadError": "Impossible de charger ces blocs.",
+    "empty": "Cet ouvreur n’a pas encore de blocs sur cette board.",
+    "chooseBoard": "Choisis une board",
+    "retry": "Réessayer",
+    "newClimb": "Nouveau bloc",
+    "newClimbCount_one": "1 nouveau bloc",
+    "newClimbCount_other": "{{count}} nouveaux blocs",
+    "seeAllClimbs": "Voir les {{count}}"
+  },
   "sends_one": "{{formattedCount}} croix",
   "sends_other": "{{formattedCount}} croix",
   "metadata": {
@@ -142,6 +165,11 @@
       "label": "Estimée",
       "body": "Personne ne l'a encore enchaîné à cet angle : la cotation vient de la façon dont il passe à l'autre angle.",
       "bodyRange": "Personne ne l'a encore enchaîné à cet angle : sans doute {{low}}–{{high}}, d'après la façon dont il passe à l'autre angle."
+    },
+    "moonboardWideAngle": {
+      "label": "Approximatif",
+      "body": "Personne n'a encore enchaîné à cet angle : c'est une estimation approximative, basée sur la façon dont d'autres boards changent selon l'angle.",
+      "bodyRange": "Personne n'a encore enchaîné à cet angle : sans doute {{low}}–{{high}}, une estimation approximative basée sur la façon dont d'autres boards changent selon l'angle."
     },
     "dumbbell": {
       "legendBoardsesh": "Grade Boardsesh",
@@ -442,6 +470,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
+      "countNote": "Chaque bloc compte une fois, pas une fois par angle.",
       "sort": {
         "ascents": "Ascensions",
         "quality": "Qualité",

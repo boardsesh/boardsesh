@@ -21,31 +21,36 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryClaimLink', () => {
-  it('reports the click with the directory-card placement', () => {
-    render(<GymDirectoryClaimLink gymUuid="gym-1" gymSlug="boulderwelt" viewerState="signed-out" />);
+  it('reports the click with the directory-footer placement and no gym', () => {
+    // `directory-footer`, not the old `directory-card`: the prompt renders once
+    // under the whole list instead of on every unclaimed row, so the two values
+    // count different things and a saved insight must not average them.
+    render(<GymDirectoryClaimLink viewerState="signed-out" />);
 
-    fireEvent.click(screen.getByRole('link', { name: 'Is this your gym?' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Find your gym' }));
 
     expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
     expect(trackGymFunnelEvent).toHaveBeenCalledWith({
       name: 'Gym Claim CTA Clicked',
-      properties: { placement: 'directory-card', viewerState: 'signed-out', gymUuid: 'gym-1' },
+      properties: { placement: 'directory-footer', viewerState: 'signed-out', gymUuid: null },
     });
   });
 
   it('passes a signed-in viewer through unchanged', () => {
-    render(<GymDirectoryClaimLink gymUuid="gym-2" gymSlug="the-climbing-hangar" viewerState="signed-in" />);
+    render(<GymDirectoryClaimLink viewerState="signed-in" />);
 
-    fireEvent.click(screen.getByRole('link', { name: 'Is this your gym?' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Find your gym' }));
 
     expect(trackGymFunnelEvent).toHaveBeenCalledWith({
       name: 'Gym Claim CTA Clicked',
-      properties: { placement: 'directory-card', viewerState: 'signed-in', gymUuid: 'gym-2' },
+      properties: { placement: 'directory-footer', viewerState: 'signed-in', gymUuid: null },
     });
   });
 
-  it('is a real link to the gym page, not a click handler on a div', () => {
-    render(<GymDirectoryClaimLink gymUuid="gym-1" gymSlug="boulderwelt" viewerState="signed-out" />);
-    expect(screen.getByRole('link', { name: 'Is this your gym?' }).getAttribute('href')).toBe('/gym/boulderwelt');
+  it('asks the question once, and jumps back to the search box rather than guessing a gym', () => {
+    render(<GymDirectoryClaimLink viewerState="signed-out" />);
+
+    expect(screen.getAllByText(/Is this your gym\?/)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Find your gym' }).getAttribute('href')).toBe('#gym-directory-search');
   });
 });

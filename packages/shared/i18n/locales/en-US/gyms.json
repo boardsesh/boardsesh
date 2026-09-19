@@ -17,6 +17,10 @@
       "description": "Looking for a Tension board near you? Browse the climbing gyms with a Tension board on the wall and the angle each one is set at."
     }
   },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Gyms"
+  },
   "directory": {
     "all": {
       "h1": "Climbing gyms with training boards",
@@ -52,6 +56,7 @@
     "countHint": "The numbers count gyms, not boards: a gym with three Kilter walls counts once."
   },
   "search": {
+    "geoHint": "Location off? Type a town instead. No permission needed.",
     "label": "Search gyms",
     "placeholder": "Gym name or town",
     "submit": "Search"
@@ -60,16 +65,25 @@
     "heading_one": "{{formattedCount}} gym",
     "heading_other": "{{formattedCount}} gyms",
     "emptyTitle": "Nothing matches that yet",
-    "emptyBody": "Try a shorter search, or drop the board filter and browse every gym."
+    "emptyBody": "Try a shorter search, or drop the board filter and browse every gym.",
+    "emptyClearSearch": "Clear the search",
+    "emptyBrowseAll": "Browse every gym"
   },
   "error": {
     "title": "We can't reach the gym list right now",
-    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know."
+    "body": "Something on our end is down. Give it a minute and reload, or head to a gym page you already know.",
+    "retry": "Reload the list",
+    "home": "Back to Boardsesh"
   },
   "card": {
+    "claimed": "Claimed",
+    "unclaimed": "Unclaimed",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "{{distance}} km away",
-    "claimCta": "Is this your gym?"
+    "distance": "{{distance}} km away"
+  },
+  "claim": {
+    "body": "Is this your gym? Claim it and you set the boards, hours and links climbers see here.",
+    "action": "Find your gym"
   },
   "nearMe": {
     "cta": "Use my location",

@@ -4,6 +4,7 @@ import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
+import { followedAuthorsLocalCondition } from './followed-authors-local';
 
 /**
  * On-device climb search over local SQLite (board_climbs ⋈ board_climb_stats),
@@ -143,15 +144,10 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   if (input.onlyDrafts) return false;
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
-  // Spray-wall hold integrity (SW-12). The server predicate is
-  // `holdIntegrityCondition` in packages/db/src/queries/climbs/create-climb-filters.ts,
-  // reading `board_climbs.missing_hold_count` — a column the on-device schema does
-  // not have and the pull client does not send until SW-15 (#5448). Declining IS the
-  // mirror here: answering from a column the device lacks would report every climb
-  // on a wall that has just been reset as intact, which is the one answer this
-  // filter exists to contradict. ANY carries no predicate on either side, so it is
-  // still served locally.
-  if (input.holdIntegrity === 'INTACT' || input.holdIntegrity === 'BROKEN') return false;
+  // Spray-wall hold integrity (SW-12) IS expressible now: SW-15 (#5448) mirrors
+  // `board_climbs.missing_hold_count` into the on-device schema at migration v7,
+  // and `buildJoinAndWhere` carries the same COALESCE predicate the server's
+  // `holdIntegrityCondition` uses. No fall-back clause here on purpose.
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
   return true;
@@ -225,7 +221,11 @@ function ticksExists(negated: boolean, statusSql: string): string {
 
 type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
-function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null): JoinAndWhere {
+function buildJoinAndWhere(
+  input: ClimbSearchInput,
+  ownerUserId: string | null,
+  followedCondition?: { sql: string; binds: string[] },
+): JoinAndWhere {
   const boardType = input.boardName;
   const angle = input.angle;
   const setIds = parseSetIds(input.setIds);
@@ -266,6 +266,7 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   };
 
   // Base: board / layout / listed / non-draft.
+  if (followedCondition) push(followedCondition.sql, ...followedCondition.binds);
   push('c.board_type = ?', boardType);
   push('c.layout_id = ?', input.layoutId);
   push('c.is_listed = 1');
@@ -278,6 +279,23 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   // are NULL — an unknown flag reads as visible, which is the safe direction for
   // a column the sync will refresh.
   if (!input.name) push('COALESCE(c.is_hidden, 0) = 0');
+
+  // Spray-wall hold integrity, mirroring `holdIntegrityCondition` in
+  // packages/db/src/queries/climbs/create-climb-filters.ts character for
+  // character — including the COALESCE, which is the whole of the NULL rule.
+  //
+  // `missing_hold_count` is NULL for every climb on the eight catalogue boards
+  // (holds do not come off a Kilter), for a spray climb written before the server
+  // materialised the column, and for any row pulled before on-device migration
+  // v7 added it — and the column is synced WITHOUT a refresh revision, so those
+  // pre-v7 rows are real and stay NULL until the climb is next touched. The
+  // honest reading of "unknown" is INTACT: a climb is presumed whole until a
+  // reset says otherwise. So INTACT keeps NULLs and BROKEN drops them. Reversed,
+  // one un-backfilled row would badge every Kilter climb on the device as broken.
+  //
+  // ANY (and an absent filter) carries no predicate on either side.
+  if (input.holdIntegrity === 'INTACT') push('COALESCE(c.missing_hold_count, 0) = 0');
+  if (input.holdIntegrity === 'BROKEN') push('COALESCE(c.missing_hold_count, 0) > 0');
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
   const wantsBoulders = !!input.boulders;
@@ -325,8 +343,15 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
     push(`${eff('ascensionist_count')} >= ?`, input.minAscents);
   }
 
-  // Grade range on the rounded display difficulty (integer grade ids).
-  const roundedGrade = `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+  // Grade range on the rounded effective display difficulty (integer grade ids),
+  // falling back to the Boardsesh grade when there's no stats row at all —
+  // mirrors the server's gradeRangeConditions in create-climb-filters.ts (a
+  // MoonBoard wide angle, or an unclimbed angle with a published cross-angle
+  // estimate, has a board_climb_grades row here with no board_climb_stats row
+  // to match it). `eff('display_difficulty')` already resolves through the
+  // set-angle fallback under cross-angle, so only a climb with NO stats row at
+  // either angle falls all the way through to g.universal_grade/local_grade.
+  const roundedGrade = `CAST(ROUND(COALESCE(${eff('display_difficulty')}, COALESCE(g.universal_grade, g.local_grade))) AS INTEGER)`;
   if (input.minGrade && input.maxGrade) {
     push(`${roundedGrade} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {
@@ -475,6 +500,10 @@ export type LocalClimbRow = {
   /** SQLite integer mirror of `board_climbs.is_hidden`; NULL on rows pulled
    *  before the column existed (migration v5), read as visible. */
   is_hidden: number | null;
+  /** SQLite integer mirror of `board_climbs.missing_hold_count` (migration v7).
+   *  NULL on every catalogue-board climb and on rows pulled before the column
+   *  existed; read as 0 — "no reset has taken anything off this climb". */
+  missing_hold_count: number | null;
   characteristics: string | null;
   created_at: string | null;
   published_at: string | null;
@@ -561,6 +590,10 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     benchmark_difficulty: bench !== null && bench > 0 ? String(bench) : null,
     is_draft: !!row.is_draft,
     is_hidden: !!row.is_hidden,
+    // Left NULL rather than coalesced to 0: the server's Climb.missingHoldCount
+    // is nullable for exactly the same rows, and a badge that reads "0 holds
+    // lost" is not the same statement as "this is not a spray climb".
+    missingHoldCount: row.missing_hold_count ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
     published_at: row.published_at,
@@ -591,7 +624,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const sortBy = normalizeSortBy(input.sortBy);
   const sortOrder = input.sortOrder === 'asc' ? 'ASC' : 'DESC';
 
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
+  const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
 
   // Re-derived from the same two inputs buildJoinAndWhere used, so the SELECT and
   // the ORDER BY read the same row the WHERE filtered on.
@@ -629,7 +663,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.characteristics,
+      c.missing_hold_count, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,
@@ -661,7 +695,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {
   const ownerUserId = await getLocalUserId(db);
-  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId);
+  const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;
+  const { joinSql, whereSql, joinBinds, whereBinds } = buildJoinAndWhere(input, ownerUserId, followedCondition);
   const query = `
     SELECT COUNT(*) AS total
     FROM board_climbs c

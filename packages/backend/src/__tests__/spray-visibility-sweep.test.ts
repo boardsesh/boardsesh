@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { boardClimbEvents, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import type * as GraphQLModule from 'graphql';
 import type {
   GraphQLArgument,
@@ -113,6 +114,7 @@ const {
 } = graphql;
 
 const { db } = await import('../db/client');
+const { pubsub } = await import('../pubsub');
 const { schema } = await import('../graphql/index');
 const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
@@ -622,16 +624,18 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
   'Query.eventsReplay': 'the event buffer requires Redis, which the sweep does not run',
   'Query.sessionStatus': 'one enum: whether the session is active',
-  'Query.sessionSummary':
-    'session totals; the hardest-send NAME comes through fetchHardestSendsBatch, which renders an invisible wall as "Unknown Climb" by design (JOIN ON, not WHERE)',
+  'Query.followedLiveSessions':
+    'lists only LIVE sessions (a live connection, or a Redis session key), and the sweep opens neither; the spray gates (followed/selected wall, board name, current climb) are pinned by the spray-wall block in live-sessions.test.ts',
+  'Query.boardLiveSessions':
+    'same: lists only live sessions, and the sweep opens no connection; the board gate mirrors boardHistory (assertSprayBoardIsReadable)',
 
   // --- board presence: Redis queue state, not board_climbs --------------------
-  'Query.boardRecentClimbs': 'presence history is driven by live queue events, and the sweep publishes none',
-  'Query.boardHistory': 'same: live queue events only',
   'Query.boardClimbRecentSenders': 'same: live queue events only',
   'Query.boardConnection': 'who holds the board connection right now; Redis state',
   'Query.boardQueuePreview': 'the live queue preview; Redis state',
   'Query.boardLeaderboard': 'senders and counts for the board uuid the caller sent; no climb is named',
+  'Query.boardDiscovery':
+    'anonymous marketing discovery never includes private walls, even for their owner; the explicit public/private/unlisted/hidden transition test below proves its positive and negative paths',
 
   // --- serial-number lookups --------------------------------------------------
   // A spray wall is LED-less by construction (`has_leds` is forced false and is
@@ -940,6 +944,35 @@ async function seedWorld(): Promise<SeededWorld> {
     SELECT id, slug, set_ids, serial_number FROM user_boards WHERE uuid = ${wall.uuid}
   `)) as unknown as Array<{ id: number; slug: string | null; set_ids: string; serial_number: string | null }>;
   const boardId = Number(boardRow?.id);
+  // Exercise native and merged recent history plus both durable APIs. The
+  // owner must see real content so empty responses cannot hide missing gates.
+  const displayedAt = new Date().toISOString();
+  await db.insert(boardClimbEvents).values({
+    boardId,
+    boardType: 'spray',
+    climbUuid: savedClimb.uuid,
+    angle: ANGLE,
+    seq: 1,
+    confirmedAt: displayedAt,
+    name: CLIMB_NAME,
+    frames,
+    userId: OWNER,
+  });
+  vi.spyOn(pubsub, 'getRecentBoardClimbs').mockImplementation(async (queriedBoardId) =>
+    queriedBoardId === String(boardId)
+      ? [
+          {
+            climbUuid: savedClimb.uuid,
+            angle: ANGLE,
+            seq: 1,
+            sentAt: displayedAt,
+            name: CLIMB_NAME,
+            frames,
+            sentByUserId: OWNER,
+          },
+        ]
+      : [],
+  );
 
   const [userRow] = (await db.execute(sql`SELECT name FROM users WHERE id = ${OWNER}`)) as unknown as Array<{
     name: string;
@@ -1148,15 +1181,75 @@ describe('the spray-wall visibility sweep', () => {
   it('enumerates the climb readers from the schema', () => {
     expect(rows.length).toBeGreaterThan(30);
 
-    // Four pinned BY NAME, because narrowing the detection rule is the one change
+    // Pinned BY NAME, because narrowing the detection rule is the one change
     // nothing else in this file notices: a field that stops being swept simply
     // vanishes from `rows`, and only the allow-listed ones leave a stale row
     // behind. `sprayWallByLayout` is the canonical case — a bare layout id, the
     // enumerable key `docs/spray-walls.md` splits its two visibility rules over —
-    // and the other three stand for the argument shapes beside it.
+    // and the others stand for the argument shapes beside it.
     const swept = rows.map((row) => row.key);
-    for (const key of ['Query.sprayWallByLayout', 'Query.climb', 'Query.searchClimbs', 'Query.userTicks']) {
+    for (const key of [
+      'Query.sprayWallByLayout',
+      'Query.climb',
+      'Query.searchClimbs',
+      'Query.userTicks',
+      'Query.boardDiscovery',
+    ]) {
       expect(swept).toContain(key);
+    }
+  });
+
+  it('discovers a published public gym wall but never private, unlisted, or moderated walls, even for owners', async () => {
+    const row = rows.find((candidate) => candidate.key === 'Query.boardDiscovery');
+    expect(row).toBeDefined();
+    if (!row) throw new Error('boardDiscovery must participate in the visibility sweep');
+    const [originalBoard] = await db
+      .select({
+        isPublic: userBoards.isPublic,
+        isUnlisted: userBoards.isUnlisted,
+        hideLocation: userBoards.hideLocation,
+      })
+      .from(userBoards)
+      .where(eq(userBoards.id, world.boardId));
+    const [originalWall] = await db
+      .select({ hiddenAt: sprayWalls.hiddenAt })
+      .from(sprayWalls)
+      .where(eq(sprayWalls.boardUuid, world.wallUuid));
+    expect(originalBoard).toBeDefined();
+    expect(originalWall).toBeDefined();
+    if (!originalBoard || !originalWall) throw new Error('The seeded discovery wall must exist');
+
+    try {
+      await db
+        .update(userBoards)
+        .set({ isPublic: true, isUnlisted: false, hideLocation: false })
+        .where(eq(userBoards.id, world.boardId));
+      for (const viewer of VIEWERS) {
+        const outcome = await runRow(row, viewer.ctx);
+        expect(outcome.errorMessages, viewer.name).toEqual([]);
+        expect(findSentinels(outcome.data, scannableSentinels(row.variables)).join(' | '), viewer.name).toContain(
+          'wall name',
+        );
+      }
+
+      for (const restriction of ['private', 'unlisted', 'hidden'] as const) {
+        await db
+          .update(userBoards)
+          .set({ isPublic: restriction !== 'private', isUnlisted: restriction === 'unlisted' })
+          .where(eq(userBoards.id, world.boardId));
+        await db
+          .update(sprayWalls)
+          .set({ hiddenAt: restriction === 'hidden' ? new Date() : null })
+          .where(eq(sprayWalls.boardUuid, world.wallUuid));
+        for (const viewer of VIEWERS) {
+          const outcome = await runRow(row, viewer.ctx);
+          expect(outcome.errorMessages, `${restriction}: ${viewer.name}`).toEqual([]);
+          expect(outcome.data, `${restriction}: ${viewer.name}`).toEqual({ boardDiscovery: [] });
+        }
+      }
+    } finally {
+      await db.update(userBoards).set(originalBoard).where(eq(userBoards.id, world.boardId));
+      await db.update(sprayWalls).set(originalWall).where(eq(sprayWalls.boardUuid, world.wallUuid));
     }
   });
 

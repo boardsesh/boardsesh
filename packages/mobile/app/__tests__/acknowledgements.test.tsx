@@ -6,6 +6,9 @@ import { createElement, type ReactNode } from 'react';
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 const openUrl = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
+// Donation links are region-gated (see src/lib/donation-links.ts). Flipped per
+// test: allowed renders the CTA, not-allowed renders unlinked text.
+const donationLinks = vi.hoisted(() => ({ allowed: false }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -18,9 +21,10 @@ vi.mock('react-native', () => ({
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null }, useRouter: () => routerMock }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, vars?: { count?: number }) =>
+    t: (key: string, vars?: { count?: number; url?: string }) =>
       ({
-        'mobile.acknowledgements.becomeSponsor': 'Become a sponsor',
+        'mobile.acknowledgements.becomeSponsor': 'Support Boardsesh',
+        'mobile.acknowledgements.supportFallback': `Boardsesh is free and community-funded. ${vars?.url ?? ''}`,
         'mobile.acknowledgements.ossLicensesLink': 'Open source licenses',
         'mobile.acknowledgements.friendsTitle': 'The crew',
         'mobile.acknowledgements.discordTitle': 'Everyone on our Discord',
@@ -45,11 +49,15 @@ vi.mock('../../src/lib/acknowledgements', () => ({
   privateSponsorCount: 1,
   friends: ['Gabby', 'Caz', 'Joz'],
   dogName: 'Scout',
-  SPONSORS_URL: 'https://github.com/sponsors/boardsesh',
   XPREM_URL: 'https://github.com/mercuretechnologies/xprem',
 }));
 vi.mock('../../src/lib/open-url', () => openUrl);
 vi.mock('../../src/lib/discord', () => discord);
+vi.mock('../../src/lib/donation-links', () => ({
+  SUPPORT_URL: 'https://www.boardsesh.com/support',
+  SUPPORT_URL_DISPLAY: 'boardsesh.com/support',
+  useDonationLinksAllowed: () => donationLinks.allowed,
+}));
 
 vi.mock('../../src/components/Button', () => ({
   Button: ({ onPress, title }: { onPress: () => void; title: string }) =>
@@ -72,8 +80,12 @@ vi.mock('../../src/components/PressableSurface', () => ({
 vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
+// Forwards onPress on purpose: the fallback copy must have NO tap target, and a
+// mock that swallowed props would pass just as happily if someone made it
+// pressable. Rendered as a button when pressable so getByRole can catch it.
 vi.mock('../../src/components/Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement(onPress ? 'button' : 'span', onPress ? { onClick: onPress, type: 'button' } : null, children),
 }));
 vi.mock('../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 80 }),
@@ -91,6 +103,7 @@ beforeEach(() => {
   routerMock.push.mockClear();
   openUrl.openExternalUrl.mockClear();
   discord.openDiscordInvite.mockClear();
+  donationLinks.allowed = false;
 });
 
 describe('AcknowledgementsScreen', () => {
@@ -159,9 +172,36 @@ describe('AcknowledgementsScreen', () => {
     expect(routerMock.push).toHaveBeenCalledWith('/scout');
   });
 
-  it('shows the empty-state Become-a-sponsor CTA when there are no sponsors', async () => {
+  it('opens the support page from the sponsors section where donation links are allowed', () => {
+    donationLinks.allowed = true;
+    render(<AcknowledgementsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Support Boardsesh' }));
+
+    expect(openUrl.openExternalUrl).toHaveBeenCalledWith(
+      'https://www.boardsesh.com/support',
+      'acknowledgements-sponsor',
+    );
+  });
+
+  it('shows unlinked support text with no tap target where donation links are not allowed', () => {
+    donationLinks.allowed = false;
+    render(<AcknowledgementsScreen />);
+
+    const fallback = screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support');
+    expect(fallback).toBeTruthy();
+    // The Text mock renders a button whenever it is given onPress, so this is
+    // what fails if the fallback copy is ever made tappable.
+    expect(fallback.tagName).toBe('SPAN');
+    expect(fallback.closest('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Support Boardsesh' })).toBeNull();
+    expect(openUrl.openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('shows the support CTA in the empty-sponsors state when donation links are allowed', async () => {
     // Re-mock the data module with no sponsors and re-import the screen so the
     // sponsors.length === 0 branch renders.
+    donationLinks.allowed = true;
     vi.resetModules();
     vi.doMock('../../src/lib/acknowledgements', () => ({
       contributors: [],
@@ -169,18 +209,41 @@ describe('AcknowledgementsScreen', () => {
       privateSponsorCount: 0,
       friends: ['Gabby'],
       dogName: 'Scout',
-      SPONSORS_URL: 'https://github.com/sponsors/boardsesh',
       XPREM_URL: 'https://github.com/mercuretechnologies/xprem',
     }));
     const { default: EmptySponsorsScreen } = await import('../acknowledgements');
 
     render(<EmptySponsorsScreen />);
-    fireEvent.click(screen.getByRole('button', { name: 'Become a sponsor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Support Boardsesh' }));
 
     expect(openUrl.openExternalUrl).toHaveBeenCalledWith(
-      'https://github.com/sponsors/boardsesh',
+      'https://www.boardsesh.com/support',
       'acknowledgements-sponsor',
     );
+
+    vi.doUnmock('../../src/lib/acknowledgements');
+    vi.resetModules();
+  });
+
+  it('falls back to unlinked text in the empty-sponsors state when donation links are not allowed', async () => {
+    donationLinks.allowed = false;
+    vi.resetModules();
+    vi.doMock('../../src/lib/acknowledgements', () => ({
+      contributors: [],
+      sponsors: [],
+      privateSponsorCount: 0,
+      friends: ['Gabby'],
+      dogName: 'Scout',
+      XPREM_URL: 'https://github.com/mercuretechnologies/xprem',
+    }));
+    const { default: EmptySponsorsScreen } = await import('../acknowledgements');
+
+    render(<EmptySponsorsScreen />);
+
+    const fallback = screen.getByText('Boardsesh is free and community-funded. boardsesh.com/support');
+    expect(fallback.tagName).toBe('SPAN');
+    expect(fallback.closest('button')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Support Boardsesh' })).toBeNull();
 
     vi.doUnmock('../../src/lib/acknowledgements');
     vi.resetModules();

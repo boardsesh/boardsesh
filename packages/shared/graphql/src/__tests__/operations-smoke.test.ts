@@ -22,6 +22,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'favorites', load: () => import('../operations/favorites') },
   { name: 'feedback', load: () => import('../operations/feedback') },
   { name: 'gyms', load: () => import('../operations/gyms') },
+  { name: 'live-sessions', load: () => import('../operations/live-sessions') },
   { name: 'new-climb-feed', load: () => import('../operations/new-climb-feed') },
   { name: 'notifications', load: () => import('../operations/notifications') },
   { name: 'playlists', load: () => import('../operations/playlists') },
@@ -66,5 +67,13 @@ describe('activity-feed operations export the expected names', () => {
     const mod = await import('../operations/activity-feed');
     expect(mod).toHaveProperty('GET_ACTIVITY_FEED');
     expect(mod).toHaveProperty('GET_SESSION_GROUPED_FEED');
+  });
+});
+
+describe('live-sessions operations export the expected names', () => {
+  it('exposes FOLLOWED_LIVE_SESSIONS and BOARD_LIVE_SESSIONS', async () => {
+    const mod = await import('../operations/live-sessions');
+    expect(mod).toHaveProperty('FOLLOWED_LIVE_SESSIONS');
+    expect(mod).toHaveProperty('BOARD_LIVE_SESSIONS');
   });
 });

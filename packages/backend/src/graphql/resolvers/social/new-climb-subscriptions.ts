@@ -75,6 +75,14 @@ export const newClimbSubscriptionResolvers = {
             // "What's new on this board" is a browse surface: a climb the
             // community hid never announces itself here.
             eq(dbSchema.boardClimbs.isHidden, false),
+            // …and neither does one its setter has not published. A draft is a
+            // climb nobody has decided to show yet; `is_listed = false` is the
+            // catalogue's own "withdrawn". This feed filtered on neither, so it
+            // announced both to anonymous callers — a spray wall's unfinished
+            // drafts included, on a PUBLIC wall the layout gate above waves
+            // through. Pre-existing for all eight catalogue boards.
+            eq(dbSchema.boardClimbs.isDraft, false),
+            eq(dbSchema.boardClimbs.isListed, true),
           ),
         )
         .orderBy(desc(dbSchema.boardClimbs.createdAt))
@@ -91,6 +99,8 @@ export const newClimbSubscriptionResolvers = {
             // Same predicate as the page above, so the count can't promise rows
             // the list will never hand back.
             eq(dbSchema.boardClimbs.isHidden, false),
+            eq(dbSchema.boardClimbs.isDraft, false),
+            eq(dbSchema.boardClimbs.isListed, true),
           ),
         );
 

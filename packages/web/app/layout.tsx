@@ -1,7 +1,8 @@
 // app/layout.tsx
 import React, { Suspense } from 'react';
+import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
-import ColorModeProvider from './components/providers/color-mode-provider';
+import AppThemeProvider from './components/providers/app-theme-provider';
 import AnalyticsClient from './components/analytics-client';
 import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
@@ -17,8 +18,10 @@ import { getLocale } from './lib/i18n/get-locale';
 import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
-import { THEME_INIT_SCRIPT } from './theme/theme-init-script';
+import { themeTokens } from './theme/theme-config';
 import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
+import { classifyMarketingBrowser } from './lib/marketing-platform';
+import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
@@ -58,24 +61,25 @@ export const viewport: Viewport = {
   // without resizing the layout viewport, so 100dvh and position:fixed
   // bottom bars stay anchored when an input is focused.
   interactiveWidget: 'resizes-visual',
-  themeColor: '#15101e',
+  // The page base, not the shared Material anchor — velvet-tokens-parity
+  // asserts web's ground is deliberately NOT materialSurfaces.dark.background.
+  themeColor: themeTokens.semantic.background,
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const locale = await getLocale();
+  const [locale, requestHeaders] = await Promise.all([getLocale(), headers()]);
+  const initialBrowser = classifyMarketingBrowser(requestHeaders.get('user-agent') ?? '');
 
+  // data-theme="dark" is static: www renders one scheme. Nothing in-repo reads
+  // the attribute any more (the CSS vars live on :root), but it is kept as the
+  // documented contract for anything embedding a Boardsesh page, and as an
+  // e2e/debug affordance.
   return (
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
-      <head>
-        {/* Runs before first paint to correct data-theme from the saved
-            preference (or OS setting for new visitors), so light-theme users
-            don't get a dark flash. data-theme="dark" above is the SSR default;
-            suppressHydrationWarning on <html> covers the attribute swap. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-      </head>
-      {/* suppressHydrationWarning: browser extensions (Grammarly, 1Password)
-          inject attributes onto <body> at runtime — unrelated to the theme swap
-          on <html>. */}
+      {/* suppressHydrationWarning on both elements: browser extensions
+          (Grammarly, 1Password) stamp attributes onto <html> and <body> at
+          runtime. Nothing in the app mutates either any more — the pre-paint
+          theme script went with the light scheme. */}
       <body suppressHydrationWarning>
         <Suspense fallback={null}>
           <AnalyticsClient />
@@ -89,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <AnalyticsIdentity />
           <QueryClientProvider>
             <AppRouterCacheProvider>
-              <ColorModeProvider>
+              <AppThemeProvider>
                 <I18nProvider
                   locale={locale}
                   namespaces={[
@@ -110,13 +114,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <CapacitorRetirementGate>
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <SiteChrome>{children}</SiteChrome>
+                          <MarketingPreviewProvider initialBrowser={initialBrowser}>
+                            <SiteChrome>{children}</SiteChrome>
+                          </MarketingPreviewProvider>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>
                   </SnackbarProvider>
                 </I18nProvider>
-              </ColorModeProvider>
+              </AppThemeProvider>
             </AppRouterCacheProvider>
           </QueryClientProvider>
         </SessionProviderWrapper>

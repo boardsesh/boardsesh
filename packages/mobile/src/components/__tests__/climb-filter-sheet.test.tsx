@@ -124,7 +124,8 @@ type TextInputProps = {
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
+    createElement('div', { 'data-style': resolveStyle(style) }, children),
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
@@ -431,6 +432,16 @@ beforeEach(() => {
 // same render as the dismiss, so the slide-down never played and the list swapped
 // under a vanishing sheet. Apply must commit only once the native close lands.
 describe('ClimbFilterSheet Apply waits for the native close', () => {
+  it('separates the Following switch from the setter picker and applies its own filter', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+    const toggle = getByTestId('switch-authors.followingClimbs');
+    expect(JSON.parse(toggle.parentElement?.getAttribute('data-style') ?? '{}')).toMatchObject({ marginTop: 16 });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('data-value')).toBe('true');
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ onlyFollowedAuthors: true }), currentBoardFilters);
+  });
   it('dismisses on the tap, then applies and closes, in that order, once the native close lands', () => {
     const onApply = vi.fn();
     const onDismiss = vi.fn();
@@ -1015,6 +1026,28 @@ describe('ClimbFilterSheet hold + zone rows by board', () => {
     expect(createBoardHoldsMocks.prewarmCreateBoardHolds).toHaveBeenCalledWith(
       expect.objectContaining({ boardName: 'woods' }),
     );
+  });
+});
+
+// Kilter's app counts a climb once per angle, so its totals run about double
+// ours. The note under Show explains that, and only where the comparison exists.
+describe('ClimbFilterSheet climb-count note', () => {
+  it('shows the note under Show on a Kilter board', () => {
+    const { queryByText } = renderFilterSheet();
+
+    expect(queryByText('mobile.filter.countNote')).not.toBeNull();
+  });
+
+  it('hides the note on a Tension board', () => {
+    const { queryByText } = renderFilterSheet({ boardConfig: { ...boardConfig, boardName: 'tension' } });
+
+    expect(queryByText('mobile.filter.countNote')).toBeNull();
+  });
+
+  it('hides the note when there is no board config', () => {
+    const { queryByText } = renderFilterSheet({ boardConfig: null });
+
+    expect(queryByText('mobile.filter.countNote')).toBeNull();
   });
 });
 

@@ -30,6 +30,8 @@ export type CreateSessionInput = {
   isPermanent?: boolean;
   boardIds?: number[];
   color?: string;
+  /** Absent or null means public. */
+  isPublic?: boolean | null;
 };
 
 /**

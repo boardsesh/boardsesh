@@ -348,6 +348,12 @@
       "lengthPillAria": "Länge der Pause, {{value}}",
       "lengthPillHint": "Fügt 30 Sekunden hinzu. Lang drücken, um jede Pausenlänge zu wählen."
     },
+    "sessionVisibility": {
+      "title": "Diese Session live zeigen",
+      "descriptionOn": "Deine Crew und Kletterer*innen an diesem Board können sie sehen und beitreten.",
+      "descriptionOff": "Nur Leute mit deinem Einladungslink können beitreten.",
+      "updateError": "Die Sichtbarkeit konnte nicht geändert werden. Versuch es nochmal."
+    },
     "queueSheet": {
       "emptyQueue": "Deine Warteschlange ist leer",
       "toggleHistory": "Historie ein- oder ausblenden",
@@ -447,7 +453,9 @@
         "headerSwitcherAria": "Du bist an {{board}}. Tippe, um zu einem anderen Board hier zu wechseln.",
         "headerSwitcherHintOpen": "Zeigt die anderen Boards in dieser Halle",
         "headerSwitcherHintClose": "Blendet die anderen Boards aus"
-      }
+      },
+      "kilterHistorySource": "Über Kilter beleuchtet",
+      "retryHistory": "Verlauf erneut laden"
     },
     "toast": {
       "sessionEnded": "Session beendet",

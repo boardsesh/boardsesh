@@ -109,6 +109,24 @@ export function evaluateDeletionsCoverage(coverageAt: number | null, nowMs: numb
  *    Clearing it would re-download tens to hundreds of MB, unprompted, possibly
  *    on cellular. A catalog rebuild stays where the user asks for it
  *    (removeBoardScopeData, behind the Storage settings flow).
+ *  - `spray_walls` rows and their `checkpoint:spray_walls:<scope>` keys — the one
+ *    board table the sentence above is not true of. A wall DOES emit a tombstone
+ *    (migration 0228, on the soft delete), so a coverage gap can strand a wall
+ *    that is gone from the server. It is still not cleared here because the
+ *    checkpoints are per scope key and this function has no scope list to
+ *    enumerate: deleting the rows without rewinding the cursors would leave a
+ *    wall the device can never fetch again.
+ *
+ *    BE PRECISE ABOUT WHO IS EXPOSED. The tombstone is scoped to the wall's
+ *    OWNER (`INSERT INTO sync_deletions … user_id = owner_id`), and `syncDeletions`
+ *    only serves a caller their own rows plus NULL-scoped reference ones — so a
+ *    gym member or a public-wall viewer who mirrored a wall never receives its
+ *    tombstone at all, coverage gap or no coverage gap. Their copy of the holds,
+ *    the geometry and the photograph survives the owner deleting the wall or
+ *    flipping it back to private, until they sign out or remove the board. That
+ *    is not this function's bug to fix — it is a hole in the tombstone's scope —
+ *    and the fix is tracked as SW-15b (#5490): an empty per-board page for a scope
+ *    that still has a local row is the signal to delete the row and its photo.
  *  - `pending_mutations`. Unsynced local writes are not recoverable from the
  *    server; drainMutationQueue legitimately leaves rows behind (attempt budget,
  *    dead letters, offline), so "drain first, then wipe" is not a substitute for

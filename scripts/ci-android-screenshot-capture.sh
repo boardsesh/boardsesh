@@ -15,6 +15,8 @@
 #   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
 #   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
+#   SCREENSHOT_FIXTURES        replay | record | live   (default replay = serve the committed fixture set)
+#   SCREENSHOT_FROZEN_NOW      record only: ISO instant to freeze "now" at (empty = mint one)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
@@ -47,13 +49,30 @@ if [ "${SCREENSHOT_DEV_CLIENT:-}" = "1" ]; then
   retarget+=(--dev-client)
 fi
 
+# The record/replay backend. `replay` (the default) serves the committed fixture
+# set, so captures are deterministic. `live` passes nothing, so the capture talks
+# to PROD exactly as it did before fixtures existed. A recording run starts from
+# an empty set so what it uploads is only what THIS capture asked for; the merge
+# step unions it with the iOS shards.
+fixtures="${SCREENSHOT_FIXTURES:-replay}"
+if [ "$fixtures" != "live" ]; then
+  retarget+=(--fixtures "$fixtures")
+  if [ "$fixtures" = "record" ]; then
+    retarget+=(--fresh)
+    if [ -n "${SCREENSHOT_FROZEN_NOW:-}" ]; then
+      retarget+=(--frozen-now "$SCREENSHOT_FROZEN_NOW")
+    fi
+  fi
+fi
+
 # Diagnostics land here; the workflow uploads it as an artifact (always()). The
 # device-side app logs (network errors, screen markers) are the only window into
 # why a screen captured empty, since the emulator is killed when this step ends.
 debug_dir="${GITHUB_WORKSPACE:-$PWD}/android-capture-debug"
 mkdir -p "$debug_dir"
-# The orchestrator copies the PNGs Maestro shot before a failure here (see
-# preserveFailedCaptures in scripts/mobile-screenshots.ts).
+# The orchestrator copies the PNGs Maestro shot before a failure here, plus the
+# screenshot backend's own log (see preserveFailedRunArtifacts in
+# scripts/mobile-screenshots.ts).
 export SCREENSHOT_DEBUG_DIR="$debug_dir"
 
 logcat_pid=""
@@ -98,13 +117,23 @@ done
   exit 1
 }
 
-# Bounded retry, mirroring the iOS job's two-attempt shard loop: the dev-client
-# cold start intermittently dies with a native SIGSEGV inside React Native's
-# Fabric mounting (MountingCoordinator::pullTransaction, seen on CI run
-# 34214269041 on the third of four cold launches). A fresh orchestrator run
-# reinstalls the APK, restarts Metro and reruns the whole flow; the emulator
-# stays up. The blank/size gates in the workflow still judge the final set.
-attempts=2
+# Bounded retry. The dev-client cold start dies natively often enough that two
+# attempts is not enough — TWO DISTINCT crashes are on record, and the store flow
+# cold-launches the app four times per run:
+#
+#   * SIGSEGV inside React Native's Fabric mounting
+#     (MountingCoordinator::pullTransaction) — CI run 34214269041, on the third
+#     of four cold launches.
+#   * SIGABRT from a JNI "field operation on NULL object" in
+#     libexpo-modules-core.so on the mqt_v_js thread — CI run 34248313427, again
+#     on a relaunch, with the app never reaching home-screen.
+#
+# A fresh orchestrator run reinstalls the APK, restarts Metro and reruns the
+# whole flow; the emulator stays up. The blank/size gates in the workflow still
+# judge the final set, so a retry cannot launder a bad capture — it only covers
+# a crash. Three attempts fit the job's 75-minute ceiling: APK resolve <= 19 min
+# plus 3 x ~10 min of capture plus setup.
+attempts=3
 for attempt in $(seq 1 "$attempts"); do
   if vp run mobile:screenshots -- \
     --platform android \

@@ -159,11 +159,35 @@ describe('useWorkoutPreview', () => {
     rerender({ selection: on(11) });
 
     expect(result.current.status).toBe('loading');
+    expect(result.current.items).toHaveLength(2); // same board: keep rows while options rebuild
     expect(result.current.plannedSlots).toEqual([]);
     expect(result.current.plannedCount).toBe(0);
     expect(result.current.toQueueItems()).toEqual([]);
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('hides the previous board’s rows immediately while the new preview loads', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async (_grade, { board: requestedBoard }) => [
+      makeClimb(`${requestedBoard.boardType}-a`),
+      makeClimb(`${requestedBoard.boardType}-b`),
+    ]);
+    const selection = on(10);
+    const { result, rerender } = renderHook(
+      ({ activeBoard }: { activeBoard: UserBoard }) =>
+        useWorkoutPreview(selection, activeBoard, { isAuthenticated: false }, { fetchPool, grades }),
+      { initialProps: { activeBoard: board } },
+    );
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.items).toHaveLength(2);
+
+    rerender({ activeBoard: { ...board, boardType: 'tension', layoutId: 10 } });
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.items).toEqual([]);
+    expect(result.current.toQueueItems()).toEqual([]);
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.items.map(({ item }) => item.climb.uuid).sort()).toEqual(['tension-a', 'tension-b']);
   });
 
   it('rebuilds when authentication changes because climb-bias filters depend on auth', async () => {

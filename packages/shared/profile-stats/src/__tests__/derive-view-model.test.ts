@@ -51,6 +51,20 @@ describe('deriveProfileViewModel', () => {
     expect(vm.weeklyBars).toBeNull();
   });
 
+  it('matches logbook record labels without collapsing a plus grade into a chart bucket', () => {
+    const vm = deriveProfileViewModel({
+      ...base,
+      selectedBoard: 'all',
+      allBoardsTicks: {
+        moonboard: [
+          entry({ difficulty: 19, status: 'flash', climbUuid: 'plus-grade', layoutId: 2, boardType: 'moonboard' }),
+        ],
+      },
+    });
+    expect(vm.hardestSend?.label).toBe('V4+');
+    expect(vm.hardestFlash?.label).toBe('V4+');
+  });
+
   it('produces every chart slice plus the stats summary', () => {
     const vm = deriveProfileViewModel({
       ...base,

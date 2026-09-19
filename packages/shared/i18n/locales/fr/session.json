@@ -348,6 +348,12 @@
       "lengthPillAria": "Durée du repos, {{value}}",
       "lengthPillHint": "Ajoute 30 secondes. Appui long pour choisir n’importe quelle durée."
     },
+    "sessionVisibility": {
+      "title": "Afficher cette session en direct",
+      "descriptionOn": "Ta crew et les grimpeurs sur cette board peuvent la voir et la rejoindre.",
+      "descriptionOff": "Seules les personnes qui ont ton lien d'invitation peuvent la rejoindre.",
+      "updateError": "Impossible de changer qui voit cette session. Réessaie."
+    },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",
       "toggleHistory": "Afficher l'historique",
@@ -447,7 +453,9 @@
         "headerSwitcherAria": "Tu es sur {{board}}. Touche pour passer à une autre board ici.",
         "headerSwitcherHintOpen": "Affiche les autres boards de cette salle",
         "headerSwitcherHintClose": "Masque les autres boards"
-      }
+      },
+      "kilterHistorySource": "Allumé via Kilter",
+      "retryHistory": "Réessayer de charger l’historique"
     },
     "toast": {
       "sessionEnded": "Session terminée",

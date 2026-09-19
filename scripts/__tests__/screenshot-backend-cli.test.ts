@@ -53,6 +53,7 @@ describe('parseCliArguments', () => {
       '--flow',
       'onboarding',
       '--fresh',
+      '--no-pseudonymise',
     ]);
     expect(options.mode).toBe('record');
     expect(options.port).toBe(9091);
@@ -61,6 +62,7 @@ describe('parseCliArguments', () => {
     expect(options.frozenNow).toBe('2026-01-01T00:00:00Z');
     expect(options.flow).toBe('onboarding');
     expect(options.fresh).toBe(true);
+    expect(options.pseudonymise).toBe(false);
   });
 
   it('defaults fixtures, upstream, frozenNow and flow when omitted', () => {
@@ -70,6 +72,8 @@ describe('parseCliArguments', () => {
     expect(options.frozenNow).toBeNull();
     expect(options.flow).toBeNull();
     expect(options.fresh).toBe(false);
+    // Defaults ON: a recording that forgets the flag must still be safe to commit.
+    expect(options.pseudonymise).toBe(true);
   });
 
   it('requires --mode', () => {
@@ -94,6 +98,11 @@ describe('parseCliArguments', () => {
   it('allows --fresh with record but rejects it with replay', () => {
     expect(parseCliArguments(['--mode', 'record', '--fresh']).fresh).toBe(true);
     expect(captureFailure(['--mode', 'replay', '--fresh'])).toContain('--fresh is record-only');
+  });
+
+  it('allows --no-pseudonymise with record but rejects it with replay', () => {
+    expect(parseCliArguments(['--mode', 'record', '--no-pseudonymise']).pseudonymise).toBe(false);
+    expect(captureFailure(['--mode', 'replay', '--no-pseudonymise'])).toContain('--no-pseudonymise is record-only');
   });
 
   it('rejects --upstream in replay mode, since replay makes no outbound request', () => {

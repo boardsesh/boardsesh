@@ -534,3 +534,17 @@ export type SearchUsersAndSettersQueryVariables = {
 export type SearchUsersAndSettersQueryResponse = {
   searchUsersAndSetters: UnifiedSearchConnection;
 };
+export const GET_FOLLOWED_AUTHORS = gql`
+  query GetFollowedAuthors {
+    followedAuthors {
+      setterUsernames
+      users {
+        userId
+        boardAccounts {
+          boardType
+          username
+        }
+      }
+    }
+  }
+`;

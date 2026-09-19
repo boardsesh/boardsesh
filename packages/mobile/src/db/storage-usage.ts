@@ -4,6 +4,17 @@
 // per-scope row counts and the byte apportionment (getScopeUsage), and the freelist
 // arithmetic (measureReclaimableBytes). What's left here is the platform I/O it
 // can't do: reading the actual file sizes off disk.
+//
+// NOT COUNTED, deliberately: the spray wall photographs in
+// `<documents>/spray-wall-photos/` (issue #5448). They are neither of the two
+// things this screen measures — they are not the database, and they are not cache
+// (the Clear cached images button sweeps `Paths.cache`, and a wall photo there
+// would be deleted out from under an offline climber). A wall's photo is part of
+// that board's download: it is reclaimed by removing the board, and by signing
+// out. Roughly one JPEG per downloaded wall, capped at ten walls per account, so
+// the figure this screen reports can understate the total by a few tens of MB on
+// a device that has downloaded walls. Fold it into a per-board figure when walls
+// are common enough for that to be the honest number.
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { DATABASE_NAME } from './connection';

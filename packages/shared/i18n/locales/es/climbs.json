@@ -1,4 +1,27 @@
 {
+  "authors": {
+    "selectHint": "Marca una casilla para filtrar bloques. Toca un nombre para verlos.",
+    "selectedCount": "Seleccionados: {{count}}",
+    "viaUserFollow": "Por una persona que sigues",
+    "followingHint": "Incluye cuentas vinculadas de personas que sigues. Seguir guarda al setter directamente.",
+    "follow": "Seguir",
+    "unfollow": "Dejar de seguir",
+    "following": "Siguiendo",
+    "allSetters": "Todos los setters",
+    "followingClimbs": "Bloques de personas que sigo",
+    "playlistSubtitle": "Todos los bloques de este plafón · Más recientes primero",
+    "signIn": "Inicia sesión para seguir a este setter",
+    "syncNeeded": "Conéctate para sincronizar a quienes sigues y sus setters vinculados.",
+    "followError": "No se pudo actualizar. Inténtalo de nuevo.",
+    "loadError": "No se pudieron cargar estos bloques.",
+    "empty": "Este setter aún no tiene bloques en este plafón.",
+    "chooseBoard": "Elige un plafón",
+    "retry": "Reintentar",
+    "newClimb": "Nuevo bloque",
+    "newClimbCount_one": "1 bloque nuevo",
+    "newClimbCount_other": "{{count}} bloques nuevos",
+    "seeAllClimbs": "Ver los {{count}}"
+  },
   "sends_one": "{{formattedCount}} encadene",
   "sends_other": "{{formattedCount}} encadenes",
   "metadata": {
@@ -142,6 +165,11 @@
       "label": "Estimado",
       "body": "Nadie lo ha encadenado en este ángulo todavía: el grado sale de cómo va en el otro ángulo.",
       "bodyRange": "Nadie lo ha encadenado en este ángulo todavía: probablemente {{low}}–{{high}}, según cómo va en el otro ángulo."
+    },
+    "moonboardWideAngle": {
+      "label": "Aproximado",
+      "body": "Todavía nadie ha encadenado este ángulo: es una estimación aproximada, basada en cómo cambian otros plafones según el ángulo.",
+      "bodyRange": "Todavía nadie ha encadenado este ángulo: probablemente {{low}}–{{high}}, una estimación aproximada basada en cómo cambian otros plafones según el ángulo."
     },
     "dumbbell": {
       "legendBoardsesh": "Grado Boardsesh",
@@ -442,6 +470,7 @@
       "benchmark": "Benchmarks",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
+      "countNote": "Cada bloque cuenta una vez, no una por ángulo.",
       "sort": {
         "ascents": "Ascensos",
         "quality": "Calidad",

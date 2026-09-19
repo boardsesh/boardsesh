@@ -171,6 +171,7 @@ type RowHandlers = {
   onActivate?: (item: AscentFeedItem) => void;
   showBoardInMeta?: boolean;
   groupTries?: number;
+  fontScale?: number;
   onOpenActions?: (item: AscentFeedItem) => void;
   onEdit?: (item: AscentFeedItem) => void;
   onDeleteRequest?: (item: AscentFeedItem, method: 'swipe' | 'a11y') => void;
@@ -333,24 +334,31 @@ describe('LogbookRow — meta line', () => {
     expect(iconNames(withoutBeta)).not.toContain('video.fill');
   });
 
-  it('labels the wall by the user-named board, falling back to the layout', () => {
-    // A named board is personal context and wins; ticks without one show the
-    // wall product ("Kilter Original", per the profile-stats mock).
+  it('keeps canonical board identity alongside a named wall', () => {
     const { container: named } = renderRow(ascent({ boardDisplayName: 'My Garage Board' }));
-    expect(named.textContent).toContain('My Garage Board 40°');
+    expect(named.textContent).toContain('My Garage Board');
+    expect(named.textContent).toContain('Kilter Original · 40°');
 
     const { container: unnamed } = renderRow(ascent({ boardDisplayName: null }));
-    expect(unnamed.textContent).toContain('Kilter Original 40°');
+    expect(unnamed.textContent).toContain('Kilter Original · 40°');
   });
 
-  it('drops the BOARD but keeps the angle when a divider above covers the wall', () => {
-    // Fixture's named board wins the label ('Kilter 40°', not the layout name).
-    const { container: covered } = renderRow(ascent({}), { showBoardInMeta: false });
-    expect(covered.textContent).not.toContain('Kilter 40°');
-    expect(covered.textContent).toContain('40°'); // angle never leaves the row
+  it('retains board and angle when a day header covers the named wall, including large type', () => {
+    const { container } = renderRow(ascent({ boardDisplayName: 'My Garage Board' }), {
+      showBoardInMeta: false,
+      fontScale: 1.5,
+    });
+    expect(container.textContent).toContain('Kilter Original · 40°');
+    expect(container.textContent).not.toContain('My Garage Board');
+    expect(a11y.props?.accessibilityLabel).toContain('My Garage Board');
+    expect(a11y.props?.accessibilityLabel).toContain('Kilter Original · 40°');
+    expect(a11y.props?.testID).toBe('logbook-entry-tick-1');
+  });
 
-    const { container: uncovered } = renderRow(ascent({}));
-    expect(uncovered.textContent).toContain('Kilter 40°');
+  it('shows a readable note preview and includes the note in the accessible entry', () => {
+    const { container } = renderRow(ascent({ comment: '  Keep the heel\non.  ' }));
+    expect(container.textContent).toContain('Keep the heel on.');
+    expect(a11y.props?.accessibilityLabel).toContain('Keep the heel on.');
   });
 
   it('renders the composite "Flash · N tries" label when a grouped flash day carries extra tries', () => {
