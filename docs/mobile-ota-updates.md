@@ -34,8 +34,10 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   stranded install is store-side only.
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
-  and a Tigris bucket `boardsesh-ota-v3`. Railway currently pulls that exact release through the
-  **pre-rename** repository path (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
+  and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
+  pulls that exact release through the **pre-rename** repository path
+  (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
   confirms the running build: that route first shipped in v3.1.2-beta2.
@@ -215,10 +217,11 @@ the first platform's source maps before they reached Sentry.
 
 ### The throttle, and what actually fixes it
 
-Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on the
-`boardsesh-ota-v3` bucket. Three things multiply into that, and it is worth keeping them apart —
-an earlier version of this doc said waiting was the only lever we had, which stopped being true on
-2026-08-19.
+The original Tigris-backed setup answered a too-fast run of asset PUTs with
+`503 <Code>SlowDown</Code>` on the `boardsesh-ota-v3` bucket. Three things multiply into that, and it
+is worth keeping them apart — an earlier version of this doc said waiting was the only lever we had,
+which stopped being true on 2026-08-19. The upload-rate cap remains a portable guard; verify the live
+provider through the storage migration gate below.
 
 **How much we upload.** One export is 380 assets, and 356 of them are the board-background images
 `require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
