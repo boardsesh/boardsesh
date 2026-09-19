@@ -63,12 +63,13 @@ on main (it's in the workflow's `paths`). `sync_image_upload: true` means an
 unchanged set is a no-op, so a text-only listing edit doesn't re-submit them.
 
 **Refreshing them:** dispatch `mobile-screenshots-android.yml` with
-`commit_to_main = true`. It builds the screenshot APK, captures fresh shots on an
-emulator, and commits them back to main via the OTA push app token — which
+`commit_to_main = true`. It loads the screenshot bundle through Metro in the
+Android dev-client, captures fresh shots on an emulator, and commits the framed
+images back to main via the OTA push app token — which
 re-triggers `Mobile Store Metadata`, which uploads them. The nightly cron only
-captures (uploads the artifact + posts a Discord preview); it never commits,
-because the capture isn't byte-deterministic (relative timestamps, live feed
-data) and auto-committing would churn the live listing daily.
+captures (uploads the artifact + posts a Discord preview); it never commits or
+changes the live listing. Replay uses the frozen fixture snapshot pinned in
+`app-stores/screenshot-fixtures.json`.
 
 **Specs:**
 
@@ -76,23 +77,37 @@ data) and auto-committing would churn the live listing daily.
 - JPEG or PNG, 16:9 or 9:16 aspect ratio
 - Minimum 320px, maximum 3840px per side
 
-**Screens to capture** (8 = the Play Store phone max; captured by `vp run mobile:screenshots --platform android`, in store display order):
+**Campaign outputs** (eight framed PNGs, in store display order):
 
-1. `00-tension-board-view` — a climb with the holds lit on the Tension wall
-2. `01-kilter-board-view` — a climb with the holds lit on Marco's Kilter board
-3. `02-home` — activity feed, your crew's sessions
-4. `03-climbs` — browse the board's climbs, on Marco's Kilter board
-5. `04-discover` — the playlist library
-6. `05-workout-generator` — the Record tab's workout generator
-7. `06-profile` — your stats and progression
-8. `07-board-sheet` — the board's now-on-the-wall surface
+| Output | What the image shows |
+| --- | --- |
+| `00-board-family.png` | Compatibility with Tension and Kilter; MoonBoard joins when its real capture is present. |
+| `01-live-queue.png` | A shared queue with climbs added by the crew. |
+| `02-live-climb.png` | The board view, session participants, and matching current-climb bar. |
+| `03-climbs.png` | Browsing the board's climbs. |
+| `04-discover.png` | The playlist library. |
+| `05-workout-generator.png` | The Record tab's workout generator. |
+| `06-profile.png` | Climbing stats and progression. |
+| `07-board-sheet.png` | The board's now-on-the-wall surface. |
 
-(Party Mode, playlist detail, and the logbook are on the iOS 10-shot set but don't fit Android's 8-shot cap.)
+Run `vp run mobile:screenshots -- --platform android --dev-client --fixtures replay`
+with the shared-session fixture bundle to produce this set. Maestro first captures
+the original eight app surfaces, then three shared-session views. If a third board
+selector is configured, it also captures MoonBoard: eleven or twelve raw PNGs in
+total. Presentation recipes combine the board captures for the first frame and
+the current-climb/participant views for the third, producing eight uploadable PNGs.
+The full raw set remains separate from the framed listing images.
+
+Legacy fixture bundles without shared-session metadata keep their original
+eight-image presentation: separate Tension and Kilter frames followed by Home
+and the other five surfaces. The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
+describes the recorded state required by the extended flow.
 
 The board is drawn with **Aura**, the app's default look, and the wall is pinned by
 name — both by the screenshots build, which fails the capture rather than commit a
 set in the classic look or on a fallback wall. Retarget one run from the workflow's
-`render_mode` / `boards` dispatch inputs; the defaults live in
+`render_mode` / `boards` dispatch inputs. Replay takes its ordered board selectors
+from the fixture manifest unless explicitly overridden; legacy runs fall back to
 `packages/mobile/src/lib/screenshot-mode.ts`.
 
 ## What's New

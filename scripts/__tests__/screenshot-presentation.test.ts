@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
-import { frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
+import { frameComposition, frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
 import { ACCEPTED_SIZES, readPngDimensions } from '../assert-screenshot-dimensions';
 import { readPngSizesRecursively, findContentOffenders } from '../assert-screenshot-content';
 import { decideProbeScope } from '../screenshot-probe-scope';
@@ -18,6 +18,7 @@ import {
   captionLocaleForStore,
   readCaptionCatalog,
   readPresentationManifest,
+  resolveScreenshotRecipes,
   screenshotCaptions,
   sha256Screenshot,
 } from '../lib/screenshot-presentation';
@@ -43,6 +44,124 @@ describe('store screenshot presentation', () => {
     expect(captionLocaleForStore('ios', 'es-MX')).toBe('es');
     expect(captionLocaleForStore('android', '')).toBe('en-US');
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
+  });
+
+  it('requires every live capture and optionally adds the real MoonBoard capture', () => {
+    const legacy = Object.keys(screenshotCaptions('android', 'pixel-2'));
+    const live = [...legacy, '09-live-queue.png', '10-live-climb.png', '11-live-climb-peer.png'];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', live);
+    expect(recipes.map((recipe) => recipe.output)).toEqual([
+      '00-board-family.png',
+      '01-live-queue.png',
+      '02-live-climb.png',
+      '03-climbs.png',
+      '04-discover.png',
+      '05-workout-generator.png',
+      '06-profile.png',
+      '07-board-sheet.png',
+    ]);
+    expect(recipes[0].sources).toEqual(['00-tension-board-view.png', '01-kilter-board-view.png']);
+    expect(
+      resolveScreenshotRecipes('android', 'pixel-2', [...live, '08-moonboard-board-view.png'])[0].sources,
+    ).toContain('08-moonboard-board-view.png');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', live.slice(0, -1))).toThrow('Incomplete or unknown');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...live, 'invented.png'])).toThrow(
+      'Incomplete or unknown',
+    );
+    expect(resolveScreenshotRecipes('android', 'pixel-2', legacy).every((recipe) => recipe.sources.length === 1)).toBe(
+      true,
+    );
+  });
+
+  it('composes eight store images from twelve verified native captures', async () => {
+    const input = directory();
+    const output = directory();
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-live-climb.png',
+      '11-live-climb-peer.png',
+    ];
+    const captures = new Map<string, Buffer>();
+    for (const [index, name] of names.entries()) {
+      const capture = await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 20},70,90)` },
+      })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      captures.set(name, capture);
+      writeFileSync(join(input, name), capture);
+    }
+    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+    expect(saved).toHaveLength(8);
+    const manifest = readPresentationManifest(output);
+    const composite = manifest.files['00-board-family.png'];
+    expect(Object.keys(composite.sources!)).toEqual([
+      '00-tension-board-view.png',
+      '01-kilter-board-view.png',
+      '08-moonboard-board-view.png',
+    ]);
+    for (const [sourceName, provenance] of Object.entries(composite.sources!)) {
+      expect(provenance).toEqual({
+        rawBytes: captures.get(sourceName)!.length,
+        rawSha256: sha256Screenshot(captures.get(sourceName)!),
+      });
+    }
+    expect(composite.rawBytes).toBe(Math.min(...Object.values(composite.sources!).map((source) => source.rawBytes)));
+    expect(
+      findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
+    ).toEqual([]);
+    expect(readFileSync(join(input, '08-moonboard-board-view.png'))).toEqual(
+      captures.get('08-moonboard-board-view.png'),
+    );
+
+    // Decorative peers must never hide a blank native source, or replace the previous valid output.
+    const originalFramed = readFileSync(saved[0]);
+    writeFileSync(
+      join(input, '11-live-climb-peer.png'),
+      await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: '#111111' },
+      })
+        .png()
+        .toBuffer(),
+    );
+    await expect(
+      frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
+    ).rejects.toThrow('likely blank');
+    expect(readFileSync(saved[0])).toEqual(originalFramed);
+
+    composite.rawBytes += 1;
+    writeFileSync(join(output, PRESENTATION_MANIFEST), JSON.stringify(manifest));
+    expect(() => readPresentationManifest(output)).toThrow('Composite source metadata does not match');
+  }, 60_000);
+
+  it('keeps pixels from both real session views and rejects missing peers', async () => {
+    const primary = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#164c39' } })
+      .png()
+      .toBuffer();
+    const peer = await sharp(
+      Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1080" height="1920" fill="#111111"/>
+      <rect y="120" width="1080" height="280" fill="#ac3478"/>
+      <rect y="1520" width="1080" height="140" fill="#e69a32"/>
+    </svg>`),
+    )
+      .png()
+      .toBuffer();
+    const sources = [primary, peer];
+    const caption = readCaptionCatalog('en-US').liveClimb;
+    const framed = await frameComposition(sources, caption, 'live-climb');
+    for (const [left, top, expected] of [
+      [540, 1100, [22, 76, 57]],
+      [150, 550, [172, 52, 120]],
+      [800, 1760, [230, 154, 50]],
+    ] as const) {
+      const pixel = await sharp(framed).extract({ left, top, width: 1, height: 1 }).raw().toBuffer();
+      expect([...pixel]).toEqual(expected);
+    }
+    await expect(frameComposition(sources.slice(0, 1), caption, 'live-climb')).rejects.toThrow('source count');
   });
 
   it('frames a complete directory with verifiable metadata and a review sheet', async () => {

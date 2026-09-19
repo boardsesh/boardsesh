@@ -6,9 +6,12 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import { parseAllDocuments } from 'yaml';
 
 import {
   buildBackendArgs,
+  buildAndroidMaestroArgs,
   buildScreenshotEnv,
   collectScreenshots,
   deviceSlug,
@@ -287,6 +290,141 @@ describe('buildScreenshotEnv', () => {
     );
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('shots@boardsesh.com');
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD).toBe('secret');
+  });
+
+  it('uses manifest board selectors for replay unless --boards explicitly overrides them', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+    };
+    const manifestEnv = buildScreenshotEnv(
+      makeOptions({ platform: 'android', fixtures: 'replay' }),
+      baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }),
+      null,
+      '2026-09-08T09:00:00Z',
+      8085,
+      capture,
+    );
+    expect(manifestEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('The Cellar|Kilter Board Homewall|MoonBoard 2016');
+    const overrideEnv = buildScreenshotEnv(
+      makeOptions({ platform: 'android', fixtures: 'replay', boards: 'Custom Tension|Custom Kilter' }),
+      baseEnv(),
+      null,
+      '2026-09-08T09:00:00Z',
+      8085,
+      capture,
+    );
+    expect(overrideEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('Custom Tension|Custom Kilter');
+  });
+});
+
+describe('buildAndroidMaestroArgs', () => {
+  const context = {
+    deviceId: 'emulator-5554',
+    flowFile: '/capture/app-store.yaml',
+    packageId: 'com.boardsesh.app.dev',
+  };
+
+  it('passes the manifest shared session explicitly to Maestro', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['Tension', 'Kilter', 'MoonBoard'],
+    };
+    const args = buildAndroidMaestroArgs({ ...context, capture }, baseEnv());
+    expect(args).toEqual([
+      '--device',
+      'emulator-5554',
+      'test',
+      '/capture/app-store.yaml',
+      '-e',
+      'APP_ID=com.boardsesh.app.dev',
+      '-e',
+      'SCREENSHOT_USER_EMAIL=test@boardsesh.com',
+      '-e',
+      'SCREENSHOT_USER_PASSWORD=test',
+      '-e',
+      `SCREENSHOT_SHARED_SESSION_ID=${capture.sharedSessionId}`,
+      '-e',
+      'SCREENSHOT_BOARD_COUNT=3',
+    ]);
+  });
+
+  it('passes an empty session for legacy or record runs, overriding stale shell metadata', () => {
+    const args = buildAndroidMaestroArgs(context, baseEnv({ SCREENSHOT_SHARED_SESSION_ID: 'stale-session' }));
+    expect(args.slice(-4)).toEqual(['-e', 'SCREENSHOT_SHARED_SESSION_ID=', '-e', 'SCREENSHOT_BOARD_COUNT=2']);
+  });
+
+  it('counts the effective board selectors using the same overrides as Metro', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000001',
+      boards: ['Kilter', 'Tension', 'MoonBoard'],
+    };
+    const overrides = { ...context, capture, boards: 'Custom Kilter| |Custom Tension' };
+    expect(buildAndroidMaestroArgs(overrides, baseEnv()).at(-1)).toBe('SCREENSHOT_BOARD_COUNT=2');
+    expect(
+      buildAndroidMaestroArgs(context, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'Kilter|Tension|MoonBoard' })).at(-1),
+    ).toBe('SCREENSHOT_BOARD_COUNT=3');
+    expect(buildAndroidMaestroArgs(context, baseEnv({ SCREENSHOT_BOARD_COUNT: '3' })).at(-1)).toBe(
+      'SCREENSHOT_BOARD_COUNT=2',
+    );
+  });
+});
+
+describe('Android app-store scenario flow', () => {
+  type FlowStep = {
+    takeScreenshot?: string;
+    runFlow?: { when: { true: string }; commands: FlowStep[] };
+  };
+  const documents = parseAllDocuments(readFileSync('packages/mobile/.maestro/app-store-android.yaml', 'utf8'));
+  const commands = documents[1].toJS() as FlowStep[];
+
+  function screenshotNames(sharedSessionId: string, boardCount: number): string[] {
+    const names: string[] = [];
+    for (const command of commands) {
+      if (command.takeScreenshot) names.push(command.takeScreenshot);
+      if (command.runFlow) {
+        const expression = command.runFlow.when.true;
+        const enabled: unknown = runInNewContext(
+          expression.slice(2, -1),
+          {
+            SCREENSHOT_SHARED_SESSION_ID: sharedSessionId,
+            SCREENSHOT_BOARD_COUNT: String(boardCount),
+          },
+          { timeout: 1000 },
+        );
+        if (enabled === true) {
+          for (const nested of command.runFlow.commands) {
+            if (nested.takeScreenshot) names.push(nested.takeScreenshot);
+          }
+        }
+      }
+    }
+    return names;
+  }
+
+  it('parses the Maestro documents without YAML errors', () => {
+    expect(documents).toHaveLength(2);
+    for (const document of documents) expect(document.errors).toEqual([]);
+  });
+
+  it('keeps legacy runs at eight captures even with an explicit third board', () => {
+    expect(screenshotNames('', 2)).toHaveLength(8);
+    expect(screenshotNames('', 3)).toEqual(screenshotNames('', 2));
+  });
+
+  it('captures eleven or twelve inputs in presentation order according to the scenario boards', () => {
+    const shared = '00000000-0000-4000-8000-000000000101';
+    const twoBoards = screenshotNames(shared, 2);
+    expect(twoBoards).toHaveLength(11);
+    expect(twoBoards.slice(-3)).toEqual(['09-live-queue', '10-live-climb', '11-live-climb-peer']);
+    const threeBoards = screenshotNames(shared, 3);
+    expect(threeBoards).toHaveLength(12);
+    expect(threeBoards.slice(-4)).toEqual([
+      '08-moonboard-board-view',
+      '09-live-queue',
+      '10-live-climb',
+      '11-live-climb-peer',
+    ]);
   });
 });
 

@@ -1017,6 +1017,13 @@ export type StaticManifestEntry = {
   bytes: number;
 };
 
+/** Optional replay scenario that enables the shared-session Android captures. */
+export type ScreenshotCaptureScenario = {
+  sharedSessionId: string;
+  /** Ordered selectors: the original board captures first, then optional extra boards. */
+  boards: string[];
+};
+
 export type ScreenshotFixtureManifest = {
   formatVersion: 1;
   /**
@@ -1041,6 +1048,7 @@ export type ScreenshotFixtureManifest = {
   accountUserId: string;
   /** Which capture flow was recorded (`app-store`, `onboarding`, …). */
   flow: string;
+  capture?: ScreenshotCaptureScenario;
   graphql: GraphqlManifestEntry[];
   static: StaticManifestEntry[];
 };
@@ -1105,6 +1113,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function captureScenarioProblem(capture: unknown): string | null {
+  if (!isRecord(capture)) return 'capture must be an object';
+  if (
+    typeof capture.sharedSessionId !== 'string' ||
+    capture.sharedSessionId.length !== 36 ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(capture.sharedSessionId)
+  ) {
+    return 'capture.sharedSessionId must be a UUID';
+  }
+  if (!Array.isArray(capture.boards) || capture.boards.length < 2) {
+    return 'capture.boards must contain at least two board selectors';
+  }
+  for (const [index, selector] of capture.boards.entries()) {
+    if (
+      typeof selector !== 'string' ||
+      selector.trim().length === 0 ||
+      selector.includes('|') ||
+      /\p{Cc}/u.test(selector)
+    ) {
+      return `capture.boards[${index}] must be a non-empty selector without control characters or |`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1172,6 +1205,10 @@ export function validateScreenshotFixtureManifest(value: unknown): ScreenshotFix
   if (typeof value.accountEmail !== 'string') return { ok: false, reason: 'accountEmail must be a string' };
   if (typeof value.accountUserId !== 'string') return { ok: false, reason: 'accountUserId must be a string' };
   if (typeof value.flow !== 'string') return { ok: false, reason: 'flow must be a string' };
+  if (value.capture !== undefined) {
+    const problem = captureScenarioProblem(value.capture);
+    if (problem) return { ok: false, reason: problem };
+  }
   if (!Array.isArray(value.graphql)) return { ok: false, reason: 'graphql must be an array' };
   if (!Array.isArray(value.static)) return { ok: false, reason: 'static must be an array' };
   for (const [index, entry] of value.graphql.entries()) {

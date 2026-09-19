@@ -42,5 +42,17 @@
   "wall": {
     "headline": "Mira qué hay en el plafón",
     "description": "Sigue el bloque actual y la actividad reciente del plafón."
+  },
+  "boardFamily": {
+    "headline": "Tus plafones. Una app.",
+    "description": "Cambia de plafón sin cambiar de app."
+  },
+  "liveQueue": {
+    "headline": "Tu grupo.\nUna cola en directo.",
+    "description": "Añadid bloques juntos. Todos veis la misma cola."
+  },
+  "liveClimb": {
+    "headline": "Elige un bloque.\nTodos lo ven.",
+    "description": "El bloque actual se actualiza para todo el grupo de la sesión."
   }
 }

@@ -190,6 +190,42 @@ describe('screenshot backend', () => {
 
   const hasLine = (fragment: string): boolean => logLines.some((line) => line.includes(fragment));
 
+  const openGraphqlSocket = async (initialize = true) => {
+    const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
+    const received: Array<Record<string, unknown>> = [];
+    socket.on('message', (frame) => {
+      const bytes = Array.isArray(frame) ? Buffer.concat(frame) : Buffer.isBuffer(frame) ? frame : Buffer.from(frame);
+      received.push(JSON.parse(bytes.toString('utf8')) as Record<string, unknown>);
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.once('open', resolve);
+      socket.once('error', reject);
+    });
+    if (initialize) {
+      socket.send(JSON.stringify({ type: 'connection_init' }));
+      await expect.poll(() => received.length).toBe(1);
+      expect(received[0]).toEqual({ type: 'connection_ack' });
+    }
+    return {
+      socket,
+      received,
+      // A pong is a barrier: all synchronous responses to earlier frames have
+      // arrived, including any unwanted complete after a subscription snapshot.
+      exchange: async (message: unknown): Promise<Array<Record<string, unknown>>> => {
+        const startIndex = received.length;
+        socket.send(JSON.stringify(message));
+        socket.send(JSON.stringify({ type: 'ping' }));
+        await expect.poll(() => received.length > startIndex && received.at(-1)?.type === 'pong').toBe(true);
+        return received.slice(startIndex, -1);
+      },
+      close: () =>
+        new Promise<void>((resolve) => {
+          socket.once('close', () => resolve());
+          socket.close();
+        }),
+    };
+  };
+
   beforeEach(async () => {
     fixturesDir = mkdtempSync(join(tmpdir(), 'screenshot-fixtures-'));
     upstream = await startUpstream();
@@ -773,7 +809,253 @@ describe('screenshot backend', () => {
       expect(socket.readyState).toBe(WebSocket.OPEN);
       expect(hasLine('WS connection_init ack')).toBe(true);
       expect(hasLine('WS subscribe ClimbStatsUpdated')).toBe(true);
+      expect(backend?.stats().misses).toBe(0);
       socket.close();
+    });
+
+    describe('WebSocket fixture replay', () => {
+      const joinRequest = {
+        operationName: 'JoinSession',
+        query: 'mutation JoinSession($sessionId: ID!) { joinSession(sessionId: $sessionId) { id } }',
+        variables: { sessionId: 'screenshot-session' },
+      };
+      const joinResponse = { data: { joinSession: { id: 'screenshot-session' } } };
+      const queueRequest = {
+        operationName: 'QueueUpdates',
+        query:
+          'subscription QueueUpdates($sessionId: ID!) { queueUpdates(sessionId: $sessionId) { __typename ... on FullSync { sequence state { sequence queue { uuid } } } } }',
+        variables: { sessionId: 'screenshot-session' },
+      };
+      const queueResponse = {
+        data: {
+          queueUpdates: { __typename: 'FullSync', sequence: 1, state: { sequence: 1, queue: [{ uuid: 'queue-1' }] } },
+        },
+      };
+      const sessionRequest = {
+        operationName: 'SessionUpdates',
+        query:
+          'subscription SessionUpdates($sessionId: ID!) { sessionUpdates(sessionId: $sessionId) { __typename ... on SessionRosterSnapshot { users { id username } boardPath } } }',
+        variables: { sessionId: 'screenshot-session' },
+      };
+      const sessionResponse = {
+        data: { sessionUpdates: { __typename: 'SessionRosterSnapshot', users: [], boardPath: '/kilter' } },
+      };
+
+      const recordSnapshots = async (): Promise<void> => {
+        await stop();
+        await start({ mode: 'record' });
+        for (const [request, response] of [
+          [joinRequest, joinResponse],
+          [queueRequest, queueResponse],
+          [sessionRequest, sessionResponse],
+        ] as const) {
+          upstream.nextGraphqlResponse = { status: 200, body: response };
+          await postGraphql(request);
+        }
+        await stop();
+        await start({ mode: 'replay' });
+      };
+
+      it('replays queries and joins with next then complete without contacting the upstream', async () => {
+        await recordSnapshots();
+        const requestsBefore = upstream.graphqlRequests.length;
+        const client = await openGraphqlSocket();
+        for (const [request, response] of [
+          [{ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } }, SYNC_TICKS_RESPONSE],
+          [joinRequest, joinResponse],
+        ] as const) {
+          expect(await client.exchange({ id: 'request', type: 'subscribe', payload: request })).toEqual([
+            { id: 'request', type: 'next', payload: response },
+            { id: 'request', type: 'complete' },
+          ]);
+        }
+        expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
+        expect(backend?.stats()).toMatchObject({ hits: 2, misses: 0 });
+        expect(hasLine('HIT graphql JoinSession')).toBe(true);
+        await client.close();
+      });
+
+      it('emits one snapshot per subscription, stays open, and repeats it after completion or reconnect', async () => {
+        await recordSnapshots();
+        const requestsBefore = upstream.graphqlRequests.length;
+        for (let connection = 0; connection < 2; connection += 1) {
+          const client = await openGraphqlSocket();
+          for (const [request, response] of [
+            [queueRequest, queueResponse],
+            [sessionRequest, sessionResponse],
+          ] as const) {
+            const frame = { id: request.operationName, type: 'subscribe', payload: request };
+            expect(await client.exchange(frame)).toEqual([{ id: frame.id, type: 'next', payload: response }]);
+            expect(await client.exchange({ id: frame.id, type: 'complete' })).toEqual([]);
+            expect(await client.exchange(frame)).toEqual([{ id: frame.id, type: 'next', payload: response }]);
+          }
+          expect(client.socket.readyState).toBe(WebSocket.OPEN);
+          await client.close();
+        }
+        expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
+        expect(backend?.stats()).toMatchObject({ hits: 8, misses: 0 });
+      });
+
+      it('shares the HTTP response cache with WebSocket replay', async () => {
+        const request = { operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } };
+        expect(await (await postGraphql(request)).json()).toEqual(SYNC_TICKS_RESPONSE);
+        const entry = readScreenshotFixtureManifest(fixturesDir)?.graphql.find(
+          (candidate) => candidate.operationName === 'SyncTicks',
+        );
+        const fixturePath = join(fixturesDir, entry?.file ?? '');
+        const fixture: Record<string, unknown> = JSON.parse(readFileSync(fixturePath, 'utf8'));
+        writeFileSync(fixturePath, JSON.stringify({ ...fixture, response: { data: { changed: true } } }));
+        const client = await openGraphqlSocket();
+        expect(await client.exchange({ id: 'cached', type: 'subscribe', payload: request })).toEqual([
+          { id: 'cached', type: 'next', payload: SYNC_TICKS_RESPONSE },
+          { id: 'cached', type: 'complete' },
+        ]);
+        await client.close();
+      });
+
+      it.each(['QueueUpdates', 'SessionUpdates'])(
+        'fails the capture gate for a missing %s snapshot',
+        async (operationName) => {
+          const request = operationName === 'QueueUpdates' ? queueRequest : sessionRequest;
+          const client = await openGraphqlSocket();
+          expect(await client.exchange({ id: 'missing', type: 'subscribe', payload: request })).toEqual([
+            {
+              id: 'missing',
+              type: 'next',
+              payload: { errors: [expect.objectContaining({ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } })] },
+            },
+          ]);
+          expect(hasLine(`MISS graphql ${operationName}`)).toBe(true);
+          expect(backend?.stats().misses).toBe(1);
+          expect(findScreenshotBackendProblems(logLines.join('\n'), { mode: 'replay' }).length).toBeGreaterThan(0);
+          await client.close();
+        },
+      );
+
+      it.each(['query', 'mutation', 'subscription'])(
+        'reports document and variable mismatches for a %s',
+        async (kind) => {
+          await recordSnapshots();
+          const request =
+            kind === 'query'
+              ? { operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } }
+              : kind === 'mutation'
+                ? joinRequest
+                : queueRequest;
+          const client = await openGraphqlSocket();
+          for (const payload of [
+            { ...request, query: `${request.query} fragment Changed on Query { changed }` },
+            { ...request, variables: { unrecorded: true } },
+          ]) {
+            const id = String(client.received.length);
+            const frames = await client.exchange({ id, type: 'subscribe', payload });
+            expect(frames[0]).toMatchObject({
+              id,
+              type: 'next',
+              payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+            });
+            expect(frames).toHaveLength(kind === 'subscription' ? 1 : 2);
+          }
+          expect(hasLine('reason=document-changed')).toBe(true);
+          expect(hasLine('reason=no-fixture')).toBe(true);
+          expect(backend?.stats().misses).toBe(2);
+          await client.close();
+        },
+      );
+
+      it('keeps record-mode WebSockets inert even when a snapshot fixture exists', async () => {
+        await recordSnapshots();
+        await stop();
+        await start({ mode: 'record' });
+        const requestsBefore = upstream.graphqlRequests.length;
+        const client = await openGraphqlSocket();
+        expect(await client.exchange({ id: 'record', type: 'subscribe', payload: queueRequest })).toEqual([]);
+        expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
+        expect(backend?.stats()).toMatchObject({ hits: 0, misses: 0, recorded: 0 });
+        await client.close();
+      });
+
+      it('does not hide a required subscription behind a passive operation name', async () => {
+        const client = await openGraphqlSocket();
+        const frames = await client.exchange({
+          id: 'mismatch',
+          type: 'subscribe',
+          payload: { ...queueRequest, operationName: 'ClimbStatsUpdated' },
+        });
+        expect(frames[0]).toMatchObject({
+          type: 'next',
+          payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+        });
+        expect(backend?.stats().misses).toBe(1);
+        await client.close();
+      });
+
+      it('validates recorded passive subscriptions instead of silently accepting changed variables', async () => {
+        const request = {
+          operationName: 'ClimbStatsUpdated',
+          query:
+            'subscription ClimbStatsUpdated($boardType: String!) { climbStatsUpdated(boardType: $boardType) { climbUuid } }',
+          variables: { boardType: 'kilter' },
+        };
+        const response = { data: { climbStatsUpdated: { climbUuid: 'climb-1' } } };
+        await stop();
+        await start({ mode: 'record' });
+        upstream.nextGraphqlResponse = { status: 200, body: response };
+        await postGraphql(request);
+        await stop();
+        await start({ mode: 'replay' });
+        const client = await openGraphqlSocket();
+        expect(await client.exchange({ id: 'recorded', type: 'subscribe', payload: request })).toEqual([
+          { id: 'recorded', type: 'next', payload: response },
+        ]);
+        const frames = await client.exchange({
+          id: 'changed',
+          type: 'subscribe',
+          payload: { ...request, variables: { boardType: 'tension' } },
+        });
+        expect(frames[0]).toMatchObject({
+          type: 'next',
+          payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+        });
+        expect(backend?.stats()).toMatchObject({ hits: 1, misses: 1 });
+        await client.close();
+      });
+
+      it.each([
+        { id: 12, type: 'subscribe', payload: queueRequest },
+        { id: '', type: 'subscribe', payload: queueRequest },
+        { id: 'invalid', type: 'subscribe', payload: [] },
+        { id: 'invalid', type: 'subscribe', payload: { query: 12 } },
+        { id: 'invalid', type: 'subscribe', payload: { query: ' ' } },
+        { id: 'invalid', type: 'subscribe', payload: { ...queueRequest, variables: [] } },
+        { id: 'invalid', type: 'subscribe', payload: { ...queueRequest, operationName: 12 } },
+      ])('rejects malformed subscription frames without replaying a fixture: %j', async (frame) => {
+        const client = await openGraphqlSocket();
+        const closed = new Promise<number>((resolve) => client.socket.once('close', resolve));
+        client.socket.send(JSON.stringify(frame));
+        expect(await closed).toBe(4400);
+        expect(backend?.stats()).toMatchObject({ hits: 0, misses: 1 });
+      });
+
+      it('rejects subscribe before connection initialization', async () => {
+        const client = await openGraphqlSocket(false);
+        const closed = new Promise<number>((resolve) => client.socket.once('close', resolve));
+        client.socket.send(JSON.stringify({ id: 'uninitialized', type: 'subscribe', payload: queueRequest }));
+        expect(await closed).toBe(4401);
+        expect(client.received).toEqual([]);
+        expect(backend?.stats().hits).toBe(0);
+      });
+
+      it('rejects duplicate active subscription IDs without replaying another snapshot', async () => {
+        await recordSnapshots();
+        const client = await openGraphqlSocket();
+        const frame = { id: 'active', type: 'subscribe', payload: queueRequest };
+        expect(await client.exchange(frame)).toEqual([{ id: 'active', type: 'next', payload: queueResponse }]);
+        const closed = new Promise<number>((resolve) => client.socket.once('close', resolve));
+        client.socket.send(JSON.stringify(frame));
+        expect(await closed).toBe(4409);
+        expect(backend?.stats().hits).toBe(1);
+      });
     });
 
     it('does not crash on a malformed frame and keeps serving HTTP afterward', async () => {

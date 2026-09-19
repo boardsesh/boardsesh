@@ -42,5 +42,17 @@
   "wall": {
     "headline": "Sieh, was gerade leuchtet",
     "description": "Verfolge den aktuellen Boulder und die letzte Aktivität am Board."
+  },
+  "boardFamily": {
+    "headline": "Deine Boards. Eine App.",
+    "description": "Wechsle das Board, ohne die App zu wechseln."
+  },
+  "liveQueue": {
+    "headline": "Deine Crew.\nEine Live-Warteschlange.",
+    "description": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron."
+  },
+  "liveClimb": {
+    "headline": "Wähle einen Boulder.\nAlle sehen ihn.",
+    "description": "Der aktuelle Boulder wird für alle in deiner Session aktualisiert."
   }
 }

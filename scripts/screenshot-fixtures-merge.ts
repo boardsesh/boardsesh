@@ -285,6 +285,12 @@ export function mergeFixtureSets(
   if (fixtureSets.length === 0) throw new Error('nothing to merge: pass at least one recorded fixture directory.');
   assertProvenanceAgrees(fixtureSets);
   const onConflict = options.onConflict ?? 'fail';
+  const capture = fixtureSets.find((fixtureSet) => fixtureSet.manifest.capture)?.manifest.capture;
+  for (const fixtureSet of fixtureSets) {
+    if (fixtureSet.manifest.capture && canonicalJson(fixtureSet.manifest.capture) !== canonicalJson(capture)) {
+      throw new Error(`fixture sets have conflicting capture scenarios (${fixtureSet.label}).`);
+    }
+  }
 
   const graphqlEntries = new Map<string, FoldedEntry<GraphqlManifestEntry>>();
   const staticEntries = new Map<string, FoldedEntry<StaticManifestEntry>>();
@@ -349,6 +355,7 @@ export function mergeFixtureSets(
       accountEmail: firstSet.accountEmail,
       accountUserId: firstSet.accountUserId,
       flow: firstSet.flow,
+      ...(capture ? { capture } : {}),
       graphql: [...graphqlEntries.values()].map(({ entry }) => entry),
       static: [...staticEntries.values()].map(({ entry }) => entry),
     }),

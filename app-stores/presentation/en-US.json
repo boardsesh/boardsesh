@@ -42,5 +42,17 @@
   "wall": {
     "headline": "See what’s on the wall",
     "description": "Follow the current climb and recent board activity."
+  },
+  "boardFamily": {
+    "headline": "Your boards. One app.",
+    "description": "Switch boards without switching apps."
+  },
+  "liveQueue": {
+    "headline": "Your crew.\nOne live queue.",
+    "description": "Add climbs together. Everyone stays in sync."
+  },
+  "liveClimb": {
+    "headline": "Pick a climb.\nEveryone sees it.",
+    "description": "The current climb updates for everyone in your session."
   }
 }

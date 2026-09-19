@@ -360,6 +360,36 @@ describe('validateScreenshotFixtureManifest', () => {
     expect(result.ok).toBe(true);
   });
 
+  const capture = {
+    sharedSessionId: '00000000-0000-4000-8000-000000000001',
+    boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+  };
+
+  it('accepts optional replay capture metadata and preserves it while sorting', () => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(sortManifestEntries(result.manifest).capture).toEqual(capture);
+  });
+
+  it.each([
+    [null, 'capture must be an object'],
+    [[], 'capture must be an object'],
+    [{ ...capture, sharedSessionId: 'not-a-session-id' }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: undefined }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: `${capture.sharedSessionId}\n` }, 'capture.sharedSessionId'],
+    [{ ...capture, boards: 'The Cellar|Kilter Board Homewall' }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar'] }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar', ' '] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 12] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\nBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\u007fBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter|Another board'] }, 'capture.boards[1]'],
+  ])('rejects invalid capture metadata %j', (invalidCapture, reason) => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture: invalidCapture });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason as string) });
+  });
+
   const rejections: Array<[string, () => unknown, string]> = [
     ['a non-object', () => 'nope', 'manifest is not a JSON object'],
     ['a wrong formatVersion', () => ({ ...validManifest(), formatVersion: 2 }), 'formatVersion'],

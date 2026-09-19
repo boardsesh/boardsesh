@@ -100,16 +100,71 @@ startup check found a fixture it cannot replay, printing the list.
 | `GET /static/*` | recorded bytes + recorded `Content-Type` | fetched with `redirect: follow`, keyed by the ORIGINAL path |
 | `GET /health`, `/health/db` | `{"status":"healthy",...}` | same |
 | `GET /__screenshot-backend/status` | the counters | same |
-| WS upgrade on `/graphql` | inert graphql-ws: acks, pongs, never emits | same |
+| WS upgrade on `/graphql` | manifest-listed GraphQL responses and initial subscription snapshots | inert graphql-ws: acks and pongs, never proxies or records responses |
 | anything else | `404` + `MISS route` | `404` + `MISS route` |
 
 The catch-all is deliberately **not** proxied in either mode. A call nobody
 handles is the one thing a capture has to learn about; proxying it would make a
 "replay" run quietly depend on PROD.
 
-The only subscription the store screens open is `ClimbStatsUpdated`, and they
-render correctly when it never emits — so the WebSocket side speaks just enough
-of graphql-ws to stop the client retrying, and then stays silent.
+WebSocket replay uses the same operation name, variables, document hash, response
+cache, and hit/miss gate as HTTP. Queries and mutations emit `next` followed by
+`complete`. Subscriptions emit their recorded initial snapshot once and remain
+open; reconnecting replays the same snapshot. They never connect to production
+or synthesize subsequent events. Screenshot documents start with their operation,
+optionally preceded by GraphQL comments.
+
+`QueueUpdates` and `SessionUpdates` require fixtures: missing snapshots fail the
+capture gate instead of silently showing an empty shared session. The existing
+passive subscriptions (climb statistics, notifications, comments, new climbs, and
+board presence updates) may remain silent when their operation has no fixture in
+the manifest. Once an operation has a fixture, a changed document or variables
+is a miss, including for passive subscriptions.
+
+Record mode still only acknowledges connections and pings over WebSocket. It
+does **not** record or proxy a live WebSocket stream. Initial subscription
+snapshots must be supplied in the sanitized fixture bundle using the ordinary
+GraphQL fixture format and manifest entries; payloads stay in object storage.
+
+An optional manifest `capture` object selects the existing Android campaign
+scenario automatically. The campaign bundle carries:
+
+```json
+{
+  "capture": {
+    "sharedSessionId": "00000000-0000-4000-8000-000000000101",
+    "boards": ["Marco's Board", "High Point Climbing Orlando", "Test User's MoonBoard 2016 Standard"]
+  }
+}
+```
+
+Metadata alone does not create a session or make an arbitrary fixture set suitable
+for these captures. The current Maestro flow expects a session named
+`Friday board crew`, three connected participants (`3 climbing`), six queue entries
+(`6 climbs`), and `Lightest Pair of Shorts` as the current climb. The session preview,
+join response, `QueueUpdates` FullSync, `SessionUpdates` roster snapshot, and the
+queries used by those screens must all describe that same sanitized scenario.
+Changing the title, counts, or current climb requires updating the flow's visible
+anchors together with the bundle. WebSocket recording remains unsupported; supply
+these initial snapshots in the bundle explicitly.
+
+The session ID must be a UUID, and `boards` must contain at least two non-empty
+selectors without control characters or `|`. Selector order is significant:
+Kilter at index 0, Tension at index 1, and optional MoonBoard at index 2. Those
+selectors must resolve to boards and climb responses present in the same bundle.
+Android uses these boards unless `--boards` explicitly overrides them, and passes
+the session ID to Maestro as `SCREENSHOT_SHARED_SESSION_ID` plus the effective
+selector count as `SCREENSHOT_BOARD_COUNT`. No manual environment setup is needed.
+Legacy manifests and record mode pass an empty session ID, keeping the original
+eight-shot flow even when three boards are configured. With a shared-session ID,
+the flow adds the shared queue, current climb, and participant view; a third board
+also adds the MoonBoard capture. The queue sheet expands before capture to show
+five entries from the six-climb queue; the flow waits for the fifth climb, `Wax On`,
+while the header confirms `6 climbs`. These eleven or twelve inputs are campaign
+candidates; presentation recipes select the final eight Google Play images.
+This metadata does not enable additional iOS shots.
+Sorting, snapshot uploads, and merges preserve it; merges reject conflicting
+scenario metadata instead of choosing a different shared session silently.
 
 ## Keying
 

@@ -42,5 +42,17 @@
   "wall": {
     "headline": "Regarde ce qui est allumé",
     "description": "Suis le bloc actuel et l’activité récente de la board."
+  },
+  "boardFamily": {
+    "headline": "Tes boards. Une seule app.",
+    "description": "Change de board sans changer d’app."
+  },
+  "liveQueue": {
+    "headline": "Ton crew.\nUne file en direct.",
+    "description": "Ajoutez des blocs ensemble. Tout le monde reste synchronisé."
+  },
+  "liveClimb": {
+    "headline": "Choisis un bloc.\nTous le voient.",
+    "description": "Le bloc actuel se met à jour pour tout le monde dans ta séance."
   }
 }

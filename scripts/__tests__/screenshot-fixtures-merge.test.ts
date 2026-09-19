@@ -65,6 +65,35 @@ function set(label: string, entries: ReturnType<typeof graphqlEntry>[], hashes: 
 }
 
 describe('mergeFixtureSets', () => {
+  const capture = {
+    sharedSessionId: '00000000-0000-4000-8000-000000000001',
+    boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+  };
+
+  it('preserves an optional capture scenario when merging with legacy shards in either order', () => {
+    const legacy = set('legacy', [], {});
+    const scenario = { ...set('scenario', [], {}), manifest: manifest({ capture }) };
+    for (const inputs of [
+      [legacy, scenario],
+      [scenario, legacy],
+    ]) {
+      expect(mergeFixtureSets(inputs).manifest.capture).toEqual(capture);
+    }
+    expect(mergeFixtureSets([legacy]).manifest.capture).toBeUndefined();
+  });
+
+  it('refuses conflicting shared-session IDs or board-selector order', () => {
+    const first = { ...set('first', [], {}), manifest: manifest({ capture }) };
+    for (const otherCapture of [
+      { ...capture, sharedSessionId: '00000000-0000-4000-8000-000000000002' },
+      { ...capture, boards: [...capture.boards].reverse() },
+    ]) {
+      const second = { ...set('second', [], {}), manifest: manifest({ capture: otherCapture }) };
+      expect(() => mergeFixtureSets([first, second])).toThrow(/conflicting capture scenarios/);
+    }
+    expect(mergeFixtureSets([first, first]).manifest.capture).toEqual(capture);
+  });
+
   it('takes the union of two disjoint shards', () => {
     const profile = graphqlEntry('GetProfile', 'aaaa');
     const climb = graphqlEntry('GetClimb', 'bbbb');
