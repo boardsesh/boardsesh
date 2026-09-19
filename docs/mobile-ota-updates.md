@@ -1234,6 +1234,49 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that falls behind a native change on `main` publishes neither platform and `pr-<number>` keeps
   serving the last revision that did publish — better for a tester than an empty branch, but the
   sticky comment says which, so an unchanged picker entry is not read as "this commit is live".
+- **An identical export is skipped, and the publish says so.** Xprem refuses to create an update whose
+  bundle matches one already in storage (`There is no change in the update for android, ignored` /
+  `No changes found in the update, nothing to deploy`) and `eoas` exits **0** either way. Ordinarily
+  that is right — the identical update is still on the branch. It is only dangerous next to a reset,
+  which is how #5417 lost its Android preview: a comment-only commit left the Android bundle
+  unchanged, the reset had already deleted `pr-5417`, and the skipped publish never recreated it. The
+  branch was iOS-only from then on and the row simply was not in the Android picker — not greyed out,
+  absent, because `/branch_lists` is filtered per platform. `mobile:publish` now scans for that notice
+  and reports `android=no-change` instead of `android=success`. Since `needs_reset` (above) this pairing
+  can no longer arise from a JS-only push.
+- **The publish verifies its own work.** After every platform reports success, `mobile:publish` asks
+  `/branch_lists` — the same unauthenticated question the in-app picker asks — whether `pr-<number>` is
+  actually offered to that platform's fingerprint. **Two independent signals are required to fail the
+  job**: the platform reported `no-change` (nothing was created) AND the server answered and did not
+  list the branch. That pairing is the #5417 signature. A platform that DID create an update but whose
+  branch the probe cannot find only warns — the update exists, so the probe is far likelier to be
+  measuring the wrong thing than to have found a hole.
+  The runtimeVersion is resolved **inside the publish step, under that platform's own env**, and this
+  is the subtle part: `GOOGLE_MAPS_API_KEY` is an Android-only fingerprint input, so the compatibility
+  check — which has no key, and whose header says its absolute hashes are meaningless for exactly this
+  reason — resolves a *different* Android hash. Passing that one in failed a healthy publish in run
+  34796068541. Skipped entirely outside CI, where a locally resolved fingerprint is not the one any
+  binary runs.
+  Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
+  diagnostic and the publisher can never disagree about what "surfable" means. The probe re-asks on a
+  miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
+  15 s the sticky comment already warns testers about, and a red X on a working preview would teach
+  people to ignore the check. A branch that is listed is listed on the first probe, so a healthy
+  publish never waits. It fails only on a server that ANSWERED about this exact
+  runtimeVersion and platform and did not list the branch; an unreachable server or a
+  channel with surfing switched off are facts about the server, not about this publish,
+  and degrade to "cannot check" alongside the missing-fingerprint case.
+- **A finalize 524 is confirmed, not re-exported.** `markUpdateAsUploaded` regularly outlives
+  Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
+  are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
+  and probes the branch before spending another attempt: if it is live, the publish is recorded as
+  published on that attempt. That probe runs a SHORT schedule (~3s of waits), not the verification's
+  propagation-tolerant one — it only asks whether this attempt's upload is live, and the ladder is
+  behind it, so a wrong "no" costs one more attempt rather than a red X.
+  #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
+  reach the same timeout, which the in-app picker showed as "building" for the whole time (the chip
+  reads the `pr-preview` deployment, which the publish job holds open). Any other 5xx, and a 524 seen
+  next to permanent-error evidence, still walk the full backoff ladder.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security

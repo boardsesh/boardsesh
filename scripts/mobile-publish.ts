@@ -31,7 +31,15 @@ import {
   publishSelfHostedPlatformWithRetry,
   type OtaPublishPlatform,
   type PlatformPublishOutcome,
+  type PublishConfirmation,
 } from './lib/mobile-publish-retry';
+import {
+  SURFABILITY_CONFIRM_DELAYS_MS,
+  SURFABILITY_PROBE_DELAYS_MS,
+  findSurfableBranch,
+  probeBranchList,
+  stripManifestSuffix,
+} from './lib/ota-branch-probe';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -133,6 +141,21 @@ export function messageArgs(updateMessage: string): string[] {
 // requires NODE_ENV, which made every `{ GITHUB_ACTIONS: 'true' }` in the tests
 // a type error without saying anything true about what this needs.
 export function shouldAllowDirtyTree(env: Record<string, string | undefined> = process.env): boolean {
+  return runsInGithubActions(env);
+}
+
+/**
+ * Whether this process is a GitHub Actions run.
+ *
+ * Its own function rather than a second use of `shouldAllowDirtyTree`: the two
+ * questions happen to share an answer today, but they are not the same question,
+ * and a reader hitting "allow a dirty tree?" as the gate on a network probe has to
+ * stop and work out why. Keyed on GITHUB_ACTIONS specifically, not the generic
+ * `CI`, because what the probe actually needs is "this fingerprint was resolved on
+ * the same Linux runner the binaries are built on" — `CI=1` in a local shell is
+ * not that, and would make the probe ask about a hash no binary runs.
+ */
+export function runsInGithubActions(env: Record<string, string | undefined> = process.env): boolean {
   return env.GITHUB_ACTIONS === 'true';
 }
 
@@ -196,9 +219,173 @@ export function requestedSelfHostedPlatforms(platform: string): OtaPublishPlatfo
 }
 
 function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
-  if (outcome.success)
-    return `${outcome.platform}=success (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'})`;
-  return `${outcome.platform}=failed (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}, ${outcome.failureKind ?? 'unknown'})`;
+  const attempts = `${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}`;
+  // `no-change` is a success the server declined to act on. Naming it separately
+  // is the difference between "we published" and "an identical update was already
+  // there" — the two look the same in eoas's exit code and mean very different
+  // things once the branch has been reset.
+  if (outcome.success) return `${outcome.platform}=${outcome.noChange ? 'no-change' : 'success'} (${attempts})`;
+  return `${outcome.platform}=failed (${attempts}, ${outcome.failureKind ?? 'unknown'})`;
+}
+
+/** The mutable per-PR preview branches, the only ones this script verifies. */
+const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
+
+const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
+
+/** Injection points for the probe, so the retry behaviour is testable without a server or a clock. */
+/**
+ * What the server said about one branch on one platform.
+ *
+ * Three answers, not a boolean: "it is offered", "the server answered and did not
+ * list it", and "nobody could tell us". The third is not a verdict and must never
+ * be treated as one — an unreachable server says nothing about this publish.
+ * `null`, separately, means the question did not apply at all (not a preview
+ * branch, or no runtimeVersion to ask about).
+ */
+export type SurfabilityResult =
+  | { kind: 'surfable'; detail: string; attempts: number }
+  | { kind: 'not-listed'; detail: string; attempts: number }
+  | { kind: 'cannot-check'; detail: string };
+
+export type SurfabilityProbeOptions = {
+  fetchImpl?: typeof fetch;
+  sleeper?: (delayMs: number) => Promise<void>;
+  delaysMs?: readonly number[];
+  /** The runtimeVersion the publish targeted; null or absent means "cannot check". */
+  runtimeVersion?: string | null;
+};
+
+/**
+ * The runtimeVersion this platform's publish actually targeted.
+ *
+ * Resolved HERE, in the publishing process, with the very env that platform's
+ * `eoas publish` ran under — which is the only way to get the right answer. The
+ * obvious-looking alternative, reading the compatibility check's resolved hashes
+ * off the workflow, is WRONG for Android: `mobile-ota-compat-check.ts` runs
+ * without GOOGLE_MAPS_API_KEY (the key is scoped to the publish step), and it says
+ * so in its own header — a missing key "shifts BOTH sides of the comparison by the
+ * same constant", so its verdict survives while its absolute hashes do not. The
+ * Android publish runs WITH the key, so the two differ, and probing with the
+ * compat hash asked the server about a runtimeVersion nothing was ever published
+ * under: run 34796068541 failed a healthy publish exactly that way.
+ *
+ * Null when the resolve fails, which is a skip, never a verdict.
+ */
+/** Generous against a ~10s resolve, and short against a 165-minute job timeout. */
+const RUNTIME_VERSION_RESOLVE_TIMEOUT_MS = 60_000;
+
+export function resolvePublishedRuntimeVersion(
+  platform: OtaPublishPlatform,
+  env: NodeJS.ProcessEnv,
+  runner: typeof execFileSync = execFileSync,
+): string | null {
+  try {
+    const stdout = runner('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
+      cwd: MOBILE_DIR,
+      env,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 32 * 1024 * 1024,
+      // A resolve takes ~10s. Without a cap, one that hangs parks the publish step
+      // until the job's own timeout — 165 minutes later, having already uploaded
+      // everything — and the only symptom would be a job that never finished. A
+      // timeout throws, which this catches and reports as "cannot check".
+      timeout: RUNTIME_VERSION_RESOLVE_TIMEOUT_MS,
+    });
+    // The CLI prints the hash on its own line, sometimes after other chatter.
+    const match = /\b[0-9a-f]{40}\b/.exec(String(stdout));
+    return match?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ask the update server whether `branchName` is actually being offered to this
+ * platform — the same `/branch_lists` question the in-app picker asks.
+ *
+ * This exists because "the publish command exited 0" is not the same claim. xprem
+ * skips an export identical to one already in storage, and the preview workflow
+ * may have deleted the branch moments earlier, so a platform can end up with no
+ * update on the branch while every log line says success. That is exactly how
+ * #5417 shipped an iOS-only preview and disappeared from the Android picker with
+ * nothing said anywhere.
+ *
+ * Returns null when the check cannot RUN — not a preview branch, no fingerprint
+ * supplied, or the server never gave a usable answer — which callers treat as
+ * "skip", never as "not surfable". Only a server that answered, about this exact
+ * runtimeVersion and platform, and did not list the branch is evidence of absence.
+ * An unreachable server and a channel with surfing switched off are facts about
+ * the server, not about this publish, and failing on them would red-X a good
+ * publish for a reason the author cannot act on.
+ */
+export async function isPreviewBranchSurfable(
+  branchName: string,
+  platform: OtaPublishPlatform,
+  serverUrl: string,
+  options: SurfabilityProbeOptions = {},
+): Promise<SurfabilityResult | null> {
+  if (!PREVIEW_BRANCH_PATTERN.test(branchName)) return null;
+  const runtimeVersion = options.runtimeVersion ?? null;
+  if (runtimeVersion === null) return null;
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleeper = options.sleeper ?? sleep;
+  const delaysMs = options.delaysMs ?? SURFABILITY_PROBE_DELAYS_MS;
+  const baseUrl = stripManifestSuffix(serverUrl);
+
+  // Re-probes only while the answer is "not there", so the cost lands on the case
+  // that is either a propagation delay or a real miss — never on a healthy publish.
+  // A server that could not be reached is retried too: it may be a blip, and if it
+  // is not, the loop ends in "cannot check" rather than in a verdict.
+  // Cumulative, not last-write-wins: ANY probe that got a real answer saw the
+  // branch absent (a probe that finds it returns immediately), so a late blip must
+  // not erase five clear readings and downgrade the run to "cannot check".
+  let lastAnsweredDetail: string | null = null;
+  let detail = 'no probe ran';
+  for (let attempt = 1; attempt <= delaysMs.length + 1; attempt++) {
+    const outcome = await probeBranchList(fetchImpl, baseUrl, runtimeVersion, platform);
+    const branch = findSurfableBranch(outcome, branchName);
+    detail = branch?.lastUpdateAt ? `${outcome.detail}, updated ${branch.lastUpdateAt}` : outcome.detail;
+    if (branch !== null) return { kind: 'surfable', detail, attempts: attempt };
+    if (outcome.state === 'branches' || outcome.state === 'no-branches') lastAnsweredDetail = detail;
+    if (attempt > delaysMs.length) break;
+    await sleeper(delaysMs[attempt - 1]);
+  }
+  // Never logs: the caller owns the reporting, so this stays a pure question with
+  // three honest answers rather than a boolean that prints one of them itself.
+  if (lastAnsweredDetail === null) return { kind: 'cannot-check', detail };
+  // Reports the last answer the server actually gave, not a trailing "request
+  // failed" that says nothing about the branch.
+  return { kind: 'not-listed', detail: lastAnsweredDetail, attempts: delaysMs.length + 1 };
+}
+
+/**
+ * `verifyPreviewBranchIsSurfable`, with a broken check treated as no verdict.
+ *
+ * A throw from the check is NOT evidence against the publish — the upload already
+ * succeeded — so it is reported loudly and the publish stands, the same rule the
+ * "no fingerprint supplied" path already follows. Letting it escape would replace
+ * a clean verdict with an unhandled rejection and lose the publish's own result.
+ */
+export async function previewBranchPassesSurfabilityCheck(
+  branchName: string,
+  outcome: PlatformPublishOutcome,
+  serverUrl: string,
+  options: SurfabilityProbeOptions = {},
+): Promise<boolean> {
+  try {
+    return await verifyPreviewBranchIsSurfable(branchName, outcome, serverUrl, options);
+  } catch (error) {
+    console.error(
+      `[mobile:publish] Could not complete the surfability check: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    console.error(
+      '[mobile:publish] The publish itself succeeded; verify by hand with `vp run mobile:ota-surf-doctor`.',
+    );
+    return true;
+  }
 }
 
 async function publishToSelfHostedBranch(
@@ -257,23 +444,63 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
+  // Each platform's env, built once: the surfability probe must resolve the
+  // runtimeVersion under exactly the env that platform published with, or it asks
+  // the server about a hash nothing was published under (GOOGLE_MAPS_API_KEY is an
+  // Android-only fingerprint input).
+  const platformEnvFor = (target: OtaPublishPlatform): NodeJS.ProcessEnv => {
+    const platformEnv = { ...eoasEnv };
+    if (target === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
+    return platformEnv;
+  };
+
+  // Resolved lazily and once per platform: it costs a ~10s CLI call, and it is
+  // only ever needed for a `pr-<n>` publish in CI. A local publish resolves a hash
+  // no shipped binary runs (@expo/fingerprint is not deterministic across macOS and
+  // Linux), so the check is skipped there rather than answered wrongly.
+  const verifiable = PREVIEW_BRANCH_PATTERN.test(branchName) && runsInGithubActions();
+  const runtimeVersions = new Map<OtaPublishPlatform, string | null>();
+  const runtimeVersionFor = (target: OtaPublishPlatform): string | null => {
+    if (!verifiable) return null;
+    if (!runtimeVersions.has(target)) {
+      runtimeVersions.set(target, resolvePublishedRuntimeVersion(target, platformEnvFor(target)));
+    }
+    return runtimeVersions.get(target) ?? null;
+  };
+
+  // Answers the retry wrapper's "did that 524 actually land?" question. Same probe
+  // as the post-publish verification below, so the two can never disagree; null
+  // (nothing to probe with) reads as "not confirmed" and the ordinary ladder runs.
+  const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
+    const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl, {
+      runtimeVersion: runtimeVersionFor(confirmedPlatform),
+      // The short schedule: this only asks whether THIS attempt's upload is live,
+      // and the retry ladder is behind it, so a wrong "no" costs one more attempt
+      // rather than a red X. The full propagation-tolerant schedule would spend a
+      // large share of the ~2.5-minute re-export it exists to avoid.
+      delaysMs: SURFABILITY_CONFIRM_DELAYS_MS,
+    });
+    return result?.kind === 'surfable';
+  };
+
   const platforms = requestedSelfHostedPlatforms(platform);
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
-    const platformEnv = { ...eoasEnv };
-    if (requestedPlatform === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
     const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage, {
       allowDirtyTree: shouldAllowDirtyTree(),
     });
     console.log('');
     console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
     console.log('');
-    return publishSelfHostedPlatformWithRetry({
-      platform: requestedPlatform,
-      command: 'vp',
-      args: ['dlx', ...eoasArgs],
-      cwd: MOBILE_DIR,
-      env: platformEnv,
-    });
+    return publishSelfHostedPlatformWithRetry(
+      {
+        platform: requestedPlatform,
+        command: 'vp',
+        args: ['dlx', ...eoasArgs],
+        cwd: MOBILE_DIR,
+        env: platformEnvFor(requestedPlatform),
+      },
+      { confirmPublished },
+    );
   });
 
   console.log('');
@@ -283,8 +510,71 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
+  // Only now, with every requested platform reporting success, is it worth asking
+  // whether the server agrees. A failed publish has its own louder verdict above.
+  for (const outcome of outcomes) {
+    const passed = await previewBranchPassesSurfabilityCheck(branchName, outcome, serverUrl, {
+      runtimeVersion: runtimeVersionFor(outcome.platform),
+    });
+    if (!passed) return 1;
+  }
+
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
+}
+
+/**
+ * The last word on a preview publish: does a device on this fingerprint get
+ * offered the branch?
+ *
+ * Failing here rather than warning is deliberate. A preview nobody can load is
+ * indistinguishable from no preview at all, and the workflow's sticky comment
+ * would otherwise tell testers to go and select a branch that is not there.
+ */
+export async function verifyPreviewBranchIsSurfable(
+  branchName: string,
+  outcome: PlatformPublishOutcome,
+  serverUrl: string,
+  options: SurfabilityProbeOptions = {},
+): Promise<boolean> {
+  const platform = outcome.platform;
+  const result = await isPreviewBranchSurfable(branchName, platform, serverUrl, options);
+  if (result === null) return true;
+
+  if (result.kind === 'surfable') {
+    const waited = result.attempts === 1 ? '' : ` after ${result.attempts} probes`;
+    console.log(
+      `[mobile:publish] ${platform}: "${branchName}" is offered to this runtimeVersion${waited} (${result.detail}).`,
+    );
+    return true;
+  }
+
+  if (result.kind === 'cannot-check') {
+    console.warn(
+      `[mobile:publish] ${platform}: could not check whether "${branchName}" is surfable (${result.detail}).`,
+    );
+    return true;
+  }
+
+  // Two independent signals are required to fail, and the probe is only one.
+  // A fresh update was definitely created ("Update ready for <platform>"), so the
+  // branch HAS it and a probe that disagrees is far more likely to be measuring the
+  // wrong thing — a stale or mis-resolved runtimeVersion — than to have found a real
+  // hole. Failing on the probe alone is how run 34796068541 red-X'd a perfectly good
+  // publish. `no-change` is the other signal: nothing was created, so "not listed"
+  // means there is genuinely nothing on the branch for this platform. That pairing is
+  // the #5417 signature exactly.
+  const fatal = outcome.noChange;
+  const say = fatal ? console.error : console.warn;
+  say(
+    `[mobile:publish] ${platform}: the publish reported ${fatal ? 'no-change' : 'success'} but "${branchName}" ` +
+      `is NOT offered to runtimeVersion ${options.runtimeVersion ?? '(unknown)'} (${result.detail}).`,
+  );
+  say(
+    `[mobile:publish] ${fatal ? `Nothing would load in the in-app picker on ${platform}.` : 'A fresh update WAS created, so this is more likely a probe reading the wrong runtimeVersion.'} ` +
+      `Diagnose with: vp run mobile:ota-surf-doctor -- --platform ${platform} --runtime-version ${options.runtimeVersion ?? '<hash>'}`,
+  );
+  return !fatal;
 }
 
 export function selfHostedPublishSuccessMessages(branchName: string): string[] {
