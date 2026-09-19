@@ -1,0 +1,32 @@
+/**
+ * Captures for the /help topic pages.
+ *
+ * Unlike `marketing-screenshots.ts` these are not platform-switched: a help page
+ * explains one flow, and swapping the phone under the reader mid-explanation
+ * costs more than it buys. One capture per shot, shot at iPhone width.
+ */
+export type HelpShot =
+  | 'discover'
+  | 'playlist-detail'
+  | 'live-sessions'
+  | 'session-detail'
+  | 'holds-filter'
+  | 'zone-filter'
+  | 'setters'
+  | 'logbook'
+  | 'board-sheet'
+  | 'board-view'
+  | 'climb-actions'
+  | 'preview'
+  | 'share-beta'
+  | 'beta-shelf';
+
+export type HelpCapture = { src: string; width: number; height: number };
+
+const CAPTURE_WIDTH = 736;
+const CAPTURE_HEIGHT = 1600;
+
+/** Add a locale only when a complete, reviewed native capture set exists. */
+export function helpScreenshot(shot: HelpShot): HelpCapture {
+  return { src: `/images/help/${shot}.webp`, width: CAPTURE_WIDTH, height: CAPTURE_HEIGHT };
+}

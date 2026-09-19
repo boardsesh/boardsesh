@@ -12,6 +12,7 @@ import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { InteractiveFilterBoard } from '../../../src/components/search/InteractiveFilterBoard';
 import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
@@ -52,10 +53,15 @@ export default function HoldFilterScreen() {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  const boardName = (params.boardName ?? '') as BoardName;
-  const layoutId = Number(params.layoutId ?? 0);
-  const sizeId = Number(params.sizeId ?? 0);
-  const setIds = params.setIds ?? '';
+  // A screenshot deep link (`://climbs/holds`) opens this route with none of the
+  // params the filter sheet pushes, which would render an empty board. In
+  // screenshot mode only, fall back to the wall the capture activated on boot;
+  // `null` in every normal build and whenever the route carried a board.
+  const screenshotBoard = useScreenshotBoardParams(params.boardName);
+  const boardName = (screenshotBoard?.boardName ?? params.boardName ?? '') as BoardName;
+  const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
+  const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
+  const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
   // Matches the web `boardLayout` property: the layout NAME (web sends
   // `boardDetails.layout_name`), not the numeric id, so the hold-filter events
   // join cleanly with web across platforms. Falls back to '' for unknown ids.
