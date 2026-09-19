@@ -143,7 +143,27 @@ describe('searchGyms requireSlug — rendered SQL', () => {
   it('keeps distance and stable ID ordering within claimed proximity groups', async () => {
     const [countSql, rowsSql] = await searchWith({ ...PROXIMITY_INPUT, prioritizeClaimed: true });
     expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
-    expect(rowsSql).toContain('ORDER BY gyms.owner_id <> $6 desc, distance_meters ASC, gyms.id ASC');
+    expect(rowsSql).toContain('ORDER BY "gyms"."owner_id" <> $6 desc, distance_meters ASC, gyms.id ASC');
+  });
+
+  it('combines claimed priority with proximity, escaped text, and pagination', async () => {
+    const [countSql, rowsSql] = await searchWith({
+      ...PROXIMITY_INPUT,
+      query: '50% gym',
+      prioritizeClaimed: true,
+      requireSlug: true,
+      offset: 2,
+    });
+    for (const statement of [countSql, rowsSql]) {
+      expect(statement).toContain('name ILIKE');
+      expect(statement).toContain(SLUG_PREDICATE);
+    }
+    expect(rowsSql).toContain(
+      'ORDER BY "gyms"."owner_id" <> $8 desc, distance_meters ASC, gyms.id ASC LIMIT $9 OFFSET $10',
+    );
+    const rowsQuery = dialect.sqlToQuery(mockDb.execute.mock.calls[1][0] as unknown as SQL);
+    expect(rowsQuery.params).toContain('%50\\% gym%');
+    expect(rowsQuery.params.slice(-2)).toEqual([20, 2]);
   });
 
   it('excludes empty-string slugs, not just NULL, and leaves the caller params untouched', async () => {
@@ -205,6 +225,10 @@ describe('searchGyms requireSlug — rendered SQL', () => {
     ['requireSlug true', { ...PROXIMITY_INPUT, requireSlug: true }],
     ['requireSlug true + board filter', { ...PROXIMITY_INPUT, boardTypes: ['kilter'], requireSlug: true }],
     ['requireSlug true + free text', { ...PROXIMITY_INPUT, query: 'boulder', requireSlug: true }],
+    [
+      'claimed priority + free text',
+      { ...PROXIMITY_INPUT, query: 'boulder', requireSlug: true, prioritizeClaimed: true },
+    ],
   ])('count and rows filter on an identical WHERE clause (%s)', async (_label, input) => {
     const [countSql, rowsSql] = await searchWith(input);
 
