@@ -33,7 +33,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
@@ -300,9 +299,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    *
    * The footer's Back was guarded and nothing else was: the header's back
    * button, the iOS back gesture and Android's Back key all remove the route
-   * outright — mid-upload, or with a draft on the server whose detections live
-   * only in this session. A silent exit there strands a draft nothing can resume
-   * and forces the owner to discard it and shoot the wall again.
+   * outright — including mid-upload or with unsaved review edits. Recognition
+   * itself now survives leaving: the stored draft resumes its durable job.
    *
    * `beforeRemove` is the one place all of them pass through — the footer's Back
    * included, since it pops the route like everything else. So this is the SOLE
