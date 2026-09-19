@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T13:31:50.601Z",
+  "generatedAt": "2026-09-19T13:39:22.967Z",
   "entries": [
+    {
+      "prNumber": 5597,
+      "category": "new",
+      "title": "The home page now tells you how many climbers are actually using Boardsesh — how many people lit a climb on a real board in the last month, and how many climbs that was.",
+      "mergedAt": "2026-09-19T13:29:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5597"
+    },
     {
       "prNumber": 5594,
       "category": "fixed",

@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- The home page now tells you how many climbers are actually using Boardsesh — how many people lit a climb on a real board in the last month, and how many climbs that was. ([#5597](https://github.com/boardsesh/boardsesh/pull/5597))
 - Get hold suggestions for your spray wall without running the model on your phone. ([#5587](https://github.com/boardsesh/boardsesh/pull/5587))
   Leave a wall scan and return to its progress, or retry a failed scan.
 - The home page is shorter and repeats itself less. The app buttons now appear once at the top and once at the bottom instead of three times, and the gym search sends you straight to the full directory rather than teasing four gyms first. ([#5584](https://github.com/boardsesh/boardsesh/pull/5584))
