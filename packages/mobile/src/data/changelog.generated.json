@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-19T14:08:21.137Z",
+  "generatedAt": "2026-09-19T22:43:01.536Z",
   "entries": [
+    {
+      "prNumber": 5599,
+      "category": "new",
+      "title": "Help pages that actually show you the app — seven guides covering the long-press menu, playlists, sessions, filters, your logbook, beta videos and getting the board connected.",
+      "mergedAt": "2026-09-19T22:41:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5599",
+      "body": "Find the things you have been asking for: previewing a climb without lighting the wall, taking a climb out of a playlist, editing a send you already logged, and following the setters you like."
+    },
     {
       "prNumber": 5592,
       "category": "new",
@@ -5468,6 +5476,19 @@
       "fingerprints": {
         "android": "cf3e0cfe4cbfbb75e927b490e76c959f9502c9c9",
         "ios": "8bfa62b061b0d5f9137cca65d24e9c7fdbea5dff"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-09-19T13:50:21Z",
+      "sha": "c4bedf867b58f3bcd73c8512b57e28167be6a6af",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "e0d965901ff9b56ab368e9ff8bfacca5ba7ee444",
+        "ios": "10823d6dc6fbd496709fb7f7770dc387fe4a2f75"
       }
     },
     {
