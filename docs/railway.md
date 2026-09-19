@@ -84,8 +84,11 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 A run touching multiple services behaves as one deployment batch. If a later
 service fails, every earlier verified deployment is rolled back in reverse order;
 variables remain set because Railway's deployment rollback cannot undo variable
-configuration. Before the first write, the tool verifies the token and every
-service's rollback target so it never starts a batch it cannot unwind.
+configuration. Before the first write, every waited multi-service batch verifies
+that each service has a rollback target. Token rollback capability is a hard
+preflight only when the batch changes an image. Non-image changes still deploy and
+probe, and failures trigger a best-effort unwind; that unwind needs a project token
+to succeed.
 
 `vp run ota:image-bump` opens those PRs for you — see
 [Upgrade PRs](#upgrade-prs-stable-and-beta).
