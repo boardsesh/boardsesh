@@ -1,0 +1,14 @@
+.trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.crumb {
+  color: var(--color-primary);
+}
+
+.divider {
+  color: var(--neutral-400);
+}

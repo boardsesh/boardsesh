@@ -549,6 +549,18 @@ export default defineConfig({
         command: 'tsx scripts/publish-design-previews.ts',
         cache: false,
       },
+      // Help-page screenshots. The raw PNGs are gitignored device captures, so
+      // `help:publish-shots` puts them in the dev bucket for review and keeps
+      // docs/help-screenshots.{json,md} pointing at them; `help:convert-shots`
+      // turns the same directory into the committed webp assets the page ships.
+      'help:publish-shots': {
+        command: 'tsx scripts/publish-help-shots.ts',
+        cache: false,
+      },
+      'help:convert-shots': {
+        command: 'tsx scripts/convert-help-shots.ts',
+        cache: false,
+      },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {
