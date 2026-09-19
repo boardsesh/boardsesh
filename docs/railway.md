@@ -118,6 +118,15 @@ next deploy ready to re-ship the failed configuration. The failure path therefor
 issues a second `serviceInstanceUpdate` restoring exactly the fields this run
 changed, including prior nulls. It says so loudly if any rollback or restore fails.
 
+Environment variables are separate from that recovery. Every `variableUpsert`
+uses `skipDeploys: true`, then the service gets one deployment carrying the whole
+batch. Neither `deploymentRollback` nor the deploy-setting/configuration restore
+undoes those variable writes, so they survive a failed single-service apply and a
+failed multi-service batch. After either failure, inspect each affected service's
+**Production → Variables** page in Railway, compare it with `infra/railway/config.ts`
+and the secrets supplied to the failed run, then manually restore the previous
+value or remove the newly added variable before re-running the drift workflow.
+
 If a service in a multi-service batch has no rollback target, the run refuses the
 whole batch before its first write. A single-service apply can discover the missing
 target only after its deployment starts; if that deployment fails, reconcile it by

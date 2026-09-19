@@ -1366,7 +1366,7 @@ export async function main(
 
     try {
       await waitForDeployment(token, deploymentId, mutation.image ?? previousImage, deploymentSleep);
-      if (desiredService?.verify) await probeService(desiredService.verify);
+      if (desiredService?.verify) await probeService(desiredService.verify, deploymentSleep);
       console.log(`[railway-apply] ${mutation.serviceName} is healthy on deployment ${deploymentId}.`);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

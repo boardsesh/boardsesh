@@ -1298,12 +1298,21 @@ describe('probeService', () => {
 
   it('fails the probe on a bad status, which is what triggers the rollback', async () => {
     const captured = captureConsole();
-    const stub = (async () => new Response('nope', { status: 503 })) as typeof globalThis.fetch;
+    let attempts = 0;
+    const sleeps: number[] = [];
+    const stub = (async () => {
+      attempts += 1;
+      return new Response('nope', { status: 503 });
+    }) as typeof globalThis.fetch;
     try {
       const { error } = await withFetch(stub, () =>
-        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async (milliseconds) => {
+          sleeps.push(milliseconds);
+        }),
       );
       expect(error?.message).toMatch(/probe failed.*503/);
+      expect(attempts).toBe(3);
+      expect(sleeps).toEqual([5_000, 5_000]);
     } finally {
       captured.restore();
     }
@@ -1588,6 +1597,8 @@ interface StubOptions {
   deploymentStatuses?: string[];
   /** `meta` on the polled deployment. Empty by default, so the raced-image check stays quiet. */
   deploymentMeta?: unknown;
+  /** HTTP statuses returned by service probes; the last one repeats. */
+  probeStatuses?: number[];
   /** Extra live services the project holds that config.ts does not declare. */
   extraServices?: { id: string; name: string }[];
   /**
@@ -1638,11 +1649,16 @@ function convergedInstanceResponse(service: ServiceDesired): InstanceResponse {
  * project that already matches config.ts. Overrides introduce exactly the drift a
  * test is about.
  */
-function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetch; calls: RecordedCall[] } {
+function railwayStub(options: StubOptions = {}): {
+  fetch: typeof globalThis.fetch;
+  calls: RecordedCall[];
+  probeCalls: () => number;
+} {
   const calls: RecordedCall[] = [];
   const variables = options.variables ?? convergedVariables();
   const statuses = options.deploymentStatuses ?? ['SUCCESS'];
   let polls = 0;
+  let probeCalls = 0;
 
   const graphql = (data: unknown) => new Response(JSON.stringify({ data }), { status: 200 });
 
@@ -1679,7 +1695,12 @@ function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetc
   const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     // Anything that is not the GraphQL endpoint is a post-deploy probe of the OTA server.
-    if (!url.startsWith(RAILWAY_API)) return new Response('ok', { status: 200 });
+    if (!url.startsWith(RAILWAY_API)) {
+      const probeStatuses = options.probeStatuses ?? [200];
+      const status = probeStatuses[Math.min(probeCalls, probeStatuses.length - 1)];
+      probeCalls += 1;
+      return new Response(status === 200 ? 'ok' : 'nope', { status });
+    }
 
     const rawBody = typeof init?.body === 'string' ? init.body : '{}';
     const body = JSON.parse(rawBody) as { query: string; variables?: Record<string, unknown> };
@@ -1729,7 +1750,7 @@ function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetc
     });
   }) as typeof globalThis.fetch;
 
-  return { fetch: fetchStub, calls };
+  return { fetch: fetchStub, calls, probeCalls: () => probeCalls };
 }
 
 interface RunResult {
@@ -1912,6 +1933,25 @@ describe('apply mode', () => {
     for (const upsert of upserts) expect(upsert.variables.input).toMatchObject({ skipDeploys: true });
     // One deploy for the pair, not one each.
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(1);
+  });
+
+  it('threads the injected sleeper through post-deploy probe retries', async () => {
+    const stub = railwayStub({
+      variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })),
+      probeStatuses: [503, 503, 200],
+    });
+    const sleeps: number[] = [];
+
+    const { code } = await runCli(
+      ['--apply'],
+      stub,
+      {},
+      { sleep: async (milliseconds) => void sleeps.push(milliseconds) },
+    );
+
+    expect(code).toBe(0);
+    expect(stub.probeCalls()).toBe(4);
+    expect(sleeps.filter((milliseconds) => milliseconds === 5_000)).toHaveLength(2);
   });
 
   it('unwinds successful services in reverse when a later service fails', async () => {
