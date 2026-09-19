@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-19T13:20:35.905Z",
+  "generatedAt": "2026-09-19T13:31:50.601Z",
   "entries": [
+    {
+      "prNumber": 5594,
+      "category": "fixed",
+      "title": "The gym directory stops shouting \"Is this your gym?\" at you on every single listing — it asks once, at the bottom, where it belongs.",
+      "mergedAt": "2026-09-19T13:29:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5594",
+      "body": "Gym rows line up: board chips sit on one baseline whether a gym listed its address or not.\nPage buttons are big enough to hit on a phone, and the pager fits on one row again."
+    },
     {
       "prNumber": 5590,
       "category": "improved",

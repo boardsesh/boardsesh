@@ -32,6 +32,9 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- The gym directory stops shouting "Is this your gym?" at you on every single listing — it asks once, at the bottom, where it belongs. ([#5594](https://github.com/boardsesh/boardsesh/pull/5594))
+  Gym rows line up: board chips sit on one baseline whether a gym listed its address or not.
+  Page buttons are big enough to hit on a phone, and the pager fits on one row again.
 - Buttons, filters and page controls now have a visible edge. Previously their outline was faint enough to disappear against the dark background, which made it hard to tell what was tappable — especially outdoors or on a dim phone screen. ([#5583](https://github.com/boardsesh/boardsesh/pull/5583))
 
 ## 2026-09-18
