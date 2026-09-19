@@ -10,7 +10,7 @@ type LocalizedCaptureSets = { 'en-US': MarketingCaptureSet } & Partial<
 
 function englishCaptures(platform: MarketingPlatform, width: number): MarketingCaptureSet {
   const capture = (shot: MarketingShot): MarketingCapture => ({
-    src: `/images/app/${platform}/${shot}.webp`,
+    src: `/images/app/${platform}/${shot === 'profile' ? 'profile-overview' : shot}.webp`,
     width,
     height: 1600,
   });

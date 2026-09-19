@@ -29,7 +29,7 @@
 }
 
 .detail[data-preview-platform='android'][data-marketing-shot='profile'] .image {
-  object-position: center 60%;
+  object-position: center 50%;
 }
 
 .detail[data-preview-platform='ios'][data-marketing-shot='queue'] .image {
@@ -37,7 +37,7 @@
 }
 
 .detail[data-preview-platform='ios'][data-marketing-shot='profile'] .image {
-  object-position: center 45%;
+  object-position: center 38%;
 }
 
 .switch {

@@ -5,7 +5,7 @@
 The latest pass carries the store campaign through the marketing site: "Your
 boards. One app.", a shared live queue, wall status, and one profile across boards.
 The hero shows genuine native Kilter, Tension and MoonBoard screens; the benefit
-panels show the queue, wall status and board breakdown. Campaign copy is shared
+panels show the queue, wall status and multiboard profile overview. Campaign copy is shared
 in meaning with the store presentation and translated in all four site locales.
 
 - Popular boards retains its organic backend order and equally sized cards.
@@ -22,6 +22,10 @@ in meaning with the store presentation and translated in all four site locales.
 - Screenshot lookup is keyed by platform, locale and scene. Until reviewed
   localized captures exist, every locale uses English captures from the same
   platform. See [capture provenance](../marketing-campaign-assets.md).
+- Profile previews now use the multiboard overview merged in #5579: lifetime
+  climb and layout totals followed by ranked board rows and best-send grades.
+  The refreshed native captures replace the earlier chart screenshots. Their
+  new image paths also refresh cached previews when reviewing over Tailscale.
 - About pairs the project story with the native profile; Help adds topic
   navigation while keeping answers visible. Support keeps its disclosure next
   to the donation options. Gym directories use compact rows beside the map;

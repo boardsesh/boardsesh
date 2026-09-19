@@ -83,7 +83,7 @@ describe('HomeFeatureStrip', () => {
     expect(html.match(/<img/g)).toHaveLength(3);
     expect(html).toContain('/images/app/android/queue.webp');
     expect(html).toContain('/images/app/android/wall-status.webp');
-    expect(html).toContain('/images/app/android/profile.webp');
+    expect(html).toContain('/images/app/android/profile-overview.webp');
     // Both captures carry alt text from the catalog. The comparison is on a
     // fragment: React escapes the apostrophes in the full string, so matching
     // the raw catalog value would be a test of HTML escaping, not of alt text.
@@ -104,7 +104,7 @@ describe('HomeFeatureStrip', () => {
       featureMarkup.indexOf('/images/app/android/wall-status.webp'),
     );
     expect(featureMarkup.indexOf(resolveMarketingKey('home.features.profile.title'))).toBeLessThan(
-      featureMarkup.indexOf('/images/app/android/profile.webp'),
+      featureMarkup.indexOf('/images/app/android/profile-overview.webp'),
     );
   });
 });
