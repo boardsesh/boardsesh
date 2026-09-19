@@ -68,7 +68,7 @@ jobs:
     environment: Production
     # Production DB/S3 credentials are NOT declared here: job-level env would leak
     # them to actions/checkout, the setup actions, and `vp install` before the
-    # export ever runs. They're scoped to the two export steps below instead.
+    # export ever runs. They're intentionally repeated on the three export steps.
     env:
       # Scheduled and ordinary manual exports remain on Tigris until the R2
       # rehearsal passes and the mobile readers move in a separate cutover.
@@ -157,7 +157,6 @@ jobs:
           SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
           SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
           SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-          SNAPSHOTS_PUBLIC_BASE_URL: ${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || '' }}
         run: |
           args=()
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
@@ -191,7 +190,6 @@ jobs:
           SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
           SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
           SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-          SNAPSHOTS_PUBLIC_BASE_URL: ${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || '' }}
         run: |
           args=(--gzip --key-prefix board-snapshots/v1-gzip)
           if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
@@ -231,11 +229,11 @@ jobs:
           SNAPSHOTS_AWS_SECRET_ACCESS_KEY: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY || '' }}
           SNAPSHOTS_AWS_ENDPOINT_URL: ${{ inputs.storage_target == 'r2' && secrets.SNAPSHOTS_R2_AWS_ENDPOINT_URL || '' }}
           SNAPSHOTS_AWS_REGION: ${{ inputs.storage_target == 'r2' && 'auto' || '' }}
-          SNAPSHOTS_PUBLIC_BASE_URL: ${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || '' }}
         run: node --import tsx src/scripts/export-board-catalog.ts
 
       - name: Verify every R2 artifact through the public domain
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.storage_target == 'r2' }}
+        timeout-minutes: 20
         env:
           SNAPSHOT_R2_BASE_URL: https://snapshots.boardsesh.com/board-snapshots
           SNAPSHOT_VERIFY_KEY: ${{ github.run_id }}
@@ -251,6 +249,7 @@ jobs:
           }
 
           work_dir="$(mktemp -d)"
+          trap 'rm -rf "$work_dir"' EXIT
           sample_artifact=''
           for prefix in v1 v1-gzip v1-catalog; do
             manifest_url="$SNAPSHOT_R2_BASE_URL/$prefix/manifest.json?verify=$SNAPSHOT_VERIFY_KEY"
