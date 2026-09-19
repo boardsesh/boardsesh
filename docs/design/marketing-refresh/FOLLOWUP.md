@@ -1,5 +1,30 @@
 # Marketing refresh — follow-up brief
 
+## Mobile typography and compact gym rows — 19 September 2026
+
+The next design-team pass focused on actual 320–430px phone renders, including
+Spanish, French, and German. The previous two-column feature cards left only
+114px for copy at 320px; important board labels and actions were only 12px.
+
+- Phone feature copy now takes the full card width above its screenshot. Body
+  text is 16px, feature titles 20px, section headings 28px, and ordinary page
+  titles 32px. The hero stays 40px except on the narrowest phones, where it is
+  36px. Heading weights and line spacing follow a consistent hierarchy.
+- Useful board metadata and actions are at least 14px. Wrapped gym names use a
+  tighter line height, and standalone search, location, map and support actions
+  have 44px touch targets. Narrow-phone gutters shrink to 16px below 360px.
+- Marco rejected the full-width framed board previews inside gym cards. Each
+  board is now a compact row: a 76×104px unframed thumbnail beside its name,
+  angle and app action. Up to three rows remain readable without a tiny-column
+  layout. Redundant summary chips are omitted only for represented boards.
+- Browser regressions check phone type sizes, full-width feature copy, touch
+  targets and compact thumbnail placement, in addition to the existing locale,
+  map, brand and physical-board identity coverage.
+
+Review hardening also gives corrupt Redis history a structured, payload-free
+operator warning. Discovery still fails closed instead of skipping an unreadable
+entry whose unknown sequence might otherwise make an older climb look current.
+
 ## Physical boards and gym previews — 19 September 2026
 
 Marco's next review identified that the "Popular boards" rail still showed

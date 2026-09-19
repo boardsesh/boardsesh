@@ -235,7 +235,11 @@ export default function GymDirectoryNearMe({
               pressed": after a denial the control has to offer the retry again,
               not a "show all" for a near-me list that never rendered. */}
           {showingNearMeResults ? (
-            <Button variant="outlined" onClick={handleShowAll} sx={{ textTransform: 'none' }}>
+            <Button
+              variant="outlined"
+              onClick={handleShowAll}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
+            >
               {t('nearMe.showAll')}
             </Button>
           ) : (
@@ -244,7 +248,7 @@ export default function GymDirectoryNearMe({
               startIcon={<MyLocationOutlined />}
               onClick={handleUseMyLocation}
               disabled={loading || fallbackReason === 'unsupported'}
-              sx={{ textTransform: 'none' }}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
             >
               {loading ? t('nearMe.locating') : t('nearMe.cta')}
             </Button>
@@ -270,6 +274,8 @@ export default function GymDirectoryNearMe({
                   // hairlines with no legible "this one".
                   sx={{
                     textTransform: 'none',
+                    minHeight: 44,
+                    fontSize: 14,
                     borderColor: 'var(--separator)',
                     backgroundColor: 'var(--semantic-surface)',
                     color: 'var(--neutral-900)',
@@ -359,7 +365,7 @@ export default function GymDirectoryNearMe({
             variant="outlined"
             startIcon={<MapOutlined />}
             onClick={() => setMapOpen((open) => !open)}
-            sx={{ textTransform: 'none', mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
+            sx={{ textTransform: 'none', minHeight: 44, fontSize: 16, mb: 1.5, [WIDE_LAYOUT]: { display: 'none' } }}
           >
             {mapOpen ? t('map.hideMap') : t('map.showMap')}
           </Button>

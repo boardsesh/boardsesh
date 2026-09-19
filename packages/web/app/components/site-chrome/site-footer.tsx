@@ -20,6 +20,11 @@ const FOOTER_START_CLIMBING_SX = brandCtaSx();
 const LINK_SX = {
   color: 'text.secondary',
   textDecorationColor: 'currentcolor',
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 44,
+  fontSize: themeTokens.typography.fontSize.base,
+  lineHeight: 1.5,
   '&:hover': { color: 'text.primary' },
 } as const;
 
@@ -27,7 +32,7 @@ const GROUP_HEADING_SX = {
   m: 0,
   color: 'text.primary',
   fontWeight: themeTokens.typography.fontWeight.semibold,
-  fontSize: themeTokens.typography.fontSize.xs,
+  fontSize: themeTokens.typography.fontSize.sm,
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
 } as const;
@@ -97,7 +102,7 @@ export default function SiteFooter() {
           <MuiLink component={LocaleLink} href="/" aria-label={t('ariaLabels.home')} underline="none">
             <BrandLockup />
           </MuiLink>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: '46ch', fontSize: 16, lineHeight: 1.6 }}>
             {t('footer.tagline')}
           </Typography>
           <StartClimbingButton
@@ -125,7 +130,7 @@ export default function SiteFooter() {
       </Box>
 
       <Box className={styles.bottom}>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 14, lineHeight: 1.6 }}>
           {t('footer.trademarkNote')}
         </Typography>
         <CompactLanguageSwitcher />

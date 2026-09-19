@@ -70,11 +70,12 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
       <Typography
         variant="h3"
         component="h2"
-        fontWeight={themeTokens.typography.fontWeight.bold}
+        fontWeight={themeTokens.typography.fontWeight.semibold}
         sx={{
           color: 'text.primary',
           letterSpacing: '-0.025em',
-          fontSize: { xs: 24, md: 32 },
+          fontSize: { xs: 28, md: 32 },
+          lineHeight: 1.25,
         }}
       >
         {t('home.recentBeta.title')}

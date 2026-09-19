@@ -22,7 +22,7 @@ for (const width of [1440, 390]) {
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(17, 10, 32)');
       await expect(page.locator('h1')).toHaveCSS(
         'font-size',
-        route === '/' ? (width === 390 ? '40px' : '64px') : width === 390 ? '30px' : '40px',
+        route === '/' ? (width === 390 ? '40px' : '64px') : width === 390 ? '32px' : '40px',
       );
     }
   });
@@ -139,7 +139,7 @@ test('gym board previews are bounded and retain their physical board identity', 
     for (const board of await boards.all()) {
       const publicLink = board.locator('a[href^="/b/"]');
       await expect(publicLink).toHaveCount(1);
-      await expect(publicLink.getByRole('img')).toHaveAttribute('aria-label', /.+/);
+      await expect(board.getByRole('img')).toHaveAttribute('aria-label', /.+/);
       const boardPath = await publicLink.getAttribute('href');
       const appHref = await board.getByRole('link', { name: 'Open this board', exact: true }).getAttribute('href');
       const appPath = new URL(appHref!, page.url()).pathname;
@@ -148,3 +148,46 @@ test('gym board previews are bounded and retain their physical board identity', 
     }
   }
 });
+
+for (const width of [320, 390, 430]) {
+  test(`mobile typography stays readable without narrow text columns at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/');
+    await expect(page.locator('h1')).toHaveCSS('font-size', width < 360 ? '36px' : '40px');
+    for (const name of ['Board night, sorted', 'Find a board near you']) {
+      await expect(page.getByRole('heading', { name, exact: true })).toHaveCSS('font-size', '28px');
+    }
+    const features = page.getByTestId('home-feature-column');
+    await expect(features).toHaveCount(3);
+    for (const feature of await features.all()) {
+      await expect(feature.locator('h3')).toHaveCSS('font-size', '20px');
+      const paragraph = feature.locator('p');
+      await expect(paragraph).toHaveCSS('font-size', '16px');
+      const textBox = await paragraph.boundingBox();
+      const imageBox = await feature.locator('img').boundingBox();
+      expect(textBox!.width).toBeGreaterThanOrEqual(200);
+      expect(imageBox!.y).toBeGreaterThanOrEqual(textBox!.y + textBox!.height);
+    }
+    for (const preview of await page.getByTestId('gym-board-previews').all()) {
+      for (const board of await preview.locator('li').all()) {
+        const artwork = await board.getByRole('img').boundingBox();
+        const name = await board.locator('a[href^="/b/"]').boundingBox();
+        expect(artwork!.width).toBeLessThanOrEqual(80);
+        expect(name!.x).toBeGreaterThanOrEqual(artwork!.x + artwork!.width);
+      }
+      for (const action of await preview.getByRole('link', { name: 'Open this board', exact: true }).all()) {
+        const metrics = await action.evaluate((element) => ({
+          fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+          height: element.getBoundingClientRect().height,
+        }));
+        expect(metrics.fontSize).toBeGreaterThanOrEqual(14);
+        expect(metrics.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    for (const buttonName of ['Search', 'Use my location']) {
+      const button = page.getByRole('button', { name: buttonName, exact: true });
+      expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  });
+}

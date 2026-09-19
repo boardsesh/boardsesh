@@ -5,10 +5,11 @@ import { BoardPresenceStore } from '../pubsub/board-presence-store';
 import { redisClientManager } from '../redis/client';
 
 const evaluate = vi.fn();
+const warn = vi.fn();
 const store = new BoardPresenceStore({
   isRedisAvailable: () => true,
   isRedisRequired: () => true,
-  logger: { error: vi.fn(), warn: vi.fn() },
+  logger: { error: vi.fn(), warn },
 });
 const climb = {
   climbUuid: 'climb-one',
@@ -27,6 +28,7 @@ const snapshot = (overrides: Record<string, unknown> = {}, writer = 'holder-one'
 
 beforeEach(() => {
   evaluate.mockReset();
+  warn.mockReset();
   vi.spyOn(redisClientManager, 'getClients').mockReturnValue({
     publisher: { eval: evaluate },
   } as unknown as ReturnType<typeof redisClientManager.getClients>);
@@ -101,6 +103,20 @@ describe('board discovery presence snapshot', () => {
     ]);
     expect(await store.getBoardDiscoveryClimb('42')).toEqual(expect.objectContaining({ uuid: 'climb-one' }));
   });
+
+  it.each(['not-json', 'null', '[]', '{"seq":"10"}'])(
+    'reports corrupt history without falling back: %s',
+    async (entry) => {
+      evaluate.mockResolvedValue(['holder-one', [entry, JSON.stringify(climb)]]);
+      expect(await store.getBoardDiscoveryClimb('42')).toBeNull();
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        expect.any(String),
+        expect.objectContaining({ event: 'board_discovery.invalid_history', boardId: '42' }),
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('Private identity');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(climb.frames);
+    },
+  );
 
   it('never falls past a newer mismatched writer to an older matching climb', async () => {
     evaluate.mockResolvedValue([

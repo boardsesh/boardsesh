@@ -3,6 +3,8 @@ import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 vi.mock('server-only', () => ({}));
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock('@sentry/nextjs', () => ({ captureException }));
 const cacheState = vi.hoisted(() => ({
   snapshot: null as { boards: BoardDiscoveryBoard[]; fetchedAt: number } | null,
   options: null as { revalidate: number } | null,
@@ -26,6 +28,7 @@ describe('public board discovery snapshots', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-19T00:00:00Z'));
     cacheState.snapshot = null;
+    captureException.mockReset();
     executeGraphQLInternal.mockReset().mockResolvedValue({ boardDiscovery: [discoveryBoard()] });
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -74,6 +77,9 @@ describe('public board discovery snapshots', () => {
     executeGraphQLInternal.mockRejectedValue(new Error('backend unavailable'));
     expect(await getBoardDiscovery()).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { surface: 'board-discovery', operation: 'fetch' },
+    });
   });
 
   it('aborts a stalled optional query after three seconds', async () => {

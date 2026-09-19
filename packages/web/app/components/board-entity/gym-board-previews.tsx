@@ -23,25 +23,29 @@ export default function GymBoardPreviews({ boards }: { boards: BoardDiscoveryBoa
         const previewAngle = board.currentClimb?.angle ?? board.angle;
         return (
           <Box component="li" key={board.uuid} className={styles.gymBoard}>
-            <MuiLink component={LocaleLink} href={boardPath} underline="hover" className={styles.gymBoardLink}>
+            <Box className={styles.gymBoardThumbnail}>
               <PhysicalBoardPreview board={board} label={t('home.boards.preview', { board: board.name })} compact />
-              <Typography component="span" className={styles.gymBoardName}>
-                {board.name}
+            </Box>
+            <Box className={styles.gymBoardDetails}>
+              <MuiLink component={LocaleLink} href={boardPath} underline="hover" className={styles.gymBoardLink}>
+                <Typography component="span" className={styles.gymBoardName}>
+                  {board.name}
+                </Typography>
+              </MuiLink>
+              <Typography component="p" className={styles.gymBoardMeta}>
+                {t('home.boards.typeAngle', {
+                  board: boardTypeLabel(board.boardType),
+                  angle: previewAngle,
+                })}
               </Typography>
-            </MuiLink>
-            <Typography component="p" className={styles.gymBoardMeta}>
-              {t('home.boards.typeAngle', {
-                board: boardTypeLabel(board.boardType),
-                angle: previewAngle,
-              })}
-            </Typography>
-            <MuiLink
-              href={`${APP_URL}${boardPath}/${previewAngle}/list`}
-              className={styles.gymBoardOpen}
-              underline="hover"
-            >
-              {t('home.boards.open')}
-            </MuiLink>
+              <MuiLink
+                href={`${APP_URL}${boardPath}/${previewAngle}/list`}
+                className={styles.gymBoardOpen}
+                underline="hover"
+              >
+                {t('home.boards.open')}
+              </MuiLink>
+            </Box>
           </Box>
         );
       })}

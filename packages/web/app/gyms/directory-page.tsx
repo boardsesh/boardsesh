@@ -230,7 +230,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                     // violet border, label and ring when selected.
                     sx={{
                       borderRadius: 'var(--border-radius-full)',
-                      height: 36,
+                      height: 44,
                       fontWeight: themeTokens.typography.fontWeight.semibold,
                       backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
                       borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--separator)',
@@ -339,7 +339,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                   component={LocaleLink}
                   href={FACET_BASE_PATHS[candidate]}
                   underline="hover"
-                  sx={{ color: 'var(--color-primary)' }}
+                  sx={{ color: 'var(--color-primary)', display: 'inline-flex', alignItems: 'center', minHeight: 44 }}
                 >
                   {facetLinkLabel(t, candidate)}
                 </MuiLink>

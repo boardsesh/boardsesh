@@ -52,10 +52,15 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale, boa
   const { t } = useTranslation('gyms');
   // Shared across the 24 cards on the page rather than constructed per card.
   const formatNumber = numberFormatFor(locale);
-  const chips = boardChips(gym.boardSummaries);
   const location = cardLocation(gym, origin);
   const distanceKm = distanceChipKm(gym, origin, location);
-  const visibleBoardPreviews = boardPreviews?.filter((board) => board.gymUuid === gym.uuid);
+  const visibleBoardPreviews = boardPreviews?.filter((board) => board.gymUuid === gym.uuid).slice(0, 3);
+  const chips = boardChips(gym.boardSummaries).filter(
+    (chip) =>
+      !visibleBoardPreviews?.some(
+        (board) => board.boardType === chip.boardType && Math.round(board.angle) === chip.angle,
+      ),
+  );
 
   return (
     /* A FILL, not a hairline. The card used to be `1px solid var(--neutral-200)`
@@ -69,6 +74,7 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale, boa
       padding="sm"
       sx={{
         listStyle: 'none',
+        minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: 1,
@@ -79,7 +85,15 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale, boa
         },
       }}
     >
-      <Typography variant="subtitle1" component="h3" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
+      <Typography
+        variant="subtitle1"
+        component="h3"
+        sx={{
+          fontSize: themeTokens.typography.fontSize.xl,
+          lineHeight: 1.3,
+          fontWeight: themeTokens.typography.fontWeight.semibold,
+        }}
+      >
         {/* A real anchor, server-rendered: this is how a crawler and a
             middle-click both reach the gym page. */}
         <MuiLink

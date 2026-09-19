@@ -1,4 +1,5 @@
 import 'server-only';
+import * as Sentry from '@sentry/nextjs';
 import { unstable_cache } from 'next/cache';
 import { GET_BOARD_DISCOVERY, type GetBoardDiscoveryQueryResponse } from '@boardsesh/graphql/operations';
 import type { BoardDiscoveryBoard, BoardDiscoveryInput } from '@boardsesh/shared-schema';
@@ -23,7 +24,8 @@ const fetchBoardDiscovery = unstable_cache(
   },
   ['public-physical-board-discovery'],
   // An anonymous snapshot, not a live session subscription. Arguments keep
-  // each gym separate from the globally ranked selection.
+  // each gym separate from the globally ranked selection. The shared tag is a
+  // deliberate all-discovery invalidation group, not a per-gym refresh target.
   { revalidate: 30, tags: ['public-physical-board-discovery'] },
 );
 
@@ -38,6 +40,7 @@ export async function getBoardDiscovery(input: BoardDiscoveryInput = {}): Promis
     return Date.now() - snapshot.fetchedAt <= 60_000 ? snapshot.boards : [];
   } catch (error) {
     console.error('[home-page-ssr] boardDiscovery failed:', error instanceof Error ? error.message : 'unknown error');
+    Sentry.captureException(error, { tags: { surface: 'board-discovery', operation: 'fetch' } });
     return [];
   }
 }

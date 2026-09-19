@@ -109,6 +109,8 @@ export default function HomeGymSearchNearMe({ locale }: HomeGymSearchNearMeProps
         disabled={loading || fallbackReason === 'unsupported'}
         sx={{
           textTransform: 'none',
+          minHeight: 44,
+          fontSize: themeTokens.typography.fontSize.base,
           borderColor: 'var(--separator)',
           color: 'var(--neutral-900)',
           '&:hover': { borderColor: 'var(--color-primary)' },

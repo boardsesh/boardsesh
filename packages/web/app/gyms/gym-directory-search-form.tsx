@@ -43,7 +43,7 @@ export default async function GymDirectorySearchForm({ facet, query, locale }: G
         defaultValue={query.query}
         label={t('search.label')}
         placeholder={t('search.placeholder')}
-        sx={{ flex: '1 1 260px', minWidth: 0 }}
+        sx={{ flex: '1 1 260px', minWidth: 0, '& .MuiInputBase-root': { minHeight: 44, fontSize: 16 } }}
       />
       {/* A new search starts at page 1, so `page` is deliberately not carried
           over. Location is: it's how the visitor got here. */}
@@ -56,7 +56,7 @@ export default async function GymDirectorySearchForm({ facet, query, locale }: G
         </>
       )}
       {query.radiusKm !== null && <input type="hidden" name="radius" value={String(query.radiusKm)} />}
-      <Button type="submit" variant="contained" sx={{ textTransform: 'none' }}>
+      <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
         {t('search.submit')}
       </Button>
     </Box>

@@ -3,6 +3,7 @@ import type { BoardDiscoveryBoard, ConnectionContext } from '@boardsesh/shared-s
 import { boardseshTicks, gyms, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { pubsub } from '../../../pubsub';
+import { logger } from '../../../utils/logger';
 import { BoardDiscoveryInputSchema } from '../../../validation/schemas';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 
@@ -83,23 +84,34 @@ export const boardDiscoveryQueries = {
       .limit(limit);
 
     return Promise.all(
-      boards.map(async (board) => ({
-        uuid: board.uuid,
-        slug: board.slug,
-        name: board.name,
-        boardType: board.boardType,
-        layoutId: board.layoutId,
-        sizeId: board.sizeId,
-        setIds: board.setIds,
-        angle: board.angle,
-        gymUuid: board.gymUuid,
-        gymName: board.gymName,
-        // The SQL eligibility predicate requires a non-empty public gym slug.
-        gymSlug: board.gymSlug!,
-        locationName: board.locationName,
-        uniqueClimbers: board.uniqueClimbers,
-        currentClimb: await pubsub.getBoardDiscoveryClimb(String(board.boardId)),
-      })),
+      boards.flatMap((board) => {
+        const gymSlug = board.gymSlug;
+        if (!gymSlug) {
+          logger.warn('[BoardDiscovery] Skipping board without a public gym slug', {
+            event: 'board_discovery.missing_gym_slug',
+            boardId: board.boardId,
+          });
+          return [];
+        }
+        return [
+          pubsub.getBoardDiscoveryClimb(String(board.boardId)).then((currentClimb) => ({
+            uuid: board.uuid,
+            slug: board.slug,
+            name: board.name,
+            boardType: board.boardType,
+            layoutId: board.layoutId,
+            sizeId: board.sizeId,
+            setIds: board.setIds,
+            angle: board.angle,
+            gymUuid: board.gymUuid,
+            gymName: board.gymName,
+            gymSlug,
+            locationName: board.locationName,
+            uniqueClimbers: board.uniqueClimbers,
+            currentClimb,
+          })),
+        ];
+      }),
     );
   },
 };

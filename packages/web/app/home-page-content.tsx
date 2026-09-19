@@ -14,11 +14,10 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
-import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
+import { resolveHeroInstall } from '@/app/lib/hero-install';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
-import LocaleLink from '@/app/components/i18n/locale-link';
 import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
 import { APP_URL } from '@/app/lib/app-origin';
 import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
@@ -267,7 +266,8 @@ export default function HomePageContent({
             sx={{
               gridColumn: '1 / -1',
               color: 'var(--neutral-900)',
-              fontSize: { xs: 24, md: 32 },
+              fontSize: { xs: 28, md: 32 },
+              lineHeight: 1.25,
               mb: 1.5,
             }}
           >

@@ -186,7 +186,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
       <PageSection title={t('support.thanks.title')} icon={<GroupOutlined />} tone="neutral">
         <Prose>{t('support.thanks.body')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/about">
+          <MuiLink component={LocaleLink} href="/about" className={styles.standaloneLink}>
             {t('support.aboutLink')}
           </MuiLink>
         </Prose>
@@ -201,7 +201,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         <Prose>{t('support.honesty.p1')}</Prose>
         <Prose>{t('support.honesty.p2')}</Prose>
         <Prose>
-          <MuiLink component={LocaleLink} href="/docs">
+          <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
             {t('support.docsLink')}
           </MuiLink>
         </Prose>

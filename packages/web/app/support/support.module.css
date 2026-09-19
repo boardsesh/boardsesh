@@ -122,6 +122,26 @@
   border-top: 1px solid var(--separator);
 }
 
+.helpItem h3 {
+  font-size: var(--font-size-xl);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.helpItem p {
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+.helpCta a,
+.railCta a,
+.standaloneLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--font-size-base);
+}
+
 .helpCta {
   margin-top: auto;
 }

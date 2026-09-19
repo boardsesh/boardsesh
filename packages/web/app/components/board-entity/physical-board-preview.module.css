@@ -20,7 +20,10 @@
 }
 
 .compact {
-  height: 100px;
+  height: 104px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .preview .fallback {
@@ -32,8 +35,10 @@
 
 .gymPreviews {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
-  gap: var(--spacing-2);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--spacing-3);
   list-style: none;
   margin: var(--spacing-2) 0 0;
   padding: var(--spacing-3) 0 0;
@@ -41,18 +46,32 @@
 }
 
 .gymBoard {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+
+.gymBoard + .gymBoard {
+  border-top: 1px solid var(--separator);
+  padding-top: var(--spacing-3);
+}
+
+.gymBoardThumbnail,
+.gymBoardDetails {
   min-width: 0;
 }
 
 .gymBoard .gymBoardLink {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
+  align-items: center;
+  min-height: 44px;
   color: var(--neutral-900);
 }
 
 .gymBoard .gymBoardName {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-base);
   font-weight: 600;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -60,7 +79,7 @@
 
 .gymBoard .gymBoardMeta,
 .gymBoard .gymBoardOpen {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   line-height: 1.5;
 }
 

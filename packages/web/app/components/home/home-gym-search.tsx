@@ -117,6 +117,7 @@ export default async function HomeGymSearch() {
           component="p"
           sx={{
             color: 'var(--color-primary)',
+            fontSize: themeTokens.typography.fontSize.sm,
             fontWeight: themeTokens.typography.fontWeight.semibold,
             letterSpacing: '0.06em',
           }}
@@ -127,8 +128,8 @@ export default async function HomeGymSearch() {
         <Typography
           variant="h3"
           component="h2"
-          sx={{ fontSize: { xs: 24, md: 32 }, letterSpacing: '-0.025em' }}
-          fontWeight={themeTokens.typography.fontWeight.bold}
+          sx={{ fontSize: { xs: 28, md: 32 }, lineHeight: 1.25, letterSpacing: '-0.025em' }}
+          fontWeight={themeTokens.typography.fontWeight.semibold}
         >
           {t('home.gymSearch.title')}
         </Typography>
@@ -163,7 +164,7 @@ export default async function HomeGymSearch() {
         >
           <GymDirectorySearchForm facet="all" query={EMPTY_FORM_QUERY} locale={locale} />
           <HomeGymSearchNearMe locale={locale} />
-          <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ flexBasis: '100%', fontSize: 14, lineHeight: 1.5 }}>
             {t('home.gymSearch.geoHint')}
           </Typography>
         </PageCard>
@@ -192,7 +193,7 @@ export default async function HomeGymSearch() {
                 // near-black page ground.
                 sx={{
                   borderRadius: 'var(--border-radius-full)',
-                  height: 36,
+                  height: 44,
                   fontWeight: themeTokens.typography.fontWeight.semibold,
                   backgroundColor: 'var(--semantic-surface)',
                   borderColor: 'var(--separator)',
@@ -250,6 +251,7 @@ export default async function HomeGymSearch() {
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
+              minHeight: 44,
               gap: 0.5,
               color: 'var(--color-primary)',
               fontWeight: themeTokens.typography.fontWeight.semibold,

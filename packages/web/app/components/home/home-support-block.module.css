@@ -21,7 +21,8 @@
 
 .strip h2 {
   font-size: 32px;
-  line-height: 1.2;
+  line-height: 1.25;
+  font-weight: 600;
   letter-spacing: -0.025em;
 }
 
@@ -48,6 +49,18 @@
   margin-top: var(--spacing-5);
 }
 
+.actions > a,
+.asideList a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--font-size-base);
+}
+
+.strip p {
+  line-height: 1.6;
+}
+
 .asideTitle {
   margin: 0 0 var(--spacing-3);
 }
@@ -71,7 +84,7 @@
   }
 
   .strip h2 {
-    font-size: 24px;
+    font-size: 28px;
   }
 
   .aside {

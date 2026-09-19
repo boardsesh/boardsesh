@@ -60,6 +60,8 @@
   margin: 0;
   font-size: 40px;
   line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
 .header .titleCompact {
@@ -68,7 +70,7 @@
 
 @media (max-width: 760px) {
   .header .title {
-    font-size: 30px;
+    font-size: 32px;
   }
 
   .header .titleCompact {
@@ -100,6 +102,14 @@
   margin: 0 0 var(--spacing-3);
 }
 
+.section > h2 {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
 .sectionIcon {
   flex-shrink: 0;
   font-size: 1.25em;
@@ -126,6 +136,13 @@
 
 .paragraph {
   max-width: 68ch;
+  line-height: 1.65;
+}
+
+@media (max-width: 760px) {
+  .section > h2 {
+    font-size: 28px;
+  }
 }
 
 .paragraph + .paragraph {
@@ -184,5 +201,11 @@
 
   .cardPaddingMd {
     padding: var(--spacing-4);
+  }
+}
+
+@media (max-width: 359px) {
+  .inner {
+    padding-inline: var(--spacing-4);
   }
 }

@@ -471,6 +471,14 @@ export class BoardPresenceStore {
    */
   async getBoardDiscoveryClimb(boardId: string): Promise<BoardDiscoveryClimb | null> {
     if (!this.deps.isRedisAvailable()) return null;
+    const invalidHistory = (reason: string): null => {
+      this.deps.logger.warn('[PubSub] Invalid board discovery history; omitting lit preview', {
+        event: 'board_discovery.invalid_history',
+        boardId,
+        reason,
+      });
+      return null;
+    };
     try {
       const { publisher } = redisClientManager.getClients();
       const snapshot: unknown = await publisher.eval(
@@ -487,11 +495,24 @@ export class BoardPresenceStore {
 
       let newest: Record<string, unknown> | null = null;
       for (const entry of entries) {
-        if (typeof entry !== 'string') return null;
-        const climb: unknown = JSON.parse(entry);
-        if (typeof climb !== 'object' || climb === null || Array.isArray(climb)) return null;
+        // Do not skip corrupt entries: their sequence may be newer than every
+        // readable entry, so skipping could present an old climb as current.
+        // Suppression lasts until the entry leaves this 50-item window or its
+        // history TTL expires. Emit a structured, payload-free operator signal.
+        if (typeof entry !== 'string') return invalidHistory('non-string entry');
+        let climb: unknown;
+        try {
+          climb = JSON.parse(entry);
+        } catch {
+          return invalidHistory('invalid JSON');
+        }
+        if (typeof climb !== 'object' || climb === null || Array.isArray(climb)) {
+          return invalidHistory('invalid object');
+        }
         const candidate = climb as Record<string, unknown>;
-        if (typeof candidate.seq !== 'number' || !Number.isSafeInteger(candidate.seq) || candidate.seq < 1) return null;
+        if (typeof candidate.seq !== 'number' || !Number.isSafeInteger(candidate.seq) || candidate.seq < 1) {
+          return invalidHistory('invalid sequence');
+        }
         if (newest === null || candidate.seq > (newest.seq as number)) newest = candidate;
       }
       if (

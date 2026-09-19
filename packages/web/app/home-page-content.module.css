@@ -156,7 +156,7 @@
 
   .heroActions > a,
   .heroActions > button {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-base);
     padding-inline: var(--spacing-4);
   }
 
@@ -166,5 +166,15 @@
 
   .onboarding {
     padding-top: var(--spacing-8);
+  }
+}
+
+@media (max-width: 359px) {
+  .main {
+    padding-inline: var(--spacing-4);
+  }
+
+  .hero .heroTitle {
+    font-size: 36px;
   }
 }
