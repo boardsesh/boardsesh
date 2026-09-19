@@ -26,6 +26,64 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from common import TileGrid, tile_boxes  # noqa: E402
 
 
+def clip_polygon_to_tile(segmentation, scale: float, x0: float, y0: float, x1: float, y1: float):
+    """Clip a COCO polygon to one tile, returned in tile-local coordinates.
+
+    Sutherland-Hodgman against the four tile edges. The clip region is a
+    rectangle — convex — so the algorithm is exact here, and it keeps this file
+    dependency-free rather than pulling shapely in for one crop.
+
+    Without this a tiled config silently trains its mask head on empty
+    polygons: the boxes survive the crop and the outlines do not.
+    """
+    if not segmentation:
+        return []
+
+    def clip_edge(points, inside, intersect):
+        if not points:
+            return []
+        output = []
+        previous = points[-1]
+        for current in points:
+            if inside(current):
+                if not inside(previous):
+                    output.append(intersect(previous, current))
+                output.append(current)
+            elif inside(previous):
+                output.append(intersect(previous, current))
+            previous = current
+        return output
+
+    def cut(points, axis, bound, keep_greater):
+        def inside(point):
+            return point[axis] >= bound if keep_greater else point[axis] <= bound
+
+        def intersect(a, b):
+            span = b[axis] - a[axis]
+            t = 0.0 if span == 0 else (bound - a[axis]) / span
+            other = 1 - axis
+            crossed = [0.0, 0.0]
+            crossed[axis] = bound
+            crossed[other] = a[other] + t * (b[other] - a[other])
+            return (crossed[0], crossed[1])
+
+        return clip_edge(points, inside, intersect)
+
+    clipped_rings = []
+    for ring in segmentation:
+        points = [(ring[i] * scale, ring[i + 1] * scale) for i in range(0, len(ring) - 1, 2)]
+        if len(points) < 3:
+            continue
+        for axis, bound, keep_greater in ((0, x0, True), (0, x1, False), (1, y0, True), (1, y1, False)):
+            points = cut(points, axis, bound, keep_greater)
+            if not points:
+                break
+        if len(points) < 3:
+            continue
+        clipped_rings.append([round(value, 2) for point in points for value in (point[0] - x0, point[1] - y0)])
+    return clipped_rings
+
+
 def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, long_side: int) -> dict[str, int]:
     annotation_path = source / "_annotations.coco.json"
     payload = json.loads(annotation_path.read_text())
@@ -72,6 +130,9 @@ def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, l
                         {
                             "bbox": [clipped_x0 - x0, clipped_y0 - y0, clipped_w, clipped_h],
                             "area": clipped_w * clipped_h,
+                            "segmentation": clip_polygon_to_tile(
+                                annotation.get("segmentation"), scale, x0, y0, x1, y1
+                            ),
                         }
                     )
                 if not kept:
@@ -98,6 +159,7 @@ def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, l
                             "category_id": 1,
                             "bbox": [round(v, 2) for v in entry["bbox"]],
                             "area": round(entry["area"], 2),
+                            "segmentation": entry["segmentation"],
                             "iscrowd": 0,
                         }
                     )

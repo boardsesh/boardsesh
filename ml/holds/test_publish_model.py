@@ -686,3 +686,57 @@ def test_a_brand_new_version_publishes_everything(
 
     assert [upload["key"] for upload in client.uploads] == [WEIGHT_KEY]
     assert [put["key"] for put in client.puts] == [MANIFEST_KEY]
+
+
+# --------------------------------------------------------------------------- #
+# Segmentation configs carry a third output
+# --------------------------------------------------------------------------- #
+
+SEG_CONFIG_NAME = "seg-nano-tiled-1024"
+
+
+def test_a_segmentation_config_documents_its_mask_output(tmp_path: Path, sample_model: Path) -> None:
+    """A seg export emits a third tensor, and the manifest is the only place a
+    consumer learns it exists. Without this entry a client reads two outputs,
+    falls back to circles, and the silhouette the model predicted is simply lost."""
+    out_dir = _run_publish(
+        tmp_path,
+        sample_model,
+        extra_args=["--config", SEG_CONFIG_NAME],
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    masks = manifest["outputs"]["masks"]
+
+    assert masks["name"] is None, "identified by rank, like boxes and logits are by shape"
+    assert masks["activation"] == "sigmoid"
+    assert masks["layout"] == "queries-hw"
+    # The decode order is the contract: @boardsesh/hold-detection's maskToOutline
+    # interpolates the raw logits and only then thresholds, and the other order
+    # measurably degrades the outlines.
+    assert masks["decode"] == "interpolate-then-threshold"
+
+    schema = json.loads(publish_model.SCHEMA_PATH.read_text())
+    jsonschema.validate(instance=manifest, schema=schema)
+
+
+def test_a_detection_config_does_not_claim_masks(tmp_path: Path, sample_model: Path) -> None:
+    """The box models still ship. Advertising a mask tensor they do not emit would
+    send a consumer looking for a rank-4 output that is not there."""
+    out_dir = _run_publish(tmp_path, sample_model)
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+
+    assert "masks" not in manifest["outputs"]
+    assert set(manifest["outputs"]) == {"boxes", "logits"}
+    jsonschema.validate(instance=manifest, schema=json.loads(publish_model.SCHEMA_PATH.read_text()))
+
+
+def test_the_schema_pins_the_mask_decode_order(tmp_path: Path, sample_model: Path) -> None:
+    """`decode` is a const, not free text: a manifest claiming the other order
+    must fail validation rather than ship a contract nothing implements."""
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--config", SEG_CONFIG_NAME])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    schema = json.loads(publish_model.SCHEMA_PATH.read_text())
+
+    manifest["outputs"]["masks"]["decode"] = "threshold-then-interpolate"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(instance=manifest, schema=schema)

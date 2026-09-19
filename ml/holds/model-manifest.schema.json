@@ -5,11 +5,22 @@
   "description": "Published to models/hold-detector/<version>/manifest.json in the public media R2 bucket by ml/holds/publish_model.py (epic #5346, SW-01, issue #5434). Consumed by the mobile model loader (issue #5435) and the server-side inference container (issue #5451). Weights are immutable per version; the manifest is the only mutable pointer for a given version, so a bad manifest can be re-published with --force but the weight files it points at never change underneath a version tag.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["schemaVersion", "version", "family", "config", "input", "outputs", "thresholds", "files", "training", "licence"],
+  "required": [
+    "schemaVersion",
+    "version",
+    "family",
+    "config",
+    "input",
+    "outputs",
+    "thresholds",
+    "files",
+    "training",
+    "licence"
+  ],
   "properties": {
     "schemaVersion": {
       "const": 1,
-      "description": "Bump when a field is renamed or removed. Additive fields do not require a bump — at the top level and inside `training`/`eval`/`outputs`, which stay open for exactly that reason. `input` and each `files` entry are closed instead: they are the preprocessing and integrity contract a consumer implements field by field, so an unrecognised key there is a typo it must not silently ignore."
+      "description": "Bump when a field is renamed or removed. Additive fields do not require a bump \u2014 at the top level and inside `training`/`eval`/`outputs`, which stay open for exactly that reason. `input` and each `files` entry are closed instead: they are the preprocessing and integrity contract a consumer implements field by field, so an unrecognised key there is a typo it must not silently ignore."
     },
     "version": {
       "type": "string",
@@ -29,31 +40,62 @@
     "input": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["width", "height", "layout", "dtype", "letterbox", "normalization"],
+      "required": [
+        "width",
+        "height",
+        "layout",
+        "dtype",
+        "letterbox",
+        "normalization"
+      ],
       "properties": {
-        "width": { "type": "integer", "exclusiveMinimum": 0, "description": "Per-tile input width the ONNX graph consumes (config's resolution)." },
-        "height": { "type": "integer", "exclusiveMinimum": 0, "description": "Per-tile input height the ONNX graph consumes (config's resolution)." },
-        "layout": { "const": "NCHW" },
-        "dtype": { "const": "float32", "description": "The graph's input tensor dtype. int8 export only quantizes weights (dynamic quantization); activations, including the input tensor, stay float32." },
+        "width": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Per-tile input width the ONNX graph consumes (config's resolution)."
+        },
+        "height": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Per-tile input height the ONNX graph consumes (config's resolution)."
+        },
+        "layout": {
+          "const": "NCHW"
+        },
+        "dtype": {
+          "const": "float32",
+          "description": "The graph's input tensor dtype. int8 export only quantizes weights (dynamic quantization); activations, including the input tensor, stay float32."
+        },
         "letterbox": {
-          "enum": ["none", "stretch", "pad"],
+          "enum": [
+            "none",
+            "stretch",
+            "pad"
+          ],
           "description": "How a crop is fit to width x height before inference. eval.py's OnnxDetector.preprocess resizes each tile directly to (width, height) with PIL bilinear resize and no aspect-preserving padding, i.e. 'stretch' - a tile whose aspect ratio isn't square gets distorted, not letterboxed."
         },
         "normalization": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mean", "std"],
+          "required": [
+            "mean",
+            "std"
+          ],
           "properties": {
             "mean": {
               "type": "array",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 3,
               "maxItems": 3,
               "description": "Per-RGB-channel mean subtracted after scaling pixels to [0, 1]. eval.py uses the ImageNet statistics RF-DETR was pretrained with."
             },
             "std": {
               "type": "array",
-              "items": { "type": "number" },
+              "items": {
+                "type": "number"
+              },
               "minItems": 3,
               "maxItems": 3,
               "description": "Per-RGB-channel standard deviation divided in after mean subtraction."
@@ -65,31 +107,89 @@
     "outputs": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["boxes", "logits"],
+      "required": [
+        "boxes",
+        "logits"
+      ],
       "properties": {
         "boxes": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["name", "format"],
+          "required": [
+            "name",
+            "format"
+          ],
           "properties": {
             "name": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "ONNX output tensor name. RF-DETR's exporter does not name outputs consistently across versions, so eval.py identifies the boxes tensor by shape (last dimension 4) instead of by name; null here means a consumer must do the same."
             },
-            "format": { "const": "cxcywh-normalized", "description": "Center x, center y, width, height, each normalized to the tile's [0, 1] range - the RF-DETR convention eval.py decodes." }
+            "format": {
+              "const": "cxcywh-normalized",
+              "description": "Center x, center y, width, height, each normalized to the tile's [0, 1] range - the RF-DETR convention eval.py decodes."
+            }
           }
         },
         "logits": {
           "type": "object",
           "additionalProperties": true,
-          "required": ["name", "activation", "classes"],
+          "required": [
+            "name",
+            "activation",
+            "classes"
+          ],
           "properties": {
             "name": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "ONNX output tensor name, or null to identify by shape (last dimension equal to `classes`), matching eval.py."
             },
-            "activation": { "const": "sigmoid", "description": "RF-DETR trains with focal loss, so scores are sigmoid(logits), never softmax." },
-            "classes": { "type": "integer", "minimum": 1, "description": "configs.json's num_classes - 1 for every shipped config (single `hold` class)." }
+            "activation": {
+              "const": "sigmoid",
+              "description": "RF-DETR trains with focal loss, so scores are sigmoid(logits), never softmax."
+            },
+            "classes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "configs.json's num_classes - 1 for every shipped config (single `hold` class)."
+            }
+          }
+        },
+        "masks": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "name",
+            "activation",
+            "layout",
+            "decode"
+          ],
+          "description": "Per-query mask logits, present only for a segmentation config (configs.json `mask_source: \"model\"`). Absent means the model predicts no silhouette and a consumer should fall back to the hold's circle, which is what spray_wall_holds.outline being NULL already means.",
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "ONNX output tensor name, or null to identify by rank: the masks tensor is the rank-4 output, where boxes and logits are rank-3. eval.py's own decoder ignores it entirely."
+            },
+            "activation": {
+              "const": "sigmoid",
+              "description": "Mask logits are per-pixel and independent, so sigmoid, not softmax. sigmoid(v) > 0.5 is exactly v > 0, which is why a decoder can threshold the raw logit and skip the exponential."
+            },
+            "layout": {
+              "const": "queries-hw",
+              "description": "[1, queries, h, w] - one mask grid per query, at a quarter of the input side, aligned with the same query index as boxes and logits."
+            },
+            "decode": {
+              "const": "interpolate-then-threshold",
+              "description": "Bilinearly interpolate the RAW LOGITS to the target size and only then threshold at 0, matching rfdetr's own _postprocess_masks. The other order quantises every edge into mask-grid steps: measured on the spray-wall eval split it drops outlines in the plausible 0.40-0.80 fill band from 96% to 79%. @boardsesh/hold-detection's maskToOutline implements this contract."
+            }
           }
         }
       }
@@ -97,12 +197,24 @@
     "thresholds": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["default", "sweep"],
+      "required": [
+        "default",
+        "sweep"
+      ],
       "properties": {
-        "default": { "type": "number", "minimum": 0, "maximum": 1, "description": "The score threshold this version ships as its default, chosen on the `tune` split." },
+        "default": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "The score threshold this version ships as its default, chosen on the `tune` split."
+        },
         "sweep": {
           "type": "array",
-          "items": { "type": "number", "minimum": 0, "maximum": 1 },
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
           "description": "Thresholds evaluated during calibration, for a client-side confidence slider (see ml/holds/README.md, '#5441')."
         }
       }
@@ -113,25 +225,70 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "bytes", "sha256", "dtype"],
+        "required": [
+          "path",
+          "bytes",
+          "sha256",
+          "dtype"
+        ],
         "properties": {
-          "path": { "type": "string", "minLength": 1, "description": "Key relative to models/hold-detector/<version>/." },
-          "bytes": { "type": "integer", "exclusiveMinimum": 0 },
-          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "dtype": { "enum": ["int8", "fp32"] }
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Key relative to models/hold-detector/<version>/."
+          },
+          "bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "dtype": {
+            "enum": [
+              "int8",
+              "fp32"
+            ]
+          }
         }
       }
     },
     "training": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["dataset", "licence", "epochs", "trainedOn", "date"],
+      "required": [
+        "dataset",
+        "licence",
+        "epochs",
+        "trainedOn",
+        "date"
+      ],
       "properties": {
-        "dataset": { "type": "string", "minLength": 1, "description": "What was trained on, e.g. 'Roboflow climbing-holds-and-volumes v14, 600 photos'." },
-        "licence": { "type": "string", "minLength": 1, "description": "Licence of the training data, e.g. 'CC BY 4.0'. Must be credited on the app licences screen per ml/holds/README.md." },
-        "epochs": { "type": "number", "exclusiveMinimum": 0 },
-        "trainedOn": { "type": "string", "minLength": 1, "description": "Hardware the training run used. publish_model.py's --trained-on CLI flag currently offers 'm5-max-mps' or 'cpu'; the schema stays open-ended so a future device label isn't a schema change." },
-        "date": { "type": "string", "minLength": 1, "description": "ISO date the export was trained/produced." }
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What was trained on, e.g. 'Roboflow climbing-holds-and-volumes v14, 600 photos'."
+        },
+        "licence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Licence of the training data, e.g. 'CC BY 4.0'. Must be credited on the app licences screen per ml/holds/README.md."
+        },
+        "epochs": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "trainedOn": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Hardware the training run used. publish_model.py's --trained-on CLI flag currently offers 'm5-max-mps' or 'cpu'; the schema stays open-ended so a future device label isn't a schema change."
+        },
+        "date": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ISO date the export was trained/produced."
+        }
       }
     },
     "eval": {
@@ -139,15 +296,79 @@
       "additionalProperties": true,
       "description": "Optional - measured quality of THIS exact export on the held-out spray-wall corpus (ml/holds/README.md, 'Spray walls, held-out'). Omitted when no eval-json was supplied at publish time.",
       "properties": {
-        "split": { "type": "string", "minLength": 1, "description": "Which split these numbers were measured on, copied from the eval.py results file (e.g. `eval`, the held-out spray half, vs `tune`, where the threshold was chosen). publish_model.py refuses an eval file whose config, model file or score threshold does not match what is being published." },
-        "sprayEvalF1": { "type": "number", "minimum": 0, "maximum": 1, "description": "Box F1 @ IoU 0.5 on the spray-wall `eval` split, at the shipped default threshold." },
-        "weightedCorrectionsPerHold": { "type": "number", "minimum": 0, "description": "eval.py's correction_rate_micro: (false positives + misses) / total holds on the spray-wall `eval` split." },
-        "gestureSavings": { "type": "number", "description": "Estimated fraction of manual tap-to-place gestures the detector saves a user, relative to placing every hold by hand." }
+        "split": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which split these numbers were measured on, copied from the eval.py results file (e.g. `eval`, the held-out spray half, vs `tune`, where the threshold was chosen). publish_model.py refuses an eval file whose config, model file or score threshold does not match what is being published."
+        },
+        "sprayEvalF1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Box F1 @ IoU 0.5 on the spray-wall `eval` split, at the shipped default threshold."
+        },
+        "weightedCorrectionsPerHold": {
+          "type": "number",
+          "minimum": 0,
+          "description": "eval.py's correction_rate_micro: (false positives + misses) / total holds on the spray-wall `eval` split."
+        },
+        "gestureSavings": {
+          "type": "number",
+          "description": "Estimated fraction of manual tap-to-place gestures the detector saves a user, relative to placing every hold by hand."
+        }
       }
     },
     "licence": {
       "const": "Apache-2.0",
       "description": "Licence of the exported weights themselves (RF-DETR is Apache-2.0). The training data's own licence, which may require app-side attribution, is training.licence."
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "longSide",
+        "tiles",
+        "nmsIou"
+      ],
+      "description": "How to drive the model over a whole photo. `input` describes ONE tensor; this describes the pass. Without it a consumer cannot tell a tiled config from an untiled one and would run a single full-frame pass, which scores differently - so it is required for any config whose `tiles` are not 1x1.",
+      "properties": {
+        "longSide": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Resize the photo's long side to this before tiling."
+        },
+        "tiles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows",
+            "cols",
+            "overlap"
+          ],
+          "description": "The tile grid. rows=cols=1 with overlap 0 is one full-frame pass. Tiles are NOT square: each is round(side / count * (1 + overlap)), so a 4:3 photo gives 4:3 tiles that the `stretch` letterbox squashes into the square input - a consumer tracing a mask must undo that or every hold comes out an ellipse.",
+          "properties": {
+            "rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cols": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "overlap": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "nmsIou": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "IoU for the class-agnostic NMS that merges what neighbouring tiles both saw. RF-DETR is a set predictor, so a SINGLE pass needs no NMS; this exists only because tiles overlap."
+        }
+      }
     }
   }
 }
