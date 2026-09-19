@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The home page is shorter and repeats itself less. The app buttons now appear once at the top and once at the bottom instead of three times, and the gym search sends you straight to the full directory rather than teasing four gyms first. ([#5584](https://github.com/boardsesh/boardsesh/pull/5584))
 - See how your crew shares a queue, check what's on the wall, and find a board nearby. App previews now match your phone. ([#5578](https://github.com/boardsesh/boardsesh/pull/5578))
 - All your boards, one climbing history. ([#5579](https://github.com/boardsesh/boardsesh/pull/5579))
   See each board’s sends on your profile, keep board names beside logged climbs, and find your session’s hardest send at a glance.
@@ -15,6 +16,14 @@ manual changes). See docs/mobile-ota-updates.md.
   Browse gyms on a dark map, spot claimed listings, and see the app before installing.
   Preview boards at your gym and open that same board in the app.
 - The homepage now has a real gym search: type a town or tap your location and find the walls near you that run a Kilter, Tension or MoonBoard. ([#5570](https://github.com/boardsesh/boardsesh/pull/5570))
+
+### Improved
+
+- The app buttons are now the same size as each other wherever they appear, and the main button on the home page is bigger. Smaller buttons across the site also got taller, so they're easier to hit with a thumb. ([#5585](https://github.com/boardsesh/boardsesh/pull/5585))
+
+### Fixed
+
+- Buttons, filters and page controls now have a visible edge. Previously their outline was faint enough to disappear against the dark background, which made it hard to tell what was tappable — especially outdoors or on a dim phone screen. ([#5583](https://github.com/boardsesh/boardsesh/pull/5583))
 
 ## 2026-09-18
 

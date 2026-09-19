@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-09-19T06:06:35.218Z",
+  "generatedAt": "2026-09-19T10:50:50.670Z",
   "entries": [
+    {
+      "prNumber": 5584,
+      "category": "new",
+      "title": "The home page is shorter and repeats itself less. The app buttons now appear once at the top and once at the bottom instead of three times, and the gym search sends you straight to the full directory rather than teasing four gyms first.",
+      "mergedAt": "2026-09-19T10:49:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5584"
+    },
+    {
+      "prNumber": 5585,
+      "category": "improved",
+      "title": "The app buttons are now the same size as each other wherever they appear, and the main button on the home page is bigger. Smaller buttons across the site also got taller, so they're easier to hit with a thumb.",
+      "mergedAt": "2026-09-19T10:49:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5585"
+    },
+    {
+      "prNumber": 5583,
+      "category": "fixed",
+      "title": "Buttons, filters and page controls now have a visible edge. Previously their outline was faint enough to disappear against the dark background, which made it hard to tell what was tappable — especially outdoors or on a dim phone screen.",
+      "mergedAt": "2026-09-19T08:41:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5583"
+    },
     {
       "prNumber": 5578,
       "category": "new",
