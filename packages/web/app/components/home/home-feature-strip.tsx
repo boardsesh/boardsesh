@@ -5,7 +5,6 @@ import Typography from '@mui/material/Typography';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { PageSection } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
-import MarketingInstallLinks from '@/app/components/marketing/marketing-install-links';
 import styles from './home-feature-strip.module.css';
 
 /** The benefits stay server-rendered; only each image reads the shared preview choice. */
@@ -49,9 +48,6 @@ export default async function HomeFeatureStrip() {
               <MarketingScreenshot shot={feature.id} alt={feature.alt} detail className={styles.shot} />
             </Box>
           ))}
-        </Box>
-        <Box className={styles.cta}>
-          <MarketingInstallLinks />
         </Box>
       </PageSection>
     </Box>

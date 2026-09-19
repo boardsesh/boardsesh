@@ -48,14 +48,10 @@
     "cards": {
       "auroraTitle": "¿Vienes de Kilter?",
       "auroraDescription": "Trae tu historial en un solo paso",
-      "crewTitle": "Encuentra tu grupo",
-      "crewDescription": "Sigue a amigos y mira qué están escalando",
       "playlistTitle": "Crea una playlist",
       "playlistDescription": "Prepara tus problemas antes de ir al rocódromo",
       "bluetoothTitle": "Conecta tu plafón",
       "bluetoothDescription": "Vincula por Bluetooth e ilumina tu siguiente problema",
-      "discordTitle": "Únete al grupo en Discord",
-      "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene",
       "gymTitle": "Encuentra un rocódromo cerca",
       "gymDescription": "Mira qué muros tienen un plafón Kilter, uno Tension o un MoonBoard"
     },
@@ -71,7 +67,6 @@
       "lead_other": "{{formattedCount}} rocódromos, muros de club y garajes ya tienen un plafón listado. Busca por nombre o ciudad, o deja que el navegador te localice.",
       "leadNoCount": "Rocódromos, muros de club y garajes con un plafón en la pared ya están listados. Busca por nombre o ciudad, o deja que el navegador te localice.",
       "geoHint": "¿Ubicación desactivada? Escribe una ciudad: mismos resultados, sin pedir permisos.",
-      "cardsUnavailable": "Ahora mismo no carga la lista de rocódromos. El directorio completo sigue ahí.",
       "browseAll": "Ver el directorio completo de rocódromos"
     },
     "boards": {

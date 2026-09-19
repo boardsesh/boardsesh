@@ -5,11 +5,9 @@ import Chip from '@mui/material/Chip';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
-import type { GymClaimViewerState } from '@boardsesh/analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { PageCard } from '@/app/components/ui/page-shell';
-import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import {
   DIRECTORY_FACETS,
@@ -18,22 +16,14 @@ import {
   type DirectoryQuery,
 } from '@/app/gyms/directory-facets';
 import { facetChipLabel } from '@/app/gyms/directory-copy';
-import { fetchDirectoryPage, fetchFacetCounts } from '@/app/gyms/directory-data';
-import GymDirectoryCard from '@/app/gyms/gym-directory-card';
+import { fetchFacetCounts } from '@/app/gyms/directory-data';
 import GymDirectorySearchForm from '@/app/gyms/gym-directory-search-form';
 import { themeTokens } from '@/app/theme/theme-config';
 import HomeGymSearchNearMe from './home-gym-search-near-me';
 import styles from './home-gym-search.module.css';
 
-/** Gym cards the homepage teases. Four fits the mockup's row and one screen. */
-const TEASER_CARD_COUNT = 4;
-
-/**
- * An unfiltered homepage preview. Claimed-first ordering is requested separately
- * and applied by the backend before pagination. Query arguments keep its cache
- * entry separate from the directory's newest-first first page.
- */
-const TEASER_QUERY: DirectoryQuery = {
+/** The form renders empty on the homepage — there is nothing to carry over. */
+const EMPTY_FORM_QUERY: DirectoryQuery = {
   query: '',
   boardTypes: [],
   latitude: null,
@@ -41,9 +31,6 @@ const TEASER_QUERY: DirectoryQuery = {
   radiusKm: null,
   page: 1,
 };
-
-/** The form renders empty on the homepage — there is nothing to carry over. */
-const EMPTY_FORM_QUERY = TEASER_QUERY;
 
 /**
  * "Find a board near you" — the homepage's gym-directory block.
@@ -59,11 +46,15 @@ const EMPTY_FORM_QUERY = TEASER_QUERY;
  * JavaScript off, or before hydration, typing a town and pressing enter still
  * lands on a real search result page.
  *
- * FAIL SOFT. `fetchDirectoryPage` and `fetchFacetCounts` both report failure
- * rather than throwing, and neither one failing may take the homepage with it:
- * the heading, the intro, the search form and the `/gyms` anchor render no
- * matter what the gym backend is doing. A dead backend costs the cards and the
- * counts, nothing else.
+ * FAIL SOFT. `fetchFacetCounts` reports failure rather than throwing, and it
+ * failing may not take the homepage with it: the heading, the intro, the search
+ * form and the `/gyms` anchor render no matter what the gym backend is doing. A
+ * dead backend costs the counts, nothing else.
+ *
+ * It used to render four gym cards too — a second copy of the directory's own
+ * row, on a page that already links to the directory twice. The cards went with
+ * the marketing trim; this block now sells the directory instead of previewing
+ * it, and `/gyms` is the one place that renders gym rows.
  *
  * Takes no props deliberately: it resolves its own locale and data, so wiring it
  * into the page is `<HomeGymSearch />` and nothing more. It is `async`, so it
@@ -77,25 +68,13 @@ export default async function HomeGymSearch() {
     getServerTranslation('gyms'),
   ]);
 
-  // In parallel, and both already swallow their own failures. The session read
-  // rides along rather than gating them: it only settles the claim call-out's
-  // `viewerState`, and in series it would add a round trip in front of the
-  // whole block.
-  const [pageResult, facetCountsResult, distinctId] = await Promise.all([
-    fetchDirectoryPage(TEASER_QUERY, { prioritizeClaimed: true, limit: TEASER_CARD_COUNT }),
-    fetchFacetCounts(),
-    getPosthogDistinctId(),
-  ]);
+  // Swallows its own failure, so the block renders with or without counts.
+  const facetCountsResult = await fetchFacetCounts();
 
   const numberFormat = new Intl.NumberFormat(locale);
   const formatNumber = (value: number) => numberFormat.format(value);
-  // Settled server-side from the request's session, never with `useSession()`:
-  // next-auth starts every page load at `loading`, so a claim click that beats
-  // the round trip would report a signed-in climber as signed-out.
-  const viewerState: GymClaimViewerState = distinctId !== null ? 'signed-in' : 'signed-out';
 
   const facetCounts = facetCountsResult.ok ? facetCountsResult.counts : null;
-  const gyms = pageResult.ok ? pageResult.gyms.slice(0, TEASER_CARD_COUNT) : [];
 
   return (
     // Its own provider, so the block is self-contained: the reused directory
@@ -205,38 +184,6 @@ export default async function HomeGymSearch() {
                 ))}
               </Box>
             )}
-          </Box>
-          <Box className={styles.results}>
-            {gyms.length > 0 ? (
-              <Box
-                component="ul"
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr)',
-                  gap: 0,
-                  m: 0,
-                  p: 0,
-                }}
-              >
-                {gyms.map((gym) => (
-                  <GymDirectoryCard
-                    key={gym.uuid}
-                    gym={gym}
-                    // No origin on the homepage: nothing has told us where the
-                    // visitor is, and a distance computed from nowhere is a lie.
-                    // Cards therefore show an address or nothing at all.
-                    origin={null}
-                    viewerState={viewerState}
-                    locale={locale}
-                  />
-                ))}
-              </Box>
-            ) : !pageResult.ok ? (
-              /* A successful empty catalogue is not a backend outage. */
-              <Typography variant="body2" color="text.secondary">
-                {t('home.gymSearch.cardsUnavailable')}
-              </Typography>
-            ) : null}
           </Box>
         </Box>
         {/* The crawlable `/gyms` anchor. It survives every failure above on
