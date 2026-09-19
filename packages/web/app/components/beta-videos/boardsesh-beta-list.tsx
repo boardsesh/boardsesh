@@ -42,8 +42,10 @@ const BoardseshBetaList: React.FC<BoardseshBetaListProps> = ({
   priorityFirstCard = false,
 }) => {
   const { t } = useTranslation('common');
+  // `data-source` is what the stylesheet reads to drop the inline inset on the
+  // home rail, which already sits inside the page container's own padding.
   return (
-    <div className={styles.section}>
+    <div className={styles.section} data-source={source}>
       <div className={styles.scrollContainer}>
         {isLoading ? (
           Array.from({ length: 3 }).map((_, i) => (

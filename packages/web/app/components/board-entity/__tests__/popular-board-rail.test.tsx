@@ -22,6 +22,9 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('@/app/components/board-renderer/board-renderer', () => ({ default: () => <div data-testid="board-art" /> }));
 
+const gymAnchors = () =>
+  screen.getAllByRole('link').filter((anchor) => anchor.getAttribute('href')?.startsWith('/gym/'));
+
 describe('PopularBoardRail physical identity', () => {
   it('links the board name and app action to the same named installation', () => {
     render(<PopularBoardRail boards={[discoveryBoard()]} />);
@@ -81,5 +84,29 @@ describe('PopularBoardRail physical identity', () => {
   it('does not invent activity or selected climbs for a quiet board', () => {
     render(<PopularBoardRail boards={[discoveryBoard({ uniqueClimbers: 0 })]} />);
     expect(screen.queryByText(/0 climbers|Selected climb:/)).toBeNull();
+  });
+
+  it('says the location instead of repeating a board named after its own gym', () => {
+    render(<PopularBoardRail boards={[discoveryBoard({ name: 'Northside Boulders' })]} />);
+    // Still exactly one /gym/ anchor per card, and the location is said once.
+    expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Sydney']);
+    expect(gymAnchors()[0].getAttribute('href')).toBe('/gym/northside-boulders');
+    expect(screen.getAllByText('Sydney')).toHaveLength(1);
+  });
+
+  it('drops the location line when board, gym and location are all the same name', () => {
+    render(
+      <PopularBoardRail
+        boards={[discoveryBoard({ name: 'Northside Boulders', locationName: 'Northside Boulders' })]}
+      />,
+    );
+    expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
+    expect(screen.getAllByText('Northside Boulders').filter((node) => node.tagName === 'P')).toHaveLength(0);
+  });
+
+  it('falls back to the gym name when a self-named board has no location', () => {
+    render(<PopularBoardRail boards={[discoveryBoard({ name: 'Northside Boulders', locationName: null })]} />);
+    expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
+    expect(gymAnchors()[0].getAttribute('href')).toBe('/gym/northside-boulders');
   });
 });

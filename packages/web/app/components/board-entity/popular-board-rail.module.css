@@ -2,12 +2,9 @@
   min-width: 0;
 }
 
+/* Type and colour come from `sectionHeadingTypeClassName`; only the rhythm to
+   the lead below is this rail's business. */
 .section .title {
-  color: var(--neutral-900);
-  font-size: 32px;
-  line-height: 1.25;
-  font-weight: 600;
-  letter-spacing: -0.02em;
   margin-bottom: var(--spacing-3);
 }
 
@@ -63,6 +60,9 @@
   align-self: start;
 }
 
+/* `grid-template-rows: subgrid` makes every card as tall as the tallest, so a
+   three-line board name bought all eight cards a blank third line. Two is the
+   cap; the full name stays in the link the row points at. */
 .card .name {
   margin: 0;
   color: var(--neutral-900);
@@ -70,18 +70,26 @@
   font-weight: 600;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.card .gym {
-  color: var(--color-primary);
-  font-size: var(--font-size-sm);
+/* Card title and subtitle, not standalone controls: a 44px box on each added
+   ~20px of nothing to the gym line. Padding gives the same pointer slack.
+   The title link stays inline so the clamp above still counts its lines. */
+.card .name a {
+  padding-block: var(--spacing-1);
 }
 
-.card .name a,
 .card .gym {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  padding-block: var(--spacing-1);
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
 }
 
 .card .location,
@@ -110,10 +118,6 @@
 }
 
 @media (max-width: 760px) {
-  .section .title {
-    font-size: 28px;
-  }
-
   .grid {
     grid-auto-columns: min(280px, 90%);
   }
