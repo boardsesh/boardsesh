@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -71,6 +71,219 @@ describe('store screenshot presentation', () => {
     expect(resolveScreenshotRecipes('android', 'pixel-2', legacy).every((recipe) => recipe.sources.length === 1)).toBe(
       true,
     );
+  });
+
+  it('selects the distinct wall-status scene without the former matching-session montage', () => {
+    const names = [...Object.keys(screenshotCaptions('android', 'pixel-2')), '09-live-queue.png', '10-wall-status.png'];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    expect(recipes).toHaveLength(8);
+    expect(recipes[2]).toEqual({
+      output: '02-wall-status.png',
+      caption: 'wallStatus',
+      layout: 'wall-status',
+      sources: ['10-wall-status.png'],
+    });
+    expect(
+      resolveScreenshotRecipes('android', 'pixel-2', [...names, '08-moonboard-board-view.png'])[0].sources,
+    ).toContain('08-moonboard-board-view.png');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', names.slice(0, -1))).toThrow('Incomplete or unknown');
+    expect(() =>
+      resolveScreenshotRecipes('android', 'pixel-2', [...names, '10-live-climb.png', '11-live-climb-peer.png']),
+    ).toThrow('Incomplete or unknown');
+  });
+
+  it.each([false, true])(
+    'frames the wall-status set, with MoonBoard=%s, and retires stale output',
+    async (moonBoard) => {
+      const input = directory();
+      const output = directory();
+      const capture = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#164c39' } })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      const names = [
+        ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+        '09-live-queue.png',
+        '10-wall-status.png',
+      ];
+      if (moonBoard) names.push('08-moonboard-board-view.png');
+      for (const name of names) writeFileSync(join(input, name), capture);
+      writeFileSync(join(output, '02-live-climb.png'), 'old composite');
+      const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+      expect(saved).toHaveLength(8);
+      expect(saved[2]).toBe(join(output, '02-wall-status.png'));
+      expect(existsSync(join(output, '02-live-climb.png'))).toBe(false);
+      const framed = readFileSync(saved[2]);
+      expect(readPngDimensions(framed)).toEqual({ width: 1080, height: 1920 });
+      expect(readPresentationManifest(output).files['02-wall-status.png']).toEqual({
+        rawBytes: capture.length,
+        rawSha256: sha256Screenshot(capture),
+        framedSha256: sha256Screenshot(framed),
+      });
+      expect(readFileSync(join(input, '10-wall-status.png'))).toEqual(capture);
+    },
+    60_000,
+  );
+
+  it('enlarges only the captured wall rail and preserves the complete local selection screen', async () => {
+    const raw = await sharp(
+      Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1080" height="1920" fill="#164c39"/>
+      <rect y="270" width="1080" height="148" fill="#e69a32"/>
+      <rect y="1525" width="1080" height="125" fill="#ac3478"/>
+      <rect y="1856" width="1080" height="64" fill="#3269e6"/>
+    </svg>`),
+    )
+      .png()
+      .toBuffer();
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const framed = await frameComposition([raw], readCaptionCatalog(locale).wallStatus, 'wall-status');
+      const column = await sharp(framed).extract({ left: 540, top: 0, width: 1, height: 1920 }).raw().toBuffer();
+      const regions = (color: readonly number[]) => {
+        const matches: Array<{ top: number; height: number }> = [];
+        for (let row = 0; row < 1920; row++) {
+          if (!color.every((channel, index) => column[row * 3 + index] === channel)) continue;
+          const last = matches.at(-1);
+          if (last && last.top + last.height === row) last.height += 1;
+          else matches.push({ top: row, height: 1 });
+        }
+        return matches;
+      };
+      const wallRails = regions([230, 154, 50]);
+      const selectedClimb = regions([172, 52, 120]);
+      const screenFooter = regions([50, 105, 230]);
+      expect(wallRails).toHaveLength(2);
+      expect(wallRails[0].height).toBeGreaterThan(wallRails[1].height);
+      expect(wallRails[0].top + wallRails[0].height).toBeLessThan(wallRails[1].top);
+      expect(selectedClimb).toHaveLength(1);
+      expect(screenFooter).toHaveLength(1);
+      expect(selectedClimb[0].top).toBeGreaterThan(wallRails[1].top + wallRails[1].height);
+      expect(screenFooter[0].top).toBeGreaterThan(selectedClimb[0].top + selectedClimb[0].height);
+    }
+  });
+
+  it('requires all six hardware captures for the extended board campaign', () => {
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-wall-status.png',
+      '11-woods-board-view.png',
+      '12-grasshopper-board-view.png',
+      '13-moonboard-2024-view.png',
+    ];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    expect(recipes.map(({ output }) => output)).toEqual([
+      '00-board-family.png',
+      '01-more-boards.png',
+      '02-live-queue.png',
+      '03-wall-status.png',
+      '04-climbs.png',
+      '05-discover.png',
+      '06-workout-generator.png',
+      '07-profile.png',
+    ]);
+    expect(recipes[1]).toEqual({
+      output: '01-more-boards.png',
+      caption: 'moreBoards',
+      layout: 'more-boards',
+      sources: ['11-woods-board-view.png', '12-grasshopper-board-view.png', '13-moonboard-2024-view.png'],
+    });
+    for (const missing of ['08-moonboard-board-view.png', ...recipes[1].sources]) {
+      expect(() =>
+        resolveScreenshotRecipes(
+          'android',
+          'pixel-2',
+          names.filter((name) => name !== missing),
+        ),
+      ).toThrow('Incomplete or unknown');
+    }
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...names, '11-live-climb-peer.png'])).toThrow(
+      'Incomplete or unknown',
+    );
+  });
+
+  it('composes fourteen native captures into eight reordered images with source provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-wall-status.png',
+      '11-woods-board-view.png',
+      '12-grasshopper-board-view.png',
+      '13-moonboard-2024-view.png',
+    ];
+    const captures = new Map<string, Buffer>();
+    for (const [index, name] of names.entries()) {
+      const capture = await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 16},70,90)` },
+      })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      captures.set(name, capture);
+      writeFileSync(join(input, name), capture);
+    }
+    const oldNames = ['01-live-queue.png', '02-wall-status.png', '07-board-sheet.png'];
+    for (const name of oldNames) writeFileSync(join(output, name), 'previous campaign');
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+    expect(saved).toEqual(recipes.map(({ output: name }) => join(output, name)));
+    const manifest = readPresentationManifest(output);
+    expect(Object.keys(manifest.files)).toEqual(recipes.map(({ output: name }) => name));
+    for (const recipe of recipes) {
+      const entry = manifest.files[recipe.output];
+      if (recipe.sources.length > 1) {
+        expect(entry.sources).toEqual(
+          Object.fromEntries(
+            recipe.sources.map((name) => [
+              name,
+              { rawBytes: captures.get(name)!.length, rawSha256: sha256Screenshot(captures.get(name)!) },
+            ]),
+          ),
+        );
+      } else {
+        expect(entry.sources).toBeUndefined();
+        expect(entry.rawSha256).toBe(sha256Screenshot(captures.get(recipe.sources[0])!));
+      }
+    }
+    for (const name of oldNames) expect(existsSync(join(output, name))).toBe(false);
+    for (const [name, bytes] of captures) expect(readFileSync(join(input, name))).toEqual(bytes);
+    expect(
+      findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
+    ).toEqual([]);
+    const originalFramed = readFileSync(saved[1]);
+    writeFileSync(join(input, '13-moonboard-2024-view.png'), Buffer.alloc(60));
+    await expect(
+      frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
+    ).rejects.toThrow();
+    expect(readFileSync(saved[1])).toEqual(originalFramed);
+  }, 60_000);
+
+  it('preserves all three additional board sources in each localized composition', async () => {
+    const colors = ['#164c39', '#ac3478', '#e69a32'];
+    const captures = await Promise.all(
+      colors.map((background) =>
+        sharp({ create: { width: 1080, height: 1920, channels: 3, background } })
+          .png()
+          .toBuffer(),
+      ),
+    );
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const caption = readCaptionCatalog(locale).moreBoards;
+      const framed = await frameComposition(captures, caption, 'more-boards');
+      for (const [left, top, expected] of [
+        [100, 700, [22, 76, 57]],
+        [540, 1300, [172, 52, 120]],
+        [950, 700, [230, 154, 50]],
+      ] as const) {
+        const pixel = await sharp(framed).extract({ left, top, width: 1, height: 1 }).raw().toBuffer();
+        expect([...pixel]).toEqual(expected);
+      }
+      await expect(frameComposition(captures.slice(0, 2), caption, 'more-boards')).rejects.toThrow('source count');
+    }
   });
 
   it('composes eight store images from twelve verified native captures', async () => {

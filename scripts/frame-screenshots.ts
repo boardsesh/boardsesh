@@ -104,14 +104,15 @@ export async function frameComposition(
   layout: ScreenshotLayout,
 ): Promise<Buffer> {
   if (
-    (layout === 'screen' && sources.length !== 1) ||
+    ((layout === 'screen' || layout === 'wall-status') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
+    (layout === 'more-boards' && sources.length !== 3) ||
     (layout === 'live-climb' && sources.length !== 2)
   ) {
     throw new Error(`Invalid native source count for ${layout}: ${sources.length}`);
   }
   const { width, height } = readPngDimensions(sources[0]);
-  const light = layout === 'live-climb';
+  const light = layout === 'live-climb' || layout === 'wall-status';
   const colors = light ? materialSurfaces.light : COLORS;
   const tint = light ? brandColors.tint : brandColorsDark.tint;
   const unit = Math.min(width, height * 0.8);
@@ -139,7 +140,7 @@ export async function frameComposition(
   const boardNames =
     layout === 'board-family'
       ? await renderText(
-          sources.length === 3 ? 'Tension · Kilter · MoonBoard' : 'Tension · Kilter',
+          sources.length === 3 ? 'Tension · Kilter · MoonBoard 2016' : 'Tension · Kilter',
           Math.round(unit * 0.029),
           textWidth,
           tint,
@@ -157,6 +158,19 @@ export async function frameComposition(
     const scale = Math.min((width - margin * 2) / width, (height * 0.96 - screenshotTop) / height);
     const panelWidth = Math.floor(width * scale);
     panels.push({ raw: sources[0], left: Math.floor((width - panelWidth) / 2), top: screenshotTop, width: panelWidth });
+  } else if (layout === 'wall-status') {
+    // The actual Android rail occupies y270–418 in the 1080×1920 capture.
+    // Enlarge those pixels separately; retain the complete native screen below
+    // so the different locally selected climb remains visible in its context.
+    const crop = { top: 270 / 1920, height: 148 / 1920 };
+    const railHeight = Math.round((textWidth * height * crop.height) / width);
+    const screenTop = screenshotTop + railHeight + Math.round(height * 0.028);
+    const scale = Math.min(textWidth / width, (height * 0.96 - screenTop) / height);
+    const panelWidth = Math.floor(width * scale);
+    panels.push(
+      { raw: sources[0], left: margin, top: screenshotTop, width: textWidth, crop },
+      { raw: sources[0], left: Math.floor((width - panelWidth) / 2), top: screenTop, width: panelWidth },
+    );
   } else if (layout === 'live-climb') {
     // These two separate detail cards come from the captured Android session UI:
     // its header/participants and its persistent current-climb bar. Keep their
@@ -166,7 +180,7 @@ export async function frameComposition(
       { raw: sources[0], left: width * 0.14, top: screenshotTop + height * 0.11, width: width * 0.72 },
       { raw: sources[1], left: margin, top: height * 0.89, width: textWidth, crop: { top: 0.793, height: 0.067 } },
     );
-  } else if (layout === 'board-family' && sources.length === 3) {
+  } else if ((layout === 'board-family' || layout === 'more-boards') && sources.length === 3) {
     // Leave the upper holds of both rear boards visible, including their lit holds.
     // Every phone fits horizontally; the foreground board remains complete.
     panels.push(
@@ -238,7 +252,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const offenders =
     options.platform === 'ios'
       ? findOffenders(options.device, captures)
-      : // A recipe has eight final images but can need 11–12 native captures.
+      : // A recipe has eight final images but can need up to 14 native captures.
         // Each source still passes the same dimension gate, in batches within Play's count limit.
         [captures.slice(0, 6), captures.slice(6)].flatMap((batch) => findGooglePlayOffenders(options.device, batch));
   for (const capture of captures) {

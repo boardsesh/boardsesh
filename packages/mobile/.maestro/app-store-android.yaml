@@ -31,7 +31,7 @@ name: app-store screenshots android
 # EXPO_PUBLIC_SCREENSHOT_MODE=1 — the dev-client ships no bundled JS of its own,
 # so nothing is "built with" it; the running bundle just reads it from Metro):
 #   ://climbs?screenshotOpenFirst=1       -> auto-opens the first climb's board view
-#   ://climbs?screenshotBoardIndex=0|1|2  -> switches to a named screenshot wall first
+#   ://climbs?screenshotBoardIndex=0..5  -> switches to a named screenshot wall first
 #   ://climbs?screenshotOpenBoardSheet=1  -> opens the board-presence "now on the wall" sheet
 # The board itself is auto-selected on boot in screenshot mode (ScreenshotBoardAutoActivator
 # activates SCREENSHOT_BOARDS[0], the wall pinned by name in screenshot-mode.ts), so the
@@ -205,6 +205,101 @@ name: app-store screenshots android
           timeout: 30000
       - takeScreenshot: 08-moonboard-board-view
 
+# More compatible boards, using the three extra selectors in the campaign bundle.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != '' && Number(SCREENSHOT_BOARD_COUNT) >= 6}
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 11-woods-board-view
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 12-grasshopper-board-view
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 13-moonboard-2024-view
+
+# The wall stays on the seeded first climb while this climber picks a different
+# local queue head. Capture the real live wall-status header before joining a crew.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_SHARED_SESSION_ID != ''}
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible:
+            id: 'home-screen'
+          timeout: 90000
+      - openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+      - extendedWaitUntil:
+          visible:
+            id: 'climb-row'
+          timeout: 60000
+      - tapOn: 'Guessing Games'
+      - extendedWaitUntil:
+          visible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - tapOn: 'Close'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'play-drawer-board-overlay'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible: 'On the wall: Lightest Pair of Shorts, .*'
+          timeout: 60000
+      - extendedWaitUntil:
+          visible: 'Guessing Games'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 10000
+      - takeScreenshot: 10-wall-status
+
 # This scenario uses sanitized session snapshots supplied with the fixture bundle.
 # An empty ID keeps legacy replay and record runs on the original flow.
 - runFlow:
@@ -226,7 +321,7 @@ name: app-store screenshots android
           visible: 'Friday board crew'
           timeout: 60000
       - extendedWaitUntil:
-          visible: '3 climbing'
+          visible: '[2-9] climbing'
           timeout: 60000
       - tapOn: 'Lightest Pair of Shorts'
       - extendedWaitUntil:
@@ -249,28 +344,3 @@ name: app-store screenshots android
       - waitForAnimationToEnd:
           timeout: 10000
       - takeScreenshot: 09-live-queue
-      - tapOn: 'Close'
-      - extendedWaitUntil:
-          notVisible: '6 climbs'
-          timeout: 60000
-      - extendedWaitUntil:
-          visible:
-            id: 'play-drawer-board-overlay'
-          timeout: 60000
-      - waitForAnimationToEnd:
-          timeout: 10000
-      - takeScreenshot: 10-live-climb
-      - tapOn: 'Close'
-      - extendedWaitUntil:
-          notVisible:
-            id: 'play-drawer-board-overlay'
-          timeout: 60000
-      - extendedWaitUntil:
-          visible: 'Friday board crew'
-          timeout: 60000
-      - extendedWaitUntil:
-          visible: '3 climbing'
-          timeout: 60000
-      - waitForAnimationToEnd:
-          timeout: 10000
-      - takeScreenshot: 11-live-climb-peer

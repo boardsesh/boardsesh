@@ -407,23 +407,36 @@ describe('Android app-store scenario flow', () => {
     for (const document of documents) expect(document.errors).toEqual([]);
   });
 
-  it('keeps legacy runs at eight captures even with an explicit third board', () => {
+  it('keeps legacy runs at eight captures even with extra board selectors', () => {
     expect(screenshotNames('', 2)).toHaveLength(8);
     expect(screenshotNames('', 3)).toEqual(screenshotNames('', 2));
+    expect(screenshotNames('', 6)).toEqual(screenshotNames('', 2));
   });
 
-  it('captures eleven or twelve inputs in presentation order according to the scenario boards', () => {
+  it('captures ten or eleven inputs with wall status before the shared queue', () => {
     const shared = '00000000-0000-4000-8000-000000000101';
     const twoBoards = screenshotNames(shared, 2);
-    expect(twoBoards).toHaveLength(11);
-    expect(twoBoards.slice(-3)).toEqual(['09-live-queue', '10-live-climb', '11-live-climb-peer']);
+    expect(twoBoards).toHaveLength(10);
+    expect(twoBoards.slice(-2)).toEqual(['10-wall-status', '09-live-queue']);
     const threeBoards = screenshotNames(shared, 3);
-    expect(threeBoards).toHaveLength(12);
-    expect(threeBoards.slice(-4)).toEqual([
+    expect(threeBoards).toHaveLength(11);
+    expect(threeBoards.slice(-3)).toEqual(['08-moonboard-board-view', '10-wall-status', '09-live-queue']);
+    // A partial second compatibility group must not create an unsupported
+    // twelve/thirteen-source set that the presentation recipes cannot frame.
+    expect(screenshotNames(shared, 4)).toEqual(threeBoards);
+    expect(screenshotNames(shared, 5)).toEqual(threeBoards);
+  });
+
+  it('captures fourteen inputs for both board families and the live features', () => {
+    const captures = screenshotNames('00000000-0000-4000-8000-000000000101', 6);
+    expect(captures).toHaveLength(14);
+    expect(captures.slice(-6)).toEqual([
       '08-moonboard-board-view',
+      '11-woods-board-view',
+      '12-grasshopper-board-view',
+      '13-moonboard-2024-view',
+      '10-wall-status',
       '09-live-queue',
-      '10-live-climb',
-      '11-live-climb-peer',
     ]);
   });
 });

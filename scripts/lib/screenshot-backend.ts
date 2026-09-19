@@ -89,8 +89,8 @@ export type ScreenshotBackendServerOptions = {
   /**
    * Record only, default TRUE: replace every other climber's name, handle and
    * avatar with a stable stand-in before a response is written
-   * (`pseudonymiseResponse`). The recorded set is committed to a public repo
-   * and the capture walks public feeds, so real names must never reach disk.
+   * (`pseudonymiseResponse`). The public CDN snapshot preserves only the
+   * recording account and explicitly approved test-account identities.
    * Set false (`--no-pseudonymise`) only for a deliberate real-data recording
    * that is NOT going to be committed.
    */
@@ -512,10 +512,8 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
 
     // Other climbers' names, handles and avatars never reach disk. This capture
     // walks public feeds (Discover, the "Everyone" session feed, recent beta),
-    // and the recorded set is committed to a public repo — so every person who
-    // is not the recording account is replaced by a stable stand-in BEFORE the
-    // fixture is built. Our own account's data stays exactly as recorded: the
-    // screenshots have to show a real signed-in user.
+    // so every person outside the recording account and the manifest's approved
+    // test accounts is replaced by a stable stand-in BEFORE the fixture is built.
     //
     // `accountUserId` is empty only until the app authenticates, which it does
     // before it asks for any screen's data. Falling back to `null` there is the
@@ -523,7 +521,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // leaking a stranger.
     let persistedResponse: unknown = responseBody;
     if (pseudonymise) {
-      const result = pseudonymiseResponse(responseBody, { ownUserId: manifest.accountUserId || null });
+      const result = pseudonymiseResponse(responseBody, {
+        ownUserId: manifest.accountUserId || null,
+        approvedTestUserIds: manifest.approvedTestUserIds,
+      });
       persistedResponse = result.response;
       if (result.persons > 0) {
         emit({

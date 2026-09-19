@@ -81,26 +81,32 @@ changes the live listing. Replay uses the frozen fixture snapshot pinned in
 
 | Output | What the image shows |
 | --- | --- |
-| `00-board-family.png` | Compatibility with Tension and Kilter; MoonBoard joins when its real capture is present. |
-| `01-live-queue.png` | A shared queue with climbs added by the crew. |
-| `02-live-climb.png` | The board view, session participants, and matching current-climb bar. |
-| `03-climbs.png` | Browsing the board's climbs. |
-| `04-discover.png` | The playlist library. |
-| `05-workout-generator.png` | The Record tab's workout generator. |
-| `06-profile.png` | Climbing stats and progression. |
-| `07-board-sheet.png` | The board's now-on-the-wall surface. |
+| `00-board-family.png` | Compatibility with Tension, Kilter, and MoonBoard 2016. |
+| `01-more-boards.png` | Compatibility with Woods Board, Grasshopper, and MoonBoard 2024. |
+| `02-live-queue.png` | A shared queue with climbs added by the crew. |
+| `03-wall-status.png` | The live wall-status capsule above the climb list while a different climb is selected locally. |
+| `04-climbs.png` | Browsing the board's climbs. |
+| `05-discover.png` | The playlist library. |
+| `06-workout-generator.png` | The Record tab's workout generator. |
+| `07-profile.png` | Climbing stats and progression. |
 
 Run `vp run mobile:screenshots -- --platform android --dev-client --fixtures replay`
-with the shared-session fixture bundle to produce this set. Maestro first captures
-the original eight app surfaces, then three shared-session views. If a third board
-selector is configured, it also captures MoonBoard: eleven or twelve raw PNGs in
-total. Presentation recipes combine the board captures for the first frame and
-the current-climb/participant views for the third, producing eight uploadable PNGs.
-The full raw set remains separate from the framed listing images.
+with the six-board shared-session fixture bundle to produce this set. Maestro
+captures fourteen raw PNGs: the original eight app surfaces, four additional board
+views, wall status, and the shared queue. The wall-status capture happens before
+joining the crew, while the local selection differs from the climb currently lit
+on the wall. Presentation recipes combine real board captures into the first two
+frames and select eight uploadable PNGs. The raw Home and board-activity captures
+remain available without taking a slot in this listing set. The full raw set stays
+separate from the framed listing images.
 
 Legacy fixture bundles without shared-session metadata keep their original
 eight-image presentation: separate Tension and Kilter frames followed by Home
-and the other five surfaces. The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
+and the other five surfaces. Two/three-board scenarios still produce ten/eleven
+raw inputs with a single compatibility frame and `02-wall-status.png`. Earlier
+eleven/twelve-source campaigns also remain readable, with their board-view and
+participant composite named `02-live-climb.png`.
+The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
 describes the recorded state required by the extended flow.
 
 The board is drawn with **Aura**, the app's default look, and the wall is pinned by

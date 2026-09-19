@@ -133,15 +133,24 @@ scenario automatically. The campaign bundle carries:
 {
   "capture": {
     "sharedSessionId": "00000000-0000-4000-8000-000000000101",
-    "boards": ["Marco's Board", "High Point Climbing Orlando", "Test User's MoonBoard 2016 Standard"]
+    "boards": [
+      "Boardsesh HQ",
+      "High Point Climbing Orlando",
+      "Test User's MoonBoard 2016 Standard",
+      "Test User's Woods Original 12×12",
+      "Test User's Grasshopper 2020 GrandMaster",
+      "St Peters 2024 Moonboard"
+    ]
   }
 }
 ```
 
 Metadata alone does not create a session or make an arbitrary fixture set suitable
 for these captures. The current Maestro flow expects a session named
-`Friday board crew`, three connected participants (`3 climbing`), six queue entries
-(`6 climbs`), and `Lightest Pair of Shorts` as the current climb. The session preview,
+`Friday board crew`, two connected test participants (Test User and Marco), six
+queue entries (`6 climbs`), and `Lightest Pair of Shorts` as the current climb.
+The flow accepts a populated roster (`[2-9] climbing`); the campaign bundle supplies
+the two approved test identities and their real avatars. The session preview,
 join response, `QueueUpdates` FullSync, `SessionUpdates` roster snapshot, and the
 queries used by those screens must all describe that same sanitized scenario.
 Changing the title, counts, or current climb requires updating the flow's visible
@@ -150,18 +159,33 @@ these initial snapshots in the bundle explicitly.
 
 The session ID must be a UUID, and `boards` must contain at least two non-empty
 selectors without control characters or `|`. Selector order is significant:
-Kilter at index 0, Tension at index 1, and optional MoonBoard at index 2. Those
+Kilter at index 0, Tension at index 1, MoonBoard 2016 at index 2, Woods Board at
+index 3, Grasshopper at index 4, and MoonBoard 2024 at index 5. Those
 selectors must resolve to boards and climb responses present in the same bundle.
 Android uses these boards unless `--boards` explicitly overrides them, and passes
 the session ID to Maestro as `SCREENSHOT_SHARED_SESSION_ID` plus the effective
 selector count as `SCREENSHOT_BOARD_COUNT`. No manual environment setup is needed.
 Legacy manifests and record mode pass an empty session ID, keeping the original
-eight-shot flow even when three boards are configured. With a shared-session ID,
-the flow adds the shared queue, current climb, and participant view; a third board
-also adds the MoonBoard capture. The queue sheet expands before capture to show
+eight-shot flow even when extra boards are configured. With a shared-session ID,
+the flow captures `10-wall-status` before joining the crew: it selects
+`Guessing Games` locally while the live header still says
+`On the wall: Lightest Pair of Shorts`. Board-presence fixtures and climb responses
+must support both states. It then joins the crew for `09-live-queue`.
+The queue sheet expands before capture to show
 five entries from the six-climb queue; the flow waits for the fifth climb, `Wax On`,
-while the header confirms `6 climbs`. These eleven or twelve inputs are campaign
-candidates; presentation recipes select the final eight Google Play images.
+while the header confirms `6 climbs`.
+
+Two configured boards produce ten raw inputs. A third adds MoonBoard 2016 for
+eleven. Six selectors enable all three additional compatibility captures
+(`11-woods-board-view`, `12-grasshopper-board-view`, and `13-moonboard-2024-view`)
+for fourteen inputs. Four or five selectors retain the eleven-input flow until
+the second compatibility group is complete. The fourteen-input recipe produces
+eight Google Play images: two compatibility frames, the shared queue, wall
+status, climb browsing, playlists, workout generator, and profile. The original
+Home and board-activity raw captures remain available but are not selected for
+this listing set. Smaller scenarios retain their earlier eight-output recipes.
+The older eleven/twelve-input campaign remains readable with its separate
+current-climb/participant captures, but this flow no longer produces those shots.
 This metadata does not enable additional iOS shots.
 Sorting, snapshot uploads, and merges preserve it; merges reject conflicting
 scenario metadata instead of choosing a different shared session silently.
@@ -420,6 +444,18 @@ display name and avatar the store listing is meant to show. The all-zero uuid
 (`NON_PERSON_USER_IDS`) is left alone too: it is what the backend puts on a
 board Boardsesh itself owns, not a person.
 
+**Additional approved test accounts.** A fixture manifest can carry
+`approvedTestUserIds`, an optional array of unique lowercase account UUIDs.
+Add an account only after explicit approval to display that test account's
+identity. Verify its ID against the actual account or public board-owner
+profile; a matching display name or email guess is insufficient. The recorder,
+publisher, drift check and rewrite command all use this same exact-ID allowlist.
+Other climbers, including nested people inside an approved user's response,
+remain pseudonymised. Wall-presence `sentByUserId` fields follow the same rule.
+Merging preserves one agreed allowlist alongside legacy shards and refuses
+conflicting nonempty allowlists rather than widening them. This metadata belongs
+in the CDN fixture manifest; no account-specific payload is committed to Git.
+
 **What is deliberately NOT rewritten**, because all three look like near misses:
 
 - `setterUsername` / `setter_username` / `faUsername`. Aurora's public
@@ -447,7 +483,9 @@ every graphql fixture's `response` in place (`--dir` to point it elsewhere,
 variables, never by its response, so nothing else moves — no hash, no filename,
 no manifest entry. The one manifest change it can make is dropping a
 `static/avatars/*` entry, since an avatar URL that is now `null` is an asset the
-app can no longer request. It is idempotent, so running it twice is free.
+app can no longer request. Exact `/static/avatars/<user-id>.jpg` assets for the
+recording account and explicitly approved test accounts are retained. It is
+idempotent, so running it twice is free.
 
 ## Log grammar
 

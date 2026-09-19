@@ -40,8 +40,8 @@
     "description": "Follow your climbing history, grades, and session stats."
   },
   "wall": {
-    "headline": "See what’s on the wall",
-    "description": "Follow the current climb and recent board activity."
+    "headline": "Follow your board’s activity",
+    "description": "See recent sends and stats for your board."
   },
   "boardFamily": {
     "headline": "Your boards. One app.",
@@ -54,5 +54,13 @@
   "liveClimb": {
     "headline": "Pick a climb.\nEveryone sees it.",
     "description": "The current climb updates for everyone in your session."
+  },
+  "wallStatus": {
+    "headline": "See what’s on the wall.",
+    "description": "Know which climb is lit while you browse your next one."
+  },
+  "moreBoards": {
+    "headline": "More boards. Same app.",
+    "description": "Works with Woods Board, Grasshopper, and MoonBoard 2024."
   }
 }

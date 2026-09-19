@@ -31,7 +31,10 @@ async function main(): Promise<void> {
       const fixture = JSON.parse(bytes.toString('utf8')) as GraphqlFixtureFile;
       if (
         findSensitiveVariableKeys(fixture.variables).length ||
-        findUnpseudonymisedPersonFields(fixture.response, { ownUserId: manifest.accountUserId }).length
+        findUnpseudonymisedPersonFields(fixture.response, {
+          ownUserId: manifest.accountUserId,
+          approvedTestUserIds: manifest.approvedTestUserIds,
+        }).length
       ) {
         throw new Error(`Refusing to publish unsanitized fixture: ${entry.file}`);
       }

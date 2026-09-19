@@ -286,9 +286,18 @@ export function mergeFixtureSets(
   assertProvenanceAgrees(fixtureSets);
   const onConflict = options.onConflict ?? 'fail';
   const capture = fixtureSets.find((fixtureSet) => fixtureSet.manifest.capture)?.manifest.capture;
+  const approvedTestUserIds = fixtureSets.find((fixtureSet) => fixtureSet.manifest.approvedTestUserIds?.length)
+    ?.manifest.approvedTestUserIds;
   for (const fixtureSet of fixtureSets) {
     if (fixtureSet.manifest.capture && canonicalJson(fixtureSet.manifest.capture) !== canonicalJson(capture)) {
       throw new Error(`fixture sets have conflicting capture scenarios (${fixtureSet.label}).`);
+    }
+    if (
+      fixtureSet.manifest.approvedTestUserIds?.length &&
+      canonicalJson([...fixtureSet.manifest.approvedTestUserIds].sort()) !==
+        canonicalJson([...(approvedTestUserIds ?? [])].sort())
+    ) {
+      throw new Error(`fixture sets have conflicting approved test accounts (${fixtureSet.label}).`);
     }
   }
 
@@ -354,6 +363,7 @@ export function mergeFixtureSets(
       upstream: firstSet.upstream,
       accountEmail: firstSet.accountEmail,
       accountUserId: firstSet.accountUserId,
+      ...(approvedTestUserIds ? { approvedTestUserIds: [...approvedTestUserIds].sort() } : {}),
       flow: firstSet.flow,
       ...(capture ? { capture } : {}),
       graphql: [...graphqlEntries.values()].map(({ entry }) => entry),

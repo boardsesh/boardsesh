@@ -388,6 +388,46 @@ describe('screenshot backend', () => {
       expect(hasLine('PSEUDONYMISED')).toBe(false);
     });
 
+    it('uses the validated manifest allowlist while continuing to sanitize unrelated users', async () => {
+      await start({ mode: 'record', fresh: true });
+      await postGraphql({ operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: {} });
+      await stop();
+      const manifest = readScreenshotFixtureManifest(fixturesDir)!;
+      const approvedId = '33333333-3333-4333-8333-333333333333';
+      manifest.approvedTestUserIds = [approvedId];
+      writeFileSync(join(fixturesDir, 'manifest.json'), JSON.stringify(manifest));
+      await start({ mode: 'record' });
+      upstream.nextGraphqlResponse = {
+        status: 200,
+        body: {
+          data: {
+            feed: [
+              { userId: approvedId, displayName: 'Approved Test Climber', avatarUrl: 'https://cdn/approved.jpg' },
+              {
+                userId: '44444444-4444-4444-8444-444444444444',
+                displayName: 'Unrelated Climber',
+                avatarUrl: 'https://cdn/other.jpg',
+              },
+            ],
+          },
+        },
+      };
+      await postGraphql({
+        operationName: 'Feed',
+        query: 'query Feed { feed { userId displayName avatarUrl } }',
+        variables: {},
+      });
+      await stop();
+      const updated = readScreenshotFixtureManifest(fixturesDir)!;
+      const entry = updated.graphql.find((fixture) => fixture.operationName === 'Feed')!;
+      const recorded = readFileSync(join(fixturesDir, entry.file), 'utf8');
+      expect(recorded).toContain('Approved Test Climber');
+      expect(recorded).toContain('https://cdn/approved.jpg');
+      expect(recorded).not.toContain('Unrelated Climber');
+      expect(recorded).not.toContain('https://cdn/other.jpg');
+      expect(updated.approvedTestUserIds).toEqual([approvedId]);
+    });
+
     it('keeps the first recording and logs a DUP for a repeat', async () => {
       await start({ mode: 'record', fresh: true });
       const request = { operationName: 'SyncTicks', query: SYNC_TICKS_QUERY, variables: { cursor: null } };

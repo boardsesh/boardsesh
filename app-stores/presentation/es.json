@@ -40,8 +40,8 @@
     "description": "Consulta tu historial, grados y estadísticas de cada sesión."
   },
   "wall": {
-    "headline": "Mira qué hay en el plafón",
-    "description": "Sigue el bloque actual y la actividad reciente del plafón."
+    "headline": "Sigue la actividad de tu plafón",
+    "description": "Mira los encadenes recientes y las estadísticas de tu plafón."
   },
   "boardFamily": {
     "headline": "Tus plafones. Una app.",
@@ -54,5 +54,13 @@
   "liveClimb": {
     "headline": "Elige un bloque.\nTodos lo ven.",
     "description": "El bloque actual se actualiza para todo el grupo de la sesión."
+  },
+  "wallStatus": {
+    "headline": "Mira qué hay en el muro.",
+    "description": "Ve qué bloque está iluminado mientras buscas el siguiente."
+  },
+  "moreBoards": {
+    "headline": "Más plafones. La misma app.",
+    "description": "Compatible con Woods Board, Grasshopper y MoonBoard 2024."
   }
 }

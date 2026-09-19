@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import type { BoardPresenceClimb, BoardPresenceEvent } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb, BoardPresenceEvent, Climb } from '@boardsesh/shared-schema';
 import {
   SCREENSHOT_SEED_BOARD_ID,
+  buildScreenshotWallSeed,
   createScreenshotBoardPresenceClient,
   publishScreenshotWallClimbs,
 } from '../screenshot-wall-seed';
@@ -29,6 +30,65 @@ afterEach(() => {
 });
 
 describe('screenshot-wall-seed', () => {
+  const realClimb: Climb = {
+    uuid: 'real-climb-id',
+    name: 'Recorded climb',
+    setter_username: 'recorded-setter',
+    frames: 'p1080r15p1081r12',
+    angle: 40,
+    ascensionist_count: 5,
+    difficulty: '6b/V4',
+    quality_average: '3.0',
+    stars: 3,
+    difficulty_error: '0.5',
+    benchmark_difficulty: null,
+  };
+
+  it('carries the recorded board owner through the native wall event and stats without changing the climb', async () => {
+    const owner = {
+      ownerId: 'recorded-owner-id',
+      ownerDisplayName: 'Recorded Owner',
+      ownerAvatarUrl: 'https://cdn.example/avatar.jpg',
+    };
+    const seed = buildScreenshotWallSeed([realClimb], 35, owner);
+    expect(seed[0]).toMatchObject({
+      climbUuid: realClimb.uuid,
+      name: realClimb.name,
+      grade: realClimb.difficulty,
+      frames: realClimb.frames,
+      angle: 35,
+      setter: realClimb.setter_username,
+      sentByUserId: owner.ownerId,
+      sentByDisplayName: owner.ownerDisplayName,
+      sentByAvatarUrl: owner.ownerAvatarUrl,
+    });
+    publishScreenshotWallClimbs(seed, null);
+    const client = createScreenshotBoardPresenceClient();
+    const events: BoardPresenceEvent[] = [];
+    const unsubscribe = client.subscribeNowPlaying(SCREENSHOT_SEED_BOARD_ID, (event) => events.push(event));
+    expect(events).toEqual([{ __typename: 'BoardClimbSet', climb: seed[0] }]);
+    expect((await client.fetchStats(SCREENSHOT_SEED_BOARD_ID)).hardestSend).toMatchObject({
+      sentByUserId: owner.ownerId,
+      sentByDisplayName: owner.ownerDisplayName,
+      sentByAvatarUrl: owner.ownerAvatarUrl,
+    });
+    unsubscribe();
+  });
+
+  it('keeps anonymous sender fallbacks when the board owner or optional profile fields are unavailable', () => {
+    expect(buildScreenshotWallSeed([realClimb], null)[0]).toMatchObject({
+      angle: realClimb.angle,
+      sentByUserId: null,
+      sentByDisplayName: null,
+      sentByAvatarUrl: null,
+    });
+    expect(buildScreenshotWallSeed([realClimb], null, { ownerId: 'recorded-owner-id' })[0]).toMatchObject({
+      sentByUserId: 'recorded-owner-id',
+      sentByDisplayName: null,
+      sentByAvatarUrl: null,
+    });
+  });
+
   it('exposes a non-null sentinel board id so the wall reads as live', () => {
     expect(typeof SCREENSHOT_SEED_BOARD_ID).toBe('number');
     expect(SCREENSHOT_SEED_BOARD_ID).not.toBeNull();
