@@ -11,7 +11,7 @@ const workflow = parse(readFileSync(resolve(REPO_ROOT, '.github/workflows/export
   jobs: {
     export: {
       env: Record<string, string>;
-      steps: { name?: string; env?: Record<string, string>; run?: string; 'timeout-minutes'?: number }[];
+      steps: { name?: string; uses?: string; env?: Record<string, string>; run?: string; 'timeout-minutes'?: number }[];
     };
   };
 };
@@ -19,6 +19,11 @@ const workflow = parse(readFileSync(resolve(REPO_ROOT, '.github/workflows/export
 const exportJob = workflow.jobs.export;
 
 describe('snapshot export workflow', () => {
+  it('pins setup-vp to the reviewed bootstrap version', () => {
+    const setup = exportJob.steps.find((step) => step.uses?.startsWith('voidzero-dev/setup-vp@'));
+    expect(setup?.uses).toBe('voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb');
+  });
+
   it('passes the public base name the exporter reads for both storage targets', () => {
     expect(exportJob.env.SNAPSHOT_PUBLIC_BASE_URL).toBe(
       "${{ inputs.storage_target == 'r2' && 'https://snapshots.boardsesh.com' || 'https://boardsesh-board-snapshots.t3.tigrisfiles.io' }}",
@@ -33,5 +38,12 @@ describe('snapshot export workflow', () => {
     );
     expect(verification?.['timeout-minutes']).toBe(20);
     expect(verification?.run).toMatch(/trap\s+'rm -rf "\$work_dir"'\s+EXIT/);
+
+    const maximumAttempts = Number(verification?.run?.match(/cache_attempt <= (\d+)/)?.[1]);
+    const terminalAttempt = Number(verification?.run?.match(/"\$cache_attempt" = (\d+)/)?.[1]);
+    const retryDelaySeconds = Number(verification?.run?.match(/sleep (\d+)/)?.[1]);
+    expect(maximumAttempts).toBe(13);
+    expect(terminalAttempt).toBe(maximumAttempts);
+    expect((maximumAttempts - 1) * retryDelaySeconds).toBe(60);
   });
 });
