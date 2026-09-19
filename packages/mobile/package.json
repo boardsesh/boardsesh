@@ -97,7 +97,6 @@
     "graphql-ws": "^6.2.0",
     "i18next": "^26.3.6",
     "intl-pluralrules": "^2.0.1",
-    "jpeg-js": "0.4.4",
     "posthog-react-native": "^4.61.2",
     "posthog-react-native-session-replay": "^1.6.0",
     "react": "19.2.3",

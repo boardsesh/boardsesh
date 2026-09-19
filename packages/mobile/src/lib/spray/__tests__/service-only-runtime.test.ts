@@ -5,7 +5,10 @@ describe('service-only spray recognition native contract', () => {
   it('removes local inference without losing camera access', () => {
     const manifest = JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'));
     const config = readFileSync(new URL('../../../../app.config.ts', import.meta.url), 'utf8');
+    expect(manifest.name).toBe('@boardsesh/mobile');
+    expect(existsSync(new URL('../../spray/wall-photo.ts', import.meta.url))).toBe(true);
     expect(manifest.dependencies).not.toHaveProperty('onnxruntime-react-native');
+    expect(manifest.dependencies).not.toHaveProperty('jpeg-js');
     expect(config).not.toContain('com.apple.developer.kernel.increased-memory-limit');
     expect(config).toContain('cameraPermission:');
     expect(config).toContain("'CAMERA'");

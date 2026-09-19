@@ -772,9 +772,6 @@ importers:
       intl-pluralrules:
         specifier: ^2.0.1
         version: 2.0.1
-      jpeg-js:
-        specifier: 0.4.4
-        version: 0.4.4
       posthog-react-native:
         specifier: ^4.61.2
         version: 4.63.5(4a6386e8f2640c2aca8caa15ab28b16f)
@@ -8754,9 +8751,6 @@ packages:
 
   jose@6.2.10:
     resolution: {integrity: sha512-iiW7J9qRFlGxvCOIBDBDxFePQSn7ZMAnrYGhrrOo6siO/MIqwfyilLR27pkfDgUk+raLuzADS8A3S/KLBisc0g==}
-
-  jpeg-js@0.4.4:
-    resolution: {integrity: sha512-WZzeDOEtTOBK4Mdsar0IqEU5sMr3vSV2RqkAIzUEV2BHnUfKGyswWFPFwK5EeDo93K3FohSHbLAjj0s1Wzd+dg==}
 
   js-file-download@0.4.12:
     resolution: {integrity: sha512-rML+NkoD08p5Dllpjo0ffy4jRHeY6Zsapvr/W86N7E0yuzAO6qa5X9+xog6zQNlH102J7IXljNY2FtS6Lj3ucg==}
@@ -19672,8 +19666,6 @@ snapshots:
   jose@5.10.0: {}
 
   jose@6.2.10: {}
-
-  jpeg-js@0.4.4: {}
 
   js-file-download@0.4.12: {}
 
