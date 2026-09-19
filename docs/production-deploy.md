@@ -213,6 +213,16 @@ the TXT exists. Add the TXT (and confirm `verified: true`) BEFORE merging any
 origin-flip PR, and never delete the `_railway-verify.*` records — `www`,
 `updates` and `ota` each keep one.
 
+## Secrets shared by web and backend
+
+`INTERNAL_SERVICE_SECRET` must hold the **same value** on `boardsesh-web` and
+`boardsesh-backend`. Generate it with `openssl rand -hex 32`. If it is unset or the
+two copies differ, the site still serves. SSR GraphQL reads fall back to the
+anonymous rate-limit path, though, and climb pages show a false "No similar climbs
+on this layout" under load (#5291). Rotation order and details are in
+[railway.md](./railway.md#internal_service_secret-web-and-backend). The nightly
+Railway drift job asserts only the web copy.
+
 ## Deployment teardown (draining)
 
 Railway's draining time — the gap between SIGTERM and SIGKILL on the outgoing
