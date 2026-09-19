@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-19T11:36:49.134Z",
+  "generatedAt": "2026-09-19T13:20:35.905Z",
   "entries": [
+    {
+      "prNumber": 5590,
+      "category": "improved",
+      "title": "Buttons in the \"something went wrong\" and \"no results\" panels on the gyms page are now big enough to hit comfortably on a phone.",
+      "mergedAt": "2026-09-19T11:28:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5590"
+    },
+    {
+      "prNumber": 5589,
+      "category": "improved",
+      "title": "The three feature cards on the home page now have a visible edge, like every other card on the site. They used to blend into the background, especially at the bottom of each card.",
+      "mergedAt": "2026-09-19T11:28:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5589"
+    },
     {
       "prNumber": 5587,
       "category": "new",
@@ -5392,6 +5406,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-19T21:21:37+10:00",
+      "sha": "cbbcf711e01781cd83ea2c9703aa56e20be94ee0",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "cf3e0cfe4cbfbb75e927b490e76c959f9502c9c9",
+        "ios": "8bfa62b061b0d5f9137cca65d24e9c7fdbea5dff"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-16T11:38:10+10:00",

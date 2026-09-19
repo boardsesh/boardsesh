@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-19
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
 - Get hold suggestions for your spray wall without running the model on your phone. ([#5587](https://github.com/boardsesh/boardsesh/pull/5587))
@@ -21,6 +25,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Improved
 
+- Buttons in the "something went wrong" and "no results" panels on the gyms page are now big enough to hit comfortably on a phone. ([#5590](https://github.com/boardsesh/boardsesh/pull/5590))
+- The three feature cards on the home page now have a visible edge, like every other card on the site. They used to blend into the background, especially at the bottom of each card. ([#5589](https://github.com/boardsesh/boardsesh/pull/5589))
 - Section headings are now the same size, weight and spacing on every page. Previously a few were subtly different, and at some window widths two headings on the same page rendered at different sizes. ([#5588](https://github.com/boardsesh/boardsesh/pull/5588))
 - The app buttons are now the same size as each other wherever they appear, and the main button on the home page is bigger. Smaller buttons across the site also got taller, so they're easier to hit with a thumb. ([#5585](https://github.com/boardsesh/boardsesh/pull/5585))
 
