@@ -1,0 +1,97 @@
+// @vitest-environment node
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vite-plus/test';
+import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
+
+/**
+ * The strip is a server component, so what matters is the FIRST server render:
+ * three columns and a crawlable store link in the HTML a crawler with no
+ * JavaScript receives. Rendering through `renderToStaticMarkup` is that pass.
+ *
+ * Copy resolves from the real en-US catalog rather than echoing keys back —
+ * a missing key would otherwise render as its own dotted path and still pass.
+ */
+
+function resolveMarketingKey(dottedKey: string): string {
+  let node: unknown = enMarketing;
+  for (const segment of dottedKey.split('.')) {
+    if (node && typeof node === 'object' && segment in (node as Record<string, unknown>)) {
+      node = (node as Record<string, unknown>)[segment];
+    } else {
+      throw new Error(`missing marketing key: ${dottedKey}`);
+    }
+  }
+  if (typeof node !== 'string') throw new Error(`marketing key is not a string: ${dottedKey}`);
+  return node;
+}
+
+vi.mock('server-only', () => ({}));
+
+vi.mock('@/app/lib/i18n/server', () => ({
+  getServerTranslation: vi.fn(async () => ({
+    t: (key: string) => resolveMarketingKey(key),
+    locale: 'en-US',
+  })),
+}));
+
+// `next/image` is a client component with its own loader; a plain <img> keeps
+// the assertion about the src the strip emits.
+vi.mock('next/image', () => ({
+  default: ({ src, alt, width, height }: { src: string; alt: string; width: number; height: number }) => (
+    <img src={src} alt={alt} width={width} height={height} />
+  ),
+}));
+
+const { default: HomeFeatureStrip } = await import('../home-feature-strip');
+const { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } = await import('@/app/lib/store-urls');
+
+async function renderStrip(): Promise<string> {
+  return renderToStaticMarkup(await HomeFeatureStrip());
+}
+
+describe('HomeFeatureStrip', () => {
+  it('renders three columns, each with a heading and a line of copy', async () => {
+    const html = await renderStrip();
+
+    expect(html.match(/data-testid="home-feature-column"/g)).toHaveLength(3);
+    expect(html.match(/<h3/g)).toHaveLength(3);
+    expect(html).toContain(resolveMarketingKey('home.features.queue.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.party.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.logbook.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.logbook.body'));
+  });
+
+  it('renders the section heading as the only h2', async () => {
+    const html = await renderStrip();
+
+    expect(html.match(/<h2/g)).toHaveLength(1);
+    expect(html).toContain(resolveMarketingKey('home.features.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.lead'));
+  });
+
+  it('carries the app CTA as a real anchor to each store', async () => {
+    const html = await renderStrip();
+
+    expect(html).toContain(`href="${IOS_APP_STORE_URL}"`);
+    expect(html).toContain(`href="${ANDROID_PLAY_STORE_URL}"`);
+    expect(html).toContain(resolveMarketingKey('home.features.cta'));
+  });
+
+  it('shows the two real captures and a neutral placeholder for the third', async () => {
+    const html = await renderStrip();
+
+    // Two committed Play Store captures, cropped to the device. The queue
+    // column has no honest capture yet, so it gets a placeholder rather than a
+    // screenshot of some other screen — and never a generated image.
+    expect(html.match(/<img/g)).toHaveLength(2);
+    expect(html).toContain('/images/app/party-mode-crew.webp');
+    expect(html).toContain('/images/app/logbook-progress.webp');
+    // Both captures carry alt text from the catalog. The comparison is on a
+    // fragment: React escapes the apostrophes in the full string, so matching
+    // the raw catalog value would be a test of HTML escaping, not of alt text.
+    expect(html).toContain('live sessions and recent sends');
+    expect(html).toContain('progress screen with send grades');
+    expect(html).toContain(resolveMarketingKey('home.features.queue.shotPending'));
+  });
+});

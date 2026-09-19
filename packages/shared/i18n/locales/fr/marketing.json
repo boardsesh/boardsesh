@@ -78,6 +78,35 @@
     },
     "recentBeta": {
       "title": "Beta fraîche"
+    },
+    "features": {
+      "title": "La soirée board, réglée",
+      "lead": "Trois choses que l'appli fait et qu'un téléphone qui circule sur le tapis ne fait pas.",
+      "queue": {
+        "title": "File partagée",
+        "body": "Tournez sans le fameux « c'est à qui ? ». Chacun ajoute, tout le monde voit l'ordre.",
+        "shotPending": "Capture en préparation"
+      },
+      "party": {
+        "title": "Mode Party",
+        "body": "Une seule file pour tout le crew, en direct sur chaque téléphone. Allumez le mur depuis le téléphone le plus proche.",
+        "shotAlt": "L'écran d'accueil de l'appli avec les sessions en direct du crew"
+      },
+      "logbook": {
+        "title": "Carnet",
+        "body": "Notez croix et essais au fil de la séance, et ramenez votre historique Kilter ou Tension avec vous.",
+        "shotAlt": "L'écran de progression de l'appli avec les cotations enchaînées et le calendrier des séances"
+      },
+      "cta": "Télécharger l'appli"
+    },
+    "support": {
+      "eyebrow": "Gratuit, et ça ne changera pas",
+      "title": "Boardsesh tourne parce que des grimpeurs participent",
+      "p1": "Pas de pub, pas d'écran verrouillé, pas de deuxième catégorie. Tout Boardsesh reste ouvert à tout le monde, sponsor ou non, auto-hébergement compris.",
+      "p2": "L'hébergement, la base de données et les factures derrière sont payés par les gens qui s'en servent.",
+      "chipIn": "Participer",
+      "source": "Lire le code",
+      "otherWays": "Pas de budget ?"
     }
   },
   "about": {
