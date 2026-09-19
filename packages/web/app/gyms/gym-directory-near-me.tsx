@@ -333,7 +333,7 @@ export default function GymDirectoryNearMe({
           display: 'grid',
           gap: 3,
           gridTemplateColumns: 'minmax(0, 1fr)',
-          [WIDE_LAYOUT]: { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 360px)', alignItems: 'start' },
+          [WIDE_LAYOUT]: { gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', alignItems: 'start' },
         }}
       >
         {/* The list column is FIRST in the DOM at every width. The map is never
@@ -460,10 +460,7 @@ function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, viewerState
           {t('nearMe.empty')}
         </Typography>
       ) : (
-        <Box
-          component="ul"
-          sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2, m: 0, p: 0 }}
-        >
+        <Box component="ul" sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 0, m: 0, p: 0 }}>
           {gyms.map((gym) => (
             <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
           ))}

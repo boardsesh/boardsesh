@@ -1,7 +1,6 @@
 .strip {
   min-width: 0;
 }
-
 .section > h2 {
   font-size: 32px;
   line-height: 1.25;
@@ -9,144 +8,90 @@
   letter-spacing: -0.02em;
   margin-bottom: var(--spacing-3);
 }
-
 .section > p {
   max-width: 60ch;
   margin-bottom: var(--spacing-8);
   line-height: 1.65;
 }
-
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-5);
   margin: 0;
   padding: 0;
   list-style: none;
 }
-
 .feature {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-8);
-  padding: var(--spacing-6);
-  border: 1px solid var(--separator);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-6);
+  padding: var(--spacing-8);
   border-radius: var(--border-radius-xl);
-  background: color-mix(in srgb, var(--semantic-surface) 55%, var(--semantic-background));
+  background: var(--semantic-surface);
+  overflow: hidden;
 }
-
+.feature:first-child {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+}
 .featureCopy {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-3);
+  min-width: 0;
 }
-
-/* Equal stages, not equal image widths: each genuine capture retains its own
-   device proportions. The UI stays visible rather than being cropped to fit. */
-.shot {
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  height: 336px;
-  width: 100%;
-  margin-top: auto;
-}
-
-.shotImage {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-lg);
-}
-
-.chip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  color: var(--color-primary);
-}
-
-.chipInfo {
-  color: var(--color-primary);
-}
-
 .feature .featureTitle {
   margin: 0;
-  font-size: var(--font-size-xl);
+  font-size: 28px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
-
+.feature:first-child .featureTitle {
+  font-size: 36px;
+  max-width: 14ch;
+}
 .feature .featureBody {
   margin: 0;
   color: var(--neutral-500);
   font-size: var(--font-size-base);
   line-height: 1.65;
+  max-width: 38ch;
 }
-
+.shot {
+  width: 100%;
+  max-width: 330px;
+  justify-self: center;
+  align-self: end;
+}
 .cta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-4);
   margin-top: var(--spacing-8);
 }
-
-.cta > a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: var(--font-size-base);
-}
-
 @media (max-width: 760px) {
   .section > h2 {
     font-size: 28px;
   }
-
-  .section > p {
-    margin-bottom: var(--spacing-6);
-  }
-
   .grid {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-4);
   }
-
-  .feature {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--spacing-6);
+  .feature,
+  .feature:first-child {
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--spacing-5);
+    gap: var(--spacing-5);
   }
-
-  .featureCopy {
-    gap: var(--spacing-2);
+  .feature .featureTitle,
+  .feature:first-child .featureTitle {
+    font-size: 24px;
+    max-width: none;
   }
-
-  .feature .featureTitle {
-    font-size: var(--font-size-xl);
-  }
-
-  .feature .featureBody {
-    font-size: var(--font-size-base);
-    line-height: 1.6;
-  }
-
   .shot {
-    height: 200px;
-    align-items: center;
-    margin-top: 0;
+    max-width: 300px;
   }
-
   .cta {
     margin-top: var(--spacing-6);
   }

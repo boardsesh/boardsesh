@@ -1,12 +1,12 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Entraînez-vous mieux sur votre board d'escalade",
-      "description": "Notez vos croix sur Kilter, Tension et MoonBoard. Une seule app pour vos boards.",
-      "ogDescription": "Compatible avec Kilter, Tension et MoonBoard. Suivez vos sessions, pilotez les LEDs, grimpez ensemble."
+      "title": "App de grimpe compatible avec Kilter, Tension et MoonBoard",
+      "description": "Partage une file en direct avec ton crew et suis tes croix sur chaque board. Compatible avec Kilter, Tension, MoonBoard et plus.",
+      "ogDescription": "Partage une file en direct avec ton crew et suis tes croix sur chaque board. Compatible avec Kilter, Tension, MoonBoard et plus."
     },
     "about": {
-      "title": "À propos",
+      "title": "Créée par des grimpeurs, ouverte à tous",
       "description": "Une seule app pour chaque board d'escalade. Open source, portée par la communauté."
     },
     "support": {
@@ -32,23 +32,19 @@
   },
   "home": {
     "hero": {
-      "title": "Une appli pour tes boards",
+      "title": "Tes boards. Une seule app.",
       "eyebrow": "Compatible avec Kilter, Tension, MoonBoard et bien d’autres",
       "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
-      "subtitle": "Prépare tes blocs avec ta crew. Garde toutes tes croix dans un seul carnet, quelle que soit ta board.",
+      "subtitle": "Change de board sans changer d’app.",
       "startClimbingAria": "Commencer à grimper dans l'appli",
       "startClimbingWeb": "Commencer à grimper sur le web →",
       "ctaInstallIos": "Télécharger sur l'App Store",
       "ctaInstallAndroid": "Disponible sur Google Play",
-      "ctaUpdate": "Mettre à jour l'appli"
+      "ctaUpdate": "Mettre à jour l'appli",
+      "tensionShotAlt": "Un bloc sur une board Tension dans Boardsesh",
+      "moonboardShotAlt": "Un bloc sur une MoonBoard dans Boardsesh"
     },
     "onboardingHeader": "Faites-en votre app",
-    "install": {
-      "iosTitle": "Installez l'app Boardsesh",
-      "iosDescription": "Allumez les prises de votre board directement depuis votre téléphone",
-      "androidLiveTitle": "Installez l'app Boardsesh",
-      "androidLiveDescription": "Disponible sur Google Play"
-    },
     "cards": {
       "auroraTitle": "Vous venez de Kilter ?",
       "auroraDescription": "Importez votre carnet et votre historique en une étape",
@@ -94,24 +90,22 @@
     },
     "features": {
       "title": "La soirée board, réglée",
-      "lead": "Trois choses que l'appli fait et qu'un téléphone qui circule sur le tapis ne fait pas.",
+      "lead": "Du premier bloc à la dernière croix, partage toute la séance.",
       "queue": {
-        "title": "File partagée",
-        "body": "Tournez sans le fameux « c'est à qui ? ». Chacun ajoute, tout le monde voit l'ordre.",
-        "shotAlt": "La file partagée de Boardsesh avec les blocs prévus pour la session"
+        "title": "Ton crew. Une file en direct.",
+        "body": "Ajoute des blocs avec ton crew. Tout le monde reste synchronisé.",
+        "shotAlt": "La file partagée de Boardsesh avec les prochains blocs du crew"
       },
-      "party": {
-        "title": "Mode Party",
-        "body": "Une seule file pour tout le crew, en direct sur chaque téléphone. Allumez le mur depuis le téléphone le plus proche.",
-        "shotAlt": "L'écran d'accueil de l'appli avec les sessions en direct du crew"
+      "wall": {
+        "title": "Vois ce qui est au mur.",
+        "body": "Vois le bloc allumé pendant que tu cherches le suivant.",
+        "shotAlt": "Le bloc allumé reste visible pendant que tu explores les autres blocs"
       },
-      "logbook": {
-        "title": "Carnet",
-        "body": "Notez croix et essais au fil de la séance, et ramenez votre historique Kilter ou Tension avec vous.",
-        "shotAlt": "L'écran de progression de l'appli avec les cotations enchaînées et le calendrier des séances"
-      },
-      "cta": "Télécharger l'appli",
-      "ctaAndroid": "Disponible sur Google Play"
+      "profile": {
+        "title": "Toutes tes boards. Un seul profil.",
+        "body": "Suis tes croix et tes progrès sur chaque board.",
+        "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
+      }
     },
     "support": {
       "eyebrow": "Gratuit, et ça ne changera pas",
@@ -125,8 +119,8 @@
   },
   "about": {
     "hero": {
-      "title": "Notez, entraînez-vous et grimpez ensemble",
-      "subtitle": "Une seule app pour chaque board d'escalade"
+      "title": "Fait par des grimpeurs. Ouvert à tous.",
+      "subtitle": "Tes boards. Une seule app."
     },
     "vision": {
       "title": "Notre vision",
@@ -135,12 +129,12 @@
     },
     "features": {
       "title": "Ce que Boardsesh vous offre",
-      "queueLabel": "Gestion de la file.",
-      "queueDescription": "Tournez sans le fameux « c'est à qui ? »",
-      "partyLabel": "Mode Party.",
-      "partyDescription": "Partagez une session et grimpez ensemble en temps réel",
-      "multiBoardLabel": "Multi-board.",
-      "multiBoardDescription": "Compatible avec Kilter, Tension, MoonBoard et d'autres",
+      "queueLabel": "Ton crew. Une file en direct.",
+      "queueDescription": "Ajoute des blocs avec ton crew. Tout le monde reste synchronisé.",
+      "partyLabel": "Vois ce qui est au mur.",
+      "partyDescription": "Vois le bloc allumé pendant que tu cherches le suivant.",
+      "multiBoardLabel": "Tes boards. Une seule app.",
+      "multiBoardDescription": "Change de board sans changer d’app.",
       "communityLabel": "Porté par la communauté.",
       "communityDescription": "Construit et amélioré par des gens qui grimpent vraiment",
       "selfHostedLabel": "Auto-hébergeable.",
@@ -158,10 +152,16 @@
     },
     "community": {
       "title": "Rejoignez la communauté",
-      "body": "Que vous codiez, ouvriez des blocs ou que vous vouliez juste nous dire ce qui cloche, on vous écoute."
+      "body": "Que vous codiez, ouvriez des blocs ou que vous vouliez juste nous dire ce qui cloche, on vous écoute.",
+      "discord": "Rejoins le crew sur Discord",
+      "support": "Soutenir Boardsesh"
     },
     "legalLink": "Politique légale et de propriété intellectuelle",
-    "footer": "Fait par des grimpeurs. Ouvert à tous."
+    "footer": "Fait par des grimpeurs. Ouvert à tous.",
+    "profile": {
+      "title": "Toutes tes boards. Un seul profil.",
+      "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
+    }
   },
   "support": {
     "hero": {
@@ -350,6 +350,13 @@
       "discord": "Demander sur Discord",
       "github": "Signaler un bug sur GitHub",
       "docs": "Lire la doc développeur"
+    },
+    "topics": {
+      "label": "Rubriques d’aide",
+      "using": "Utiliser Boardsesh",
+      "logbook": "Retrouve ton carnet",
+      "counts": "Nombre de blocs",
+      "ask": "Obtenir de l’aide"
     }
   },
   "docs": {
@@ -494,5 +501,10 @@
       "body2Link": "GitHub",
       "body2End": "."
     }
+  },
+  "preview": {
+    "label": "Aperçu de l’app",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

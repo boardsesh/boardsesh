@@ -1,0 +1,59 @@
+.row {
+  list-style: none;
+  min-width: 0;
+  padding: var(--spacing-4) 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.row:first-child {
+  border-top: 1px solid var(--separator);
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+
+.heading h3 {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.heading h3 a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.heading > :last-child {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.location {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-1);
+}
+
+.location svg {
+  flex-shrink: 0;
+}
+
+.location p {
+  overflow-wrap: anywhere;
+}
+
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-4);
+  margin-top: var(--spacing-2);
+}

@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 vi.mock('server-only', () => ({}));
 
@@ -102,15 +101,11 @@ beforeEach(() => {
 });
 
 describe('HomeGymSearch', () => {
-  it('fetches bounded real-board previews for each gym without replacing its identity', async () => {
-    getBoardDiscovery.mockImplementation(async ({ gymUuid }: { gymUuid: string }) =>
-      gymUuid === 'gym-1' ? [discoveryBoard()] : [],
-    );
+  it('shows gym links without fetching or repeating physical board previews', async () => {
     await renderSection();
-    expect(getBoardDiscovery).toHaveBeenCalledWith({ gymUuid: 'gym-1', limit: 3 });
-    expect(getBoardDiscovery).toHaveBeenCalledWith({ gymUuid: 'gym-2', limit: 3 });
-    expect(screen.getByRole('link', { name: /Training room Kilter/ }).getAttribute('href')).toBe('/b/northside-kilter');
+    expect(getBoardDiscovery).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'Granite Barn Bouldering' })).toBeTruthy();
+    expect(screen.queryByTestId('gym-board-previews')).toBeNull();
   });
 
   it('does not describe a successful empty catalogue as an outage', async () => {

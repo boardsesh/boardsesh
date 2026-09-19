@@ -2,7 +2,6 @@
 
 import React from 'react';
 
-import Image from 'next/image';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -25,12 +24,11 @@ import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
+import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
 import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
-import InstallAppCard from '@/app/components/home/install-app-card';
 import DiscordIcon from '@/app/components/home/discord-icon';
 import styles from './home-page-content.module.css';
 
@@ -171,8 +169,7 @@ export default function HomePageContent({
             {/* Store-first, per the marketing wireframe: the app is the product
               and the web is the way in for someone who has not installed it.
               A phone browser gets the one store that matches it; a desktop
-              browser gets both, because there is nothing to infer from. The
-              whole row self-suppresses inside the native app. */}
+              browser gets both. Retired native shells receive an update link. */}
             <Box className={styles.heroActions}>
               {heroInstallButtons.map((button) => (
                 <Button
@@ -180,6 +177,9 @@ export default function HomePageContent({
                   variant={button.primary ? 'contained' : 'outlined'}
                   size="large"
                   startIcon={<HeroInstallIcon />}
+                  href={button.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => {
                     track(
                       APP_INSTALL_CLICK_EVENT,
@@ -190,7 +190,6 @@ export default function HomePageContent({
                         mode: heroInstall.mode,
                       }),
                     );
-                    window.open(button.url, '_blank', 'noopener,noreferrer');
                   }}
                   sx={button.primary ? HERO_CTA_SX : HERO_SECONDARY_CTA_SX}
                 >
@@ -209,40 +208,36 @@ export default function HomePageContent({
               sx={HERO_WEB_CTA_SX}
             />
           </Box>
-          <Box className={styles.heroPreview}>
-            <Image
-              src={resolveStaticAssetUrl('/images/app/play-view.webp')}
-              alt={t('home.hero.playShotAlt')}
-              width={603}
-              height={1312}
-              sizes="(max-width: 760px) 49vw, 260px"
-              preload
-              className={`${styles.previewPhone} ${styles.previewPrimary}`}
-            />
-            <Image
-              src={resolveStaticAssetUrl('/images/app/shared-queue.webp')}
-              alt={t('home.features.queue.shotAlt')}
-              width={603}
-              height={1312}
-              sizes="(max-width: 760px) 40vw, 210px"
-              className={`${styles.previewPhone} ${styles.previewSecondary}`}
-            />
+          <Box className={styles.previewGroup}>
+            <Box className={styles.heroPreview}>
+              <MarketingScreenshot
+                shot="tension"
+                alt={t('home.hero.tensionShotAlt')}
+                sizes="(max-width: 760px) 42vw, 230px"
+                className={`${styles.previewPhone} ${styles.previewLeft}`}
+              />
+              <MarketingScreenshot
+                shot="moonboard"
+                alt={t('home.hero.moonboardShotAlt')}
+                sizes="(max-width: 760px) 42vw, 230px"
+                className={`${styles.previewPhone} ${styles.previewRight}`}
+              />
+              <MarketingScreenshot
+                shot="kilter"
+                alt={t('home.hero.playShotAlt')}
+                sizes="(max-width: 760px) 48vw, 260px"
+                preload
+                className={`${styles.previewPhone} ${styles.previewPrimary}`}
+              />
+            </Box>
+            <MarketingPreviewSwitch />
           </Box>
         </Box>
 
-        {/* Explain the app before asking visitors to explore the catalogue. */}
         {featureStrip}
-
-        {/* "Find a board near you" — the gym directory teaser. Server-rendered,
-            so its gym links are crawlable. */}
+        <PopularBoardRail boards={initialBoards ?? []} />
         {gymSearch}
-
-        {/* Named physical boards keep discovery and the app handoff on the
-            same installation instead of minting another configuration. */}
-        <Box className={styles.discovery}>
-          <PopularBoardRail boards={initialBoards ?? []} />
-          <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
-        </Box>
+        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
 
         {/* Onboarding Cards */}
         {/* The stack used to be a single column capped at 420px, which on a
@@ -273,10 +268,6 @@ export default function HomePageContent({
           >
             {t('home.onboardingHeader')}
           </Typography>
-
-          <Box sx={{ gridColumn: '1 / -1' }}>
-            <InstallAppCard platform={installPlatform} />
-          </Box>
 
           {/* Signed-in only: the gym you help run, with Manage / View links.
               Self-gates to null for signed-out visitors and for climbers with

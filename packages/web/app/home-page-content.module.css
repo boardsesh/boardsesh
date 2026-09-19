@@ -59,15 +59,26 @@
   font-size: var(--font-size-base);
 }
 
+.previewGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-5);
+  min-width: 0;
+}
+.previewGroup > :last-child {
+  align-self: center;
+}
 .heroPreview {
   position: relative;
   isolation: isolate;
   width: 100%;
   max-width: 490px;
-  aspect-ratio: 490 / 600;
-  justify-self: end;
+  aspect-ratio: 490 / 680;
 }
-
+.heroPreview:has([data-preview-platform='android']) {
+  aspect-ratio: 490 / 570;
+}
 .heroPreview::before {
   content: '';
   position: absolute;
@@ -82,33 +93,24 @@
   );
   pointer-events: none;
 }
-
 .previewPhone {
   position: absolute;
   display: block;
-  height: auto;
-  border: 1px solid var(--separator);
-  border-radius: var(--border-radius-xl);
-  background: var(--semantic-background);
 }
-
-.previewPrimary {
-  width: 53%;
+.previewLeft {
+  width: 46%;
   top: 0;
-  left: 3%;
+  left: 0;
 }
-
-.previewSecondary {
-  width: 43%;
-  top: 17%;
+.previewRight {
+  width: 46%;
+  top: 0;
   right: 0;
 }
-
-.discovery {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-12);
-  min-width: 0;
+.previewPrimary {
+  width: 53%;
+  top: 16%;
+  left: 23.5%;
 }
 
 .onboarding {
@@ -158,10 +160,6 @@
   .heroActions > button {
     font-size: var(--font-size-base);
     padding-inline: var(--spacing-4);
-  }
-
-  .discovery {
-    gap: var(--spacing-8);
   }
 
   .onboarding {

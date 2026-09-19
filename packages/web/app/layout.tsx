@@ -1,5 +1,6 @@
 // app/layout.tsx
 import React, { Suspense } from 'react';
+import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import AppThemeProvider from './components/providers/app-theme-provider';
 import AnalyticsClient from './components/analytics-client';
@@ -19,6 +20,8 @@ import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
 import { themeTokens } from './theme/theme-config';
 import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
+import { classifyMarketingBrowser } from './lib/marketing-platform';
+import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
 import './components/index.css';
 import type { Viewport, Metadata } from 'next';
 
@@ -64,7 +67,8 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const locale = await getLocale();
+  const [locale, requestHeaders] = await Promise.all([getLocale(), headers()]);
+  const initialBrowser = classifyMarketingBrowser(requestHeaders.get('user-agent') ?? '');
 
   // data-theme="dark" is static: www renders one scheme. Nothing in-repo reads
   // the attribute any more (the CSS vars live on :root), but it is kept as the
@@ -110,7 +114,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <CapacitorRetirementGate>
                       <AuthModalProvider>
                         <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <SiteChrome>{children}</SiteChrome>
+                          <MarketingPreviewProvider initialBrowser={initialBrowser}>
+                            <SiteChrome>{children}</SiteChrome>
+                          </MarketingPreviewProvider>
                         </FeatureFlagsProvider>
                       </AuthModalProvider>
                     </CapacitorRetirementGate>

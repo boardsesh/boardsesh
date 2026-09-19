@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
 import type { InstallPlatform, HeroInstallStore } from '@/app/lib/hero-install';
+import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
+import { useMarketingPreview } from '@/app/components/marketing/marketing-preview-provider';
 
 export type InstallPlatformState = {
   platform: InstallPlatform;
@@ -23,21 +25,14 @@ export type InstallPlatformState = {
  * on it renders fine on the server.
  */
 export function useInstallPlatform(): InstallPlatformState {
-  const [platform, setPlatform] = useState<InstallPlatform>('unknown');
-  const [nativeStore, setNativeStore] = useState<HeroInstallStore>('ios');
+  const preview = useMarketingPreview();
+  const [platform, setPlatform] = useState<InstallPlatform>(preview?.browser.installPlatform ?? 'unknown');
+  const [nativeStore, setNativeStore] = useState<HeroInstallStore>(preview?.browser.platform ?? 'ios');
 
   useEffect(() => {
     let cancelled = false;
-    const classifyWeb = (): InstallPlatform => {
-      const ua = navigator.userAgent;
-      if (/Android/i.test(ua)) return 'android-web';
-      // iPadOS 13+ reports a Macintosh UA. Touch points are what separate it
-      // from an actual Mac, and an iPad wants the App Store, not both stores.
-      const isIpad = /Macintosh/i.test(ua) && navigator.maxTouchPoints > 1;
-      if (isIpad || /iPhone|iPod|Mobile|Silk|Kindle/i.test(ua)) return 'other-web';
-      // No phone OS to infer from a desktop browser, so the hero offers both.
-      return 'desktop-web';
-    };
+    const classifyWeb = (): InstallPlatform =>
+      classifyMarketingBrowser(navigator.userAgent, navigator.maxTouchPoints).installPlatform;
     const classifyNativeStore = (): HeroInstallStore => (/Android/i.test(navigator.userAgent) ? 'android' : 'ios');
 
     // App-store screenshot tests set this flag so the install CTA matches what

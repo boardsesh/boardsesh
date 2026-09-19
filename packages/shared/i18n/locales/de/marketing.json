@@ -1,12 +1,12 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Trainiere schlauer an deinem Board",
-      "description": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest. Eine App für alle deine Boards.",
-      "ogDescription": "Funktioniert mit Kilter, Tension und MoonBoard. Sessions festhalten, LEDs steuern, zusammen klettern."
+      "title": "Kletter-App für Kilter, Tension und MoonBoard",
+      "description": "Teile eine Live-Warteschlange mit deiner Crew und verfolge deine Begehungen an allen Boards. Kompatibel mit Kilter, Tension, MoonBoard und mehr.",
+      "ogDescription": "Teile eine Live-Warteschlange mit deiner Crew und verfolge deine Begehungen an allen Boards. Kompatibel mit Kilter, Tension, MoonBoard und mehr."
     },
     "about": {
-      "title": "Über uns",
+      "title": "Von Kletterer*innen, offen für alle",
       "description": "Eine App für jedes Kletterboard. Open Source, von der Community getragen."
     },
     "support": {
@@ -32,23 +32,19 @@
   },
   "home": {
     "hero": {
-      "title": "Eine App für deine Boards",
+      "title": "Deine Boards. Eine App.",
       "eyebrow": "Kompatibel mit Kilter, Tension, MoonBoard & mehr",
       "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
-      "subtitle": "Plane die nächsten Boulder mit deiner Crew. Halte jede Begehung in einem Routenbuch fest, egal an welchem Board du kletterst.",
+      "subtitle": "Wechsle das Board, ohne die App zu wechseln.",
       "startClimbingAria": "In der App losklettern",
       "startClimbingWeb": "Im Browser losklettern →",
       "ctaInstallIos": "Im App Store laden",
       "ctaInstallAndroid": "Bei Google Play holen",
-      "ctaUpdate": "App aktualisieren"
+      "ctaUpdate": "App aktualisieren",
+      "tensionShotAlt": "Ein Boulder an einem Tension Board in Boardsesh",
+      "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh"
     },
     "onboardingHeader": "Mach's zu deinem",
-    "install": {
-      "iosTitle": "Hol dir die Boardsesh-App",
-      "iosDescription": "Beleuchtet Griffe auf deinem Board direkt vom Handy aus",
-      "androidLiveTitle": "Hol dir die Boardsesh-App",
-      "androidLiveDescription": "Jetzt bei Google Play"
-    },
     "cards": {
       "auroraTitle": "Kommst du von Kilter?",
       "auroraDescription": "Hol Routenbuch und Historie in einem Schritt rüber",
@@ -94,24 +90,22 @@
     },
     "features": {
       "title": "Board-Abend, geregelt",
-      "lead": "Drei Dinge, die die App kann und ein herumgereichtes Handy auf der Matte nicht.",
+      "lead": "Vom ersten Boulder bis zur letzten Begehung bleibt eure Session zusammen.",
       "queue": {
-        "title": "Geteilte Warteschlange",
-        "body": "Wechselt euch ab ohne das peinliche „wer ist dran?“. Alle legen auf, alle sehen die Reihenfolge.",
-        "shotAlt": "Die geteilte Boardsesh-Warteschlange mit Bouldern für die Session"
+        "title": "Deine Crew. Eine Live-Warteschlange.",
+        "body": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron.",
+        "shotAlt": "Die gemeinsame Boardsesh-Warteschlange mit den nächsten Bouldern deiner Crew"
       },
-      "party": {
-        "title": "Party-Modus",
-        "body": "Eine Warteschlange für die ganze Crew, live auf jedem Handy. Beleuchte das Board vom Handy, das gerade am nächsten liegt.",
-        "shotAlt": "Der Startbildschirm der App mit den laufenden Sessions der Crew"
+      "wall": {
+        "title": "Sieh, was gerade leuchtet.",
+        "body": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst.",
+        "shotAlt": "Der beleuchtete Boulder bleibt sichtbar, während du weitere Boulder suchst"
       },
-      "logbook": {
-        "title": "Routenbuch",
-        "body": "Halt Begehungen und Versuche direkt fest und bring deine Kilter- oder Tension-Historie mit rüber.",
-        "shotAlt": "Der Fortschritts-Screen der App mit Begehungsgraden und dem Session-Kalender"
-      },
-      "cta": "App holen",
-      "ctaAndroid": "Bei Google Play holen"
+      "profile": {
+        "title": "Alle deine Boards. Ein Profil.",
+        "body": "Sieh Begehungen und Fortschritte an jedem Board.",
+        "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+      }
     },
     "support": {
       "eyebrow": "Kostenlos, und das bleibt so",
@@ -125,8 +119,8 @@
   },
   "about": {
     "hero": {
-      "title": "Festhalten, trainieren, zusammen klettern",
-      "subtitle": "Eine App für jedes Kletterboard"
+      "title": "Von Kletterer*innen gebaut. Offen für alle.",
+      "subtitle": "Deine Boards. Eine App."
     },
     "vision": {
       "title": "Unsere Vision",
@@ -135,12 +129,12 @@
     },
     "features": {
       "title": "Was Boardsesh kann",
-      "queueLabel": "Warteschlange.",
-      "queueDescription": "Abwechseln ohne das peinliche „wer ist dran?“",
-      "partyLabel": "Party-Modus.",
-      "partyDescription": "Teil eine Session und klettert in Echtzeit zusammen",
-      "multiBoardLabel": "Mehrere Boards.",
-      "multiBoardDescription": "Funktioniert mit Kilter, Tension, MoonBoard und mehr",
+      "queueLabel": "Deine Crew. Eine Live-Warteschlange.",
+      "queueDescription": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron.",
+      "partyLabel": "Sieh, was gerade leuchtet.",
+      "partyDescription": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst.",
+      "multiBoardLabel": "Deine Boards. Eine App.",
+      "multiBoardDescription": "Wechsle das Board, ohne die App zu wechseln.",
       "communityLabel": "Von der Community.",
       "communityDescription": "Gebaut und verbessert von Leuten, die wirklich klettern",
       "selfHostedLabel": "Selbst hostbar.",
@@ -158,10 +152,16 @@
     },
     "community": {
       "title": "Komm in die Community",
-      "body": "Ob du Code schreibst, Boulder schraubst oder uns einfach sagen willst, was kaputt ist — wir hören gern von dir."
+      "body": "Ob du Code schreibst, Boulder schraubst oder uns einfach sagen willst, was kaputt ist — wir hören gern von dir.",
+      "discord": "Tritt der Crew auf Discord bei",
+      "support": "Unterstütze Boardsesh"
     },
     "legalLink": "Rechtliches & Richtlinie zum geistigen Eigentum",
-    "footer": "Von Kletterer*innen gebaut. Offen für alle."
+    "footer": "Von Kletterer*innen gebaut. Offen für alle.",
+    "profile": {
+      "title": "Alle deine Boards. Ein Profil.",
+      "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+    }
   },
   "support": {
     "hero": {
@@ -350,6 +350,13 @@
       "discord": "Auf Discord fragen",
       "github": "Fehler auf GitHub melden",
       "docs": "Entwickler-Doku lesen"
+    },
+    "topics": {
+      "label": "Hilfethemen",
+      "using": "Boardsesh nutzen",
+      "logbook": "Bring dein Routenbuch mit",
+      "counts": "Boulder-Anzahl",
+      "ask": "Hilfe finden"
     }
   },
   "docs": {
@@ -494,5 +501,10 @@
       "body2Link": "GitHub",
       "body2End": " siehst du genau, welche Daten die App erhebt und wie sie verarbeitet werden."
     }
+  },
+  "preview": {
+    "label": "App-Vorschau",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

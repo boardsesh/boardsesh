@@ -8,6 +8,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import StartClimbingButton from '@/app/components/start-climbing-button';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import styles from './help.module.css';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
@@ -29,81 +30,96 @@ export default function HelpContent() {
   const { t } = useTranslation('marketing');
 
   return (
-    <PageShell title={t('help.hero.title')} lead={t('help.hero.subtitle')}>
-      <PageSection title={t('help.web.title')} lead={t('help.web.intro')}>
-        <ProseList>
-          <li>{t('help.web.item1')}</li>
-          <li>{t('help.web.item2')}</li>
-          <li>{t('help.web.item3')}</li>
-          <li>{t('help.web.item4')}</li>
-        </ProseList>
-        <Prose>
-          <MuiLink component={LocaleLink} href="/playlists">
-            {t('help.web.playlistsLink')}
-          </MuiLink>
-          {' · '}
-          <MuiLink component={LocaleLink} href="/about">
-            {t('help.web.aboutLink')}
-          </MuiLink>
-        </Prose>
-      </PageSection>
-
-      <PageSection title={t('help.app.title')} lead={t('help.app.intro')}>
-        <ProseList>
-          <li>{t('help.app.item1')}</li>
-          <li>{t('help.app.item2')}</li>
-          <li>{t('help.app.item3')}</li>
-          <li>{t('help.app.item4')}</li>
-        </ProseList>
-        <Box sx={{ mt: 2 }}>
-          <StartClimbingButton
-            label={t('help.app.cta')}
-            ariaLabel={t('help.app.ctaAriaLabel')}
-            size="medium"
-            sx={CTA_SX}
-          />
+    <PageShell title={t('help.hero.title')} lead={t('help.hero.subtitle')} width="wide">
+      <Box className={styles.layout}>
+        <Box component="nav" aria-label={t('help.topics.label')} className={styles.topics}>
+          <MuiLink href="#using-boardsesh">{t('help.topics.using')}</MuiLink>
+          <MuiLink href="#bring-your-logbook">{t('help.topics.logbook')}</MuiLink>
+          <MuiLink href="#climb-counts">{t('help.topics.counts')}</MuiLink>
+          <MuiLink href="#get-help">{t('help.topics.ask')}</MuiLink>
         </Box>
-      </PageSection>
+        <Box className={styles.content}>
+          <Box id="using-boardsesh" className={styles.using}>
+            <PageSection title={t('help.web.title')} lead={t('help.web.intro')}>
+              <ProseList>
+                <li>{t('help.web.item1')}</li>
+                <li>{t('help.web.item2')}</li>
+                <li>{t('help.web.item3')}</li>
+                <li>{t('help.web.item4')}</li>
+              </ProseList>
+              <Prose>
+                <MuiLink component={LocaleLink} href="/playlists">
+                  {t('help.web.playlistsLink')}
+                </MuiLink>
+                {' · '}
+                <MuiLink component={LocaleLink} href="/about">
+                  {t('help.web.aboutLink')}
+                </MuiLink>
+              </Prose>
+            </PageSection>
 
-      <PageSection title={t('help.aurora.title')} lead={t('help.aurora.intro')}>
-        <ProseList>
-          <li>{t('help.aurora.item1')}</li>
-          <li>{t('help.aurora.item2')}</li>
-        </ProseList>
-        <Prose>
-          <MuiLink component={LocaleLink} href="/aurora-migration">
-            {t('help.aurora.link')}
-          </MuiLink>
-        </Prose>
-      </PageSection>
+            <PageSection title={t('help.app.title')} lead={t('help.app.intro')}>
+              <ProseList>
+                <li>{t('help.app.item1')}</li>
+                <li>{t('help.app.item2')}</li>
+                <li>{t('help.app.item3')}</li>
+                <li>{t('help.app.item4')}</li>
+              </ProseList>
+              <Box sx={{ mt: 2 }}>
+                <StartClimbingButton
+                  label={t('help.app.cta')}
+                  ariaLabel={t('help.app.ctaAriaLabel')}
+                  size="medium"
+                  sx={CTA_SX}
+                />
+              </Box>
+            </PageSection>
+          </Box>
+          <PageSection id="bring-your-logbook" title={t('help.aurora.title')} lead={t('help.aurora.intro')}>
+            <ProseList>
+              <li>{t('help.aurora.item1')}</li>
+              <li>{t('help.aurora.item2')}</li>
+            </ProseList>
+            <Prose>
+              <MuiLink component={LocaleLink} href="/aurora-migration">
+                {t('help.aurora.link')}
+              </MuiLink>
+            </Prose>
+          </PageSection>
 
-      <PageSection id={CLIMB_COUNTS_SECTION_ID} title={t('help.climbCounts.title')} lead={t('help.climbCounts.intro')}>
-        <ProseList>
-          <li>{t('help.climbCounts.item1')}</li>
-          <li>{t('help.climbCounts.item2')}</li>
-          <li>{t('help.climbCounts.item3')}</li>
-        </ProseList>
-      </PageSection>
+          <PageSection
+            id={CLIMB_COUNTS_SECTION_ID}
+            title={t('help.climbCounts.title')}
+            lead={t('help.climbCounts.intro')}
+          >
+            <ProseList>
+              <li>{t('help.climbCounts.item1')}</li>
+              <li>{t('help.climbCounts.item2')}</li>
+              <li>{t('help.climbCounts.item3')}</li>
+            </ProseList>
+          </PageSection>
 
-      <PageSection title={t('help.ask.title')} lead={t('help.ask.intro')}>
-        <ProseList>
-          <li>
-            <MuiLink href={DISCORD_INVITE_URL} target="_blank" rel="noopener noreferrer">
-              {t('help.ask.discord')}
-            </MuiLink>
-          </li>
-          <li>
-            <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
-              {t('help.ask.github')}
-            </MuiLink>
-          </li>
-          <li>
-            <MuiLink component={LocaleLink} href="/docs">
-              {t('help.ask.docs')}
-            </MuiLink>
-          </li>
-        </ProseList>
-      </PageSection>
+          <PageSection id="get-help" title={t('help.ask.title')} lead={t('help.ask.intro')}>
+            <ProseList>
+              <li>
+                <MuiLink href={DISCORD_INVITE_URL} target="_blank" rel="noopener noreferrer">
+                  {t('help.ask.discord')}
+                </MuiLink>
+              </li>
+              <li>
+                <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+                  {t('help.ask.github')}
+                </MuiLink>
+              </li>
+              <li>
+                <MuiLink component={LocaleLink} href="/docs">
+                  {t('help.ask.docs')}
+                </MuiLink>
+              </li>
+            </ProseList>
+          </PageSection>
+        </Box>
+      </Box>
     </PageShell>
   );
 }

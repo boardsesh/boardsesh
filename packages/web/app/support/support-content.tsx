@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
 import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
+import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import styles from './support.module.css';
 
 const GITHUB_SPONSORS_URL = 'https://github.com/sponsors/boardsesh';
@@ -25,6 +26,7 @@ const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
 const LOCALE_CATALOGS_URL = 'https://github.com/boardsesh/boardsesh/tree/main/packages/shared/i18n/locales';
 const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
 const DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
+const DONATION_CTA_SX = brandCtaSx();
 
 type SupportContentProps = {
   /** Stripe Payment Link. Unset in most environments — the rail hides itself. */
@@ -51,6 +53,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
             target="_blank"
             rel="noopener noreferrer"
             startIcon={<GitHub />}
+            sx={DONATION_CTA_SX}
           >
             {t('support.sponsors.cta')}
           </Button>
@@ -89,6 +92,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
                   href={GITHUB_SPONSORS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
+                  sx={DONATION_CTA_SX}
                 >
                   {t('support.sponsors.cta')}
                 </Button>
@@ -105,7 +109,13 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
                   {t('support.oneTime.body')}
                 </Typography>
                 <Box className={styles.railCta}>
-                  <Button variant="outlined" href={stripeDonateUrl} target="_blank" rel="noopener noreferrer">
+                  <Button
+                    variant="outlined"
+                    href={stripeDonateUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{ borderRadius: 'var(--border-radius-full)', textTransform: 'none', minHeight: 44 }}
+                  >
                     {t('support.oneTime.cta')}
                   </Button>
                 </Box>
@@ -114,6 +124,21 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
           </Box>
         </PageSection>
       </Box>
+
+      <PageSection
+        className={styles.disclosure}
+        title={t('support.honesty.title')}
+        icon={<InfoOutlined />}
+        tone="neutral"
+      >
+        <Prose>{t('support.honesty.p1')}</Prose>
+        <Prose>{t('support.honesty.p2')}</Prose>
+        <Prose>
+          <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
+            {t('support.docsLink')}
+          </MuiLink>
+        </Prose>
+      </PageSection>
 
       {/* The page's second column of substance. Without it, an environment with
           no Stripe link is one card and a lot of prose. */}
@@ -188,21 +213,6 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
         <Prose>
           <MuiLink component={LocaleLink} href="/about" className={styles.standaloneLink}>
             {t('support.aboutLink')}
-          </MuiLink>
-        </Prose>
-      </PageSection>
-
-      <PageSection
-        className={styles.disclosure}
-        title={t('support.honesty.title')}
-        icon={<InfoOutlined />}
-        tone="neutral"
-      >
-        <Prose>{t('support.honesty.p1')}</Prose>
-        <Prose>{t('support.honesty.p2')}</Prose>
-        <Prose>
-          <MuiLink component={LocaleLink} href="/docs" className={styles.standaloneLink}>
-            {t('support.docsLink')}
           </MuiLink>
         </Prose>
       </PageSection>

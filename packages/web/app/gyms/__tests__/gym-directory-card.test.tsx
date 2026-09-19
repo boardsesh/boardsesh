@@ -3,8 +3,6 @@ import { render, screen } from '@testing-library/react';
 import React from 'react';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
-import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -45,7 +43,6 @@ async function renderCard(props: {
   gym?: Partial<GymDirectoryCardData>;
   origin?: { latitude: number; longitude: number } | null;
   viewerState?: 'signed-in' | 'signed-out';
-  boardPreviews?: BoardDiscoveryBoard[];
 }) {
   return render(
     <GymDirectoryCard
@@ -53,7 +50,6 @@ async function renderCard(props: {
       origin={props.origin ?? null}
       viewerState={props.viewerState ?? 'signed-out'}
       locale="en-US"
-      boardPreviews={props.boardPreviews}
     />,
   );
 }
@@ -68,50 +64,6 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryCard', () => {
-  it('replaces only represented summary chips with physical board rows', async () => {
-    await renderCard({
-      gym: {
-        boardSummaries: [
-          { boardType: 'kilter', angle: 40 },
-          { boardType: 'tension', angle: 30 },
-        ],
-      },
-      boardPreviews: [
-        discoveryBoard({ currentClimb: { uuid: 'climb-one', name: 'A real climb', frames: 'p1r12', angle: 35 } }),
-      ],
-    });
-    expect(screen.queryByText('Kilter 40°')).toBeNull();
-    expect(screen.getByText('Tension 30°')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open this board' }).getAttribute('href')).toContain(
-      '/b/northside-kilter/35/list',
-    );
-  });
-
-  it('does not hide summary chips for boards outside the three visible previews', async () => {
-    await renderCard({
-      gym: { boardSummaries: [{ boardType: 'tension', angle: 30 }] },
-      boardPreviews: [
-        discoveryBoard({ uuid: 'board-one' }),
-        discoveryBoard({ uuid: 'board-two', slug: 'second-kilter' }),
-        discoveryBoard({ uuid: 'board-three', slug: 'third-kilter' }),
-        discoveryBoard({ uuid: 'board-four', slug: 'hidden-tension', boardType: 'tension', angle: 30 }),
-      ],
-    });
-    expect(screen.getByText('Tension 30°')).toBeTruthy();
-    expect(screen.getAllByRole('link', { name: 'Open this board' })).toHaveLength(3);
-  });
-
-  it('renders only previews belonging to this gym and keeps the board UUID route', async () => {
-    await renderCard({
-      boardPreviews: [
-        discoveryBoard(),
-        discoveryBoard({ gymUuid: 'another-gym', slug: 'wrong-wall', name: 'Other gym wall' }),
-      ],
-    });
-    expect(screen.getByRole('link', { name: /Training room Kilter/ }).getAttribute('href')).toBe('/b/northside-kilter');
-    expect(screen.queryByRole('link', { name: /Other gym wall/ })).toBeNull();
-  });
-
   it('labels a claimed gym without offering a claim action', async () => {
     await renderCard({ gym: { isClaimed: true } });
     expect(screen.getByText('Claimed')).toBeTruthy();

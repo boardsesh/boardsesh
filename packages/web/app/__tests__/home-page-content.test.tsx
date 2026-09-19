@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
@@ -114,7 +114,7 @@ describe('HomePageContent', () => {
     setUserAgent(ORIGINAL_UA);
   });
 
-  it('explains the app before the gym catalogue and preserves both real hero captures', () => {
+  it('explains the app before discovery and shows three real board captures', () => {
     render(
       <HomePageContent featureStrip={<section data-testid="features" />} gymSearch={<section data-testid="gyms" />} />,
     );
@@ -122,26 +122,30 @@ describe('HomePageContent', () => {
     const gymSection = screen.getByTestId('gyms');
     expect(featureSection.compareDocumentPosition(gymSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeTruthy();
-    expect(screen.getByAltText(resolveMarketingKey('home.features.queue.shotAlt'))).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.tensionShotAlt'))).toBeTruthy();
+    expect(screen.getByAltText(resolveMarketingKey('home.hero.moonboardShotAlt'))).toBeTruthy();
   });
 
   describe('hero install CTA', () => {
     it('renders both store buttons on desktop web', async () => {
       setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
       render(<HomePageContent {...defaultProps} />);
-      expect(await screen.findByRole('button', { name: /install from app store/i })).toBeTruthy();
-      fireEvent.click(await screen.findByRole('button', { name: /get it on google play/i }));
-      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(await screen.findByRole('link', { name: /install from app store/i })).toBeTruthy();
+      fireEvent.click(await screen.findByRole('link', { name: /get it on google play/i }));
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
     });
 
     it('shows the App Store install CTA on iOS web and opens the store on click', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /install from app store/i });
+      const button = await screen.findByRole('link', { name: /install from app store/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
         source: 'app-store',
@@ -157,10 +161,12 @@ describe('HomePageContent', () => {
       setUserAgent(ANDROID_UA);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /get it on google play/i });
+      const button = await screen.findByRole('link', { name: /get it on google play/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -174,10 +180,11 @@ describe('HomePageContent', () => {
       mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /update the app/i });
+      const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(button.getAttribute('href')).toBe(IOS_APP_STORE_URL);
+      expect(button.getAttribute('rel')).toBe('noopener noreferrer');
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'ios',
         source: 'app-store',
@@ -191,10 +198,12 @@ describe('HomePageContent', () => {
       mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
 
-      const button = await screen.findByRole('button', { name: /update the app/i });
+      const button = await screen.findByRole('link', { name: /update the app/i });
       fireEvent.click(button);
 
-      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(screen.getByRole('link', { name: /get it on google play|update the app/i }).getAttribute('href')).toBe(
+        ANDROID_PLAY_STORE_URL,
+      );
       expect(mockTrack).toHaveBeenCalledWith('App Install Click', {
         platform: 'android',
         source: 'google-play',
@@ -204,34 +213,7 @@ describe('HomePageContent', () => {
     });
   });
 
-  describe('install app card', () => {
-    it('shows the iOS App Store CTA on a regular browser', async () => {
-      setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByText(/Get the Boardsesh app/i)).toBeTruthy();
-      });
-      expect(screen.getByText(/Lights up holds on your board straight from your phone/i)).toBeTruthy();
-    });
-
-    it('shows the Google Play CTA on Android UA', async () => {
-      setUserAgent(ANDROID_UA);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.getByText(/Now on Google Play/i)).toBeTruthy();
-      });
-      expect(screen.getByText(/Get the Boardsesh app/i)).toBeTruthy();
-    });
-
-    it('hides the install card once running in the native Capacitor app', async () => {
-      mockIsNativeApp.mockReturnValue(true);
-      render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        expect(screen.queryByText(/Get the Boardsesh app/i)).toBeNull();
-        expect(screen.queryByText(/Now on Google Play/i)).toBeNull();
-      });
-    });
-
+  describe('install handling', () => {
     it('waits for the Capacitor bridge before classifying a WebView as web', async () => {
       setUserAgent(ANDROID_UA);
       mockIsCapacitorWebView.mockReturnValue(true);
@@ -245,10 +227,8 @@ describe('HomePageContent', () => {
       });
 
       render(<HomePageContent {...defaultProps} />);
-      await waitFor(() => {
-        // Card must not render since we now know we're native.
-        expect(screen.queryByText(/Now on Google Play/i)).toBeNull();
-      });
+      expect(await screen.findByRole('link', { name: /update the app/i })).toBeTruthy();
+      expect(screen.queryByRole('link', { name: /get it on google play/i })).toBeNull();
       expect(mockWaitForCapacitor).toHaveBeenCalledTimes(1);
     });
   });
