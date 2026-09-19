@@ -27,9 +27,19 @@ export type BrandCtaOptions = {
   glow?: boolean;
 };
 
+/**
+ * ONE ramp, shared by the filled and outlined recipes. That sharing is the point:
+ * a filled pill and the outlined pill beside it are a PAIR, and the only reason
+ * they ever stopped matching was that each call site wrote its own padding.
+ *
+ * `medium` pins `minHeight: 44` because MUI's `sizeMedium` is 40px, under the
+ * 44px target the rest of the site holds itself to. `small` lives in the header,
+ * where `marketing-header.module.css` already floors every control at 44px, and
+ * `large` is 48px from MUI — so medium is the only step that needs it said.
+ */
 const SIZE_SX = {
   small: { px: 2, flexShrink: 0, whiteSpace: 'nowrap' },
-  medium: { px: 3 },
+  medium: { px: 3, minHeight: 44 },
   large: {
     px: 4,
     py: 1.5,
@@ -61,6 +71,43 @@ export function brandCtaSx({ size = 'medium', glow = false }: BrandCtaOptions = 
       // The shared StartClimbingButton lifts on hover; the brand pill does not.
       transform: 'none',
       ...(glow ? { boxShadow: 'var(--shadow-accent-glow-hover)' } : {}),
+    },
+  } satisfies SxProps<Theme>;
+}
+
+export type BrandCtaOutlinedOptions = {
+  /** Same ramp as `brandCtaSx`, so a filled/outlined pair cannot drift apart. */
+  size?: BrandCtaSize;
+};
+
+/**
+ * The outlined pill that stands beside the filled one. One definition, because
+ * there were three near-identical ones: the hero's `HERO_SECONDARY_CTA_SX`,
+ * a drifted copy inside `marketing-install-links.tsx` (different `px`, different
+ * `fontSize` — which is why the mid-page store pair visibly did not match the
+ * hero pair), and a bare `variant="outlined"` in the support block that fell
+ * through to MUI's defaults and so matched neither.
+ *
+ * No `glow` option, deliberately. The amber glow belongs to the filled pill and
+ * to one surface per page; an outlined button that glows would be a third thing.
+ *
+ * The border reads `--control-border`, not `--separator`: this is the visual
+ * boundary of a control, and a button whose fill is transparent has nothing else
+ * to identify it. See the token split in `index.css`.
+ */
+export function brandCtaOutlinedSx({ size = 'medium' }: BrandCtaOutlinedOptions = {}) {
+  return {
+    borderRadius: `${themeTokens.borderRadius.full}px`,
+    textTransform: 'none',
+    fontWeight: themeTokens.typography.fontWeight.semibold,
+    color: 'var(--color-primary)',
+    borderColor: 'var(--control-border)',
+    ...SIZE_SX[size],
+    '&:hover': {
+      borderColor: 'var(--color-primary)',
+      backgroundColor: 'var(--semantic-selected-light)',
+      // Cancels the same global StartClimbingButton lift the filled pill cancels.
+      transform: 'none',
     },
   } satisfies SxProps<Theme>;
 }

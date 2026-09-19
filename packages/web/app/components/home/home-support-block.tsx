@@ -8,7 +8,7 @@ import GitHub from '@mui/icons-material/GitHub';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageSection, PageCard, Prose } from '@/app/components/ui/page-shell';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import styles from './home-support-block.module.css';
 
 /**
@@ -28,6 +28,10 @@ import styles from './home-support-block.module.css';
 // Hoisted: brandCtaSx returns a plain object. The amber glow stays on the
 // hero's one CTA — this block takes the plain filled violet.
 const CHIP_IN_SX = brandCtaSx({ size: 'medium' });
+// Its pair-mate. It used to be a bare variant="outlined", so it fell through to
+// MUI's defaults: a 40px button with a half-opacity violet edge, next to a 44px
+// pill. They are one pair and now share one ramp.
+const SOURCE_SX = brandCtaOutlinedSx({ size: 'medium' });
 
 const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
 const GITHUB_ISSUES_URL = 'https://github.com/boardsesh/boardsesh/issues';
@@ -60,6 +64,7 @@ export default async function HomeSupportBlock() {
               </Button>
               <Button
                 variant="outlined"
+                sx={SOURCE_SX}
                 href={GITHUB_REPO_URL}
                 target="_blank"
                 rel="noopener noreferrer"
