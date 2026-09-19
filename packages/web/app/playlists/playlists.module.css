@@ -1,0 +1,21 @@
+/* The playlists directory grid.
+ *
+ * `auto-fill` rather than a fixed column count on purpose. The page moved from
+ * an 800px container to PageShell's wide measure, and a fixed 4-up grid would
+ * have stretched each card from ~188px to ~296px and made the artwork square
+ * ~108px taller with it. Sizing by the card instead of the column count keeps
+ * the card the size it was designed at and lets the number of columns follow the
+ * viewport — roughly 6 at the wide measure, 2 on a phone, with no breakpoints to
+ * keep in sync. */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cardGridItem {
+  min-width: 0;
+}

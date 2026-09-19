@@ -140,46 +140,66 @@ export async function cachedCommunityStats(): Promise<{
   }
 }
 
-export async function cachedDiscoverPlaylists(input: { boardType?: string; layoutId?: number } = {}): Promise<{
-  popular: DiscoverablePlaylist[];
-  recent: DiscoverablePlaylist[];
-  popularHasMore: boolean;
-  recentHasMore: boolean;
-  popularTotalCount: number;
-  recentTotalCount: number;
+/** How many cards each section server-renders. */
+const CURATED_PAGE_SIZE = 12;
+const COMMUNITY_PAGE_SIZE = 24;
+
+/**
+ * The two streams `/playlists` shows: the nightly-rebuilt cohort lists, and the
+ * playlists climbers actually kept.
+ *
+ * They are two queries rather than one sorted list because they are two
+ * different claims. The cohort lists are generated and say so; the community
+ * ones are climbers' own and are ranked by how many people pinned or followed
+ * them. Mixing them would mean the page either lies about one or ranks them
+ * against each other on a signal only one of them can have.
+ *
+ * The community band (5..150 climbs) is what keeps one-climb scratch lists and
+ * 600-climb exports off the page — see the discover resolver for why that has to
+ * be a HAVING.
+ */
+export async function cachedCommunityPlaylists(viewerId?: string | null): Promise<{
+  curated: DiscoverablePlaylist[];
+  community: DiscoverablePlaylist[];
+  communityTotalCount: number;
 } | null> {
   const { DISCOVER_PLAYLISTS } = await import('@boardsesh/graphql/operations/playlists');
   type Response = DiscoverPlaylistsQueryResponse;
 
   try {
-    const popularQuery = createCachedGraphQLQuery<Response>(
-      DISCOVER_PLAYLISTS,
-      'discover-playlists-popular',
-      300, // 5 min cache
-    );
-    const recentQuery = createCachedGraphQLQuery<Response>(DISCOVER_PLAYLISTS, 'discover-playlists-recent', 300);
+    const curatedQuery = createCachedGraphQLQuery<Response>(DISCOVER_PLAYLISTS, 'discover-playlists-curated', 300);
+    // The viewer id is part of the community query, so it cannot share a cache
+    // entry with everyone else's. Signed-out visitors — every crawler, and most
+    // first-time readers — still hit one warm entry.
+    const communityTag = viewerId ? `discover-playlists-community-${viewerId}` : 'discover-playlists-community';
+    const communityQuery = createCachedGraphQLQuery<Response>(DISCOVER_PLAYLISTS, communityTag, 300);
 
-    const [popularRes, recentRes] = await Promise.all([
-      popularQuery({ input: { ...input, pageSize: 10, sortBy: 'popular' } }),
-      recentQuery({ input: { ...input, pageSize: 10, sortBy: 'recent' } }),
+    const [curatedRes, communityRes] = await Promise.all([
+      curatedQuery({
+        input: { pageSize: CURATED_PAGE_SIZE, sortBy: 'popular', generatedRecommendation: true },
+      }),
+      communityQuery({
+        input: {
+          pageSize: COMMUNITY_PAGE_SIZE,
+          sortBy: 'popular',
+          generatedRecommendation: false,
+          minClimbs: 5,
+          maxClimbs: 150,
+          ...(viewerId ? { excludeCreatorIds: [viewerId] } : {}),
+        },
+      }),
     ]);
 
     return {
-      popular: popularRes.discoverPlaylists.playlists,
-      recent: recentRes.discoverPlaylists.playlists,
-      popularHasMore: popularRes.discoverPlaylists.hasMore,
-      recentHasMore: recentRes.discoverPlaylists.hasMore,
-      popularTotalCount: popularRes.discoverPlaylists.totalCount,
-      recentTotalCount: recentRes.discoverPlaylists.totalCount,
+      curated: curatedRes.discoverPlaylists.playlists,
+      community: communityRes.discoverPlaylists.playlists,
+      communityTotalCount: communityRes.discoverPlaylists.totalCount,
     };
   } catch {
     return null;
   }
 }
 
-/**
- * Cached server-side fetch of user profile stats (public, no auth needed).
- */
 export async function cachedUserProfileStats(
   userId: string,
 ): Promise<GetUserProfileStatsQueryResponse['userProfileStats'] | null> {
