@@ -34,8 +34,10 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   stranded install is store-side only.
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
-  and a Tigris bucket `boardsesh-ota-v3`. Railway currently pulls that exact release through the
-  **pre-rename** repository path (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
+  and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
+  pulls that exact release through the **pre-rename** repository path
+  (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
   confirms the running build: that route first shipped in v3.1.2-beta2.
@@ -215,10 +217,11 @@ the first platform's source maps before they reached Sentry.
 
 ### The throttle, and what actually fixes it
 
-Tigris answers a too-fast run of asset PUTs with `503 <Code>SlowDown</Code>` on the
-`boardsesh-ota-v3` bucket. Three things multiply into that, and it is worth keeping them apart —
-an earlier version of this doc said waiting was the only lever we had, which stopped being true on
-2026-08-19.
+The original Tigris-backed setup answered a too-fast run of asset PUTs with
+`503 <Code>SlowDown</Code>` on the `boardsesh-ota-v3` bucket. Three things multiply into that, and it
+is worth keeping them apart — an earlier version of this doc said waiting was the only lever we had,
+which stopped being true on 2026-08-19. The upload-rate cap remains a portable guard; verify the live
+provider through the storage migration gate below.
 
 **How much we upload.** One export is 380 assets, and 356 of them are the board-background images
 `require()`d by `packages/mobile/src/lib/board-backgrounds-manifest.ts` — 94% of the asset count.
@@ -950,10 +953,18 @@ This is the runbook that stood up the live V3 server; it's here for the record a
 replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
 Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` (Boardsesh uses Tigris,
-   `t3.storage.dev`, region `auto`) + a scoped key. Keep it portable (see the object-storage rules
-   in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with `AWS_S3_FORCE_PATH_STYLE=true`
-   if CopyObject fails).
+> **Storage migration gate:** `infra/cloudflare/config.ts` declares `boardsesh-ota-v3` as a private R2 bucket with
+> no custom domain and with `r2.dev` disabled. That desired state does not prove which provider Railway currently
+> uses, because `AWS_BASE_ENDPOINT` and its credentials remain live secrets. Inspect the production service before
+> calling the OTA bucket migrated. If `AWS_BASE_ENDPOINT` still points at Tigris, rotate the endpoint and credentials
+> to the scoped R2 key, then require `/hc` and `/ready` to return 200, publish a test update, and download/install it
+> from a production-configured client. See `docs/cloudflare.md` → **R2 buckets**; no live provider is inferred from
+> the declaration alone.
+
+1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` plus a scoped key. The original setup used
+   Tigris (`t3.storage.dev`, region `auto`); the migration target is the private R2 bucket above. Keep it portable
+   (see the object-storage rules in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with
+   `AWS_S3_FORCE_PATH_STYLE=true` if CopyObject fails).
 2. **Postgres** — a dedicated Railway Postgres. **Create the database before first boot** (the
    server runs migrations but never creates the DB itself, else SQLSTATE `3D000`), and use an
    internal URL with explicit `sslmode` in `DB_URL`. **Enable backups + uptime monitoring and keep a
@@ -971,7 +982,8 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    - `BASE_URL` = `https://updates.boardsesh.com`
    - `JWT_SECRET` = random string
    - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
-     `AWS_BASE_ENDPOINT` (the Tigris endpoint), and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+     `AWS_BASE_ENDPOINT` (the selected S3-compatible account endpoint), and
+     `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
    - `CACHE_MODE` = `local` (fine at one replica)
    - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
    - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`

@@ -28,9 +28,10 @@ affected layout so a bulk gap does not remain in the first-download path.
 for the full export and at **:07, :22, :37, and :52 every hour** for a bounded live-prefix scan
 (`workflow_dispatch` also available), with `environment: Production` so it gets the Production secrets.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
-instead of stepping on each other. `queue: max` is important: GitHub's default single pending slot lets a
-newer scan replace an older pending run, which could otherwise displace the nightly full export. The
-offset avoids GitHub's busiest quarter-hour schedule boundary.
+instead of stepping on each other. GitHub retains at most one pending run and may replace it with a newer
+one; the eight-minute offset from the preceding bounded scan makes the nightly unlikely to enter that
+pending slot. If the nightly full export is absent from the run history, dispatch it manually. The offset
+also avoids GitHub's busiest quarter-hour schedule boundary.
 
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
 (default `board-snapshots/v1`):
@@ -1186,6 +1187,30 @@ bucket. The workflow therefore sets `SNAPSHOT_PUBLIC_BASE_URL` (not a secret —
 manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 `EXPO_PUBLIC_SNAPSHOT_BASE_URL` in the mobile workflows: the mobile value is
 `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
+
+### Moving the snapshot bucket to R2
+
+The migration is a full re-export from the primary database, not an object copy. Until cutover, schedules and
+ordinary manual runs continue writing Tigris, and every shipped app continues reading Tigris.
+
+1. Merge the R2 prepare change and run `vp run cf:apply -- --apply` twice. The first apply can create
+   `boardsesh-board-snapshots`; the second attaches `snapshots.boardsesh.com` and converges CORS, cache, and response
+   header rules.
+2. Add `SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
+   `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY` to the `Production` GitHub environment. Scope the key to the snapshot bucket.
+3. Dispatch **Export Board Snapshots** from `main` with `storage_target=r2`, `gzip_only=false`, and every filter blank.
+   The workflow rejects a partial R2 run, exports all three prefixes, then checks every manifest and referenced
+   artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`. A
+   cold Cloudflare edge gets up to 13 cache probes across 60 seconds to produce the required `cf-cache-status: HIT`.
+4. Dispatch the same full R2 export immediately before cutover. In the same cutover change
+   `.github/workflows/export-board-snapshots.yml` so scheduled exports and an ordinary manual dispatch default to
+   the R2 bucket, R2 credentials, and `SNAPSHOT_PUBLIC_BASE_URL=https://snapshots.boardsesh.com`. Until that change,
+   both still publish to Tigris unless a manual run explicitly selects `storage_target=r2`. Keep an explicit Tigris
+   target as the rollback path. Change all seven mobile workflow snapshot bases, the dev-database loader, and this
+   document to `https://snapshots.boardsesh.com`; merge those producer and reader changes together, then publish the
+   mobile OTA.
+5. Keep the Tigris bucket read-only for 30 days. Compare 404 and download-failure telemetry before requesting its
+   deletion; deletion remains a separate, explicitly approved operation.
 
 ### Recovery controls
 

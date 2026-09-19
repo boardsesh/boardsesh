@@ -1,0 +1,62 @@
+name: Bootstrap R2 Static Assets
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: bootstrap-r2-static-assets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - name: Validate R2 credentials
+        env:
+          STATIC_ASSETS_R2_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_R2_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          for required_name in STATIC_ASSETS_R2_AWS_ENDPOINT_URL STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY; do
+            if [ -z "${!required_name}" ]; then
+              echo "::error::Missing Production secret: $required_name"
+              exit 1
+            fi
+          done
+          node -e '
+            const raw = process.env.STATIC_ASSETS_R2_AWS_ENDPOINT_URL ?? "";
+            let endpoint;
+            try { endpoint = new URL(raw); } catch { process.exitCode = 1; }
+            const suffix = ".r2.cloudflarestorage.com";
+            if (!endpoint || endpoint.protocol !== "https:" || !endpoint.hostname.endsWith(suffix) ||
+                endpoint.hostname === suffix.slice(1) || endpoint.username || endpoint.password || endpoint.port ||
+                endpoint.pathname !== "/" || endpoint.search || endpoint.hash) {
+              console.error("::error::STATIC_ASSETS_R2_AWS_ENDPOINT_URL must be an HTTPS Cloudflare R2 account endpoint.");
+              process.exitCode = 1;
+            }
+          '
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Upload and verify the complete catalogue
+        env:
+          STATIC_ASSETS_PUBLIC_BASE_URL: https://assets-r2.boardsesh.com
+          STATIC_ASSETS_S3_BUCKET_NAME: boardsesh-static-assets
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_R2_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: auto
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY }}
+        run: vp run upload:static-assets

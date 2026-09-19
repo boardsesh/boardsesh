@@ -72,7 +72,7 @@ colo holds the object: a year, given `immutable`, with no purge tooling and no `
 
 Two things fix it, and both ship before the hostname moves:
 
-- the bucket's own CORS policy (`PUBLIC_IMAGE_CORS`, `GET`/`HEAD` from `*`), converged by `vp run cf:apply`;
+- the bucket's own CORS policy (`PUBLIC_READ_CORS`, `GET`/`HEAD` from `*`), converged by `vp run cf:apply`;
 - a response-header transform rule setting `access-control-allow-origin: *` **unconditionally** at the edge, so no
   cached copy can lack it whichever request shape populated it.
 
@@ -92,16 +92,11 @@ flip itself a non-event.
 3. **Run `cf:apply` again** to attach `assets-r2.boardsesh.com` and converge CORS, the cache rule and the header rule.
    Both rules cover the staging hostname as well as the production one, so the dry run in step 4 exercises the real
    edge-cache and CORS behaviour rather than a fresh origin read every time.
-4. **Dual-publish and validate through staging** — the real gate:
-   ```sh
-   STATIC_ASSETS_PUBLIC_BASE_URL=https://assets-r2.boardsesh.com \
-   STATIC_ASSETS_S3_BUCKET_NAME=boardsesh-static-assets \
-   STATIC_ASSETS_AWS_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com \
-   STATIC_ASSETS_AWS_REGION=auto \
-   STATIC_ASSETS_AWS_ACCESS_KEY_ID=... STATIC_ASSETS_AWS_SECRET_ACCESS_KEY=... \
-     vp run upload:static-assets
-   ```
-   This uploads all 365 objects and puts every one through both the signed `HEAD` and the public `GET` — SHA-256,
+4. **Dual-publish and validate through staging** — the real gate. Add the three `Production` environment secrets
+   `STATIC_ASSETS_R2_AWS_ENDPOINT_URL`, `STATIC_ASSETS_R2_AWS_ACCESS_KEY_ID`, and
+   `STATIC_ASSETS_R2_AWS_SECRET_ACCESS_KEY`, then dispatch **Bootstrap R2 Static Assets** from `main`.
+   The workflow fixes the bucket, region, and public base URL so credentials cannot accidentally target the live
+   Tigris bucket. It uploads all 365 objects and puts every one through both the signed `HEAD` and public `GET` — SHA-256,
    MIME, immutable caching, CORS with an `Origin`, and the sampled CORS probe **without** one. It is also what proves
    the two R2 behaviours this repo cannot assert from source: that `HeadObject` returns `ChecksumSHA256`
    (`assertRemoteStaticAssetMetadata` throws without it) and that `PutObject` honours `If-None-Match: *`

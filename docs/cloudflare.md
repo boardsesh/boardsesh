@@ -6,9 +6,23 @@ token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
 ## R2 buckets
 
-`infra/cloudflare/config.ts` declares the R2 buckets alongside the zone, and `vp run cf:apply` converges them: it creates a declared bucket that is missing and attaches its custom domain. See `docs/user-media-storage.md` for what lives in each one.
+`infra/cloudflare/config.ts` declares the R2 buckets alongside the zone, and `vp run cf:apply` converges them: it creates a declared bucket that is missing and attaches its custom domain.
 
-**`customDomain` is the whole access-control story.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private — attaching a custom domain publishes every object in it. `boardsesh-user-private` holds user data exports and is declared `customDomain: null`; if it is ever found serving a domain, the apply reports it `BLOCKED` and stops rather than detaching it on its own. Buckets are created when absent and never deleted by this tool.
+- `boardsesh-user-media` serves public user media at `media.boardsesh.com`.
+- `boardsesh-user-private` holds exports and OCR submissions without a domain.
+- `boardsesh-static-assets` stages the repo image catalogue at `assets-r2.boardsesh.com`.
+- `boardsesh-board-snapshots` stages mobile bootstrap data at `snapshots.boardsesh.com`.
+- `boardsesh-ota-v3` is the private R2 target for XPRem. Verify Railway's live
+  storage endpoint before treating the service as migrated.
+
+See `docs/user-media-storage.md`, `docs/static-assets.md`, `docs/board-snapshots.md`, and
+`docs/mobile-ota-updates.md` for the storage-specific contracts and cutover runbooks.
+
+**R2 has two independent public access paths.** A custom domain and the managed `r2.dev` development URL can each
+publish every object in a bucket. The config disables `r2.dev` for every declared bucket; production public buckets
+use only their custom domain. `boardsesh-user-private` and `boardsesh-ota-v3` also declare `customDomain: null`.
+The apply disables a drifted `r2.dev` URL automatically, but reports an unexpected custom domain as `BLOCKED`
+instead of detaching a hostname during a routine converge. Buckets are created when absent and never deleted.
 
 ### Token scopes
 
