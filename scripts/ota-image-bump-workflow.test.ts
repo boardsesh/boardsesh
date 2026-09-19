@@ -17,6 +17,19 @@ describe('OTA image bump workflow', () => {
     expect(workflow).not.toContain('GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
   });
 
+  it('fails clearly when either App credential is missing without printing its value', () => {
+    const credentialGuard = workflow.slice(
+      workflow.indexOf('- name: Require the push credential'),
+      workflow.indexOf('- name: Mint the push token'),
+    );
+    expect(credentialGuard).toContain('OTA_PUSH_APP_ID: ${{ vars.OTA_PUSH_APP_ID }}');
+    expect(credentialGuard).toContain('OTA_PUSH_APP_PRIVATE_KEY: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}');
+    expect(credentialGuard).toContain('if [ -z "$OTA_PUSH_APP_ID" ]');
+    expect(credentialGuard).toContain('if [ -z "$OTA_PUSH_APP_PRIVATE_KEY" ]');
+    expect(credentialGuard).toContain('::error::OTA_PUSH_APP_ID is not configured.');
+    expect(credentialGuard).toContain('::error::OTA_PUSH_APP_PRIVATE_KEY is not configured.');
+  });
+
   it('renders the PR body while the source still contains the previous version', () => {
     const bodyIndex = workflow.indexOf('--pr-body "$version"');
     const writeIndex = workflow.indexOf('--write "$version"');

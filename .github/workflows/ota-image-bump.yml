@@ -38,10 +38,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Require the push credential
-        if: vars.OTA_PUSH_APP_ID == ''
+        env:
+          OTA_PUSH_APP_ID: ${{ vars.OTA_PUSH_APP_ID }}
+          OTA_PUSH_APP_PRIVATE_KEY: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
         run: |
-          echo "::error::OTA_PUSH_APP_ID is not configured, so bump PR workflows would not run."
-          exit 1
+          missing=0
+          if [ -z "$OTA_PUSH_APP_ID" ]; then
+            echo "::error::OTA_PUSH_APP_ID is not configured."
+            missing=1
+          fi
+          if [ -z "$OTA_PUSH_APP_PRIVATE_KEY" ]; then
+            echo "::error::OTA_PUSH_APP_PRIVATE_KEY is not configured."
+            missing=1
+          fi
+          exit "$missing"
 
       - name: Mint the push token
         id: push_token
