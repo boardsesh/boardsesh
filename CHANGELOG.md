@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See how your crew shares a queue, check what's on the wall, and find a board nearby. App previews now match your phone. ([#5578](https://github.com/boardsesh/boardsesh/pull/5578))
 - All your boards, one climbing history. ([#5579](https://github.com/boardsesh/boardsesh/pull/5579))
   See each board’s sends on your profile, keep board names beside logged climbs, and find your session’s hardest send at a glance.
 - Find your next board night from the refreshed Boardsesh website. ([#5572](https://github.com/boardsesh/boardsesh/pull/5572))

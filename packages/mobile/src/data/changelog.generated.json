@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T05:36:38.617Z",
+  "generatedAt": "2026-09-19T06:06:35.218Z",
   "entries": [
+    {
+      "prNumber": 5578,
+      "category": "new",
+      "title": "See how your crew shares a queue, check what's on the wall, and find a board nearby. App previews now match your phone.",
+      "mergedAt": "2026-09-19T06:05:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5578"
+    },
     {
       "prNumber": 5579,
       "category": "new",
