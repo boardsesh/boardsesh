@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T14:00:57.846Z",
+  "generatedAt": "2026-09-19T14:08:21.137Z",
   "entries": [
+    {
+      "prNumber": 5592,
+      "category": "new",
+      "title": "The playlists page is now about what the community climbs. It opens with sets we rebuild every night from what people are sending, then the playlists climbers have saved most — instead of a sign-in prompt and whichever list happened to have the most climbs dumped in it.",
+      "mergedAt": "2026-09-19T13:43:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5592"
+    },
     {
       "prNumber": 5595,
       "category": "fixed",
