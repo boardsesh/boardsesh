@@ -28,11 +28,13 @@ on:
       - 'infra/railway/**'
       - 'scripts/railway-apply.ts'
       - 'scripts/ota-image-bump.ts'
+      - 'scripts/ota-image-bump-workflow.test.ts'
       # The inventory test reads this runbook with readFileSync to check it against
       # the declared env contract — a relationship Vitest's --changed module graph
       # cannot see, so it needs an explicit path trigger or it rots silently.
       - 'scripts/mobile-ota-setup.ts'
       - 'scripts/lib/eoas.ts'
+      - '.github/workflows/ota-image-bump.yml'
       - '.github/workflows/railway-drift.yml'
 
 concurrency:
@@ -175,6 +177,7 @@ jobs:
           vp test run --project scripts \
             scripts/railway-apply.test.ts \
             scripts/ota-image-bump.test.ts \
+            scripts/ota-image-bump-workflow.test.ts \
             scripts/__tests__/eoas-version-parity.test.ts \
             scripts/__tests__/railway-config-inventory.test.ts \
             --reporter=agent

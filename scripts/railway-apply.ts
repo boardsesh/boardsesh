@@ -813,6 +813,7 @@ async function waitForDeployment(
       liveImage = deploymentImage(data.deployment.meta);
       consecutiveReadErrors = 0;
     } catch (error) {
+      confirmations = 0;
       consecutiveReadErrors += 1;
       if (consecutiveReadErrors >= DEPLOY_MAX_CONSECUTIVE_READ_ERRORS) throw error;
       await sleep(DEPLOY_POLL_INTERVAL_MS);

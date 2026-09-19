@@ -1316,6 +1316,22 @@ describe('waitForDeployment', () => {
     expect(calls).toBe(4);
   });
 
+  it('restarts success confirmations after a transient read failure', async () => {
+    resetAuthScheme();
+    let calls = 0;
+    const interruptedSuccess = (async () => {
+      calls += 1;
+      if (calls === 2) return new Response('temporary gateway failure', { status: 502 });
+      return new Response(JSON.stringify({ data: { deployment: { id: 'dep-new', status: 'SUCCESS', meta: {} } } }), {
+        status: 200,
+      });
+    }) as typeof globalThis.fetch;
+
+    const { error } = await withFetch(interruptedSuccess, () => waitForDeployment('token', 'dep-new', null, noSleep));
+    expect(error).toBeUndefined();
+    expect(calls).toBe(5);
+  });
+
   it('fails after three consecutive deployment read errors', async () => {
     resetAuthScheme();
     let calls = 0;
