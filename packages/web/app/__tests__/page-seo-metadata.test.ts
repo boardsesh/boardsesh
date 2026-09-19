@@ -46,7 +46,7 @@ describe('page metadata exports', () => {
     const aboutImages = toOpenGraphImageList(aboutMetadata.openGraph?.images);
     const aboutImageUrl = getOpenGraphImageUrl(aboutImages[0]);
 
-    expect(aboutMetadata.title).toEqual({ absolute: 'About | Boardsesh' });
+    expect(aboutMetadata.title).toEqual({ absolute: 'Built by climbers, open to everyone | Boardsesh' });
     expect(aboutMetadata.alternates?.canonical).toBe('/about');
     expect(aboutMetadata.alternates?.languages).toEqual({
       'en-US': '/about',
