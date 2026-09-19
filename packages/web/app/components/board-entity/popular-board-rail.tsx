@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 import { APP_URL } from '@/app/lib/app-origin';
 import PhysicalBoardPreview from './physical-board-preview';
 import styles from './popular-board-rail.module.css';
@@ -23,7 +24,7 @@ export default function PopularBoardRail({ boards }: { boards: BoardDiscoveryBoa
 
   return (
     <Box component="section" className={styles.section} data-testid="physical-board-rail">
-      <Typography variant="h3" component="h2" className={styles.title}>
+      <Typography variant="h3" component="h2" className={`${sectionHeadingTypeClassName} ${styles.title}`}>
         {t('home.boards.title')}
       </Typography>
       <Typography component="p" className={styles.lead}>
@@ -34,6 +35,11 @@ export default function PopularBoardRail({ boards }: { boards: BoardDiscoveryBoa
           const boardPath = `/b/${encodeURIComponent(board.slug)}`;
           const previewAngle = board.currentClimb?.angle ?? board.angle;
           const appPath = `${boardPath}/${previewAngle}/list`;
+          /* Plenty of boards are named after the gym they live in, and printing
+             the same words twice reads as a bug. The gym link is the card's only
+             /gym/ anchor either way, so relabel it with the location when the
+             two names match rather than dropping the second line. */
+          const gymLabel = board.gymName === board.name ? (board.locationName ?? board.gymName) : board.gymName;
           return (
             <Box component="li" key={board.uuid} className={styles.card}>
               <Box className={styles.identity}>
@@ -48,9 +54,9 @@ export default function PopularBoardRail({ boards }: { boards: BoardDiscoveryBoa
                   underline="hover"
                   className={styles.gym}
                 >
-                  {board.gymName}
+                  {gymLabel}
                 </MuiLink>
-                {board.locationName && board.locationName !== board.gymName && (
+                {board.locationName && board.locationName !== gymLabel && (
                   <Typography component="p" className={styles.location}>
                     {board.locationName}
                   </Typography>

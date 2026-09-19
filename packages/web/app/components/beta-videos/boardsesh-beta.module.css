@@ -1,5 +1,15 @@
+/* The rail is inset from its own container by default, which suits the climb
+   front door and the profile column. The home page already pads `.main`, so
+   `[data-source='home']` below drops the inline half. */
 .section {
-  padding: 12px 12px 0;
+  padding: var(--spacing-3) var(--spacing-3) 0;
+}
+
+/* Double-inset: the home rail sits inside `.main`'s `padding-inline`, so a
+   second 12px pushed the last card past the container edge instead of letting
+   it scroll cleanly into view. */
+.section[data-source='home'] {
+  padding-inline: 0;
 }
 
 .scrollContainer {
@@ -8,12 +18,10 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scroll-snap-type: x proximity;
-  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--separator) transparent;
   padding-bottom: 4px;
-}
-
-.scrollContainer::-webkit-scrollbar {
-  display: none;
 }
 
 .card {
@@ -50,10 +58,10 @@
 .thumbnailWrapper {
   position: relative;
   aspect-ratio: 9 / 16;
-  border-radius: 8px;
+  border-radius: var(--border-radius-md);
   overflow: hidden;
-  background: var(--neutral-100);
-  border: 1px solid var(--neutral-200);
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
 }
 
 .thumbnail {
@@ -114,9 +122,10 @@
   pointer-events: none;
 }
 
+/* --neutral-400 on the page ground is 3.66:1, under the 4.5:1 floor. */
 .emptyText {
-  font-size: 13px;
-  color: var(--neutral-400);
+  font-size: var(--font-size-sm);
+  color: var(--neutral-500);
   align-self: center;
   white-space: nowrap;
 }
