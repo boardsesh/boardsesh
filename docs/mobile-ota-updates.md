@@ -35,8 +35,9 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
-  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
-  pulls that exact release through the **pre-rename** repository path
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Its endpoint is
+  managed in Railway so a stale checked-in value cannot undo a storage-provider migration. Railway
+  currently pulls that exact release through the **pre-rename** repository path
   (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server

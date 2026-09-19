@@ -25,11 +25,10 @@
 // state here, pure diffing in ./plan.ts, all I/O in scripts/railway-apply.ts.
 //
 // SECRET VALUES NEVER APPEAR IN THIS FILE. A variable is declared either with a
-// value — which makes it non-secret by construction — or by name only, in which
-// case this file asserts that it exists and is not still a placeholder. The value
-// lives in Railway, and the apply script reads what it needs from its own
-// environment — the same contract scripts/cloudflare-apply.ts uses for
-// CLOUDFLARE_API_TOKEN.
+// value — which makes it repo-managed and non-secret — or by name only, in which
+// case this file asserts that it exists and is not still a placeholder. Unmanaged
+// values live in Railway, and the apply script reads missing replacements from its
+// own environment.
 
 /**
  * The Railway environment these services live in. Railway projects are
@@ -43,6 +42,12 @@ export const OTA_SERVICE_NAME = 'boardsesh-ota-v3';
 
 /** The ClickHouse service backing xprem's Observe feature. */
 export const CLICKHOUSE_SERVICE_NAME = 'boardsesh-ota-clickhouse';
+
+/** The public www service. Its variable assertions must survive OTA config changes. */
+export const WEB_SERVICE_NAME = 'boardsesh-web';
+
+/** The only public origin that can safely issue Boardsesh's cross-subdomain session cookies. */
+export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
 
 /** The dedicated Postgres holding xprem's control plane — and the app's signing key. */
 export const OTA_POSTGRES_SERVICE_NAME = 'Postgres';
@@ -188,7 +193,8 @@ export interface RequiredEnvVar {
    * Declaring a value here is what makes a variable non-secret: anything with a
    * value in this file is, by construction, safe to print in a plan line. Omit it
    * and the variable is presence-only — asserted to exist and not be a
-   * placeholder, never printed, never overwritten once set.
+   * placeholder, never printed, never overwritten once set. Most presence-only
+   * values are secrets; AWS_BASE_ENDPOINT is intentionally provider-managed.
    */
   value?: string;
 }
@@ -196,6 +202,20 @@ export interface RequiredEnvVar {
 /** A variable that must NOT be set, because setting it changes how xprem behaves. */
 export interface ForbiddenEnvVar {
   name: string;
+  reason: string;
+}
+
+/** A variable which may be absent, but must use one of these safe values when present. */
+export interface OptionalConstrainedEnvVar {
+  name: string;
+  allowedValues: readonly string[];
+  reason: string;
+}
+
+/** At least one variable in the group must contain the public expected value. */
+export interface RequiredOneOfEnvVars {
+  names: readonly string[];
+  expectedValue: string;
   reason: string;
 }
 
@@ -248,6 +268,8 @@ export interface ServiceDesired {
   name: string;
   management: ServiceManagement;
   requiredVars: RequiredEnvVar[];
+  optionalConstrainedVars?: OptionalConstrainedEnvVar[];
+  requiredOneOfVars?: RequiredOneOfEnvVars[];
   /** Variables that must stay unset. Reported, never deleted. */
   forbiddenVars?: ForbiddenEnvVar[];
   /** The exact image the service must run. Applied for `managed`. */
@@ -412,8 +434,8 @@ export const OTA_FORBIDDEN_VARS: ForbiddenEnvVar[] = [
  * xprem's environment contract, from the runbook in scripts/mobile-ota-setup.ts.
  *
  * Variables carrying a `value` are configuration this repo owns and `--apply` will
- * correct. Variables without one are secrets: asserted present and non-placeholder,
- * never printed, never overwritten once set.
+ * correct. Variables without one are presence-only: asserted present and
+ * non-placeholder, never printed, never overwritten once set.
  */
 export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
   {
@@ -429,17 +451,17 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
   {
     name: 'S3_BUCKET_NAME',
     value: 'boardsesh-ota-v3',
-    reason: 'The Tigris bucket holding every published update. Empty at V3 green-field; never shared with V2.',
+    reason: 'The dedicated S3-compatible bucket holding every published update; never shared with V2.',
   },
   {
     name: 'AWS_REGION',
     value: 'auto',
-    reason: 'Tigris is globally replicated and expects the literal "auto" rather than a region name.',
+    reason: 'The configured S3-compatible backend uses its automatic region selector.',
   },
   {
     name: 'AWS_BASE_ENDPOINT',
-    value: 'https://t3.storage.dev',
-    reason: 'The S3-compatible endpoint. Wrong value means publishes fail against the real AWS endpoints.',
+    reason:
+      'The live S3-compatible endpoint. Presence-only so a provider migration cannot be overwritten by stale config.',
   },
   {
     name: 'CACHE_MODE',
@@ -505,12 +527,6 @@ export const OTA_REQUIRED_VARS: RequiredEnvVar[] = [
  * Nothing here is asserted or applied.
  */
 export const INVENTORY_SERVICES: ServiceDesired[] = [
-  {
-    name: 'boardsesh-web',
-    management: 'inventory',
-    requiredVars: [],
-    managedBy: 'railway.web.toml + .github/workflows/production-deploy.yml',
-  },
   {
     name: 'boardsesh-backend',
     management: 'inventory',
@@ -582,6 +598,35 @@ export const desiredRailwayState: RailwayDesiredState = {
       management: 'assert-only',
       volume: { mountPath: OTA_POSTGRES_VOLUME_MOUNT_PATH },
       requiredVars: [],
+    },
+    {
+      name: WEB_SERVICE_NAME,
+      management: 'assert-only',
+      requiredVars: [
+        {
+          name: 'SMTP_USER',
+          reason: 'Required to send password-reset and verification emails for credential accounts.',
+        },
+        {
+          name: 'SMTP_PASSWORD',
+          reason: 'Required to authenticate the SMTP transport for credential-account emails.',
+        },
+      ],
+      optionalConstrainedVars: [
+        {
+          name: 'BOARDSESH_WEB',
+          allowedValues: ['1'],
+          reason: 'The Docker image enables the www-to-app auth bridge; any other dashboard override disables it.',
+        },
+      ],
+      requiredOneOfVars: [
+        {
+          names: ['NEXTAUTH_URL', 'BASE_URL'],
+          expectedValue: CANONICAL_WEB_ORIGIN,
+          reason:
+            'At least one canonical origin is required for secure cross-subdomain session cookies and email links.',
+        },
+      ],
     },
     ...INVENTORY_SERVICES,
   ],

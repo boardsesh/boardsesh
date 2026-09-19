@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CANONICAL_WEB_ORIGIN,
   CLICKHOUSE_IMAGE,
   CLICKHOUSE_RETENTION,
   CLICKHOUSE_SERVICE_NAME,
@@ -20,6 +21,7 @@ import {
   OTA_SERVER_VERSION,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
+  WEB_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
 import type { ServiceDesired } from '../infra/railway/config';
@@ -89,6 +91,7 @@ function declaredService(name: string): ServiceDesired {
 const OTA = declaredService(OTA_SERVICE_NAME);
 const CLICKHOUSE = declaredService(CLICKHOUSE_SERVICE_NAME);
 const POSTGRES = declaredService(OTA_POSTGRES_SERVICE_NAME);
+const WEB = declaredService(WEB_SERVICE_NAME);
 
 /** Stable fake Railway id for a declared service. Derived, so a renamed service cannot desync the fixtures. */
 function liveServiceId(name: string): string {
@@ -117,9 +120,13 @@ function convergedServices(): { id: string; name: string }[] {
 function convergedVariables(): Record<string, Record<string, string>> {
   const variables: Record<string, Record<string, string>> = {};
   for (const service of desiredRailwayState.services) {
-    variables[service.name] = Object.fromEntries(
+    const serviceVariables = Object.fromEntries(
       service.requiredVars.map((required) => [required.name, required.value ?? SECRET_STAND_IN]),
     );
+    for (const requirement of service.requiredOneOfVars ?? []) {
+      serviceVariables[requirement.names[0]] = requirement.expectedValue;
+    }
+    variables[service.name] = serviceVariables;
   }
   return variables;
 }
@@ -581,6 +588,26 @@ describe('diffServiceVars', () => {
     expect(diffServiceVars(OTA, live, PLAN_OPTIONS)).toEqual([]);
   });
 
+  it('preserves an existing R2 endpoint without requiring its value in git', () => {
+    const r2Endpoint = 'https://account-id.r2.cloudflarestorage.com';
+    const live = liveState({ variables: variablesWithOta(otaVariables({ AWS_BASE_ENDPOINT: r2Endpoint })) });
+
+    expect(diffServiceVars(OTA, live, PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it.each([
+    ['absent', null],
+    ['placeholder', '<S3-compatible endpoint>'],
+  ])('blocks an %s AWS_BASE_ENDPOINT until an endpoint is supplied', (_state, endpoint) => {
+    const live = liveState({ variables: variablesWithOta(otaVariables({ AWS_BASE_ENDPOINT: endpoint })) });
+    const change = diffServiceVars(OTA, live, PLAN_OPTIONS).find(
+      (candidate) => candidate.target?.varName === 'AWS_BASE_ENDPOINT',
+    );
+
+    expect(change).toMatchObject({ resource: 'env-var', blocked: true });
+    expect(JSON.stringify(change)).not.toContain('t3.storage.dev');
+  });
+
   it('converges an owned variable, printing the declared value and never the live one', () => {
     const live = liveState({ variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })) });
     const [change] = diffServiceVars(OTA, live, PLAN_OPTIONS);
@@ -605,6 +632,55 @@ describe('diffServiceVars', () => {
   it('ignores surrounding whitespace on an owned value rather than rewriting it forever', () => {
     const live = liveState({ variables: variablesWithOta(otaVariables({ BASE_URL: `  ${OTA_BASE_URL}  ` })) });
     expect(diffServiceVars(OTA, live, PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it('reports missing web SMTP credentials', () => {
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { BASE_URL: CANONICAL_WEB_ORIGIN };
+
+    const changes = diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS);
+    expect(changes.map((change) => change.summary)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('SMTP_USER is absent'),
+        expect.stringContaining('SMTP_PASSWORD is absent'),
+      ]),
+    );
+  });
+
+  it('allows an absent BOARDSESH_WEB override', () => {
+    expect(diffServiceVars(WEB, liveState(), PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it('reports a non-one BOARDSESH_WEB override without printing it', () => {
+    const unsupportedOverride = 'turn-off-the-auth-bridge';
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], BOARDSESH_WEB: unsupportedOverride };
+
+    const changes = diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS);
+    expect(JSON.stringify(changes)).not.toContain(unsupportedOverride);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ summary: expect.stringContaining('BOARDSESH_WEB must be absent or "1"') }),
+      ]),
+    );
+  });
+
+  it('requires a canonical NEXTAUTH_URL or BASE_URL without printing the live URL', () => {
+    const wrongOrigin = 'https://attacker.example';
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = {
+      ...variables[WEB_SERVICE_NAME],
+      NEXTAUTH_URL: wrongOrigin,
+      BASE_URL: wrongOrigin,
+    };
+
+    const changes = diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS);
+    expect(JSON.stringify(changes)).not.toContain(wrongOrigin);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ summary: expect.stringContaining('NEXTAUTH_URL or BASE_URL') }),
+      ]),
+    );
   });
 });
 
@@ -720,8 +796,8 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {}, instances: {} });
     const plan = buildPlan(desiredRailwayState, live, PLAN_OPTIONS);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    // One per asserted service: the two managed ones plus assert-only Postgres.
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(3);
+    // One per asserted service: the two managed ones, Postgres and web.
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(4);
   });
 
   it('reports missing TTLs', () => {
@@ -830,7 +906,7 @@ describe('supplied values', () => {
     expect([...supplied.keys()]).toEqual(['CLICKHOUSE_URL']);
   });
 
-  it('only keys variables the config declares as secrets, never one this repo owns outright', () => {
+  it('only keys variables the config declares as presence-only, never one this repo owns outright', () => {
     const supplied = new Map([
       ['CLICKHOUSE_URL', 'dsn'],
       ['BASE_URL', 'https://someone-elses-host.example'],

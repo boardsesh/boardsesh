@@ -12,11 +12,11 @@
 //   1. Never delete. A live service, variable or domain absent from config is
 //      reported and left alone, the way the Cloudflare tool preserves foreign
 //      rules verbatim.
-//   2. Never overwrite a SECRET value that is already set. Only `absent` and
+//   2. Never overwrite an unmanaged value that is already set. Only `absent` and
 //      `placeholder` are drift this tool will fix for a variable it holds no
 //      declared value for. A variable declared WITH a value in config.ts is
 //      non-secret by construction and is owned — that one is converged.
-//   3. Never surface a secret value. A variable with no declared value is reduced
+//   3. Never surface an unmanaged value. A variable with no declared value is reduced
 //      to a three-state classification before it reaches a PlannedChange, so no
 //      code path can print a DSN or a token. The live value of an owned variable
 //      is not printed either — only the declared one, which is already in the repo.
@@ -581,10 +581,10 @@ export function diffScale(desired: ServiceDesired, live: LiveState): PlannedChan
  *   - A variable declared WITH a value is configuration this repo owns. It is
  *     non-secret by construction (the value is in git), so the declared value may
  *     be printed and a mismatch is converged.
- *   - A variable declared by name only is a secret. It is reduced to
+ *   - A variable declared by name only is unmanaged. It is reduced to
  *     set/absent/placeholder, never printed, and converged only when the caller
- *     supplied a value as RAILWAY_VAR_<NAME>. A secret that is already set is
- *     never overwritten — this tool cannot clobber a working DSN with a stale one.
+ *     supplied a value as RAILWAY_VAR_<NAME>. An existing value is never
+ *     overwritten — this tool cannot clobber a working endpoint with stale config.
  *
  * Returns nothing for a service that does not exist — diffService already reported
  * that, and repeating it once per variable buries the real message.
@@ -634,7 +634,7 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
             `or set it directly in Railway.`),
       target: { serviceName: desired.name, varName: required.name },
       // Convergeable only when the caller actually supplied a value. Without one
-      // this is a report, not a fix — the tool never invents a secret.
+      // this is a report, not a fix — the tool never invents an unmanaged value.
       blocked: !supplied,
     });
   }

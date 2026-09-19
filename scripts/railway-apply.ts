@@ -20,9 +20,9 @@
  *     applied. Each is half of a change that lives somewhere else (DNS), a create,
  *     or a decision with a bill attached.
  *   - Variables: a variable declared with a value in config.ts is owned by this
- *     repo and converged. A variable declared by name only is a secret: asserted
+ *     repo and converged. A variable declared by name only is unmanaged: asserted
  *     present and non-placeholder, never printed, and written only when the caller
- *     supplies its value as `RAILWAY_VAR_<NAME>`. A secret that is already set is
+ *     supplies its value as `RAILWAY_VAR_<NAME>`. A value that is already set is
  *     never overwritten.
  *   - Public variable constraints: checked without printing the live value.
  *   - Variables that must NOT be set (xprem's control-plane mode). Reported only.
@@ -55,7 +55,7 @@
  *                       rollback path needs a PROJECT token specifically: it derives
  *                       its scope from `projectToken { projectId environmentId }`.
  *   RAILWAY_PROJECT_ID  (required) The project holding the OTA services.
- *   RAILWAY_VAR_<NAME>  (optional) Value for a declared secret, enabling --apply
+ *   RAILWAY_VAR_<NAME>  (optional) Value for a presence-only variable, enabling --apply
  *                       to converge it. Never logged.
  *   CLICKHOUSE_URL      (optional) Enables the retention assertion. Read-only use.
  *
@@ -162,7 +162,7 @@ export function collectSuppliedVars(env: NodeJS.ProcessEnv): Map<string, string>
 /**
  * Build the plan-layer key set from supplied values and the desired state.
  *
- * A value is only usable for a variable the config actually declares as a secret,
+ * A value is only usable for a variable the config declares as presence-only,
  * so an accidental `RAILWAY_VAR_JWT_SECRET` in the environment can never cause a
  * write to a variable this repo owns outright.
  */

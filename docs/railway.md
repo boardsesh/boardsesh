@@ -38,13 +38,13 @@ tool is.
 
 ## What it manages
 
-| | `boardsesh-ota-v3` | `boardsesh-ota-clickhouse` | `Postgres` | everything else |
-| --- | --- | --- | --- | --- |
-| Level | `managed` | `managed` | `assert-only` | `inventory` |
-| Image | applied | asserted | left alone | — |
-| Deploy settings | applied | — | — | — |
-| Variables | applied / asserted | — | — | — |
-| Domains, volumes, scale | reported | reported | reported | — |
+| | `boardsesh-ota-v3` | `boardsesh-ota-clickhouse` | `Postgres` | `boardsesh-web` | everything else |
+| --- | --- | --- | --- | --- | --- |
+| Level | `managed` | `managed` | `assert-only` | `assert-only` | `inventory` |
+| Image | applied | asserted | left alone | left alone | — |
+| Deploy settings | applied | — | — | — | — |
+| Variables | applied / asserted | — | — | asserted | — |
+| Domains, volumes, scale | reported | reported | reported | — | — |
 
 - **The image.** `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the one place
   the deployed xprem version is written down. Applying it rolls a deployment —
@@ -52,9 +52,10 @@ tool is.
 - **Deploy settings.** Healthcheck path and timeout, restart policy, and the
   draining window. All safe, all reversible, all applied.
 - **Variables.** A variable declared **with a value** is configuration this repo
-  owns and converges. A variable declared **by name only** is a secret: asserted
-  present and not an unfilled `<placeholder>`, never printed, never overwritten
-  once set. See [Secrets](#secrets).
+  owns and converges. A variable declared **by name only** is presence-only:
+  asserted present and not an unfilled `<placeholder>`, never printed, never
+  overwritten once set. This covers secrets and the provider-managed
+  `AWS_BASE_ENDPOINT`, so merging cannot restore a stale storage endpoint.
 - **Variables that must not be set.** `forbiddenVars` catches the ones that would
   switch xprem out of control-plane mode. Reported, never deleted.
 - **Custom domains, volume mounts, replicas, region.** Read and reported, never
@@ -195,9 +196,9 @@ trailing the server.
 
 ## Secrets
 
-`infra/railway/config.ts` holds a value only for non-secret configuration, which is
-what makes that value safe to print: it is already in git. Everything else is
-declared by name, and the value lives in Railway.
+`infra/railway/config.ts` holds a value only for repo-owned, non-secret
+configuration, which is what makes that value safe to print: it is already in git.
+Everything else is declared by name, and the value lives in Railway.
 
 `--apply` writes a name-only variable solely when the caller supplies its value in
 the script's own environment as `RAILWAY_VAR_<NAME>`:
@@ -206,9 +207,9 @@ the script's own environment as `RAILWAY_VAR_<NAME>`:
 RAILWAY_VAR_CLICKHOUSE_URL='clickhouse://…' vp run railway:apply -- --apply
 ```
 
-Without one, the drift is reported and left unapplied. A secret that is already set
-and is not a placeholder is **never overwritten** — this tool cannot clobber a
-working DSN with a stale one.
+Without one, the drift is reported and left unapplied. A presence-only value that
+is already set and is not a placeholder is **never overwritten** — this tool cannot
+clobber a working DSN or storage endpoint with a stale one.
 
 Values never reach a log line. `infra/railway/plan.ts` reduces every name-only
 variable to `set` / `absent` / `placeholder` before it can appear in a
@@ -440,7 +441,7 @@ the rollback halfway.
 | --- | --- | --- |
 | `RAILWAY_TOKEN` | yes | Railway API token. The same secret the production deploy already uses against `backboard.railway.com`. It is a **project** token, scoped to this project and its production environment, so it authenticates with `Project-Access-Token` — not `Authorization: Bearer`, which is for account tokens. The script tries one and falls back to the other, so either kind works — but the rollback path needs a project token specifically, since it derives its scope from `projectToken`. |
 | `RAILWAY_PROJECT_ID` | yes | The project holding the OTA services. |
-| `RAILWAY_VAR_<NAME>` | no | A value `--apply` may write for a declared secret. Never logged. |
+| `RAILWAY_VAR_<NAME>` | no | A value `--apply` may write for a presence-only variable. Never logged. |
 | `CLICKHOUSE_URL` | no | Enables the retention assertion. Read-only. **Do not add this as a CI secret yet** — see the reachability note under ClickHouse retention. |
 
 ## Related

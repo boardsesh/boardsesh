@@ -62,6 +62,7 @@ describe('the OTA env contract', () => {
       'AWS_SECRET_ACCESS_KEY',
       'ADMIN_PASSWORD',
       'CLICKHOUSE_URL',
+      'AWS_BASE_ENDPOINT',
     ];
 
     for (const name of mustStayValueless) {
@@ -69,6 +70,13 @@ describe('the OTA env contract', () => {
       expect(variable, `${name} should be declared`).toBeDefined();
       expect(variable?.value, `${name} must not carry a value in the repo`).toBeUndefined();
     }
+  });
+
+  it('keeps the storage endpoint present but provider-managed', () => {
+    const endpoint = OTA_REQUIRED_VARS.find((variable) => variable.name === 'AWS_BASE_ENDPOINT');
+    expect(endpoint).toBeDefined();
+    expect(endpoint?.value).toBeUndefined();
+    expect(endpoint?.reason).toMatch(/provider migration/i);
   });
 
   it('forbids the variables that would switch xprem off DB-sealed signing keys', () => {
