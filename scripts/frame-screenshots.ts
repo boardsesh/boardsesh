@@ -14,7 +14,12 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import { brandColors, brandColorsDark, materialSurfaces } from '../packages/shared/velvet-tokens/src/index';
-import { findGooglePlayOffenders, findOffenders, readPngDimensions } from './assert-screenshot-dimensions';
+import {
+  findGooglePlayImageOffenders,
+  findGooglePlayOffenders,
+  findOffenders,
+  readPngDimensions,
+} from './assert-screenshot-dimensions';
 import {
   CAPTION_LOCALES,
   PRESENTATION_MANIFEST,
@@ -107,7 +112,7 @@ export async function frameComposition(
   if (
     ((layout === 'screen' || layout === 'wall-status') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
-    (layout === 'more-boards' && sources.length !== 3) ||
+    ((layout === 'more-boards' || layout === 'cross-board-logbook') && sources.length !== 3) ||
     (layout === 'live-climb' && sources.length !== 2)
   ) {
     throw new Error(`Invalid native source count for ${layout}: ${sources.length}`);
@@ -183,9 +188,12 @@ export async function frameComposition(
       // The same peer capture's persistent current-climb bar above its bottom tabs.
       { raw: sources[1], left: margin, top: height * 0.89, width: textWidth, crop: { top: 0.793, height: 0.067 } },
     );
-  } else if ((layout === 'board-family' || layout === 'more-boards') && sources.length === 3) {
-    // Leave the upper holds of both rear boards visible, including their lit holds.
-    // Every phone fits horizontally; the foreground board remains complete.
+  } else if (
+    (layout === 'board-family' || layout === 'more-boards' || layout === 'cross-board-logbook') &&
+    sources.length === 3
+  ) {
+    // Keep both rear screens' upper content visible above the foreground phone.
+    // This exposes board holds or profile/session totals for each composition.
     panels.push(
       { raw: sources[0], left: width * 0.015, top: screenshotTop, width: width * 0.48 },
       { raw: sources[2], left: width * 0.505, top: screenshotTop, width: width * 0.48 },
@@ -253,11 +261,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const outputNames = recipes.map((recipe) => recipe.output);
   const captures = names.map((name) => ({ name, buffer: readFileSync(join(input, name)) }));
   const offenders =
-    options.platform === 'ios'
-      ? findOffenders(options.device, captures)
-      : // A recipe has eight final images but can need up to 14 native captures.
-        // Each source still passes the same dimension gate, in batches within Play's count limit.
-        [captures.slice(0, 6), captures.slice(6)].flatMap((batch) => findGooglePlayOffenders(options.device, batch));
+    options.platform === 'ios' ? findOffenders(options.device, captures) : findGooglePlayImageOffenders(captures);
   for (const capture of captures) {
     if (capture.buffer.length < MIN_RAW_BYTES) {
       offenders.push({ file: capture.name, reason: `raw capture is under ${MIN_RAW_BYTES} bytes; likely blank` });
@@ -292,6 +296,15 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
         framedSha256: sha256Screenshot(framed),
         ...(buffers.length > 1 ? { sources: sourceMetadata } : {}),
       };
+    }
+    if (options.platform === 'android') {
+      const listingOffenders = findGooglePlayOffenders(
+        options.device,
+        outputNames.map((name) => ({ name, buffer: readFileSync(join(staging, name)) })),
+      );
+      if (listingOffenders.length) {
+        throw new Error(listingOffenders.map(({ file, reason }) => `${file}: ${reason}`).join('\n'));
+      }
     }
     writeFileSync(join(staging, PRESENTATION_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
     // Build a review artifact outside the PNG upload set.

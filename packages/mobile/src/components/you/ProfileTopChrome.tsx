@@ -1,16 +1,4 @@
-// Top chrome for the Profile ("You") tab, routed by UI variant.
-//
-// Liquid Glass: the board-agnostic CollapsingLargeTitleHeader (no board pill —
-// unlike Climbs/Discover) with an account-avatar island on the left, an optional
-// filter island on the right (the Progress sub-tab only), and the
-// Progress/Sessions/Logbook/Climbs/Social segmented control (glass-track-wrapped)
-// as its below-row content.
-//
-// Material: an absolutely-positioned, onHeightChange-measured M3 small app bar
-// (mirroring ClimbTopChrome) — the account avatar, dashboard title via
-// Appbar.Content, the Progress-only filter Appbar.Action, and the MaterialTabs primary tabs as
-// the app bar's bottom row.
-
+// Profile navigation stays separate from the filters in the Progress section.
 import { useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -19,11 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
-import { Icon } from '../Icon';
-import { iconMap } from '../icon-map';
 import { SegmentedControl } from '../SegmentedControl';
 import { MaterialTabs } from '../navigation/MaterialTabs';
-import { CollapsingLargeTitleHeader, GlassActionToolbar, GlassToolbarAction } from '../chrome';
+import { CollapsingLargeTitleHeader, GlassActionToolbar } from '../chrome';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 
 export type ProfileTabKey = 'progress' | 'sessions' | 'logbook' | 'climbs' | 'social';
@@ -32,10 +18,6 @@ export type ProfileTopChromeProps = {
   /** Selected sub-tab; drives the segmented control's pill / the active tab. */
   activeTab: ProfileTabKey;
   onSelectTab: (key: ProfileTabKey) => void;
-  /** Tints the filter island accent when the Progress filters are narrowed. */
-  hasActiveFilters: boolean;
-  /** Open the Progress filter sheet (only reachable from the Progress sub-tab). */
-  onOpenFilters: () => void;
   /** Report the measured chrome height so each sub-tab can inset its top padding. */
   onHeightChange: (height: number) => void;
 };
@@ -59,15 +41,9 @@ function useSegmentOptions() {
   );
 }
 
-function ProfileTopChromeMaterial({
-  activeTab,
-  onSelectTab,
-  hasActiveFilters,
-  onOpenFilters,
-  onHeightChange,
-}: ProfileTopChromeProps) {
+function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
-  const { systemColors, brandColors, m3 } = useTheme();
+  const { systemColors, m3 } = useTheme();
   const insets = useSafeAreaInsets();
 
   const dashboardTitle = t('metadata.dashboard.title');
@@ -77,10 +53,6 @@ function ProfileTopChromeMaterial({
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
-
-  // The filter action only makes sense on Progress (the only sub-tab the filter
-  // sheet narrows); Sessions/Logbook show none.
-  const filterColor = hasActiveFilters ? (brandColors.primary as string) : (systemColors.label as string);
 
   return (
     <View
@@ -105,17 +77,9 @@ function ProfileTopChromeMaterial({
         <UserAvatarToolbarAction variant="material" />
         {/* No visible title — the sub-tab group below already names the surface
             (matches Liquid Glass, which never rendered one). The empty Content is
-            the flex spacer that keeps the avatar left and the filter action right;
+            the flex spacer that keeps the avatar at the leading edge;
             dashboardTitle still labels the tabs for screen readers. */}
         <Appbar.Content title="" />
-        {activeTab === 'progress' ? (
-          <Appbar.Action
-            icon={iconMap.filter.android}
-            color={filterColor}
-            onPress={onOpenFilters}
-            accessibilityLabel={t('mobile.filter.title')}
-          />
-        ) : null}
       </Appbar.Header>
 
       {/* Inner box-none is fine: the outer `auto` container already claims the RNGH
@@ -132,15 +96,8 @@ function ProfileTopChromeMaterial({
   );
 }
 
-function ProfileTopChromeGlass({
-  activeTab,
-  onSelectTab,
-  hasActiveFilters,
-  onOpenFilters,
-  onHeightChange,
-}: ProfileTopChromeProps) {
+function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
-  const { systemColors, brandColors } = useTheme();
 
   const dashboardTitle = t('metadata.dashboard.title');
   const segmentOptions = useSegmentOptions();
@@ -151,19 +108,8 @@ function ProfileTopChromeGlass({
     </GlassActionToolbar>
   );
 
-  // The filter island only makes sense on Progress (the only sub-tab the filter
-  // sheet narrows); Sessions/Logbook show no right island.
-  const rightActions =
-    activeTab === 'progress' ? (
-      <GlassActionToolbar actionCount={1}>
-        <GlassToolbarAction onPress={onOpenFilters} accessibilityLabel={t('mobile.filter.title')}>
-          <Icon name="filter" size={22} color={hasActiveFilters ? brandColors.primary : systemColors.label} />
-        </GlassToolbarAction>
-      </GlassActionToolbar>
-    ) : undefined;
-
   return (
-    <CollapsingLargeTitleHeader onHeightChange={onHeightChange} leftActions={leftActions} rightActions={rightActions}>
+    <CollapsingLargeTitleHeader onHeightChange={onHeightChange} leftActions={leftActions}>
       {/* The native iOS segmented control brings its own track/background, so it
           renders directly — wrapping it in the old GlassSurface track doubled the
           border. The padded segmentStack positions it under the large title. */}

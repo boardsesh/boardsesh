@@ -100,6 +100,8 @@ export type RawLayoutPercentage = {
   count: number;
   grades: Record<string, number>;
   percentage: number;
+  /** Highest known effective grade among this layout's lifetime sends/flashes. */
+  hardestSend: RawGradeHighlight | null;
 };
 
 export type RawStatisticsSummary = {

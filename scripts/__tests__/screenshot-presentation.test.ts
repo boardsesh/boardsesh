@@ -255,9 +255,7 @@ describe('store screenshot presentation', () => {
     );
   });
 
-  it('composes fourteen native captures into eight reordered images with source provenance', async () => {
-    const input = directory();
-    const output = directory();
+  it('requires both history sources and puts the logbook in the foreground', () => {
     const names = [
       ...Object.keys(screenshotCaptions('android', 'pixel-2')),
       '08-moonboard-board-view.png',
@@ -266,54 +264,95 @@ describe('store screenshot presentation', () => {
       '11-woods-board-view.png',
       '12-grasshopper-board-view.png',
       '13-moonboard-2024-view.png',
+      '14-logbook.png',
+      '15-session-detail.png',
     ];
-    const captures = new Map<string, Buffer>();
-    for (const [index, name] of names.entries()) {
-      const capture = await sharp({
-        create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 16},70,90)` },
-      })
-        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
-        .png()
-        .toBuffer();
-      captures.set(name, capture);
-      writeFileSync(join(input, name), capture);
-    }
-    const oldNames = ['01-live-queue.png', '02-wall-status.png', '07-board-sheet.png'];
-    for (const name of oldNames) writeFileSync(join(output, name), 'previous campaign');
     const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
-    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
-    expect(saved).toEqual(recipes.map(({ output: name }) => join(output, name)));
-    const manifest = readPresentationManifest(output);
-    expect(Object.keys(manifest.files)).toEqual(recipes.map(({ output: name }) => name));
-    for (const recipe of recipes) {
-      const entry = manifest.files[recipe.output];
-      if (recipe.sources.length > 1) {
-        expect(entry.sources).toEqual(
-          Object.fromEntries(
-            recipe.sources.map((name) => [
-              name,
-              { rawBytes: captures.get(name)!.length, rawSha256: sha256Screenshot(captures.get(name)!) },
-            ]),
-          ),
-        );
-        expect(entry.rawSha256).toBe(sha256ScreenshotSources(entry.sources!));
-      } else {
-        expect(entry.sources).toBeUndefined();
-        expect(entry.rawSha256).toBe(sha256Screenshot(captures.get(recipe.sources[0])!));
-      }
+    expect(recipes).toHaveLength(8);
+    expect(recipes.at(-1)).toEqual({
+      output: '07-profile.png',
+      caption: 'crossBoardLogbook',
+      layout: 'cross-board-logbook',
+      sources: ['06-profile.png', '14-logbook.png', '15-session-detail.png'],
+    });
+    for (const missing of ['14-logbook.png', '15-session-detail.png']) {
+      expect(() =>
+        resolveScreenshotRecipes(
+          'android',
+          'pixel-2',
+          names.filter((name) => name !== missing),
+        ),
+      ).toThrow('Incomplete or unknown');
     }
-    for (const name of oldNames) expect(existsSync(join(output, name))).toBe(false);
-    for (const [name, bytes] of captures) expect(readFileSync(join(input, name))).toEqual(bytes);
-    expect(
-      findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
-    ).toEqual([]);
-    const originalFramed = readFileSync(saved[1]);
-    writeFileSync(join(input, '13-moonboard-2024-view.png'), Buffer.alloc(60));
-    await expect(
-      frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
-    ).rejects.toThrow();
-    expect(readFileSync(saved[1])).toEqual(originalFramed);
-  }, 60_000);
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...names, '14-logbook.png'])).toThrow(
+      'Incomplete or unknown',
+    );
+  });
+
+  it.each([false, true])(
+    'composes the extended campaign with all-board history=%s and source provenance',
+    async (history) => {
+      const input = directory();
+      const output = directory();
+      const names = [
+        ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+        '08-moonboard-board-view.png',
+        '09-live-queue.png',
+        '10-wall-status.png',
+        '11-woods-board-view.png',
+        '12-grasshopper-board-view.png',
+        '13-moonboard-2024-view.png',
+      ];
+      if (history) names.push('14-logbook.png', '15-session-detail.png');
+      const captures = new Map<string, Buffer>();
+      for (const [index, name] of names.entries()) {
+        const capture = await sharp({
+          create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 16},70,90)` },
+        })
+          .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+          .png()
+          .toBuffer();
+        captures.set(name, capture);
+        writeFileSync(join(input, name), capture);
+      }
+      const oldNames = ['01-live-queue.png', '02-wall-status.png', '07-board-sheet.png'];
+      for (const name of oldNames) writeFileSync(join(output, name), 'previous campaign');
+      const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+      const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+      expect(saved).toEqual(recipes.map(({ output: name }) => join(output, name)));
+      const manifest = readPresentationManifest(output);
+      expect(Object.keys(manifest.files)).toEqual(recipes.map(({ output: name }) => name));
+      for (const recipe of recipes) {
+        const entry = manifest.files[recipe.output];
+        if (recipe.sources.length > 1) {
+          expect(entry.sources).toEqual(
+            Object.fromEntries(
+              recipe.sources.map((name) => [
+                name,
+                { rawBytes: captures.get(name)!.length, rawSha256: sha256Screenshot(captures.get(name)!) },
+              ]),
+            ),
+          );
+          expect(entry.rawSha256).toBe(sha256ScreenshotSources(entry.sources!));
+        } else {
+          expect(entry.sources).toBeUndefined();
+          expect(entry.rawSha256).toBe(sha256Screenshot(captures.get(recipe.sources[0])!));
+        }
+      }
+      for (const name of oldNames) expect(existsSync(join(output, name))).toBe(false);
+      for (const [name, bytes] of captures) expect(readFileSync(join(input, name))).toEqual(bytes);
+      expect(
+        findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
+      ).toEqual([]);
+      const originalFramed = readFileSync(saved[1]);
+      writeFileSync(join(input, '13-moonboard-2024-view.png'), Buffer.alloc(60));
+      await expect(
+        frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
+      ).rejects.toThrow();
+      expect(readFileSync(saved[1])).toEqual(originalFramed);
+    },
+    60_000,
+  );
 
   it('preserves all three additional board sources in each localized composition', async () => {
     const colors = ['#164c39', '#ac3478', '#e69a32'];

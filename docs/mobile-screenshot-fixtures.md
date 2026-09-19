@@ -133,6 +133,7 @@ scenario automatically. The campaign bundle carries:
 {
   "capture": {
     "sharedSessionId": "00000000-0000-4000-8000-000000000101",
+    "profileSessionId": "00000000-0000-4000-8000-000000000102",
     "boards": [
       "Boardsesh HQ",
       "High Point Climbing Orlando",
@@ -156,6 +157,21 @@ queries used by those screens must all describe that same sanitized scenario.
 Changing the title, counts, or current climb requires updating the flow's visible
 anchors together with the bundle. WebSocket recording remains unsupported; supply
 these initial snapshots in the bundle explicitly.
+
+The optional `profileSessionId` selects a separate, populated historical recap.
+With six board selectors, Android adds `14-logbook` and `15-session-detail` to
+the raw captures. The final profile slide combines these with `06-profile`,
+placing the all-board logbook in front of the overview and recap. The listing
+still contains eight images. Older bundles without this field retain their
+single-screen profile slide. The recap ID must be a UUID; include its detail
+query and session vote summary in the same bundle.
+
+The history capture waits for visible Kilter, Tension, and MoonBoard row labels.
+Its demo chronology must agree across user ticks, grouped logbook entries,
+session feeds, and recap totals. Reuse recorded climb metadata at the correct
+angle. Moving a demo tick between dates also moves it out of its old session's
+totals; never stretch that session across the intervening months. Keep these
+changes in the sanitized fixture snapshot, not in production accounts.
 
 The session ID must be a UUID, and `boards` must contain at least two non-empty
 selectors without control characters or `|`. Selector order is significant:
@@ -184,9 +200,11 @@ eight Google Play images: two compatibility frames, the shared queue, wall
 status, climb browsing, playlists, workout generator, and profile. The original
 Home and board-activity raw captures remain available but are not selected for
 this listing set. Smaller scenarios retain their earlier eight-output recipes.
-The profile capture uses the all-board view with the activity calendar and the
-Boards donut below it visible. Its ascent history must cover more than one board
-layout; the app hides the donut when only one layout has recorded ascents.
+With `profileSessionId`, the six-board flow adds logbook and historical-session
+captures for sixteen raw inputs, still producing eight Google Play images.
+The profile capture starts at the all-board overview: the distinct-climb total,
+layout count, and first three ranked board rows. Additional layouts expand below
+these rows; filtered progress charts remain farther down the same page.
 The published profile scenario includes screenshot-only demo sends on Woods Board,
 Grasshopper, and MoonBoard 2024, using recorded climb metadata. Its nine-layout
 history is kept consistent across profile totals, account tick queries, and the

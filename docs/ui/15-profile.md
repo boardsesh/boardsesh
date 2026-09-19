@@ -91,6 +91,19 @@ Three `ProfileNavCard` components, each a `Card` with icon, title, subtitle, and
 - Tab navigation: Progress, Sessions, Logbook.
 - Requires authentication (redirects to home if not logged in).
 
+**Current mobile Profile tab:**
+
+- Progress starts with an all-board, all-time overview: distinct climbs sent,
+  layout count, and three ranked layout rows with counts and best-send grades.
+  The remaining layouts expand inline in the virtualized list.
+- Board/time filters live with the detailed Progress section below this lifetime
+  overview. Activity includes attempts; lifetime records are labeled separately
+  from filtered charts.
+- Logbook displays canonical board/layout identity on every climb row, including
+  when a day heading already names a custom wall. One history covers all boards.
+- Session detail leads with board/date/participants and Sends/Hardest, followed
+  by the grade chart, full notes, and existing session content.
+
 **Data operations:**
 
 - `publicProfile` -- Profile data for any user.

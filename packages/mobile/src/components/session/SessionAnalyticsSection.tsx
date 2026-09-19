@@ -18,6 +18,7 @@ import { spacing } from '../../theme/tokens';
  */
 export function SessionAnalyticsSection({ gradeDistribution }: { gradeDistribution: SessionGradeDistributionItem[] }) {
   const { t } = useTranslation('profile');
+  const { t: tSession } = useTranslation('session');
   // Match the grade format the Progress tab / useYouProfileData uses so a
   // session's chart reads identically to the profile's.
   const { formatGrade } = useGradeFormat();
@@ -36,7 +37,19 @@ export function SessionAnalyticsSection({ gradeDistribution }: { gradeDistributi
     <View>
       <SectionHeader title={t('stats.gradeDistribution')} />
       <Card style={styles.chartCard}>
-        <StackedBarChart bars={gradeBars} colorBy="grade" fitYAxisToData />
+        <StackedBarChart
+          testID="session-grade-chart"
+          bars={gradeBars}
+          colorBy="grade"
+          height={112}
+          fitYAxisToData
+          accessibilityLabel={gradeBars
+            .map(
+              (bar) =>
+                `${bar.label}: ${tSession('detail.sendsCount', { count: bar.segments.reduce((total, segment) => total + segment.value, 0) })}`,
+            )
+            .join(', ')}
+        />
       </Card>
     </View>
   );

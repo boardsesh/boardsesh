@@ -58,20 +58,16 @@ export default function YouScreen() {
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
       <View style={styles.page}>
-        {activeTab === 'progress' ? <ProgressTab data={youData} topInset={chromeHeight} userId={userId} /> : null}
+        {activeTab === 'progress' ? (
+          <ProgressTab data={youData} topInset={chromeHeight} userId={userId} onOpenFilters={openFilters} />
+        ) : null}
         {activeTab === 'sessions' ? <SessionsTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'logbook' ? <LogbookTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'social' ? <SocialTab userId={userId} topInset={chromeHeight} /> : null}
       </View>
 
-      <ProfileTopChrome
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        hasActiveFilters={youData.hasActiveFilters}
-        onOpenFilters={openFilters}
-        onHeightChange={setChromeHeight}
-      />
+      <ProfileTopChrome activeTab={activeTab} onSelectTab={handleSelectTab} onHeightChange={setChromeHeight} />
 
       <YouFilterSheet
         sheetRef={filterSheetRef}

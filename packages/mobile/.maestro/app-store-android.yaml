@@ -163,17 +163,51 @@ name: app-store screenshots android
     notVisible:
       id: 'horizontal-scroll-section-loading'
     timeout: 60000
-# Show the all-board history, including the complete chart and its board legend.
+# Return to the all-board overview, even when the mounted tab retained a scroll position.
 - scrollUntilVisible:
     element:
-      id: 'profile-board-share-chart'
-    direction: DOWN
-    centerElement: true
+      id: 'profile-board-overview'
+    direction: UP
+    centerElement: false
     visibilityPercentage: 100
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 06-profile
+
+# One history across boards. Old fixture bundles retain their original captures.
+- runFlow:
+    when:
+      true: ${SCREENSHOT_PROFILE_SESSION_ID != '' && Number(SCREENSHOT_BOARD_COUNT) >= 6}
+    commands:
+      - openLink: com.boardsesh.app://profile?screenshotTab=logbook
+      - extendedWaitUntil:
+          visible:
+            id: 'logbook-screen'
+          timeout: 90000
+      - extendedWaitUntil:
+          visible:
+            id: 'logbook-board-kilter'
+          timeout: 60000
+      - assertVisible:
+          id: 'logbook-board-tension'
+      - assertVisible:
+          id: 'logbook-board-moonboard'
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 14-logbook
+      - openLink: com.boardsesh.app://profile/session/${SCREENSHOT_PROFILE_SESSION_ID}
+      - extendedWaitUntil:
+          visible:
+            id: 'session-detail-screen'
+          timeout: 90000
+      - extendedWaitUntil:
+          visible:
+            id: 'session-grade-chart'
+          timeout: 60000
+      - waitForAnimationToEnd:
+          timeout: 30000
+      - takeScreenshot: 15-session-detail
 
 # Board sheet — relaunch to keep the prior route from leaking into the sheet, then open it
 # deterministically through the screenshot-mode parameter.

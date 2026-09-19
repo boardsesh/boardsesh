@@ -62,5 +62,9 @@
   "moreBoards": {
     "headline": "Más plafones. La misma app.",
     "description": "Compatible con Woods Board, Grasshopper y MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "Todos tus plafones.\nUn logbook.",
+    "description": "Tus encadenes y sesiones de todos tus plafones, juntos."
   }
 }

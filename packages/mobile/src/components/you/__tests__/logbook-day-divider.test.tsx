@@ -100,7 +100,11 @@ describe('LogbookDayDivider', () => {
     const { container } = render(
       createElement(LogbookDayDivider, { dayStartMs: startOfToday(), stats: stats(), wallLabel: 'Kilter 40°' }),
     );
-    expect(container.textContent).toContain('mobile.logbook.day.today · Kilter 40°');
+    expect(container.textContent).toContain('mobile.logbook.day.today');
+    expect(container.textContent).toContain('Kilter 40°');
+    expect(container.querySelector('[accessibilityRole="header"]')?.getAttribute('accessibilityLabel')).toContain(
+      'mobile.logbook.day.today · Kilter 40°',
+    );
   });
 
   it('marks the anchor as a header for the screen-reader rotor', () => {

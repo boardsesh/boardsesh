@@ -11,7 +11,7 @@ import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SectionHeader } from '../SectionHeader';
 import { CommentSheet } from '../you/CommentSheet';
-import { SessionSummaryCard } from './SessionSummaryCard';
+import { SessionSummaryCard, SessionNotesCard } from './SessionSummaryCard';
 import { SessionEditSheet } from './SessionEditSheet';
 import { SessionAnalyticsSection } from './SessionAnalyticsSection';
 import { SessionBetaCarousel } from './SessionBetaCarousel';
@@ -145,6 +145,8 @@ export default function SessionDetailScreen() {
       />
 
       <SessionAnalyticsSection gradeDistribution={session.gradeDistribution} />
+
+      <SessionNotesCard session={session} />
 
       <SessionBetaCarousel ticks={session.ticks} participantById={participantById} isMultiUser={isMultiUser} />
 

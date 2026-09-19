@@ -1,4 +1,4 @@
-import { type GradeDisplayFormat } from '@boardsesh/play-view';
+import { formatGradeByDifficultyId, type GradeDisplayFormat } from '@boardsesh/play-view';
 import type { Dayjs } from 'dayjs';
 import {
   filterLogbookByTimeframe,
@@ -156,7 +156,7 @@ function computeHardest(
 
   const makeHighlight = (difficulty: number, status: 'send' | 'flash'): RawGradeHighlight => ({
     difficulty,
-    label: mapping[difficulty] ?? `${difficulty}`,
+    label: formatGradeByDifficultyId(difficulty, gradeFormat) ?? mapping[difficulty] ?? `${difficulty}`,
     status,
   });
 

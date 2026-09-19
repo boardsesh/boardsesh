@@ -62,5 +62,9 @@
   "moreBoards": {
     "headline": "Plus de boards. La même app.",
     "description": "Compatible avec Woods Board, Grasshopper et MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "Toutes tes boards.\nUn seul carnet.",
+    "description": "Tes croix et tes séances réunies, sur toutes tes boards."
   }
 }

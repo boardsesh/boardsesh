@@ -24,6 +24,7 @@ export const CAPTION_IDS = [
   'liveClimb',
   'wallStatus',
   'moreBoards',
+  'crossBoardLogbook',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
 export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
@@ -87,7 +88,13 @@ export function screenshotCaptions(platform: 'ios' | 'android', device: string):
   throw new Error(`No screenshot presentation for device ${device}`);
 }
 
-export type ScreenshotLayout = 'screen' | 'board-family' | 'more-boards' | 'live-climb' | 'wall-status';
+export type ScreenshotLayout =
+  | 'screen'
+  | 'board-family'
+  | 'more-boards'
+  | 'live-climb'
+  | 'wall-status'
+  | 'cross-board-logbook';
 export interface ScreenshotRecipe {
   output: string;
   caption: CaptionId;
@@ -106,6 +113,7 @@ const MORE_BOARD_CAPTURES = [
   '12-grasshopper-board-view.png',
   '13-moonboard-2024-view.png',
 ] as const;
+const PROFILE_HISTORY_CAPTURES = ['14-logbook.png', '15-session-detail.png'] as const;
 
 /** Keep old capture flows usable; the new opening requires the complete live capture set. */
 export function resolveScreenshotRecipes(
@@ -123,7 +131,9 @@ export function resolveScreenshotRecipes(
   }
   const liveNames = [...legacyNames, ...ANDROID_LIVE_CAPTURES];
   const wallNames = [...legacyNames, ...ANDROID_WALL_CAPTURES];
-  if (platform === 'android' && matches([...wallNames, MOONBOARD_CAPTURE, ...MORE_BOARD_CAPTURES])) {
+  const extendedNames = [...wallNames, MOONBOARD_CAPTURE, ...MORE_BOARD_CAPTURES];
+  const hasProfileHistory = matches([...extendedNames, ...PROFILE_HISTORY_CAPTURES]);
+  if (platform === 'android' && (matches(extendedNames) || hasProfileHistory)) {
     return [
       {
         output: '00-board-family.png',
@@ -142,7 +152,14 @@ export function resolveScreenshotRecipes(
         layout: 'screen',
         sources: ['05-workout-generator.png'],
       },
-      { output: '07-profile.png', caption: 'profile', layout: 'screen', sources: ['06-profile.png'] },
+      hasProfileHistory
+        ? {
+            output: '07-profile.png',
+            caption: 'crossBoardLogbook',
+            layout: 'cross-board-logbook',
+            sources: ['06-profile.png', ...PROFILE_HISTORY_CAPTURES],
+          }
+        : { output: '07-profile.png', caption: 'profile', layout: 'screen', sources: ['06-profile.png'] },
     ];
   }
   const hasWallStatus = matches(wallNames) || matches([...wallNames, MOONBOARD_CAPTURE]);

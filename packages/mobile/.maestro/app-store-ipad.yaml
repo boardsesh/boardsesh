@@ -142,9 +142,9 @@ name: app-store screenshots (iPad)
     timeout: 60000
 - scrollUntilVisible:
     element:
-      id: 'profile-board-share-chart'
-    direction: DOWN
-    centerElement: true
+      id: 'profile-board-overview'
+    direction: UP
+    centerElement: false
     visibilityPercentage: 100
     timeout: 60000
 - waitForAnimationToEnd

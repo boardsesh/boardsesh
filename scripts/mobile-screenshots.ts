@@ -1879,6 +1879,8 @@ export function buildAndroidMaestroArgs(
     '-e',
     `SCREENSHOT_USER_PASSWORD=${env.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD}`,
     '-e',
+    `SCREENSHOT_PROFILE_SESSION_ID=${context.capture?.profileSessionId ?? ''}`,
+    '-e',
     `SCREENSHOT_SHARED_SESSION_ID=${context.capture?.sharedSessionId ?? ''}`,
     '-e',
     `SCREENSHOT_BOARD_COUNT=${boardCount}`,

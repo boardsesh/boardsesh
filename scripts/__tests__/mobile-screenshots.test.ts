@@ -343,6 +343,8 @@ describe('buildAndroidMaestroArgs', () => {
       '-e',
       'SCREENSHOT_USER_PASSWORD=test',
       '-e',
+      'SCREENSHOT_PROFILE_SESSION_ID=',
+      '-e',
       `SCREENSHOT_SHARED_SESSION_ID=${capture.sharedSessionId}`,
       '-e',
       'SCREENSHOT_BOARD_COUNT=3',
@@ -352,6 +354,18 @@ describe('buildAndroidMaestroArgs', () => {
   it('passes an empty session for legacy or record runs, overriding stale shell metadata', () => {
     const args = buildAndroidMaestroArgs(context, baseEnv({ SCREENSHOT_SHARED_SESSION_ID: 'stale-session' }));
     expect(args.slice(-4)).toEqual(['-e', 'SCREENSHOT_SHARED_SESSION_ID=', '-e', 'SCREENSHOT_BOARD_COUNT=2']);
+    expect(args).toContain('SCREENSHOT_PROFILE_SESSION_ID=');
+  });
+
+  it('passes the historical recap separately from the live crew session', () => {
+    const capture = {
+      sharedSessionId: '00000000-0000-4000-8000-000000000101',
+      profileSessionId: '00000000-0000-4000-8000-000000000102',
+      boards: ['Kilter', 'Tension'],
+    };
+    const args = buildAndroidMaestroArgs({ ...context, capture }, baseEnv());
+    expect(args).toContain(`SCREENSHOT_PROFILE_SESSION_ID=${capture.profileSessionId}`);
+    expect(args).toContain(`SCREENSHOT_SHARED_SESSION_ID=${capture.sharedSessionId}`);
   });
 
   it('counts the effective board selectors using the same overrides as Metro', () => {
@@ -378,7 +392,7 @@ describe('Android app-store scenario flow', () => {
   const documents = parseAllDocuments(readFileSync('packages/mobile/.maestro/app-store-android.yaml', 'utf8'));
   const commands = documents[1].toJS() as FlowStep[];
 
-  function screenshotNames(sharedSessionId: string, boardCount: number): string[] {
+  function screenshotNames(sharedSessionId: string, boardCount: number, profileSessionId = ''): string[] {
     const names: string[] = [];
     for (const command of commands) {
       if (command.takeScreenshot) names.push(command.takeScreenshot);
@@ -389,6 +403,7 @@ describe('Android app-store scenario flow', () => {
           {
             SCREENSHOT_SHARED_SESSION_ID: sharedSessionId,
             SCREENSHOT_BOARD_COUNT: String(boardCount),
+            SCREENSHOT_PROFILE_SESSION_ID: profileSessionId,
           },
           { timeout: 1000 },
         );
@@ -411,6 +426,15 @@ describe('Android app-store scenario flow', () => {
     expect(screenshotNames('', 2)).toHaveLength(8);
     expect(screenshotNames('', 3)).toEqual(screenshotNames('', 2));
     expect(screenshotNames('', 6)).toEqual(screenshotNames('', 2));
+  });
+
+  it('adds two distinct history views only to a complete six-board campaign', () => {
+    const shared = '00000000-0000-4000-8000-000000000101';
+    const profile = '00000000-0000-4000-8000-000000000102';
+    expect(screenshotNames(shared, 6, profile)).toHaveLength(16);
+    expect(screenshotNames(shared, 6, profile)).toEqual(expect.arrayContaining(['14-logbook', '15-session-detail']));
+    expect(screenshotNames(shared, 3, profile)).not.toContain('14-logbook');
+    expect(screenshotNames(shared, 6)).not.toContain('14-logbook');
   });
 
   it('captures ten or eleven inputs with wall status before the shared queue', () => {

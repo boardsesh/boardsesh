@@ -15,25 +15,35 @@
 // every layout prop explicitly: the FULL occupied span must fit inside the
 // measured frame, and the fitted bar/spacing content must fit inside `width`.
 import { createElement, useEffect, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RawGroupedBar } from '@boardsesh/profile-stats';
 import type { ColoredBar } from '../profile-chart-colors';
 
 const FRAME_WIDTH = 320;
 const getFontScaleMock = vi.hoisted(() => vi.fn(() => 1));
+const frameLayout = vi.hoisted(() => ({ width: 320, onLayout: null as ((event: unknown) => void) | null }));
 
 // Minimal RN surface — mirrors you-charts-tap-tooltip.test.tsx's mock so
 // ChartFrame's width-gated render path reaches the chart under test.
 // PixelRatio is needed because GroupedBarChart reads PixelRatio.getFontScale()
 // for its top-label rotation layout (#3779).
 vi.mock('react-native', () => ({
-  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
+  View: ({
+    children,
+    onLayout,
+    testID,
+  }: {
+    children?: ReactNode;
+    onLayout?: (event: unknown) => void;
+    testID?: string;
+  }) => {
+    if (onLayout) frameLayout.onLayout = onLayout;
     useEffect(() => {
-      onLayout?.({ nativeEvent: { layout: { width: FRAME_WIDTH, height: 160, x: 0, y: 0 } } });
+      onLayout?.({ nativeEvent: { layout: { width: frameLayout.width, height: 160, x: 0, y: 0 } } });
       // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on mount, matching a real layout pass
     }, []);
-    return createElement('div', null, children);
+    return createElement('div', { 'data-testid': testID }, children);
   },
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', { type: 'button' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
@@ -123,6 +133,8 @@ beforeEach(() => {
   barChartCalls.length = 0;
   getFontScaleMock.mockReset();
   getFontScaleMock.mockReturnValue(1);
+  frameLayout.width = FRAME_WIDTH;
+  frameLayout.onLayout = null;
 });
 
 /**
@@ -164,6 +176,28 @@ describe('StackedBarChart width budget (#3778, #3050)', () => {
     label: `V${index}`,
     segments: [{ key: 'kilter-1', label: 'Kilter Original', value: index + 1 }],
   }));
+
+  it('exposes screenshot readiness only when the native frame has positive width and renders bars', () => {
+    frameLayout.width = 0;
+    const { queryByTestId, getByTestId } = render(
+      <StackedBarChart testID="session-grade-chart" bars={bars} colorBy="grade" />,
+    );
+    expect(queryByTestId('session-grade-chart')).toBeNull();
+    expect(queryByTestId('gifted-bar-chart')).toBeNull();
+
+    act(() => frameLayout.onLayout?.({ nativeEvent: { layout: { width: FRAME_WIDTH, height: 112, x: 0, y: 0 } } }));
+    expect(getByTestId('session-grade-chart')).not.toBeNull();
+    expect(getByTestId('gifted-bar-chart')).not.toBeNull();
+  });
+
+  it('does not expose readiness for loading or empty charts even after width is measured', () => {
+    const { queryByTestId, rerender } = render(
+      <StackedBarChart testID="session-grade-chart" bars={bars} colorBy="grade" loading />,
+    );
+    expect(queryByTestId('session-grade-chart')).toBeNull();
+    rerender(<StackedBarChart testID="session-grade-chart" bars={[]} colorBy="grade" />);
+    expect(queryByTestId('session-grade-chart')).toBeNull();
+  });
 
   it('keeps the whole chart — y-axis gutter included — inside the measured frame', () => {
     // `showYAxisScale` is what ProgressTab passes for Activity and Grade

@@ -50,6 +50,9 @@ export function YouFilterSheet({
     <Sheet
       ref={sheetRef}
       snapPoints={['55%']}
+      // Android's fixed partial detent strands the footer below the form.
+      // Fit its bounded content there; iOS keeps the requested 55% detent.
+      androidContentSized
       scrollable
       footer={<Button title={t('mobile.filter.done')} onPress={() => sheetRef.current?.close()} />}
     >
