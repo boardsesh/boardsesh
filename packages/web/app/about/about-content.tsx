@@ -7,7 +7,7 @@ import MuiLink from '@mui/material/Link';
 import { GitHub, GroupOutlined, FavoriteBorderOutlined, ApiOutlined, RocketLaunchOutlined } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
+import { PageShell, PageSection, Prose } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, MarketingPreviewSwitch } from '@/app/components/marketing/marketing-screenshot';
 import styles from './about.module.css';
 
@@ -16,9 +16,19 @@ export default function AboutContent() {
   return (
     <PageShell title={t('about.hero.title')} lead={t('about.hero.subtitle')} width="wide">
       <Box className={styles.story}>
-        <PageSection title={t('about.vision.title')} icon={<RocketLaunchOutlined />} className={styles.vision}>
-          <Prose>{t('about.vision.p1')}</Prose>
-          <Prose>{t('about.vision.p2')}</Prose>
+        {/* The old "Our Vision" said the same thing the landing page says, in the
+            same words. This is the part only About can tell: what the problem
+            actually was, and what happened when it bit. The Aurora outage is
+            written up properly on /aurora-migration — link to it rather than
+            re-litigate someone else's dispute on a marketing page. */}
+        <PageSection title={t('about.story.title')} icon={<RocketLaunchOutlined />} className={styles.vision}>
+          <Prose>{t('about.story.p1')}</Prose>
+          <Prose>{t('about.story.p2')}</Prose>
+          <Prose>
+            <MuiLink component={LocaleLink} href="/aurora-migration">
+              {t('about.story.link')}
+            </MuiLink>
+          </Prose>
         </PageSection>
         <Box component="figure" className={styles.preview}>
           <Typography component="figcaption" className={styles.caption}>
@@ -34,44 +44,33 @@ export default function AboutContent() {
           />
         </Box>
 
-        <PageSection
-          title={t('about.features.title')}
-          icon={<GroupOutlined />}
-          tone="neutral"
-          className={styles.features}
-        >
-          <ProseList>
-            <li>
-              <Typography variant="body1" component="span" fontWeight={600}>
-                {t('about.features.queueLabel')}
-              </Typography>{' '}
-              {t('about.features.queueDescription')}
-            </li>
-            <li>
-              <Typography variant="body1" component="span" fontWeight={600}>
-                {t('about.features.partyLabel')}
-              </Typography>{' '}
-              {t('about.features.partyDescription')}
-            </li>
-            <li>
-              <Typography variant="body1" component="span" fontWeight={600}>
-                {t('about.features.multiBoardLabel')}
-              </Typography>{' '}
-              {t('about.features.multiBoardDescription')}
-            </li>
-            <li>
-              <Typography variant="body1" component="span" fontWeight={600}>
-                {t('about.features.communityLabel')}
-              </Typography>{' '}
-              {t('about.features.communityDescription')}
-            </li>
-            <li>
-              <Typography variant="body1" component="span" fontWeight={600}>
-                {t('about.features.selfHostedLabel')}
-              </Typography>{' '}
-              {t('about.features.selfHostedDescription')}
-            </li>
-          </ProseList>
+        {/* The feature list that was here repeated the landing page's own feature
+            strip as bolded-label bullets. Who builds it, and what is coming, are
+            the things a reader cannot get anywhere else. */}
+        <PageSection title={t('about.who.title')} icon={<GroupOutlined />} tone="neutral" className={styles.features}>
+          <Prose>{t('about.who.body')}</Prose>
+          <Prose>
+            <MuiLink
+              href="https://github.com/boardsesh/boardsesh/graphs/contributors"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t('about.who.cta')}
+            </MuiLink>
+          </Prose>
+        </PageSection>
+
+        <PageSection title={t('about.next.title')} icon={<ApiOutlined />} tone="neutral" className={styles.features}>
+          <Prose>{t('about.next.body')}</Prose>
+          <Prose>
+            <MuiLink
+              href="https://github.com/boardsesh/boardsesh/blob/main/ROADMAP.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t('about.next.cta')}
+            </MuiLink>
+          </Prose>
         </PageSection>
       </Box>
 

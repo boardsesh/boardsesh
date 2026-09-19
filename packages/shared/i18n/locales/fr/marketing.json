@@ -117,25 +117,7 @@
   "about": {
     "hero": {
       "title": "Fait par des grimpeurs. Ouvert à tous.",
-      "subtitle": "Tes boards. Une seule app."
-    },
-    "vision": {
-      "title": "Notre vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Chaque board a son app et son jardin fermé. Votre entraînement n'a pas à rester enfermé dans l'un d'eux.",
-      "p2": "Boardsesh fonctionne avec tous, pour que vous n'ayez qu'à grimper."
-    },
-    "features": {
-      "title": "Ce que Boardsesh vous offre",
-      "queueLabel": "Ton crew. Une file en direct.",
-      "queueDescription": "Ajoute des blocs avec ton crew. Tout le monde reste synchronisé.",
-      "partyLabel": "Vois ce qui est au mur.",
-      "partyDescription": "Vois le bloc allumé pendant que tu cherches le suivant.",
-      "multiBoardLabel": "Tes boards. Une seule app.",
-      "multiBoardDescription": "Change de board sans changer d’app.",
-      "communityLabel": "Porté par la communauté.",
-      "communityDescription": "Construit et amélioré par des gens qui grimpent vraiment",
-      "selfHostedLabel": "Auto-hébergeable.",
-      "selfHostedDescription": "Montez votre propre instance si ça vous tente"
+      "subtitle": "Fait par des grimpeurs fatigués d'avoir une app par board."
     },
     "openSource": {
       "title": "Open Source",
@@ -158,6 +140,22 @@
     "profile": {
       "title": "Toutes tes boards. Un seul profil.",
       "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
+    },
+    "story": {
+      "title": "Pourquoi ça existe",
+      "p1": "Chaque board a son app, son compte et son carnet. Tu grimpes sur un Kilter dans ta salle et sur un MoonBoard en vacances, et tu te retrouves avec deux historiques qui ne se croisent jamais.",
+      "p2": "Puis une de ces apps a disparu du jour au lendemain et les grimpeurs ont perdu leur carnet avec. Voilà ce qui arrive quand une seule boîte contrôle le seul accès à du matériel que tu as déjà payé.",
+      "link": "Ce qui s'est passé, et comment récupérer tes données"
+    },
+    "who": {
+      "title": "Qui le construit",
+      "body": "Ça a commencé en 2024 avec un grimpeur et un dépôt, et c'est toujours le genre de projet sur lequel on bosse le soir. Les bugs, c'est quelqu'un devant le mur qui les trouve, pas une équipe QA.",
+      "cta": "Vois qui a contribué"
+    },
+    "next": {
+      "title": "La suite",
+      "body": "Plus de boards, un meilleur mode hors ligne, et sortir tes données aussi facilement qu'elles sont entrées. La feuille de route est publique et on en débat sur Discord.",
+      "cta": "Lis la feuille de route"
     }
   },
   "support": {

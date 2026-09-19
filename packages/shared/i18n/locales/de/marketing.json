@@ -117,25 +117,7 @@
   "about": {
     "hero": {
       "title": "Von Kletterer*innen gebaut. Offen für alle.",
-      "subtitle": "Deine Boards. Eine App."
-    },
-    "vision": {
-      "title": "Unsere Vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jedes Board hat seine eigene App und seinen eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
-      "p2": "Boardsesh läuft mit allen, damit du einfach klettern kannst."
-    },
-    "features": {
-      "title": "Was Boardsesh kann",
-      "queueLabel": "Deine Crew. Eine Live-Warteschlange.",
-      "queueDescription": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron.",
-      "partyLabel": "Sieh, was gerade leuchtet.",
-      "partyDescription": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst.",
-      "multiBoardLabel": "Deine Boards. Eine App.",
-      "multiBoardDescription": "Wechsle das Board, ohne die App zu wechseln.",
-      "communityLabel": "Von der Community.",
-      "communityDescription": "Gebaut und verbessert von Leuten, die wirklich klettern",
-      "selfHostedLabel": "Selbst hostbar.",
-      "selfHostedDescription": "Betreib deine eigene Instanz, wenn dir danach ist"
+      "subtitle": "Von Kletterer*innen gebaut, die genug hatten von einer App pro Board."
     },
     "openSource": {
       "title": "Open Source",
@@ -158,6 +140,22 @@
     "profile": {
       "title": "Alle deine Boards. Ein Profil.",
       "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+    },
+    "story": {
+      "title": "Warum es das gibt",
+      "p1": "Jedes Board bringt seine eigene App mit, seinen eigenen Login und sein eigenes Logbuch. Du kletterst ein Kilter in deiner Halle und im Urlaub ein MoonBoard — und hast zwei Verläufe, die nie zusammenfinden.",
+      "p2": "Dann war eine dieser Apps über Nacht weg, und die Logbücher gleich mit. Das passiert, wenn eine einzige Firma den einzigen Zugang zu Hardware besitzt, die dir längst gehört.",
+      "link": "Was passiert ist — und wie du deine Daten rausbekommst"
+    },
+    "who": {
+      "title": "Wer daran baut",
+      "body": "Angefangen hat es 2024 mit einem Kletterer und einem Repo, und es ist immer noch so ein Projekt, an dem abends gearbeitet wird. Fehler findet, wer an der Wand steht — kein QA-Team.",
+      "cta": "Schau, wer beigetragen hat"
+    },
+    "next": {
+      "title": "Was als Nächstes kommt",
+      "body": "Mehr Boards, besser offline, und deine Daten so leicht wieder raus wie rein. Die Roadmap ist öffentlich, diskutiert wird auf Discord.",
+      "cta": "Lies die Roadmap"
     }
   },
   "support": {

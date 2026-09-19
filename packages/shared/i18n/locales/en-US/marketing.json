@@ -117,25 +117,7 @@
   "about": {
     "hero": {
       "title": "Made by climbers. Open to everyone.",
-      "subtitle": "Your boards. One app."
-    },
-    "vision": {
-      "title": "Our Vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Every board has its own app and its own walled garden. Your training shouldn't be locked inside one of them.",
-      "p2": "Boardsesh works across all of them so you can just climb."
-    },
-    "features": {
-      "title": "What Boardsesh Offers",
-      "queueLabel": "Your crew. One live queue.",
-      "queueDescription": "Add climbs together. Everyone stays in sync.",
-      "partyLabel": "See what’s on the wall.",
-      "partyDescription": "Know which climb is lit while you browse your next one.",
-      "multiBoardLabel": "Your boards. One app.",
-      "multiBoardDescription": "Switch boards without switching apps.",
-      "communityLabel": "Community-driven.",
-      "communityDescription": "Built and improved by people who actually climb",
-      "selfHostedLabel": "Self-hostable.",
-      "selfHostedDescription": "Run your own instance if that's your thing"
+      "subtitle": "Built by climbers who got tired of one app per board."
     },
     "openSource": {
       "title": "Open Source",
@@ -158,6 +140,22 @@
     "profile": {
       "title": "All your boards. One profile.",
       "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
+    },
+    "story": {
+      "title": "Why this exists",
+      "p1": "Every board comes with its own app, its own login and its own logbook. Climb a Kilter at your gym and a MoonBoard on holiday and you have two histories that never meet.",
+      "p2": "Then one of those apps vanished overnight and climbers lost their logbooks with it. That is what happens when one company owns the only way into hardware you already paid for.",
+      "link": "What happened, and how to get your data out"
+    },
+    "who": {
+      "title": "Who builds it",
+      "body": "It started in 2024 with one climber and a repo, and it is still the kind of project people work on in the evenings. Bugs get found by someone standing at the wall, not by a QA team.",
+      "cta": "See who has committed"
+    },
+    "next": {
+      "title": "What's next",
+      "body": "More boards, better offline, and getting your data out as easily as it went in. The roadmap is public and the arguments about it happen on Discord.",
+      "cta": "Read the roadmap"
     }
   },
   "support": {
