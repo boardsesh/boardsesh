@@ -33,6 +33,13 @@
   align-items: center;
 }
 
+.nav a[aria-current='page'] {
+  color: var(--neutral-900);
+  text-decoration: underline;
+  text-decoration-color: var(--color-primary);
+  text-underline-offset: 6px;
+}
+
 .desktopAppLink {
   flex-shrink: 0;
 }

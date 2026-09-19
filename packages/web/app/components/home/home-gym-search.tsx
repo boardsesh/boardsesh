@@ -22,8 +22,8 @@ import { fetchDirectoryPage, fetchFacetCounts } from '@/app/gyms/directory-data'
 import GymDirectoryCard from '@/app/gyms/gym-directory-card';
 import GymDirectorySearchForm from '@/app/gyms/gym-directory-search-form';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import HomeGymSearchNearMe from './home-gym-search-near-me';
+import styles from './home-gym-search.module.css';
 
 /** Gym cards the homepage teases. Four fits the mockup's row and one screen. */
 const TEASER_CARD_COUNT = 4;
@@ -96,14 +96,6 @@ export default async function HomeGymSearch() {
 
   const facetCounts = facetCountsResult.ok ? facetCountsResult.counts : null;
   const gyms = pageResult.ok ? pageResult.gyms.slice(0, TEASER_CARD_COUNT) : [];
-  // Four bounded, independently cached queries; never drain the directory or
-  // subscribe to board presence from a marketing page. One failed preview
-  // leaves that gym's original card intact.
-  const previewsByGym = new Map(
-    await Promise.all(
-      gyms.map(async (gym) => [gym.uuid, await getBoardDiscovery({ gymUuid: gym.uuid, limit: 3 })] as const),
-    ),
-  );
 
   return (
     // Its own provider, so the block is self-contained: the reused directory
@@ -151,95 +143,102 @@ export default async function HomeGymSearch() {
             directory form's own bottom margin so the row stays a row — the
             alternative was a second copy of that form with different spacing,
             which would drift within a release. */}
-        <PageCard
-          variant="surface"
-          padding="sm"
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 1.5,
-            alignItems: 'flex-start',
-            '& form': { mb: 0, flex: '1 1 320px' },
-          }}
-        >
-          <GymDirectorySearchForm facet="all" query={EMPTY_FORM_QUERY} locale={locale} />
-          <HomeGymSearchNearMe locale={locale} />
-          <Typography variant="body2" color="text.secondary" sx={{ flexBasis: '100%', fontSize: 14, lineHeight: 1.5 }}>
-            {t('home.gymSearch.geoHint')}
-          </Typography>
-        </PageCard>
+        <Box className={styles.locator}>
+          <Box className={styles.controls}>
+            <PageCard
+              variant="surface"
+              padding="sm"
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1.5,
+                alignItems: 'flex-start',
+                '& form': { mb: 0, flex: '1 1 320px' },
+              }}
+            >
+              <GymDirectorySearchForm facet="all" query={EMPTY_FORM_QUERY} locale={locale} />
+              <HomeGymSearchNearMe locale={locale} />
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ flexBasis: '100%', fontSize: 14, lineHeight: 1.5 }}
+              >
+                {t('home.gymSearch.geoHint')}
+              </Typography>
+            </PageCard>
 
-        {/* Facet chips point at the LITERAL routes, never at `?boardType=`:
+            {/* Facet chips point at the LITERAL routes, never at `?boardType=`:
             `/gyms/kilter` is a page with its own copy and its own canonical,
             and a query-string variant would self-canonicalise away and burn
             crawl budget. Hidden entirely when the counts are unavailable — a
             chip reading "Kilter · 0" is worse than no chip. */}
-        {facetCounts !== null && (
-          <Box
-            sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2.5, mb: 3 }}
-            role="group"
-            aria-label={tGyms('facets.heading')}
-          >
-            {DIRECTORY_FACETS.map((facet: DirectoryFacet) => (
-              <Chip
-                key={facet}
-                clickable
-                component={LocaleLink}
-                href={FACET_BASE_PATHS[facet]}
-                label={facetChipLabel(tGyms, facet, facetCounts, formatNumber)}
-                variant="outlined"
-                // Both states spelled out: MUI's default outlined chip is a
-                // barely-there hairline that loses the whole row on the
-                // near-black page ground.
+            {facetCounts !== null && (
+              <Box
+                sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2.5, mb: 3 }}
+                role="group"
+                aria-label={tGyms('facets.heading')}
+              >
+                {DIRECTORY_FACETS.map((facet: DirectoryFacet) => (
+                  <Chip
+                    key={facet}
+                    clickable
+                    component={LocaleLink}
+                    href={FACET_BASE_PATHS[facet]}
+                    label={facetChipLabel(tGyms, facet, facetCounts, formatNumber)}
+                    variant="outlined"
+                    // Both states spelled out: MUI's default outlined chip is a
+                    // barely-there hairline that loses the whole row on the
+                    // near-black page ground.
+                    sx={{
+                      borderRadius: 'var(--border-radius-full)',
+                      height: 44,
+                      fontWeight: themeTokens.typography.fontWeight.semibold,
+                      backgroundColor: 'var(--semantic-surface)',
+                      borderColor: 'var(--separator)',
+                      color: 'var(--neutral-900)',
+                      '&:hover': {
+                        backgroundColor: 'var(--semantic-surface-elevated)',
+                        borderColor: 'var(--color-primary)',
+                      },
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+          <Box className={styles.results}>
+            {gyms.length > 0 ? (
+              <Box
+                component="ul"
                 sx={{
-                  borderRadius: 'var(--border-radius-full)',
-                  height: 44,
-                  fontWeight: themeTokens.typography.fontWeight.semibold,
-                  backgroundColor: 'var(--semantic-surface)',
-                  borderColor: 'var(--separator)',
-                  color: 'var(--neutral-900)',
-                  '&:hover': {
-                    backgroundColor: 'var(--semantic-surface-elevated)',
-                    borderColor: 'var(--color-primary)',
-                  },
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr)',
+                  gap: 0,
+                  m: 0,
+                  p: 0,
                 }}
-              />
-            ))}
+              >
+                {gyms.map((gym) => (
+                  <GymDirectoryCard
+                    key={gym.uuid}
+                    gym={gym}
+                    // No origin on the homepage: nothing has told us where the
+                    // visitor is, and a distance computed from nowhere is a lie.
+                    // Cards therefore show an address or nothing at all.
+                    origin={null}
+                    viewerState={viewerState}
+                    locale={locale}
+                  />
+                ))}
+              </Box>
+            ) : !pageResult.ok ? (
+              /* A successful empty catalogue is not a backend outage. */
+              <Typography variant="body2" color="text.secondary">
+                {t('home.gymSearch.cardsUnavailable')}
+              </Typography>
+            ) : null}
           </Box>
-        )}
-
-        {gyms.length > 0 ? (
-          <Box
-            component="ul"
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
-              gap: 2,
-              m: 0,
-              p: 0,
-            }}
-          >
-            {gyms.map((gym) => (
-              <GymDirectoryCard
-                key={gym.uuid}
-                gym={gym}
-                // No origin on the homepage: nothing has told us where the
-                // visitor is, and a distance computed from nowhere is a lie.
-                // Cards therefore show an address or nothing at all.
-                origin={null}
-                viewerState={viewerState}
-                locale={locale}
-                boardPreviews={previewsByGym.get(gym.uuid)}
-              />
-            ))}
-          </Box>
-        ) : !pageResult.ok ? (
-          /* A successful empty catalogue is not a backend outage. */
-          <Typography variant="body2" color="text.secondary">
-            {t('home.gymSearch.cardsUnavailable')}
-          </Typography>
-        ) : null}
-
+        </Box>
         {/* The crawlable `/gyms` anchor. It survives every failure above on
             purpose: whatever else this block cannot show, it always hands both
             a climber and a crawler the way into the directory. */}

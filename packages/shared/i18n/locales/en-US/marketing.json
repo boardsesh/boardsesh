@@ -1,12 +1,12 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Train smarter on your climbing board",
-      "description": "Track your sends across Kilter, Tension, and MoonBoard. One app for your boards.",
-      "ogDescription": "Works with Kilter, Tension, and MoonBoard. Track sessions, control LEDs, climb together."
+      "title": "Climbing app compatible with Kilter, Tension & MoonBoard",
+      "description": "Share a live queue with your crew and track your sends across boards. Works with Kilter, Tension, MoonBoard and more.",
+      "ogDescription": "Share a live queue with your crew and track your sends across boards. Works with Kilter, Tension, MoonBoard and more."
     },
     "about": {
-      "title": "About",
+      "title": "Built by climbers, open to everyone",
       "description": "One app for every climbing board. Open source, community-driven."
     },
     "support": {
@@ -32,23 +32,19 @@
   },
   "home": {
     "hero": {
-      "title": "One app for your boards",
+      "title": "Your boards. One app.",
       "eyebrow": "Works with Kilter, Tension, MoonBoard & More",
       "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
-      "subtitle": "Line up climbs with your crew. Keep every send in one logbook, whichever board you’re on.",
+      "subtitle": "Switch boards without switching apps.",
       "startClimbingAria": "Start climbing in the app",
       "startClimbingWeb": "Start climbing on the web →",
       "ctaInstallIos": "Install from App Store",
       "ctaInstallAndroid": "Get it on Google Play",
-      "ctaUpdate": "Update the app"
+      "ctaUpdate": "Update the app",
+      "tensionShotAlt": "A climb on a Tension board in Boardsesh",
+      "moonboardShotAlt": "A climb on a MoonBoard in Boardsesh"
     },
     "onboardingHeader": "Make it yours",
-    "install": {
-      "iosTitle": "Get the Boardsesh app",
-      "iosDescription": "Lights up holds on your board straight from your phone",
-      "androidLiveTitle": "Get the Boardsesh app",
-      "androidLiveDescription": "Now on Google Play"
-    },
     "cards": {
       "auroraTitle": "Coming from Kilter?",
       "auroraDescription": "Bring your logbook and history over in one step",
@@ -94,24 +90,22 @@
     },
     "features": {
       "title": "Board night, sorted",
-      "lead": "Three things the app does that a shared phone on the mat does not.",
+      "lead": "From the first climb to the last send, keep the whole session together.",
       "queue": {
-        "title": "Shared queue",
-        "body": "Take turns without the awkward “who’s next?”. Everyone adds, everyone sees the order.",
-        "shotAlt": "The Boardsesh shared queue with climbs lined up for the session"
+        "title": "Your crew. One live queue.",
+        "body": "Add climbs together. Everyone stays in sync.",
+        "shotAlt": "The shared Boardsesh queue with the crew’s next climbs"
       },
-      "party": {
-        "title": "Party mode",
-        "body": "One queue for the whole crew, live on every phone. Light the wall from whichever one is closest.",
-        "shotAlt": "The app's home screen with the crew's live sessions and recent sends"
+      "wall": {
+        "title": "See what’s on the wall.",
+        "body": "Know which climb is lit while you browse your next one.",
+        "shotAlt": "The lit climb stays visible while browsing other climbs"
       },
-      "logbook": {
-        "title": "Logbook",
-        "body": "Log sends and attempts as you go, and bring your Kilter or Tension history across with you.",
-        "shotAlt": "The app's progress screen with send grades and a session calendar"
-      },
-      "cta": "Get the app",
-      "ctaAndroid": "Get it on Google Play"
+      "profile": {
+        "title": "All your boards. One profile.",
+        "body": "See your sends and progress across every board.",
+        "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
+      }
     },
     "support": {
       "eyebrow": "Free, and staying that way",
@@ -125,8 +119,8 @@
   },
   "about": {
     "hero": {
-      "title": "Track, Train, and Climb Together",
-      "subtitle": "One app for every climbing board"
+      "title": "Made by climbers. Open to everyone.",
+      "subtitle": "Your boards. One app."
     },
     "vision": {
       "title": "Our Vision",
@@ -135,12 +129,12 @@
     },
     "features": {
       "title": "What Boardsesh Offers",
-      "queueLabel": "Queue management.",
-      "queueDescription": "Take turns without the awkward \"who's next?\"",
-      "partyLabel": "Party Mode.",
-      "partyDescription": "Share a session and climb together in real time",
-      "multiBoardLabel": "Multi-board.",
-      "multiBoardDescription": "Works with Kilter, Tension, MoonBoard, and more",
+      "queueLabel": "Your crew. One live queue.",
+      "queueDescription": "Add climbs together. Everyone stays in sync.",
+      "partyLabel": "See what’s on the wall.",
+      "partyDescription": "Know which climb is lit while you browse your next one.",
+      "multiBoardLabel": "Your boards. One app.",
+      "multiBoardDescription": "Switch boards without switching apps.",
       "communityLabel": "Community-driven.",
       "communityDescription": "Built and improved by people who actually climb",
       "selfHostedLabel": "Self-hostable.",
@@ -158,10 +152,16 @@
     },
     "community": {
       "title": "Join the Community",
-      "body": "Whether you write code, set problems, or just want to tell us what's broken, we'd like to hear from you."
+      "body": "Whether you write code, set problems, or just want to tell us what's broken, we'd like to hear from you.",
+      "discord": "Join the crew on Discord",
+      "support": "Support Boardsesh"
     },
     "legalLink": "Legal & Intellectual Property Policy",
-    "footer": "Made by climbers. Open to everyone."
+    "footer": "Made by climbers. Open to everyone.",
+    "profile": {
+      "title": "All your boards. One profile.",
+      "shotAlt": "Your sends and progress across boards in the Boardsesh profile"
+    }
   },
   "support": {
     "hero": {
@@ -350,6 +350,13 @@
       "discord": "Ask on Discord",
       "github": "Report a bug on GitHub",
       "docs": "Read the developer docs"
+    },
+    "topics": {
+      "label": "Help topics",
+      "using": "Using Boardsesh",
+      "logbook": "Bring your logbook",
+      "counts": "Climb counts",
+      "ask": "Get help"
     }
   },
   "docs": {
@@ -494,5 +501,10 @@
       "body2Link": "GitHub",
       "body2End": "."
     }
+  },
+  "preview": {
+    "label": "App preview",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

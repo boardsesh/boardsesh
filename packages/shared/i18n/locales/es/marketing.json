@@ -1,12 +1,12 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Entrena mejor en tu plafón",
-      "description": "Registra tus encadenes en Kilter, Tension y MoonBoard. Una sola app para todos tus plafones.",
-      "ogDescription": "Compatible con Kilter, Tension y MoonBoard. Sigue sesiones, controla los LED, escala en grupo."
+      "title": "App de escalada compatible con Kilter, Tension y MoonBoard",
+      "description": "Comparte una cola en directo con tu grupo y sigue tus encadenes en cada plafón. Compatible con Kilter, Tension, MoonBoard y más.",
+      "ogDescription": "Comparte una cola en directo con tu grupo y sigue tus encadenes en cada plafón. Compatible con Kilter, Tension, MoonBoard y más."
     },
     "about": {
-      "title": "Acerca de",
+      "title": "Creada por escaladores, abierta a todo el mundo",
       "description": "Una sola app para todos los plafones. Código abierto y dirigida por la comunidad."
     },
     "support": {
@@ -32,23 +32,19 @@
   },
   "home": {
     "hero": {
-      "title": "Una app para tus plafones",
+      "title": "Tus plafones. Una app.",
       "eyebrow": "Compatible con Kilter, Tension, MoonBoard y más",
       "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
-      "subtitle": "Preparad la cola de bloques juntos. Guarda todos tus encadenes en un solo logbook, sea cual sea tu plafón.",
+      "subtitle": "Cambia de plafón sin cambiar de app.",
       "startClimbingAria": "Empieza a escalar en la app",
       "startClimbingWeb": "Empieza a escalar en la web →",
       "ctaInstallIos": "Descárgala en el App Store",
       "ctaInstallAndroid": "Disponible en Google Play",
-      "ctaUpdate": "Actualiza la app"
+      "ctaUpdate": "Actualiza la app",
+      "tensionShotAlt": "Un bloque en un plafón Tension en Boardsesh",
+      "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh"
     },
     "onboardingHeader": "Hazlo tuyo",
-    "install": {
-      "iosTitle": "Descarga la app de Boardsesh",
-      "iosDescription": "Ilumina las presas de tu plafón directamente desde el móvil",
-      "androidLiveTitle": "Descarga la app de Boardsesh",
-      "androidLiveDescription": "Ya disponible en Google Play"
-    },
     "cards": {
       "auroraTitle": "¿Vienes de Kilter?",
       "auroraDescription": "Trae tu historial en un solo paso",
@@ -94,24 +90,22 @@
     },
     "features": {
       "title": "Noche de plafón, resuelta",
-      "lead": "Tres cosas que hace la app y que un móvil compartido en la colchoneta no.",
+      "lead": "Del primer bloque al último encadene, comparte toda la sesión.",
       "queue": {
-        "title": "Cola compartida",
-        "body": "Turnaos sin el típico «¿quién va ahora?». Todos añaden, todos ven el orden.",
-        "shotAlt": "La cola compartida de Boardsesh con bloques listos para la sesión"
+        "title": "Tu grupo. Una cola en directo.",
+        "body": "Añade bloques con tu grupo a la misma cola.",
+        "shotAlt": "La cola compartida de Boardsesh con los próximos bloques del grupo"
       },
-      "party": {
-        "title": "Modo Fiesta",
-        "body": "Una cola para todo el grupo, en vivo en cada móvil. Enciende el plafón desde el que tengas más cerca.",
-        "shotAlt": "La pantalla de inicio de la app con las sesiones en vivo del grupo"
+      "wall": {
+        "title": "Mira qué hay en el muro.",
+        "body": "Ve qué bloque está iluminado mientras buscas el siguiente.",
+        "shotAlt": "El bloque iluminado sigue visible mientras buscas otros bloques"
       },
-      "logbook": {
-        "title": "Registro",
-        "body": "Apunta encadenes e intentos sobre la marcha, y trae contigo tu historial de Kilter o Tension.",
-        "shotAlt": "La pantalla de progreso de la app con los grados encadenados y el calendario de sesiones"
-      },
-      "cta": "Consigue la app",
-      "ctaAndroid": "Disponible en Google Play"
+      "profile": {
+        "title": "Todos tus plafones. Un perfil.",
+        "body": "Ve tus encadenes y tu progreso en cada plafón.",
+        "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+      }
     },
     "support": {
       "eyebrow": "Gratis, y así se queda",
@@ -125,8 +119,8 @@
   },
   "about": {
     "hero": {
-      "title": "Registra, Entrena y Escala en Grupo",
-      "subtitle": "Una sola app para todos los plafones"
+      "title": "Hecho por escaladores. Abierto para todos.",
+      "subtitle": "Tus plafones. Una app."
     },
     "vision": {
       "title": "Nuestra Visión",
@@ -135,12 +129,12 @@
     },
     "features": {
       "title": "Qué te ofrece Boardsesh",
-      "queueLabel": "Gestión de cola.",
-      "queueDescription": "Turnaos sin el típico «¿quién va ahora?»",
-      "partyLabel": "Modo Fiesta.",
-      "partyDescription": "Comparte una sesión y escala en grupo en tiempo real",
-      "multiBoardLabel": "Multi-plafón.",
-      "multiBoardDescription": "Compatible con Kilter, Tension, MoonBoard y más",
+      "queueLabel": "Tu grupo. Una cola en directo.",
+      "queueDescription": "Añade bloques con tu grupo a la misma cola.",
+      "partyLabel": "Mira qué hay en el muro.",
+      "partyDescription": "Ve qué bloque está iluminado mientras buscas el siguiente.",
+      "multiBoardLabel": "Tus plafones. Una app.",
+      "multiBoardDescription": "Cambia de plafón sin cambiar de app.",
       "communityLabel": "Dirigida por la comunidad.",
       "communityDescription": "Construida y mejorada por gente que realmente escala",
       "selfHostedLabel": "Auto-alojable.",
@@ -158,10 +152,16 @@
     },
     "community": {
       "title": "Únete a la Comunidad",
-      "body": "Tanto si escribes código, abres problemas o solo quieres contarnos qué está roto, queremos saber de ti."
+      "body": "Tanto si escribes código, abres problemas o solo quieres contarnos qué está roto, queremos saber de ti.",
+      "discord": "Únete al grupo en Discord",
+      "support": "Apoya Boardsesh"
     },
     "legalLink": "Política Legal y de Propiedad Intelectual",
-    "footer": "Hecho por escaladores. Abierto para todos."
+    "footer": "Hecho por escaladores. Abierto para todos.",
+    "profile": {
+      "title": "Todos tus plafones. Un perfil.",
+      "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+    }
   },
   "support": {
     "hero": {
@@ -426,6 +426,13 @@
       "discord": "Preguntar en Discord",
       "github": "Reportar un fallo en GitHub",
       "docs": "Leer la documentación para desarrolladores"
+    },
+    "topics": {
+      "label": "Temas de ayuda",
+      "using": "Usar Boardsesh",
+      "logbook": "Trae tu logbook",
+      "counts": "Recuento de bloques",
+      "ask": "Pide ayuda"
     }
   },
   "docs": {
@@ -494,5 +501,10 @@
         "body": "La conexión WebSocket puede interrumpirse por cambios de red. Implementa la lógica de reconexión con las opciones de reintento de graphql-ws y usa la sincronización delta para mantener la coherencia del estado."
       }
     }
+  },
+  "preview": {
+    "label": "Vista previa de la app",
+    "ios": "iOS",
+    "android": "Android"
   }
 }

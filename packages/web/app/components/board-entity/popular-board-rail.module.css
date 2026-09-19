@@ -28,6 +28,7 @@
 .grid {
   display: grid;
   grid-auto-flow: column;
+  grid-template-rows: auto auto 1fr auto;
   grid-auto-columns: 268px;
   gap: var(--spacing-4);
   min-width: 0;
@@ -43,8 +44,9 @@
 }
 
 .card {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 4;
   gap: var(--spacing-4);
   min-width: 0;
   padding: var(--spacing-5);
@@ -58,7 +60,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-1);
-  min-height: 92px;
+  align-self: start;
 }
 
 .card .name {

@@ -56,6 +56,14 @@ const NAV_LINK_SX = {
 /** Route prefixes that render a simple title header instead of the default marketing header */
 const TITLE_HEADER_PAGE_PREFIXES = ['/aurora-migration'] as const;
 
+function isNavigationActive(pathname: string, destination: string) {
+  return (
+    pathname === destination ||
+    pathname.startsWith(`${destination}/`) ||
+    (destination === '/gyms' && pathname.startsWith('/gym/'))
+  );
+}
+
 type CenteredHeaderProps = {
   left?: React.ReactNode;
   title: string;
@@ -222,7 +230,14 @@ export default function MarketingHeader() {
     <>
       <Box component="nav" aria-label={t('header.navLabel')} className={styles.nav}>
         {navLinks.map(({ href, label }) => (
-          <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={NAV_LINK_SX}>
+          <MuiLink
+            key={href}
+            component={LocaleLink}
+            href={href}
+            variant="body2"
+            aria-current={isNavigationActive(pathname, href) ? 'page' : undefined}
+            sx={NAV_LINK_SX}
+          >
             {label}
           </MuiLink>
         ))}
@@ -245,7 +260,14 @@ export default function MarketingHeader() {
           transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         >
           {navLinks.map(({ href, label }) => (
-            <MenuItem key={href} component={LocaleLink} href={href} onClick={() => setNavMenuAnchor(null)}>
+            <MenuItem
+              key={href}
+              component={LocaleLink}
+              href={href}
+              selected={isNavigationActive(pathname, href)}
+              aria-current={isNavigationActive(pathname, href) ? 'page' : undefined}
+              onClick={() => setNavMenuAnchor(null)}
+            >
               {label}
             </MenuItem>
           ))}

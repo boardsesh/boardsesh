@@ -12,15 +12,7 @@ import styles from './physical-board-preview.module.css';
 
 /** Real catalogue geometry only. Missing/unsupported art remains a named board,
  * not a different manufacturer's stock diagram or a fabricated wall photo. */
-export default function PhysicalBoardPreview({
-  board,
-  label,
-  compact = false,
-}: {
-  board: BoardDiscoveryBoard;
-  label: string;
-  compact?: boolean;
-}) {
+export default function PhysicalBoardPreview({ board, label }: { board: BoardDiscoveryBoard; label: string }) {
   const artwork = useMemo(() => {
     try {
       const boardName = toBoardName(board.boardType);
@@ -42,7 +34,7 @@ export default function PhysicalBoardPreview({
   }, [board.boardType, board.layoutId, board.sizeId, board.setIds, board.currentClimb?.frames]);
 
   return (
-    <Box className={`${styles.preview} ${compact ? styles.compact : ''}`} role="img" aria-label={label}>
+    <Box className={styles.preview} role="img" aria-label={label}>
       {artwork ? (
         <Box className={styles.artwork} aria-hidden>
           <BoardRenderer {...artwork} mirrored={false} thumbnail fillHeight />

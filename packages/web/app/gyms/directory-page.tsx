@@ -308,9 +308,8 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               component="ul"
               sx={{
                 display: 'grid',
-                // Two readable columns beside the map, matching near-me results.
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-                gap: 2,
+                gridTemplateColumns: 'minmax(0, 1fr)',
+                gap: 0,
                 m: 0,
                 p: 0,
               }}

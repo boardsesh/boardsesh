@@ -18,6 +18,12 @@ function resolveMarketingKey(dottedKey: string): string {
 }
 
 vi.mock('server-only', () => ({}));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => resolveMarketingKey(key), i18n: { language: 'en-US' } }),
+}));
+vi.mock('@/app/hooks/use-install-platform', () => ({
+  useInstallPlatform: () => ({ platform: 'desktop-web', nativeStore: 'ios' }),
+}));
 vi.mock('@/app/lib/static-asset-url', () => ({ resolveStaticAssetUrl: (path: string) => path }));
 
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -49,9 +55,9 @@ describe('HomeFeatureStrip', () => {
     expect(html.match(/data-testid="home-feature-column"/g)).toHaveLength(3);
     expect(html.match(/<h3/g)).toHaveLength(3);
     expect(html).toContain(resolveMarketingKey('home.features.queue.title'));
-    expect(html).toContain(resolveMarketingKey('home.features.party.title'));
-    expect(html).toContain(resolveMarketingKey('home.features.logbook.title'));
-    expect(html).toContain(resolveMarketingKey('home.features.logbook.body'));
+    expect(html).toContain(resolveMarketingKey('home.features.wall.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.profile.title'));
+    expect(html).toContain(resolveMarketingKey('home.features.profile.body'));
   });
 
   it('renders the section heading as the only h2', async () => {
@@ -67,23 +73,22 @@ describe('HomeFeatureStrip', () => {
 
     expect(html).toContain(`href="${IOS_APP_STORE_URL}"`);
     expect(html).toContain(`href="${ANDROID_PLAY_STORE_URL}"`);
-    expect(html).toContain(resolveMarketingKey('home.features.cta'));
-    expect(html).toContain(resolveMarketingKey('home.features.ctaAndroid'));
-    expect(html.match(/aria-hidden="true"/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(html).toContain(resolveMarketingKey('home.hero.ctaInstallIos'));
+    expect(html).toContain(resolveMarketingKey('home.hero.ctaInstallAndroid'));
   });
 
   it('shows a real app capture for all three features', async () => {
     const html = await renderStrip();
 
     expect(html.match(/<img/g)).toHaveLength(3);
-    expect(html).toContain('/images/app/shared-queue.webp');
-    expect(html).toContain('/images/app/party-mode-crew.webp');
-    expect(html).toContain('/images/app/logbook-progress.webp');
+    expect(html).toContain('/images/app/android/queue.webp');
+    expect(html).toContain('/images/app/android/wall-status.webp');
+    expect(html).toContain('/images/app/android/profile-overview.webp');
     // Both captures carry alt text from the catalog. The comparison is on a
     // fragment: React escapes the apostrophes in the full string, so matching
     // the raw catalog value would be a test of HTML escaping, not of alt text.
-    expect(html).toContain('live sessions and recent sends');
-    expect(html).toContain('progress screen with send grades');
+    expect(html).toContain(resolveMarketingKey('home.features.wall.shotAlt'));
+    expect(html).toContain(resolveMarketingKey('home.features.profile.shotAlt'));
     expect(html).toContain(resolveMarketingKey('home.features.queue.shotAlt'));
   });
 
@@ -93,13 +98,13 @@ describe('HomeFeatureStrip', () => {
     const featureMarkup = html.slice(html.indexOf('data-testid="home-feature-column"'));
 
     expect(featureMarkup.indexOf(resolveMarketingKey('home.features.queue.title'))).toBeLessThan(
-      featureMarkup.indexOf('/images/app/shared-queue.webp'),
+      featureMarkup.indexOf('/images/app/android/queue.webp'),
     );
-    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.party.title'))).toBeLessThan(
-      featureMarkup.indexOf('/images/app/party-mode-crew.webp'),
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.wall.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/android/wall-status.webp'),
     );
-    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.logbook.title'))).toBeLessThan(
-      featureMarkup.indexOf('/images/app/logbook-progress.webp'),
+    expect(featureMarkup.indexOf(resolveMarketingKey('home.features.profile.title'))).toBeLessThan(
+      featureMarkup.indexOf('/images/app/android/profile-overview.webp'),
     );
   });
 });

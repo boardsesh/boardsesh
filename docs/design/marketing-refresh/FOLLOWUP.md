@@ -1,5 +1,42 @@
 # Marketing refresh — follow-up brief
 
+## Store campaign and distinct discovery surfaces — 19 September 2026
+
+The latest pass carries the store campaign through the marketing site: "Your
+boards. One app.", a shared live queue, wall status, and one profile across boards.
+The hero shows genuine native Kilter, Tension and MoonBoard screens; the benefit
+panels show the queue, wall status and multiboard profile overview. Campaign copy is shared
+in meaning with the store presentation and translated in all four site locales.
+
+- Popular boards retains its organic backend order and equally sized cards.
+  Alex Megos receives no pin, endorsement wording or special treatment. Gym
+  discovery is now a compact locator with four text rows, so it no longer
+  repeats the board artwork immediately above it.
+- The root marketing preview provider starts from the request user agent.
+  Apple browsers receive iOS screenshots; Android, Windows, Linux and unknown
+  browsers receive Android screenshots. Client refinement recognizes iPads
+  reporting a desktop user agent. Desktop visitors can switch platforms, and
+  the choice survives client navigation. Mobile visitors see their own platform.
+  Only the selected platform is rendered and preloaded. Store links follow the
+  actual device, independently of a desktop screenshot preference.
+- Screenshot lookup is keyed by platform, locale and scene. Until reviewed
+  localized captures exist, every locale uses English captures from the same
+  platform. See [capture provenance](../marketing-campaign-assets.md).
+- Profile previews now use the multiboard overview merged in #5579: lifetime
+  climb and layout totals followed by ranked board rows and best-send grades.
+  The refreshed native captures replace the earlier chart screenshots. Their
+  new image paths also refresh cached previews when reviewing over Tailscale.
+- About pairs the project story with the native profile; Help adds topic
+  navigation while keeping answers visible. Support keeps its disclosure next
+  to the donation options. Gym directories use compact rows beside the map;
+  public gyms put the board roster before practical details. Shared navigation
+  shows the current page and retains the existing destinations.
+- Server-rendered copy, crawlable links, directory noindex policies, map reveal,
+  gym claims, QR links and donation behavior remain covered by the existing
+  tests plus platform, hydration and responsive browser regressions.
+
+Earlier sections below describe historical checkpoints, not outstanding work.
+
 ## Mobile typography and compact gym rows — 19 September 2026
 
 The next design-team pass focused on actual 320–430px phone renders, including
