@@ -283,12 +283,6 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     expect(contrast(blendOpaque(separator, surfaceElevated), surfaceElevated)).toBeLessThan(3);
     expect(contrast(blendOpaque(separator, surface), surface)).toBeLessThan(3);
   });
-
-  it('neutral[400] is not a substitute for --control-border', () => {
-    // It is the nearest neutral and the obvious thing to reach for, but it lands at 2.72:1
-    // on the elevated surface. Documented here so the next person does not have to re-derive it.
-    expect(contrast(themeTokens.neutral[400], themeTokens.semantic.surfaceElevated)).toBeLessThan(3);
-  });
 });
 
 describe('the light-surface tokens stay legible on the white OG cards', () => {

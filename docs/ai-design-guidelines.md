@@ -614,6 +614,18 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
 - **The surface ladder is how depth works.** `background #110A20` → `surface #251B3A` →
   `surfaceElevated #2F234A`, with one hairline (`--separator`). On near-black a drop shadow does almost
   nothing; a card is a lighter violet, not a shadowed panel. The parity test asserts the luminance order.
+- **Two border tokens, and you pick by ROLE not by looks.** `--separator`
+  (`rgba(185,170,215,0.2)`) is DECORATIVE: dividers, hairlines, rules, image frames, the edge of a
+  non-interactive card or badge. `--control-border` (`#837A9C`) is the visual boundary of an
+  INTERACTIVE thing: outlined buttons, chips, toggles, pagination pills. WCAG 1.4.11 wants ≥3:1 for
+  those, and `--separator` composites to 1.43–1.50:1 on our surfaces, so it cannot serve — which
+  matters because these controls' fill is `surface` on `background` (1.19:1), i.e. the border is the
+  only affordance. `--control-border` is **opaque on purpose**: a translucent border's contrast
+  depends on its backdrop, so it can pass on the page and fail on a card and no single test can pin
+  it. Opaque makes it one fact — 3.58:1 on `surfaceElevated` (worst case), 4.03:1 on `surface`,
+  4.81:1 on `background`. Don't reach for `neutral[400]` here; it lands at 2.72:1 on `surfaceElevated`.
+  The parity test fences both tokens, including that `--separator` stays *below* 3:1 — that is its
+  job, not a bug to fix.
 - **The one place light values survive** is `printSurfaceTokens` in `theme-config.ts`: the Satori OG
   cards for `/api/og/{profile,setter,playlist}` render on `#FFFFFF`. It is not a light theme and must
   not be imported into a product component.
