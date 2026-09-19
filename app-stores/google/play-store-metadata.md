@@ -88,7 +88,7 @@ changes the live listing. Replay uses the frozen fixture snapshot pinned in
 | `04-climbs.png` | Browsing the board's climbs. |
 | `05-discover.png` | The playlist library. |
 | `06-workout-generator.png` | The Record tab's workout generator. |
-| `07-profile.png` | Climbing stats and progression. |
+| `07-profile.png` | One climbing history across boards, with the activity calendar and board-share donut. |
 
 Run `vp run mobile:screenshots -- --platform android --dev-client --fixtures replay`
 with the six-board shared-session fixture bundle to produce this set. Maestro

@@ -163,6 +163,14 @@ name: app-store screenshots android
     notVisible:
       id: 'horizontal-scroll-section-loading'
     timeout: 60000
+# Show the all-board history, including the complete chart and its board legend.
+- scrollUntilVisible:
+    element:
+      id: 'profile-board-share-chart'
+    direction: DOWN
+    centerElement: true
+    visibilityPercentage: 100
+    timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 06-profile

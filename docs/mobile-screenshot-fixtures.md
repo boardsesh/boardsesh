@@ -184,6 +184,13 @@ eight Google Play images: two compatibility frames, the shared queue, wall
 status, climb browsing, playlists, workout generator, and profile. The original
 Home and board-activity raw captures remain available but are not selected for
 this listing set. Smaller scenarios retain their earlier eight-output recipes.
+The profile capture uses the all-board view with the activity calendar and the
+Boards donut below it visible. Its ascent history must cover more than one board
+layout; the app hides the donut when only one layout has recorded ascents.
+The published profile scenario includes screenshot-only demo sends on Woods Board,
+Grasshopper, and MoonBoard 2024, using recorded climb metadata. Its nine-layout
+history is kept consistent across profile totals, account tick queries, and the
+offline sync snapshot; seeding this fixture does not write to the production account.
 The older eleven/twelve-input campaign remains readable with its separate
 current-climb/participant captures, but this flow no longer produces those shots.
 This metadata does not enable additional iOS shots.
