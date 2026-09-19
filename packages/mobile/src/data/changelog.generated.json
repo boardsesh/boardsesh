@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-19T02:36:01.206Z",
+  "generatedAt": "2026-09-19T05:36:38.617Z",
   "entries": [
+    {
+      "prNumber": 5579,
+      "category": "new",
+      "title": "All your boards, one climbing history.",
+      "mergedAt": "2026-09-19T05:35:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5579",
+      "body": "See each board’s sends on your profile, keep board names beside logged climbs, and find your session’s hardest send at a glance."
+    },
     {
       "prNumber": 5572,
       "category": "new",

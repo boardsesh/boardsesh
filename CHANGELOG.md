@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- All your boards, one climbing history. ([#5579](https://github.com/boardsesh/boardsesh/pull/5579))
+  See each board’s sends on your profile, keep board names beside logged climbs, and find your session’s hardest send at a glance.
 - Find your next board night from the refreshed Boardsesh website. ([#5572](https://github.com/boardsesh/boardsesh/pull/5572))
   Browse gyms on a dark map, spot claimed listings, and see the app before installing.
   Preview boards at your gym and open that same board in the app.
