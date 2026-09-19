@@ -118,9 +118,10 @@ next deploy ready to re-ship the failed configuration. The failure path therefor
 issues a second `serviceInstanceUpdate` restoring exactly the fields this run
 changed, including prior nulls. It says so loudly if any rollback or restore fails.
 
-If the service has never had a second successful deployment there is **no rollback
-target**, and the run warns about that *before* deploying rather than discovering
-it afterwards.
+If a service in a multi-service batch has no rollback target, the run refuses the
+whole batch before its first write. A single-service apply can discover the missing
+target only after its deployment starts; if that deployment fails, reconcile it by
+hand.
 
 Two failures deliberately do *not* roll back the current service. If its deployment
 was canceled/parked or carries somebody else's image, rollback could undo a newer
