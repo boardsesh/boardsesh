@@ -35,8 +35,9 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
   and the S3-compatible bucket `boardsesh-ota-v3`. Verify its current provider through the storage
-  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Railway currently
-  pulls that exact release through the **pre-rename** repository path
+  migration gate below; the bucket name alone does not distinguish R2 from Tigris. Its endpoint is
+  managed in Railway so a stale checked-in value cannot undo a storage-provider migration. Railway
+  currently pulls that exact release through the **pre-rename** repository path
   (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
   renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
   doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
@@ -51,15 +52,23 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 
 ### Versions: the CLI pin and the server image
 
-One version governs both halves of the self-hosted path, and it lives in exactly one place:
-`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
-`ghcr.io/mercuretechnologies/xprem:v3.1.2`, which is deployed on Railway. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
-if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
+One version governs both halves of the self-hosted path, and each half has a constant:
+`EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts` (currently **`eoas@3.1.2`**) is the CLI we publish with,
+and `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the image Railway runs
+(`ghcr.io/mercuretechnologies/xprem:v3.1.2`). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+if this doc, the setup runbook or the rollback helper drifts off either — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 
+**Upgrading is a PR, not a dashboard edit.** `vp run ota:image-bump` opens it — one draft PR for the
+newest stable release and, separately, one for the newest prerelease — bumping both constants in the
+same commit. Merging it rolls the image, waits for the deployment, probes the server and rolls back
+if it does not answer. See [railway.md](./railway.md).
+
 **The CLI may lead the server; it must never trail it.** Neither side exchanges a version and there
-is no version endpoint, so confirm the deployed image in Railway after a bump. Two features require
-the server on v3.1.2:
+is no version endpoint. This used to mean "confirm the deployed image in the Railway dashboard after
+a bump"; now the rule is enforced in two places that need no dashboard — `infra/railway/plan.ts`
+blocks an image ahead of the pin, and the version-parity test asserts the same without touching the
+API. Two features require the server on v3.1.2:
 
 - server-side reuse of the previous update's assets (xprem #165) — see
   [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
@@ -77,7 +86,9 @@ run `eoas doctor`.
 - **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
   three in `updates.requestHeaders`; xprem's branch API overrides only `xprem-branch`.
 - **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
-  trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
+  trails the server can 404 on app-scoped routes. `vp run ota:image-bump` moves both in one commit,
+  so the ordering holds by construction; `infra/railway/plan.ts` blocks the apply if it ever does not.
+  Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
   remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
   read-only members).
@@ -975,7 +986,8 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
    sealed key unreadable).
 4. **Deploy the server** — Railway service running
-   `ghcr.io/mercuretechnologies/xprem:v3.1.2` (see the
+   `ghcr.io/mercuretechnologies/xprem:v3.1.2`, which `infra/railway/config.ts` declares and
+   `vp run railway:apply` keeps deployed (see the
    [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
    [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
    docs). Required env:

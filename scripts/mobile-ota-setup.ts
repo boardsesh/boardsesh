@@ -107,7 +107,7 @@ function printServerSetup(): void {
       `USE_DASHBOARD=true`,
       `STORAGE_MODE=s3`,
       `S3_BUCKET_NAME=${BUCKET}`,
-      `AWS_BASE_ENDPOINT=<S3-compatible endpoint; e.g. https://t3.storage.dev for Tigris>`,
+      `AWS_BASE_ENDPOINT=<current S3-compatible provider endpoint>`,
       `AWS_REGION=auto`,
       `AWS_ACCESS_KEY_ID=<bucket key id>`,
       `AWS_SECRET_ACCESS_KEY=<bucket secret>`,
@@ -234,8 +234,8 @@ function setupPreview(): void {
     ),
   );
   log('');
-  log(`Apply via the S3 API (${BUCKET} is Tigris on t3.storage.dev — pass its --endpoint-url; any`);
-  log('S3-compatible provider works the same). FIRST get-bucket-lifecycle-configuration and MERGE —');
+  log(`Apply via the S3 API for ${BUCKET}, passing the current provider's --endpoint-url.`);
+  log('FIRST get-bucket-lifecycle-configuration and MERGE —');
   log('put-bucket-lifecycle-configuration REPLACES all rules:');
   log(`  aws s3api put-bucket-lifecycle-configuration --bucket ${BUCKET} \\`);
   log('    --lifecycle-configuration file://lifecycle.json --endpoint-url <S3 endpoint>');
