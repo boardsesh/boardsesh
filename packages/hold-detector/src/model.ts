@@ -5,9 +5,8 @@
  * a cache hit is still verified — a corrupted or tampered cache file would
  * otherwise silently become the model this service runs.
  *
- * The session is loaded once and kept for the container's life. On a service
- * that sleeps when idle (Railway Serverless) the load is paid on the cold boot
- * that follows a wake, not per request.
+ * The dedicated homelab worker keeps one warm session. A replacement inference
+ * thread reloads it after a timeout or native-runtime failure.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
