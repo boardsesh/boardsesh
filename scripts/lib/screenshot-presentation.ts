@@ -157,7 +157,7 @@ export function resolveScreenshotRecipes(
             output: '07-profile.png',
             caption: 'crossBoardLogbook',
             layout: 'cross-board-logbook',
-            sources: ['06-profile.png', ...PROFILE_HISTORY_CAPTURES],
+            sources: ['14-logbook.png', '06-profile.png', '15-session-detail.png'],
           }
         : { output: '07-profile.png', caption: 'profile', layout: 'screen', sources: ['06-profile.png'] },
     ];

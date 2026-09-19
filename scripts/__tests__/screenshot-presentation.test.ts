@@ -255,7 +255,7 @@ describe('store screenshot presentation', () => {
     );
   });
 
-  it('requires both history sources and puts the logbook in the foreground', () => {
+  it('requires both history sources and puts the board overview in the foreground', () => {
     const names = [
       ...Object.keys(screenshotCaptions('android', 'pixel-2')),
       '08-moonboard-board-view.png',
@@ -273,7 +273,7 @@ describe('store screenshot presentation', () => {
       output: '07-profile.png',
       caption: 'crossBoardLogbook',
       layout: 'cross-board-logbook',
-      sources: ['06-profile.png', '14-logbook.png', '15-session-detail.png'],
+      sources: ['14-logbook.png', '06-profile.png', '15-session-detail.png'],
     });
     for (const missing of ['14-logbook.png', '15-session-detail.png']) {
       expect(() =>

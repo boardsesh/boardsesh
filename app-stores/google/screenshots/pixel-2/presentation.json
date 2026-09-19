@@ -68,15 +68,15 @@
     "07-profile.png": {
       "rawBytes": 128398,
       "rawSha256": "7cedd0cba29ac932b2b99477df0fb8f304749a4b3f78b3821748ce021b0f6ed6",
-      "framedSha256": "2be8148ad53a6dd3da21a91aecf6d606338fd4e99ea8fcd7b1fa51b171101895",
+      "framedSha256": "cd3e4a3efc25e97ba025a0ec584d0e97d2041dcc637dd82c2dbe33343dcd730c",
       "sources": {
-        "06-profile.png": {
-          "rawBytes": 184787,
-          "rawSha256": "fb35e85e75beeef9e8a821e3fbe0716841b541a81e0cac1fa450497ae8c8c2a3"
-        },
         "14-logbook.png": {
           "rawBytes": 217110,
           "rawSha256": "78a0bf9e972fb28ae57a3a642ffddcc30c2ea93d49b9e6283cfa6b998e669be3"
+        },
+        "06-profile.png": {
+          "rawBytes": 184787,
+          "rawSha256": "fb35e85e75beeef9e8a821e3fbe0716841b541a81e0cac1fa450497ae8c8c2a3"
         },
         "15-session-detail.png": {
           "rawBytes": 128398,
