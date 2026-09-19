@@ -5,6 +5,15 @@ import styles from './page-shell.module.css';
 
 export type PageSectionTone = 'brand' | 'accent' | 'neutral';
 
+/**
+ * The section-heading type ramp as a bare class, for the headings that cannot be
+ * a PageSection child. There is one such case today: the "Where to start"
+ * heading spans its grid with `grid-column: 1 / -1`, and wrapping it in a
+ * PageSection would put a <section> between the grid and the cell, breaking the
+ * span. Reach for PageSection first; this is the escape hatch, not the default.
+ */
+export const sectionHeadingTypeClassName = styles.sectionHeadingType;
+
 export type PageSectionProps = {
   /** Section heading. Omit for an unheaded block that still gets the rhythm. */
   title?: string;
@@ -44,7 +53,7 @@ export default function PageSection({
         <Typography
           variant={headingLevel === 2 ? 'h3' : 'h4'}
           component={headingLevel === 2 ? 'h2' : 'h3'}
-          className={styles.sectionHeading}
+          className={`${styles.sectionHeading} ${styles.sectionHeadingType}`}
         >
           {icon
             ? React.cloneElement(icon, {

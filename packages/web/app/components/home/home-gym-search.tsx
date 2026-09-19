@@ -7,7 +7,7 @@ import MuiLink from '@mui/material/Link';
 import ArrowForwardOutlined from '@mui/icons-material/ArrowForwardOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
-import { PageCard } from '@/app/components/ui/page-shell';
+import { PageCard, sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import {
   DIRECTORY_FACETS,
@@ -96,12 +96,7 @@ export default async function HomeGymSearch() {
           {t('home.gymSearch.eyebrow')}
         </Typography>
 
-        <Typography
-          variant="h3"
-          component="h2"
-          sx={{ fontSize: { xs: 28, md: 32 }, lineHeight: 1.25, letterSpacing: '-0.025em' }}
-          fontWeight={themeTokens.typography.fontWeight.semibold}
-        >
+        <Typography variant="h3" component="h2" className={sectionHeadingTypeClassName}>
           {t('home.gymSearch.title')}
         </Typography>
 

@@ -29,6 +29,7 @@ import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/l
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
 import styles from './home-page-content.module.css';
+import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 
 type HomePageContentProps = {
   initialBoards?: BoardDiscoveryBoard[];
@@ -240,14 +241,8 @@ export default function HomePageContent({
           <Typography
             variant="h3"
             component="h2"
-            fontWeight={themeTokens.typography.fontWeight.semibold}
-            sx={{
-              gridColumn: '1 / -1',
-              color: 'var(--neutral-900)',
-              fontSize: { xs: 28, md: 32 },
-              lineHeight: 1.25,
-              mb: 1.5,
-            }}
+            className={sectionHeadingTypeClassName}
+            sx={{ gridColumn: '1 / -1', mb: 1.5 }}
           >
             {t('home.onboardingHeader')}
           </Typography>
