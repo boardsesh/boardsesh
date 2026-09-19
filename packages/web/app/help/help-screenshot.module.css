@@ -1,0 +1,20 @@
+.figure {
+  min-width: 0;
+  max-width: 320px;
+  margin: 0;
+}
+
+.caption {
+  margin-top: var(--spacing-2);
+  color: var(--neutral-500);
+  line-height: 1.5;
+}
+
+/* A row of captures. Two fit a desktop measure; one fits a phone. */
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+  gap: var(--spacing-6);
+  margin-block: var(--spacing-6);
+}

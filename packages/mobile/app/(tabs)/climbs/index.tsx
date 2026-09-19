@@ -200,18 +200,22 @@ function ClimbListInner() {
   // second board-view shot passes 1 to render myBoards[1].
   // screenshotOpenPreview / screenshotOpenWallPreview land the same first climb
   // in the drawer's two wall-state shots — browsing, and on the wall.
+  // screenshotOpenClimbActions opens the long-press reaction menu over the first
+  // row (the help flow's 11-climb-actions shot).
   const {
     screenshotOpenFirst,
     screenshotBoardIndex,
     screenshotOpenBoardSheet,
     screenshotOpenPreview,
     screenshotOpenWallPreview,
+    screenshotOpenClimbActions,
   } = useLocalSearchParams<{
     screenshotOpenFirst?: string;
     screenshotBoardIndex?: string;
     screenshotOpenBoardSheet?: string;
     screenshotOpenPreview?: string;
     screenshotOpenWallPreview?: string;
+    screenshotOpenClimbActions?: string;
   }>();
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
@@ -966,6 +970,7 @@ function ClimbListInner() {
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
     if (screenshotOpenFirst || screenshotOpenPreview || screenshotOpenWallPreview) return;
+    if (screenshotOpenClimbActions) return;
     if (!usesDetailPane || screenshotPaneLitRef.current) return;
     if (!activeBoard || !searchReady) return;
     const firstClimb = visibleClimbs[0];
@@ -976,6 +981,7 @@ function ClimbListInner() {
     screenshotOpenFirst,
     screenshotOpenPreview,
     screenshotOpenWallPreview,
+    screenshotOpenClimbActions,
     usesDetailPane,
     activeBoard,
     searchReady,
@@ -1052,6 +1058,32 @@ function ClimbListInner() {
     visibleClimbs,
     openPlayDrawer,
   ]);
+
+  // Screenshot mode: open the long-press reaction menu over the first row. The
+  // gesture behind it is a 400ms `Gesture.LongPress()` on the row itself
+  // (ClimbListRow), and Maestro's accessibility tree on this iOS build doesn't
+  // expose the row at all — there is nothing to long-press — so the deep-link
+  // param is the only route to this screen. Same shape as the preview latch
+  // above: a one-shot ref, gated on the active board plus settled results so the
+  // menu opens over a list that has rows in it rather than skeletons.
+  // Guarded by `isPlaceholderDataRef` the same way every row action is: `searchReady`
+  // only says the filters finished restoring (`hasBoardConfig && restoredKey ===
+  // boardKey`), which is a different signal from React Query's placeholder flag. On
+  // a board or filter swap `visibleClimbs[0]` is still the PREVIOUS board's climb
+  // while placeholder data is showing, and this latch is one-shot — it would open
+  // the menu over the wrong climb and never correct itself. Dead-strips in normal
+  // builds.
+  const screenshotClimbActionsOpenedRef = useRef(false);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenClimbActions) return;
+    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
+    if (!activeBoard || !searchReady || screenshotClimbActionsOpenedRef.current) return;
+    if (isPlaceholderDataRef.current) return;
+    const firstClimb = visibleClimbs[0];
+    if (!firstClimb) return;
+    screenshotClimbActionsOpenedRef.current = true;
+    openClimbActions(firstClimb);
+  }, [screenshotOpenClimbActions, screenshotTargetBoard, activeBoard, searchReady, visibleClimbs, openClimbActions]);
 
   // Row actions ignore stale placeholder rows, same as handleClimbPress.
   const handleAddToQueue = useCallback(

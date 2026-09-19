@@ -98,7 +98,7 @@ interface ShotsOptions {
   shutdown: boolean;
   /** Inject EXPO_PUBLIC_SCREENSHOT_MODE (auto-login, locked theme) into the Metro bundle. */
   screenshotMode: boolean;
-  flow: 'app-store' | 'onboarding' | null;
+  flow: 'app-store' | 'onboarding' | 'help' | null;
   buildLocal: boolean;
   apkTag: string | null;
   appPath: string | null;
@@ -164,7 +164,10 @@ function parseShotsArgs(argv: readonly string[]): ShotsOptions {
         index++;
         break;
       case '--flow':
-        options.flow = expectEnum(flag, value, ['app-store', 'onboarding']) as 'app-store' | 'onboarding';
+        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help']) as
+          | 'app-store'
+          | 'onboarding'
+          | 'help';
         index++;
         break;
       case '--backend':
@@ -270,10 +273,13 @@ function runMaestroFlow(serial: string, options: ShotsOptions, env: NodeJS.Proce
   if (!commandExists('maestro')) {
     throw new Error('Maestro is not on PATH; install it (https://maestro.mobile.dev) to use --flow.');
   }
-  const flowFile = join(
-    MAESTRO_DIR,
-    options.flow === 'onboarding' ? 'onboarding-android.yaml' : 'app-store-android.yaml',
-  );
+  // Resolve by flow NAME rather than a two-way ternary, so a new flow (`help`)
+  // picks up its own YAML instead of silently running the store flow. Android
+  // variants come first where they exist; `help` has only the shared iPhone
+  // flow, and its deep links drive Android the same way.
+  const flowName = options.flow ?? 'app-store';
+  const androidFlowFile = join(MAESTRO_DIR, `${flowName}-android.yaml`);
+  const flowFile = existsSync(androidFlowFile) ? androidFlowFile : join(MAESTRO_DIR, `${flowName}.yaml`);
   if (!existsSync(flowFile)) throw new Error(`flow not found: ${flowFile}`);
   const email = process.env.SCREENSHOT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
   const password = process.env.SCREENSHOT_USER_PASSWORD ?? DEFAULT_USER_PASSWORD;
