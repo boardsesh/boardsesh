@@ -16,7 +16,7 @@ import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls'
 import { resolveHeroInstall } from '@/app/lib/hero-install';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
-import { brandCtaSx } from '@/app/components/ui/brand-cta';
+import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
 import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
 import { APP_URL } from '@/app/lib/app-origin';
 import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
@@ -62,22 +62,9 @@ type HomePageContentProps = {
 const HERO_CTA_SX = brandCtaSx({ size: 'large', glow: true });
 
 // The second store on desktop: outlined, so it is clearly the same kind of
-// action as the primary without competing with it for weight.
-const HERO_SECONDARY_CTA_SX = {
-  borderRadius: `${themeTokens.borderRadius.full}px`,
-  textTransform: 'none',
-  fontWeight: themeTokens.typography.fontWeight.semibold,
-  px: 4,
-  py: 1.5,
-  fontSize: themeTokens.typography.fontSize.lg,
-  color: 'var(--color-primary)',
-  borderColor: 'var(--separator)',
-  '&:hover': {
-    borderColor: 'var(--color-primary)',
-    backgroundColor: 'var(--semantic-selected-light)',
-    transform: 'none',
-  },
-} as const;
+// action as the primary without competing with it for weight. Same size step as
+// HERO_CTA_SX above, from the same ramp, so the pair cannot drift again.
+const HERO_SECONDARY_CTA_SX = brandCtaOutlinedSx({ size: 'large' });
 
 // The web hand-off reads as a link, so it takes the foreground violet rather
 // than the fill — #A78BFA on text, never behind white.

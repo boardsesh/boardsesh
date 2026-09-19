@@ -53,12 +53,6 @@
   margin-top: var(--spacing-2);
 }
 
-.heroActions > a,
-.heroActions > button {
-  padding-inline: var(--spacing-5);
-  font-size: var(--font-size-base);
-}
-
 .previewGroup {
   display: flex;
   flex-direction: column;
