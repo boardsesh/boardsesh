@@ -1949,10 +1949,16 @@ export type DiscoverPlaylistsInput = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   /** Filter by creator IDs */
   creatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  /** Exclude these creators. The viewer's own playlists, for a discovery surface. */
+  excludeCreatorIds?: InputMaybe<Array<Scalars['ID']['input']>>;
   /** Filter by generated recommendation status */
   generatedRecommendation?: InputMaybe<Scalars['Boolean']['input']>;
   /** Layout ID (optional — omit to discover across all layouts) */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
+  /** Only playlists with at most this many climbs. A 600-climb list is an export, not a playlist. */
+  maxClimbs?: InputMaybe<Scalars['Int']['input']>;
+  /** Only playlists with at least this many climbs */
+  minClimbs?: InputMaybe<Scalars['Int']['input']>;
   /** Filter by name (partial match) */
   name?: InputMaybe<Scalars['String']['input']>;
   /** Page number */
@@ -1961,7 +1967,7 @@ export type DiscoverPlaylistsInput = {
   pageSize?: InputMaybe<Scalars['Int']['input']>;
   /** Board size ID for generated recommendation filters */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
-  /** Sort by: 'recent' (default) or 'popular' */
+  /** Sort by: 'recent' (default) or 'popular' (climbers who pinned or followed it, then size) */
   sortBy?: InputMaybe<Scalars['String']['input']>;
 };
 
