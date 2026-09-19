@@ -198,6 +198,14 @@
   padding: var(--spacing-4);
 }
 
+.cardPaddingLg {
+  padding: var(--spacing-8);
+}
+
+.cardRadiusXl {
+  border-radius: var(--border-radius-xl);
+}
+
 @media (max-width: 600px) {
   .inner {
     padding: 0 var(--spacing-6);
