@@ -1,0 +1,381 @@
+/**
+ * Classifier for #3909: legacy ticks whose `climbed_at` holds the climber's
+ * LOCAL wall-clock time relabelled as UTC.
+ *
+ * Pure and DB-agnostic — no drizzle, no postgres, no I/O. The read-only report
+ * (packages/db/scripts/report-mislabeled-tick-timezones.ts) and the gated
+ * corrective backfill (packages/db/scripts/backfill-mislabeled-tick-timezones.ts)
+ * both drive THIS module, so a row can never be classified one way in the
+ * report and another way at apply time.
+ *
+ * ## The shape of the evidence
+ *
+ * Nothing inside a single row says which zone its naive timestamp meant. The
+ * only signal is cross-source: for the same physical ascent, an ANCHOR family
+ * that we believe wrote honest UTC and a SUSPECT family that may not have.
+ *
+ *   - Anchors: `kilter_pull` ticks (a PowerSync `created_at`, true UTC) and
+ *     post-cutoff `native` ticks (built from `getUTC*` accessors in
+ *     packages/backend/src/graphql/resolvers/ticks/mutations.ts, honest by
+ *     construction).
+ *   - Suspects: `json_import`, `aurora_pull`, and pre-cutoff `native`.
+ *
+ * ## Why the offset is per (user, board, calendar quarter)
+ *
+ * The offset is a property of the CLIMBER, not the deployment — a per-user
+ * distribution is exactly what #3909 measured. Quartering it lets DST and
+ * travel move the offset instead of being flattened into one median that fits
+ * neither half of the year. We never fall back to a neighbouring quarter:
+ * abstaining is the safe direction, and the report counts every abstention.
+ *
+ * ## Anchor ranking, and why kilter_pull is the weaker anchor
+ *
+ * `kilter_pull` stores `climbed_at = raw.created_at` — the instant the LOG ROW
+ * was created upstream (packages/kilter-sync/src/sync/user-sync.ts; `RawLog`
+ * carries no `climbed_at` at all). For a back-dated log that is not the same
+ * quantity as the suspect's climbed_at, so the delta picks up the back-dating
+ * gap on top of the offset. When a bucket has enough post-cutoff `native`
+ * anchors we therefore build the profile from native ONLY; a kilter-only
+ * bucket is still usable but must clear a tighter consistency bar and is
+ * labelled so a reader can discount it.
+ *
+ * ## The guard that matters most
+ *
+ * `inferUserUtcOffsetSeconds` is explicitly documented as robust to a bucket of
+ * "mixed honest+shifted history" — which is precisely what makes a bucket
+ * median DANGEROUS as a blanket correction: an already-correct row survives the
+ * median and would then be shifted BY it. #3909 measured ~3% (62/2,128) of
+ * suspect rows already aligning. So before any profile offset is consulted,
+ * `classifySuspect` checks the row against its OWN same-(climb, angle) anchors
+ * and returns `already-correct` on a hit. That per-row guard is the one whose
+ * failure silently corrupts data; the profile-level `profile-offset-zero`
+ * check is a different, weaker thing and does not substitute for it.
+ */
+
+import {
+  MAX_USER_UTC_OFFSET_SECONDS,
+  NATURAL_KEY_TOLERANCE_SECONDS,
+  medianOf,
+  perKeyClosestDeltasMs,
+  roundOffsetSeconds,
+  type TickTimeSample,
+} from '../tick-offset-inference';
+
+/**
+ * Which honest-UTC family a profile was built from. `native` is the stronger
+ * anchor (same quantity as climbed_at, honest by construction); `kilter_pull`
+ * carries the back-dating caveat above.
+ */
+export type AnchorTrust = 'native' | 'kilter_pull';
+
+/** A tick whose stored climbed_at may be a relabelled local wall clock. */
+export type SuspectTick = {
+  uuid: string;
+  userId: string;
+  boardType: string;
+  /**
+   * Canonical climb uuid — NOT the raw `climb_uuid` column. kilter_pull
+   * resolves aliases before writing while json_import and aurora_pull store
+   * whatever Aurora sent, so joining raw uuids silently drops every aliased
+   * climb. The caller resolves through board_climb_aliases first.
+   */
+  canonicalClimbUuid: string;
+  angle: number;
+  climbedAtMs: number;
+  origin: string;
+  /**
+   * True when this row is one member of an Aurora-side duplicate pair that
+   * `isDirectAuroraTwin` hides on EXACT climbed_at equality. Shifting one
+   * member and not its sibling un-hides a duplicate in the climber's logbook,
+   * so the classifier abstains.
+   */
+  isAuroraTwinMember: boolean;
+};
+
+/** A tick we believe carries a true-UTC instant. */
+export type AnchorTick = {
+  userId: string;
+  boardType: string;
+  canonicalClimbUuid: string;
+  angle: number;
+  climbedAtMs: number;
+  trust: AnchorTrust;
+};
+
+export type OffsetProfile = {
+  userId: string;
+  boardType: string;
+  /** Calendar quarter of climbed_at in UTC, e.g. "2024-Q3". */
+  quarter: string;
+  /** Seconds to SUBTRACT from a suspect's stored climbed_at. */
+  offsetSeconds: number;
+  /** Distinct (canonical climb, angle) keys the offset was derived from. */
+  anchorKeyCount: number;
+  medianAbsoluteDeviationSeconds: number;
+  anchorTrust: AnchorTrust;
+  /** The per-key deltas themselves, in seconds — written to the audit row. */
+  perKeyDeltasSeconds: number[];
+};
+
+export type AbstainReason =
+  | 'no-anchor'
+  | 'too-few-anchor-keys'
+  | 'inconsistent-offset'
+  | 'offset-implausible'
+  | 'profile-offset-zero'
+  | 'aurora-twin-member';
+
+export type SuspectVerdict =
+  | {
+      verdict: 'shift';
+      offsetSeconds: number;
+      correctedMs: number;
+      evidence: {
+        anchorKeyCount: number;
+        anchorTrust: AnchorTrust;
+        medianAbsoluteDeviationSeconds: number;
+        perKeyDeltasSeconds: number[];
+        quarter: string;
+      };
+    }
+  | { verdict: 'already-correct'; reason: 'row-matches-own-anchor' }
+  | { verdict: 'abstain'; reason: AbstainReason };
+
+export type CorrectionOptions = {
+  /** Minimum distinct anchor keys in a bucket before its offset is trusted. */
+  minAnchorKeys?: number;
+  /** Tolerance for "this row already lines up with its own anchor", seconds. */
+  matchToleranceSeconds?: number;
+  /** Max median-absolute-deviation for a native-anchored bucket, seconds. */
+  maxNativeMadSeconds?: number;
+  /** Max MAD for a kilter-only bucket — tighter, per the back-dating caveat. */
+  maxKilterMadSeconds?: number;
+  /**
+   * Minimum distinct native anchor keys before a bucket ignores its kilter_pull
+   * anchors entirely.
+   */
+  minNativeKeysToPreferNative?: number;
+};
+
+type ResolvedOptions = Required<CorrectionOptions>;
+
+export const DEFAULT_CORRECTION_OPTIONS: ResolvedOptions = {
+  minAnchorKeys: 3,
+  matchToleranceSeconds: NATURAL_KEY_TOLERANCE_SECONDS,
+  maxNativeMadSeconds: NATURAL_KEY_TOLERANCE_SECONDS,
+  maxKilterMadSeconds: 30,
+  minNativeKeysToPreferNative: 3,
+};
+
+function resolveOptions(options?: CorrectionOptions): ResolvedOptions {
+  return { ...DEFAULT_CORRECTION_OPTIONS, ...options };
+}
+
+/**
+ * Calendar quarter of an instant, in UTC. UTC (not the inferred local zone) on
+ * purpose: the bucket label must be derivable before any offset is known,
+ * otherwise the bucketing depends on the answer it is being used to compute.
+ */
+export function calendarQuarterOf(climbedAtMs: number): string {
+  const at = new Date(climbedAtMs);
+  const quarter = Math.floor(at.getUTCMonth() / 3) + 1;
+  return `${at.getUTCFullYear()}-Q${quarter}`;
+}
+
+/** Bucket identity: one climber, one board, one calendar quarter. */
+export function bucketKeyOf(row: { userId: string; boardType: string; climbedAtMs: number }): string {
+  return `${row.userId}\u0000${row.boardType}\u0000${calendarQuarterOf(row.climbedAtMs)}`;
+}
+
+/** Within-bucket natural key. Angle matters: the same climb at 40° and 45° are different ascents. */
+export function naturalKeyOf(row: { canonicalClimbUuid: string; angle: number }): string {
+  return `${row.canonicalClimbUuid}\u0000${row.angle}`;
+}
+
+function toTimeSample(row: { canonicalClimbUuid: string; angle: number; climbedAtMs: number }): TickTimeSample {
+  return { climbUuid: row.canonicalClimbUuid, angle: row.angle, climbedAtMs: row.climbedAtMs };
+}
+
+function medianAbsoluteDeviationMs(deltasMs: number[], centreMs: number): number {
+  if (deltasMs.length === 0) return 0;
+  return medianOf(deltasMs.map((delta) => Math.abs(delta - centreMs)));
+}
+
+/**
+ * Build one offset profile per (user, board, quarter) that holds at least one
+ * anchor. Buckets with anchors but no overlapping natural key still get a
+ * profile, with `anchorKeyCount: 0` — that is what makes them classify as
+ * `too-few-anchor-keys` rather than `no-anchor`, which is a materially
+ * different diagnosis for whoever reads the report.
+ */
+export function buildOffsetProfiles(
+  anchors: AnchorTick[],
+  suspects: SuspectTick[],
+  options?: CorrectionOptions,
+): Map<string, OffsetProfile> {
+  const resolved = resolveOptions(options);
+
+  const anchorsByBucket = new Map<string, AnchorTick[]>();
+  for (const anchor of anchors) {
+    const key = bucketKeyOf(anchor);
+    const list = anchorsByBucket.get(key);
+    if (list) list.push(anchor);
+    else anchorsByBucket.set(key, [anchor]);
+  }
+
+  const suspectsByBucket = new Map<string, SuspectTick[]>();
+  for (const suspect of suspects) {
+    const key = bucketKeyOf(suspect);
+    const list = suspectsByBucket.get(key);
+    if (list) list.push(suspect);
+    else suspectsByBucket.set(key, [suspect]);
+  }
+
+  const profiles = new Map<string, OffsetProfile>();
+  for (const [bucketKey, bucketAnchors] of anchorsByBucket) {
+    const bucketSuspects = suspectsByBucket.get(bucketKey);
+    if (!bucketSuspects || bucketSuspects.length === 0) continue;
+
+    // Anchor ranking: prefer native outright once there are enough of them.
+    const nativeAnchors = bucketAnchors.filter((anchor) => anchor.trust === 'native');
+    const distinctNativeKeys = new Set(nativeAnchors.map(naturalKeyOf)).size;
+    const preferNative = distinctNativeKeys >= resolved.minNativeKeysToPreferNative;
+    const chosenAnchors = preferNative ? nativeAnchors : bucketAnchors;
+    const anchorTrust: AnchorTrust = preferNative ? 'native' : 'kilter_pull';
+
+    // Argument order is load-bearing: perKeyClosestDeltasMs returns
+    // `existing − incoming`, so passing suspects as `existing` yields the
+    // amount to SUBTRACT from a suspect to reach the anchor's instant.
+    const deltasMs = perKeyClosestDeltasMs(bucketSuspects.map(toTimeSample), chosenAnchors.map(toTimeSample));
+
+    const { userId, boardType, climbedAtMs } = bucketSuspects[0];
+    if (deltasMs.length === 0) {
+      profiles.set(bucketKey, {
+        userId,
+        boardType,
+        quarter: calendarQuarterOf(climbedAtMs),
+        offsetSeconds: 0,
+        anchorKeyCount: 0,
+        medianAbsoluteDeviationSeconds: 0,
+        anchorTrust,
+        perKeyDeltasSeconds: [],
+      });
+      continue;
+    }
+
+    const medianMs = medianOf(deltasMs);
+    profiles.set(bucketKey, {
+      userId,
+      boardType,
+      quarter: calendarQuarterOf(climbedAtMs),
+      offsetSeconds: roundOffsetSeconds(medianMs / 1000),
+      anchorKeyCount: deltasMs.length,
+      medianAbsoluteDeviationSeconds: medianAbsoluteDeviationMs(deltasMs, medianMs) / 1000,
+      anchorTrust,
+      perKeyDeltasSeconds: deltasMs.map((delta) => delta / 1000),
+    });
+  }
+
+  return profiles;
+}
+
+/**
+ * Index anchors by (bucket, natural key) so `classifySuspect`'s per-row guard
+ * is an O(1) Map lookup rather than a scan over every anchor per suspect.
+ */
+export function indexAnchorsByNaturalKey(anchors: AnchorTick[]): Map<string, AnchorTick[]> {
+  const index = new Map<string, AnchorTick[]>();
+  for (const anchor of anchors) {
+    const key = `${anchor.userId}\u0000${anchor.boardType}\u0000${naturalKeyOf(anchor)}`;
+    const list = index.get(key);
+    if (list) list.push(anchor);
+    else index.set(key, [anchor]);
+  }
+  return index;
+}
+
+/** The lookup key `indexAnchorsByNaturalKey` uses, for a suspect row. */
+export function suspectAnchorLookupKey(suspect: SuspectTick): string {
+  return `${suspect.userId}\u0000${suspect.boardType}\u0000${naturalKeyOf(suspect)}`;
+}
+
+/**
+ * Decide what, if anything, to do with one suspect row.
+ *
+ * `sameKeyAnchors` are the anchors sharing this suspect's (user, board,
+ * canonical climb, angle) — NOT restricted to the quarter, because a row that
+ * already lines up with any honest anchor of the same ascent is correct
+ * regardless of which bucket the profile came from.
+ */
+export function classifySuspect(
+  suspect: SuspectTick,
+  profile: OffsetProfile | undefined,
+  sameKeyAnchors: readonly AnchorTick[],
+  options?: CorrectionOptions,
+): SuspectVerdict {
+  const resolved = resolveOptions(options);
+
+  // ── The guard, first and unconditionally. A row that already sits on top of
+  // its own honest anchor is CORRECT; applying the bucket median to it is the
+  // one failure mode that turns a repair into corruption.
+  const toleranceMs = resolved.matchToleranceSeconds * 1000;
+  for (const anchor of sameKeyAnchors) {
+    if (Math.abs(suspect.climbedAtMs - anchor.climbedAtMs) <= toleranceMs) {
+      return { verdict: 'already-correct', reason: 'row-matches-own-anchor' };
+    }
+  }
+
+  if (suspect.isAuroraTwinMember) return { verdict: 'abstain', reason: 'aurora-twin-member' };
+  if (!profile) return { verdict: 'abstain', reason: 'no-anchor' };
+  if (profile.anchorKeyCount < resolved.minAnchorKeys) {
+    return { verdict: 'abstain', reason: 'too-few-anchor-keys' };
+  }
+
+  const maxMadSeconds = profile.anchorTrust === 'native' ? resolved.maxNativeMadSeconds : resolved.maxKilterMadSeconds;
+  if (profile.medianAbsoluteDeviationSeconds > maxMadSeconds) {
+    return { verdict: 'abstain', reason: 'inconsistent-offset' };
+  }
+
+  if (profile.offsetSeconds === 0) return { verdict: 'abstain', reason: 'profile-offset-zero' };
+  if (Math.abs(profile.offsetSeconds) > MAX_USER_UTC_OFFSET_SECONDS) {
+    return { verdict: 'abstain', reason: 'offset-implausible' };
+  }
+
+  return {
+    verdict: 'shift',
+    offsetSeconds: profile.offsetSeconds,
+    correctedMs: suspect.climbedAtMs - profile.offsetSeconds * 1000,
+    evidence: {
+      anchorKeyCount: profile.anchorKeyCount,
+      anchorTrust: profile.anchorTrust,
+      medianAbsoluteDeviationSeconds: profile.medianAbsoluteDeviationSeconds,
+      perKeyDeltasSeconds: profile.perKeyDeltasSeconds,
+      quarter: profile.quarter,
+    },
+  };
+}
+
+export type ClassifiedSuspect = { suspect: SuspectTick; verdict: SuspectVerdict };
+
+/**
+ * Whole-run convenience: build the profiles once, then classify every suspect
+ * against its own bucket. The report and the backfill both call THIS, so the
+ * apply path can never carry a second copy of the decision logic.
+ */
+export function classifyAllSuspects(
+  anchors: AnchorTick[],
+  suspects: SuspectTick[],
+  options?: CorrectionOptions,
+): ClassifiedSuspect[] {
+  const profiles = buildOffsetProfiles(anchors, suspects, options);
+  const anchorIndex = indexAnchorsByNaturalKey(anchors);
+  return suspects.map((suspect) => ({
+    suspect,
+    verdict: classifySuspect(
+      suspect,
+      profiles.get(bucketKeyOf(suspect)),
+      anchorIndex.get(suspectAnchorLookupKey(suspect)) ?? [],
+      options,
+    ),
+  }));
+}
