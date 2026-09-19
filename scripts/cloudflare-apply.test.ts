@@ -12,6 +12,7 @@ import {
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
   ASSETS_STAGING_HOSTNAME,
+  SNAPSHOTS_HOSTNAME,
   desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_CONTENT_CHALLENGE_RULE_DESCRIPTION,
@@ -1543,6 +1544,10 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
         return envelope({ buckets: desiredR2Buckets.map((bucket) => ({ name: bucket.name })) });
       }
       if (url.pathname.endsWith('/domains/custom')) return envelope({ domains: [] });
+      if (url.pathname.endsWith('/domains/managed')) {
+        if (method === 'GET') return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: true });
+        return envelope({ bucketId: 'bucket-id', domain: 'example.r2.dev', enabled: false });
+      }
       if (url.pathname.endsWith('/cors')) {
         // GET returns 404 before a CORS policy exists; PUT creates it.
         if (method === 'GET') {
@@ -1598,15 +1603,21 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
     expect(attaches).toHaveLength(publicBuckets.length);
 
+    const managedDomainPuts = requests.filter(
+      (request) => request.method === 'PUT' && request.pathname.endsWith('/domains/managed'),
+    );
+    expect(managedDomainPuts).toHaveLength(desiredR2Buckets.length);
+    expect(managedDomainPuts.every((request) => request.body?.enabled === false)).toBe(true);
+
     const corsPuts = requests.filter((request) => request.method === 'PUT' && request.pathname.endsWith('/cors'));
-    expect(corsPuts).toHaveLength(1);
+    expect(corsPuts).toHaveLength(desiredR2Buckets.filter((bucket) => bucket.cors).length);
 
     const assetChangeLogs = vi
       .mocked(console.log)
       .mock.calls.map(([message]) => message)
       .filter((message) => typeof message === 'string' && message.includes('R2 boardsesh-static-assets:'));
     expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] applied:'))).toHaveLength(1);
-    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(1);
+    expect(assetChangeLogs.filter((message) => message.startsWith('[cf-apply] skipped:'))).toHaveLength(2);
   });
 
   it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
@@ -1893,11 +1904,28 @@ describe('a rule phase this token cannot read', () => {
 });
 
 describe('diffR2Bucket', () => {
-  const MEDIA = { name: 'boardsesh-user-media', customDomain: 'media.boardsesh.com' } as const;
-  const PRIVATE = { name: 'boardsesh-user-private', customDomain: null } as const;
+  const MEDIA = {
+    name: 'boardsesh-user-media',
+    customDomain: 'media.boardsesh.com',
+    r2DevDomainEnabled: false,
+  } as const;
+  const PRIVATE = { name: 'boardsesh-user-private', customDomain: null, r2DevDomainEnabled: false } as const;
 
-  function live(name: string, customDomains: string[] = [], cors: R2Cors | null = null, corsRuleCount = cors ? 1 : 0) {
-    return { name, exists: true, customDomains, cors, corsRuleCount };
+  function live(
+    name: string,
+    customDomains: string[] = [],
+    cors: R2Cors | null = null,
+    corsRuleCount = cors ? 1 : 0,
+    r2DevDomainEnabled = false,
+  ) {
+    return {
+      name,
+      exists: true,
+      customDomains: customDomains.map((domain) => ({ domain, enabled: true })),
+      r2DevDomainEnabled,
+      cors,
+      corsRuleCount,
+    };
   }
 
   it('plans a create when the bucket is absent', () => {
@@ -1910,7 +1938,15 @@ describe('diffR2Bucket', () => {
 
   it('does not plan the domain in the same pass as the create', () => {
     // The domain call needs the bucket to exist; the next run attaches it.
-    expect(diffR2Bucket(MEDIA, { name: MEDIA.name, exists: false, customDomains: [], cors: null })).toHaveLength(1);
+    expect(
+      diffR2Bucket(MEDIA, {
+        name: MEDIA.name,
+        exists: false,
+        customDomains: [],
+        r2DevDomainEnabled: false,
+        cors: null,
+      }),
+    ).toHaveLength(1);
   });
 
   it('attaches a missing custom domain to a public bucket', () => {
@@ -1921,6 +1957,24 @@ describe('diffR2Bucket', () => {
 
   it('is a no-op once the public bucket serves its domain', () => {
     expect(diffR2Bucket(MEDIA, live(MEDIA.name, ['media.boardsesh.com']))).toEqual([]);
+  });
+
+  it('enables a declared custom domain that is attached but disabled', () => {
+    const disabledDomain = {
+      ...live(MEDIA.name),
+      customDomains: [{ domain: 'media.boardsesh.com', enabled: false }],
+    };
+    const changes = diffR2Bucket(MEDIA, disabledDomain);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('will enable media.boardsesh.com');
+  });
+
+  it('disables the independent r2.dev URL on every declared bucket', () => {
+    for (const desiredBucket of [MEDIA, PRIVATE]) {
+      const changes = diffR2Bucket(desiredBucket, live(desiredBucket.name, [], null, 0, true));
+      expect(changes.some((change) => change.summary.includes('will disable public r2.dev URL'))).toBe(true);
+      expect(changes.find((change) => change.summary.includes('r2.dev'))?.blocked).toBeUndefined();
+    }
   });
 
   it('is a no-op for a private bucket with no domain', () => {
@@ -1935,12 +1989,13 @@ describe('diffR2Bucket', () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].blocked).toBe(true);
     expect(changes[0].summary).toContain('declared PRIVATE but serves oops.boardsesh.com');
-    expect(changes[0].detail).toContain('user data exports');
+    expect(changes[0].detail).toContain('custom domain publishes every object');
   });
 
   const ASSETS = {
     name: 'boardsesh-static-assets',
     customDomain: 'assets-r2.boardsesh.com',
+    r2DevDomainEnabled: false,
     cors: { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'], maxAgeSeconds: 86_400 },
   } as const satisfies R2BucketDesired;
 
@@ -2029,6 +2084,7 @@ describe('desiredR2Buckets', () => {
     const byName = new Map(desiredR2Buckets.map((bucket) => [bucket.name, bucket]));
     expect(byName.get('boardsesh-user-private')?.customDomain).toBeNull();
     expect(byName.get('boardsesh-user-media')?.customDomain).toBe('media.boardsesh.com');
+    expect([...byName.values()].every((bucket) => bucket.r2DevDomainEnabled === false)).toBe(true);
   });
 
   it('keeps the static-assets bucket on its staging hostname until the flip', () => {
@@ -2048,8 +2104,33 @@ describe('desiredR2Buckets', () => {
     expect(assets?.cors?.allowedMethods).toEqual(['GET', 'HEAD']);
     // '*' rather than an origin list, deliberately — Cloudflare does not key its
     // cache on Vary below Enterprise, so a per-origin answer would be served to
-    // whichever origin lost the race. See PUBLIC_IMAGE_CORS.
+    // whichever origin lost the race. See PUBLIC_READ_CORS.
     expect(assets?.cors?.allowedOrigins).toEqual(['*']);
+  });
+
+  it('prepares public snapshots and keeps OTA objects private', () => {
+    const snapshots = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-board-snapshots');
+    const ota = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-ota-v3');
+
+    expect(snapshots?.customDomain).toBe(SNAPSHOTS_HOSTNAME);
+    expect(snapshots?.cors).toEqual({
+      allowedOrigins: ['*'],
+      allowedMethods: ['GET', 'HEAD'],
+      maxAgeSeconds: 86_400,
+    });
+    expect(ota?.customDomain).toBeNull();
+  });
+
+  it('caches snapshot paths and sets CORS independently of request headers', () => {
+    const cacheRule = desired.cacheRules.find((rule) => rule.expression.includes(SNAPSHOTS_HOSTNAME));
+    const corsRule = desired.responseHeaderRules.find((rule) => rule.expression.includes(SNAPSHOTS_HOSTNAME));
+
+    expect(cacheRule?.expression).toContain('starts_with(http.request.uri.path, "/board-snapshots/")');
+    expect(cacheRule?.action_parameters.edge_ttl?.mode).toBe('bypass_by_default');
+    expect(corsRule?.action_parameters.headers['access-control-allow-origin']).toEqual({
+      operation: 'set',
+      value: '*',
+    });
   });
 });
 

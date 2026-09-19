@@ -1187,6 +1187,24 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 `EXPO_PUBLIC_SNAPSHOT_BASE_URL` in the mobile workflows: the mobile value is
 `${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
 
+### Moving the snapshot bucket to R2
+
+The migration is a full re-export from the primary database, not an object copy. Until cutover, schedules and
+ordinary manual runs continue writing Tigris, and every shipped app continues reading Tigris.
+
+1. Merge the R2 prepare change and run `vp run cf:apply -- --apply` twice. The first apply can create
+   `boardsesh-board-snapshots`; the second attaches `snapshots.boardsesh.com` and converges CORS, cache, and response
+   header rules.
+2. Add `SNAPSHOTS_R2_AWS_ENDPOINT_URL`, `SNAPSHOTS_R2_AWS_ACCESS_KEY_ID`, and
+   `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY` to the `Production` GitHub environment. Scope the key to the snapshot bucket.
+3. Dispatch **Export Board Snapshots** from `main` with `storage_target=r2`, `gzip_only=false`, and every filter blank.
+   The workflow rejects a partial R2 run, exports all three prefixes, then checks every manifest and referenced
+   artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`.
+4. Dispatch the same full R2 export immediately before cutover. Change all seven mobile workflow snapshot bases,
+   the dev-database loader, and this document to `https://snapshots.boardsesh.com`; merge and publish the mobile OTA.
+5. Keep the Tigris bucket read-only for 30 days. Compare 404 and download-failure telemetry before requesting its
+   deletion; deletion remains a separate, explicitly approved operation.
+
 ### Recovery controls
 
 Native offline downloads, snapshot bootstrap, progress, and transfer strategy have no PostHog kill

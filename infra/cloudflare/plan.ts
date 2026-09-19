@@ -536,7 +536,9 @@ export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl
 export interface LiveR2Bucket {
   name: string;
   exists: boolean;
-  customDomains: string[];
+  customDomains: { domain: string; enabled: boolean }[];
+  /** Whether Cloudflare's independent public `r2.dev` URL is enabled. */
+  r2DevDomainEnabled: boolean;
   /**
    * The bucket's CORS rules, or null when they could not be read (the token
    * lacks the scope, or the account 404s a bucket that has never had a policy).
@@ -584,9 +586,10 @@ export function r2CorsMatches(live: R2Cors | null, desired: R2Cors): boolean {
 /**
  * Diff one declared R2 bucket against the account.
  *
- * Three outcomes, and the third is the point of this function:
+ * Four outcomes, and the last two are the point of this function:
  *  - the bucket is missing            → create it
  *  - it is public and lacks its domain → attach it
+ *  - its public r2.dev URL is enabled → disable it
  *  - it is declared private but HAS a domain → BLOCKED, never auto-removed
  *
  * Detaching a domain is left to a human because the tool cannot tell an
@@ -609,17 +612,26 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
     return changes;
   }
 
-  const domains = live.customDomains;
+  if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will disable public r2.dev URL`,
+      detail: 'The managed development URL bypasses the custom-domain cache and access rules.',
+    });
+  }
+
+  const enabledDomains = live.customDomains.filter((entry) => entry.enabled).map((entry) => entry.domain);
 
   if (desired.customDomain === null) {
-    if (domains.length > 0) {
+    if (enabledDomains.length > 0) {
       changes.push({
         resource: 'r2-bucket',
         r2BucketName: desired.name,
-        summary: `R2 ${desired.name}: declared PRIVATE but serves ${domains.join(', ')}`,
+        summary: `R2 ${desired.name}: declared PRIVATE but serves ${enabledDomains.join(', ')}`,
         detail:
           'R2 has no object ACLs and no bucket policies, so a custom domain publishes every object in the bucket. ' +
-          'This bucket holds user data exports. Remove the domain in the Cloudflare dashboard, or change the ' +
+          'Remove the domain in the Cloudflare dashboard, or change the ' +
           'declaration if it is now meant to be public.',
         blocked: true,
       });
@@ -627,12 +639,19 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
     return changes;
   }
 
-  if (!domains.includes(desired.customDomain)) {
+  const desiredDomain = live.customDomains.find((entry) => entry.domain === desired.customDomain);
+  if (!desiredDomain) {
     changes.push({
       resource: 'r2-bucket',
       r2BucketName: desired.name,
       summary: `R2 ${desired.name}: will attach ${desired.customDomain}`,
-      detail: domains.length > 0 ? `already serves: ${domains.join(', ')}` : undefined,
+      detail: enabledDomains.length > 0 ? `already serves: ${enabledDomains.join(', ')}` : undefined,
+    });
+  } else if (!desiredDomain.enabled) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will enable ${desired.customDomain}`,
     });
   }
 
@@ -649,7 +668,7 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
       summary: `R2 ${desired.name}: has ${live.corsRuleCount} CORS rules; this tool manages a single-rule policy`,
       detail:
         'Converging would replace all of them with the declared rule and drop the others. Reconcile them in the ' +
-        'Cloudflare dashboard, or fold what they allow into PUBLIC_IMAGE_CORS.',
+        'Cloudflare dashboard, or fold what they allow into PUBLIC_READ_CORS.',
       blocked: true,
     });
   } else if (desired.cors && !r2CorsMatches(live.cors, desired.cors)) {

@@ -23,7 +23,7 @@ was deleted, and a re-promotion would hand back a URL people already had. Going
 private, and deleting the wall, null the key and delete the object; the copy has no
 resize variants. See `docs/spray-walls.md`.
 
-**On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. Attaching a custom domain publishes the whole bucket. That is why the exports live in a separate bucket rather than under a prefix, and why the private bucket must never be given a custom domain.
+**On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. A custom domain or the independent `r2.dev` URL publishes the whole bucket. That is why exports live in a separate bucket, why the private bucket has no custom domain, and why the Cloudflare config disables `r2.dev` on every declared bucket.
 
 ## Why R2 and not Tigris
 
