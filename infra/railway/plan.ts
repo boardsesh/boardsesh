@@ -845,6 +845,10 @@ export function undeclaredServices(desired: RailwayDesiredState, live: LiveState
 /** Services whose live instance configuration the tool needs to read. */
 export function servicesNeedingInstanceRead(desired: RailwayDesiredState): string[] {
   return desired.services
-    .filter((service) => isAsserted(service) && (service.image || service.deploy || service.domains || service.volume))
+    .filter(
+      (service) =>
+        isAsserted(service) &&
+        (service.image || service.deploy || service.domains || service.volume || service.requiredVars.length > 0),
+    )
     .map((service) => service.name);
 }

@@ -112,7 +112,16 @@ jobs:
             # against a tracking ref that already contains any human commit pushed to
             # the branch — it is always satisfied, and a reviewer's fixups would be
             # silently destroyed.
-            remote_tip=$(git rev-parse --verify --quiet "origin/$branch" || true)
+            remote_tip=''
+            if remote_tip=$(git show-ref --verify --hash "refs/remotes/origin/$branch"); then
+              :
+            else
+              branch_lookup_status=$?
+              if [ "$branch_lookup_status" -ne 1 ]; then
+                echo "::error::Could not inspect origin/$branch (git show-ref exited $branch_lookup_status)."
+                return "$branch_lookup_status"
+              fi
+            fi
             if [ -n "$remote_tip" ]; then
               # EVERY commit the branch adds on top of main must be this workflow's,
               # not just the tip: checking only the tip would let a human commit
@@ -125,11 +134,12 @@ jobs:
               fi
             fi
 
-            # A CLOSED PR must not be resurrected. `gh pr view <branch>` resolves a
-            # branch to its most recent PR whatever its state, so without this a
+            # A CLOSED PR must not be resurrected. Ask for all states explicitly;
+            # unlike `gh pr view ... || echo NONE`, an API failure remains fatal.
+            # Without this a
             # declined beta bump would be force-pushed and body-edited every week
             # while no PR was open and the candidate never resurfaced.
-            pr_state=$(gh pr view "$branch" --json state --jq '.state' 2>/dev/null || echo 'NONE')
+            pr_state=$(gh pr list --head "$branch" --state all --limit 1 --json state --jq '.[0].state // "NONE"')
             if [ "$pr_state" = 'CLOSED' ] || [ "$pr_state" = 'MERGED' ]; then
               echo "::notice::The PR for $version is $pr_state; not reopening it."
               return 0

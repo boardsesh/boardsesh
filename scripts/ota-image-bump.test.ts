@@ -176,6 +176,8 @@ describe('pullRequestBody', () => {
     expect(body).toContain('## Release Notes');
     expect(body).toContain('## Risk');
     expect(body).toMatch(/Risk: \d\/5/);
+    expect(body).toContain('## Release Notes\n\n- [x] No release note needed\n');
+    expect(body).not.toMatch(/## Release Notes\n\nnone(?:\n|$)/i);
   });
 
   it('names both the version it leaves and the one it moves to', () => {

@@ -79,7 +79,13 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 2. rolls a deployment (`serviceInstanceDeployV2`, which returns its id),
 3. polls until three consecutive `SUCCESS` readings,
 4. probes `/hc` and `/ready`,
-5. **rolls back and restores the previous image** if either step fails.
+5. **rolls back and restores the previous configuration** if either step fails.
+
+A run touching multiple services behaves as one deployment batch. If a later
+service fails, every earlier verified deployment is rolled back in reverse order;
+variables remain set because Railway's deployment rollback cannot undo variable
+configuration. Before the first write, the tool verifies the token and every
+service's rollback target so it never starts a batch it cannot unwind.
 
 `vp run ota:image-bump` opens those PRs for you — see
 [Upgrade PRs](#upgrade-prs-stable-and-beta).
@@ -106,24 +112,21 @@ Four things gate the image change, and all four matter:
 
 ### Step 5 is the part worth reading twice
 
-`deploymentRollback` restores the *running container*. It does not touch the
-service's configured `source.image`, so a rollback alone would leave the config
-naming the bad tag — and the next unrelated deploy would silently ship it again.
-So the failure path issues a second `serviceInstanceUpdate` to put the previous
-image back, and says so loudly if that second write fails, because that is the one
-genuinely bad state this feature can reach.
+`deploymentRollback` restores the *running container*. It does not touch deploy
+settings or the configured `source.image`, so a rollback alone would leave the
+next deploy ready to re-ship the failed configuration. The failure path therefore
+issues a second `serviceInstanceUpdate` restoring exactly the fields this run
+changed, including prior nulls. It says so loudly if any rollback or restore fails.
 
 If the service has never had a second successful deployment there is **no rollback
 target**, and the run warns about that *before* deploying rather than discovering
 it afterwards.
 
-Two failures deliberately do *not* roll back. If the deployment turns out to carry
-somebody else's image — a dashboard edit that landed between our write and our
-deploy — rolling back would undo a change this tool did not make, so it says so and
-stops. And if the rollback succeeds but restoring the configured image fails, that
-is the worst state reachable here (container old, config still naming the bad tag),
-so it prints a `MANUAL ACTION` line naming the service and both images rather than
-exiting quietly.
+Two failures deliberately do *not* roll back the current service. If its deployment
+was canceled/parked or carries somebody else's image, rollback could undo a newer
+or manual action. Earlier services completed by the same run are still unwound.
+Every recovery is best-effort across the whole stack, followed by an aggregate
+`MANUAL ACTION` warning when anything could not be restored.
 
 ### Configured is not running
 
@@ -169,8 +172,8 @@ next run refuses to touch a service that is not — then re-run.
 
 ## Upgrade PRs (stable and beta)
 
-`.github/workflows/ota-image-bump.yml` runs weekly and opens a **draft PR per
-candidate**. `vp run ota:image-bump` does the same locally:
+`.github/workflows/ota-image-bump.yml` runs each Monday at 07:15 UTC and opens a
+**draft PR per candidate**. `vp run ota:image-bump` does the same locally:
 
 ```
 [ota-image-bump] Deployed server 3.1.2, publishing with eoas 3.1.2.
@@ -262,6 +265,10 @@ carry 90/90/180 windows; all five are in `CLICKHOUSE_RETENTION`.
 The check is skipped, not failed, when the script has no `CLICKHOUSE_URL` of its own
 (the same way `scripts/mobile-ota-health-check.ts` skips without a PostHog key). It
 reads over ClickHouse's HTTP interface on port 8123 and never writes.
+
+The database name is the sole value interpolated into that read-only SQL. The tool
+accepts only an unquoted ClickHouse identifier (`[A-Za-z_][A-Za-z0-9_]*`), which is
+the SQL-injection boundary rather than a cosmetic naming check.
 
 > **The assertion cannot run from CI as written.** The DSN host is
 > `boardsesh-ota-clickhouse.railway.internal`, which resolves only inside Railway's

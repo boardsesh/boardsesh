@@ -27,6 +27,7 @@ on:
     paths:
       - 'infra/railway/**'
       - 'scripts/railway-apply.ts'
+      - 'scripts/railway-deployment-rollback.mjs'
       - 'scripts/ota-image-bump.ts'
       - 'scripts/ota-image-bump-workflow.test.ts'
       # The inventory test reads this runbook with readFileSync to check it against
@@ -47,11 +48,12 @@ concurrency:
   # writing a service's image and confirming the deployment that carries it: the
   # exact state the old comment claimed to protect.
   #
-  # A dry-run alongside an apply is harmless — it writes nothing — so the read-only
-  # runs share a separate, cancellable group.
+  # A manual dry-run is an operator diagnostic, so serialize it with apply: reading
+  # halfway through an apply can report a configured/running split that disappears
+  # when the deployment settles. Scheduled and PR reads remain cancellable.
   group: >-
-    railway-config-${{ github.event_name == 'push' && 'apply' || format('read-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+    railway-config-${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'apply' || format('read-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' }}
 
 jobs:
   # Converge the live project. This is the only job that mutates anything.

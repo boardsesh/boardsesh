@@ -99,7 +99,7 @@ const DEPLOY_POLL_INTERVAL_MS = 10_000;
  * SUCCESS transiently while replicas are still settling, and one confirmation has
  * been seen to be a lie.
  */
-const DEPLOY_SUCCESS_CONFIRMATIONS = 3;
+export const DEPLOY_SUCCESS_CONFIRMATIONS = 3;
 const DEPLOY_MAX_CONSECUTIVE_READ_ERRORS = 3;
 
 /** Probe attempts per path, and the gap between them. */
@@ -634,6 +634,8 @@ export async function fetchClickHouseTtl(
 ): Promise<Record<string, string> | null> {
   if (!dsn) return null;
 
+  // The database name is interpolated into the SQL below. Restricting it to an
+  // unquoted ClickHouse identifier is the injection boundary, not just validation.
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(database)) {
     throw new Error(`Refusing to query a database name that is not a plain identifier: ${database}`);
   }
@@ -850,6 +852,8 @@ async function waitForDeployment(
       }
     }
 
+    // Keep confirmations separated in time. Immediate reads can repeat the same
+    // stale SUCCESS response and would turn three confirmations into one sample.
     await sleep(DEPLOY_POLL_INTERVAL_MS);
   }
 
@@ -958,7 +962,81 @@ export async function restoreConfiguration(
   console.log(`[railway-apply] restored ${mutation.serviceName} configuration after rollback`);
 }
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+type RollbackDeployment = typeof import('./railway-deployment-rollback.mjs').rollbackDeployment;
+
+interface AppliedDeployment {
+  deploymentId: string;
+  mutation: ServiceMutation;
+  previousDeployment: DeploymentSnapshot;
+  previousInstance: LiveServiceInstance;
+}
+
+export interface MainDependencies {
+  rollbackDeployment?: RollbackDeployment;
+  sleep?: (milliseconds: number) => Promise<void>;
+}
+
+/** Roll back the newest applied service first, preserving stack order. */
+export async function rollbackAppliedDeployments<T>(
+  deployments: readonly T[],
+  rollback: (deployment: T) => Promise<boolean>,
+): Promise<boolean> {
+  let allSucceeded = true;
+  for (const deployment of [...deployments].reverse()) {
+    if (!(await rollback(deployment))) allSucceeded = false;
+  }
+  return allSucceeded;
+}
+
+async function defaultRollbackDeployment(
+  options: Parameters<RollbackDeployment>[0],
+): Promise<Awaited<ReturnType<RollbackDeployment>>> {
+  const { rollbackDeployment } = await import('./railway-deployment-rollback.mjs');
+  return rollbackDeployment(options);
+}
+
+async function rollbackAppliedDeployment(
+  token: string,
+  environmentId: string,
+  applied: AppliedDeployment,
+  rollbackDeployment: RollbackDeployment,
+): Promise<boolean> {
+  let succeeded = true;
+  console.error(
+    `[railway-apply] Rolling back ${applied.mutation.serviceName} to deployment ${applied.previousDeployment.id}.`,
+  );
+  try {
+    await rollbackDeployment({
+      serviceId: applied.mutation.serviceId,
+      targetDeploymentId: applied.previousDeployment.id,
+      expectedCurrentDeploymentId: applied.deploymentId,
+      token,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`[railway-apply] MANUAL ACTION: could not roll back ${applied.mutation.serviceName} (${reason}).`);
+    succeeded = false;
+  }
+
+  if (applied.mutation.image || Object.keys(applied.mutation.deployFields).length > 0) {
+    try {
+      await restoreConfiguration(token, environmentId, applied.mutation, applied.previousInstance);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[railway-apply] MANUAL ACTION: rolled ${applied.mutation.serviceName} back, but could not restore its ` +
+          `previous configuration (${reason}). Reconcile it in Railway before it redeploys.`,
+      );
+      succeeded = false;
+    }
+  }
+  return succeeded;
+}
+
+export async function main(
+  argv: string[] = process.argv.slice(2),
+  dependencies: MainDependencies = {},
+): Promise<number> {
   resetAuthScheme();
   const options = parseArgs(argv);
   if (options.help) {
@@ -975,6 +1053,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   const desired = desiredRailwayState;
+  const rollbackDeployment = dependencies.rollbackDeployment ?? defaultRollbackDeployment;
+  const deploymentSleep = dependencies.sleep ?? ((milliseconds: number) => delay(milliseconds));
   const supplied = collectSuppliedVars(process.env);
 
   const project = await fetchProject(token, projectId, desired.environmentName);
@@ -1110,13 +1190,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       );
     }
 
-    if (needed.has('source') && !(await canRollBack(token, projectId))) {
+    if (!(await canRollBack(token, projectId))) {
       throw new Error(
-        'Refusing to change a container image with a token that cannot roll back this project. ' +
+        'Refusing to deploy with a token that cannot roll back this project. ' +
           'The rollback path needs a Railway PROJECT token scoped to ' +
           `${projectId} (it reads \`projectToken\` for its scope); this one answers the apply ` +
           'calls but not that. Use the project token the production deploy uses.',
       );
+    }
+
+    if (options.wait && mutations.size > 1) {
+      const withoutRollbackTarget = [...mutations.keys()].filter(
+        (serviceName) => !instanceReads.get(serviceName)?.latestDeployment?.canRollback,
+      );
+      if (withoutRollbackTarget.length > 0) {
+        throw new Error(
+          `Refusing a multi-service apply without rollback targets for: ${withoutRollbackTarget.join(', ')}.`,
+        );
+      }
     }
   }
 
@@ -1159,6 +1250,20 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
   }
 
+  const appliedDeployments: AppliedDeployment[] = [];
+  const unwindDeployments = async (deployments: readonly AppliedDeployment[]) => {
+    const allSucceeded = await rollbackAppliedDeployments(deployments, (deployment) =>
+      rollbackAppliedDeployment(token, project.environmentId, deployment, rollbackDeployment),
+    );
+    if (!allSucceeded) {
+      console.error(
+        '[railway-apply] MANUAL ACTION: one or more services could not be fully restored; inspect every message above.',
+      );
+    }
+  };
+  const warnVariablesRemain = () =>
+    console.error('[railway-apply] Any variables written this run remain set after rollback.');
+
   for (const mutation of mutations.values()) {
     const read = instanceReads.get(mutation.serviceName);
     const previousDeployment = read?.latestDeployment ?? null;
@@ -1169,11 +1274,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     if (mutation.image) input.source = { image: mutation.image };
 
     if (Object.keys(input).length > 0) {
-      await railwayRequest(token, SERVICE_INSTANCE_UPDATE, {
-        environmentId: project.environmentId,
-        serviceId: mutation.serviceId,
-        input,
-      });
+      try {
+        await railwayRequest(token, SERVICE_INSTANCE_UPDATE, {
+          environmentId: project.environmentId,
+          serviceId: mutation.serviceId,
+          input,
+        });
+      } catch (error) {
+        await unwindDeployments(appliedDeployments);
+        warnVariablesRemain();
+        throw error;
+      }
       const written = [...Object.keys(mutation.deployFields), ...(mutation.image ? ['image'] : [])].join(', ');
       console.log(`[railway-apply] applied: ${mutation.serviceName} ${written}`);
     }
@@ -1200,9 +1311,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           `${mutation.image ?? 'the declared settings'} but no deployment was rolled to carry it. ` +
           `Deploy it in Railway, or set the image back to ${previousImage ?? '(unknown)'}.`,
       );
+      await unwindDeployments(appliedDeployments);
+      warnVariablesRemain();
       throw error;
     }
     console.log(`[railway-apply] rolled ${mutation.serviceName} deployment ${deploymentId}`);
+
+    const currentApplied =
+      read && previousDeployment?.canRollback
+        ? { deploymentId, mutation, previousDeployment, previousInstance: read.instance }
+        : null;
 
     if (!options.wait) {
       console.log('[railway-apply] --no-wait: not polling or probing. Check Railway yourself.');
@@ -1218,65 +1336,43 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
 
     try {
-      await waitForDeployment(token, deploymentId, mutation.image ?? previousImage, (ms) => delay(ms));
+      await waitForDeployment(token, deploymentId, mutation.image ?? previousImage, deploymentSleep);
       if (desiredService?.verify) await probeService(desiredService.verify);
       console.log(`[railway-apply] ${mutation.serviceName} is healthy on deployment ${deploymentId}.`);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       console.error(`[railway-apply] ${mutation.serviceName} failed after deploy: ${reason}`);
 
+      const currentIdentityIsUnsafe =
+        error instanceof DeploymentApprovalError ||
+        error instanceof DeploymentSupersededError ||
+        error instanceof DeploymentRaceError;
+      const deploymentsToUnwind =
+        currentIdentityIsUnsafe || !currentApplied ? appliedDeployments : [...appliedDeployments, currentApplied];
+      await unwindDeployments(deploymentsToUnwind);
+
       if (error instanceof DeploymentApprovalError || error instanceof DeploymentSupersededError) {
         console.error(
           '[railway-apply] Leaving it alone: this deployment may be controlled by a newer or manual action.',
         );
-        return 1;
-      }
-
-      if (error instanceof DeploymentRaceError) {
+      } else if (error instanceof DeploymentRaceError) {
         // Somebody changed the image between our write and our deploy, so the
         // deployment we triggered carries THEIR change. Rolling back would undo
         // work this tool did not do — and the error text already promised not to.
         console.error('[railway-apply] Leaving it alone: this deployment is not ours to roll back.');
-        return 1;
-      }
-
-      if (!previousDeployment?.canRollback || !previousImage) {
+      } else if (!currentApplied) {
         console.error(
           '[railway-apply] No rollback target available. Reconcile by hand — this is not recoverable here.',
         );
-        return 1;
-      }
-
-      console.error(`[railway-apply] Rolling back to deployment ${previousDeployment.id}.`);
-      // Imported here rather than at the top: scripts/railway-deployment-rollback.mjs
-      // has a top-level `await` in its CLI guard, and tsx compiles this file to CJS,
-      // which cannot `require` such a module. A dynamic import can. It also means the
-      // rollback machinery is only loaded on the path that needs it.
-      const { rollbackDeployment } = await import('./railway-deployment-rollback.mjs');
-      await rollbackDeployment({
-        serviceId: mutation.serviceId,
-        targetDeploymentId: previousDeployment.id,
-        expectedCurrentDeploymentId: deploymentId,
-        token,
-      });
-      if (read && (mutation.image || Object.keys(mutation.deployFields).length > 0)) {
-        try {
-          await restoreConfiguration(token, project.environmentId, mutation, read.instance);
-        } catch (restoreError) {
-          const reason = restoreError instanceof Error ? restoreError.message : String(restoreError);
-          console.error(
-            `[railway-apply] MANUAL ACTION: rolled the container back, but could not restore its ` +
-              `previous configuration (${reason}). Reconcile ${mutation.serviceName} in Railway before it redeploys.`,
-          );
-          return 1;
-        }
       }
 
       // Variables were upserted with skipDeploys and are NOT undone by a deployment
       // rollback, so claiming nothing was applied would be a lie.
-      console.error('[railway-apply] Rolled back the deployment. Any variables written this run remain set.');
+      warnVariablesRemain();
       return 1;
     }
+
+    if (currentApplied) appliedDeployments.push(currentApplied);
   }
 
   console.log('');

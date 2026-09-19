@@ -49,6 +49,7 @@ import type { LiveServiceInstance, LiveState, PlanOptions } from '../infra/railw
 import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 import {
   ACTIVE_DEPLOYMENT_STATUSES,
+  DEPLOY_SUCCESS_CONFIRMATIONS,
   RAILWAY_API,
   collectSuppliedVars,
   fetchClickHouseTtl,
@@ -59,6 +60,7 @@ import {
   previousConfigurationInput,
   probeService,
   resetAuthScheme,
+  rollbackAppliedDeployments,
   restoreConfiguration,
   suppliedVarKeys,
   ttlFromEngineFull,
@@ -895,7 +897,7 @@ describe('inventory services', () => {
   it('are not queried for their instance configuration either', () => {
     const read = servicesNeedingInstanceRead(desiredRailwayState);
     for (const service of INVENTORY_SERVICES) expect(read).not.toContain(service.name);
-    expect(read).toEqual([OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME, OTA_POSTGRES_SERVICE_NAME]);
+    expect(read).toEqual([OTA_SERVICE_NAME, CLICKHOUSE_SERVICE_NAME, OTA_POSTGRES_SERVICE_NAME, WEB_SERVICE_NAME]);
   });
 });
 
@@ -1249,9 +1251,15 @@ describe('waitForDeployment', () => {
   it('needs three consecutive SUCCESS polls, because one has been seen to be a lie', async () => {
     resetAuthScheme();
     const stub = deploymentStub(['SUCCESS']);
-    const { error } = await withFetch(stub.fetch, () => waitForDeployment('token', 'dep-new', null, noSleep));
+    let sleeps = 0;
+    const { error } = await withFetch(stub.fetch, () =>
+      waitForDeployment('token', 'dep-new', null, async () => {
+        sleeps += 1;
+      }),
+    );
     expect(error).toBeUndefined();
-    expect(stub.polls()).toBe(3);
+    expect(stub.polls()).toBe(DEPLOY_SUCCESS_CONFIRMATIONS);
+    expect(sleeps).toBe(DEPLOY_SUCCESS_CONFIRMATIONS - 1);
   });
 
   it('keeps waiting through the in-flight statuses instead of calling them failures', async () => {
@@ -1259,7 +1267,7 @@ describe('waitForDeployment', () => {
     const stub = deploymentStub(['QUEUED', 'BUILDING', 'DEPLOYING', 'SUCCESS']);
     const { error } = await withFetch(stub.fetch, () => waitForDeployment('token', 'dep-new', null, noSleep));
     expect(error).toBeUndefined();
-    expect(stub.polls()).toBe(6);
+    expect(stub.polls()).toBe(3 + DEPLOY_SUCCESS_CONFIRMATIONS);
   });
 
   it('restarts the count when a SUCCESS turns out not to have stuck', async () => {
@@ -1313,7 +1321,7 @@ describe('waitForDeployment', () => {
     }) as typeof globalThis.fetch;
     const { error } = await withFetch(transient, () => waitForDeployment('token', 'dep-new', null, noSleep));
     expect(error).toBeUndefined();
-    expect(calls).toBe(4);
+    expect(calls).toBe(1 + DEPLOY_SUCCESS_CONFIRMATIONS);
   });
 
   it('restarts success confirmations after a transient read failure', async () => {
@@ -1329,7 +1337,7 @@ describe('waitForDeployment', () => {
 
     const { error } = await withFetch(interruptedSuccess, () => waitForDeployment('token', 'dep-new', null, noSleep));
     expect(error).toBeUndefined();
-    expect(calls).toBe(5);
+    expect(calls).toBe(2 + DEPLOY_SUCCESS_CONFIRMATIONS);
   });
 
   it('fails after three consecutive deployment read errors', async () => {
@@ -1382,6 +1390,17 @@ describe('waitForDeployment', () => {
 });
 
 describe('previousConfigurationInput', () => {
+  it('attempts every rollback in reverse even after one fails', async () => {
+    const attempted: string[] = [];
+    const allSucceeded = await rollbackAppliedDeployments(['first', 'second'], async (service) => {
+      attempted.push(service);
+      return service !== 'second';
+    });
+
+    expect(attempted).toEqual(['second', 'first']);
+    expect(allSucceeded).toBe(false);
+  });
+
   it('restores only fields changed by this run and preserves nulls', () => {
     const previous = liveState().instances[OTA_SERVICE_NAME];
     if (!previous) throw new Error('OTA fixture must have an instance');
@@ -1650,6 +1669,7 @@ async function runCli(
   argv: string[],
   stub: { fetch: typeof globalThis.fetch; calls: RecordedCall[] },
   env: Record<string, string> = {},
+  dependencies: Parameters<typeof main>[1] = {},
 ): Promise<RunResult> {
   const originalFetch = globalThis.fetch;
   const originalEnv = { ...process.env };
@@ -1667,7 +1687,7 @@ async function runCli(
   for (const [key, value] of Object.entries(env)) process.env[key] = value;
 
   try {
-    const code = await main(argv);
+    const code = await main(argv, dependencies);
     return { code, error: null, output: captured.lines.join('\n'), calls: stub.calls };
   } catch (error) {
     return { code: null, error: error as Error, output: captured.lines.join('\n'), calls: stub.calls };
@@ -1813,6 +1833,38 @@ describe('apply mode', () => {
     for (const upsert of upserts) expect(upsert.variables.input).toMatchObject({ skipDeploys: true });
     // One deploy for the pair, not one each.
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(1);
+  });
+
+  it('unwinds successful services in reverse when a later service fails', async () => {
+    const variables = variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE }));
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME] };
+    delete variables[WEB_SERVICE_NAME].SMTP_USER;
+    const stub = railwayStub({
+      variables,
+      deploymentStatuses: [...Array(DEPLOY_SUCCESS_CONFIRMATIONS).fill('SUCCESS'), 'FAILED'],
+    });
+    const rollbacks: string[] = [];
+
+    const { code, calls, output } = await runCli(
+      ['--apply'],
+      stub,
+      { RAILWAY_VAR_SMTP_USER: 'smtp-user' },
+      {
+        rollbackDeployment: async ({ serviceId }) => {
+          rollbacks.push(serviceId);
+          return { deploymentId: `rollback-${serviceId}`, image: 'restored-image' };
+        },
+        sleep: async () => {},
+      },
+    );
+
+    expect(code).toBe(1);
+    expect(callsMatching(calls, 'serviceInstanceDeployV2(').map((call) => call.variables.serviceId)).toEqual([
+      OTA_SERVICE_ID,
+      liveServiceId(WEB_SERVICE_NAME),
+    ]);
+    expect(rollbacks).toEqual([liveServiceId(WEB_SERVICE_NAME), OTA_SERVICE_ID]);
+    expect(output).toContain('Any variables written this run remain set');
   });
 
   it('batches deploy settings into a single serviceInstanceUpdate per service', async () => {

@@ -372,7 +372,7 @@ export function pullRequestBody(version: string, current: string): string {
     '',
     '## Release Notes',
     '',
-    'none',
+    '- [x] No release note needed',
     '',
     '## Risk',
     '',

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workflow = readFileSync(resolve(REPO_ROOT, '.github/workflows/ota-image-bump.yml'), 'utf8');
+const railwayWorkflow = readFileSync(resolve(REPO_ROOT, '.github/workflows/railway-drift.yml'), 'utf8');
 
 describe('OTA image bump workflow', () => {
   it('uses the repository App token for checkout, push, and pull requests', () => {
@@ -28,5 +29,35 @@ describe('OTA image bump workflow', () => {
       .split('\n')
       .find((line) => line.includes('HEAD^{tree}') && line.trimStart().startsWith('if '));
     expect(identicalTreeGuard).toContain('"$pr_state" = \'OPEN\'');
+  });
+
+  it('distinguishes a missing branch and PR from lookup failures', () => {
+    const executable = workflow
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(workflow).toContain('git show-ref --verify --hash "refs/remotes/origin/$branch"');
+    expect(executable).not.toMatch(/git rev-parse[^\n]+\|\| true/);
+    expect(workflow).toContain('gh pr list --head "$branch" --state all');
+    expect(executable).not.toMatch(/gh pr view[^\n]+\|\| echo/);
+  });
+});
+
+describe('Railway workflow', () => {
+  it('validates rollback helper changes on pull requests', () => {
+    const pullRequestPaths = railwayWorkflow.slice(
+      railwayWorkflow.indexOf('  pull_request:'),
+      railwayWorkflow.indexOf('\nconcurrency:'),
+    );
+    expect(pullRequestPaths).toContain("'scripts/railway-deployment-rollback.mjs'");
+  });
+
+  it('serializes manual diagnostics with push applies without cancellation', () => {
+    expect(railwayWorkflow).toContain(
+      "(github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'apply'",
+    );
+    expect(railwayWorkflow).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' }}",
+    );
   });
 });
