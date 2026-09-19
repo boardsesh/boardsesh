@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   CANONICAL_WEB_ORIGIN,
@@ -51,6 +51,7 @@ import {
   ACTIVE_DEPLOYMENT_STATUSES,
   DEPLOY_SUCCESS_CONFIRMATIONS,
   RAILWAY_API,
+  canRollBack,
   collectSuppliedVars,
   fetchClickHouseTtl,
   fetchUpdateInputFields,
@@ -1186,6 +1187,18 @@ describe('fetchUpdateInputFields', () => {
     expect(headers['Project-Access-Token']).toBeUndefined();
   });
 
+  it('bounds the direct introspection fetch with the Railway request timeout', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    try {
+      const { calls } = await withFetch(fieldsResponse(['source']), () => fetchUpdateInputFields());
+      expect(timeout).toHaveBeenCalledWith(30_000);
+      expect(calls[0].init?.signal).toBe(controller.signal);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it('throws rather than guessing when the type has gone', async () => {
     const missing = (async () =>
       new Response(JSON.stringify({ data: { __type: null } }), { status: 200 })) as typeof globalThis.fetch;
@@ -1197,6 +1210,72 @@ describe('fetchUpdateInputFields', () => {
     const failing = (async () => new Response('gateway', { status: 502 })) as typeof globalThis.fetch;
     const { error } = await withFetch(failing, () => fetchUpdateInputFields());
     expect(error?.message).toMatch(/502/);
+  });
+});
+
+describe('canRollBack', () => {
+  const projectTokenResponse = (projectToken: { projectId: string } | null) =>
+    (async () => new Response(JSON.stringify({ data: { projectToken } }), { status: 200 })) as typeof globalThis.fetch;
+
+  it('returns false for an account token or a token scoped to another project', async () => {
+    resetAuthScheme();
+    const account = await withFetch(projectTokenResponse(null), () => canRollBack('account-token', 'project'));
+    expect(account.result).toBe(false);
+
+    resetAuthScheme();
+    const crossProject = await withFetch(projectTokenResponse({ projectId: 'other-project' }), () =>
+      canRollBack('project-token', 'project'),
+    );
+    expect(crossProject.result).toBe(false);
+  });
+
+  it('returns false when Railway rejects both supported authentication schemes', async () => {
+    resetAuthScheme();
+    const denied = (async () =>
+      new Response(JSON.stringify({ errors: [{ message: 'Not Authorized' }] }), {
+        status: 200,
+      })) as typeof globalThis.fetch;
+    const { result, calls } = await withFetch(denied, () => canRollBack('denied-token', 'project'));
+    expect(result).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('propagates transport and malformed-response failures instead of calling them a scope mismatch', async () => {
+    resetAuthScheme();
+    const transport = await withFetch(
+      (async () => {
+        throw new Error('socket reset');
+      }) as typeof globalThis.fetch,
+      () => canRollBack('token', 'project'),
+    );
+    expect(transport.error?.message).toMatch(/Could not verify Railway rollback capability: socket reset/);
+
+    resetAuthScheme();
+    const malformed = await withFetch(
+      (async () => new Response('not json', { status: 200 })) as typeof globalThis.fetch,
+      () => canRollBack('token', 'project'),
+    );
+    expect(malformed.error?.message).toMatch(/Could not verify Railway rollback capability.*not json/s);
+  });
+
+  it('propagates GraphQL failures that are not the unsupported project-token field', async () => {
+    resetAuthScheme();
+    const internalFailure = (async () =>
+      new Response(JSON.stringify({ errors: [{ message: 'Internal service failure' }] }), {
+        status: 200,
+      })) as typeof globalThis.fetch;
+    const { error } = await withFetch(internalFailure, () => canRollBack('token', 'project'));
+    expect(error?.message).toMatch(/Could not verify Railway rollback capability.*Internal service failure/s);
+  });
+
+  it('returns false when Railway does not expose the project-token scope field', async () => {
+    resetAuthScheme();
+    const unsupported = (async () =>
+      new Response(JSON.stringify({ errors: [{ message: 'Cannot query field "projectToken" on type "Query".' }] }), {
+        status: 200,
+      })) as typeof globalThis.fetch;
+    const { result } = await withFetch(unsupported, () => canRollBack('token', 'project'));
+    expect(result).toBe(false);
   });
 });
 

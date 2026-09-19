@@ -182,6 +182,17 @@ interface GraphQLResponse<TData> {
   errors?: { message: string }[];
 }
 
+class RailwayAuthorizationError extends Error {}
+
+class RailwayGraphQLResponseError extends Error {
+  constructor(
+    readonly messages: string[],
+    status: number,
+  ) {
+    super(`Railway API request failed (HTTP ${status}).\n${messages.map((message) => `  - ${message}`).join('\n')}`);
+  }
+}
+
 /**
  * Railway issues two kinds of token and they authenticate differently: an
  * account token travels in `Authorization: Bearer`, while a project token —
@@ -252,6 +263,10 @@ async function railwayRequest<TData>(token: string, query: string, variables: Re
     }
   }
 
+  if (isNotAuthorized(response, rawBody)) {
+    throw new RailwayAuthorizationError('Railway API rejected both supported authentication schemes.');
+  }
+
   let envelope: GraphQLResponse<TData> | null = null;
   try {
     envelope = rawBody ? (JSON.parse(rawBody) as GraphQLResponse<TData>) : null;
@@ -259,11 +274,13 @@ async function railwayRequest<TData>(token: string, query: string, variables: Re
     // Non-JSON body (e.g. an HTML error page) — handled below via the raw text.
   }
 
-  if (!response.ok || !envelope || envelope.errors?.length) {
-    const rendered = (envelope?.errors ?? []).map((error) => `  - ${error.message}`).join('\n');
-    throw new Error(
-      `Railway API request failed (HTTP ${response.status}).` +
-        (rendered ? `\n${rendered}` : `\n  ${rawBody.slice(0, 500)}`),
+  if (!response.ok || !envelope) {
+    throw new Error(`Railway API request failed (HTTP ${response.status}).` + `\n  ${rawBody.slice(0, 500)}`);
+  }
+  if (envelope.errors?.length) {
+    throw new RailwayGraphQLResponseError(
+      envelope.errors.map((error) => error.message),
+      response.status,
     );
   }
 
@@ -693,6 +710,7 @@ export async function fetchUpdateInputFields(): Promise<Set<string>> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: UPDATE_INPUT_INTROSPECTION }),
+    signal: AbortSignal.timeout(RAILWAY_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Railway schema introspection failed (HTTP ${response.status}).`);
   const envelope = (await response.json()) as GraphQLResponse<{
@@ -715,8 +733,19 @@ export async function canRollBack(token: string, projectId: string): Promise<boo
   try {
     const data = await railwayRequest<{ projectToken: { projectId: string } | null }>(token, PROJECT_TOKEN_QUERY, {});
     return data.projectToken?.projectId === projectId;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof RailwayAuthorizationError) return false;
+    if (
+      error instanceof RailwayGraphQLResponseError &&
+      error.messages.every(
+        (message) =>
+          /\bprojectToken\b/i.test(message) && /cannot query field|unknown field|does not exist/i.test(message),
+      )
+    ) {
+      return false;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not verify Railway rollback capability: ${reason}`, { cause: error });
   }
 }
 
