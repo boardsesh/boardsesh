@@ -17,9 +17,7 @@ export type HelpShot =
   | 'board-sheet'
   | 'board-view'
   | 'climb-actions'
-  | 'preview'
-  | 'share-beta'
-  | 'beta-shelf';
+  | 'preview';
 
 export type HelpCapture = { src: string; width: number; height: number };
 

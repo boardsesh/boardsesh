@@ -654,11 +654,7 @@
         "intro": "Depuis Instagram ou TikTok, avec le bouton de partage habituel.",
         "p1": "Appuyez sur partager sur le reel et choisissez Boardsesh. L'app s'ouvre sur l'écran d'ajout de beta et vous demande de toucher le bloc concerné, avec vos ascensions notées en dessous et un champ de recherche au-dessus.",
         "p2": "Quand la légende porte le nom du bloc entre guillemets, Boardsesh le lit et remonte cette ascension en haut, dans la section des correspondances, le reste allant sous vos autres ascensions. Une touche suffit : il n'y a pas de seconde confirmation, ni moyen de détacher la vidéo ensuite, alors vérifiez le bloc avant de toucher.",
-        "p3": "Liens Instagram et TikTok uniquement ; tout le reste est refusé. Boardsesh garde le lien, pas la vidéo : le clip continue de vivre là où vous l'avez publié.",
-        "shotAlt": "L'écran d'ajout de beta avec les ascensions récentes",
-        "shotCaption": "Partagez un reel, puis touchez le bloc concerné.",
-        "shelfShotAlt": "L'étagère de vidéos beta sur le profil d'un grimpeur",
-        "shelfShotCaption": "Votre beta se rassemble en bas de votre profil."
+        "p3": "Liens Instagram et TikTok uniquement ; tout le reste est refusé. Boardsesh garde le lien, pas la vidéo : le clip continue de vivre là où vous l'avez publié."
       },
       "find": {
         "title": "Trouver la beta déjà posée",

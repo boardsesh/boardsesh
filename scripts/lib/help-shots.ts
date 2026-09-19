@@ -31,9 +31,16 @@ export const HELP_WEBP_DIR = resolve(REPO_ROOT, 'packages/web/public/images/help
  * keeps the Maestro flow's output ordered on disk, while the web app imports the
  * stable name (`/images/help/discover.webp`) that survives a reordered flow.
  *
- * A capture missing from a run is a hard failure rather than a skipped file —
+ * A capture missing from a run is a hard failure rather than a skipped file:
  * silently shipping eleven of twelve assets is how a help page ends up with a
  * broken image that nobody notices until it is live.
+ *
+ * The flow shoots FOURTEEN; this map ships twelve. `13-share-beta` and
+ * `14-beta-shelf` are captured but not published, because the capture account
+ * has no beta video attached, so both screens photograph their empty state. The
+ * shots are honest — that really is what the app shows with nothing to list —
+ * they just teach nothing. Attach a reel to one of that account's ascents and
+ * both rows can come back.
  */
 export const HELP_SHOTS = [
   { capture: '01-discover', asset: 'discover' },
@@ -48,8 +55,6 @@ export const HELP_SHOTS = [
   { capture: '10-board-view', asset: 'board-view' },
   { capture: '11-climb-actions', asset: 'climb-actions' },
   { capture: '12-preview', asset: 'preview' },
-  { capture: '13-share-beta', asset: 'share-beta' },
-  { capture: '14-beta-shelf', asset: 'beta-shelf' },
 ] as const;
 
 /** Sharp settings are fixed by prior art — see docs/design/marketing-campaign-assets.md. */

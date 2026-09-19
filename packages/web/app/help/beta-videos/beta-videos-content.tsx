@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
 
 /**
  * Two halves of one loop that nobody sees whole: sharing a reel in, and finding
@@ -27,18 +26,6 @@ export default function BetaVideosContent() {
       breadcrumb={<HelpBreadcrumb current={t('help.betaVideos.breadcrumb')} />}
     >
       <PageSection title={t('help.betaVideos.share.title')} lead={t('help.betaVideos.share.intro')}>
-        <HelpShots>
-          <HelpScreenshot
-            shot="share-beta"
-            alt={t('help.betaVideos.share.shotAlt')}
-            caption={t('help.betaVideos.share.shotCaption')}
-          />
-          <HelpScreenshot
-            shot="beta-shelf"
-            alt={t('help.betaVideos.share.shelfShotAlt')}
-            caption={t('help.betaVideos.share.shelfShotCaption')}
-          />
-        </HelpShots>
         <Prose>{t('help.betaVideos.share.p1')}</Prose>
         <Prose>{t('help.betaVideos.share.p2')}</Prose>
         <Prose>{t('help.betaVideos.share.p3')}</Prose>

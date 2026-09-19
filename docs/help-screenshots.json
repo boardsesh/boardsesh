@@ -1,1 +1,62 @@
-{}
+{
+  "01-discover": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/01-discover/fdc7568e64c38a8617353a0c57407af8617d542dbbfae6f8fdf2dbac300bd473.png",
+    "sha256": "fdc7568e64c38a8617353a0c57407af8617d542dbbfae6f8fdf2dbac300bd473",
+    "bytes": 502152
+  },
+  "02-playlist-detail": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/02-playlist-detail/aa31f4b1951f8368a796066e7da3110726d4f74eeeb941c0df83820404ae9b77.png",
+    "sha256": "aa31f4b1951f8368a796066e7da3110726d4f74eeeb941c0df83820404ae9b77",
+    "bytes": 1362772
+  },
+  "03-home-live": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/03-home-live/93205cfd82dbb6e069922d824dbc17ed89dd7eb4bbbf284baf98c39bca300b9a.png",
+    "sha256": "93205cfd82dbb6e069922d824dbc17ed89dd7eb4bbbf284baf98c39bca300b9a",
+    "bytes": 614234
+  },
+  "04-session-detail": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/04-session-detail/327e872a3104fa8805ed73fba1857200ee0c562db73122b464ab814194fcbd80.png",
+    "sha256": "327e872a3104fa8805ed73fba1857200ee0c562db73122b464ab814194fcbd80",
+    "bytes": 389141
+  },
+  "05-holds-filter": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/05-holds-filter/56c4e56e13741962b291a94ebfc5223d349f483f5fe0a2bfda0bf5b51d41ef70.png",
+    "sha256": "56c4e56e13741962b291a94ebfc5223d349f483f5fe0a2bfda0bf5b51d41ef70",
+    "bytes": 1953586
+  },
+  "06-zone-filter": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/06-zone-filter/70066ce65f5eed85cb6cd33f3a7168519588885d10caffe2bf47826f830dae48.png",
+    "sha256": "70066ce65f5eed85cb6cd33f3a7168519588885d10caffe2bf47826f830dae48",
+    "bytes": 2412516
+  },
+  "07-setters": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/07-setters/f7a5ac7f538aa4494d4a874d1112deef97441bab7f276b952be3c5c12679966a.png",
+    "sha256": "f7a5ac7f538aa4494d4a874d1112deef97441bab7f276b952be3c5c12679966a",
+    "bytes": 276796
+  },
+  "08-logbook": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/08-logbook/30da2a471b9102f2fa0854d87882eb09bed5fa88208ecb8f9458f28080c5f915.png",
+    "sha256": "30da2a471b9102f2fa0854d87882eb09bed5fa88208ecb8f9458f28080c5f915",
+    "bytes": 548680
+  },
+  "09-board-sheet": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/09-board-sheet/a628b9d4bdbf566a852898dd336801f207bef47ca1d78eba068e9c4244f542a3.png",
+    "sha256": "a628b9d4bdbf566a852898dd336801f207bef47ca1d78eba068e9c4244f542a3",
+    "bytes": 683651
+  },
+  "10-board-view": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/10-board-view/d6a19116471423a64f6c16ce6bb010db888f46f73f0caa774b54f7467d67df57.png",
+    "sha256": "d6a19116471423a64f6c16ce6bb010db888f46f73f0caa774b54f7467d67df57",
+    "bytes": 2096477
+  },
+  "11-climb-actions": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/11-climb-actions/88e2910edf39058058fde2125a2e5ef42e4961ae4d686ef77cb7b54835965450.png",
+    "sha256": "88e2910edf39058058fde2125a2e5ef42e4961ae4d686ef77cb7b54835965450",
+    "bytes": 1108393
+  },
+  "12-preview": {
+    "url": "https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/12-preview/9cf5d01d0c22f477ca6f893b09591187099bba413f8779f20b076ac52e76abc3.png",
+    "sha256": "9cf5d01d0c22f477ca6f893b09591187099bba413f8779f20b076ac52e76abc3",
+    "bytes": 2096383
+  }
+}

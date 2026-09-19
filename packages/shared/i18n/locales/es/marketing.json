@@ -730,11 +730,7 @@
         "intro": "Desde Instagram o TikTok, con el botón de compartir de siempre.",
         "p1": "Dale a compartir en el reel y elige Boardsesh. La app abre la pantalla para enganchar tu beta y te pide que toques el bloque al que va, con tus ascensos registrados debajo y un buscador encima.",
         "p2": "Si el pie de foto lleva el nombre del bloque entre comillas, Boardsesh lo lee y sube ese ascenso arriba del todo, a la sección de coincidencias, y el resto queda bajo tus otros ascensos. Con un toque queda enganchado: no hay segunda confirmación ni forma de desengancharlo después, así que comprueba el bloque antes de tocar.",
-        "p3": "Solo enlaces de Instagram y TikTok; lo demás se rechaza. Boardsesh guarda el enlace, no el vídeo, así que el clip sigue viviendo donde lo publicaste.",
-        "shotAlt": "La pantalla para enganchar beta con los ascensos recientes",
-        "shotCaption": "Comparte un reel y toca el bloque al que va.",
-        "shelfShotAlt": "La estantería de vídeos de beta en el perfil de una escaladora",
-        "shelfShotCaption": "Tu beta se junta al final de tu perfil."
+        "p3": "Solo enlaces de Instagram y TikTok; lo demás se rechaza. Boardsesh guarda el enlace, no el vídeo, así que el clip sigue viviendo donde lo publicaste."
       },
       "find": {
         "title": "Encontrar la beta que ya hay",

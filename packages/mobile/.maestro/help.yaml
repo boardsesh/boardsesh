@@ -159,30 +159,37 @@ name: help screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 02-playlist-detail
 
-# Home — the global "Everyone" feed with the live-sessions rail. The home screen
-# defaults to that feed in screenshot mode (see home/index.tsx) for a livelier
-# shot than the test user's own crew.
-#
-# The live rail settles INDEPENDENTLY of the session feed, so `waitForAnimationToEnd`
-# alone can snap while the rail is still a skeleton. Wait the skeleton out, then
-# assert the rail did not land in its error or offline state — a help page showing
-# "couldn't load" teaches the wrong thing, and both states are pixel-stable enough
-# that nothing else would catch them. Verbatim from app-store.yaml, including the
-# 90s timeout: the rail is a graphql-ws subscription and a cold one is slow.
-- openLink: com.boardsesh.app://home
+# Share-beta matcher — where a link shared in from Instagram or TikTok gets
+# matched against the climber's recent ascents. Deep-linked with no URL: the
+# screen re-shares the account's OWN most recent beta video (see share-beta.tsx),
+# so the post on screen is the account's, not a stranger's, and no URL is pinned
+# in this file to rot. Three settles: the own-beta lookup, then the link preview
+# (thumbnail + caption), then the caption-match query that fills "Suggested".
+# It is a `presentation: 'modal'` route, so whatever ran before it shows in the
+# sliver iOS leaves at the top; the playlist detail above is a calm backdrop for
+# that. 14-beta-shelf's tab navigation is what dismisses it.
+- openLink: com.boardsesh.app://share-beta?screenshotShareBeta=1
 - tapOn:
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
-- extendedWaitUntil:
-    notVisible:
-      id: 'live-sessions-skeleton'
-    timeout: 90000
-- assertNotVisible:
-    id: 'live-sessions-error'
-- assertNotVisible:
-    id: 'live-sessions-offline'
-- takeScreenshot: 03-home-live
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 13-share-beta
+
+# Beta shelf — the climber's own beta videos. The param resolves the signed-in
+# id and pushes `/users/[userId]/beta`, the full grid behind the profile shelf's
+# "See all" (the shelf itself sits mid-way down a virtualized profile list with
+# no stable anchor to scroll to). This also navigates the tab stack, which is what
+# dismisses the share-beta modal above.
+- openLink: com.boardsesh.app://profile?screenshotBetaShelf=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 14-beta-shelf
+
 
 # Session detail — the Sessions sub-tab auto-opens the newest session's recap in
 # screenshot mode (summary + grade chart + leaderboard/roster + ticks). Two
@@ -243,35 +250,48 @@ name: help screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 08-logbook
 
-# Share-beta matcher — where a link shared in from Instagram or TikTok gets
-# matched against the climber's recent ascents. Deep-linked with no URL: the
-# screen re-shares the account's OWN most recent beta video (see share-beta.tsx),
-# so the post on screen is the account's, not a stranger's, and no URL is pinned
-# in this file to rot. Three settles: the own-beta lookup, then the link preview
-# (thumbnail + caption), then the caption-match query that fills "Suggested".
-# It is a `presentation: 'modal'` route, so it sits over the logbook shot above —
-# a neutral backdrop for the sliver iOS leaves showing at the top.
-- openLink: com.boardsesh.app://share-beta?screenshotShareBeta=1
-- tapOn:
-    text: 'Open'
-    optional: true
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- takeScreenshot: 13-share-beta
 
-# Beta shelf — the climber's own beta videos. The param resolves the signed-in
-# id and pushes `/users/[userId]/beta`, the full grid behind the profile shelf's
-# "See all" (the shelf itself sits mid-way down a virtualized profile list with
-# no stable anchor to scroll to). This also navigates the tab stack, which is what
-# dismisses the share-beta modal above.
-- openLink: com.boardsesh.app://profile?screenshotBetaShelf=1
+# Home runs LAST of the plain shots, and that placement is deliberate.
+#
+# Its live-sessions assert is the only gate in this flow that depends on a
+# graphql-ws SUBSCRIPTION rather than a query. Under --fixtures replay the rail
+# is fixture-fed and the assert passes; under --fixtures record it goes through
+# the proxy and fails often (three consecutive runs died here). Maestro stops at
+# the first failed assert, so wherever this shot sits, everything after it is
+# unreachable on a record run — which means those screens never get their
+# fixtures recorded, and the NEXT replay then serves them empty. That is how
+# 07-setters came back "No setters yet" and 13-share-beta came back with an
+# empty ascent list, from a flow where every step reported COMPLETED.
+#
+# Keeping it last costs nothing (the shot itself is unaffected by order) and
+# means one record pass can top up every other screen. Put new plain shots
+# ABOVE it, not below.
+
+# Home — the global "Everyone" feed with the live-sessions rail. The home screen
+# defaults to that feed in screenshot mode (see home/index.tsx) for a livelier
+# shot than the test user's own crew.
+#
+# The live rail settles INDEPENDENTLY of the session feed, so `waitForAnimationToEnd`
+# alone can snap while the rail is still a skeleton. Wait the skeleton out, then
+# assert the rail did not land in its error or offline state — a help page showing
+# "couldn't load" teaches the wrong thing, and both states are pixel-stable enough
+# that nothing else would catch them. Verbatim from app-store.yaml, including the
+# 90s timeout: the rail is a graphql-ws subscription and a cold one is slow.
+- openLink: com.boardsesh.app://home
 - tapOn:
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
-- waitForAnimationToEnd
-- takeScreenshot: 14-beta-shelf
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- assertNotVisible:
+    id: 'live-sessions-error'
+- assertNotVisible:
+    id: 'live-sessions-offline'
+- takeScreenshot: 03-home-live
+
 
 # Board sheet — the board picker / BLE board sheet over the climb list.
 # It overlays the climb list, so it opens the overlay tail — anything shot after
@@ -328,33 +348,16 @@ name: help screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 10-board-view
 
-# Climb actions — the long-press reaction menu over the first climb row: preview,
-# add to queue, add to playlist, favourite, log a tick, share, and the rest. The
-# most-missed interaction in the app, which is why the help pages teach it and why
-# it needed the param above. Two settles: the list has to have real rows before
-# the menu opens over them, and the menu animates in.
-# Clear whatever overlay the previous shot left up.
+# Preview runs BEFORE the reaction menu, and the order is not cosmetic.
 #
-# A repeat deep link to a route that is ALREADY the current route does not
-# remount it — expo-router calls setParams on the mounted screen — so the sheet
-# or drawer the last shot opened is still sitting there when the next param
-# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
-# exactly that reason: the board sheet from 09 covered the three drawer shots
-# after it, and the run's own duplicate check caught it.
-#
-# Bouncing through ://home leaves the climbs route, which tears the overlay down,
-# so the next ://climbs link mounts clean. Each of the four params has its own
-# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
-# that has already fired.
-- openLink: com.boardsesh.app://home
-- waitForAnimationToEnd
-- openLink: com.boardsesh.app://climbs?screenshotOpenClimbActions=1
-- tapOn:
-    text: 'Open'
-    optional: true
-- waitForAnimationToEnd
-- waitForAnimationToEnd
-- takeScreenshot: 11-climb-actions
+# ClimbReactionMenu renders inside a react-native `Modal` (with a
+# `FullWindowOverlay` on iOS), which sits ABOVE the navigator rather than
+# inside it — so unlike the play drawer, navigating away does not dismiss it.
+# The ://home hop each of these shots opens with cannot clear it. With the menu
+# shot first, the preview shot photographed the menu again: two captures a
+# single byte apart, which only the duplicate check told apart from a real pair.
+# The play drawer IS a route, so it dismisses normally and can safely precede
+# anything. Keep the modal-backed shot last.
 
 # Preview — the play drawer in its browse state: the Browsing pill, the viewfinder
 # brackets and the commit row, i.e. what you get from the menu's "Preview" action
@@ -384,3 +387,31 @@ name: help screenshots
 - waitForAnimationToEnd
 - waitForAnimationToEnd
 - takeScreenshot: 12-preview
+
+# Climb actions — the long-press reaction menu over the first climb row: preview,
+# add to queue, add to playlist, favourite, log a tick, share, and the rest. The
+# most-missed interaction in the app, which is why the help pages teach it and why
+# it needed the param above. Two settles: the list has to have real rows before
+# the menu opens over them, and the menu animates in.
+# Clear whatever overlay the previous shot left up.
+#
+# A repeat deep link to a route that is ALREADY the current route does not
+# remount it — expo-router calls setParams on the mounted screen — so the sheet
+# or drawer the last shot opened is still sitting there when the next param
+# arrives. A full 14-shot run came back with 09/10/11/12 byte-identical for
+# exactly that reason: the board sheet from 09 covered the three drawer shots
+# after it, and the run's own duplicate check caught it.
+#
+# Bouncing through ://home leaves the climbs route, which tears the overlay down,
+# so the next ://climbs link mounts clean. Each of the four params has its own
+# one-shot latch in climbs/index.tsx, so re-entering the route re-arms nothing
+# that has already fired.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- openLink: com.boardsesh.app://climbs?screenshotOpenClimbActions=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 11-climb-actions

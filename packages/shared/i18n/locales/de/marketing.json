@@ -654,11 +654,7 @@
         "intro": "Aus Instagram oder TikTok, mit dem Teilen-Button, den du ohnehin benutzt.",
         "p1": "Tipp beim Reel auf Teilen und wähl Boardsesh. Die App öffnet den Beta-Anhängen-Screen und bittet dich, den passenden Boulder anzutippen — darunter deine eingetragenen Begehungen, darüber ein Suchfeld.",
         "p2": "Steht der Name des Boulders in Anführungszeichen in der Bildunterschrift, liest Boardsesh ihn und holt diese Begehung nach oben in den Treffer-Abschnitt, der Rest steht unter deinen übrigen Begehungen. Ein Tap hängt es an — ohne zweite Rückfrage und ohne Möglichkeit, es später wieder abzuhängen. Prüf den Boulder also, bevor du tippst.",
-        "p3": "Nur Instagram- und TikTok-Links; alles andere wird abgewiesen. Boardsesh speichert den Link, nicht das Video, der Clip bleibt also dort, wo du ihn gepostet hast.",
-        "shotAlt": "Der Beta-Anhängen-Screen mit den letzten Begehungen",
-        "shotCaption": "Teil ein Reel und tipp den passenden Boulder an.",
-        "shelfShotAlt": "Das Beta-Video-Regal auf einem Profil",
-        "shelfShotCaption": "Deine Beta sammelt sich unten auf deinem Profil."
+        "p3": "Nur Instagram- und TikTok-Links; alles andere wird abgewiesen. Boardsesh speichert den Link, nicht das Video, der Clip bleibt also dort, wo du ihn gepostet hast."
       },
       "find": {
         "title": "Die Beta finden, die schon da ist",

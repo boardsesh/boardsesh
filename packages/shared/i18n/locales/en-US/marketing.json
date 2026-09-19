@@ -777,11 +777,7 @@
         "intro": "From Instagram or TikTok, using the share button you already use.",
         "p1": "Hit share on the reel and pick Boardsesh. The app opens on Attach your beta and asks you to tap the climb you sent it on, with your logged ascents underneath and a search field over them.",
         "p2": "When the caption carries the climb's name in quotes, Boardsesh reads it and lifts that ascent to the top under Matched from the caption, with everything else under Your other ascents. One tap attaches it — there's no second confirm and no way to unpin it afterwards, so check the climb before you tap.",
-        "p3": "Instagram and TikTok links only; anything else is turned away. Boardsesh stores the link rather than the video, so the clip keeps living where you posted it.",
-        "shotAlt": "The attach-your-beta screen listing recent ascents",
-        "shotCaption": "Share a reel in, then tap the climb you sent it on.",
-        "shelfShotAlt": "The beta videos shelf on a climber's profile",
-        "shelfShotCaption": "Your beta collects at the bottom of your profile."
+        "p3": "Instagram and TikTok links only; anything else is turned away. Boardsesh stores the link rather than the video, so the clip keeps living where you posted it."
       },
       "find": {
         "title": "Find the beta already on a climb",

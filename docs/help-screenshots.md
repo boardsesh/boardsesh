@@ -20,3 +20,15 @@ only `DEV_*` storage variables, never production media credentials.
 
 | Capture | Ships as | Size | Shot |
 | --- | --- | ---: | --- |
+| `01-discover.png` | `discover.webp` | 490 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/01-discover/fdc7568e64c38a8617353a0c57407af8617d542dbbfae6f8fdf2dbac300bd473.png) |
+| `02-playlist-detail.png` | `playlist-detail.webp` | 1331 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/02-playlist-detail/aa31f4b1951f8368a796066e7da3110726d4f74eeeb941c0df83820404ae9b77.png) |
+| `03-home-live.png` | `live-sessions.webp` | 600 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/03-home-live/93205cfd82dbb6e069922d824dbc17ed89dd7eb4bbbf284baf98c39bca300b9a.png) |
+| `04-session-detail.png` | `session-detail.webp` | 380 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/04-session-detail/327e872a3104fa8805ed73fba1857200ee0c562db73122b464ab814194fcbd80.png) |
+| `05-holds-filter.png` | `holds-filter.webp` | 1908 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/05-holds-filter/56c4e56e13741962b291a94ebfc5223d349f483f5fe0a2bfda0bf5b51d41ef70.png) |
+| `06-zone-filter.png` | `zone-filter.webp` | 2356 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/06-zone-filter/70066ce65f5eed85cb6cd33f3a7168519588885d10caffe2bf47826f830dae48.png) |
+| `07-setters.png` | `setters.webp` | 270 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/07-setters/f7a5ac7f538aa4494d4a874d1112deef97441bab7f276b952be3c5c12679966a.png) |
+| `08-logbook.png` | `logbook.webp` | 536 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/08-logbook/30da2a471b9102f2fa0854d87882eb09bed5fa88208ecb8f9458f28080c5f915.png) |
+| `09-board-sheet.png` | `board-sheet.webp` | 668 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/09-board-sheet/a628b9d4bdbf566a852898dd336801f207bef47ca1d78eba068e9c4244f542a3.png) |
+| `10-board-view.png` | `board-view.webp` | 2047 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/10-board-view/d6a19116471423a64f6c16ce6bb010db888f46f73f0caa774b54f7467d67df57.png) |
+| `11-climb-actions.png` | `climb-actions.webp` | 1082 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/11-climb-actions/88e2910edf39058058fde2125a2e5ef42e4961ae4d686ef77cb7b54835965450.png) |
+| `12-preview.png` | `preview.webp` | 2047 KB | [Open shot](https://pub-ce4091dbd55b4b71b1c59a2461a28360.r2.dev/help-shots/12-preview/9cf5d01d0c22f477ca6f893b09591187099bba413f8779f20b076ac52e76abc3.png) |
