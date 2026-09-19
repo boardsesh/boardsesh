@@ -46,10 +46,12 @@
   cursor: pointer;
 }
 
+/* Sits inside .thumbnailWrapper, so it takes the elevated surface rather than
+   the same fill — the icon needs the step up to read. */
 .thumbnailPlaceholder {
   width: 100%;
   height: 100%;
-  background: var(--neutral-200);
+  background: var(--semantic-surface-elevated);
   display: flex;
   align-items: center;
   justify-content: center;

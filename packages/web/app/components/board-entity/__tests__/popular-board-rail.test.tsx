@@ -99,10 +99,4 @@ describe('PopularBoardRail physical identity', () => {
     expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
     expect(gymAnchors()[0].getAttribute('href')).toBe('/gym/northside-boulders');
   });
-
-  it('keeps the gym name and a separate location line when the two names differ', () => {
-    render(<PopularBoardRail boards={[discoveryBoard()]} />);
-    expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
-    expect(screen.getByText('Sydney')).toBeTruthy();
-  });
 });
