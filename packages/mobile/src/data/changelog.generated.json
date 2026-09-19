@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T13:46:58.807Z",
+  "generatedAt": "2026-09-19T13:53:52.283Z",
   "entries": [
+    {
+      "prNumber": 5591,
+      "category": "new",
+      "title": "Playlists are now sorted by how many climbers actually saved them, instead of which one has the most climbs in it. A 600-climb dump of everything someone ever liked no longer outranks a playlist people use.",
+      "mergedAt": "2026-09-19T13:30:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5591"
+    },
     {
       "prNumber": 5596,
       "category": "new",

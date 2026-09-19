@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Playlists are now sorted by how many climbers actually saved them, instead of which one has the most climbs in it. A 600-climb dump of everything someone ever liked no longer outranks a playlist people use. ([#5591](https://github.com/boardsesh/boardsesh/pull/5591))
 - About now tells you why Boardsesh exists, who builds it and where it's going — instead of repeating the front page back at you. ([#5596](https://github.com/boardsesh/boardsesh/pull/5596))
 - The Fresh beta row on the home page scrolls properly now, with a slim scrollbar so you can tell there is more to swipe through. ([#5593](https://github.com/boardsesh/boardsesh/pull/5593))
   Board cards on the home page stopped carrying a blank third line, and a board named after its gym shows its location instead of saying the name twice.
