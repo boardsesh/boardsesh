@@ -56,8 +56,10 @@ import {
   fetchVolumes,
   main,
   parseArgs,
+  previousConfigurationInput,
   probeService,
   resetAuthScheme,
+  restoreConfiguration,
   suppliedVarKeys,
   ttlFromEngineFull,
   waitForDeployment,
@@ -629,9 +631,10 @@ describe('diffServiceVars', () => {
     expect(change.blocked).toBeFalsy();
   });
 
-  it('ignores surrounding whitespace on an owned value rather than rewriting it forever', () => {
+  it('converges surrounding whitespace on an owned value because ownership is byte-exact', () => {
     const live = liveState({ variables: variablesWithOta(otaVariables({ BASE_URL: `  ${OTA_BASE_URL}  ` })) });
-    expect(diffServiceVars(OTA, live, PLAN_OPTIONS)).toEqual([]);
+    const [change] = diffServiceVars(OTA, live, PLAN_OPTIONS);
+    expect(change).toMatchObject({ resource: 'env-var', target: { varName: 'BASE_URL' } });
   });
 
   it('reports missing web SMTP credentials', () => {
@@ -1061,6 +1064,7 @@ describe('fetchVolumes', () => {
                       currentSizeMB: 853,
                       mountPath: CLICKHOUSE_VOLUME_MOUNT_PATH,
                       serviceId: liveServiceId(CLICKHOUSE_SERVICE_NAME),
+                      environmentId: 'env-prod',
                     },
                   },
                 ],
@@ -1078,10 +1082,19 @@ describe('fetchVolumes', () => {
                       currentSizeMB: 400,
                       mountPath: OTA_POSTGRES_VOLUME_MOUNT_PATH,
                       serviceId: liveServiceId(OTA_POSTGRES_SERVICE_NAME),
+                      environmentId: 'env-prod',
                     },
                   },
                   // An unattached volume instance: no service to mount it on.
-                  { node: { sizeMB: 5000, currentSizeMB: 0, mountPath: '/detached', serviceId: null } },
+                  {
+                    node: {
+                      sizeMB: 5000,
+                      currentSizeMB: 0,
+                      mountPath: '/detached',
+                      serviceId: null,
+                      environmentId: 'env-prod',
+                    },
+                  },
                 ],
               },
             },
@@ -1096,13 +1109,17 @@ describe('fetchVolumes', () => {
 
   it('reads the ClickHouse utilisation Railway can answer even when ClickHouse cannot', async () => {
     resetAuthScheme();
-    const { result } = await withFetch(stub, () => fetchVolumes('token', 'project', CLICKHOUSE_VOLUME_NAME));
+    const { result } = await withFetch(stub, () =>
+      fetchVolumes('token', 'project', 'env-prod', CLICKHOUSE_VOLUME_NAME),
+    );
     expect(result?.clickhouse).toEqual({ usedMb: 853, capacityMb: 50000 });
   });
 
   it('maps every mount to its service, which is what catches a volume that came detached', async () => {
     resetAuthScheme();
-    const { result } = await withFetch(stub, () => fetchVolumes('token', 'project', CLICKHOUSE_VOLUME_NAME));
+    const { result } = await withFetch(stub, () =>
+      fetchVolumes('token', 'project', 'env-prod', CLICKHOUSE_VOLUME_NAME),
+    );
     expect(result?.mountsByService.get(liveServiceId(CLICKHOUSE_SERVICE_NAME))).toEqual([CLICKHOUSE_VOLUME_MOUNT_PATH]);
     expect(result?.mountsByService.get(liveServiceId(OTA_POSTGRES_SERVICE_NAME))).toEqual([
       OTA_POSTGRES_VOLUME_MOUNT_PATH,
@@ -1111,15 +1128,39 @@ describe('fetchVolumes', () => {
 
   it('skips a volume instance attached to no service instead of crashing on it', async () => {
     resetAuthScheme();
-    const { result, error } = await withFetch(stub, () => fetchVolumes('token', 'project', CLICKHOUSE_VOLUME_NAME));
+    const { result, error } = await withFetch(stub, () =>
+      fetchVolumes('token', 'project', 'env-prod', CLICKHOUSE_VOLUME_NAME),
+    );
     expect(error).toBeUndefined();
     expect([...(result?.mountsByService.values() ?? [])].flat()).not.toContain('/detached');
   });
 
   it('reports no reading rather than a wrong one when the named volume is absent', async () => {
     resetAuthScheme();
-    const { result } = await withFetch(stub, () => fetchVolumes('token', 'project', 'some-other-volume'));
+    const { result } = await withFetch(stub, () => fetchVolumes('token', 'project', 'env-prod', 'some-other-volume'));
     expect(result?.clickhouse).toBeNull();
+  });
+
+  it('ignores volume instances from another environment in the project', async () => {
+    const response = structuredClone(VOLUMES_RESPONSE);
+    response.project.volumes.edges[0].node.volumeInstances.edges.push({
+      node: {
+        sizeMB: 90000,
+        currentSizeMB: 80000,
+        mountPath: '/wrong-environment',
+        serviceId: liveServiceId(CLICKHOUSE_SERVICE_NAME),
+        environmentId: 'env-preview',
+      },
+    });
+    const environmentStub = (async () =>
+      new Response(JSON.stringify({ data: response }), { status: 200 })) as typeof globalThis.fetch;
+
+    resetAuthScheme();
+    const { result } = await withFetch(environmentStub, () =>
+      fetchVolumes('token', 'project', 'env-prod', CLICKHOUSE_VOLUME_NAME),
+    );
+    expect(result?.clickhouse).toEqual({ usedMb: 853, capacityMb: 50000 });
+    expect(result?.mountsByService.get(liveServiceId(CLICKHOUSE_SERVICE_NAME))).not.toContain('/wrong-environment');
   });
 });
 
@@ -1251,6 +1292,55 @@ describe('waitForDeployment', () => {
     expect(error?.message).not.toMatch(/finished as/);
   });
 
+  it.each(['CANCELED', 'CANCELLED'])('treats %s as superseded instead of a failed deployment', async (status) => {
+    resetAuthScheme();
+    const { error } = await withFetch(deploymentStub([status]).fetch, () =>
+      waitForDeployment('token', 'dep-new', null, noSleep),
+    );
+    expect(error?.name).toBe('DeploymentSupersededError');
+    expect(error?.message).toMatch(/newer deployment replaced it/);
+  });
+
+  it('retries transient deployment reads and still requires three clean successes', async () => {
+    resetAuthScheme();
+    let calls = 0;
+    const transient = (async () => {
+      calls += 1;
+      if (calls === 1) return new Response('temporary gateway failure', { status: 502 });
+      return new Response(JSON.stringify({ data: { deployment: { id: 'dep-new', status: 'SUCCESS', meta: {} } } }), {
+        status: 200,
+      });
+    }) as typeof globalThis.fetch;
+    const { error } = await withFetch(transient, () => waitForDeployment('token', 'dep-new', null, noSleep));
+    expect(error).toBeUndefined();
+    expect(calls).toBe(4);
+  });
+
+  it('fails after three consecutive deployment read errors', async () => {
+    resetAuthScheme();
+    let calls = 0;
+    const unavailable = (async () => {
+      calls += 1;
+      return new Response('temporary gateway failure', { status: 502 });
+    }) as typeof globalThis.fetch;
+    const { error } = await withFetch(unavailable, () => waitForDeployment('token', 'dep-new', null, noSleep));
+    expect(error?.message).toMatch(/HTTP 502/);
+    expect(calls).toBe(3);
+  });
+
+  it('retries a malformed deployment response instead of rolling back immediately', async () => {
+    resetAuthScheme();
+    let calls = 0;
+    const malformedOnce = (async () => {
+      calls += 1;
+      const deployment = calls === 1 ? null : { id: 'dep-new', status: 'SUCCESS', meta: {} };
+      return new Response(JSON.stringify({ data: { deployment } }), { status: 200 });
+    }) as typeof globalThis.fetch;
+    const { error } = await withFetch(malformedOnce, () => waitForDeployment('token', 'dep-new', null, noSleep));
+    expect(error).toBeUndefined();
+    expect(calls).toBe(4);
+  });
+
   it('refuses to adopt a deployment somebody else raced in on top of ours', async () => {
     resetAuthScheme();
     const stub = deploymentStub(['SUCCESS'], { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` });
@@ -1272,6 +1362,79 @@ describe('waitForDeployment', () => {
     expect(ACTIVE_DEPLOYMENT_STATUSES.has('QUEUED')).toBe(true);
     expect(ACTIVE_DEPLOYMENT_STATUSES.has('NEEDS_APPROVAL')).toBe(true);
     expect(ACTIVE_DEPLOYMENT_STATUSES.has('SUCCESS')).toBe(false);
+  });
+});
+
+describe('previousConfigurationInput', () => {
+  it('restores only fields changed by this run and preserves nulls', () => {
+    const previous = liveState().instances[OTA_SERVICE_NAME];
+    if (!previous) throw new Error('OTA fixture must have an instance');
+
+    expect(
+      previousConfigurationInput(
+        {
+          serviceName: OTA_SERVICE_NAME,
+          serviceId: OTA_SERVICE_ID,
+          deployFields: { healthcheckPath: '/new', restartPolicyMaxRetries: 9 },
+        },
+        { ...previous, healthcheckPath: null, restartPolicyMaxRetries: 2 },
+      ),
+    ).toEqual({ healthcheckPath: null, restartPolicyMaxRetries: 2 });
+  });
+
+  it('restores the previous image only when this run changed it', () => {
+    const previous = liveState().instances[OTA_SERVICE_NAME];
+    if (!previous) throw new Error('OTA fixture must have an instance');
+
+    expect(
+      previousConfigurationInput(
+        {
+          serviceName: OTA_SERVICE_NAME,
+          serviceId: OTA_SERVICE_ID,
+          deployFields: {},
+          image: `${OTA_IMAGE_REPOSITORY}:v3.2.0`,
+        },
+        { ...previous, image: null },
+      ),
+    ).toEqual({ source: { image: null } });
+  });
+
+  it('sends prior deploy settings, including null, after rollback', async () => {
+    resetAuthScheme();
+    const previous = liveState().instances[OTA_SERVICE_NAME];
+    if (!previous) throw new Error('OTA fixture must have an instance');
+    const api = (async () =>
+      new Response(JSON.stringify({ data: { serviceInstanceUpdate: true } }), {
+        status: 200,
+      })) as typeof globalThis.fetch;
+    const captured = captureConsole();
+
+    try {
+      const { error, calls } = await withFetch(api, () =>
+        restoreConfiguration(
+          'token',
+          'env-prod',
+          {
+            serviceName: OTA_SERVICE_NAME,
+            serviceId: OTA_SERVICE_ID,
+            deployFields: { healthcheckPath: '/new', healthcheckTimeout: 100 },
+          },
+          { ...previous, healthcheckPath: null, healthcheckTimeout: 300 },
+        ),
+      );
+      expect(error).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      const rawBody = calls[0].init?.body;
+      if (typeof rawBody !== 'string') throw new Error('Expected a JSON request body');
+      const body = JSON.parse(rawBody) as { variables: Record<string, unknown> };
+      expect(body.variables).toEqual({
+        environmentId: 'env-prod',
+        serviceId: OTA_SERVICE_ID,
+        input: { healthcheckPath: null, healthcheckTimeout: 300 },
+      });
+    } finally {
+      captured.restore();
+    }
   });
 });
 
@@ -1388,6 +1551,7 @@ function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetc
                       currentSizeMB: 853,
                       mountPath: service.volume.mountPath,
                       serviceId: liveServiceId(service.name),
+                      environmentId: 'env-prod',
                     },
                   },
                 ],
@@ -1725,6 +1889,35 @@ describe('apply mode', () => {
     expect(output).toContain('SKIPPED (blocked)');
     expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(0);
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
+  });
+
+  it('suppresses every service write when blocked image drift shares the service', async () => {
+    const stub = railwayStub({
+      variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })),
+      instances: {
+        [OTA_SERVICE_NAME]: {
+          source: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` },
+          healthcheckTimeout: 300,
+        },
+      },
+    });
+    const { code, calls, output } = await runCli(['--apply'], stub);
+    expect(code).toBe(1);
+    expect(output).toMatch(/No changes applied.*blocked image drift/);
+    expect(callsMatching(calls, 'variableUpsert')).toHaveLength(0);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(0);
+    expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
+  });
+
+  it.each(['CANCELED', 'CANCELLED'])('does not roll back a %s deployment', async (status) => {
+    const stub = railwayStub({
+      variables: variablesWithOta(otaVariables({ BASE_URL: WRONG_OWNED_VALUE })),
+      deploymentStatuses: [status],
+    });
+    const { code, calls, output } = await runCli(['--apply'], stub);
+    expect(code).toBe(1);
+    expect(output).toMatch(/newer or manual action/);
+    expect(callsMatching(calls, 'deploymentRollback')).toHaveLength(0);
   });
 
   it('refuses to invent a secret it was not given', async () => {

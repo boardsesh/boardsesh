@@ -29,18 +29,32 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Require the push credential
+        if: vars.OTA_PUSH_APP_ID == ''
+        run: |
+          echo "::error::OTA_PUSH_APP_ID is not configured, so bump PR workflows would not run."
+          exit 1
+
+      - name: Mint the push token
+        id: push_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.push_token.outputs.token }}
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -60,7 +74,7 @@ jobs:
 
       - name: Open or update the bump PRs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.push_token.outputs.token }}
           STABLE: ${{ steps.candidates.outputs.stable }}
           STABLE_CLI: ${{ steps.candidates.outputs.stable_cli }}
           PRERELEASE: ${{ steps.candidates.outputs.prerelease }}
@@ -123,22 +137,19 @@ jobs:
 
             git checkout -B "$branch" origin/main
 
+            vp exec tsx scripts/ota-image-bump.ts -- --pr-body "$version" > "$RUNNER_TEMP/body-$version.md"
             vp exec tsx scripts/ota-image-bump.ts -- --write "$version"
             if git diff --quiet; then
               echo "::notice::Nothing to rewrite for $version."
               return 0
             fi
 
-            # Generated before the commit so a body-generation failure does not
-            # leave a pushed branch with no pull request attached to it.
-            vp exec tsx scripts/ota-image-bump.ts -- --pr-body "$version" > "$RUNNER_TEMP/body-$version.md"
-
             git commit -am "chore(ota): move the OTA server to xprem $version"
 
             # Nothing to say if the branch already holds exactly this content — a
             # no-op force-push would still move the SHA, re-run CI and dismiss
             # reviews every week.
-            if [ -n "$remote_tip" ] && [ "$(git rev-parse "HEAD^{tree}")" = "$(git rev-parse "$remote_tip^{tree}")" ]; then
+            if [ "$pr_state" = 'OPEN' ] && [ -n "$remote_tip" ] && [ "$(git rev-parse "HEAD^{tree}")" = "$(git rev-parse "$remote_tip^{tree}")" ]; then
               echo "::notice::$branch is already at this content; leaving it untouched."
               return 0
             fi

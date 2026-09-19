@@ -34,6 +34,7 @@
     "canonical-outlines.test.ts",
     "ota-image-bump.ts",
     "ota-image-bump.test.ts",
+    "ota-image-bump-workflow.test.ts",
     "railway-apply.ts",
     "railway-deployment-rollback.d.mts",
     "railway-apply.test.ts",

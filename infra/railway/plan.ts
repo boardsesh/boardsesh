@@ -601,7 +601,7 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
     const state = classifyVar(rawValue);
 
     if (required.value !== undefined) {
-      if (rawValue !== undefined && rawValue.trim() === required.value) continue;
+      if (rawValue === required.value) continue;
       changes.push({
         resource: 'env-var',
         summary:

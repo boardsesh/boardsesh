@@ -100,6 +100,7 @@ const DEPLOY_POLL_INTERVAL_MS = 10_000;
  * been seen to be a lie.
  */
 const DEPLOY_SUCCESS_CONFIRMATIONS = 3;
+const DEPLOY_MAX_CONSECUTIVE_READ_ERRORS = 3;
 
 /** Probe attempts per path, and the gap between them. */
 const PROBE_ATTEMPTS = 3;
@@ -321,7 +322,7 @@ const VOLUMES_QUERY = `
         edges {
           node {
             name
-            volumeInstances { edges { node { sizeMB currentSizeMB mountPath serviceId } } }
+            volumeInstances { edges { node { sizeMB currentSizeMB mountPath serviceId environmentId } } }
           }
         }
       }
@@ -550,7 +551,15 @@ interface VolumesData {
         node: {
           name: string;
           volumeInstances: {
-            edges: { node: { sizeMB: number; currentSizeMB: number; mountPath: string; serviceId: string | null } }[];
+            edges: {
+              node: {
+                sizeMB: number;
+                currentSizeMB: number;
+                mountPath: string;
+                serviceId: string | null;
+                environmentId: string;
+              };
+            }[];
           };
         };
       }[];
@@ -573,7 +582,12 @@ interface VolumeRead {
  * also yields which service has a volume mounted where, which is what catches a
  * volume that came detached.
  */
-export async function fetchVolumes(token: string, projectId: string, volumeName: string): Promise<VolumeRead> {
+export async function fetchVolumes(
+  token: string,
+  projectId: string,
+  environmentId: string,
+  volumeName: string,
+): Promise<VolumeRead> {
   const data = await railwayRequest<VolumesData>(token, VOLUMES_QUERY, { projectId });
   const mountsByService = new Map<string, string[]>();
   let clickhouse: { usedMb: number; capacityMb: number } | null = null;
@@ -581,6 +595,7 @@ export async function fetchVolumes(token: string, projectId: string, volumeName:
   for (const volumeEdge of data.project.volumes.edges) {
     for (const instanceEdge of volumeEdge.node.volumeInstances.edges) {
       const instance = instanceEdge.node;
+      if (instance.environmentId !== environmentId) continue;
       if (instance.serviceId) {
         const existing = mountsByService.get(instance.serviceId) ?? [];
         existing.push(instance.mountPath);
@@ -759,6 +774,14 @@ export class DeploymentApprovalError extends Error {
   }
 }
 
+/** The deployment was canceled, usually because a newer deployment replaced it. */
+export class DeploymentSupersededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeploymentSupersededError';
+  }
+}
+
 /** Poll a deployment this tool created until it settles, or throw. */
 async function waitForDeployment(
   token: string,
@@ -767,15 +790,34 @@ async function waitForDeployment(
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
   let confirmations = 0;
+  let consecutiveReadErrors = 0;
 
   for (let attempt = 0; attempt < DEPLOY_POLL_ATTEMPTS; attempt += 1) {
-    const data = await railwayRequest<{ deployment: { id: string; status: string; meta: unknown } }>(
-      token,
-      DEPLOYMENT_QUERY,
-      { id: deploymentId },
-    );
-    const status = data.deployment.status;
-    const liveImage = deploymentImage(data.deployment.meta);
+    let status: string;
+    let liveImage: string | null;
+    try {
+      const data = await railwayRequest<{ deployment?: { id?: unknown; status?: unknown; meta?: unknown } }>(
+        token,
+        DEPLOYMENT_QUERY,
+        { id: deploymentId },
+      );
+      if (
+        !data.deployment ||
+        data.deployment.id !== deploymentId ||
+        typeof data.deployment.status !== 'string' ||
+        data.deployment.status === ''
+      ) {
+        throw new Error(`Railway deployment query returned malformed data for ${deploymentId}.`);
+      }
+      status = data.deployment.status;
+      liveImage = deploymentImage(data.deployment.meta);
+      consecutiveReadErrors = 0;
+    } catch (error) {
+      consecutiveReadErrors += 1;
+      if (consecutiveReadErrors >= DEPLOY_MAX_CONSECUTIVE_READ_ERRORS) throw error;
+      await sleep(DEPLOY_POLL_INTERVAL_MS);
+      continue;
+    }
 
     // Someone else deployed on top of ours. Fail closed rather than roll back over
     // a change this tool did not make.
@@ -795,6 +837,11 @@ async function waitForDeployment(
         throw new DeploymentApprovalError(
           `Deployment ${deploymentId} is parked waiting for approval in Railway. Nothing was rolled ` +
             `back — approve it (or cancel it) there, then re-run.`,
+        );
+      }
+      if (status === 'CANCELED' || status === 'CANCELLED') {
+        throw new DeploymentSupersededError(
+          `Deployment ${deploymentId} finished as ${status}, which may mean a newer deployment replaced it.`,
         );
       }
       if (!ACTIVE_DEPLOYMENT_STATUSES.has(status)) {
@@ -883,26 +930,31 @@ function collectServiceMutations(changes: PlannedChange[], services: LiveService
   return mutations;
 }
 
-/**
- * Restore a service's declared image after a failed roll.
- *
- * This is the failure mode the image feature introduces and the one most worth
- * getting right: `deploymentRollback` restores the running container, but the
- * service's configured `source.image` would still name the bad tag, so the next
- * unrelated deploy would silently ship it again.
- */
-async function restoreImage(
+/** Restore only the configuration fields this run changed. */
+export function previousConfigurationInput(
+  mutation: ServiceMutation,
+  previous: LiveServiceInstance,
+): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  for (const field of Object.keys(mutation.deployFields) as (keyof DeploySettings)[]) {
+    input[field] = previous[field];
+  }
+  if (mutation.image) input.source = { image: previous.image };
+  return input;
+}
+
+export async function restoreConfiguration(
   token: string,
   environmentId: string,
   mutation: ServiceMutation,
-  previousImage: string,
+  previous: LiveServiceInstance,
 ): Promise<void> {
   await railwayRequest(token, SERVICE_INSTANCE_UPDATE, {
     environmentId,
     serviceId: mutation.serviceId,
-    input: { source: { image: previousImage } },
+    input: previousConfigurationInput(mutation, previous),
   });
-  console.log(`[railway-apply] restored ${mutation.serviceName} image to ${previousImage}`);
+  console.log(`[railway-apply] restored ${mutation.serviceName} configuration after rollback`);
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
@@ -940,7 +992,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 
   // Railway's API answers this even from CI, unlike ClickHouse itself.
-  const volumes = await fetchVolumes(token, projectId, CLICKHOUSE_VOLUME_NAME);
+  const volumes = await fetchVolumes(token, projectId, project.environmentId, CLICKHOUSE_VOLUME_NAME);
   if (volumes.clickhouse === null) {
     console.log(`[railway-apply] Disk check skipped: no volume named "${CLICKHOUSE_VOLUME_NAME}".`);
   } else {
@@ -989,6 +1041,28 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   if (!options.apply) {
     console.log('[railway-apply] Dry-run: no changes applied. Re-run with --apply to converge.');
     // Non-zero exit signals drift so CI can gate on it.
+    return 1;
+  }
+
+  const blockedImageServices = new Set(
+    changes
+      .filter((change) => change.blocked && change.resource === 'service-image' && change.service)
+      .map((change) => change.service as string),
+  );
+  const blockedServiceWrites = changes.some((change) => {
+    const serviceName = change.service ?? change.target?.serviceName;
+    return (
+      !change.blocked &&
+      serviceName !== undefined &&
+      blockedImageServices.has(serviceName) &&
+      (change.resource === 'env-var' || change.resource === 'deploy-setting')
+    );
+  });
+  if (blockedServiceWrites) {
+    console.warn(
+      '[railway-apply] No changes applied: a service with blocked image drift also has writable drift. ' +
+        'Re-run with --allow-image-change so one verified deployment carries the complete configuration.',
+    );
     return 1;
   }
 
@@ -1150,8 +1224,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const reason = error instanceof Error ? error.message : String(error);
       console.error(`[railway-apply] ${mutation.serviceName} failed after deploy: ${reason}`);
 
-      if (error instanceof DeploymentApprovalError) {
-        console.error('[railway-apply] Leaving it alone: a parked deployment is for a human to release.');
+      if (error instanceof DeploymentApprovalError || error instanceof DeploymentSupersededError) {
+        console.error(
+          '[railway-apply] Leaving it alone: this deployment may be controlled by a newer or manual action.',
+        );
         return 1;
       }
 
@@ -1182,18 +1258,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         expectedCurrentDeploymentId: deploymentId,
         token,
       });
-      if (mutation.image) {
+      if (read && (mutation.image || Object.keys(mutation.deployFields).length > 0)) {
         try {
-          await restoreImage(token, project.environmentId, mutation, previousImage);
+          await restoreConfiguration(token, project.environmentId, mutation, read.instance);
         } catch (restoreError) {
-          // The container is back on the old image, but the service is still
-          // CONFIGURED for the bad one, so the next deploy re-ships it. This is the
-          // worst state the tool can reach, and it must never be quiet.
           const reason = restoreError instanceof Error ? restoreError.message : String(restoreError);
           console.error(
-            `[railway-apply] MANUAL ACTION: rolled the container back, but could not restore the ` +
-              `configured image (${reason}). ${mutation.serviceName} still names ${mutation.image}; ` +
-              `set it back to ${previousImage} in Railway before anything redeploys it.`,
+            `[railway-apply] MANUAL ACTION: rolled the container back, but could not restore its ` +
+              `previous configuration (${reason}). Reconcile ${mutation.serviceName} in Railway before it redeploys.`,
           );
           return 1;
         }
