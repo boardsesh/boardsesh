@@ -52,7 +52,6 @@ export default function ProfileLayout() {
         {/* i18n-ignore-next-line — tester-only screen */}
         <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
         {/* i18n-ignore-next-line — tester-only screen */}
-        <Stack.Screen name="hold-detection-benchmark" options={{ title: 'Hold Detection Benchmark' }} />
         {/* i18n-ignore-next-line — admin-only screen */}
         <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
         {/* i18n-ignore-next-line — admin-only screen */}

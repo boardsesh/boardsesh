@@ -425,23 +425,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'com.apple.security.application-groups': ['group.com.boardsesh.app'],
         'keychain-access-groups': ['$(AppIdentifierPrefix)group.com.boardsesh.app'],
         'aps-environment': 'production',
-        // Ask the kernel for a higher per-app memory ceiling (iOS 15+).
-        //
-        // iOS does NOT hand an app the device's RAM: jetsam caps each process at a
-        // fraction of it. An iPhone 17 Pro killed the hold-detector benchmark with
-        // 11 GB of the device's 12 GB still free — the app hit its own ceiling, not
-        // the phone's. The detector's 768 px pass is the only allocation in the app
-        // anywhere near that ceiling: the weights are 31 MB, but RF-DETR's decoder
-        // is 300 queries and DINOv2's attention is quadratic in tokens, so the
-        // transient activations dwarf the model.
-        //
-        // This raises the ceiling; it does not remove it, and it does nothing at all
-        // if a termination turns out to be the main-thread watchdog rather than
-        // jetsam. Both are still unmeasured — see #5520 and the Instruments trace it
-        // asks for. Shipped here because the ceiling is a real constraint regardless
-        // of which one killed that run, and because every other lever (smaller input
-        // graphs, tiling) is either unbuilt or already measured as worse.
-        'com.apple.developer.kernel.increased-memory-limit': true,
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,

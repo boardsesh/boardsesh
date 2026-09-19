@@ -979,20 +979,7 @@ export default function MoreScreen() {
         onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
       });
     }
-    // `__DEV__ ||` like its neighbours, and like the screen's own guard: the row
-    // was tester-only while HoldDetectionBenchmarkScreen renders for any dev
-    // build, so a developer could reach it by deep link but not by tapping.
     if (__DEV__ || profile?.isTester) {
-      devRows.push({
-        kind: 'nav',
-        key: 'holdDetectionBenchmark',
-        // i18n-ignore-next-line — tester-only dev tooling
-        label: 'Hold Detection Benchmark',
-        // i18n-ignore-next-line
-        subtitle: 'Measure the wall-hold detector on this device: latency, detections, memory',
-        icon: 'boardLook',
-        onPress: navAction(() => router.push('/(tabs)/profile/hold-detection-benchmark')),
-      });
       devRows.push({
         kind: 'nav',
         key: 'sentryDiagnostics',
