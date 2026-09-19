@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-18T22:54:14.081Z",
+  "generatedAt": "2026-09-19T00:25:43.640Z",
   "entries": [
+    {
+      "prNumber": 5570,
+      "category": "new",
+      "title": "The homepage now has a real gym search: type a town or tap your location and find the walls near you that run a Kilter, Tension or MoonBoard.",
+      "mergedAt": "2026-09-19T00:24:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5570"
+    },
     {
       "prNumber": 5540,
       "category": "improved",
