@@ -393,12 +393,22 @@ describe('validateScreenshotFixtureManifest', () => {
     expect(sortManifestEntries(result.manifest).capture).toEqual(capture);
   });
 
+  it('preserves the deterministic historical recap target', () => {
+    const profileCapture = { ...capture, profileSessionId: '00000000-0000-4000-8000-000000000102' };
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture: profileCapture });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(sortManifestEntries(result.manifest).capture).toEqual(profileCapture);
+  });
+
   it.each([
     [null, 'capture must be an object'],
     [[], 'capture must be an object'],
     [{ ...capture, sharedSessionId: 'not-a-session-id' }, 'capture.sharedSessionId'],
     [{ ...capture, sharedSessionId: undefined }, 'capture.sharedSessionId'],
     [{ ...capture, sharedSessionId: `${capture.sharedSessionId}\n` }, 'capture.sharedSessionId'],
+    [{ ...capture, profileSessionId: 'not-a-session' }, 'capture.profileSessionId'],
+    [{ ...capture, profileSessionId: null }, 'capture.profileSessionId'],
+    [{ ...capture, profileSessionId: `${capture.sharedSessionId}\n` }, 'capture.profileSessionId'],
     [{ ...capture, boards: 'The Cellar|Kilter Board Homewall' }, 'capture.boards'],
     [{ ...capture, boards: ['The Cellar'] }, 'capture.boards'],
     [{ ...capture, boards: ['The Cellar', ' '] }, 'capture.boards[1]'],

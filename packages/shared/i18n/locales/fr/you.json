@@ -19,8 +19,7 @@
       "weekly": {
         "sessions": "Sessions",
         "sends": "Croix",
-        "flashes": "Flashs",
-        "attempts": "Essais"
+        "flashes": "Flashs"
       },
       "streak": "Série de {{count}} semaines",
       "sectionToday": "Aujourd'hui",
@@ -29,9 +28,6 @@
       "emptyTitle": "Pas encore de sessions",
       "emptyBody": "Démarrez une session et vos voies apparaîtront ici.",
       "emptyCta": "Démarrer une session"
-    },
-    "progress": {
-      "empty": "Rien d'enregistré pour l'instant — tes stats apparaissent dès que tu coches des voies."
     },
     "social": {
       "title": "Social",

@@ -104,11 +104,12 @@ type FrameProps = {
   emptyLabel?: string;
   isEmpty?: boolean;
   zoomable?: boolean;
+  onWidthChange?: (width: number) => void;
   children: (width: number, zoomScale: number, scrollEnabled: boolean) => ReactNode;
 };
 
 /** Measures available width and renders loading / empty / chart states. */
-function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, children }: FrameProps) {
+function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthChange, children }: FrameProps) {
   const { systemColors, chartColors } = useTheme();
   // Material casts a shadow under the floating chrome; Liquid Glass stays flat
   // (its border carries the edge). Routed through the variant selector so the
@@ -119,7 +120,11 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, children }
   const [zoomScale, setZoomScale] = useState(MIN_ZOOM_SCALE);
   const pinchStartDistanceRef = useRef<number | null>(null);
   const pinchStartScaleRef = useRef(MIN_ZOOM_SCALE);
-  const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
+  const onLayout = (event: LayoutChangeEvent) => {
+    const measuredWidth = event.nativeEvent.layout.width;
+    setWidth(measuredWidth);
+    onWidthChange?.(measuredWidth);
+  };
   const updateZoomScale = useCallback((nextScale: number) => {
     setZoomScale((currentScale) => {
       const clampedScale = clampZoomScale(nextScale);
@@ -261,6 +266,8 @@ function TooltipBubble({ model, totalLabel }: { model: ChartTooltipModel | undef
 }
 
 type StackedBarsProps = {
+  /** Exposed only after data exists and the native chart frame has measured width. */
+  testID?: string;
   bars: ColoredBar[] | null;
   /**
    * Fallback colour resolution when a segment has no explicit `color`:
@@ -293,6 +300,7 @@ type StackedBarsProps = {
 
 /** Stacked bars (weekly activity, grade distribution). */
 export const StackedBarChart = memo(function StackedBarChart({
+  testID,
   bars,
   colorBy,
   height = 170,
@@ -312,6 +320,7 @@ export const StackedBarChart = memo(function StackedBarChart({
   const { colorScheme, chartColors } = useTheme();
   const { t } = useTranslation('profile');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
   const isEmpty = !bars || bars.length === 0;
 
   // Color resolution is width-independent, so memoize it off the data.
@@ -377,6 +386,7 @@ export const StackedBarChart = memo(function StackedBarChart({
 
   return (
     <View
+      testID={!loading && !isEmpty && measuredWidth > 0 ? testID : undefined}
       accessible={accessibilityLabel ? true : undefined}
       accessibilityRole={accessibilityLabel ? 'image' : undefined}
       accessibilityLabel={accessibilityLabel}
@@ -388,6 +398,7 @@ export const StackedBarChart = memo(function StackedBarChart({
           isEmpty={isEmpty}
           emptyLabel={emptyLabel}
           zoomable={interactive && zoomable}
+          onWidthChange={testID ? setMeasuredWidth : undefined}
         >
           {(width, zoomScale, scrollEnabled) => {
             const axisGutter = showYAxisScale ? Y_AXIS_LABEL_WIDTH : 0;

@@ -181,3 +181,10 @@ renderer crashes, boot with `BOARDSESH_EMULATOR_GPU=swangle_indirect` and
 `BOARDSESH_EMULATOR_EXTRA_ARGS='-feature -Vulkan'`. The emulator helper starts
 Xvfb automatically when no display is available. See the store release runbook
 for caption editing and the standalone framing command.
+
+The all-board history campaign captures the profile overview at the top, the
+logbook with visible board names, and a historical session selected by the
+fixture manifest's `capture.profileSessionId`. These become three overlapping
+phones in the final slide, with the logbook in front. The capture requires all
+six campaign board selectors and keeps eight final Play images. See
+`docs/mobile-screenshot-fixtures.md` for the matching fixture contract.

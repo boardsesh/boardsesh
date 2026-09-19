@@ -396,6 +396,65 @@ describe('buildStatisticsSummary', () => {
       ],
     });
     expect(layoutPercentages[0].grades).toEqual({ V6: 5, V8: 3 });
+    expect(layoutPercentages[0].hardestSend).toEqual({ difficulty: 24, label: 'V8', status: 'send' });
+  });
+
+  it('uses positive, valid numeric grades for records without changing distinct counts', () => {
+    const layout = {
+      layoutKey: 'kilter-1',
+      boardType: 'kilter',
+      layoutId: 1,
+      distinctClimbCount: 2,
+      gradeCounts: [
+        { grade: '22', count: 2 },
+        { grade: '24', count: 2 },
+        { grade: '30', count: 0 },
+        { grade: '31junk', count: 8 },
+        { grade: '999', count: 1 },
+      ],
+    };
+    const summary = buildStatisticsSummary({ totalDistinctClimbs: 2, layoutStats: [layout] }, 'font');
+    expect(summary.totalAscents).toBe(2);
+    expect(summary.layoutPercentages[0].count).toBe(2);
+    expect(summary.layoutPercentages[0].hardestSend).toMatchObject({ difficulty: 24, label: '7B' });
+  });
+
+  it('keeps missing records null and breaks count ties by stable layout key', () => {
+    const summary = buildStatisticsSummary({
+      totalDistinctClimbs: 2,
+      layoutStats: [
+        { layoutKey: 'tension-9', boardType: 'tension', layoutId: 9, distinctClimbCount: 1, gradeCounts: [] },
+        {
+          layoutKey: 'kilter-1',
+          boardType: 'kilter',
+          layoutId: 1,
+          distinctClimbCount: 1,
+          gradeCounts: [
+            { grade: '', count: 1 },
+            { grade: '999', count: 1 },
+          ],
+        },
+      ],
+    });
+    expect(summary.layoutPercentages.map((layout) => layout.layoutKey)).toEqual(['kilter-1', 'tension-9']);
+    expect(summary.layoutPercentages.map((layout) => layout.hardestSend)).toEqual([null, null]);
+  });
+
+  it('preserves plus grades in records while keeping the chart grade buckets', () => {
+    const summary = buildStatisticsSummary({
+      totalDistinctClimbs: 1,
+      layoutStats: [
+        {
+          layoutKey: 'moonboard-2',
+          boardType: 'moonboard',
+          layoutId: 2,
+          distinctClimbCount: 1,
+          gradeCounts: [{ grade: '19', count: 1 }],
+        },
+      ],
+    });
+    expect(summary.layoutPercentages[0].hardestSend?.label).toBe('V4+');
+    expect(summary.layoutPercentages[0].grades).toEqual({ V4: 1 });
   });
 
   it('emits no color field (renderer-agnostic)', () => {

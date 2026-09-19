@@ -19,8 +19,7 @@
       "weekly": {
         "sessions": "Sessions",
         "sends": "Begehungen",
-        "flashes": "Flashes",
-        "attempts": "Versuche"
+        "flashes": "Flashes"
       },
       "streak": "{{count}} Wochen in Folge",
       "sectionToday": "Heute",
@@ -29,9 +28,6 @@
       "emptyTitle": "Noch keine Sessions",
       "emptyBody": "Starte eine Session, dann landen deine Boulder hier.",
       "emptyCta": "Session starten"
-    },
-    "progress": {
-      "empty": "Noch nichts eingetragen — deine Statistiken kommen, sobald du Boulder abhakst."
     },
     "social": {
       "title": "Social",

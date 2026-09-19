@@ -117,13 +117,12 @@ name: app-store screenshots
     notVisible:
       id: 'horizontal-scroll-section-loading'
     timeout: 60000
-# The chart is explicitly accessible, unlike ordinary Fabric views on iOS.
-# Keep it and its legend in the profile capture in every locale.
+# Capture the overview from the top, in every locale.
 - scrollUntilVisible:
     element:
-      id: 'profile-board-share-chart'
-    direction: DOWN
-    centerElement: true
+      id: 'profile-board-overview'
+    direction: UP
+    centerElement: false
     visibilityPercentage: 100
     timeout: 60000
 - waitForAnimationToEnd

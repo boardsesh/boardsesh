@@ -11,9 +11,14 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) => (options?.count == null ? key : `${key}:${options.count}`),
+  }),
+}));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../PressableSurface', () => ({
@@ -42,7 +47,7 @@ vi.mock('../../you/FeedSocialRow', () => ({
     return createElement('div', { 'data-testid': 'social-row', 'data-entity': props.entityId });
   },
 }));
-vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#f00' }));
+vi.mock('../../you/profile-chart-colors', () => ({ gradeChartColor: () => '#f00' }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (c: string) => c }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
@@ -63,12 +68,16 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 vi.mock('@boardsesh/profile-stats', () => ({
   // Return a fixed sentinel distinct from any i18n key so assertions are stable.
   formatTickAbsoluteTime: () => '__ABSOLUTE_TIME__',
+  getLayoutDisplayName: () => 'Kilter Original',
+}));
+vi.mock('@boardsesh/board-config', () => ({
+  formatBoardDisplayName: (boardType: string) => (boardType === 'kilter' ? 'Kilter' : 'Tension'),
 }));
 vi.mock('../../../lib/format-session-when', () => ({
   formatSessionWhen: () => 'Sunday morning',
 }));
 
-import { SessionSummaryCard } from '../SessionSummaryCard';
+import { SessionSummaryCard, SessionNotesCard } from '../SessionSummaryCard';
 
 beforeEach(() => {
   mockFeedSocialRow.mockClear();
@@ -131,7 +140,7 @@ describe('SessionSummaryCard', () => {
 
   it('displays board types in the meta row', () => {
     const { container } = render_(session({ boardTypes: ['kilter', 'tension'] }), 'Sesh', false);
-    expect(container.textContent).toContain('kilter · tension');
+    expect(container.textContent).toContain('Kilter · Tension');
   });
 
   it('displays duration when durationMinutes > 0', () => {
@@ -154,9 +163,9 @@ describe('SessionSummaryCard', () => {
     expect(container.querySelector('[data-icon="clock"]')).toBeNull();
   });
 
-  it('shows the goal when set', () => {
+  it('keeps long goals out of the headline summary', () => {
     const { container } = render_(session({ goal: 'Flash the overhang' }), 'Sesh', false);
-    expect(container.textContent).toContain('Flash the overhang');
+    expect(container.textContent).not.toContain('Flash the overhang');
   });
 
   it('omits the goal row when goal is null', () => {
@@ -169,13 +178,24 @@ describe('SessionSummaryCard', () => {
     const text = container.textContent ?? '';
     // Assert value + i18n label key together to avoid matching stray digits elsewhere.
     expect(text).toContain('7mobile.sessions.weekly.sends');
-    expect(text).toContain('3mobile.sessions.weekly.flashes');
-    expect(text).toContain('20mobile.sessions.weekly.attempts');
+    expect(text).toContain('detail.flashesCount:3');
+    expect(text).toContain('detail.attemptsCount:20');
   });
 
   it('renders the grade tile when hardestGrade is set', () => {
     const { container } = render_(session({ hardestGrade: 'V8' }), 'Sesh', false);
     expect(container.textContent).toContain('V8');
+  });
+
+  it.each(['V0', 'V17'])('uses theme foreground for %s instead of its low-contrast grade fill', (grade) => {
+    const { getByText } = render_(session({ hardestGrade: grade }), 'Sesh', false);
+    expect(getByText(grade).getAttribute('data-color')).toBe('#000');
+  });
+
+  it('passes singular counts to the plural-aware session labels', () => {
+    const { container } = render_(session({ totalFlashes: 1, totalAttempts: 1 }), 'Sesh', false);
+    expect(container.textContent).toContain('detail.flashesCount:1');
+    expect(container.textContent).toContain('detail.attemptsCount:1');
   });
 
   it('omits the grade tile when hardestGrade is null', () => {
@@ -234,5 +254,22 @@ describe('SessionSummaryCard', () => {
   it('omits the edit affordance when onEditSession is absent (non-owner)', () => {
     const { container } = render_(session(), 'Sesh', false);
     expect(container.querySelector('[data-pressable="detail.editSession"]')).toBeNull();
+  });
+});
+
+describe('SessionNotesCard', () => {
+  it('keeps the full goal and recap available below the grade chart', () => {
+    const { container } = render(
+      createElement(SessionNotesCard, {
+        session: { goal: 'Flash the overhang', notes: 'Kept the heel on.\nTry the steeper angle next time.' },
+      }),
+    );
+    expect(container.textContent).toContain('Flash the overhang');
+    expect(container.textContent).toContain('Kept the heel on.\nTry the steeper angle next time.');
+  });
+
+  it('omits the card when no goal or recap is recorded', () => {
+    const { container } = render(createElement(SessionNotesCard, { session: { goal: null, notes: '   ' } }));
+    expect(container.querySelector('[data-testid="card"]')).toBeNull();
   });
 });

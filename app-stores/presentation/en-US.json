@@ -62,5 +62,9 @@
   "moreBoards": {
     "headline": "More boards. Same app.",
     "description": "Works with Woods Board, Grasshopper, and MoonBoard 2024."
+  },
+  "crossBoardLogbook": {
+    "headline": "All your boards.\nOne logbook.",
+    "description": "Keep your sends and sessions together across boards."
   }
 }

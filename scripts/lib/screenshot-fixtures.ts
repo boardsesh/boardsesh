@@ -1028,6 +1028,8 @@ export type StaticManifestEntry = {
 /** Optional replay scenario that enables the shared-session Android captures. */
 export type ScreenshotCaptureScenario = {
   sharedSessionId: string;
+  /** Populated historical recap for the three-screen, all-board logbook slide. */
+  profileSessionId?: string;
   /** Ordered selectors: the original board captures first, then optional extra boards. */
   boards: string[];
 };
@@ -1128,6 +1130,14 @@ function isNonEmptyString(value: unknown): value is string {
 
 function captureScenarioProblem(capture: unknown): string | null {
   if (!isRecord(capture)) return 'capture must be an object';
+  if (
+    capture.profileSessionId !== undefined &&
+    (typeof capture.profileSessionId !== 'string' ||
+      capture.profileSessionId.length !== 36 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(capture.profileSessionId))
+  ) {
+    return 'capture.profileSessionId must be a UUID';
+  }
   if (
     typeof capture.sharedSessionId !== 'string' ||
     capture.sharedSessionId.length !== 36 ||
