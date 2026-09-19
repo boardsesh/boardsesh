@@ -66,9 +66,14 @@ describe('page metadata exports', () => {
   });
 
   it('keeps the public playlists directory indexable because it exposes discoverable content', () => {
-    expect(playlistsMetadata.title).toEqual({ absolute: 'Discover Climbing Playlists | Boardsesh' });
+    // The old title/description sold a signed-in library ("manage your own after
+    // signing in"), which is not what the page is any more — it is a public
+    // directory that needs no account. Lead with what people search for.
+    expect(playlistsMetadata.title).toEqual({
+      absolute: 'Climbing playlists for Kilter, Tension and MoonBoard | Boardsesh',
+    });
     expect(playlistsMetadata.description).toBe(
-      'Discover public climbing playlists and manage your own after signing in.',
+      'Public climbing playlists built by climbers, plus sets Boardsesh rebuilds every night. Open one in the app and climb it.',
     );
     expect(playlistsMetadata.robots).toBeUndefined();
     expect(playlistsMetadata.alternates?.canonical).toBe('/playlists');

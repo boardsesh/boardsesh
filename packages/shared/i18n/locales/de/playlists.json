@@ -1,8 +1,8 @@
 {
   "metadata": {
     "library": {
-      "title": "Kletter-Playlists entdecken",
-      "description": "Entdecke öffentliche Kletter-Playlists und verwalte nach dem Anmelden deine eigenen."
+      "title": "Kletter-Playlists für Kilter, Tension und MoonBoard",
+      "description": "Öffentliche Playlists von Kletterer*innen, dazu Sets, die Boardsesh jede Nacht neu baut. Öffne sie in der App und kletter sie."
     },
     "detail": {
       "fallbackTitle": "Playlist",
@@ -18,18 +18,13 @@
     "signInBanner": {
       "title": "Melde dich an für deine Bibliothek",
       "description": "Halt deine Begehungen fest und verwalte Playlists.",
-      "cta": "Anmelden",
-      "modalTitle": "Bei Boardsesh anmelden",
-      "modalDescription": "Melde dich an, um deine Boulder festzuhalten und Playlists zu verwalten."
+      "cta": "Anmelden"
     },
     "sections": {
-      "jumpBackIn": "Weitermachen",
       "pinned": "Angepinnt",
-      "discover": "Entdecken",
       "forYou": "Für dich",
       "community": "Community-Playlists"
     },
-    "showMore": "Mehr anzeigen",
     "communityByline": "{{creatorName}} - {{climbCount}}",
     "allPlaylists": {
       "title": "Meine Playlists",
@@ -93,8 +88,7 @@
     "empty": {
       "title": "Noch keine Playlists",
       "description": "Pack deine Projekte und Lieblingsboulder in eine Playlist, dann findest du sie schnell wieder.",
-      "createCta": "Playlist erstellen",
-      "cta": "Playlist in der App erstellen"
+      "createCta": "Playlist erstellen"
     },
     "createFab": {
       "ariaLabel": "Playlist erstellen"
@@ -221,5 +215,23 @@
     "selectBoardForPlaylist": "Wähl erst ein Board, dann leg die Playlist an",
     "createdPlaylistToast": "Playlist „{{name}}“ erstellt",
     "createPlaylistFailed": "Die Playlist ließ sich nicht erstellen"
+  },
+  "directory": {
+    "h1": "Playlists zum Durcharbeiten",
+    "lead_one": "Öffne sie in der App und kletter sie. {{formattedCount}} öffentliche Playlist zur Auswahl.",
+    "lead_other": "Öffne sie in der App und kletter sie. {{formattedCount}} öffentliche Playlists zur Auswahl.",
+    "leadNoCount": "Öffne sie in der App und kletter sie.",
+    "curated": {
+      "title": "Jede Nacht neu gebaut",
+      "lead": "Publikumslieblinge, frische Boulder und versteckte Perlen für jedes Board — aus den Begehungen der letzten Zeit."
+    },
+    "community": {
+      "title": "Von Kletterer*innen gespeichert",
+      "lead": "Sortiert danach, wie viele Kletterer*innen sie gespeichert haben."
+    },
+    "empty": {
+      "title": "Noch keine öffentlichen Playlists",
+      "body": "Bau eine in der App, dann taucht sie hier auf."
+    }
   }
 }
