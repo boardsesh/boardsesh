@@ -115,25 +115,7 @@
   "about": {
     "hero": {
       "title": "Hecho por escaladores. Abierto para todos.",
-      "subtitle": "Tus plafones. Una app."
-    },
-    "vision": {
-      "title": "Nuestra Visión",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Cada plafón tiene su propia app y su propio jardín cerrado. Tu entrenamiento no debería estar encerrado en ninguno de ellos.",
-      "p2": "Boardsesh funciona con todas para que tú solo te dediques a escalar."
-    },
-    "features": {
-      "title": "Qué te ofrece Boardsesh",
-      "queueLabel": "Tu grupo. Una cola en directo.",
-      "queueDescription": "Añade bloques con tu grupo a la misma cola.",
-      "partyLabel": "Mira qué hay en el muro.",
-      "partyDescription": "Ve qué bloque está iluminado mientras buscas el siguiente.",
-      "multiBoardLabel": "Tus plafones. Una app.",
-      "multiBoardDescription": "Cambia de plafón sin cambiar de app.",
-      "communityLabel": "Dirigida por la comunidad.",
-      "communityDescription": "Construida y mejorada por gente que realmente escala",
-      "selfHostedLabel": "Auto-alojable.",
-      "selfHostedDescription": "Monta tu propia instancia si te apetece"
+      "subtitle": "Hecho por escaladores hartos de tener una app por plafón."
     },
     "openSource": {
       "title": "Código Abierto",
@@ -156,6 +138,22 @@
     "profile": {
       "title": "Todos tus plafones. Un perfil.",
       "shotAlt": "Tus encadenes y tu progreso en cada plafón en tu perfil de Boardsesh"
+    },
+    "story": {
+      "title": "Por qué existe esto",
+      "p1": "Cada plafón trae su propia app, su propio inicio de sesión y su propio registro. Escalas un Kilter en tu rocódromo y un MoonBoard de vacaciones y acabas con dos historiales que nunca se juntan.",
+      "p2": "Luego una de esas apps desapareció de la noche a la mañana y los escaladores perdieron su registro con ella. Eso pasa cuando una sola empresa controla la única forma de usar un material que ya has pagado.",
+      "link": "Qué pasó y cómo sacar tus datos"
+    },
+    "who": {
+      "title": "Quién lo hace",
+      "body": "Empezó en 2024 con un escalador y un repositorio, y sigue siendo de esos proyectos en los que se trabaja por las tardes. Los fallos los encuentra alguien de pie delante del muro, no un equipo de QA.",
+      "cta": "Mira quién ha contribuido"
+    },
+    "next": {
+      "title": "Qué viene ahora",
+      "body": "Más plafones, mejor modo sin conexión y poder sacar tus datos tan fácil como entraron. La hoja de ruta es pública y se discute en Discord.",
+      "cta": "Lee la hoja de ruta"
     }
   },
   "support": {
