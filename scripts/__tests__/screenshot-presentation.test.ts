@@ -21,6 +21,7 @@ import {
   resolveScreenshotRecipes,
   screenshotCaptions,
   sha256Screenshot,
+  sha256ScreenshotSources,
 } from '../lib/screenshot-presentation';
 
 const directories: string[] = [];
@@ -44,6 +45,55 @@ describe('store screenshot presentation', () => {
     expect(captionLocaleForStore('ios', 'es-MX')).toBe('es');
     expect(captionLocaleForStore('android', '')).toBe('en-US');
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
+  });
+
+  it('canonicalizes composite source names and field order without ignoring changed provenance', () => {
+    const sources = {
+      'a.png': { rawBytes: 70000, rawSha256: 'a'.repeat(64) },
+      'z.png': { rawBytes: 80000, rawSha256: 'b'.repeat(64) },
+    };
+    const reordered = {
+      'z.png': { rawSha256: sources['z.png'].rawSha256, rawBytes: sources['z.png'].rawBytes },
+      'a.png': { rawSha256: sources['a.png'].rawSha256, rawBytes: sources['a.png'].rawBytes },
+    };
+    const expected = sha256Screenshot(Buffer.from(JSON.stringify(sources)));
+    expect(sha256ScreenshotSources(sources)).toBe(expected);
+    expect(sha256ScreenshotSources(reordered)).toBe(expected);
+    reordered['z.png'].rawSha256 = 'c'.repeat(64);
+    expect(sha256ScreenshotSources(reordered)).not.toBe(expected);
+  });
+
+  it('reads reordered canonical metadata and legacy insertion-order hashes while rejecting tampered sources', () => {
+    const output = directory();
+    const sources = {
+      'z.png': { rawBytes: 80000, rawSha256: 'b'.repeat(64) },
+      'a.png': { rawBytes: 70000, rawSha256: 'a'.repeat(64) },
+    };
+    const entry = {
+      rawBytes: 70000,
+      rawSha256: sha256ScreenshotSources(sources),
+      framedSha256: 'f'.repeat(64),
+      sources,
+    };
+    const writeManifest = () =>
+      writeFileSync(
+        join(output, PRESENTATION_MANIFEST),
+        JSON.stringify({ version: 1, locale: 'en-US', files: { '00-composite.png': entry } }),
+      );
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+    entry.sources = { 'a.png': sources['a.png'], 'z.png': sources['z.png'] };
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+
+    entry.sources = sources;
+    entry.rawSha256 = sha256Screenshot(Buffer.from(JSON.stringify(sources)));
+    expect(entry.rawSha256).not.toBe(sha256ScreenshotSources(sources));
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+    entry.sources['z.png'].rawSha256 = 'c'.repeat(64);
+    writeManifest();
+    expect(() => readPresentationManifest(output)).toThrow('Composite source metadata does not match');
   });
 
   it('requires every live capture and optionally adds the real MoonBoard capture', () => {
@@ -244,6 +294,7 @@ describe('store screenshot presentation', () => {
             ]),
           ),
         );
+        expect(entry.rawSha256).toBe(sha256ScreenshotSources(entry.sources!));
       } else {
         expect(entry.sources).toBeUndefined();
         expect(entry.rawSha256).toBe(sha256Screenshot(captures.get(recipe.sources[0])!));

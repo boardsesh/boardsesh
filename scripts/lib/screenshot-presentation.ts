@@ -213,6 +213,16 @@ export function sha256Screenshot(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+/** JSON object order is not part of a composite's provenance. */
+export function sha256ScreenshotSources(sources: NonNullable<PresentedScreenshot['sources']>): string {
+  const orderedSources = Object.fromEntries(
+    Object.keys(sources)
+      .sort()
+      .map((name) => [name, { rawBytes: sources[name].rawBytes, rawSha256: sources[name].rawSha256 }]),
+  );
+  return sha256Screenshot(Buffer.from(JSON.stringify(orderedSources)));
+}
+
 /** A sidecar belongs to exactly these PNG bytes; stale metadata must never weaken the content gate. */
 export function readPresentationManifest(directory: string): PresentationManifest {
   const filename = join(directory, PRESENTATION_MANIFEST);
@@ -267,9 +277,13 @@ export function readPresentationManifest(directory: string): PresentationManifes
         }
         presented.sources[sourceName] = { rawBytes: Number(source.rawBytes), rawSha256: source.rawSha256 };
       }
+      const canonicalHash = sha256ScreenshotSources(presented.sources);
+      // Version 1 sidecars originally hashed sources in recipe insertion order.
+      // Accept those existing hashes while all new writers use canonical order.
+      const legacyHash = sha256Screenshot(Buffer.from(JSON.stringify(presented.sources)));
       if (
         presented.rawBytes !== Math.min(...Object.values(presented.sources).map((source) => source.rawBytes)) ||
-        presented.rawSha256 !== sha256Screenshot(Buffer.from(JSON.stringify(presented.sources)))
+        (presented.rawSha256 !== canonicalHash && presented.rawSha256 !== legacyHash)
       ) {
         throw new Error(`Composite source metadata does not match: ${filename}: ${name}`);
       }

@@ -138,6 +138,14 @@ name: app-store screenshots android
       id: 'pre-session-board-summary'
     direction: UP
     timeout: 60000
+# Bring the workout choices, target grade, and warm-up controls above the tray.
+- repeat:
+    times: 2
+    commands:
+      - swipe:
+          start: '15%, 65%'
+          end: '15%, 40%'
+          duration: 1000
 - waitForAnimationToEnd:
     timeout: 30000
 - takeScreenshot: 05-workout-generator

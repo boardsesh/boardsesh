@@ -24,6 +24,7 @@ import {
   readCaptionCatalog,
   resolveScreenshotRecipes,
   sha256Screenshot,
+  sha256ScreenshotSources,
   type CaptionLocale,
   type PresentationManifest,
   type ScreenshotCaption,
@@ -285,10 +286,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
       );
       manifest.files[name] = {
         rawBytes: Math.min(...buffers.map((buffer) => buffer.length)),
-        rawSha256:
-          buffers.length === 1
-            ? sha256Screenshot(buffers[0])
-            : sha256Screenshot(Buffer.from(JSON.stringify(sourceMetadata))),
+        rawSha256: buffers.length === 1 ? sha256Screenshot(buffers[0]) : sha256ScreenshotSources(sourceMetadata),
         framedSha256: sha256Screenshot(framed),
         ...(buffers.length > 1 ? { sources: sourceMetadata } : {}),
       };
