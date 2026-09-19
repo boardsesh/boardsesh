@@ -1,0 +1,31 @@
+/* Deliberately the same box as help-screenshot.module.css: a clip and a still
+   have to sit in one row without either one setting a different measure. */
+.figure {
+  min-width: 0;
+  max-width: 320px;
+  margin: 0;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Reserves the frame before the poster decodes, so a row of clips does not
+     reflow the prose under it. Matches the converter's 736 x 1600 output. */
+  aspect-ratio: 736 / 1600;
+  background: var(--semantic-surface);
+}
+
+.caption {
+  margin-top: var(--spacing-2);
+  color: var(--neutral-500);
+  line-height: 1.5;
+}
+
+/* Only rendered when the reader has asked for reduced motion, where the clip
+   waits on the poster until they press play. */
+.hint {
+  margin-top: var(--spacing-1);
+  color: var(--neutral-500);
+  line-height: 1.5;
+}

@@ -180,3 +180,13 @@ and `scripts/lib/help-shots.ts` both key off them, so renaming one silently brea
   calls `setParams` on the mounted screen — so an overlay opened by one shot is still up
   for the next. The four `://climbs` overlay shots each bounce through `://home` first for
   exactly this reason; without it all four come back byte-identical.
+
+## Clips for the help pages
+
+Some help topics teach a gesture — a long press that raises a sheet, a swipe across a
+row, a drag over the board — and a still cannot hold one. Those are recorded here too,
+but with `xcrun simctl io <udid> recordVideo --codec h264 --force
+.boardsesh/help-clips/raw/<name>.mov` and a Ctrl-C to stop, rather than through Maestro:
+5–12 seconds, portrait, silent, named exactly as the clip table names it. The recording
+contract, the conversion command and the size budget are in
+[docs/help-clips.md](help-clips.md).

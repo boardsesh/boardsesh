@@ -19,7 +19,7 @@ const CLIMB_COUNTS_SECTION_ID = 'climb-counts';
 
 const CTA_SX = brandCtaSx();
 
-/** Each topic is a whole page now, so the hub carries the path, not the answer. */
+/** One card per guide page. Card copy lives under `help.guides.<key>`. */
 const TOPICS = [
   { key: 'playlists', href: '/help/playlists' },
   { key: 'climbActions', href: '/help/climb-actions' },
@@ -31,15 +31,16 @@ const TOPICS = [
 ] as const;
 
 /**
- * The front-door help page.
+ * /help, the front door of the help site.
  *
- * It documented nine interactive features once, with screenshots from an e2e run
- * that drove those very surfaces; climbing moved to the app and both went away,
- * leaving an honest split of what this site does and what the app does.
+ * Five things a reader should be able to settle in a few seconds: which guide
+ * they want (the cards), what this site does vs the app, how to link a Kilter or
+ * Tension account, why Kilter's app shows more climbs, and where to ask. The
+ * section ids are stable: `climb-counts` is linked from docs/kilter-sync.md.
  *
- * The guides below are the other half coming back. The adoption numbers said the
- * gap was never "what is Boardsesh" — it was "how do I take a climb back out of
- * a playlist", so each card is a page that answers one of those.
+ * The Aurora linking steps are checked against the mobile app: avatar → user
+ * drawer → Settings → the More screen → Connected apps → Board Accounts, where
+ * the Tension card says "Link" and the Kilter card says "Sign in to Kilter".
  */
 export default function HelpContent() {
   const { t } = useTranslation('marketing');
@@ -98,9 +99,7 @@ export default function HelpContent() {
                 <li>{t('help.app.item3')}</li>
                 <li>{t('help.app.item4')}</li>
               </ProseList>
-              {/* This section's own list includes "light up holds over Bluetooth",
-                  which the browser cannot do — Safari has no Web Bluetooth. It
-                  used to hand the reader the web app anyway. */}
+              {/* Store links, not the web app: Bluetooth only works from the native app. */}
               <Box sx={{ mt: 2 }}>
                 <MarketingInstallLinks />
               </Box>
@@ -110,9 +109,8 @@ export default function HelpContent() {
             <ProseList>
               <li>{t('help.aurora.item1')}</li>
               <li>{t('help.aurora.item2')}</li>
-              {/* Which way sync runs was the most repeated question in the Discord —
-                  four separate people read the "pending sync" label as a queued push
-                  back to Kilter. It is not, and never was. */}
+              {/* Sync direction. The app's "pending sync" label gets read as a push
+                  back to Kilter; there is none (kilter-sync push-back is stubbed). */}
               <li>{t('help.aurora.item3')}</li>
             </ProseList>
             <Prose>
@@ -134,10 +132,7 @@ export default function HelpContent() {
             </ProseList>
           </PageSection>
 
-          {/* Three equal bullets sent a stuck climber to GitHub issues and
-              developer docs as peers of the place questions actually get
-              answered. Discord is the answer; the other two are for people who
-              already know which one they want. */}
+          {/* Discord is the primary CTA; GitHub and the API docs are secondary links. */}
           <PageSection id="get-help" title={t('help.ask.title')} lead={t('help.ask.intro')}>
             <Box sx={{ mt: 1 }}>
               <Button

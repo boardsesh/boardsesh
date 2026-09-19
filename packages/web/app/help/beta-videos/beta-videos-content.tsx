@@ -8,13 +8,16 @@ import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/pa
 import HelpBreadcrumb from '../help-breadcrumb';
 
 /**
- * Two halves of one loop that nobody sees whole: sharing a reel in, and finding
- * the reels already pinned to a climb. The second half is a scroll problem —
- * Beta Videos sits below the board in the play drawer, under the logbook and
- * the setter's notes — so the page says "keep scrolling" in as many words.
+ * /help/beta-videos, in the order a climber meets the feature: where the Beta
+ * Videos section is on a climb, how to attach a post they already made (share
+ * sheet → "Attach your beta"), how to film new beta from a climb ("Share your
+ * beta", three steps), and where their own collect on the profile.
  *
- * Instagram and TikTok only. `isBetaVideoUrl` turns everything else away, so no
- * amount of wishing makes a YouTube link work and the page must not imply one.
+ * Every UI label here is checked against packages/mobile: `share-beta.tsx`,
+ * `AddBetaVideoSheet.tsx`, `DeferredSections.tsx`, `ProfileBetaShelf.tsx` and
+ * the `session` / `climbs` / `you` catalogs. Only Instagram and TikTok links are
+ * accepted (`isBetaVideoUrl`), attaching has no confirm step, and there is no
+ * mutation to remove an attached video, so the copy says so.
  */
 export default function BetaVideosContent() {
   const { t } = useTranslation('marketing');
@@ -25,12 +28,6 @@ export default function BetaVideosContent() {
       lead={t('help.betaVideos.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.betaVideos.breadcrumb')} />}
     >
-      <PageSection title={t('help.betaVideos.share.title')} lead={t('help.betaVideos.share.intro')}>
-        <Prose>{t('help.betaVideos.share.p1')}</Prose>
-        <Prose>{t('help.betaVideos.share.p2')}</Prose>
-        <Prose>{t('help.betaVideos.share.p3')}</Prose>
-      </PageSection>
-
       <PageSection title={t('help.betaVideos.find.title')} lead={t('help.betaVideos.find.intro')}>
         <Prose>{t('help.betaVideos.find.p1')}</Prose>
         <Prose>{t('help.betaVideos.find.p2')}</Prose>
@@ -40,6 +37,12 @@ export default function BetaVideosContent() {
             {t('help.betaVideos.find.filtersLink')}
           </MuiLink>
         </Prose>
+      </PageSection>
+
+      <PageSection title={t('help.betaVideos.share.title')} lead={t('help.betaVideos.share.intro')}>
+        <Prose>{t('help.betaVideos.share.p1')}</Prose>
+        <Prose>{t('help.betaVideos.share.p2')}</Prose>
+        <Prose>{t('help.betaVideos.share.p3')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.betaVideos.add.title')} lead={t('help.betaVideos.add.intro')}>

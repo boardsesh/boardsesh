@@ -14,6 +14,11 @@ import { HelpScreenshot, HelpShots } from '../help-screenshot';
  * a climb in the same window — about one in five. Most of what Discord asks for
  * is already a row in this menu, and Preview answers the loudest request of all:
  * browsing a shared session without lighting the wall for everyone.
+ *
+ * The action list, its order and every gate (signed in, own climb, moderation
+ * flag, Aurora boards) come from packages/mobile/src/components/climb-actions/
+ * use-climb-actions.ts; the three quick buttons from PRIMARY_ACTION_IDS in
+ * ClimbReactionMenu.tsx; the Preview chrome from play-drawer/wall-state.ts.
  */
 export default function ClimbActionsContent() {
   const { t } = useTranslation('marketing');
@@ -54,19 +59,21 @@ export default function ClimbActionsContent() {
       </PageSection>
 
       <PageSection title={t('help.climbActions.quick.title')} lead={t('help.climbActions.quick.intro')}>
+        <ProseList>
+          <li>{t('help.climbActions.quick.tick')}</li>
+          <li>{t('help.climbActions.quick.playlist')}</li>
+          <li>{t('help.climbActions.quick.share')}</li>
+        </ProseList>
         <Prose>{t('help.climbActions.quick.p1')}</Prose>
-        <Prose>{t('help.climbActions.quick.p2')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.climbActions.rest.title')} lead={t('help.climbActions.rest.intro')}>
-        <ProseList>
+        <ProseList ordered>
           <li>{t('help.climbActions.rest.queue')}</li>
           <li>{t('help.climbActions.rest.favorite')}</li>
           <li>{t('help.climbActions.rest.editEntry')}</li>
           <li>{t('help.climbActions.rest.betaVideo')}</li>
           <li>{t('help.climbActions.rest.edit')}</li>
-        </ProseList>
-        <ProseList>
           <li>{t('help.climbActions.rest.remix')}</li>
           <li>{t('help.climbActions.rest.openInAurora')}</li>
           <li>{t('help.climbActions.rest.report')}</li>

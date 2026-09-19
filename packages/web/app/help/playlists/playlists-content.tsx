@@ -13,6 +13,13 @@ import { HelpScreenshot, HelpShots } from '../help-screenshot';
  * are about the parts that already work: taking a climb back out again, and the
  * playlist tags setting one climber had to tell another about. So removal gets
  * its own section rather than a clause.
+ *
+ * Every UI claim here was checked against packages/mobile: the Discover screen
+ * (section order, the create plus, per-device smart-list pins), ClimbListRow
+ * (swipe directions), InlinePlaylistPicker (checklist + board scoping),
+ * PlaylistDetailView / use-playlist-activation (tap-to-queue, the Start
+ * playlist? confirm, view-only taps in a shared session) and the backend
+ * smart-playlists resolver (what feeds each curated list).
  */
 export default function PlaylistsContent() {
   const { t } = useTranslation('marketing');
@@ -36,6 +43,11 @@ export default function PlaylistsContent() {
             caption={t('help.playlists.build.playlistShotCaption')}
           />
         </HelpShots>
+        <ProseList ordered>
+          <li>{t('help.playlists.build.step1')}</li>
+          <li>{t('help.playlists.build.step2')}</li>
+          <li>{t('help.playlists.build.step3')}</li>
+        </ProseList>
         <Prose>{t('help.playlists.build.p1')}</Prose>
         <Prose>{t('help.playlists.build.p2')}</Prose>
       </PageSection>
@@ -62,9 +74,9 @@ export default function PlaylistsContent() {
           <li>{t('help.playlists.smart.hiddenGems')}</li>
           <li>{t('help.playlists.smart.atYourLevel')}</li>
           <li>{t('help.playlists.smart.fresh')}</li>
-          <li>{t('help.playlists.smart.fiveStars')}</li>
         </ProseList>
         <ProseList>
+          <li>{t('help.playlists.smart.fiveStars')}</li>
           <li>{t('help.playlists.smart.mostRepeated')}</li>
           <li>{t('help.playlists.smart.projects')}</li>
           <li>{t('help.playlists.smart.likedClimbs')}</li>
