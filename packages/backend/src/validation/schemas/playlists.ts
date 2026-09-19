@@ -112,22 +112,30 @@ export const GetPlaylistClimbsInputSchema = z
     path: ['activeAngle'],
   });
 
-export const DiscoverPlaylistsInputSchema = z.object({
-  boardType: BoardNameSchema.optional(),
-  layoutId: z.number().int().positive().optional(),
-  sizeId: z.number().int().positive().nullable().optional(),
-  // Live board angle; Aurora supports negative tilt.
-  angle: z.number().int().min(-90).max(90).nullable().optional(),
-  name: z.string().max(100).optional(),
-  creatorIds: z.array(z.string().min(1)).optional(),
-  excludeCreatorIds: z.array(z.string().min(1)).max(100).optional(),
-  minClimbs: z.number().int().min(1).max(1000).optional(),
-  maxClimbs: z.number().int().min(1).max(10000).optional(),
-  generatedRecommendation: z.boolean().nullable().optional(),
-  sortBy: z.enum(['recent', 'popular']).optional(),
-  page: z.number().int().min(0).optional(),
-  pageSize: z.number().int().min(1).max(100).optional(),
-});
+export const DiscoverPlaylistsInputSchema = z
+  .object({
+    boardType: BoardNameSchema.optional(),
+    layoutId: z.number().int().positive().optional(),
+    sizeId: z.number().int().positive().nullable().optional(),
+    // Live board angle; Aurora supports negative tilt.
+    angle: z.number().int().min(-90).max(90).nullable().optional(),
+    name: z.string().max(100).optional(),
+    creatorIds: z.array(z.string().min(1)).optional(),
+    excludeCreatorIds: z.array(z.string().min(1)).max(100).optional(),
+    minClimbs: z.number().int().min(1).max(1000).optional(),
+    maxClimbs: z.number().int().min(1).max(10000).optional(),
+    generatedRecommendation: z.boolean().nullable().optional(),
+    sortBy: z.enum(['recent', 'popular']).optional(),
+    page: z.number().int().min(0).optional(),
+    pageSize: z.number().int().min(1).max(100).optional(),
+  })
+  // An inverted band is not an empty result, it is a caller bug. Without this it
+  // returns zero rows and looks exactly like "the catalogue has nothing to show",
+  // which is the hardest kind of mistake to notice from the outside.
+  .refine((input) => input.minClimbs == null || input.maxClimbs == null || input.minClimbs <= input.maxClimbs, {
+    message: 'minClimbs must be less than or equal to maxClimbs',
+    path: ['minClimbs'],
+  });
 
 export const GetPlaylistCreatorsInputSchema = z.object({
   boardType: BoardNameSchema,

@@ -497,6 +497,9 @@ describe('discoverPlaylists resolver', () => {
 
     await playlistQueries.discoverPlaylists(null, { input: { sortBy: 'recent' } }, ctx);
 
+    // `tablesIn` reads Drizzle internals, so a `.not.toContain` on it would pass
+    // vacuously if a Drizzle bump ever changed that shape. The term count is the
+    // independent check: `recent` has three, `popular` four.
     expect(tablesIn(resultsCalls.orderBy[0])).not.toContain('user_playlist_pins');
     expect(resultsCalls.orderBy[0]).toHaveLength(3);
   });
@@ -555,6 +558,16 @@ describe('discoverPlaylists resolver', () => {
     const ctx = makeCtx();
 
     await expect(playlistQueries.discoverPlaylists(null, { input: { minClimbs: 0 } }, ctx)).rejects.toThrow();
+  });
+
+  it('rejects an INVERTED band rather than returning a convincing empty page', async () => {
+    // min > max is a caller bug, but the query would happily run it and return
+    // zero rows — indistinguishable from "the catalogue has nothing to show".
+    const ctx = makeCtx();
+
+    await expect(
+      playlistQueries.discoverPlaylists(null, { input: { minClimbs: 100, maxClimbs: 50 } }, ctx),
+    ).rejects.toThrow();
   });
 
   it('should use correct page offset for page > 0', async () => {
