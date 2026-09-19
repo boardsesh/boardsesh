@@ -26,14 +26,14 @@ export default function SessionsContent() {
       <PageSection title={t('help.sessions.start.title')} lead={t('help.sessions.start.intro')}>
         <HelpShots>
           <HelpScreenshot
-            shot="live-sessions"
-            alt={t('help.sessions.join.shotAlt')}
-            caption={t('help.sessions.join.shotCaption')}
-          />
-          <HelpScreenshot
             shot="session-detail"
             alt={t('help.sessions.start.shotAlt')}
             caption={t('help.sessions.start.shotCaption')}
+          />
+          <HelpScreenshot
+            shot="live-sessions"
+            alt={t('help.sessions.start.liveShotAlt')}
+            caption={t('help.sessions.start.liveShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.sessions.start.p1')}</Prose>
@@ -67,9 +67,9 @@ export default function SessionsContent() {
 
       <PageSection title={t('help.sessions.crowd.title')} lead={t('help.sessions.crowd.intro')}>
         <Prose>{t('help.sessions.crowd.p1')}</Prose>
-        <Prose>{t('help.sessions.crowd.p3')}</Prose>
+        <Prose>{t('help.sessions.crowd.p2')}</Prose>
         <Prose>
-          {t('help.sessions.crowd.p2')}{' '}
+          {t('help.sessions.crowd.p3')}{' '}
           <MuiLink component={LocaleLink} href="/help/climb-actions">
             {t('help.sessions.crowd.previewLink')}
           </MuiLink>

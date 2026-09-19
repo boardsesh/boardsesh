@@ -110,6 +110,10 @@ export default function HelpContent() {
             <ProseList>
               <li>{t('help.aurora.item1')}</li>
               <li>{t('help.aurora.item2')}</li>
+              {/* Which way sync runs was the most repeated question in the Discord —
+                  four separate people read the "pending sync" label as a queued push
+                  back to Kilter. It is not, and never was. */}
+              <li>{t('help.aurora.item3')}</li>
             </ProseList>
             <Prose>
               <MuiLink component={LocaleLink} href="/aurora-migration">

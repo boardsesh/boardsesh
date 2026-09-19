@@ -33,8 +33,8 @@ export default function BoardAndBluetoothContent() {
           />
           <HelpScreenshot
             shot="board-view"
-            alt={t('help.bluetooth.control.shotAlt')}
-            caption={t('help.bluetooth.control.shotCaption')}
+            alt={t('help.bluetooth.connect.litShotAlt')}
+            caption={t('help.bluetooth.connect.litShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.bluetooth.connect.p1')}</Prose>
@@ -49,6 +49,9 @@ export default function BoardAndBluetoothContent() {
           <li>{t('help.bluetooth.hidden.row2')}</li>
           <li>{t('help.bluetooth.hidden.row3')}</li>
           <li>{t('help.bluetooth.hidden.row4')}</li>
+          <li>{t('help.bluetooth.hidden.row5')}</li>
+          <li>{t('help.bluetooth.hidden.row6')}</li>
+          <li>{t('help.bluetooth.hidden.row7')}</li>
         </ProseList>
         <Prose>{t('help.bluetooth.hidden.p2')}</Prose>
       </PageSection>

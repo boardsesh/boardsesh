@@ -38,8 +38,8 @@ export default function FindingClimbsContent() {
           />
           <HelpScreenshot
             shot="zone-filter"
-            alt={t('help.findingClimbs.zone.shotAlt')}
-            caption={t('help.findingClimbs.zone.shotCaption')}
+            alt={t('help.findingClimbs.holds.zoneShotAlt')}
+            caption={t('help.findingClimbs.holds.zoneShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.findingClimbs.holds.p1')}</Prose>
@@ -71,9 +71,9 @@ export default function FindingClimbsContent() {
 
       <PageSection title={t('help.findingClimbs.rows.title')} lead={t('help.findingClimbs.rows.intro')}>
         <Prose>{t('help.findingClimbs.rows.p1')}</Prose>
-        <Prose>{t('help.findingClimbs.rows.p3')}</Prose>
+        <Prose>{t('help.findingClimbs.rows.p2')}</Prose>
         <Prose>
-          {t('help.findingClimbs.rows.p2')}{' '}
+          {t('help.findingClimbs.rows.p3')}{' '}
           <MuiLink component={LocaleLink} href="/help/climb-actions">
             {t('help.findingClimbs.rows.actionsLink')}
           </MuiLink>

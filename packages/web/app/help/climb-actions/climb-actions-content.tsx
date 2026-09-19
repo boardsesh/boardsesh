@@ -33,8 +33,8 @@ export default function ClimbActionsContent() {
           />
           <HelpScreenshot
             shot="preview"
-            alt={t('help.climbActions.preview.shotAlt')}
-            caption={t('help.climbActions.preview.shotCaption')}
+            alt={t('help.climbActions.open.previewShotAlt')}
+            caption={t('help.climbActions.open.previewShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.climbActions.open.p1')}</Prose>
@@ -64,10 +64,10 @@ export default function ClimbActionsContent() {
           <li>{t('help.climbActions.rest.favorite')}</li>
           <li>{t('help.climbActions.rest.editEntry')}</li>
           <li>{t('help.climbActions.rest.betaVideo')}</li>
-          <li>{t('help.climbActions.rest.remix')}</li>
+          <li>{t('help.climbActions.rest.edit')}</li>
         </ProseList>
         <ProseList>
-          <li>{t('help.climbActions.rest.edit')}</li>
+          <li>{t('help.climbActions.rest.remix')}</li>
           <li>{t('help.climbActions.rest.openInAurora')}</li>
           <li>{t('help.climbActions.rest.report')}</li>
         </ProseList>

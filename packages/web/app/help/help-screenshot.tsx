@@ -21,7 +21,7 @@ export function HelpScreenshot({ shot, alt, caption }: { shot: HelpShot; alt: st
   const capture = helpScreenshot(shot);
   return (
     <Box component="figure" className={styles.figure}>
-      <Box className={frame.frame} data-help-shot={shot}>
+      <Box className={frame.frame}>
         <Image
           src={resolveStaticAssetUrl(capture.src)}
           alt={alt}

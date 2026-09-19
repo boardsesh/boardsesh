@@ -32,8 +32,8 @@ export default function PlaylistsContent() {
           />
           <HelpScreenshot
             shot="playlist-detail"
-            alt={t('help.playlists.remove.shotAlt')}
-            caption={t('help.playlists.remove.shotCaption')}
+            alt={t('help.playlists.build.playlistShotAlt')}
+            caption={t('help.playlists.build.playlistShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.playlists.build.p1')}</Prose>

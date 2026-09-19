@@ -26,7 +26,7 @@ export type HelpCapture = { src: string; width: number; height: number };
 const CAPTURE_WIDTH = 736;
 const CAPTURE_HEIGHT = 1600;
 
-/** Add a locale only when a complete, reviewed native capture set exists. */
+/** One source per shot. Widen the signature only when a complete, reviewed capture set justifies it. */
 export function helpScreenshot(shot: HelpShot): HelpCapture {
   return { src: `/images/help/${shot}.webp`, width: CAPTURE_WIDTH, height: CAPTURE_HEIGHT };
 }

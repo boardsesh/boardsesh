@@ -35,8 +35,8 @@ export default function BetaVideosContent() {
           />
           <HelpScreenshot
             shot="beta-shelf"
-            alt={t('help.betaVideos.shelf.shotAlt')}
-            caption={t('help.betaVideos.shelf.shotCaption')}
+            alt={t('help.betaVideos.share.shelfShotAlt')}
+            caption={t('help.betaVideos.share.shelfShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.betaVideos.share.p1')}</Prose>

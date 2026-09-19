@@ -32,8 +32,8 @@ export default function LogbookContent() {
           />
           <HelpScreenshot
             shot="logbook"
-            alt={t('help.logbook.edit.shotAlt')}
-            caption={t('help.logbook.edit.shotCaption')}
+            alt={t('help.logbook.log.logbookShotAlt')}
+            caption={t('help.logbook.log.logbookShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.logbook.log.p1')}</Prose>
