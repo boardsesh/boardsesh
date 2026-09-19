@@ -194,7 +194,7 @@ export default async function HomeGymSearch() {
                       height: 44,
                       fontWeight: themeTokens.typography.fontWeight.semibold,
                       backgroundColor: 'var(--semantic-surface)',
-                      borderColor: 'var(--separator)',
+                      borderColor: 'var(--control-border)',
                       color: 'var(--neutral-900)',
                       '&:hover': {
                         backgroundColor: 'var(--semantic-surface-elevated)',

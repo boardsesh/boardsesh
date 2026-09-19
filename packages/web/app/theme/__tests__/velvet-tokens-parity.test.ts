@@ -82,6 +82,11 @@ describe('index.css ↔ theme-config parity', () => {
     ['--semantic-surface-elevated', themeTokens.semantic.surfaceElevated],
     ['--semantic-selected-border', themeTokens.semantic.selectedBorder],
     ['--separator', themeTokens.semantic.separator],
+    ['--control-border', themeTokens.semantic.controlBorder],
+    // These two lived only in index.css until now, so the parity test could not see them
+    // even though the file claims to mirror theme-config.
+    ['--shadow-accent-glow', themeTokens.shadows.accentGlow],
+    ['--shadow-accent-glow-hover', themeTokens.shadows.accentGlowHover],
     // Input surface: the elevated violet field. Rest of the --input-* family (no
     // theme-config counterpart) is pinned in its own block below.
     ['--input-bg', themeTokens.semantic.inputSurface],
@@ -260,6 +265,29 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
   it('secondary text clears AA on its surface', () => {
     expect(contrast(themeTokens.neutral[500], themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(themeTokens.neutral[500], themeTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('--control-border clears the 3:1 UI-component floor on page, card and elevated surface', () => {
+    // WCAG 1.4.11. This is the fence that makes the control/decorative split self-enforcing:
+    // the token is opaque precisely so all three of these are checkable at once.
+    const { controlBorder, background, surface, surfaceElevated } = themeTokens.semantic;
+    expect(contrast(controlBorder, surfaceElevated)).toBeGreaterThanOrEqual(3);
+    expect(contrast(controlBorder, surface)).toBeGreaterThanOrEqual(3);
+    expect(contrast(controlBorder, background)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('--separator stays BELOW 3:1, which is why it is decorative-only', () => {
+    // Not a bug being tolerated — the reason the split exists. If someone "fixes" separator
+    // to pass 3:1 it stops being a hairline, and this test says so before review does.
+    const { separator, surface, surfaceElevated } = themeTokens.semantic;
+    expect(contrast(blendOpaque(separator, surfaceElevated), surfaceElevated)).toBeLessThan(3);
+    expect(contrast(blendOpaque(separator, surface), surface)).toBeLessThan(3);
+  });
+
+  it('neutral[400] is not a substitute for --control-border', () => {
+    // It is the nearest neutral and the obvious thing to reach for, but it lands at 2.72:1
+    // on the elevated surface. Documented here so the next person does not have to re-derive it.
+    expect(contrast(themeTokens.neutral[400], themeTokens.semantic.surfaceElevated)).toBeLessThan(3);
   });
 });
 

@@ -58,8 +58,19 @@
   --semantic-selected-hover: rgba(199, 184, 232, 0.24);
   --semantic-selected-light: rgba(199, 184, 232, 0.1);
   --semantic-selected-border: #a78bfa;
-  /* Dividers/hairlines — decoupled from neutral-200 so they never equal a surface. */
+  /* THE SPLIT, and it is load-bearing — pick by ROLE, not by looks:
+     `--separator` is DECORATIVE: dividers, hairlines, rules, image frames, the edge of a
+     non-interactive card or badge. It is translucent and low-contrast on purpose.
+     `--control-border` is the visual boundary of an INTERACTIVE thing: outlined buttons,
+     chips, toggles, pagination pills, floating surfaces. WCAG 1.4.11 wants >= 3:1 for those
+     and `--separator` composites to 1.43-1.50:1 on our surfaces, so it cannot serve here.
+     `--control-border` is OPAQUE on purpose: a translucent hairline's contrast depends on
+     whatever it sits on, so it can be right on the page and wrong on a card, and no single
+     test can assert it. Opaque makes 1.4.11 one arithmetic fact — 3.58:1 on the elevated
+     surface (worst case), 4.03:1 on the card, 4.81:1 on the page. Fenced in
+     velvet-tokens-parity.test.ts. */
   --separator: rgba(185, 170, 215, 0.2);
+  --control-border: #837a9c;
 
   /* Status colors */
   --color-success: #34d399;

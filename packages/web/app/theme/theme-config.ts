@@ -102,6 +102,12 @@ export const themeTokens = {
     selectedLight: 'rgba(199, 184, 232, 0.10)', // Very subtle violet highlight
     selectedBorder: brandColorsDark.primary, // #A78BFA — matches foreground primary
     separator: 'rgba(185, 170, 215, 0.2)', // dividers/hairlines (decoupled from neutral-200)
+    // The visual boundary of an INTERACTIVE thing (outlined buttons, chips, toggles,
+    // pagination pills, floating surfaces). Opaque on purpose so WCAG 1.4.11's 3:1 floor is
+    // one fact rather than a per-backdrop guess: 3.58:1 on surfaceElevated (worst case),
+    // 4.03:1 on surface, 4.81:1 on background. `separator` composites to ~1.5:1 and stays
+    // decorative-only. Do not reuse neutral[400] here — it lands at 2.72:1 on surfaceElevated.
+    controlBorder: '#837A9C',
     background: '#110A20', // deeper violet near-black (richer than a generic dark theme)
     surface: '#251B3A', // cards/sheets — richer violet
     surfaceElevated: '#2F234A', // elevated layers pop one step brighter than the card
@@ -129,6 +135,12 @@ export const themeTokens = {
     lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3)',
     xl: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
     inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.15)',
+    // Amber glow under the one hero CTA per page. Amber is fill-only in Velvet Send and this
+    // is the only place it appears as light rather than a fill — it is the spark, so exactly
+    // one surface carries it. Mirrored here because index.css claims parity with this file
+    // and these two were the gap: they lived only in CSS, so the parity test could not see them.
+    accentGlow: '0 6px 18px rgba(255, 138, 61, 0.35)',
+    accentGlowHover: '0 8px 22px rgba(255, 138, 61, 0.45)',
   },
 
   // Typography

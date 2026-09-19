@@ -233,7 +233,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
                       height: 44,
                       fontWeight: themeTokens.typography.fontWeight.semibold,
                       backgroundColor: isCurrentFacet ? 'var(--semantic-surface-elevated)' : 'var(--semantic-surface)',
-                      borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--separator)',
+                      borderColor: isCurrentFacet ? 'var(--color-primary)' : 'var(--control-border)',
                       color: isCurrentFacet ? 'var(--color-primary)' : 'var(--neutral-900)',
                       boxShadow: isCurrentFacet ? '0 0 0 3px var(--semantic-selected)' : 'none',
                       '&:hover': {

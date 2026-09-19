@@ -276,7 +276,7 @@ export default function GymDirectoryNearMe({
                     textTransform: 'none',
                     minHeight: 44,
                     fontSize: 14,
-                    borderColor: 'var(--separator)',
+                    borderColor: 'var(--control-border)',
                     backgroundColor: 'var(--semantic-surface)',
                     color: 'var(--neutral-900)',
                     '&.Mui-selected': {

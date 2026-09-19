@@ -32,7 +32,7 @@ export default function MarketingInstallLinks() {
                   minHeight: 44,
                   px: 3,
                   color: 'var(--color-primary)',
-                  borderColor: 'var(--separator)',
+                  borderColor: 'var(--control-border)',
                   textTransform: 'none',
                   fontSize: 'var(--font-size-base)',
                 }
