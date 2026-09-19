@@ -136,7 +136,7 @@ export default function OnboardingCard({
         // #110A20 is nearly invisible, and depth here is a lighter violet
         // rather than a shadow.
         backgroundColor: 'var(--semantic-surface)',
-        border: '1px solid var(--separator)',
+        border: '1px solid var(--control-border)',
         transition: themeTokens.transitions.fast,
         '&:hover': {
           backgroundColor: 'var(--semantic-surface-elevated)',

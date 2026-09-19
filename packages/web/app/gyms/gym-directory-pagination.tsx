@@ -27,7 +27,7 @@ const PAGE_PILL = {
   justifyContent: 'center',
   px: 1.5,
   borderRadius: 'var(--border-radius-button)',
-  border: '1px solid var(--separator)',
+  border: '1px solid var(--control-border)',
   backgroundColor: 'var(--semantic-surface)',
   fontWeight: themeTokens.typography.fontWeight.semibold,
   '&:hover': { backgroundColor: 'var(--semantic-surface-elevated)', borderColor: 'var(--color-primary)' },

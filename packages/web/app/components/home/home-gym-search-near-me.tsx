@@ -111,7 +111,7 @@ export default function HomeGymSearchNearMe({ locale }: HomeGymSearchNearMeProps
           textTransform: 'none',
           minHeight: 44,
           fontSize: themeTokens.typography.fontSize.base,
-          borderColor: 'var(--separator)',
+          borderColor: 'var(--control-border)',
           color: 'var(--neutral-900)',
           '&:hover': { borderColor: 'var(--color-primary)' },
         }}
