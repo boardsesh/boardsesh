@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- About now tells you why Boardsesh exists, who builds it and where it's going — instead of repeating the front page back at you. ([#5596](https://github.com/boardsesh/boardsesh/pull/5596))
+- The Fresh beta row on the home page scrolls properly now, with a slim scrollbar so you can tell there is more to swipe through. ([#5593](https://github.com/boardsesh/boardsesh/pull/5593))
+  Board cards on the home page stopped carrying a blank third line, and a board named after its gym shows its location instead of saying the name twice.
 - The home page now tells you how many climbers are actually using Boardsesh — how many people lit a climb on a real board in the last month, and how many climbs that was. ([#5597](https://github.com/boardsesh/boardsesh/pull/5597))
 - Get hold suggestions for your spray wall without running the model on your phone. ([#5587](https://github.com/boardsesh/boardsesh/pull/5587))
   Leave a wall scan and return to its progress, or retry a failed scan.

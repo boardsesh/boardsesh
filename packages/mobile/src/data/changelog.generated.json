@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-19T13:39:22.967Z",
+  "generatedAt": "2026-09-19T13:46:58.807Z",
   "entries": [
+    {
+      "prNumber": 5596,
+      "category": "new",
+      "title": "About now tells you why Boardsesh exists, who builds it and where it's going — instead of repeating the front page back at you.",
+      "mergedAt": "2026-09-19T13:30:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5596"
+    },
+    {
+      "prNumber": 5593,
+      "category": "new",
+      "title": "The Fresh beta row on the home page scrolls properly now, with a slim scrollbar so you can tell there is more to swipe through.",
+      "mergedAt": "2026-09-19T13:29:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5593",
+      "body": "Board cards on the home page stopped carrying a blank third line, and a board named after its gym shows its location instead of saying the name twice."
+    },
     {
       "prNumber": 5597,
       "category": "new",
