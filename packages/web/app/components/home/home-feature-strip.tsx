@@ -3,7 +3,7 @@ import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { PageSection } from '@/app/components/ui/page-shell';
+import { PageCard, PageSection } from '@/app/components/ui/page-shell';
 import { MarketingScreenshot, type MarketingShot } from '@/app/components/marketing/marketing-screenshot';
 import styles from './home-feature-strip.module.css';
 
@@ -36,7 +36,14 @@ export default async function HomeFeatureStrip() {
       <PageSection className={styles.section} title={t('home.features.title')} lead={t('home.features.lead')}>
         <Box component="ul" className={styles.grid}>
           {features.map((feature) => (
-            <Box component="li" key={feature.id} className={styles.feature} data-testid="home-feature-column">
+            <PageCard
+              component="li"
+              key={feature.id}
+              padding="lg"
+              radius="xl"
+              className={styles.feature}
+              data-testid="home-feature-column"
+            >
               <Box className={styles.featureCopy}>
                 <Typography component="h3" className={styles.featureTitle}>
                   {feature.title}
@@ -46,7 +53,7 @@ export default async function HomeFeatureStrip() {
                 </Typography>
               </Box>
               <MarketingScreenshot shot={feature.id} alt={feature.alt} detail className={styles.shot} />
-            </Box>
+            </PageCard>
           ))}
         </Box>
       </PageSection>

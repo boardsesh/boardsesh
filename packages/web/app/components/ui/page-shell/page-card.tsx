@@ -8,7 +8,14 @@ export type PageCardProps = {
    * surface, or is used when the card has to be the findable thing on the page.
    */
   variant?: 'surface' | 'elevated';
-  padding?: 'sm' | 'md';
+  /**
+   * `lg` exists for the home feature strip, whose cards are the page's biggest
+   * content blocks and carry a screenshot beside the copy. Adding a step is
+   * cheaper than letting that strip keep its own card recipe.
+   */
+  padding?: 'sm' | 'md' | 'lg';
+  /** `xl` goes with `padding="lg"` — a bigger card wants a bigger corner. */
+  radius?: 'lg' | 'xl';
   className?: string;
   /**
    * The element to render. `Box`'s own `component` prop is generic and does not
@@ -18,15 +25,25 @@ export type PageCardProps = {
    */
   component?: React.ElementType;
   children: React.ReactNode;
-} & Omit<React.ComponentProps<typeof Box>, 'className' | 'children' | 'component'>;
+  // `padding` is ALSO an MUI Box style prop. Without excluding it the two types
+  // intersect and PageCard's own 'sm' | 'md' | 'lg' widens to Box's responsive
+  // padding union, which then cannot index the class map.
+} & Omit<React.ComponentProps<typeof Box>, 'className' | 'children' | 'component' | 'padding'>;
 
 /**
  * A card for something you can ACT on. Prose does not get a card — that was the
  * old /support page's whole problem: an entire document inside one Paper.
  */
+const PADDING_CLASS = {
+  sm: 'cardPaddingSm',
+  md: 'cardPaddingMd',
+  lg: 'cardPaddingLg',
+} as const;
+
 export default function PageCard({
   variant = 'surface',
   padding = 'md',
+  radius = 'lg',
   className,
   children,
   ...boxProps
@@ -34,7 +51,8 @@ export default function PageCard({
   const classes = [
     styles.card,
     variant === 'elevated' ? styles.cardElevated : null,
-    padding === 'sm' ? styles.cardPaddingSm : styles.cardPaddingMd,
+    styles[PADDING_CLASS[padding]],
+    radius === 'xl' ? styles.cardRadiusXl : null,
     className,
   ]
     .filter(Boolean)

@@ -284,6 +284,12 @@ for (const width of [320, 390, 430]) {
     const features = page.getByTestId('home-feature-column');
     await expect(features).toHaveCount(3);
     for (const feature of await features.all()) {
+      // The feature cards are PageCards now. They used to hand-roll surface +
+      // radius + padding and NO border, so their bottom edge barely read against
+      // the page (#251B3A on #110A20 is 1.19:1). Pin the edge, not the recipe.
+      await expect(feature).toHaveCSS('border-bottom-width', '1px');
+      await expect(feature).toHaveCSS('border-bottom-color', 'rgba(185, 170, 215, 0.2)');
+      await expect(feature).toHaveCSS('border-radius', '16px');
       await expect(feature.locator('h3')).toHaveCSS('font-size', '24px');
       const paragraph = feature.locator('p');
       await expect(paragraph).toHaveCSS('font-size', '16px');
