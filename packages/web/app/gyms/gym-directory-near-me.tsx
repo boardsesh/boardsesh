@@ -351,8 +351,8 @@ export default function GymDirectoryNearMe({
           {/* Toggle BELOW the breakpoint only. At 960px and up the map is the
               wireframe's sticky second column and renders with the page.
               ACCEPTED COST, stated rather than mitigated: every wide-screen
-              view therefore requests OSM tiles before anyone asks for a map.
-              That is the page's only third-party request, it carries the
+              view therefore requests OpenFreeMap tiles (OSM raster fallback)
+              before anyone asks for a map. The request carries the
               visitor's IP, and it becomes public traffic when #4382 drops the
               noindex. */}
           <Button

@@ -32,7 +32,8 @@
   },
   "home": {
     "hero": {
-      "title": "Au mur !",
+      "title": "Une appli pour tes boards",
+      "playShotAlt": "Un bloc ouvert dans Boardsesh avec ses prises allumées sur la board",
       "subtitle": "Notez vos croix sur Kilter, Tension et MoonBoard.",
       "startClimbingAria": "Commencer à grimper dans l'appli",
       "startClimbingWeb": "Commencer à grimper sur le web →",
@@ -85,7 +86,7 @@
       "queue": {
         "title": "File partagée",
         "body": "Tournez sans le fameux « c'est à qui ? ». Chacun ajoute, tout le monde voit l'ordre.",
-        "shotPending": "Capture en préparation"
+        "shotAlt": "La file partagée de Boardsesh avec les blocs prévus pour la session"
       },
       "party": {
         "title": "Mode Party",
@@ -97,7 +98,8 @@
         "body": "Notez croix et essais au fil de la séance, et ramenez votre historique Kilter ou Tension avec vous.",
         "shotAlt": "L'écran de progression de l'appli avec les cotations enchaînées et le calendrier des séances"
       },
-      "cta": "Télécharger l'appli"
+      "cta": "Télécharger l'appli",
+      "ctaAndroid": "Disponible sur Google Play"
     },
     "support": {
       "eyebrow": "Gratuit, et ça ne changera pas",

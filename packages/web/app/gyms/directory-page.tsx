@@ -198,6 +198,9 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         </Typography>
 
         <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: -2, mb: 3 }}>
+          {t('search.geoHint')}
+        </Typography>
 
         <Box component="section" sx={{ mb: 3 }}>
           <Typography

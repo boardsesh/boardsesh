@@ -56,6 +56,7 @@
     "countHint": "The numbers count gyms, not boards: a gym with three Kilter walls counts once."
   },
   "search": {
+    "geoHint": "Location off? Type a town instead. No permission needed.",
     "label": "Search gyms",
     "placeholder": "Gym name or town",
     "submit": "Search"
@@ -75,6 +76,8 @@
     "home": "Back to Boardsesh"
   },
   "card": {
+    "claimed": "Claimed",
+    "unclaimed": "Unclaimed",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "{{distance}} km away",
     "claimCta": "Is this your gym?"

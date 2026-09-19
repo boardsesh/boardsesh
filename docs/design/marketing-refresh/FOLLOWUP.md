@@ -1,5 +1,44 @@
 # Marketing refresh — follow-up brief
 
+## Completion update — 19 September 2026
+
+The historical handover below is superseded by the implementation in #5572 and
+the opt-in backend ordering in #5574. #5570 and #5571 have merged.
+
+- Homepage and support now have CSS violet glows, the support mark sits outside
+  its single heading, and shared page titles use the mockup's 40px/30px scale.
+  The homepage uses 60px/34px and real play/queue previews.
+- `play-view.webp` and `shared-queue.webp` are real iPhone 16 Pro simulator
+  captures from the existing screenshot replay backend, frozen at
+  `2026-09-18T11:52:34Z`. They retain the full device screen at 603×1312; the
+  feature strip contains the narrower queue capture rather than stretching it.
+  Both are registered in the immutable static-asset catalog. No generated art.
+- Claim badges live on the shared gym card. The directory's location hint is
+  translated in all four locales. Its basemap uses OpenFreeMap's dark style
+  through the lazy MapLibre/Leaflet adapter, with OpenFreeMap, OpenMapTiles and
+  OpenStreetMap credits. Unsupported WebGL, context loss, or an initial style
+  failure falls back to attributed OSM raster tiles and light marker rings.
+  Dependencies remain visibility-gated on phones; pin coverage sits below the
+  map so translated provider credits cannot be obscured.
+- Only the homepage requests `prioritizeClaimed: true`, with four results.
+  Ranking happens before backend pagination and retains unclaimed fallback
+  listings. Ordinary directory/proximity ordering remains unchanged. Query
+  arguments separate the cache entries. Server-resolved claim analytics stay:
+  the homepage already reads locale request headers, so removing the session
+  lookup would not make it static (confirmed with Marco).
+- Donating-gym priority is a separate follow-up, #5573, including the eligibility
+  and donation-disclosure decisions. Board-art double fetching remains #5558;
+  the homepage's obsolete board/beta preloads were removed because its hero
+  now owns LCP. No other board-rendering surface was changed.
+
+Browser regression coverage is in `marketing-refresh.spec.ts`. It checks the
+actual computed typography, dark appearance under a light OS preference,
+horizontal overflow, mobile map gating, and raster fallback. Unit coverage also
+pins basemap disposal, failed WebGL construction, claim badges, empty/error
+states, desktop store buttons, and geolocation consent/fallback behaviour.
+
+## Historical handover
+
 Hand-off for finishing the dark-only marketing overhaul. The mockups in this
 directory are the approved design; most of them shipped. This records what is
 left, what is deliberately different, and the traps that cost time.

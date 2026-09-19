@@ -32,7 +32,8 @@
   },
   "home": {
     "hero": {
-      "title": "¡A escalar!",
+      "title": "Una app para tus plafones",
+      "playShotAlt": "Un bloque abierto en Boardsesh con sus presas iluminadas en el plafón",
       "subtitle": "Registra tus encadenes en Kilter, Tension y MoonBoard.",
       "startClimbingAria": "Empieza a escalar en la app",
       "startClimbingWeb": "Empieza a escalar en la web →",
@@ -85,7 +86,7 @@
       "queue": {
         "title": "Cola compartida",
         "body": "Turnaos sin el típico «¿quién va ahora?». Todos añaden, todos ven el orden.",
-        "shotPending": "Captura en camino"
+        "shotAlt": "La cola compartida de Boardsesh con bloques listos para la sesión"
       },
       "party": {
         "title": "Modo Fiesta",
@@ -97,7 +98,8 @@
         "body": "Apunta encadenes e intentos sobre la marcha, y trae contigo tu historial de Kilter o Tension.",
         "shotAlt": "La pantalla de progreso de la app con los grados encadenados y el calendario de sesiones"
       },
-      "cta": "Consigue la app"
+      "cta": "Consigue la app",
+      "ctaAndroid": "Disponible en Google Play"
     },
     "support": {
       "eyebrow": "Gratis, y así se queda",

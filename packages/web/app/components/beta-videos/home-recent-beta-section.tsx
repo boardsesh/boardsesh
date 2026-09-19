@@ -84,7 +84,6 @@ export default function HomeRecentBetaSection({ initialRecentBeta }: HomeRecentB
         links={links}
         isLoading={false}
         source="home"
-        priorityFirstCard
         getClimbName={(link) => climbNameByLink.get(link.link)}
         getClimbHref={(link) => climbHrefByLink.get(link.link)}
       />

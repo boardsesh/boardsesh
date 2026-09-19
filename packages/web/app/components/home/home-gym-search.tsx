@@ -28,13 +28,9 @@ import HomeGymSearchNearMe from './home-gym-search-near-me';
 const TEASER_CARD_COUNT = 4;
 
 /**
- * The unfiltered first page of the directory.
- *
- * Byte-for-byte the query `/gyms` itself runs, on purpose: `fetchDirectoryPage`
- * caches on its arguments, so the homepage teaser and the directory's own first
- * page share one cache entry instead of each paying for a backend round trip.
- * We throw away all but the first four rows, which costs nothing over the wire
- * that the directory was not already paying.
+ * An unfiltered homepage preview. Claimed-first ordering is requested separately
+ * and applied by the backend before pagination. Query arguments keep its cache
+ * entry separate from the directory's newest-first first page.
  */
 const TEASER_QUERY: DirectoryQuery = {
   query: '',
@@ -85,7 +81,7 @@ export default async function HomeGymSearch() {
   // `viewerState`, and in series it would add a round trip in front of the
   // whole block.
   const [pageResult, facetCountsResult, distinctId] = await Promise.all([
-    fetchDirectoryPage(TEASER_QUERY),
+    fetchDirectoryPage(TEASER_QUERY, { prioritizeClaimed: true, limit: TEASER_CARD_COUNT }),
     fetchFacetCounts(),
     getPosthogDistinctId(),
   ]);
@@ -221,14 +217,12 @@ export default async function HomeGymSearch() {
               />
             ))}
           </Box>
-        ) : (
-          /* The backend is down, or the catalogue really is empty. Either way
-             the block keeps its heading, its search box and its link out — one
-             quiet line, no empty hole and no thrown render. */
+        ) : !pageResult.ok ? (
+          /* A successful empty catalogue is not a backend outage. */
           <Typography variant="body2" color="text.secondary">
             {t('home.gymSearch.cardsUnavailable')}
           </Typography>
-        )}
+        ) : null}
 
         {/* The crawlable `/gyms` anchor. It survives every failure above on
             purpose: whatever else this block cannot show, it always hands both

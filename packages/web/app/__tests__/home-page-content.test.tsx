@@ -114,7 +114,15 @@ describe('HomePageContent', () => {
   });
 
   describe('hero install CTA', () => {
-    it('shows the App Store install CTA on iOS/desktop web and opens the store on click', async () => {
+    it('renders both store buttons on desktop web', async () => {
+      setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36');
+      render(<HomePageContent {...defaultProps} />);
+      expect(await screen.findByRole('button', { name: /install from app store/i })).toBeTruthy();
+      fireEvent.click(await screen.findByRole('button', { name: /get it on google play/i }));
+      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+    });
+
+    it('shows the App Store install CTA on iOS web and opens the store on click', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
 

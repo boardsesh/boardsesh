@@ -98,8 +98,20 @@ beforeEach(() => {
 });
 
 describe('HomeGymSearch', () => {
+  it('does not describe a successful empty catalogue as an outage', async () => {
+    fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [], totalCount: 0 });
+    await renderSection();
+    expect(screen.queryByText(tFromCatalog('marketing', 'home.gymSearch.cardsUnavailable'))).toBeNull();
+    expect(screen.getByRole('link', { name: /Browse the full gym directory/ })).toBeTruthy();
+  });
+
   it('renders its heading and the directory link when gym data is available', async () => {
     await renderSection();
+
+    expect(fetchDirectoryPage).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }), {
+      prioritizeClaimed: true,
+      limit: 4,
+    });
 
     expect(screen.getByRole('heading', { level: 2, name: 'Find a board near you' })).toBeTruthy();
     const browseAll = screen.getByRole('link', { name: /Browse the full gym directory/ });

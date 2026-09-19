@@ -56,6 +56,7 @@
     "countHint": "Les chiffres comptent des salles, pas des boards : une salle avec trois murs Kilter compte une fois."
   },
   "search": {
+    "geoHint": "Localisation désactivée ? Saisis une ville. Aucune autorisation nécessaire.",
     "label": "Rechercher une salle",
     "placeholder": "Nom de la salle ou ville",
     "submit": "Rechercher"
@@ -75,6 +76,8 @@
     "home": "Retour à Boardsesh"
   },
   "card": {
+    "claimed": "Revendiquée",
+    "unclaimed": "Non revendiquée",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "à {{distance}} km",
     "claimCta": "C'est ta salle ?"

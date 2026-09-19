@@ -44,24 +44,7 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-}
-
-/* A column with no honest capture yet gets this instead of a screenshot of
-   something else. No AI-generated images, ever. */
-.shotPending {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4);
-  border: 1px dashed var(--separator);
-  border-radius: var(--border-radius-lg);
-  background: var(--semantic-surface-elevated);
-  color: var(--neutral-500);
-  font-size: var(--font-size-sm);
-  text-align: center;
+  object-fit: contain;
 }
 
 /* Three colour roles, not six. Brand violet for what the app does with your

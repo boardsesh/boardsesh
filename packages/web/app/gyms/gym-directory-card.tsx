@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
 import NearMeOutlined from '@mui/icons-material/NearMeOutlined';
+import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
@@ -35,10 +36,8 @@ type GymDirectoryCardProps = {
  *
  * The card renders only schema-real fields: name, board chips, and a location
  * line WHEN THERE IS ONE. No photo, no description, no hours, no "verified"
- * treatment — the long tail of gyms will never have those, and a card design
- * that leans on them quietly demotes every gym nobody has filled in. Unclaimed
- * gyms render identically to claimed ones, with one extra quiet prompt and no
- * ranking or styling penalty.
+ * treatment. Claim badges report who maintains a listing; sparse and unclaimed
+ * listings retain the same card surface and their claim prompt.
  *
  * A CLIENT component, though it is still server-rendered into the first HTML
  * response like every other one: near-me results are fetched in the browser, so
@@ -87,6 +86,19 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
           {gym.name}
         </MuiLink>
       </Typography>
+
+      <Chip
+        size="small"
+        icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
+        label={gym.isClaimed ? t('card.claimed') : t('card.unclaimed')}
+        sx={{
+          alignSelf: 'flex-start',
+          backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'var(--home-accent-info-surface)',
+          color: gym.isClaimed ? 'var(--color-success)' : 'var(--color-info)',
+          border: '1px solid currentColor',
+          '& .MuiChip-icon': { color: 'inherit' },
+        }}
+      />
 
       {location && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

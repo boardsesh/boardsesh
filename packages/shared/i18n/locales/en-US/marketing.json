@@ -32,7 +32,8 @@
   },
   "home": {
     "hero": {
-      "title": "Get on the board!",
+      "title": "One app for your boards",
+      "playShotAlt": "A climb open in Boardsesh with its holds lit on the board",
       "subtitle": "Track your sends across Kilter, Tension, and MoonBoard.",
       "startClimbingAria": "Start climbing in the app",
       "startClimbingWeb": "Start climbing on the web →",
@@ -85,7 +86,7 @@
       "queue": {
         "title": "Shared queue",
         "body": "Take turns without the awkward “who’s next?”. Everyone adds, everyone sees the order.",
-        "shotPending": "Fresh capture on the way"
+        "shotAlt": "The Boardsesh shared queue with climbs lined up for the session"
       },
       "party": {
         "title": "Party mode",
@@ -97,7 +98,8 @@
         "body": "Log sends and attempts as you go, and bring your Kilter or Tension history across with you.",
         "shotAlt": "The app's progress screen with send grades and a session calendar"
       },
-      "cta": "Get the app"
+      "cta": "Get the app",
+      "ctaAndroid": "Get it on Google Play"
     },
     "support": {
       "eyebrow": "Free, and staying that way",

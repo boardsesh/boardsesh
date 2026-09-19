@@ -26,13 +26,14 @@ import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import StartClimbingButton from '@/app/components/start-climbing-button';
-import { resolveShellStaticAssetUrl } from '@/app/lib/shell-static-asset-url';
+import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
 import InstallAppCard from '@/app/components/home/install-app-card';
 import DiscordIcon from '@/app/components/home/discord-icon';
+import styles from './home-page-content.module.css';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
@@ -134,6 +135,7 @@ export default function HomePageContent({
     >
       <Box
         component="main"
+        className={styles.main}
         sx={{
           flex: 1,
           px: 2,
@@ -146,23 +148,15 @@ export default function HomePageContent({
       >
         {/* Hero: Install-the-app CTA */}
         <Box
+          className={styles.hero}
           sx={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             textAlign: 'center',
             gap: 2,
-            py: 1,
           }}
         >
-          <Image
-            src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
-            width={130}
-            height={130}
-            // i18n-ignore-next-line -- brand name, not translated
-            alt="Boardsesh"
-            priority
-          />
           {/* `component` fixes the semantics: MUI maps a variant to its literal
               tag, so this used to server-render no <h1> at all on the
               highest-traffic indexable page on the site. The size is set here
@@ -172,21 +166,21 @@ export default function HomePageContent({
           <Typography
             variant="h3"
             component="h1"
+            className={styles.heroTitle}
             fontWeight={themeTokens.typography.fontWeight.bold}
             sx={{
               color: 'var(--bs-text-brand-primary)',
-              fontSize: { xs: 30, sm: 40 },
               lineHeight: 1.15,
               letterSpacing: '-0.02em',
               // Cap the measure so the title breaks in a deliberate place.
-              maxInlineSize: '18ch',
+              maxInlineSize: '15ch',
             }}
           >
             {t('home.hero.title')}
           </Typography>
           <Typography
             variant="body1"
-            sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 420, fontSize: { xs: 16, sm: 18 } }}
+            sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: '54ch', fontSize: { xs: 16, sm: 19 } }}
           >
             {t('home.hero.subtitle')}
           </Typography>
@@ -230,6 +224,25 @@ export default function HomePageContent({
             variant="text"
             sx={HERO_WEB_CTA_SX}
           />
+          <Box className={styles.heroPreview}>
+            <Image
+              src={resolveStaticAssetUrl('/images/app/play-view.webp')}
+              alt={t('home.hero.playShotAlt')}
+              width={603}
+              height={1312}
+              sizes="(max-width: 600px) 42vw, 240px"
+              preload
+              className={styles.previewPhone}
+            />
+            <Image
+              src={resolveStaticAssetUrl('/images/app/shared-queue.webp')}
+              alt={t('home.features.queue.shotAlt')}
+              width={603}
+              height={1312}
+              sizes="(max-width: 600px) 42vw, 240px"
+              className={styles.previewPhone}
+            />
+          </Box>
         </Box>
 
         {/* Section order follows the marketing wireframe: find a board, jump

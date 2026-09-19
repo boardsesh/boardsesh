@@ -6,8 +6,6 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
 import { getPopularBoardConfigs } from './lib/server-popular-configs';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
-import { selectHomeLcpHints } from './lib/popular-lcp-preload';
-import { getPublicBackendHttpUrl } from './lib/backend-url';
 import HomePageContent from './home-page-content';
 import HomeGymSearch from './components/home/home-gym-search';
 import HomeFeatureStrip from './components/home/home-feature-strip';
@@ -30,24 +28,11 @@ export default async function Home() {
     getRecentBetaLinks(),
     getLocale(),
   ]);
-  // Point the single high-priority image hint at whatever the browser will
-  // actually paint as the LCP element: the first (cross-origin) beta thumbnail
-  // when the recent-beta rail renders, otherwise the first board thumbnail.
-  // `getPublicBackendHttpUrl()` resolves to a browser-reachable origin on the
-  // server (unlike `getBackendHttpUrl`, which can return a Docker-internal one).
-  const { preconnectOrigin, boardPreloadUrl } = selectHomeLcpHints({
-    recentBetaCount: recentBeta.length,
-    popularConfigs,
-    backendOrigin: getPublicBackendHttpUrl(),
-  });
 
   return (
     <I18nProvider locale={locale} namespaces={['marketing', 'boards', 'climbs', 'profile', 'feed']}>
-      {/* Warm the cross-origin backend host that serves the beta-rail LCP image.
-          No crossOrigin: the beta <img> is a credentialed no-cors request, so a
-          plain preconnect opens the connection it can reuse. */}
-      {preconnectOrigin && <link rel="preconnect" href={preconnectOrigin} />}
-      {boardPreloadUrl && <link rel="preload" as="image" href={boardPreloadUrl} fetchPriority="high" />}
+      {/* The hero's Next Image owns its responsive preload. Board and beta
+          thumbnails now sit below the hero and must not compete with it. */}
       <SiteJsonLd />
       {/* The three marketing sections are async server components, so they are
           rendered HERE and handed down as slots: HomePageContent is a client

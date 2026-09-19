@@ -32,7 +32,8 @@
   },
   "home": {
     "hero": {
-      "title": "Ab ans Board!",
+      "title": "Eine App für deine Boards",
+      "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
       "subtitle": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest.",
       "startClimbingAria": "In der App losklettern",
       "startClimbingWeb": "Im Browser losklettern →",
@@ -85,7 +86,7 @@
       "queue": {
         "title": "Geteilte Warteschlange",
         "body": "Wechselt euch ab ohne das peinliche „wer ist dran?“. Alle legen auf, alle sehen die Reihenfolge.",
-        "shotPending": "Screenshot folgt"
+        "shotAlt": "Die geteilte Boardsesh-Warteschlange mit Bouldern für die Session"
       },
       "party": {
         "title": "Party-Modus",
@@ -97,7 +98,8 @@
         "body": "Halt Begehungen und Versuche direkt fest und bring deine Kilter- oder Tension-Historie mit rüber.",
         "shotAlt": "Der Fortschritts-Screen der App mit Begehungsgraden und dem Session-Kalender"
       },
-      "cta": "App holen"
+      "cta": "App holen",
+      "ctaAndroid": "Bei Google Play holen"
     },
     "support": {
       "eyebrow": "Kostenlos, und das bleibt so",

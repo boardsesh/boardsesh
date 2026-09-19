@@ -64,6 +64,18 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryCard', () => {
+  it('labels a claimed gym without offering a claim action', async () => {
+    await renderCard({ gym: { isClaimed: true } });
+    expect(screen.getByText('Claimed')).toBeTruthy();
+    expect(screen.queryByText('Is this your gym?')).toBeNull();
+  });
+
+  it('labels an unclaimed gym and keeps its claim action', async () => {
+    await renderCard({});
+    expect(screen.getByText('Unclaimed')).toBeTruthy();
+    expect(screen.getByText('Is this your gym?')).toBeTruthy();
+  });
+
   it('links the gym name with a real href a crawler can follow', async () => {
     await renderCard({});
     const link = screen.getByRole('link', { name: 'Boulderwelt München Ost' });

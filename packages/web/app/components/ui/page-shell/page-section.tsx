@@ -17,6 +17,7 @@ export type PageSectionProps = {
   lead?: string;
   /** Anchor target — the module already carries the scroll-margin for the header. */
   id?: string;
+  className?: string;
   children?: React.ReactNode;
 };
 
@@ -34,10 +35,11 @@ export default function PageSection({
   tone = 'brand',
   lead,
   id,
+  className,
   children,
 }: PageSectionProps) {
   return (
-    <Box component="section" id={id} className={styles.section}>
+    <Box component="section" id={id} className={`${styles.section} ${className ?? ''}`}>
       {title ? (
         <Typography
           variant={headingLevel === 2 ? 'h3' : 'h4'}

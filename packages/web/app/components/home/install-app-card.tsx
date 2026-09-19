@@ -4,10 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Typography from '@mui/material/Typography';
 import Skeleton from '@mui/material/Skeleton';
-import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import AndroidOutlined from '@mui/icons-material/AndroidOutlined';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -71,6 +68,11 @@ export default function InstallAppCard({ platform }: { platform: InstallPlatform
         }}
       />
     );
+  }
+
+  if (platform !== 'other-web' && platform !== 'desktop-web') {
+    const exhaustivePlatform: never = platform;
+    return exhaustivePlatform;
   }
 
   return (

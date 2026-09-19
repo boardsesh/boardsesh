@@ -56,6 +56,7 @@
     "countHint": "Los números cuentan rocódromos, no plafones: un rocódromo con tres muros Kilter cuenta una vez."
   },
   "search": {
+    "geoHint": "¿Ubicación desactivada? Escribe una ciudad. No hace falta dar permiso.",
     "label": "Buscar rocódromos",
     "placeholder": "Nombre del rocódromo o ciudad",
     "submit": "Buscar"
@@ -75,6 +76,8 @@
     "home": "Vuelve a Boardsesh"
   },
   "card": {
+    "claimed": "Reclamado",
+    "unclaimed": "Sin reclamar",
     "boardChip": "{{board}} {{angle}}°",
     "distance": "a {{distance}} km",
     "claimCta": "¿Es tuyo este rocódromo?"

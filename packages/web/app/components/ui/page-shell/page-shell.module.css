@@ -56,8 +56,24 @@
   color: var(--neutral-500);
 }
 
-.title {
+.header .title {
   margin: 0;
+  font-size: 40px;
+  line-height: 1.15;
+}
+
+.header .titleCompact {
+  font-size: 24px;
+}
+
+@media (max-width: 760px) {
+  .header .title {
+    font-size: 30px;
+  }
+
+  .header .titleCompact {
+    font-size: 21px;
+  }
 }
 
 .lead {
@@ -107,6 +123,10 @@
 }
 
 /* ---- prose ---- */
+
+.paragraph {
+  max-width: 68ch;
+}
 
 .paragraph + .paragraph {
   margin-top: var(--spacing-3);
