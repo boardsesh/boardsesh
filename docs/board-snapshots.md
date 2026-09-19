@@ -1201,8 +1201,13 @@ ordinary manual runs continue writing Tigris, and every shipped app continues re
 3. Dispatch **Export Board Snapshots** from `main` with `storage_target=r2`, `gzip_only=false`, and every filter blank.
    The workflow rejects a partial R2 run, exports all three prefixes, then checks every manifest and referenced
    artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`.
-4. Dispatch the same full R2 export immediately before cutover. Change all seven mobile workflow snapshot bases,
-   the dev-database loader, and this document to `https://snapshots.boardsesh.com`; merge and publish the mobile OTA.
+4. Dispatch the same full R2 export immediately before cutover. In the same cutover change
+   `.github/workflows/export-board-snapshots.yml` so scheduled exports and an ordinary manual dispatch default to
+   the R2 bucket, R2 credentials, and `SNAPSHOT_PUBLIC_BASE_URL=https://snapshots.boardsesh.com`. Until that change,
+   both still publish to Tigris unless a manual run explicitly selects `storage_target=r2`. Keep an explicit Tigris
+   target as the rollback path. Change all seven mobile workflow snapshot bases, the dev-database loader, and this
+   document to `https://snapshots.boardsesh.com`; merge those producer and reader changes together, then publish the
+   mobile OTA.
 5. Keep the Tigris bucket read-only for 30 days. Compare 404 and download-failure telemetry before requesting its
    deletion; deletion remains a separate, explicitly approved operation.
 
