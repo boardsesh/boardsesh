@@ -11,11 +11,42 @@ import type {
   SearchBoardsInput,
   PopularBoardConfigConnection,
   PopularBoardConfigsInput,
+  BoardDiscoveryBoard,
+  BoardDiscoveryInput,
 } from '@boardsesh/shared-schema';
 
 // ============================================
 // Board Queries
 // ============================================
+
+export const GET_BOARD_DISCOVERY = gql`
+  query GetBoardDiscovery($input: BoardDiscoveryInput) {
+    boardDiscovery(input: $input) {
+      uuid
+      slug
+      name
+      boardType
+      layoutId
+      sizeId
+      setIds
+      angle
+      gymUuid
+      gymName
+      gymSlug
+      locationName
+      uniqueClimbers
+      currentClimb {
+        uuid
+        name
+        frames
+        angle
+      }
+    }
+  }
+`;
+
+export type GetBoardDiscoveryQueryResponse = { boardDiscovery: BoardDiscoveryBoard[] };
+export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
 
 const BOARD_FIELDS = `
   uuid

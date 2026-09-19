@@ -93,3 +93,58 @@ test('the mobile directory does not request map tiles before Show map', async ({
   await expect(page.locator('.leaflet-control-attribution')).toContainText('OpenStreetMap');
   await expect(page.locator('.maplibregl-canvas')).toHaveCount(0);
 });
+
+test('physical board discovery keeps public and app links on the same named board', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const rail = page.getByTestId('physical-board-rail');
+  if ((await rail.count()) === 0) {
+    // The standard CI seed does not guarantee public gym-linked installations.
+    // Positive rendering and privacy eligibility have dedicated fixture tests.
+    test.info().annotations.push({ type: 'data-availability', description: 'No eligible public physical boards' });
+    await expect(page.getByRole('heading', { name: 'Popular boards', exact: true })).toHaveCount(0);
+    return;
+  }
+  const cards = rail.locator('li');
+  expect(await cards.count()).toBeGreaterThan(0);
+  for (const card of await cards.all()) {
+    const boardPath = await card.locator('h3 a').getAttribute('href');
+    expect(boardPath).toMatch(/^\/b\/[^/]+$/);
+    await expect(card.getByRole('img')).toHaveAttribute('aria-label', /.+/);
+    await expect(card.locator('a[href^="/gym/"]')).toHaveCount(1);
+    const appHref = await card.getByRole('link', { name: 'Open this board', exact: true }).getAttribute('href');
+    const appPath = new URL(appHref!, page.url()).pathname;
+    const namedPath = appPath.slice(appPath.indexOf('/b/'));
+    expect(namedPath).toMatch(/^\/b\/[^/]+\/-?\d+\/list$/);
+    expect(namedPath.split('/').slice(0, 3).join('/')).toBe(boardPath);
+    const angle = namedPath.split('/')[3];
+    await expect(card).toContainText(`${angle}°`);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+});
+
+test('gym board previews are bounded and retain their physical board identity', async ({ page }) => {
+  await page.goto('/');
+  const previewLists = page.getByTestId('gym-board-previews');
+  if ((await previewLists.count()) === 0) {
+    test.info().annotations.push({ type: 'data-availability', description: 'No homepage gyms with eligible boards' });
+    await expect(page.getByRole('heading', { name: 'Find a board near you', exact: true })).toBeVisible();
+    return;
+  }
+  expect(await previewLists.count()).toBeLessThanOrEqual(4);
+  for (const previews of await previewLists.all()) {
+    const boards = previews.locator('li');
+    expect(await boards.count()).toBeGreaterThan(0);
+    expect(await boards.count()).toBeLessThanOrEqual(3);
+    for (const board of await boards.all()) {
+      const publicLink = board.locator('a[href^="/b/"]');
+      await expect(publicLink).toHaveCount(1);
+      await expect(publicLink.getByRole('img')).toHaveAttribute('aria-label', /.+/);
+      const boardPath = await publicLink.getAttribute('href');
+      const appHref = await board.getByRole('link', { name: 'Open this board', exact: true }).getAttribute('href');
+      const appPath = new URL(appHref!, page.url()).pathname;
+      expect(appPath.slice(appPath.indexOf('/b/')).split('/').slice(0, 3).join('/')).toBe(boardPath);
+      expect(appPath).toMatch(/\/-?\d+\/list$/);
+    }
+  }
+});

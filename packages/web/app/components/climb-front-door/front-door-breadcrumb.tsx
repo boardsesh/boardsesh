@@ -12,6 +12,8 @@ type FrontDoorBreadcrumbProps = {
   angle: number;
   /** Canonical `/list` URL for this board config at this angle. */
   boardListUrl: string;
+  /** Physical-board navigation may differ from the canonical used in JSON-LD. */
+  navigationBoardListUrl?: string;
   /**
    * The climb crumb: its label and its own canonical path (the JSON-LD leaf's
    * `item`). Rendered as plain text, not a self-link.
@@ -49,6 +51,7 @@ export default async function FrontDoorBreadcrumb({
   boardName,
   angle,
   boardListUrl,
+  navigationBoardListUrl,
   leaf,
   emitJsonLd = true,
 }: FrontDoorBreadcrumbProps) {
@@ -83,7 +86,12 @@ export default async function FrontDoorBreadcrumb({
         {leaf ? (
           <>
             <li>
-              <MuiLink component={LocaleLink} href={boardListUrl} underline="hover" color="inherit">
+              <MuiLink
+                component={LocaleLink}
+                href={navigationBoardListUrl ?? boardListUrl}
+                underline="hover"
+                color="inherit"
+              >
                 {boardCrumbLabel}
               </MuiLink>
             </li>

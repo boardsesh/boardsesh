@@ -35,6 +35,8 @@ export type StaticClimbListProps = {
   climbs: Climb[];
   /** Board used for any climb without an entry in `boardDetailsByClimb`. */
   boardDetails: BoardDetails;
+  /** Explicit physical-board identity supplied by a named-board front door. */
+  boardSlug?: string;
   /** Per-climb board override, keyed by climb uuid — cross-board lists need it. */
   boardDetailsByClimb?: Record<string, BoardDetails>;
   /**
@@ -99,6 +101,7 @@ const noop = () => {};
 /** Row props every row shares, whichever path renders it. */
 type SharedRowProps = {
   climbs: Climb[];
+  boardSlug?: string;
   resolveBoardDetails: (climb: Climb) => BoardDetails;
   unlinkedClimbUuids?: ReadonlySet<string>;
   pathname: string;
@@ -110,6 +113,7 @@ type SharedRowProps = {
 export default function StaticClimbList({
   climbs,
   boardDetails,
+  boardSlug,
   boardDetailsByClimb,
   unlinkedClimbUuids,
   logbook,
@@ -135,6 +139,7 @@ export default function StaticClimbList({
 
   const rowProps: SharedRowProps = {
     climbs,
+    boardSlug,
     resolveBoardDetails,
     unlinkedClimbUuids,
     pathname,
@@ -188,6 +193,7 @@ export default function StaticClimbList({
  */
 function PlainRows({
   climbs,
+  boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
   pathname,
@@ -201,6 +207,7 @@ function PlainRows({
         <div key={climb.uuid} data-index={index} style={{ width: '100%', minHeight: LIST_ROW_HEIGHT }}>
           <StaticClimbRow
             climb={climb}
+            boardSlug={boardSlug}
             boardDetails={resolveBoardDetails(climb)}
             unlinked={unlinkedClimbUuids?.has(climb.uuid)}
             pathname={pathname}
@@ -240,6 +247,7 @@ function InfiniteScrollSentinel({
 
 function VirtualizedRows({
   climbs,
+  boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
   pathname,
@@ -329,6 +337,7 @@ function VirtualizedRows({
           >
             <StaticClimbRow
               climb={climb}
+              boardSlug={boardSlug}
               boardDetails={resolveBoardDetails(climb)}
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
               pathname={pathname}

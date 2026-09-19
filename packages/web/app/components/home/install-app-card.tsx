@@ -72,7 +72,8 @@ export default function InstallAppCard({ platform }: { platform: InstallPlatform
 
   if (platform !== 'other-web' && platform !== 'desktop-web') {
     const exhaustivePlatform: never = platform;
-    return exhaustivePlatform;
+    void exhaustivePlatform;
+    return null;
   }
 
   return (

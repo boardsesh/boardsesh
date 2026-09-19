@@ -594,6 +594,11 @@ class PubSub {
     return this.boardPresenceStore.getRecentBoardClimbs(boardId);
   }
 
+  /** Redacted last-confirmed climb, only while its verified sender holds the board. */
+  async getBoardDiscoveryClimb(boardId: string) {
+    return this.boardPresenceStore.getBoardDiscoveryClimb(boardId);
+  }
+
   /** Record that a user is connected to a board (proof-of-presence). TTL'd; a reconnect re-stamps. */
   async stampBoardMembership(boardId: string, userId: string): Promise<void> {
     return this.boardPresenceStore.stampBoardMembership(boardId, userId);

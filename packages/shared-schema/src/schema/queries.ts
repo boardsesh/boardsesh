@@ -585,6 +585,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     searchBoards(input: SearchBoardsInput!): UserBoardConnection!
 
+    "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
+    boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
+
     """
     Get popular board configurations ranked by climb count.
     """

@@ -161,6 +161,17 @@ export const PopularBoardConfigsInputSchema = z.object({
   offset: z.number().int().min(0).optional().default(0),
 });
 
+export const BoardDiscoveryInputSchema = z.object({
+  gymUuid: UUIDSchema.nullish().transform((gymUuid) => gymUuid ?? undefined),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(12)
+    .nullish()
+    .transform((limit) => limit ?? 8),
+});
+
 /**
  * Schema for `boardsBySerialNumbers` and `myBoardSerialConfigs` queries.
  * Caps the array length and per-element size so an attacker can't push a

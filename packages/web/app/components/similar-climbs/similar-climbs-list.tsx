@@ -22,11 +22,17 @@ import {
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
-import { constructClimbViewUrlWithSlugs, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
+import {
+  constructBoardSlugViewUrl,
+  constructClimbViewUrlWithSlugs,
+  tryConstructSlugViewUrl,
+} from '@/app/lib/url-utils';
 import styles from './similar-climbs-list.module.css';
 
 type SimilarClimbsListProps = {
   boardType: BoardName;
+  /** Preserve the physical wall on compatible climb links. */
+  boardSlug?: string;
   layoutId: number;
   threshold?: number;
   limit?: number;
@@ -67,6 +73,7 @@ type SimilarClimbsListProps = {
 
 export default function SimilarClimbsList({
   boardType,
+  boardSlug,
   layoutId,
   threshold = 0.5,
   limit = 10,
@@ -176,6 +183,7 @@ export default function SimilarClimbsList({
         return (
           <SimilarClimbCard
             key={climb.uuid}
+            boardSlug={compatible ? boardSlug : undefined}
             climb={climb}
             boardType={boardType}
             // When the climb fits on the viewer's wall, render the
@@ -196,6 +204,7 @@ export default function SimilarClimbsList({
 
 type SimilarClimbCardProps = {
   climb: SimilarClimb;
+  boardSlug?: string;
   boardType: BoardName;
   /** When set, render the thumbnail on the viewer's exact wall config
    *  (size + sets) rather than the layout's default. Only passed for
@@ -208,7 +217,7 @@ type SimilarClimbCardProps = {
   compatible: boolean;
 };
 
-function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: SimilarClimbCardProps) {
+function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, compatible }: SimilarClimbCardProps) {
   const { t } = useTranslation('climbs');
   const canvasReady = useCanvasRendererReady();
   const { formatGrade, getGradeColor } = useGradeFormat();
@@ -243,6 +252,9 @@ function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: 
   // Fallback link path for when the queue isn't available — preserves the
   // original navigation behaviour for the duplicate-resolution drawer.
   const climbViewPath = useMemo(() => {
+    if (boardSlug) {
+      return constructBoardSlugViewUrl(encodeURIComponent(boardSlug), angle, climb.uuid, climb.name || undefined);
+    }
     // Id-aware first: boardDetails can be the viewer's REAL board (not just the
     // layout default), so a shadowed size (Kilter 12x12 without kickboard) must
     // not be slugged from names onto the other board's bare slug.
@@ -271,7 +283,7 @@ function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: 
       );
     }
     return getDefaultClimbViewPath(boardType, climb.layoutId, angle, climb.uuid, climb.name || undefined);
-  }, [boardType, climb.layoutId, angle, climb.uuid, climb.name, boardDetails]);
+  }, [boardSlug, boardType, climb.layoutId, angle, climb.uuid, climb.name, boardDetails]);
 
   // Dim the thumbnail / name / byline when the climb is incompatible with the
   // viewer's wall size: the link still resolves (on the layout default config),

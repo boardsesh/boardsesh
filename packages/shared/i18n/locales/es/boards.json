@@ -1,10 +1,4 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Plafones populares",
-      "meta": "{{boards}} plafones · {{sends}} encadenes"
-    }
-  },
   "mobile": {
     "edit": {
       "screenTitle": "Editar plafón",

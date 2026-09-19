@@ -21,7 +21,7 @@ import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import PopularBoardRail from '@/app/components/board-entity/popular-board-rail';
 import { APP_URL } from '@/app/lib/app-origin';
-import type { PopularBoardConfig } from '@boardsesh/shared-schema';
+import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
@@ -38,7 +38,7 @@ import styles from './home-page-content.module.css';
 const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
 type HomePageContentProps = {
-  initialPopularConfigs?: PopularBoardConfig[];
+  initialBoards?: BoardDiscoveryBoard[];
   initialRecentBeta?: RecentBetaLinkRow[];
   /**
    * Sections rendered on the SERVER and passed down as slots.
@@ -92,7 +92,7 @@ const HERO_WEB_CTA_SX = {
 } as const;
 
 export default function HomePageContent({
-  initialPopularConfigs,
+  initialBoards,
   initialRecentBeta = [],
   gymSearch,
   featureStrip,
@@ -238,10 +238,10 @@ export default function HomePageContent({
             so its gym links are crawlable. */}
         {gymSearch}
 
-        {/* Board discovery — a static, crawlable grid of the popular configs the
-            page already SSR-fetches. */}
+        {/* Named physical boards keep discovery and the app handoff on the
+            same installation instead of minting another configuration. */}
         <Box className={styles.discovery}>
-          <PopularBoardRail configs={initialPopularConfigs ?? []} />
+          <PopularBoardRail boards={initialBoards ?? []} />
           <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
         </Box>
 

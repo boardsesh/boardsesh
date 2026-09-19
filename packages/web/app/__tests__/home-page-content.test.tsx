@@ -4,6 +4,7 @@ import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 import { APP_URL } from '@/app/lib/app-origin';
+import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 // --- Mocks ---
 
@@ -62,7 +63,7 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 }));
 
 // The rail is deliberately NOT mocked — its anchors are the point of the page
-// now, and mocking it would make the "SSR popular configs" cases vacuous. Only
+// now, and mocking it would make the physical-board identity cases vacuous. Only
 // the board artwork inside it is stubbed out.
 vi.mock('@/app/components/board-renderer/board-renderer', () => ({
   default: () => <div data-testid="board-thumb" />,
@@ -252,46 +253,31 @@ describe('HomePageContent', () => {
     });
   });
 
-  describe('SSR popular configs', () => {
-    const KILTER_CONFIG = {
-      boardType: 'kilter',
-      layoutId: 1,
-      layoutName: 'Original',
-      sizeId: 10,
-      sizeName: '12 x 12 Square',
-      sizeDescription: 'With kickboard',
-      setIds: [1, 20],
-      setNames: ['Bolt Ons', 'Screw Ons'],
-      climbCount: 500,
-      totalAscents: 5000,
-      boardCount: 10,
-      displayName: 'Kilter Original 12x12',
-    };
-
-    it('renders one crawlable board link per SSR config', () => {
+  describe('SSR physical boards', () => {
+    it('renders one crawlable named-board link per physical installation', () => {
       setUserAgent(IOS_SAFARI_UA);
       render(
         <HomePageContent
           {...defaultProps}
-          initialPopularConfigs={[KILTER_CONFIG, { ...KILTER_CONFIG, sizeId: 27, displayName: 'Kilter no kick' }]}
+          initialBoards={[discoveryBoard(), discoveryBoard({ uuid: 'board-two', slug: 'southside-kilter' })]}
         />,
       );
 
       const boardLinks = screen
         .getAllByRole('link')
         .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
-      expect(boardLinks).toHaveLength(2);
+        .filter((href) => href.startsWith('/b/'));
+      expect(boardLinks).toEqual(['/b/northside-kilter', '/b/southside-kilter']);
     });
 
     it('renders no board links and does not crash when the backend returned nothing', () => {
       setUserAgent(IOS_SAFARI_UA);
-      render(<HomePageContent {...defaultProps} initialPopularConfigs={[]} />);
+      render(<HomePageContent {...defaultProps} initialBoards={[]} />);
 
       const boardLinks = screen
         .getAllByRole('link')
         .map((link) => link.getAttribute('href') ?? '')
-        .filter((href) => /^\/(kilter|tension|moonboard)\/.+\/list$/.test(href));
+        .filter((href) => href.startsWith('/b/'));
       expect(boardLinks).toHaveLength(0);
     });
   });

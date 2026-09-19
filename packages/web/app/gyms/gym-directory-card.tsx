@@ -12,6 +12,8 @@ import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { GymClaimViewerState } from '@boardsesh/analytics';
+import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
+import GymBoardPreviews from '@/app/components/board-entity/gym-board-previews';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageCard } from '@/app/components/ui/page-shell';
 import type { Locale } from '@/app/lib/i18n/config';
@@ -29,6 +31,8 @@ type GymDirectoryCardProps = {
   viewerState: GymClaimViewerState;
   /** Formats the distance for the active locale. */
   locale: Locale;
+  /** Public physical installations, fetched only for the homepage teaser. */
+  boardPreviews?: BoardDiscoveryBoard[];
 };
 
 /**
@@ -44,13 +48,14 @@ type GymDirectoryCardProps = {
  * one card has to render on both sides. The alternative was a second card
  * component for near-me that would drift from this one within a release.
  */
-export default function GymDirectoryCard({ gym, origin, viewerState, locale }: GymDirectoryCardProps) {
+export default function GymDirectoryCard({ gym, origin, viewerState, locale, boardPreviews }: GymDirectoryCardProps) {
   const { t } = useTranslation('gyms');
   // Shared across the 24 cards on the page rather than constructed per card.
   const formatNumber = numberFormatFor(locale);
   const chips = boardChips(gym.boardSummaries);
   const location = cardLocation(gym, origin);
   const distanceKm = distanceChipKm(gym, origin, location);
+  const visibleBoardPreviews = boardPreviews?.filter((board) => board.gymUuid === gym.uuid);
 
   return (
     /* A FILL, not a hairline. The card used to be `1px solid var(--neutral-200)`
@@ -150,6 +155,8 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
           ))}
         </Box>
       )}
+
+      {visibleBoardPreviews && visibleBoardPreviews.length > 0 && <GymBoardPreviews boards={visibleBoardPreviews} />}
 
       {!gym.isClaimed && (
         <GymDirectoryClaimLink gymUuid={gym.uuid} gymSlug={gym.slug ?? ''} viewerState={viewerState} />

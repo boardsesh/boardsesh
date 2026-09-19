@@ -160,6 +160,35 @@ export type FollowBoardInput = {
   boardUuid: string;
 };
 
+export type BoardDiscoveryInput = {
+  gymUuid?: string;
+  limit?: number;
+};
+
+export type BoardDiscoveryClimb = {
+  uuid: string;
+  name: string | null;
+  frames: string;
+  angle: number;
+};
+
+export type BoardDiscoveryBoard = {
+  uuid: string;
+  slug: string;
+  name: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  gymUuid: string;
+  gymName: string;
+  gymSlug: string;
+  locationName: string | null;
+  uniqueClimbers: number;
+  currentClimb: BoardDiscoveryClimb | null;
+};
+
 export type SearchBoardsInput = {
   query?: string;
   boardType?: string;

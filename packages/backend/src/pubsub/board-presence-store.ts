@@ -1,5 +1,5 @@
 import type { Logger } from 'winston';
-import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardDiscoveryClimb, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { redisClientManager } from '../redis/client';
 
 /** Result of the Stage-A report gate read (one pipeline, see `getBoardReportGate`). */
@@ -459,6 +459,65 @@ export class BoardPresenceStore {
     } catch (error) {
       this.deps.logger.error('[PubSub] Failed to read board history:', error);
       return [];
+    }
+  }
+
+  /**
+   * One atomic, bounded read for anonymous marketing snapshots. History alone
+   * is never proof of current LEDs: release keeps that week-long buffer. The
+   * sender must still hold the board, and a mismatched/anonymous holder cannot
+   * be verified from the stored history's user identity, so returns no preview.
+   * This read does not change the existing BLE/report write semantics.
+   */
+  async getBoardDiscoveryClimb(boardId: string): Promise<BoardDiscoveryClimb | null> {
+    if (!this.deps.isRedisAvailable()) return null;
+    try {
+      const { publisher } = redisClientManager.getClients();
+      const snapshot: unknown = await publisher.eval(
+        "local writer = redis.call('get', KEYS[1]); " +
+          'if not writer then return {} end; ' +
+          "return {writer, redis.call('lrange', KEYS[2], 0, 49)}",
+        2,
+        `board:${boardId}:writer`,
+        `board:${boardId}:history`,
+      );
+      if (!Array.isArray(snapshot) || snapshot.length !== 2) return null;
+      const [writer, entries] = snapshot;
+      if (typeof writer !== 'string' || writer.startsWith('conn:') || !Array.isArray(entries)) return null;
+
+      let newest: Record<string, unknown> | null = null;
+      for (const entry of entries) {
+        if (typeof entry !== 'string') return null;
+        const climb: unknown = JSON.parse(entry);
+        if (typeof climb !== 'object' || climb === null || Array.isArray(climb)) return null;
+        const candidate = climb as Record<string, unknown>;
+        if (typeof candidate.seq !== 'number' || !Number.isSafeInteger(candidate.seq) || candidate.seq < 1) return null;
+        if (newest === null || candidate.seq > (newest.seq as number)) newest = candidate;
+      }
+      if (
+        !newest ||
+        newest.sentByUserId !== writer ||
+        (newest.source != null && newest.source !== 'boardsesh') ||
+        typeof newest.climbUuid !== 'string' ||
+        !newest.climbUuid ||
+        typeof newest.frames !== 'string' ||
+        !newest.frames ||
+        typeof newest.angle !== 'number' ||
+        !Number.isInteger(newest.angle)
+      )
+        return null;
+
+      return {
+        uuid: newest.climbUuid,
+        name: typeof newest.name === 'string' ? newest.name : null,
+        frames: newest.frames,
+        angle: newest.angle,
+      };
+    } catch (error) {
+      // Discovery stays useful when ephemeral presence is unavailable. In
+      // particular, never fall back to durable/imported climb history here.
+      this.deps.logger.warn('[PubSub] Board discovery snapshot unavailable:', error);
+      return null;
     }
   }
 

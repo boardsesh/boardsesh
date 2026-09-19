@@ -4,7 +4,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import SiteJsonLd from '@/app/components/seo/site-json-ld';
-import { getPopularBoardConfigs } from './lib/server-popular-configs';
+import { getBoardDiscovery } from './lib/server-board-discovery';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import HomePageContent from './home-page-content';
 import HomeGymSearch from './components/home/home-gym-search';
@@ -23,11 +23,7 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [popularConfigs, recentBeta, locale] = await Promise.all([
-    getPopularBoardConfigs(),
-    getRecentBetaLinks(),
-    getLocale(),
-  ]);
+  const [boards, recentBeta, locale] = await Promise.all([getBoardDiscovery(), getRecentBetaLinks(), getLocale()]);
 
   return (
     <I18nProvider locale={locale} namespaces={['marketing', 'boards', 'climbs', 'profile', 'feed']}>
@@ -40,7 +36,7 @@ export default async function Home() {
           them. This keeps their markup — the gym links especially — in the
           first HTML a crawler sees. */}
       <HomePageContent
-        initialPopularConfigs={popularConfigs}
+        initialBoards={boards}
         initialRecentBeta={recentBeta}
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}

@@ -22,6 +22,7 @@ import { fetchDirectoryPage, fetchFacetCounts } from '@/app/gyms/directory-data'
 import GymDirectoryCard from '@/app/gyms/gym-directory-card';
 import GymDirectorySearchForm from '@/app/gyms/gym-directory-search-form';
 import { themeTokens } from '@/app/theme/theme-config';
+import { getBoardDiscovery } from '@/app/lib/server-board-discovery';
 import HomeGymSearchNearMe from './home-gym-search-near-me';
 
 /** Gym cards the homepage teases. Four fits the mockup's row and one screen. */
@@ -95,6 +96,14 @@ export default async function HomeGymSearch() {
 
   const facetCounts = facetCountsResult.ok ? facetCountsResult.counts : null;
   const gyms = pageResult.ok ? pageResult.gyms.slice(0, TEASER_CARD_COUNT) : [];
+  // Four bounded, independently cached queries; never drain the directory or
+  // subscribe to board presence from a marketing page. One failed preview
+  // leaves that gym's original card intact.
+  const previewsByGym = new Map(
+    await Promise.all(
+      gyms.map(async (gym) => [gym.uuid, await getBoardDiscovery({ gymUuid: gym.uuid, limit: 3 })] as const),
+    ),
+  );
 
   return (
     // Its own provider, so the block is self-contained: the reused directory
@@ -219,6 +228,7 @@ export default async function HomeGymSearch() {
                 origin={null}
                 viewerState={viewerState}
                 locale={locale}
+                boardPreviews={previewsByGym.get(gym.uuid)}
               />
             ))}
           </Box>

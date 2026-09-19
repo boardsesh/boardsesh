@@ -1,5 +1,50 @@
 # Marketing refresh — follow-up brief
 
+## Physical boards and gym previews — 19 September 2026
+
+Marco's next review identified that the "Popular boards" rail still showed
+generic layout/size combinations. It now discovers named physical installations,
+so opening a board keeps the existing board UUID instead of encouraging another
+custom configuration. The compatibility line is now **"Works with Kilter,
+Tension, MoonBoard & More"**, with matching translations in all four locales.
+
+- `boardDiscovery(input: { gymUuid?, limit? })` is a new backend GraphQL read,
+  shared through `@boardsesh/graphql`. It defaults to eight boards and accepts
+  at most twelve. Homepage gym cards request up to three previews for their own
+  gym; the popular rail uses the globally ranked selection. Board names and gym
+  locations lead the cards, not layout abbreviations or catalogue-wide sends.
+- Eligibility is viewer-independent: a public, listed, non-deleted canonical
+  board linked to a public, non-deleted canonical gym, with usable board and gym
+  slugs. Location-hidden boards are excluded, including for their owners. Spray
+  walls must be published, non-deleted, and not moderation-hidden. The response
+  exposes no owner identity, controller serial, or coordinates.
+- Popularity counts distinct climbers with a send or flash on the actual
+  `boardsesh_ticks.board_id`, excluding detached Kilter ticks. Filtering and
+  ranking happen before the limit, with the board UUID breaking ties. Identical
+  configurations at different gyms remain distinct boards; zero stays zero.
+- Optional lit-climb artwork is a **snapshot**, not a live-session promise. One
+  atomic Redis read checks the current writer and bounded native history, then
+  uses the newest sequence only when its sender still matches that writer.
+  Cleared, mismatched, anonymous, malformed, imported, or unavailable presence
+  produces an unlit preview, never an older-history fallback. This is a read-only
+  addition; Bluetooth/report write semantics are unchanged. The web cache
+  revalidates after 30 seconds and refuses snapshots older than 60 seconds.
+- Public board links retain `/b/{slug}` identity, including the app hand-off.
+  A board card does not claim to join a live session automatically. The gym
+  directory remains the location-search entry point, with named-board discovery
+  directly beneath it. Failed optional previews cannot fail the homepage.
+
+Backend verification includes real SQL ranking/eligibility tests, a real Redis
+release-with-retained-history test, and the schema-wide spray visibility sweep
+with public positive and private/unlisted/moderation-hidden negative cases.
+Independent security QA reviewed the projection, privacy gates, ranking, and
+presence snapshot semantics. GraphQL code generation and backend types pass.
+
+The earlier claimed-first dependency **#5574 is merged** at
+`f95f35763a6197c99e3f88a290c83c216780ad0c`. The new physical-board query ships in
+#5572, alongside its web consumers. #5570 and #5571 are already merged. The
+historical sections below describe earlier checkpoints, not remaining work.
+
 ## Design polish — 19 September 2026
 
 The initial implementation below passed functional checks, but Marco rejected

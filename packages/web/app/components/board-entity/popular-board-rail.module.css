@@ -1,80 +1,111 @@
+.section {
+  min-width: 0;
+}
+
 .section .title {
   color: var(--neutral-900);
   font-size: 32px;
   line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin-bottom: var(--spacing-6);
+  margin-bottom: var(--spacing-3);
 }
 
-/* Every destination remains in the first HTML. A compact scrollable rail keeps
-   the catalogue from turning the mobile landing page into six rows of boards. */
+.section .lead {
+  max-width: 60ch;
+  color: var(--neutral-500);
+  margin-bottom: var(--spacing-6);
+  line-height: 1.6;
+}
+
+.section .ranking {
+  color: var(--neutral-500);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  margin-top: var(--spacing-2);
+}
+
 .grid {
   display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 268px;
+  gap: var(--spacing-4);
   min-width: 0;
   width: 100%;
-  grid-auto-flow: column;
-  grid-auto-columns: 160px;
-  gap: var(--spacing-4);
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-snap-type: x proximity;
   scrollbar-width: thin;
   scrollbar-color: var(--separator) transparent;
-  padding-block: var(--spacing-1) var(--spacing-4);
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-1) 0 var(--spacing-4);
 }
 
 .card {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
   min-width: 0;
-  color: inherit;
-  text-decoration: none;
+  padding: var(--spacing-5);
+  background: var(--semantic-surface);
+  border: 1px solid var(--separator);
+  border-radius: var(--border-radius-xl);
   scroll-snap-align: start;
 }
 
-.thumb {
-  aspect-ratio: 1;
-  border-radius: var(--border-radius-lg);
-  border: 1px solid var(--separator);
-  overflow: hidden;
+.identity {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--semantic-surface);
-  margin-bottom: var(--spacing-3);
-  transition: border-color var(--motion-fast) var(--ease-standard);
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-height: 92px;
 }
 
-.card:hover .thumb,
-.card:focus-visible .thumb {
-  border-color: var(--color-primary);
-}
-
-.name {
-  font-size: var(--font-size-sm);
-  font-weight: 500;
+.card .name {
+  margin: 0;
   color: var(--neutral-900);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
-.meta {
-  font-size: var(--font-size-xs);
+.card .gym {
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+}
+
+.card .location,
+.card .meta,
+.card .selection {
   color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.card .selection {
   margin-top: var(--spacing-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: var(--font-size-xs);
+}
+
+.card .open {
+  margin-top: auto;
+  align-self: flex-start;
+  min-height: 44px;
 }
 
 @media (max-width: 760px) {
   .section .title {
     font-size: var(--font-size-2xl);
-    margin-bottom: var(--spacing-5);
   }
 
   .grid {
-    grid-auto-columns: 144px;
+    grid-auto-columns: min(280px, 90%);
   }
 }

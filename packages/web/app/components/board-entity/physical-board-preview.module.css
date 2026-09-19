@@ -1,0 +1,77 @@
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: var(--semantic-background);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--separator);
+}
+
+.artwork {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: var(--spacing-2);
+}
+
+.compact {
+  height: 100px;
+}
+
+.preview .fallback {
+  color: var(--neutral-500);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--spacing-2);
+}
+
+.gymPreviews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: var(--spacing-2);
+  list-style: none;
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-3) 0 0;
+  border-top: 1px solid var(--separator);
+}
+
+.gymBoard {
+  min-width: 0;
+}
+
+.gymBoard .gymBoardLink {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  color: var(--neutral-900);
+}
+
+.gymBoard .gymBoardName {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.gymBoard .gymBoardMeta,
+.gymBoard .gymBoardOpen {
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.gymBoard .gymBoardMeta {
+  margin-top: var(--spacing-1);
+  color: var(--neutral-500);
+}
+
+.gymBoard .gymBoardOpen {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-primary);
+}

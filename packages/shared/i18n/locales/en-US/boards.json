@@ -1,10 +1,4 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Popular boards",
-      "meta": "{{boards}} boards · {{sends}} sends"
-    }
-  },
   "mobile": {
     "edit": {
       "screenTitle": "Edit board",

@@ -1,4 +1,38 @@
 export const boardEntitiesTypeDefs = /* GraphQL */ `
+  "A redacted snapshot of the last confirmed climb while its sender still holds the board."
+  type BoardDiscoveryClimb {
+    uuid: ID!
+    name: String
+    frames: String!
+    angle: Int!
+  }
+
+  "A public, listed physical board at a public gym. No owner or controller identity is exposed."
+  type BoardDiscoveryBoard {
+    uuid: ID!
+    slug: String!
+    name: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+    gymUuid: ID!
+    gymName: String!
+    gymSlug: String!
+    locationName: String
+    "Distinct climbers with a send or flash recorded on this physical board."
+    uniqueClimbers: Int!
+    "Null when there is no verified live holder, including unavailable Redis. Not a live subscription."
+    currentClimb: BoardDiscoveryClimb
+  }
+
+  input BoardDiscoveryInput {
+    gymUuid: ID
+    "Maximum number of boards, from 1 to 12 (default 8)."
+    limit: Int
+  }
+
   # ============================================
   # Board Entity Types
   # ============================================

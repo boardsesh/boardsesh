@@ -10,13 +10,13 @@ import ClimbTitle from '@/app/components/climb-card/climb-title';
 import { AscentStatus } from '@/app/components/climb-card/ascent-status';
 import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
-import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
+import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
 /**
- * One crawlable climb row: a real `<a href>` to the canonical config-tuple
- * view URL, wrapping the thumbnail, the title block and nothing else.
+ * One crawlable climb row. Ordinary discovery uses the canonical config-tuple
+ * URL; named-board pages explicitly retain their physical-board identity.
  *
  * Lives in its own module rather than inside `static-climb-list.tsx` so
  * `social/proposal-card.tsx` — which renders exactly one climb inside
@@ -31,6 +31,8 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
 export type StaticClimbRowProps = {
   climb: Climb;
   boardDetails: BoardDetails;
+  /** Keep named-wall discovery on that physical board, not a new config. */
+  boardSlug?: string;
   /**
    * Renders the row without its anchor, for a climb with no resolvable
    * canonical URL — a session tick the catalog lookup missed has no name,
@@ -80,6 +82,7 @@ const centerSx = { flex: 1, minWidth: 0 } as const;
 const StaticClimbRow = ({
   climb,
   boardDetails,
+  boardSlug,
   unlinked,
   pathname,
   logbook,
@@ -94,13 +97,20 @@ const StaticClimbRow = ({
           // canonical carries the `-{board} Climb-` slug, and so does its sitemap
           // URL; a row anchor built from the raw null would be a THIRD URL for
           // one page, splitting the signal three ways.
-          buildCanonicalClimbViewUrl(
-            boardDetails,
-            climb.angle,
-            climb.uuid,
-            resolveClimbDisplayName(climb.name, boardDetails.board_name),
-          ),
-    [unlinked, boardDetails, climb.angle, climb.uuid, climb.name],
+          boardSlug
+          ? constructBoardSlugViewUrl(
+              encodeURIComponent(boardSlug),
+              climb.angle,
+              climb.uuid,
+              resolveClimbDisplayName(climb.name, boardDetails.board_name),
+            )
+          : buildCanonicalClimbViewUrl(
+              boardDetails,
+              climb.angle,
+              climb.uuid,
+              resolveClimbDisplayName(climb.name, boardDetails.board_name),
+            ),
+    [unlinked, boardSlug, boardDetails, climb.angle, climb.uuid, climb.name],
   );
 
   const rowBody = (

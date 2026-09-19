@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 vi.mock('server-only', () => ({}));
 
@@ -23,6 +24,8 @@ vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinc
 const fetchDirectoryPage = vi.hoisted(() => vi.fn());
 const fetchFacetCounts = vi.hoisted(() => vi.fn());
 vi.mock('@/app/gyms/directory-data', () => ({ fetchDirectoryPage, fetchFacetCounts }));
+const getBoardDiscovery = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/server-board-discovery', () => ({ getBoardDiscovery }));
 
 vi.mock('@/app/lib/gym-funnel-analytics', () => ({
   trackGymFunnelEvent: vi.fn(),
@@ -83,6 +86,7 @@ beforeEach(() => {
     locale: 'en-US',
   }));
   getPosthogDistinctId.mockReset().mockResolvedValue(null);
+  getBoardDiscovery.mockReset().mockResolvedValue([]);
   fetchDirectoryPage.mockReset().mockResolvedValue({
     ok: true,
     gyms: [
@@ -98,6 +102,17 @@ beforeEach(() => {
 });
 
 describe('HomeGymSearch', () => {
+  it('fetches bounded real-board previews for each gym without replacing its identity', async () => {
+    getBoardDiscovery.mockImplementation(async ({ gymUuid }: { gymUuid: string }) =>
+      gymUuid === 'gym-1' ? [discoveryBoard()] : [],
+    );
+    await renderSection();
+    expect(getBoardDiscovery).toHaveBeenCalledWith({ gymUuid: 'gym-1', limit: 3 });
+    expect(getBoardDiscovery).toHaveBeenCalledWith({ gymUuid: 'gym-2', limit: 3 });
+    expect(screen.getByRole('link', { name: /Training room Kilter/ }).getAttribute('href')).toBe('/b/northside-kilter');
+    expect(screen.getByRole('link', { name: 'Granite Barn Bouldering' })).toBeTruthy();
+  });
+
   it('does not describe a successful empty catalogue as an outage', async () => {
     fetchDirectoryPage.mockResolvedValue({ ok: true, gyms: [], totalCount: 0 });
     await renderSection();

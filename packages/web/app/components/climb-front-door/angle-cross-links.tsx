@@ -4,12 +4,13 @@ import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
-import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
+import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardDetails } from '@/app/lib/types';
 
 type AngleCrossLinksProps = {
   boardDetails: BoardDetails;
+  boardSlug?: string;
   climbUuid: string;
   climbName: string;
   currentAngle: number;
@@ -47,6 +48,7 @@ const itemSx = {
  */
 export default async function AngleCrossLinks({
   boardDetails,
+  boardSlug,
   climbUuid,
   climbName,
   currentAngle,
@@ -72,7 +74,13 @@ export default async function AngleCrossLinks({
           }
           return (
             <Box component="li" key={stats.angle} sx={itemSx}>
-              <LocaleLink href={buildCanonicalClimbViewUrl(boardDetails, stats.angle, climbUuid, climbName)}>
+              <LocaleLink
+                href={
+                  boardSlug
+                    ? constructBoardSlugViewUrl(encodeURIComponent(boardSlug), stats.angle, climbUuid, climbName)
+                    : buildCanonicalClimbViewUrl(boardDetails, stats.angle, climbUuid, climbName)
+                }
+              >
                 {t('frontDoor.angles.link', { angle: stats.angle, grade })}
               </LocaleLink>
             </Box>

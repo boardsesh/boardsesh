@@ -256,9 +256,10 @@ describe('climb front door server HTML', () => {
 
   it('cross-links the other angles and does not self-link the current one', async () => {
     const html = await renderFrontDoor();
-    // 25° is a real link; 40° — the angle being viewed — must not be one.
-    expect(html).toMatch(/href="\/kilter\/[^"]*\/25\/view\//);
-    expect(html).not.toMatch(/href="\/kilter\/[^"]*\/40\/view\//);
+    // Angle navigation retains the shared physical board, while schema above
+    // continues to use its canonical configuration URL.
+    expect(html).toMatch(/href="\/b\/my-board\/25\/view\//);
+    expect(html).not.toMatch(/href="\/b\/my-board\/40\/view\//);
     expect(html).toContain('aria-current="page"');
   });
 

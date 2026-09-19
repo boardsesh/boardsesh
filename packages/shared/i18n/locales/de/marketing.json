@@ -33,7 +33,7 @@
   "home": {
     "hero": {
       "title": "Eine App für deine Boards",
-      "eyebrow": "Kompatibel mit Kilter, Tension & MoonBoard",
+      "eyebrow": "Kompatibel mit Kilter, Tension, MoonBoard & mehr",
       "playShotAlt": "Ein geöffneter Boulder in Boardsesh mit beleuchteten Griffen am Board",
       "subtitle": "Plane die nächsten Boulder mit deiner Crew. Halte jede Begehung in einem Routenbuch fest, egal an welchem Board du kletterst.",
       "startClimbingAria": "In der App losklettern",
@@ -77,6 +77,17 @@
       "geoHint": "Ortung aus? Tipp einfach eine Stadt ein: gleiche Ergebnisse, ohne Berechtigungsabfrage.",
       "cardsUnavailable": "Die Hallenliste lädt gerade nicht. Das komplette Verzeichnis ist trotzdem da.",
       "browseAll": "Zum kompletten Hallenverzeichnis"
+    },
+    "boards": {
+      "title": "Beliebte Boards",
+      "lead": "Finde das Board, an dem du kletterst, und öffne es mit deiner Crew in der App.",
+      "ranking": "Sortiert nach Kletterer*innen mit eingetragenen Begehungen an diesem Board. Die Vorschauen sind Momentaufnahmen, keine Live-Ansichten.",
+      "climbers_one": "{{formattedCount}} Kletterer*in",
+      "climbers_other": "{{formattedCount}} Kletterer*innen",
+      "preview": "Board-Vorschau: {{board}}",
+      "typeAngle": "{{board}} · {{angle}}°",
+      "selectedClimb": "Ausgewählter Boulder: {{climb}}",
+      "open": "Dieses Board öffnen"
     },
     "recentBeta": {
       "title": "Frische Beta"

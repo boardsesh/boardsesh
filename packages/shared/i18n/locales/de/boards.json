@@ -1,10 +1,4 @@
 {
-  "discovery": {
-    "popular": {
-      "title": "Beliebte Boards",
-      "meta": "{{boards}} Boards · {{sends}} Begehungen"
-    }
-  },
   "mobile": {
     "edit": {
       "screenTitle": "Board bearbeiten",

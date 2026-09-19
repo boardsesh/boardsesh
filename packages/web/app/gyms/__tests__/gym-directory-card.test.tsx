@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/react';
 import React from 'react';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
+import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -43,6 +45,7 @@ async function renderCard(props: {
   gym?: Partial<GymDirectoryCardData>;
   origin?: { latitude: number; longitude: number } | null;
   viewerState?: 'signed-in' | 'signed-out';
+  boardPreviews?: BoardDiscoveryBoard[];
 }) {
   return render(
     <GymDirectoryCard
@@ -50,6 +53,7 @@ async function renderCard(props: {
       origin={props.origin ?? null}
       viewerState={props.viewerState ?? 'signed-out'}
       locale="en-US"
+      boardPreviews={props.boardPreviews}
     />,
   );
 }
@@ -64,6 +68,17 @@ beforeEach(() => {
 });
 
 describe('GymDirectoryCard', () => {
+  it('renders only previews belonging to this gym and keeps the board UUID route', async () => {
+    await renderCard({
+      boardPreviews: [
+        discoveryBoard(),
+        discoveryBoard({ gymUuid: 'another-gym', slug: 'wrong-wall', name: 'Other gym wall' }),
+      ],
+    });
+    expect(screen.getByRole('link', { name: /Training room Kilter/ }).getAttribute('href')).toBe('/b/northside-kilter');
+    expect(screen.queryByRole('link', { name: /Other gym wall/ })).toBeNull();
+  });
+
   it('labels a claimed gym without offering a claim action', async () => {
     await renderCard({ gym: { isClaimed: true } });
     expect(screen.getByText('Claimed')).toBeTruthy();
