@@ -79,8 +79,11 @@
     "claimed": "Beansprucht",
     "unclaimed": "Nicht beansprucht",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "{{distance}} km entfernt",
-    "claimCta": "Ist das deine Halle?"
+    "distance": "{{distance}} km entfernt"
+  },
+  "claim": {
+    "body": "Ist das deine Halle? Beanspruche sie und du legst fest, welche Boards, Zeiten und Links hier stehen.",
+    "action": "Finde deine Halle"
   },
   "nearMe": {
     "cta": "Meinen Standort nutzen",

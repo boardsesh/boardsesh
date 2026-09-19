@@ -42,6 +42,7 @@ import {
 } from './directory-copy';
 import { fetchDirectoryPage, fetchFacetCounts } from './directory-data';
 import GymDirectoryCard from './gym-directory-card';
+import GymDirectoryClaimLink from './gym-directory-claim-link';
 import GymDirectoryNearMe from './gym-directory-near-me';
 import GymDirectoryPagination from './gym-directory-pagination';
 import GymDirectorySearchForm from './gym-directory-search-form';
@@ -198,7 +199,17 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           {facetDetail(t, facet, facetCounts, formatNumber)}
         </Typography>
 
-        <PageCard sx={{ mb: 4, '& form': { mb: 1.5 } }}>
+        {/* The anchor the closing claim prompt jumps back to. Same clearance
+            the shell gives every other anchored block, so the fixed header does
+            not land on top of the search field. */}
+        <PageCard
+          id="gym-directory-search"
+          sx={{
+            mb: 4,
+            '& form': { mb: 1.5 },
+            scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
+          }}
+        >
           <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             {t('search.geoHint')}
@@ -245,7 +256,6 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
           // was typed, so near-me has to keep applying it.
           searchQuery={query.query}
           locale={locale}
-          viewerState={viewerState}
           browsePins={toMapPins(pageResult.gyms)}
           browsePinnedCount={browseCoverage.pinned}
           browseShownCount={browseCoverage.total}
@@ -299,13 +309,24 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
               }}
             >
               {pageResult.gyms.map((gym) => (
-                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
+                <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
               ))}
             </Box>
           )}
 
           <GymDirectoryPagination facet={facet} query={query} totalCount={pageResult.totalCount} />
         </GymDirectoryNearMe>
+
+        {/* ONE claim prompt for the page, below the list. It used to sit on
+            every unclaimed row, so the page said "Is this your gym?" 24 times
+            and the phrase read as a defect on each listing instead of an offer
+            to one owner. Suppressed on an empty page: there is nothing to
+            claim, and the search that found nothing is the thing to fix. */}
+        {pageResult.gyms.length > 0 && (
+          <Box component="section" sx={{ mt: 4 }}>
+            <GymDirectoryClaimLink viewerState={viewerState} />
+          </Box>
+        )}
 
         <Box component="section" sx={{ mt: 5 }}>
           <Typography

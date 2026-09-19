@@ -17,7 +17,7 @@ import {
   type SearchGymsDirectoryQueryResponse,
   type SearchGymsDirectoryQueryVariables,
 } from '@boardsesh/graphql/operations';
-import { gymDirectorySearched, type GymClaimViewerState } from '@boardsesh/analytics';
+import { gymDirectorySearched } from '@boardsesh/analytics';
 import { useGeolocation } from '@/app/hooks/use-geolocation';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -54,7 +54,6 @@ type GymDirectoryNearMeProps = {
   /** The visitor's `?q=` text, carried into the near-me query unchanged. */
   searchQuery: string;
   locale: Locale;
-  viewerState: GymClaimViewerState;
   /** Pins for the server-rendered page, so browse mode has a populated map. */
   browsePins: MapPin[];
   browsePinnedCount: number;
@@ -96,7 +95,6 @@ export default function GymDirectoryNearMe({
   boardTypes,
   searchQuery,
   locale,
-  viewerState,
   browsePins,
   browsePinnedCount,
   browseShownCount,
@@ -346,7 +344,6 @@ export default function GymDirectoryNearMe({
               origin={origin}
               radiusKm={radiusKm}
               locale={locale}
-              viewerState={viewerState}
             />
           ) : (
             children
@@ -422,10 +419,9 @@ type NearMeResultsProps = {
   origin: { latitude: number; longitude: number } | null;
   radiusKm: NearMeRadiusKm;
   locale: Locale;
-  viewerState: GymClaimViewerState;
 };
 
-function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, viewerState }: NearMeResultsProps) {
+function NearMeResults({ gyms, totalCount, origin, radiusKm, locale }: NearMeResultsProps) {
   const { t } = useTranslation('gyms');
   const formatNumber = numberFormatFor(locale);
   // The request is capped at the backend's 50 and near-me has no pagination, so
@@ -462,7 +458,7 @@ function NearMeResults({ gyms, totalCount, origin, radiusKm, locale, viewerState
       ) : (
         <Box component="ul" sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 0, m: 0, p: 0 }}>
           {gyms.map((gym) => (
-            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} viewerState={viewerState} locale={locale} />
+            <GymDirectoryCard key={gym.uuid} gym={gym} origin={origin} locale={locale} />
           ))}
         </Box>
       )}

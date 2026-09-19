@@ -79,8 +79,11 @@
     "claimed": "Reclamado",
     "unclaimed": "Sin reclamar",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "a {{distance}} km",
-    "claimCta": "¿Es tuyo este rocódromo?"
+    "distance": "a {{distance}} km"
+  },
+  "claim": {
+    "body": "¿Es tuyo este rocódromo? Reclámalo y decides qué plafones, horarios y enlaces ven aquí los escaladores.",
+    "action": "Busca tu rocódromo"
   },
   "nearMe": {
     "cta": "Usar mi ubicación",

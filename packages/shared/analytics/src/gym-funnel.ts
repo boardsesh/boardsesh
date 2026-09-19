@@ -67,16 +67,21 @@ export type GymClaimViewerState = 'signed-in' | 'signed-out';
  *  - `gym-page`      — packages/web/app/gym/[gym_slug]/gym-claim-cta.tsx
  *  - `preview-sheet` — packages/web/app/components/gym-entity/gym-detail.tsx
  *                      (the gym preview sheet opened from a board page)
- *  - `directory-card` — a claim affordance on a gym card in the directory
- *                       listing. Reserved by #4374; the directory surface ships
- *                       in a later PR of this epic.
+ *  - `directory-footer` — packages/web/app/gyms/gym-directory-claim-link.tsx,
+ *                      the one closing prompt under the directory list. It was
+ *                      `directory-card` while the prompt sat on every result
+ *                      row; the prompt now renders ONCE per page, so the old
+ *                      name would keep counting a per-row impression surface
+ *                      that no longer exists. A rename, not an alias, because
+ *                      the click rate of 24 prompts and the click rate of one
+ *                      are not the same number and must not be averaged.
  *  - `similar-gyms`  — packages/web/app/components/gym-entity/similar-gym-suggestions.tsx
  *                      (the duplicate-check list inside the create-gym form).
  *                      NOT in #4374's list; added because the call site is real
- *                      and folding it into `directory-card` would mix "browsing
+ *                      and folding it into the directory would mix "browsing
  *                      the directory" with "about to create a duplicate".
  */
-export type GymClaimPlacement = 'gym-page' | 'preview-sheet' | 'directory-card' | 'similar-gyms';
+export type GymClaimPlacement = 'gym-page' | 'preview-sheet' | 'directory-footer' | 'similar-gyms';
 
 /**
  * Which proof path the claimant submitted. Mirrors the `GymClaimMethod` GraphQL
@@ -197,7 +202,14 @@ export type GymFunnelPayload<
 export type GymClaimCtaClickedInput = {
   placement: GymClaimPlacement;
   viewerState: GymClaimViewerState;
-  gymUuid: string;
+  /**
+   * The gym the click was about, or `null` where the surface is not about one
+   * gym. `directory-footer` is the only such surface: it is a single prompt
+   * under a list of 24 gyms. `null` rather than a dropped key — the property
+   * stays present on every claim click, so a PostHog breakdown reads "no gym"
+   * instead of silently excluding the whole directory.
+   */
+  gymUuid: string | null;
 };
 
 export type GymClaimSubmittedInput = {
@@ -239,7 +251,7 @@ export function gymClaimCtaClicked(
   input: GymClaimCtaClickedInput,
 ): GymFunnelPayload<
   typeof GYM_FUNNEL_EVENTS.ClaimCtaClicked,
-  { placement: GymClaimPlacement; viewerState: GymClaimViewerState; gymUuid: string }
+  { placement: GymClaimPlacement; viewerState: GymClaimViewerState; gymUuid: string | null }
 > {
   return {
     name: GYM_FUNNEL_EVENTS.ClaimCtaClicked,

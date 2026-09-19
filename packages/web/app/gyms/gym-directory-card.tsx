@@ -11,12 +11,10 @@ import NearMeOutlined from '@mui/icons-material/NearMeOutlined';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
 import type { GymDirectoryCard as GymDirectoryCardData } from '@boardsesh/graphql/operations';
 import { boardTypeLabel } from '@boardsesh/board-constants';
-import type { GymClaimViewerState } from '@boardsesh/analytics';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
 import { boardChips, cardLocation, distanceChipKm, numberFormatFor, roundDistanceKm } from './directory-card-model';
-import GymDirectoryClaimLink from './gym-directory-claim-link';
 import styles from './gym-directory-card.module.css';
 
 type GymDirectoryCardProps = {
@@ -26,7 +24,6 @@ type GymDirectoryCardProps = {
    * origin the visitor shared with the client. Null when there is neither.
    */
   origin: { latitude: number; longitude: number } | null;
-  viewerState: GymClaimViewerState;
   /** Formats the distance for the active locale. */
   locale: Locale;
 };
@@ -37,14 +34,18 @@ type GymDirectoryCardProps = {
  * The card renders only schema-real fields: name, board chips, and a location
  * line WHEN THERE IS ONE. No photo, no description, no hours, no "verified"
  * treatment. Claim badges report who maintains a listing; sparse and unclaimed
- * listings retain the same divided row and their claim prompt.
+ * listings retain the same divided row.
+ *
+ * No claim prompt on the row any more. It was repeated on every unclaimed gym,
+ * which is most of them — the directory now carries ONE prompt under the list
+ * (`gym-directory-claim-link.tsx`).
  *
  * A CLIENT component, though it is still server-rendered into the first HTML
  * response like every other one: near-me results are fetched in the browser, so
  * one card has to render on both sides. The alternative was a second card
  * component for near-me that would drift from this one within a release.
  */
-export default function GymDirectoryCard({ gym, origin, viewerState, locale }: GymDirectoryCardProps) {
+export default function GymDirectoryCard({ gym, origin, locale }: GymDirectoryCardProps) {
   const { t } = useTranslation('gyms');
   // Shared across the 24 cards on the page rather than constructed per card.
   const formatNumber = numberFormatFor(locale);
@@ -76,6 +77,10 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
           </MuiLink>
         </Typography>
 
+        {/* "Claimed" earns the chip: it has a fill, an icon, and it reports a
+            state somebody acted to reach. "Unclaimed" is the absence of that,
+            and a bordered pill around it drew a control nobody can press — so
+            it keeps the label and drops the box. */}
         <Chip
           size="small"
           icon={gym.isClaimed ? <CheckCircleOutline /> : undefined}
@@ -84,7 +89,7 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
             alignSelf: 'flex-start',
             backgroundColor: gym.isClaimed ? 'var(--color-success-bg)' : 'transparent',
             color: gym.isClaimed ? 'var(--color-success)' : 'var(--neutral-500)',
-            border: '1px solid var(--separator)',
+            border: gym.isClaimed ? '1px solid var(--separator)' : 'none',
             '& .MuiChip-icon': { color: 'inherit' },
           }}
         />
@@ -139,10 +144,6 @@ export default function GymDirectoryCard({ gym, origin, viewerState, locale }: G
               />
             ))}
           </Box>
-        )}
-
-        {!gym.isClaimed && (
-          <GymDirectoryClaimLink gymUuid={gym.uuid} gymSlug={gym.slug ?? ''} viewerState={viewerState} />
         )}
       </Box>
     </Box>

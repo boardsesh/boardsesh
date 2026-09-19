@@ -79,8 +79,11 @@
     "claimed": "Revendiquée",
     "unclaimed": "Non revendiquée",
     "boardChip": "{{board}} {{angle}}°",
-    "distance": "à {{distance}} km",
-    "claimCta": "C'est ta salle ?"
+    "distance": "à {{distance}} km"
+  },
+  "claim": {
+    "body": "C'est ta salle ? Revendique-la et c'est toi qui choisis les boards, les horaires et les liens affichés ici.",
+    "action": "Trouve ta salle"
   },
   "nearMe": {
     "cta": "Utiliser ma position",
