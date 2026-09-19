@@ -1,13 +1,13 @@
 /// <reference types="node" />
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
-import { frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
+import { frameComposition, frameDirectory, frameScreenshot, main, parseFrameArguments } from '../frame-screenshots';
 import { ACCEPTED_SIZES, readPngDimensions } from '../assert-screenshot-dimensions';
 import { readPngSizesRecursively, findContentOffenders } from '../assert-screenshot-content';
 import { decideProbeScope } from '../screenshot-probe-scope';
@@ -18,8 +18,10 @@ import {
   captionLocaleForStore,
   readCaptionCatalog,
   readPresentationManifest,
+  resolveScreenshotRecipes,
   screenshotCaptions,
   sha256Screenshot,
+  sha256ScreenshotSources,
 } from '../lib/screenshot-presentation';
 
 const directories: string[] = [];
@@ -43,6 +45,389 @@ describe('store screenshot presentation', () => {
     expect(captionLocaleForStore('ios', 'es-MX')).toBe('es');
     expect(captionLocaleForStore('android', '')).toBe('en-US');
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
+  });
+
+  it('canonicalizes composite source names and field order without ignoring changed provenance', () => {
+    const sources = {
+      'a.png': { rawBytes: 70000, rawSha256: 'a'.repeat(64) },
+      'z.png': { rawBytes: 80000, rawSha256: 'b'.repeat(64) },
+    };
+    const reordered = {
+      'z.png': { rawSha256: sources['z.png'].rawSha256, rawBytes: sources['z.png'].rawBytes },
+      'a.png': { rawSha256: sources['a.png'].rawSha256, rawBytes: sources['a.png'].rawBytes },
+    };
+    const expected = sha256Screenshot(Buffer.from(JSON.stringify(sources)));
+    expect(sha256ScreenshotSources(sources)).toBe(expected);
+    expect(sha256ScreenshotSources(reordered)).toBe(expected);
+    reordered['z.png'].rawSha256 = 'c'.repeat(64);
+    expect(sha256ScreenshotSources(reordered)).not.toBe(expected);
+  });
+
+  it('reads reordered canonical metadata and legacy insertion-order hashes while rejecting tampered sources', () => {
+    const output = directory();
+    const sources = {
+      'z.png': { rawBytes: 80000, rawSha256: 'b'.repeat(64) },
+      'a.png': { rawBytes: 70000, rawSha256: 'a'.repeat(64) },
+    };
+    const entry = {
+      rawBytes: 70000,
+      rawSha256: sha256ScreenshotSources(sources),
+      framedSha256: 'f'.repeat(64),
+      sources,
+    };
+    const writeManifest = () =>
+      writeFileSync(
+        join(output, PRESENTATION_MANIFEST),
+        JSON.stringify({ version: 1, locale: 'en-US', files: { '00-composite.png': entry } }),
+      );
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+    entry.sources = { 'a.png': sources['a.png'], 'z.png': sources['z.png'] };
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+
+    entry.sources = sources;
+    entry.rawSha256 = sha256Screenshot(Buffer.from(JSON.stringify(sources)));
+    expect(entry.rawSha256).not.toBe(sha256ScreenshotSources(sources));
+    writeManifest();
+    expect(readPresentationManifest(output).files['00-composite.png']).toEqual(entry);
+    entry.sources['z.png'].rawSha256 = 'c'.repeat(64);
+    writeManifest();
+    expect(() => readPresentationManifest(output)).toThrow('Composite source metadata does not match');
+  });
+
+  it('requires every live capture and optionally adds the real MoonBoard capture', () => {
+    const legacy = Object.keys(screenshotCaptions('android', 'pixel-2'));
+    const live = [...legacy, '09-live-queue.png', '10-live-climb.png', '11-live-climb-peer.png'];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', live);
+    expect(recipes.map((recipe) => recipe.output)).toEqual([
+      '00-board-family.png',
+      '01-live-queue.png',
+      '02-live-climb.png',
+      '03-climbs.png',
+      '04-discover.png',
+      '05-workout-generator.png',
+      '06-profile.png',
+      '07-board-sheet.png',
+    ]);
+    expect(recipes[0].sources).toEqual(['00-tension-board-view.png', '01-kilter-board-view.png']);
+    expect(
+      resolveScreenshotRecipes('android', 'pixel-2', [...live, '08-moonboard-board-view.png'])[0].sources,
+    ).toContain('08-moonboard-board-view.png');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', live.slice(0, -1))).toThrow('Incomplete or unknown');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...live, 'invented.png'])).toThrow(
+      'Incomplete or unknown',
+    );
+    expect(resolveScreenshotRecipes('android', 'pixel-2', legacy).every((recipe) => recipe.sources.length === 1)).toBe(
+      true,
+    );
+  });
+
+  it('selects the distinct wall-status scene without the former matching-session montage', () => {
+    const names = [...Object.keys(screenshotCaptions('android', 'pixel-2')), '09-live-queue.png', '10-wall-status.png'];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    expect(recipes).toHaveLength(8);
+    expect(recipes[2]).toEqual({
+      output: '02-wall-status.png',
+      caption: 'wallStatus',
+      layout: 'wall-status',
+      sources: ['10-wall-status.png'],
+    });
+    expect(
+      resolveScreenshotRecipes('android', 'pixel-2', [...names, '08-moonboard-board-view.png'])[0].sources,
+    ).toContain('08-moonboard-board-view.png');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', names.slice(0, -1))).toThrow('Incomplete or unknown');
+    expect(() =>
+      resolveScreenshotRecipes('android', 'pixel-2', [...names, '10-live-climb.png', '11-live-climb-peer.png']),
+    ).toThrow('Incomplete or unknown');
+  });
+
+  it.each([false, true])(
+    'frames the wall-status set, with MoonBoard=%s, and retires stale output',
+    async (moonBoard) => {
+      const input = directory();
+      const output = directory();
+      const capture = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#164c39' } })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      const names = [
+        ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+        '09-live-queue.png',
+        '10-wall-status.png',
+      ];
+      if (moonBoard) names.push('08-moonboard-board-view.png');
+      for (const name of names) writeFileSync(join(input, name), capture);
+      writeFileSync(join(output, '02-live-climb.png'), 'old composite');
+      const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+      expect(saved).toHaveLength(8);
+      expect(saved[2]).toBe(join(output, '02-wall-status.png'));
+      expect(existsSync(join(output, '02-live-climb.png'))).toBe(false);
+      const framed = readFileSync(saved[2]);
+      expect(readPngDimensions(framed)).toEqual({ width: 1080, height: 1920 });
+      expect(readPresentationManifest(output).files['02-wall-status.png']).toEqual({
+        rawBytes: capture.length,
+        rawSha256: sha256Screenshot(capture),
+        framedSha256: sha256Screenshot(framed),
+      });
+      expect(readFileSync(join(input, '10-wall-status.png'))).toEqual(capture);
+    },
+    60_000,
+  );
+
+  it('enlarges only the captured wall rail and preserves the complete local selection screen', async () => {
+    const raw = await sharp(
+      Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1080" height="1920" fill="#164c39"/>
+      <rect y="270" width="1080" height="148" fill="#e69a32"/>
+      <rect y="1525" width="1080" height="125" fill="#ac3478"/>
+      <rect y="1856" width="1080" height="64" fill="#3269e6"/>
+    </svg>`),
+    )
+      .png()
+      .toBuffer();
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const framed = await frameComposition([raw], readCaptionCatalog(locale).wallStatus, 'wall-status');
+      const column = await sharp(framed).extract({ left: 540, top: 0, width: 1, height: 1920 }).raw().toBuffer();
+      const regions = (color: readonly number[]) => {
+        const matches: Array<{ top: number; height: number }> = [];
+        for (let row = 0; row < 1920; row++) {
+          if (!color.every((channel, index) => column[row * 3 + index] === channel)) continue;
+          const last = matches.at(-1);
+          if (last && last.top + last.height === row) last.height += 1;
+          else matches.push({ top: row, height: 1 });
+        }
+        return matches;
+      };
+      const wallRails = regions([230, 154, 50]);
+      const selectedClimb = regions([172, 52, 120]);
+      const screenFooter = regions([50, 105, 230]);
+      expect(wallRails).toHaveLength(2);
+      expect(wallRails[0].height).toBeGreaterThan(wallRails[1].height);
+      expect(wallRails[0].top + wallRails[0].height).toBeLessThan(wallRails[1].top);
+      expect(selectedClimb).toHaveLength(1);
+      expect(screenFooter).toHaveLength(1);
+      expect(selectedClimb[0].top).toBeGreaterThan(wallRails[1].top + wallRails[1].height);
+      expect(screenFooter[0].top).toBeGreaterThan(selectedClimb[0].top + selectedClimb[0].height);
+    }
+  });
+
+  it('requires all six hardware captures for the extended board campaign', () => {
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-wall-status.png',
+      '11-woods-board-view.png',
+      '12-grasshopper-board-view.png',
+      '13-moonboard-2024-view.png',
+    ];
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    expect(resolveScreenshotRecipes('android', 'pixel-2', [...names].reverse())).toEqual(recipes);
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...names, names[0]])).toThrow('Incomplete or unknown');
+    expect(recipes.map(({ output }) => output)).toEqual([
+      '00-board-family.png',
+      '01-more-boards.png',
+      '02-live-queue.png',
+      '03-wall-status.png',
+      '04-climbs.png',
+      '05-discover.png',
+      '06-workout-generator.png',
+      '07-profile.png',
+    ]);
+    expect(recipes[1]).toEqual({
+      output: '01-more-boards.png',
+      caption: 'moreBoards',
+      layout: 'more-boards',
+      sources: ['11-woods-board-view.png', '12-grasshopper-board-view.png', '13-moonboard-2024-view.png'],
+    });
+    for (const missing of ['08-moonboard-board-view.png', ...recipes[1].sources]) {
+      expect(() =>
+        resolveScreenshotRecipes(
+          'android',
+          'pixel-2',
+          names.filter((name) => name !== missing),
+        ),
+      ).toThrow('Incomplete or unknown');
+    }
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...names, '11-live-climb-peer.png'])).toThrow(
+      'Incomplete or unknown',
+    );
+  });
+
+  it('composes fourteen native captures into eight reordered images with source provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-wall-status.png',
+      '11-woods-board-view.png',
+      '12-grasshopper-board-view.png',
+      '13-moonboard-2024-view.png',
+    ];
+    const captures = new Map<string, Buffer>();
+    for (const [index, name] of names.entries()) {
+      const capture = await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 16},70,90)` },
+      })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      captures.set(name, capture);
+      writeFileSync(join(input, name), capture);
+    }
+    const oldNames = ['01-live-queue.png', '02-wall-status.png', '07-board-sheet.png'];
+    for (const name of oldNames) writeFileSync(join(output, name), 'previous campaign');
+    const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+    expect(saved).toEqual(recipes.map(({ output: name }) => join(output, name)));
+    const manifest = readPresentationManifest(output);
+    expect(Object.keys(manifest.files)).toEqual(recipes.map(({ output: name }) => name));
+    for (const recipe of recipes) {
+      const entry = manifest.files[recipe.output];
+      if (recipe.sources.length > 1) {
+        expect(entry.sources).toEqual(
+          Object.fromEntries(
+            recipe.sources.map((name) => [
+              name,
+              { rawBytes: captures.get(name)!.length, rawSha256: sha256Screenshot(captures.get(name)!) },
+            ]),
+          ),
+        );
+        expect(entry.rawSha256).toBe(sha256ScreenshotSources(entry.sources!));
+      } else {
+        expect(entry.sources).toBeUndefined();
+        expect(entry.rawSha256).toBe(sha256Screenshot(captures.get(recipe.sources[0])!));
+      }
+    }
+    for (const name of oldNames) expect(existsSync(join(output, name))).toBe(false);
+    for (const [name, bytes] of captures) expect(readFileSync(join(input, name))).toEqual(bytes);
+    expect(
+      findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
+    ).toEqual([]);
+    const originalFramed = readFileSync(saved[1]);
+    writeFileSync(join(input, '13-moonboard-2024-view.png'), Buffer.alloc(60));
+    await expect(
+      frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
+    ).rejects.toThrow();
+    expect(readFileSync(saved[1])).toEqual(originalFramed);
+  }, 60_000);
+
+  it('preserves all three additional board sources in each localized composition', async () => {
+    const colors = ['#164c39', '#ac3478', '#e69a32'];
+    const captures = await Promise.all(
+      colors.map((background) =>
+        sharp({ create: { width: 1080, height: 1920, channels: 3, background } })
+          .png()
+          .toBuffer(),
+      ),
+    );
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const caption = readCaptionCatalog(locale).moreBoards;
+      const framed = await frameComposition(captures, caption, 'more-boards');
+      for (const [left, top, expected] of [
+        [100, 700, [22, 76, 57]],
+        [540, 1300, [172, 52, 120]],
+        [950, 700, [230, 154, 50]],
+      ] as const) {
+        const pixel = await sharp(framed).extract({ left, top, width: 1, height: 1 }).raw().toBuffer();
+        expect([...pixel]).toEqual(expected);
+      }
+      await expect(frameComposition(captures.slice(0, 2), caption, 'more-boards')).rejects.toThrow('source count');
+    }
+  });
+
+  it('composes eight store images from twelve verified native captures', async () => {
+    const input = directory();
+    const output = directory();
+    const names = [
+      ...Object.keys(screenshotCaptions('android', 'pixel-2')),
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+      '10-live-climb.png',
+      '11-live-climb-peer.png',
+    ];
+    const captures = new Map<string, Buffer>();
+    for (const [index, name] of names.entries()) {
+      const capture = await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: `rgb(${index * 20},70,90)` },
+      })
+        .composite([{ input: randomBytes(256 * 128 * 3), raw: { width: 256, height: 128, channels: 3 } }])
+        .png()
+        .toBuffer();
+      captures.set(name, capture);
+      writeFileSync(join(input, name), capture);
+    }
+    const saved = await frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output });
+    expect(saved).toHaveLength(8);
+    const manifest = readPresentationManifest(output);
+    const composite = manifest.files['00-board-family.png'];
+    expect(Object.keys(composite.sources!)).toEqual([
+      '00-tension-board-view.png',
+      '01-kilter-board-view.png',
+      '08-moonboard-board-view.png',
+    ]);
+    for (const [sourceName, provenance] of Object.entries(composite.sources!)) {
+      expect(provenance).toEqual({
+        rawBytes: captures.get(sourceName)!.length,
+        rawSha256: sha256Screenshot(captures.get(sourceName)!),
+      });
+    }
+    expect(composite.rawBytes).toBe(Math.min(...Object.values(composite.sources!).map((source) => source.rawBytes)));
+    expect(
+      findContentOffenders(readPngSizesRecursively(output), new Map(), { minBytes: 61440, minRatio: 0.4 }),
+    ).toEqual([]);
+    expect(readFileSync(join(input, '08-moonboard-board-view.png'))).toEqual(
+      captures.get('08-moonboard-board-view.png'),
+    );
+
+    // Decorative peers must never hide a blank native source, or replace the previous valid output.
+    const originalFramed = readFileSync(saved[0]);
+    writeFileSync(
+      join(input, '11-live-climb-peer.png'),
+      await sharp({
+        create: { width: 1080, height: 1920, channels: 3, background: '#111111' },
+      })
+        .png()
+        .toBuffer(),
+    );
+    await expect(
+      frameDirectory({ platform: 'android', device: 'pixel-2', locale: 'en-US', input, output }),
+    ).rejects.toThrow('likely blank');
+    expect(readFileSync(saved[0])).toEqual(originalFramed);
+
+    composite.rawBytes += 1;
+    writeFileSync(join(output, PRESENTATION_MANIFEST), JSON.stringify(manifest));
+    expect(() => readPresentationManifest(output)).toThrow('Composite source metadata does not match');
+  }, 60_000);
+
+  it('keeps pixels from both real session views and rejects missing peers', async () => {
+    const primary = await sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#164c39' } })
+      .png()
+      .toBuffer();
+    const peer = await sharp(
+      Buffer.from(`<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+      <rect width="1080" height="1920" fill="#111111"/>
+      <rect y="120" width="1080" height="280" fill="#ac3478"/>
+      <rect y="1520" width="1080" height="140" fill="#e69a32"/>
+    </svg>`),
+    )
+      .png()
+      .toBuffer();
+    const sources = [primary, peer];
+    const caption = readCaptionCatalog('en-US').liveClimb;
+    const framed = await frameComposition(sources, caption, 'live-climb');
+    for (const [left, top, expected] of [
+      [540, 1100, [22, 76, 57]],
+      [150, 550, [172, 52, 120]],
+      [800, 1760, [230, 154, 50]],
+    ] as const) {
+      const pixel = await sharp(framed).extract({ left, top, width: 1, height: 1 }).raw().toBuffer();
+      expect([...pixel]).toEqual(expected);
+    }
+    await expect(frameComposition(sources.slice(0, 1), caption, 'live-climb')).rejects.toThrow('source count');
   });
 
   it('frames a complete directory with verifiable metadata and a review sheet', async () => {

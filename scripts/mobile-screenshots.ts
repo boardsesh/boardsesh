@@ -110,6 +110,7 @@ import {
   resolveScreenshotBackendPort,
   startOfSecondIso,
   type ScreenshotBackendMode,
+  type ScreenshotCaptureScenario,
 } from './lib/screenshot-fixtures';
 // Orchestrator-to-orchestrator import (mobile-android-shots.ts already does the
 // same): resolving a dev-client APK is one behaviour with one cache, and the lib
@@ -554,6 +555,7 @@ export function buildScreenshotEnv(
   appLocale: Locale | null = null,
   frozenNow: string | null = null,
   backendPort: number | null = null,
+  capture: ScreenshotCaptureScenario | null = null,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
@@ -587,8 +589,9 @@ export function buildScreenshotEnv(
   if (options.renderMode) {
     env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = options.renderMode;
   }
-  if (options.boards) {
-    env.EXPO_PUBLIC_SCREENSHOT_BOARDS = options.boards;
+  const boards = options.boards ?? capture?.boards.join('|');
+  if (boards) {
+    env.EXPO_PUBLIC_SCREENSHOT_BOARDS = boards;
   }
   if (options.backend === 'local') {
     env.EXPO_PUBLIC_BACKEND_URL = env.EXPO_PUBLIC_BACKEND_URL ?? LOCAL_BACKEND_URL;
@@ -1102,7 +1105,7 @@ export function readScreenshotBackendLogSince(
   return readFileSync(logPath, 'utf8').split('\n').slice(baselineLines).join('\n');
 }
 
-/** A running screenshot backend, and the two facts the capture needs from it. */
+/** A running screenshot backend and the fixture metadata used by the capture. */
 export interface ScreenshotBackendSession {
   process: ChildProcess;
   mode: ScreenshotBackendMode;
@@ -1111,6 +1114,7 @@ export interface ScreenshotBackendSession {
   port: number;
   /** Absolute path of the fixture set this session reads or writes. */
   fixturesDir: string;
+  capture?: ScreenshotCaptureScenario;
 }
 
 /** Where the fixture set lives for this run, absolute. */
@@ -1244,12 +1248,14 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
   // recording froze — read from the manifest here (not left to the CLI) because
   // the same instant has to be baked into the JS bundle by buildScreenshotEnv.
   let frozenNow: string;
+  let capture: ScreenshotCaptureScenario | undefined;
   if (mode === 'replay') {
     const manifest = readScreenshotFixtureManifest(fixturesDir);
     if (!manifest) {
       throw new Error(`no recorded fixture set under ${fixturesDir} — record one first with \`${RE_RECORD_COMMAND}\`.`);
     }
     frozenNow = manifest.frozenNow;
+    capture = manifest.capture;
   } else {
     frozenNow = options.frozenNow ?? startOfSecondIso(new Date());
   }
@@ -1291,7 +1297,7 @@ export function startScreenshotBackend(options: ScreenshotOptions): ScreenshotBa
       // with it, and the NEXT platform's backend then extended whatever set was
       // already on disk instead of recording a clean one.
       if (mode === 'record' && options.fresh) freshConsumedThisRun = true;
-      return { process: backend, mode, frozenNow, port, fixturesDir };
+      return { process: backend, mode, frozenNow, port, fixturesDir, capture };
     }
     spawnSync('sleep', ['0.5']);
   }
@@ -1848,6 +1854,37 @@ function readSettledLogcat(stream: ChildProcess): string | null {
   return logcat;
 }
 
+export function buildAndroidMaestroArgs(
+  context: {
+    deviceId: string;
+    flowFile: string;
+    packageId: string;
+    capture?: ScreenshotCaptureScenario;
+    boards?: string | null;
+  },
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const boards = context.boards ?? context.capture?.boards.join('|') ?? env.EXPO_PUBLIC_SCREENSHOT_BOARDS;
+  // Match screenshot-mode.ts: missing or blank selectors use its two default boards.
+  const boardCount = boards?.split('|').filter((selector) => selector.trim().length > 0).length || 2;
+  return [
+    '--device',
+    context.deviceId,
+    'test',
+    context.flowFile,
+    '-e',
+    `APP_ID=${context.packageId}`,
+    '-e',
+    `SCREENSHOT_USER_EMAIL=${env.SCREENSHOT_USER_EMAIL || DEFAULT_USER_EMAIL}`,
+    '-e',
+    `SCREENSHOT_USER_PASSWORD=${env.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD}`,
+    '-e',
+    `SCREENSHOT_SHARED_SESSION_ID=${context.capture?.sharedSessionId ?? ''}`,
+    '-e',
+    `SCREENSHOT_BOARD_COUNT=${boardCount}`,
+  ];
+}
+
 function runAndroid(options: ScreenshotOptions): number {
   if (!commandExists('adb') || runCapture('adb', ['version']).status !== 0) {
     console.error(`${LOG} FAILED: Android platform tooling (adb) is not available.`);
@@ -1930,6 +1967,7 @@ function runAndroid(options: ScreenshotOptions): number {
         null,
         backendSession?.frozenNow ?? null,
         backendSession?.port ?? null,
+        backendSession?.capture ?? null,
       );
       console.log(
         `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
@@ -1949,26 +1987,16 @@ function runAndroid(options: ScreenshotOptions): number {
       }
     }
 
-    // `||` — see buildScreenshotEnv: CI passes these empty on a replay run.
-    const email = process.env.SCREENSHOT_USER_EMAIL || DEFAULT_USER_EMAIL;
-    const password = process.env.SCREENSHOT_USER_PASSWORD || DEFAULT_USER_PASSWORD;
     console.log(`${LOG} Running Maestro flow ${options.flow} on ${deviceId}...`);
     const maestroStatus = runInherit(
       'maestro',
-      [
-        '--device',
+      buildAndroidMaestroArgs({
         deviceId,
-        'test',
         flowFile,
-        // The flows declare `appId: ${APP_ID}`; the standalone store APK is the
-        // production package (the dev-client path passes the .dev package).
-        '-e',
-        `APP_ID=${packageId}`,
-        '-e',
-        `SCREENSHOT_USER_EMAIL=${email}`,
-        '-e',
-        `SCREENSHOT_USER_PASSWORD=${password}`,
-      ],
+        packageId,
+        capture: backendSession?.capture,
+        boards: options.boards,
+      }),
       process.env,
       captureDir,
     );
@@ -2174,6 +2202,21 @@ export function applyCleanAndroidStatusBar(deviceId: string): void {
     'false',
   ]);
   runCapture('adb', ['-s', deviceId, 'shell', 'cmd', 'notification', 'dismiss-all']);
+  runCapture('adb', [
+    '-s',
+    deviceId,
+    'shell',
+    'am',
+    'broadcast',
+    '-a',
+    'com.android.systemui.demo',
+    '-e',
+    'command',
+    'notifications',
+    '-e',
+    'visible',
+    'false',
+  ]);
 }
 
 export function clearAndroidStatusBar(deviceId: string): void {

@@ -89,8 +89,8 @@ export type ScreenshotBackendServerOptions = {
   /**
    * Record only, default TRUE: replace every other climber's name, handle and
    * avatar with a stable stand-in before a response is written
-   * (`pseudonymiseResponse`). The recorded set is committed to a public repo
-   * and the capture walks public feeds, so real names must never reach disk.
+   * (`pseudonymiseResponse`). The public CDN snapshot preserves only the
+   * recording account and explicitly approved test-account identities.
    * Set false (`--no-pseudonymise`) only for a deliberate real-data recording
    * that is NOT going to be committed.
    */
@@ -142,6 +142,22 @@ const REPLAY_JWT_SIGNATURE = 'screenshot-replay';
  * used to claim.
  */
 const REPLAY_SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+// These subscriptions only add live updates to screens whose initial state is
+// already loaded over HTTP. QueueUpdates and SessionUpdates are deliberately excluded:
+// without them a shared-session capture would silently show an empty queue.
+const PASSIVE_SCREENSHOT_SUBSCRIPTIONS = new Set([
+  'ClimbStatsUpdated',
+  'NotificationReceived',
+  'CommentUpdates',
+  'OnNewClimbCreated',
+  'BoardNowPlaying',
+  'BoardQueuePreviewUpdates',
+  'BoardConnectionChanged',
+  'BoardStatsUpdated',
+]);
+
+type SendGraphqlResponse = (serializedResponse: string) => void;
 
 // Hop-by-hop and body-framing headers: forwarding them to `fetch` either throws
 // or makes the upstream frame a body we already buffered.
@@ -496,10 +512,8 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
 
     // Other climbers' names, handles and avatars never reach disk. This capture
     // walks public feeds (Discover, the "Everyone" session feed, recent beta),
-    // and the recorded set is committed to a public repo — so every person who
-    // is not the recording account is replaced by a stable stand-in BEFORE the
-    // fixture is built. Our own account's data stays exactly as recorded: the
-    // screenshots have to show a real signed-in user.
+    // so every person outside the recording account and the manifest's approved
+    // test accounts is replaced by a stable stand-in BEFORE the fixture is built.
     //
     // `accountUserId` is empty only until the app authenticates, which it does
     // before it asks for any screen's data. Falling back to `null` there is the
@@ -507,7 +521,10 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // leaking a stranger.
     let persistedResponse: unknown = responseBody;
     if (pseudonymise) {
-      const result = pseudonymiseResponse(responseBody, { ownUserId: manifest.accountUserId || null });
+      const result = pseudonymiseResponse(responseBody, {
+        ownUserId: manifest.accountUserId || null,
+        approvedTestUserIds: manifest.approvedTestUserIds,
+      });
       persistedResponse = result.response;
       if (result.persons > 0) {
         emit({
@@ -670,7 +687,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
    * request is not composable at all and belongs on the ordinary miss path.
    */
   const replayComposedBatch = (
-    response: ServerResponse,
+    sendResponse: SendGraphqlResponse,
     operationName: string,
     documentHash: string,
     hash12: string,
@@ -705,11 +722,11 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       uncoveredCount: unrecordedIds.length,
       uncoveredIds: cappedUnrecordedIds(unrecordedIds),
     });
-    sendJson(response, 200, composed.response);
+    sendResponse(JSON.stringify(composed.response));
     return true;
   };
 
-  const replayGraphql = (response: ServerResponse, parsedBody: Record<string, unknown>): void => {
+  const replayGraphql = (sendResponse: SendGraphqlResponse, parsedBody: Record<string, unknown>): void => {
     const operationName = resolveOperationName(parsedBody);
     const query = typeof parsedBody.query === 'string' ? parsedBody.query : '';
     const key = graphqlFixtureKey(
@@ -719,7 +736,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     const hash12 = shortHash(key.variablesHash);
     const loggedVariables = formatMissVariables(operationName ?? '', parsedBody.variables);
 
-    /** Every graphql miss answers 200 + `errors`, never a 5xx — see `handleGraphql`. */
+    /** Every miss carries GraphQL `errors`; HTTP sends 200 — see `handleGraphql`. */
     const missGraphql = (
       loggedName: string,
       reason: GraphqlMissReason,
@@ -735,7 +752,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         unrecordedIds,
         variables: loggedVariables,
       });
-      sendJson(response, 200, fixtureMissBody(loggedName, hash12));
+      sendResponse(JSON.stringify(fixtureMissBody(loggedName, hash12)));
     };
 
     if (!operationName) {
@@ -749,7 +766,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       // own recorded bytes. Only a batch nobody recorded as a whole is composed
       // out of the recorded ones — see `BATCHED_OPERATIONS` for why membership,
       // not the exact id list, is the stable key for these.
-      if (replayComposedBatch(response, operationName, key.documentHash, hash12, parsedBody.variables, missGraphql)) {
+      if (
+        replayComposedBatch(sendResponse, operationName, key.documentHash, hash12, parsedBody.variables, missGraphql)
+      ) {
         return;
       }
       missGraphql(operationName, 'no-fixture');
@@ -787,7 +806,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     }
     hits += 1;
     emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null, uncoveredCount: 0, uncoveredIds: [] });
-    sendRawJson(response, 200, serializedResponse);
+    sendResponse(serializedResponse);
   };
 
   const handleGraphql = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
@@ -819,7 +838,11 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     // exactly what makes a miss noticeable at a glance, and the connectivity
     // store itself is never tripped.
     if (isRecording) await recordGraphql(request, response, rawBody, parsedBody as Record<string, unknown>);
-    else replayGraphql(response, parsedBody as Record<string, unknown>);
+    else
+      replayGraphql(
+        (serializedResponse) => sendRawJson(response, 200, serializedResponse),
+        parsedBody as Record<string, unknown>,
+      );
   };
 
   // -------------------------------------------------------------------------
@@ -1040,12 +1063,11 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   });
 
   // -------------------------------------------------------------------------
-  // graphql-ws (inert)
+  // graphql-ws: deterministic initial snapshots, never a live upstream stream
   // -------------------------------------------------------------------------
 
-  // The only subscription the store screens open is ClimbStatsUpdated, and the
-  // UI renders correctly when it never emits. So this speaks just enough of the
-  // protocol to keep graphql-ws from retrying in a loop, and then stays silent.
+  // Record mode retains its inert transport. Replay serves manifest-listed
+  // snapshots through the same key/document validation and cache as HTTP.
   const webSocketServer = new WebSocketServer({
     noServer: true,
     handleProtocols: (protocols) => (protocols.has('graphql-transport-ws') ? 'graphql-transport-ws' : false),
@@ -1059,6 +1081,13 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   });
 
   webSocketServer.on('connection', (socket: WebSocket) => {
+    let initialized = false;
+    const subscriptionIds = new Set<string>();
+    const invalidMessage = (): void => {
+      misses += 1;
+      emit({ event: 'miss', kind: 'route', method: 'WS', path: '/graphql (invalid message)' });
+      socket.close(4400, 'Invalid screenshot GraphQL message');
+    };
     socket.on('error', () => {
       // A malformed frame from one client must not take the server down —
       // `ws` already terminated this socket; nothing else to do here.
@@ -1071,9 +1100,17 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
           return null;
         }
       })();
-      if (typeof message !== 'object' || message === null) return;
+      if (typeof message !== 'object' || message === null || Array.isArray(message)) {
+        invalidMessage();
+        return;
+      }
       const messageType = (message as { type?: unknown }).type;
       if (messageType === 'connection_init') {
+        if (initialized) {
+          socket.close(4429, 'Too many initialization requests');
+          return;
+        }
+        initialized = true;
         socket.send(JSON.stringify({ type: 'connection_ack' }));
         emit({ event: 'ws-ack' });
         return;
@@ -1083,14 +1120,71 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         return;
       }
       if (messageType === 'subscribe') {
+        if (!initialized) {
+          socket.close(4401, 'Connection not initialized');
+          return;
+        }
+        const id = (message as { id?: unknown }).id;
         const payload = (message as { payload?: unknown }).payload;
-        const operationName =
-          typeof payload === 'object' && payload !== null
-            ? (resolveOperationName(payload as { operationName?: unknown; query?: unknown }) ?? 'anonymous')
-            : 'anonymous';
+        if (
+          typeof id !== 'string' ||
+          id.length === 0 ||
+          typeof payload !== 'object' ||
+          payload === null ||
+          Array.isArray(payload)
+        ) {
+          invalidMessage();
+          return;
+        }
+        const operation = payload as Record<string, unknown>;
+        if (
+          typeof operation.query !== 'string' ||
+          operation.query.trim().length === 0 ||
+          (operation.operationName !== undefined &&
+            operation.operationName !== null &&
+            (typeof operation.operationName !== 'string' || !/^[A-Za-z_]\w*$/.test(operation.operationName))) ||
+          (operation.variables !== undefined &&
+            operation.variables !== null &&
+            (typeof operation.variables !== 'object' || Array.isArray(operation.variables)))
+        ) {
+          invalidMessage();
+          return;
+        }
+        if (subscriptionIds.has(id)) {
+          socket.close(4409, 'Subscriber already exists');
+          return;
+        }
+        const operationName = resolveOperationName(operation) ?? 'anonymous';
         emit({ event: 'ws-subscribe', operationName });
+        if (isRecording) return;
+        // Screenshot documents begin with their operation, optionally preceded
+        // by comments. Exact document hashing below still rejects changed text.
+        const subscriptionDeclaration = operation.query.match(
+          /^\s*(?:#[^\r\n]*(?:\r?\n|$)\s*)*subscription\b(?:\s+([A-Za-z_]\w*))?/,
+        );
+        const isSubscription = subscriptionDeclaration !== null;
+        if (isSubscription) subscriptionIds.add(id);
+        if (
+          isSubscription &&
+          subscriptionDeclaration[1] === operationName &&
+          PASSIVE_SCREENSHOT_SUBSCRIPTIONS.has(operationName) &&
+          !manifest.graphql.some((entry) => entry.operationName === operationName)
+        )
+          return;
+
+        replayGraphql((serializedResponse) => {
+          socket.send(`{"id":${JSON.stringify(id)},"type":"next","payload":${serializedResponse}}`);
+        }, operation);
+        if (!isSubscription) socket.send(JSON.stringify({ id, type: 'complete' }));
+        return;
       }
-      // `complete` and everything else: ignored on purpose.
+      if (messageType === 'complete') {
+        const id = (message as { id?: unknown }).id;
+        if (typeof id !== 'string' || id.length === 0) invalidMessage();
+        else subscriptionIds.delete(id);
+        return;
+      }
+      if (messageType !== 'pong') invalidMessage();
     });
   });
 

@@ -136,4 +136,16 @@ name: app-store screenshots (iPad)
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: 'horizontal-scroll-section-loading'
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: 'profile-board-share-chart'
+    direction: DOWN
+    centerElement: true
+    visibilityPercentage: 100
+    timeout: 60000
+- waitForAnimationToEnd
 - takeScreenshot: 05-profile

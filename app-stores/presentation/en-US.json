@@ -36,11 +36,31 @@
     "description": "Keep your sends and attempts in one logbook."
   },
   "profile": {
-    "headline": "See your progress",
-    "description": "Follow your climbing history, grades, and session stats."
+    "headline": "All your boards.\nOne profile.",
+    "description": "See your sends and progress across every board."
   },
   "wall": {
-    "headline": "See what’s on the wall",
-    "description": "Follow the current climb and recent board activity."
+    "headline": "Follow your board’s activity",
+    "description": "See recent sends and stats for your board."
+  },
+  "boardFamily": {
+    "headline": "Your boards. One app.",
+    "description": "Switch boards without switching apps."
+  },
+  "liveQueue": {
+    "headline": "Your crew.\nOne live queue.",
+    "description": "Add climbs together. Everyone stays in sync."
+  },
+  "liveClimb": {
+    "headline": "Pick a climb.\nEveryone sees it.",
+    "description": "The current climb updates for everyone in your session."
+  },
+  "wallStatus": {
+    "headline": "See what’s on the wall.",
+    "description": "Know which climb is lit while you browse your next one."
+  },
+  "moreBoards": {
+    "headline": "More boards. Same app.",
+    "description": "Works with Woods Board, Grasshopper, and MoonBoard 2024."
   }
 }

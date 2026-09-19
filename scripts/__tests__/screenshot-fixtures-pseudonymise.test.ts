@@ -97,6 +97,27 @@ describe('pseudonymiseFixtureSet', () => {
   const readFixture = (file: string): GraphqlFixtureFile =>
     JSON.parse(readFileSync(join(fixturesDir, file), 'utf8')) as GraphqlFixtureFile;
 
+  it('preserves approved identities and their exact static avatars while removing unrelated avatars', () => {
+    const avatar = (userId: string) => ({
+      path: `/static/avatars/${userId}.jpg`,
+      query: '',
+      file: `static/${userId}.jpg`,
+      contentType: 'image/jpeg',
+      bytes: 10,
+    });
+    const strangerId = '33333333-3333-4333-8333-333333333333';
+    const manifest = writeSet(fixturesDir, [avatar(ACCOUNT_USER_ID), avatar(OTHER_USER_ID), avatar(strangerId)]);
+    manifest.approvedTestUserIds = [OTHER_USER_ID];
+    const result = pseudonymiseFixtureSet(fixturesDir, manifest, { dryRun: false });
+    expect(result.removedStaticAvatars).toEqual([avatar(strangerId).file]);
+    expect(JSON.stringify(readFixture(manifest.graphql[0].file).response)).toContain('Xin Wei Chow');
+    expect(readScreenshotFixtureManifest(fixturesDir)?.approvedTestUserIds).toEqual([OTHER_USER_ID]);
+    expect(readScreenshotFixtureManifest(fixturesDir)?.static).toEqual([
+      avatar(ACCOUNT_USER_ID),
+      avatar(OTHER_USER_ID),
+    ]);
+  });
+
   it('rewrites only the response, leaving the key, the query and the variables byte-identical', () => {
     const manifest = writeSet(fixturesDir);
     const result = pseudonymiseFixtureSet(fixturesDir, manifest, { dryRun: false });

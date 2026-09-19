@@ -113,6 +113,20 @@ name: app-store screenshots
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: 'horizontal-scroll-section-loading'
+    timeout: 60000
+# The chart is explicitly accessible, unlike ordinary Fabric views on iOS.
+# Keep it and its legend in the profile capture in every locale.
+- scrollUntilVisible:
+    element:
+      id: 'profile-board-share-chart'
+    direction: DOWN
+    centerElement: true
+    visibilityPercentage: 100
+    timeout: 60000
+- waitForAnimationToEnd
 - takeScreenshot: 09-profile
 
 # Logbook — the climbing history, every logged send. The screenshot-mode param selects

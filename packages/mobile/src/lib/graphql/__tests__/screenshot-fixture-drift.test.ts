@@ -518,12 +518,13 @@ describe('the recorded screenshot fixtures', () => {
   /** How many offending fields one failure line names before it says "+N more". */
   const PII_OFFENDERS_SHOWN = 5;
 
-  it('carries no real climber but the recording account', () => {
+  it('carries real identity only for the recording account and approved test accounts', () => {
     const failures: string[] = [];
     for (const entry of entries) {
       const fixture = readFixture(entry.file);
       const offenders = findUnpseudonymisedPersonFields(fixture.response, {
         ownUserId: manifest.accountUserId,
+        approvedTestUserIds: manifest.approvedTestUserIds,
       });
       if (offenders.length === 0) continue;
       // Capped: one "Everyone" feed fixture carries 21 of these, and a failure
@@ -535,7 +536,7 @@ describe('the recorded screenshot fixtures', () => {
           : shown.join(', ');
       failures.push(
         `Fixture ${entry.file} still holds a real person's data at ${listed}. Every climber but ` +
-          `the recording account (${manifest.accountUserId}) must be a stand-in: a display name from the ` +
+          `the recording account (${manifest.accountUserId}) and approved test accounts must be a stand-in: a display name from the ` +
           `pseudonym word space, a \`climber_<6 hex>\` handle, and a null avatar. Run ` +
           `\`vp run mobile:screenshot-fixtures-pseudonymise\` and publish the sanitized snapshot — and if this set was ` +
           `recorded with --no-pseudonymise, do not publish it at all.`,

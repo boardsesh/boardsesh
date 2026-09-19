@@ -370,6 +370,13 @@ export const PSEUDONYMISED_PERSON_FIELDS: readonly PersonFieldGroup[] = [
     emailKeys: ['email', 'userEmail'],
   },
   {
+    idKey: 'sentByUserId',
+    displayNameKeys: ['sentByDisplayName'],
+    handleKeys: [],
+    avatarKeys: ['sentByAvatarUrl'],
+    emailKeys: [],
+  },
+  {
     idKey: 'ownerId',
     displayNameKeys: ['ownerDisplayName', 'ownerName'],
     handleKeys: ['ownerUsername', 'ownerHandle'],
@@ -596,15 +603,16 @@ type PersonFieldVisitor = (visit: {
   value: string;
 }) => void;
 
-/**
- * Walk any JSON value and call back once per personal field belonging to a
- * person who is neither our own account nor a non-person id.
- *
- * Shared by the rewrite and by the drift-test guard so the two can never
- * disagree about what counts as a person.
- */
-function visitPersonFields(root: unknown, ownUserId: string | null, visit: PersonFieldVisitor): void {
+export type ScreenshotPersonOptions = {
+  ownUserId: string | null;
+  /** Additional test accounts explicitly approved for visible screenshot identity. Exact IDs only. */
+  approvedTestUserIds?: readonly string[];
+};
+
+/** Walk non-approved people's fields using the same rules for rewrite and verification. */
+function visitPersonFields(root: unknown, options: ScreenshotPersonOptions, visit: PersonFieldVisitor): void {
   const nonPersonIds = new Set(NON_PERSON_USER_IDS);
+  const approvedTestUserIds = new Set(options.approvedTestUserIds ?? []);
 
   const walk = (node: unknown, path: string): void => {
     if (Array.isArray(node)) {
@@ -635,7 +643,7 @@ function visitPersonFields(root: unknown, ownUserId: string | null, visit: Perso
       for (const field of fields) claimed.add(field.key);
       // Claimed first, then skipped: our own account's fields must not fall
       // through to a later group and be rewritten by it.
-      if (personId === ownUserId || nonPersonIds.has(personId)) continue;
+      if (personId === options.ownUserId || approvedTestUserIds.has(personId) || nonPersonIds.has(personId)) continue;
       for (const field of fields) {
         const value = container[field.key];
         if (typeof value !== 'string' || value.length === 0) continue;
@@ -671,8 +679,8 @@ export type PseudonymiseResult = {
 
 /**
  * Every other climber's personal fields in a recorded GraphQL response,
- * replaced by a stable stand-in. Our own account (`ownUserId`) is left exactly
- * as recorded, so the screenshots still show the real signed-in user.
+ * replaced by a stable stand-in. Our own account (`ownUserId`) and explicitly
+ * approved test accounts remain as recorded for the screenshots.
  *
  * Deterministic: the pseudonym is a pure function of the person's id, so one
  * climber reads as the same person in every fixture and a session feed stays
@@ -683,11 +691,11 @@ export type PseudonymiseResult = {
  * Applied at RECORD time by default (`--no-pseudonymise` opts out), so real
  * names never reach disk in the first place.
  */
-export function pseudonymiseResponse(response: unknown, options: { ownUserId: string | null }): PseudonymiseResult {
+export function pseudonymiseResponse(response: unknown, options: ScreenshotPersonOptions): PseudonymiseResult {
   const pseudonymised = cloneJsonValue(response);
   const identities = new Set<string>();
   let fields = 0;
-  visitPersonFields(pseudonymised, options.ownUserId, ({ container, key, kind, identity, value }) => {
+  visitPersonFields(pseudonymised, options, ({ container, key, kind, identity, value }) => {
     const replacement = pseudonymFor(kind, identity);
     // Already pseudonymous: leave the bytes alone and do not count it, so a
     // second pass produces a byte-identical file and `persons=0`.
@@ -708,9 +716,9 @@ export function pseudonymiseResponse(response: unknown, options: { ownUserId: st
  * `--no-pseudonymise`, or hand-edited, cannot land a real climber's name in the
  * repo unnoticed.
  */
-export function findUnpseudonymisedPersonFields(response: unknown, options: { ownUserId: string | null }): string[] {
+export function findUnpseudonymisedPersonFields(response: unknown, options: ScreenshotPersonOptions): string[] {
   const offenders: string[] = [];
-  visitPersonFields(response, options.ownUserId, ({ kind, path, value }) => {
+  visitPersonFields(response, options, ({ kind, path, value }) => {
     if (kind === 'displayName' && isPseudonymDisplayName(value)) return;
     if (kind === 'handle' && PSEUDONYM_HANDLE_PATTERN.test(value)) return;
     if (kind === 'email' && value.endsWith(`@${PSEUDONYM_EMAIL_DOMAIN}`)) return;
@@ -1017,6 +1025,13 @@ export type StaticManifestEntry = {
   bytes: number;
 };
 
+/** Optional replay scenario that enables the shared-session Android captures. */
+export type ScreenshotCaptureScenario = {
+  sharedSessionId: string;
+  /** Ordered selectors: the original board captures first, then optional extra boards. */
+  boards: string[];
+};
+
 export type ScreenshotFixtureManifest = {
   formatVersion: 1;
   /**
@@ -1039,8 +1054,11 @@ export type ScreenshotFixtureManifest = {
    * live token is decoded in memory and NEVER written; only this id is.
    */
   accountUserId: string;
+  /** Additional test-account UUIDs explicitly approved for display; never inferred from names or emails. */
+  approvedTestUserIds?: string[];
   /** Which capture flow was recorded (`app-store`, `onboarding`, …). */
   flow: string;
+  capture?: ScreenshotCaptureScenario;
   graphql: GraphqlManifestEntry[];
   static: StaticManifestEntry[];
 };
@@ -1067,12 +1085,13 @@ export function emptyManifest(fields: {
 }
 
 /**
- * Both entry lists in a stable order, so re-recording an unchanged capture
+ * Entry lists and approved account IDs in a stable order, so re-recording an unchanged capture
  * produces a byte-identical manifest and the diff shows only what moved.
  */
 export function sortManifestEntries(manifest: ScreenshotFixtureManifest): ScreenshotFixtureManifest {
   return {
     ...manifest,
+    ...(manifest.approvedTestUserIds ? { approvedTestUserIds: [...manifest.approvedTestUserIds].sort() } : {}),
     graphql: [...manifest.graphql].sort((left, right) =>
       left.operationName === right.operationName
         ? left.variablesHash.localeCompare(right.variablesHash)
@@ -1105,6 +1124,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
+}
+
+function captureScenarioProblem(capture: unknown): string | null {
+  if (!isRecord(capture)) return 'capture must be an object';
+  if (
+    typeof capture.sharedSessionId !== 'string' ||
+    capture.sharedSessionId.length !== 36 ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(capture.sharedSessionId)
+  ) {
+    return 'capture.sharedSessionId must be a UUID';
+  }
+  if (!Array.isArray(capture.boards) || capture.boards.length < 2) {
+    return 'capture.boards must contain at least two board selectors';
+  }
+  for (const [index, selector] of capture.boards.entries()) {
+    if (
+      typeof selector !== 'string' ||
+      selector.trim().length === 0 ||
+      selector.includes('|') ||
+      /\p{Cc}/u.test(selector)
+    ) {
+      return `capture.boards[${index}] must be a non-empty selector without control characters or |`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1171,7 +1215,25 @@ export function validateScreenshotFixtureManifest(value: unknown): ScreenshotFix
   if (!isNonEmptyString(value.upstream)) return { ok: false, reason: 'upstream must be a non-empty string' };
   if (typeof value.accountEmail !== 'string') return { ok: false, reason: 'accountEmail must be a string' };
   if (typeof value.accountUserId !== 'string') return { ok: false, reason: 'accountUserId must be a string' };
+  if (value.approvedTestUserIds !== undefined) {
+    if (
+      !Array.isArray(value.approvedTestUserIds) ||
+      value.approvedTestUserIds.some(
+        (userId) =>
+          typeof userId !== 'string' ||
+          userId.length !== 36 ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(userId),
+      ) ||
+      new Set(value.approvedTestUserIds).size !== value.approvedTestUserIds.length
+    ) {
+      return { ok: false, reason: 'approvedTestUserIds must be an array of unique lowercase UUIDs' };
+    }
+  }
   if (typeof value.flow !== 'string') return { ok: false, reason: 'flow must be a string' };
+  if (value.capture !== undefined) {
+    const problem = captureScenarioProblem(value.capture);
+    if (problem) return { ok: false, reason: problem };
+  }
   if (!Array.isArray(value.graphql)) return { ok: false, reason: 'graphql must be an array' };
   if (!Array.isArray(value.static)) return { ok: false, reason: 'static must be an array' };
   for (const [index, entry] of value.graphql.entries()) {

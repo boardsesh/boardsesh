@@ -63,12 +63,13 @@ on main (it's in the workflow's `paths`). `sync_image_upload: true` means an
 unchanged set is a no-op, so a text-only listing edit doesn't re-submit them.
 
 **Refreshing them:** dispatch `mobile-screenshots-android.yml` with
-`commit_to_main = true`. It builds the screenshot APK, captures fresh shots on an
-emulator, and commits them back to main via the OTA push app token — which
+`commit_to_main = true`. It loads the screenshot bundle through Metro in the
+Android dev-client, captures fresh shots on an emulator, and commits the framed
+images back to main via the OTA push app token — which
 re-triggers `Mobile Store Metadata`, which uploads them. The nightly cron only
-captures (uploads the artifact + posts a Discord preview); it never commits,
-because the capture isn't byte-deterministic (relative timestamps, live feed
-data) and auto-committing would churn the live listing daily.
+captures (uploads the artifact + posts a Discord preview); it never commits or
+changes the live listing. Replay uses the frozen fixture snapshot pinned in
+`app-stores/screenshot-fixtures.json`.
 
 **Specs:**
 
@@ -76,23 +77,43 @@ data) and auto-committing would churn the live listing daily.
 - JPEG or PNG, 16:9 or 9:16 aspect ratio
 - Minimum 320px, maximum 3840px per side
 
-**Screens to capture** (8 = the Play Store phone max; captured by `vp run mobile:screenshots --platform android`, in store display order):
+**Campaign outputs** (eight framed PNGs, in store display order):
 
-1. `00-tension-board-view` — a climb with the holds lit on the Tension wall
-2. `01-kilter-board-view` — a climb with the holds lit on Marco's Kilter board
-3. `02-home` — activity feed, your crew's sessions
-4. `03-climbs` — browse the board's climbs, on Marco's Kilter board
-5. `04-discover` — the playlist library
-6. `05-workout-generator` — the Record tab's workout generator
-7. `06-profile` — your stats and progression
-8. `07-board-sheet` — the board's now-on-the-wall surface
+| Output | What the image shows |
+| --- | --- |
+| `00-board-family.png` | Compatibility with Tension, Kilter, and MoonBoard 2016. |
+| `01-more-boards.png` | Compatibility with Woods Board, Grasshopper, and MoonBoard 2024. |
+| `02-live-queue.png` | A shared queue with climbs added by the crew. |
+| `03-wall-status.png` | The live wall-status capsule shows the lit climb while a different climb is selected locally. |
+| `04-climbs.png` | Browsing the board's climbs. |
+| `05-discover.png` | The playlist library. |
+| `06-workout-generator.png` | The Record tab's workout generator. |
+| `07-profile.png` | One climbing history across boards, with the activity calendar and board-share donut. |
 
-(Party Mode, playlist detail, and the logbook are on the iOS 10-shot set but don't fit Android's 8-shot cap.)
+Run `vp run mobile:screenshots -- --platform android --dev-client --fixtures replay`
+with the six-board shared-session fixture bundle to produce this set. Maestro
+captures fourteen raw PNGs: the original eight app surfaces, four additional board
+views, wall status, and the shared queue. The wall-status capture happens before
+joining the crew, while the local selection differs from the climb currently lit
+on the wall. Presentation recipes combine real board captures into the first two
+frames and select eight uploadable PNGs. The raw Home and board-activity captures
+remain available without taking a slot in this listing set. The full raw set stays
+separate from the framed listing images.
+
+Legacy fixture bundles without shared-session metadata keep their original
+eight-image presentation: separate Tension and Kilter frames followed by Home
+and the other five surfaces. Two/three-board scenarios still produce ten/eleven
+raw inputs with a single compatibility frame and `02-wall-status.png`. Earlier
+eleven/twelve-source campaigns also remain readable, with their board-view and
+participant composite named `02-live-climb.png`.
+The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
+describes the recorded state required by the extended flow.
 
 The board is drawn with **Aura**, the app's default look, and the wall is pinned by
 name — both by the screenshots build, which fails the capture rather than commit a
 set in the classic look or on a fallback wall. Retarget one run from the workflow's
-`render_mode` / `boards` dispatch inputs; the defaults live in
+`render_mode` / `boards` dispatch inputs. Replay takes its ordered board selectors
+from the fixture manifest unless explicitly overridden; legacy runs fall back to
 `packages/mobile/src/lib/screenshot-mode.ts`.
 
 ## What's New

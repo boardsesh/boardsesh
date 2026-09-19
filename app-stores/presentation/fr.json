@@ -36,11 +36,31 @@
     "description": "Retrouve tes croix et tes essais dans un seul carnet."
   },
   "profile": {
-    "headline": "Suis ta progression",
-    "description": "Retrouve ton historique, tes cotations et les stats de tes séances."
+    "headline": "Toutes tes boards.\nUn seul profil.",
+    "description": "Suis tes croix et tes progrès sur chaque board."
   },
   "wall": {
-    "headline": "Regarde ce qui est allumé",
-    "description": "Suis le bloc actuel et l’activité récente de la board."
+    "headline": "Suis l’activité de ta board",
+    "description": "Retrouve les dernières croix et les stats de ta board."
+  },
+  "boardFamily": {
+    "headline": "Tes boards. Une seule app.",
+    "description": "Change de board sans changer d’app."
+  },
+  "liveQueue": {
+    "headline": "Ton crew.\nUne file en direct.",
+    "description": "Ajoute des blocs avec ton crew. Tout le monde reste synchronisé."
+  },
+  "liveClimb": {
+    "headline": "Choisis un bloc.\nTous le voient.",
+    "description": "Le bloc actuel se met à jour pour tout le monde dans ta séance."
+  },
+  "wallStatus": {
+    "headline": "Vois ce qui est au mur.",
+    "description": "Vois le bloc allumé pendant que tu cherches le suivant."
+  },
+  "moreBoards": {
+    "headline": "Plus de boards. La même app.",
+    "description": "Compatible avec Woods Board, Grasshopper et MoonBoard 2024."
   }
 }

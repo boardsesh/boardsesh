@@ -78,6 +78,7 @@ export function LayoutShareDonut({ layoutPercentages, totalAscents }: LayoutShar
   return (
     <View style={styles.container}>
       <View
+        testID="profile-board-share-chart"
         accessible
         accessibilityRole="image"
         accessibilityLabel={t('stats.layoutShareAria', { count: totalAscents })}

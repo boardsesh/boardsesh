@@ -36,11 +36,31 @@
     "description": "Behalte deine Begehungen und Versuche in einem Routenbuch."
   },
   "profile": {
-    "headline": "Sieh deine Fortschritte",
-    "description": "Verfolge deinen Verlauf, deine Grade und deine Session-Statistiken."
+    "headline": "Alle deine Boards.\nEin Profil.",
+    "description": "Sieh Begehungen und Fortschritte an jedem Board."
   },
   "wall": {
-    "headline": "Sieh, was gerade leuchtet",
-    "description": "Verfolge den aktuellen Boulder und die letzte Aktivität am Board."
+    "headline": "Verfolge die Aktivität am Board",
+    "description": "Sieh die letzten Begehungen und die Statistiken für dein Board."
+  },
+  "boardFamily": {
+    "headline": "Deine Boards. Eine App.",
+    "description": "Wechsle das Board, ohne die App zu wechseln."
+  },
+  "liveQueue": {
+    "headline": "Deine Crew.\nEine Live-Warteschlange.",
+    "description": "Fügt gemeinsam Boulder hinzu. Alle bleiben synchron."
+  },
+  "liveClimb": {
+    "headline": "Wähle einen Boulder.\nAlle sehen ihn.",
+    "description": "Der aktuelle Boulder wird für alle in deiner Session aktualisiert."
+  },
+  "wallStatus": {
+    "headline": "Sieh, was gerade leuchtet.",
+    "description": "Sieh den beleuchteten Boulder, während du deinen nächsten suchst."
+  },
+  "moreBoards": {
+    "headline": "Mehr Boards. Dieselbe App.",
+    "description": "Kompatibel mit Woods Board, Grasshopper und MoonBoard 2024."
   }
 }

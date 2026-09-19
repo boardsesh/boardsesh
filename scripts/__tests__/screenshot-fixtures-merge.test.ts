@@ -65,6 +65,53 @@ function set(label: string, entries: ReturnType<typeof graphqlEntry>[], hashes: 
 }
 
 describe('mergeFixtureSets', () => {
+  it('preserves explicit approved test accounts across legacy shards without widening conflicting approvals', () => {
+    const approvedTestUserIds = ['33333333-3333-4333-8333-333333333333'];
+    const legacy = set('legacy', [], {});
+    const approved = { ...set('approved', [], {}), manifest: manifest({ approvedTestUserIds }) };
+    for (const inputs of [
+      [legacy, approved],
+      [approved, legacy],
+    ]) {
+      expect(mergeFixtureSets(inputs).manifest.approvedTestUserIds).toEqual(approvedTestUserIds);
+    }
+    const other = {
+      ...set('other', [], {}),
+      manifest: manifest({ approvedTestUserIds: ['44444444-4444-4444-8444-444444444444'] }),
+    };
+    expect(() => mergeFixtureSets([approved, other])).toThrow(/conflicting approved test accounts/);
+    expect(mergeFixtureSets([legacy]).manifest.approvedTestUserIds).toBeUndefined();
+  });
+
+  const capture = {
+    sharedSessionId: '00000000-0000-4000-8000-000000000001',
+    boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+  };
+
+  it('preserves an optional capture scenario when merging with legacy shards in either order', () => {
+    const legacy = set('legacy', [], {});
+    const scenario = { ...set('scenario', [], {}), manifest: manifest({ capture }) };
+    for (const inputs of [
+      [legacy, scenario],
+      [scenario, legacy],
+    ]) {
+      expect(mergeFixtureSets(inputs).manifest.capture).toEqual(capture);
+    }
+    expect(mergeFixtureSets([legacy]).manifest.capture).toBeUndefined();
+  });
+
+  it('refuses conflicting shared-session IDs or board-selector order', () => {
+    const first = { ...set('first', [], {}), manifest: manifest({ capture }) };
+    for (const otherCapture of [
+      { ...capture, sharedSessionId: '00000000-0000-4000-8000-000000000002' },
+      { ...capture, boards: [...capture.boards].reverse() },
+    ]) {
+      const second = { ...set('second', [], {}), manifest: manifest({ capture: otherCapture }) };
+      expect(() => mergeFixtureSets([first, second])).toThrow(/conflicting capture scenarios/);
+    }
+    expect(mergeFixtureSets([first, first]).manifest.capture).toEqual(capture);
+  });
+
   it('takes the union of two disjoint shards', () => {
     const profile = graphqlEntry('GetProfile', 'aaaa');
     const climb = graphqlEntry('GetClimb', 'bbbb');

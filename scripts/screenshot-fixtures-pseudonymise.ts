@@ -1,8 +1,8 @@
 /// <reference types="node" />
 
 /**
- * Rewrite an already-recorded fixture set so no climber but the recording
- * account is identifiable in it.
+ * Rewrite an already-recorded fixture set so only the recording account and
+ * explicitly approved test accounts remain identifiable.
  *
  *   vp run mobile:screenshot-fixtures-pseudonymise
  *   vp run mobile:screenshot-fixtures-pseudonymise -- --dir ./artifacts/screenshot-fixtures-android --check
@@ -16,8 +16,8 @@
  * never by its response — so rewriting the response cannot change a filename,
  * a hash or a manifest entry, and a replay capture keeps hitting exactly the
  * fixtures it hit before. The manifest is touched only to drop a static avatar
- * entry, since an avatar URL that is now `null` is an asset the app can no
- * longer request.
+ * entry for an unapproved account, since an avatar URL that is now `null` is
+ * an asset the app can no longer request.
  *
  * Idempotent: `pseudonymiseResponse` recognises its own output, so a second run
  * reports 0 and writes nothing. `--check` reports without writing, which is
@@ -84,7 +84,10 @@ export function pseudonymiseFixtureSet(
     const fixturePath = join(fixturesDir, entry.file);
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as GraphqlFixtureFile;
     result.scannedFixtures += 1;
-    const pseudonymised = pseudonymiseResponse(fixture.response, { ownUserId });
+    const pseudonymised = pseudonymiseResponse(fixture.response, {
+      ownUserId,
+      approvedTestUserIds: manifest.approvedTestUserIds,
+    });
     if (pseudonymised.fields === 0) continue;
     result.rewrittenFixtures += 1;
     result.personRewrites += pseudonymised.persons;
@@ -98,6 +101,10 @@ export function pseudonymiseFixtureSet(
 
   const survivingStatic = manifest.static.filter((entry) => {
     if (!entry.path.startsWith(AVATAR_ASSET_PREFIX)) return true;
+    // Retain the exact native avatar paths for the recording account and the
+    // explicitly approved test accounts; unrelated avatars remain removable.
+    const approvedIds = [ownUserId, ...(manifest.approvedTestUserIds ?? [])];
+    if (approvedIds.some((userId) => userId && entry.path === `${AVATAR_ASSET_PREFIX}${userId}.jpg`)) return true;
     result.removedStaticAvatars.push(entry.file);
     return false;
   });

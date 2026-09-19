@@ -355,9 +355,60 @@ describe('static keys', () => {
 });
 
 describe('validateScreenshotFixtureManifest', () => {
+  it('accepts only explicit unique test-account UUIDs and preserves the allowlist', () => {
+    const approvedTestUserIds = ['33333333-3333-4333-8333-333333333333'];
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), approvedTestUserIds });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(sortManifestEntries(result.manifest).approvedTestUserIds).toEqual(approvedTestUserIds);
+    for (const invalid of [
+      null,
+      '*',
+      ['*'],
+      ['marco@example.com'],
+      [12],
+      [...approvedTestUserIds, ...approvedTestUserIds],
+      [`${approvedTestUserIds[0]}\n`],
+    ]) {
+      expect(validateScreenshotFixtureManifest({ ...validManifest(), approvedTestUserIds: invalid })).toMatchObject({
+        ok: false,
+        reason: expect.stringContaining('approvedTestUserIds'),
+      });
+    }
+  });
+
   it('accepts a complete manifest', () => {
     const result = validateScreenshotFixtureManifest(validManifest());
     expect(result.ok).toBe(true);
+  });
+
+  const capture = {
+    sharedSessionId: '00000000-0000-4000-8000-000000000001',
+    boards: ['The Cellar', 'Kilter Board Homewall', 'MoonBoard 2016'],
+  };
+
+  it('accepts optional replay capture metadata and preserves it while sorting', () => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(sortManifestEntries(result.manifest).capture).toEqual(capture);
+  });
+
+  it.each([
+    [null, 'capture must be an object'],
+    [[], 'capture must be an object'],
+    [{ ...capture, sharedSessionId: 'not-a-session-id' }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: undefined }, 'capture.sharedSessionId'],
+    [{ ...capture, sharedSessionId: `${capture.sharedSessionId}\n` }, 'capture.sharedSessionId'],
+    [{ ...capture, boards: 'The Cellar|Kilter Board Homewall' }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar'] }, 'capture.boards'],
+    [{ ...capture, boards: ['The Cellar', ' '] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 12] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\nBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter\u007fBoard'] }, 'capture.boards[1]'],
+    [{ ...capture, boards: ['The Cellar', 'Kilter|Another board'] }, 'capture.boards[1]'],
+  ])('rejects invalid capture metadata %j', (invalidCapture, reason) => {
+    const result = validateScreenshotFixtureManifest({ ...validManifest(), capture: invalidCapture });
+    expect(result).toMatchObject({ ok: false, reason: expect.stringContaining(reason as string) });
   });
 
   const rejections: Array<[string, () => unknown, string]> = [
@@ -512,6 +563,18 @@ describe('emptyManifest / sortManifestEntries', () => {
     ]);
     // Non-destructive: re-recording must not shuffle the caller's own arrays.
     expect(shuffled.graphql[0].operationName).toBe('SyncTicks');
+  });
+
+  it('canonicalizes approved account order without mutating the original list or inventing an absent list', () => {
+    const approvedTestUserIds = ['44444444-4444-4444-8444-444444444444', '33333333-3333-4333-8333-333333333333'];
+    const manifest = { ...validManifest(), approvedTestUserIds };
+    const sorted = sortManifestEntries(manifest);
+    expect(sorted.approvedTestUserIds).toEqual([...approvedTestUserIds].reverse());
+    expect(sorted).toEqual(
+      sortManifestEntries({ ...manifest, approvedTestUserIds: [...approvedTestUserIds].reverse() }),
+    );
+    expect(approvedTestUserIds[0]).toBe('44444444-4444-4444-8444-444444444444');
+    expect(sortManifestEntries(validManifest())).not.toHaveProperty('approvedTestUserIds');
   });
 });
 
@@ -1011,6 +1074,43 @@ const OWN_USER_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_USER_ID = '22222222-2222-2222-2222-222222222222';
 
 describe('pseudonymiseResponse', () => {
+  it('preserves approved test-account identity only for exact matching IDs, including wall senders', () => {
+    const approvedId = '33333333-3333-4333-8333-333333333333';
+    const approvedProfile = { id: approvedId, displayName: 'Demo Climber', avatarUrl: 'https://cdn/approved.jpg' };
+    const recorded = {
+      approvedProfile,
+      sameNameStranger: { userId: OTHER_USER_ID, displayName: 'Demo Climber', avatarUrl: 'https://cdn/stranger.jpg' },
+      wall: {
+        sentByUserId: approvedId,
+        sentByDisplayName: 'Demo Climber',
+        sentByAvatarUrl: 'https://cdn/approved.jpg',
+      },
+      otherWall: {
+        sentByUserId: OTHER_USER_ID,
+        sentByDisplayName: 'Demo Climber',
+        sentByAvatarUrl: 'https://cdn/stranger.jpg',
+      },
+      nested: { id: approvedId, child: { userId: OTHER_USER_ID, displayName: 'Nested Stranger' } },
+    };
+    const options = { ownUserId: OWN_USER_ID, approvedTestUserIds: [approvedId] };
+    const result = pseudonymiseResponse(recorded, options);
+    expect(result.response).toEqual({
+      approvedProfile,
+      sameNameStranger: { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID), avatarUrl: null },
+      wall: recorded.wall,
+      otherWall: {
+        sentByUserId: OTHER_USER_ID,
+        sentByDisplayName: pseudonymDisplayName(OTHER_USER_ID),
+        sentByAvatarUrl: null,
+      },
+      nested: { id: approvedId, child: { userId: OTHER_USER_ID, displayName: pseudonymDisplayName(OTHER_USER_ID) } },
+    });
+    expect(findUnpseudonymisedPersonFields(result.response, options)).toEqual([]);
+    expect(findUnpseudonymisedPersonFields(result.response, { ownUserId: OWN_USER_ID })).toHaveLength(4);
+    expect(findUnpseudonymisedPersonFields(recorded, options)).toHaveLength(5);
+    expect(pseudonymiseResponse(result.response, options).fields).toBe(0);
+  });
+
   it('replaces another climber’s name, handle, avatar and email, keyed on their id', () => {
     const { response, persons, fields } = pseudonymiseResponse(
       {

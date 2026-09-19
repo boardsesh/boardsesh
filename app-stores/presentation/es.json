@@ -36,11 +36,31 @@
     "description": "Guarda tus encadenes e intentos en un solo logbook."
   },
   "profile": {
-    "headline": "Sigue tu progreso",
-    "description": "Consulta tu historial, grados y estadísticas de cada sesión."
+    "headline": "Todos tus plafones.\nUn perfil.",
+    "description": "Ve tus encadenes y tu progreso en cada plafón."
   },
   "wall": {
-    "headline": "Mira qué hay en el plafón",
-    "description": "Sigue el bloque actual y la actividad reciente del plafón."
+    "headline": "Sigue la actividad de tu plafón",
+    "description": "Mira los encadenes recientes y las estadísticas de tu plafón."
+  },
+  "boardFamily": {
+    "headline": "Tus plafones. Una app.",
+    "description": "Cambia de plafón sin cambiar de app."
+  },
+  "liveQueue": {
+    "headline": "Tu grupo.\nUna cola en directo.",
+    "description": "Añade bloques con tu grupo a la misma cola."
+  },
+  "liveClimb": {
+    "headline": "Elige un bloque.\nTodos lo ven.",
+    "description": "El bloque actual se actualiza para todo el grupo de la sesión."
+  },
+  "wallStatus": {
+    "headline": "Mira qué hay en el muro.",
+    "description": "Ve qué bloque está iluminado mientras buscas el siguiente."
+  },
+  "moreBoards": {
+    "headline": "Más plafones. La misma app.",
+    "description": "Compatible con Woods Board, Grasshopper y MoonBoard 2024."
   }
 }

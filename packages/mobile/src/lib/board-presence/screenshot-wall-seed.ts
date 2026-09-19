@@ -25,6 +25,7 @@ import type {
   BoardPresenceClimb,
   BoardPresenceStats,
   Climb,
+  UserBoard,
 } from '@boardsesh/shared-schema';
 import type { MobileBoardPresenceClient } from './board-presence-client';
 import { nowMs as currentNowMs } from '../clock';
@@ -40,7 +41,11 @@ export const SCREENSHOT_WALL_SEED_COUNT = 6;
  * screen ever mounting (its sidebar tap has missed on the 11" iPad, shipping a
  * "WALL IS DARK" hero shot).
  */
-export function buildScreenshotWallSeed(climbs: Climb[], boardAngle: number | null): BoardPresenceClimb[] {
+export function buildScreenshotWallSeed(
+  climbs: Climb[],
+  boardAngle: number | null,
+  boardOwner?: Pick<UserBoard, 'ownerId' | 'ownerDisplayName' | 'ownerAvatarUrl'>,
+): BoardPresenceClimb[] {
   const nowMs = currentNowMs();
   return climbs.slice(0, SCREENSHOT_WALL_SEED_COUNT).map((climb, index) => ({
     climbUuid: climb.uuid,
@@ -50,9 +55,11 @@ export function buildScreenshotWallSeed(climbs: Climb[], boardAngle: number | nu
     frames: climb.frames,
     angle: boardAngle ?? climb.angle,
     setter: climb.setter_username,
-    sentByDisplayName: null,
-    sentByAvatarUrl: null,
-    sentByUserId: null,
+    // The capture demonstrates this recorded board owner's turn at the wall.
+    // Identity comes from the sanitized fixture, never a hardcoded demo person.
+    sentByDisplayName: boardOwner?.ownerDisplayName ?? null,
+    sentByAvatarUrl: boardOwner?.ownerAvatarUrl ?? null,
+    sentByUserId: boardOwner?.ownerId ?? null,
     // Stagger the timestamps a few minutes apart so the history reads like a
     // real session rather than a burst.
     sentAt: new Date(nowMs - index * 4 * 60_000).toISOString(),
@@ -123,7 +130,7 @@ function seedStats(): BoardPresenceStats {
           climbUuid: hardest.climbUuid,
           name: hardest.name,
           grade: hardest.grade ?? '',
-          sentByUserId: seedHolder?.userId ?? '',
+          sentByUserId: hardest.sentByUserId ?? seedHolder?.userId ?? '',
           sentByDisplayName: hardest.sentByDisplayName,
           sentByAvatarUrl: hardest.sentByAvatarUrl,
           sentAt: hardest.sentAt,
