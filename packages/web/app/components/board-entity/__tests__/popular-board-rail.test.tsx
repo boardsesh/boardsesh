@@ -94,6 +94,16 @@ describe('PopularBoardRail physical identity', () => {
     expect(screen.getAllByText('Sydney')).toHaveLength(1);
   });
 
+  it('drops the location line when board, gym and location are all the same name', () => {
+    render(
+      <PopularBoardRail
+        boards={[discoveryBoard({ name: 'Northside Boulders', locationName: 'Northside Boulders' })]}
+      />,
+    );
+    expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
+    expect(screen.getAllByText('Northside Boulders').filter((node) => node.tagName === 'P')).toHaveLength(0);
+  });
+
   it('falls back to the gym name when a self-named board has no location', () => {
     render(<PopularBoardRail boards={[discoveryBoard({ name: 'Northside Boulders', locationName: null })]} />);
     expect(gymAnchors().map((anchor) => anchor.textContent)).toEqual(['Northside Boulders']);
