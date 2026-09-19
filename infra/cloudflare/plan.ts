@@ -612,6 +612,23 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
     return changes;
   }
 
+  const enabledDomains = live.customDomains.filter((entry) => entry.enabled).map((entry) => entry.domain);
+
+  if (desired.customDomain === null && enabledDomains.length > 0) {
+    return [
+      {
+        resource: 'r2-bucket',
+        r2BucketName: desired.name,
+        summary: `R2 ${desired.name}: declared PRIVATE but serves ${enabledDomains.join(', ')}`,
+        detail:
+          'R2 has no object ACLs and no bucket policies, so a custom domain publishes every object in the bucket. ' +
+          'Remove the domain in the Cloudflare dashboard, or change the ' +
+          'declaration if it is now meant to be public.',
+        blocked: true,
+      },
+    ];
+  }
+
   if (!desired.r2DevDomainEnabled && live.r2DevDomainEnabled) {
     changes.push({
       resource: 'r2-bucket',
@@ -621,21 +638,7 @@ export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null
     });
   }
 
-  const enabledDomains = live.customDomains.filter((entry) => entry.enabled).map((entry) => entry.domain);
-
   if (desired.customDomain === null) {
-    if (enabledDomains.length > 0) {
-      changes.push({
-        resource: 'r2-bucket',
-        r2BucketName: desired.name,
-        summary: `R2 ${desired.name}: declared PRIVATE but serves ${enabledDomains.join(', ')}`,
-        detail:
-          'R2 has no object ACLs and no bucket policies, so a custom domain publishes every object in the bucket. ' +
-          'Remove the domain in the Cloudflare dashboard, or change the ' +
-          'declaration if it is now meant to be public.',
-        blocked: true,
-      });
-    }
     return changes;
   }
 

@@ -1992,6 +1992,13 @@ describe('diffR2Bucket', () => {
     expect(changes[0].detail).toContain('custom domain publishes every object');
   });
 
+  it('reports only the private-domain block when r2.dev is also enabled', () => {
+    const changes = diffR2Bucket(PRIVATE, live(PRIVATE.name, ['oops.boardsesh.com'], null, 0, true));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).not.toContain('r2.dev');
+  });
+
   const ASSETS = {
     name: 'boardsesh-static-assets',
     customDomain: 'assets-r2.boardsesh.com',

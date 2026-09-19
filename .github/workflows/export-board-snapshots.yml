@@ -112,7 +112,7 @@ jobs:
           '
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -262,16 +262,16 @@ jobs:
             verify_headers "$headers" '^access-control-allow-origin: \*$'
             verify_headers "$headers" '^cache-control: .*max-age=300'
             verify_headers "$headers" '^cf-ray:'
-            for cache_attempt in 1 2 3 4 5; do
+            for ((cache_attempt = 1; cache_attempt <= 13; cache_attempt += 1)); do
               curl --fail --silent --show-error --retry 4 --retry-all-errors \
                 -H 'Origin: https://app.boardsesh.com' -D "$cached_headers" -o /dev/null "$manifest_url"
               if tr -d '\r' < "$cached_headers" | grep -Eiq '^cf-cache-status: HIT$'; then break; fi
-              if [ "$cache_attempt" = 5 ]; then
-                echo '::error::Snapshot manifest did not reach cf-cache-status: HIT after five probes.'
+              if [ "$cache_attempt" = 13 ]; then
+                echo '::error::Snapshot manifest did not reach cf-cache-status: HIT after 13 probes over 60 seconds.'
                 cat "$cached_headers"
                 exit 1
               fi
-              sleep 2
+              sleep 5
             done
 
             if [ "$prefix" = 'v1-catalog' ]; then

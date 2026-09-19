@@ -1200,7 +1200,8 @@ ordinary manual runs continue writing Tigris, and every shipped app continues re
    `SNAPSHOTS_R2_AWS_SECRET_ACCESS_KEY` to the `Production` GitHub environment. Scope the key to the snapshot bucket.
 3. Dispatch **Export Board Snapshots** from `main` with `storage_target=r2`, `gzip_only=false`, and every filter blank.
    The workflow rejects a partial R2 run, exports all three prefixes, then checks every manifest and referenced
-   artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`.
+   artifact through `snapshots.boardsesh.com`, including immutable caching and CORS with and without `Origin`. A
+   cold Cloudflare edge gets up to 13 cache probes across 60 seconds to produce the required `cf-cache-status: HIT`.
 4. Dispatch the same full R2 export immediately before cutover. In the same cutover change
    `.github/workflows/export-board-snapshots.yml` so scheduled exports and an ordinary manual dispatch default to
    the R2 bucket, R2 credentials, and `SNAPSHOT_PUBLIC_BASE_URL=https://snapshots.boardsesh.com`. Until that change,
