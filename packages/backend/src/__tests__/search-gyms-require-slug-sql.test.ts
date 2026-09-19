@@ -137,7 +137,18 @@ describe('searchGyms requireSlug — rendered SQL', () => {
     textSelectCaptures.length = 0;
     const prioritized = await textSearchWith({ ...TEXT_INPUT, prioritizeClaimed: true });
     expect(prioritized.wheres).toEqual(baseline.wheres);
-    expect(prioritized.orderBys).toEqual(['"gyms"."owner_id" <> $1 desc, "gyms"."created_at" desc, "gyms"."id"']);
+    expect(prioritized.orderBys.map((orderBy) => orderBy.replace(/\$\d+/g, '$?'))).toEqual([
+      '"gyms"."owner_id" <> $? desc, "gyms"."created_at" desc, "gyms"."id"',
+    ]);
+  });
+
+  it('keeps both default sort orders when claimed priority is explicitly false', async () => {
+    const baseline = await textSearchWith(TEXT_INPUT);
+    textSelectCaptures.length = 0;
+    expect(await textSearchWith({ ...TEXT_INPUT, prioritizeClaimed: false })).toEqual(baseline);
+    const [countSql, rowsSql] = await searchWith({ ...PROXIMITY_INPUT, prioritizeClaimed: false });
+    expect(countSql).toBe(BASELINE_PROXIMITY_COUNT_SQL);
+    expect(rowsSql).toBe(BASELINE_PROXIMITY_ROWS_SQL);
   });
 
   it('keeps distance and stable ID ordering within claimed proximity groups', async () => {
