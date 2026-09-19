@@ -60,6 +60,7 @@ export async function initializeJobQueueSchema(
     }
     if (detectorRole) {
       await adapter.executeSql(`GRANT USAGE ON SCHEMA public TO "${detectorRole}"`);
+      await adapter.executeSql(`GRANT USAGE ON TYPE public.spray_detection_status TO "${detectorRole}"`);
       await adapter.executeSql(
         `GRANT SELECT ON public.spray_walls, public.spray_wall_versions, public.user_boards TO "${detectorRole}"`,
       );

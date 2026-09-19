@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
+import { retrySprayDetectionAttempt } from '@boardsesh/db/queries';
 import { SPRAY_DETECTION_QUEUE, SPRAY_DETECTION_RECONCILE_QUEUE } from '@boardsesh/shared-schema';
 
 describe('owner-only queue initialization', () => {
@@ -23,7 +24,12 @@ describe('owner-only queue initialization', () => {
     runtime.on('error', () => {});
     try {
       await owner.unsafe(`CREATE ROLE "${role}" NOLOGIN`);
+      // Production's ACL reconciler removes the default PUBLIC type grant.
+      await owner`REVOKE ALL ON TYPE public.spray_detection_status FROM PUBLIC`;
       await initializeJobQueueSchema(drizzle(owner), undefined, role);
+      const [typeGrant] =
+        await restricted`SELECT has_type_privilege(current_user, 'public.spray_detection_status', 'USAGE') AS permitted`;
+      expect(typeGrant.permitted).toBe(true);
       await expect(restricted`CREATE TABLE public.detector_forbidden (id int)`).rejects.toThrow('permission denied');
       await expect(restricted`CREATE TABLE pgboss.detector_forbidden (id int)`).rejects.toThrow('permission denied');
       await runtime.start();
@@ -36,7 +42,10 @@ describe('owner-only queue initialization', () => {
       expect((await runtime.getJobById(SPRAY_DETECTION_QUEUE, jobs[0].id))?.state).toBe('completed');
       const permitted = await restricted`SELECT id FROM spray_wall_detections LIMIT 1`;
       expect(Array.isArray(permitted)).toBe(true);
+      // Exercise the real worker status UPDATE, including enum-bound filters.
+      await retrySprayDetectionAttempt(drizzle(restricted), randomUUID(), randomUUID());
     } finally {
+      await owner`GRANT USAGE ON TYPE public.spray_detection_status TO PUBLIC`;
       await runtime.stop({ graceful: true, close: true });
       await restricted.end();
       // This random NOLOGIN test role owns no objects, only grants in this
