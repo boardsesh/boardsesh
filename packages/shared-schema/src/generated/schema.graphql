@@ -2568,6 +2568,23 @@ type BoardDiscoveryClimb {
   angle: Int!
 }
 
+"""
+Headline usage numbers for the marketing site.
+
+Counted from board_climb_events, which records every climb pushed to a board's
+LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+board attribution was under 1% before 2026-04 and would shrink the number the
+further back it reached.
+"""
+type CommunityStats {
+  "Distinct climbers who lit a climb on a real board in the last 30 days."
+  climbersLast30Days: Int!
+  "Climbs lit on real boards in the last 30 days."
+  litLast30Days: Int!
+  computedAt: String!
+}
+
 "A public, listed physical board at a public gym. No owner or controller identity is exposed."
 type BoardDiscoveryBoard {
   uuid: ID!
@@ -6875,6 +6892,9 @@ type Query {
 
   "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
   boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
+
+  "Headline usage numbers for the marketing site. Public, cached, no auth."
+  communityStats: CommunityStats!
 
   """
   Get popular board configurations ranked by climb count.

@@ -42,7 +42,9 @@
       "ctaInstallAndroid": "Bei Google Play holen",
       "ctaUpdate": "App aktualisieren",
       "tensionShotAlt": "Ein Boulder an einem Tension Board in Boardsesh",
-      "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh"
+      "moonboardShotAlt": "Ein Boulder an einem MoonBoard in Boardsesh",
+      "proof": "{{formattedClimbers}} Kletterer*innen haben in den letzten 30 Tagen {{formattedClimbs}} Boulder an echten Boards beleuchtet.",
+      "proofNoCount": "Kostenlos, Open Source und bezahlt von den Kletterer*innen, die es nutzen."
     },
     "onboardingHeader": "Mach's zu deinem",
     "cards": {

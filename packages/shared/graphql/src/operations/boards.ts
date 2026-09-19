@@ -458,3 +458,22 @@ export type RecordBoardSerialMutationVariables = {
 export type RecordBoardSerialMutationResponse = {
   recordBoardSerial: BoardSerialConfig | null;
 };
+
+/** Headline usage numbers for the marketing site. Public, no variables. */
+export const GET_COMMUNITY_STATS = gql`
+  query GetCommunityStats {
+    communityStats {
+      climbersLast30Days
+      litLast30Days
+      computedAt
+    }
+  }
+`;
+
+export type CommunityStats = {
+  climbersLast30Days: number;
+  litLast30Days: number;
+  computedAt: string;
+};
+
+export type GetCommunityStatsQueryResponse = { communityStats: CommunityStats };

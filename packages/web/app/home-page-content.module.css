@@ -46,6 +46,13 @@
   line-height: 1.65;
 }
 
+/* Sits between the subtitle and the buttons, quieter than both — it is evidence,
+   not a second pitch. */
+.heroProof {
+  margin-top: var(--spacing-2);
+  color: var(--neutral-500);
+}
+
 .heroActions {
   display: flex;
   flex-wrap: wrap;

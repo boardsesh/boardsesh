@@ -42,7 +42,9 @@
       "ctaInstallAndroid": "Get it on Google Play",
       "ctaUpdate": "Update the app",
       "tensionShotAlt": "A climb on a Tension board in Boardsesh",
-      "moonboardShotAlt": "A climb on a MoonBoard in Boardsesh"
+      "moonboardShotAlt": "A climb on a MoonBoard in Boardsesh",
+      "proof": "{{formattedClimbers}} climbers lit {{formattedClimbs}} climbs on real boards in the last 30 days.",
+      "proofNoCount": "Free, open source, and paid for by the climbers who use it."
     },
     "onboardingHeader": "Make it yours",
     "cards": {

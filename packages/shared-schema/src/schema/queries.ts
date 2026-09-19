@@ -588,6 +588,9 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Public physical boards ranked by distinct climbers before limiting; optionally within one public gym."
     boardDiscovery(input: BoardDiscoveryInput): [BoardDiscoveryBoard!]!
 
+    "Headline usage numbers for the marketing site. Public, cached, no auth."
+    communityStats: CommunityStats!
+
     """
     Get popular board configurations ranked by climb count.
     """

@@ -42,7 +42,9 @@
       "ctaInstallAndroid": "Disponible en Google Play",
       "ctaUpdate": "Actualiza la app",
       "tensionShotAlt": "Un bloque en un plafón Tension en Boardsesh",
-      "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh"
+      "moonboardShotAlt": "Un bloque en un MoonBoard en Boardsesh",
+      "proof": "{{formattedClimbers}} escaladores encendieron {{formattedClimbs}} bloques en plafones reales en los últimos 30 días.",
+      "proofNoCount": "Gratis, de código abierto y pagado por los escaladores que lo usan."
     },
     "onboardingHeader": "Hazlo tuyo",
     "cards": {
