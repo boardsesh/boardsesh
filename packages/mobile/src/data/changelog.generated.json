@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T13:53:52.283Z",
+  "generatedAt": "2026-09-19T14:00:57.846Z",
   "entries": [
+    {
+      "prNumber": 5595,
+      "category": "fixed",
+      "title": "Stuck on something? Help now points you straight at Discord, where people actually answer. And the section about what the app does now gives you the app — it used to hand you the browser version, which can't light up holds.",
+      "mergedAt": "2026-09-19T13:30:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5595"
+    },
     {
       "prNumber": 5591,
       "category": "new",

@@ -37,6 +37,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Stuck on something? Help now points you straight at Discord, where people actually answer. And the section about what the app does now gives you the app — it used to hand you the browser version, which can't light up holds. ([#5595](https://github.com/boardsesh/boardsesh/pull/5595))
 - The gym directory stops shouting "Is this your gym?" at you on every single listing — it asks once, at the bottom, where it belongs. ([#5594](https://github.com/boardsesh/boardsesh/pull/5594))
   Gym rows line up: board chips sit on one baseline whether a gym listed its address or not.
   Page buttons are big enough to hit on a phone, and the pager fits on one row again.
