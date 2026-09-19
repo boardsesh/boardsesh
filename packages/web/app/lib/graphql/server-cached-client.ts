@@ -5,6 +5,7 @@ import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { getGraphQLHttpUrl } from './client';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
+import type { GetCommunityStatsQueryResponse } from '@boardsesh/graphql/operations';
 import type {
   GetUserClimbPercentileQueryResponse,
   GetUserProfileStatsQueryResponse,
@@ -113,6 +114,32 @@ export function createCachedGraphQLQuery<T = unknown, V extends Variables = Vari
  * Surfaces per-stream `hasMore` + `totalCount` so the client hook can seed
  * pagination state without firing a redundant first request.
  */
+/**
+ * The two numbers the hero quotes. Cached for five minutes and fail-soft: the
+ * homepage must render with or without them, and the copy has a no-count sibling
+ * for exactly that. Never call this without the cache — it aggregates over an
+ * events table, not a materialised row.
+ */
+export async function cachedCommunityStats(): Promise<{
+  climbersLast30Days: number;
+  litLast30Days: number;
+} | null> {
+  const { GET_COMMUNITY_STATS } = await import('@boardsesh/graphql/operations');
+  type Response = GetCommunityStatsQueryResponse;
+
+  try {
+    const query = createCachedGraphQLQuery<Response>(GET_COMMUNITY_STATS, 'community-stats', 300);
+    const result = await query({});
+    const { climbersLast30Days, litLast30Days } = result.communityStats;
+    // A zero is not a number worth printing: it reads as "nobody uses this"
+    // rather than "we could not ask", which is what it actually means.
+    if (climbersLast30Days <= 0 || litLast30Days <= 0) return null;
+    return { climbersLast30Days, litLast30Days };
+  } catch {
+    return null;
+  }
+}
+
 export async function cachedDiscoverPlaylists(input: { boardType?: string; layoutId?: number } = {}): Promise<{
   popular: DiscoverablePlaylist[];
   recent: DiscoverablePlaylist[];

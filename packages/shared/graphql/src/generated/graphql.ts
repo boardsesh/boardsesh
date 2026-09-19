@@ -1582,6 +1582,24 @@ export type CommunitySetting = {
   value: Scalars['String']['output'];
 };
 
+/**
+ * Headline usage numbers for the marketing site.
+ *
+ * Counted from board_climb_events, which records every climb pushed to a board's
+ * LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+ * in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+ * board attribution was under 1% before 2026-04 and would shrink the number the
+ * further back it reached.
+ */
+export type CommunityStats = {
+  __typename?: 'CommunityStats';
+  /** Distinct climbers who lit a climb on a real board in the last 30 days. */
+  climbersLast30Days: Scalars['Int']['output'];
+  computedAt: Scalars['String']['output'];
+  /** Climbs lit on real boards in the last 30 days. */
+  litLast30Days: Scalars['Int']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerInfo = {
@@ -5859,6 +5877,8 @@ export type Query = {
   communityRoles: Array<CommunityRoleAssignment>;
   /** Get community settings for a scope. */
   communitySettings: Array<CommunitySetting>;
+  /** Headline usage numbers for the marketing site. Public, cached, no auth. */
+  communityStats: CommunityStats;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**

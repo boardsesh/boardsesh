@@ -1585,6 +1585,24 @@ export type CommunitySetting = {
   value: Scalars['String']['output'];
 };
 
+/**
+ * Headline usage numbers for the marketing site.
+ *
+ * Counted from board_climb_events, which records every climb pushed to a board's
+ * LEDs and is dwell-gated at ~60s of presence — so these are climbs someone stood
+ * in front of, not app-swiping noise. Deliberately NOT counted from ticks, whose
+ * board attribution was under 1% before 2026-04 and would shrink the number the
+ * further back it reached.
+ */
+export type CommunityStats = {
+  __typename?: 'CommunityStats';
+  /** Distinct climbers who lit a climb on a real board in the last 30 days. */
+  climbersLast30Days: Scalars['Int']['output'];
+  computedAt: Scalars['String']['output'];
+  /** Climbs lit on real boards in the last 30 days. */
+  litLast30Days: Scalars['Int']['output'];
+};
+
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
 export type ControllerInfo = {
@@ -5862,6 +5880,8 @@ export type Query = {
   communityRoles: Array<CommunityRoleAssignment>;
   /** Get community settings for a scope. */
   communitySettings: Array<CommunitySetting>;
+  /** Headline usage numbers for the marketing site. Public, cached, no auth. */
+  communityStats: CommunityStats;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -10200,6 +10220,7 @@ export type ResolversTypes = ResolversObject<{
   CommunityRoleAssignment: ResolverTypeWrapper<CommunityRoleAssignment>;
   CommunityRoleType: CommunityRoleType;
   CommunitySetting: ResolverTypeWrapper<CommunitySetting>;
+  CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
   ControllerInfo: ResolverTypeWrapper<ControllerInfo>;
   ControllerPing: ResolverTypeWrapper<ControllerPing>;
@@ -10657,6 +10678,7 @@ export type ResolversParentTypes = ResolversObject<{
   CommitSprayWallVersionInput: CommitSprayWallVersionInput;
   CommunityRoleAssignment: CommunityRoleAssignment;
   CommunitySetting: CommunitySetting;
+  CommunityStats: CommunityStats;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
   ControllerInfo: ControllerInfo;
   ControllerPing: ControllerPing;
@@ -11834,6 +11856,16 @@ export type CommunitySettingResolvers<
   setBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   value?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CommunityStatsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CommunityStats'] = ResolversParentTypes['CommunityStats'],
+> = ResolversObject<{
+  climbersLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  computedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  litLast30Days?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14257,6 +14289,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
+  communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
   crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
@@ -16216,6 +16249,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommentUpdated?: CommentUpdatedResolvers<ContextType>;
   CommunityRoleAssignment?: CommunityRoleAssignmentResolvers<ContextType>;
   CommunitySetting?: CommunitySettingResolvers<ContextType>;
+  CommunityStats?: CommunityStatsResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
   ControllerInfo?: ControllerInfoResolvers<ContextType>;
   ControllerPing?: ControllerPingResolvers<ContextType>;

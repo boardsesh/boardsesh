@@ -42,7 +42,9 @@
       "ctaInstallAndroid": "Disponible sur Google Play",
       "ctaUpdate": "Mettre à jour l'appli",
       "tensionShotAlt": "Un bloc sur une board Tension dans Boardsesh",
-      "moonboardShotAlt": "Un bloc sur une MoonBoard dans Boardsesh"
+      "moonboardShotAlt": "Un bloc sur une MoonBoard dans Boardsesh",
+      "proof": "{{formattedClimbers}} grimpeurs ont allumé {{formattedClimbs}} blocs sur de vraies boards ces 30 derniers jours.",
+      "proofNoCount": "Gratuit, open source, et financé par les grimpeurs qui l'utilisent."
     },
     "onboardingHeader": "Faites-en votre app",
     "cards": {

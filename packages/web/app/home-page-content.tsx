@@ -33,6 +33,8 @@ import { sectionHeadingTypeClassName } from '@/app/components/ui/page-shell';
 
 type HomePageContentProps = {
   initialBoards?: BoardDiscoveryBoard[];
+  /** Pre-formatted on the server; the hero never sees the raw numbers. */
+  heroProof?: string;
   initialRecentBeta?: RecentBetaLinkRow[];
   /**
    * Sections rendered on the SERVER and passed down as slots.
@@ -74,6 +76,7 @@ const HERO_WEB_CTA_SX = {
 
 export default function HomePageContent({
   initialBoards,
+  heroProof,
   initialRecentBeta = [],
   gymSearch,
   featureStrip,
@@ -150,6 +153,14 @@ export default function HomePageContent({
             <Typography variant="body1" className={styles.heroLead}>
               {t('home.hero.subtitle')}
             </Typography>
+            {/* The site made no claim about itself anywhere — no number, no
+                rating, not one climber's words. For a free project that IS the
+                trust story, so it goes in the one place everyone reads. */}
+            {heroProof && (
+              <Typography variant="body2" className={styles.heroProof}>
+                {heroProof}
+              </Typography>
+            )}
             {/* Store-first, per the marketing wireframe: the app is the product
               and the web is the way in for someone who has not installed it.
               A phone browser gets the one store that matches it; a desktop

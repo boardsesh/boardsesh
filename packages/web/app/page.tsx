@@ -8,6 +8,7 @@ import { getBoardDiscovery } from './lib/server-board-discovery';
 import { getRecentBetaLinks } from './lib/server-recent-beta-links';
 import HomePageContent from './home-page-content';
 import HomeGymSearch from './components/home/home-gym-search';
+import { cachedCommunityStats } from './lib/graphql/server-cached-client';
 import HomeFeatureStrip from './components/home/home-feature-strip';
 import HomeSupportBlock from './components/home/home-support-block';
 
@@ -23,7 +24,24 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [boards, recentBeta, locale] = await Promise.all([getBoardDiscovery(), getRecentBetaLinks(), getLocale()]);
+  const [boards, recentBeta, locale, communityStats] = await Promise.all([
+    getBoardDiscovery(),
+    getRecentBetaLinks(),
+    getLocale(),
+    cachedCommunityStats(),
+  ]);
+
+  // Formatted here rather than in the client hero: the numbers are server data,
+  // and `Intl.NumberFormat` on the locale we already resolved keeps 132,341 from
+  // rendering as 132341 in English or 132.341 in German by accident.
+  const { t } = await getServerTranslation('marketing');
+  const numberFormat = new Intl.NumberFormat(locale);
+  const heroProof = communityStats
+    ? t('home.hero.proof', {
+        formattedClimbers: numberFormat.format(communityStats.climbersLast30Days),
+        formattedClimbs: numberFormat.format(communityStats.litLast30Days),
+      })
+    : t('home.hero.proofNoCount');
 
   return (
     <I18nProvider locale={locale} namespaces={['marketing', 'boards', 'climbs', 'profile', 'feed']}>
@@ -37,6 +55,7 @@ export default async function Home() {
           first HTML a crawler sees. */}
       <HomePageContent
         initialBoards={boards}
+        heroProof={heroProof}
         initialRecentBeta={recentBeta}
         gymSearch={<HomeGymSearch />}
         featureStrip={<HomeFeatureStrip />}
