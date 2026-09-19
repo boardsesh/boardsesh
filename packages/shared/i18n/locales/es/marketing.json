@@ -397,9 +397,7 @@
       "item1": "Monta una cola y ve pasando bloques con tu gente.",
       "item2": "Abre una sesión compartida para que todos los móviles muevan la misma cola.",
       "item3": "Enciende las presas por Bluetooth en plafones Kilter, Tension y MoonBoard.",
-      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio.",
-      "cta": "Abrir la app",
-      "ctaAriaLabel": "Abrir la app de Boardsesh"
+      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio."
     },
     "aurora": {
       "title": "Si vienes de las apps de Aurora",
@@ -417,10 +415,12 @@
     },
     "ask": {
       "title": "¿Sigues atascado?",
-      "intro": "Pregúntanos. Leemos los tres.",
+      "intro": "Pregunta en el Discord. Ahí es donde antes te responden.",
       "discord": "Preguntar en Discord",
       "github": "Reportar un fallo en GitHub",
-      "docs": "Leer la documentación para desarrolladores"
+      "docs": "Leer la documentación para desarrolladores",
+      "bugLead": "¿Has encontrado un fallo?",
+      "devLead": "¿Estás construyendo sobre la API?"
     },
     "topics": {
       "label": "Temas de ayuda",
