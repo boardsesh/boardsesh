@@ -28,9 +28,10 @@ affected layout so a bulk gap does not remain in the first-download path.
 for the full export and at **:07, :22, :37, and :52 every hour** for a bounded live-prefix scan
 (`workflow_dispatch` also available), with `environment: Production` so it gets the Production secrets.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
-instead of stepping on each other. `queue: max` is important: GitHub's default single pending slot lets a
-newer scan replace an older pending run, which could otherwise displace the nightly full export. The
-offset avoids GitHub's busiest quarter-hour schedule boundary.
+instead of stepping on each other. GitHub retains at most one pending run and may replace it with a newer
+one; the eight-minute offset from the preceding bounded scan makes the nightly unlikely to enter that
+pending slot. If the nightly full export is absent from the run history, dispatch it manually. The offset
+also avoids GitHub's busiest quarter-hour schedule boundary.
 
 **Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
 (default `board-snapshots/v1`):

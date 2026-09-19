@@ -52,9 +52,6 @@ on:
 concurrency:
   group: export-board-snapshots
   cancel-in-progress: false
-  # GitHub's default single pending slot replaces an older pending run. Keep a
-  # FIFO queue so a frequent scan can never displace the nightly full export.
-  queue: max
 
 jobs:
   export:
