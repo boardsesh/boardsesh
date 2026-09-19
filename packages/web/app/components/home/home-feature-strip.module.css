@@ -67,9 +67,6 @@
   justify-self: center;
   align-self: end;
 }
-.cta {
-  margin-top: var(--spacing-8);
-}
 @media (max-width: 760px) {
   .section > h2 {
     font-size: 28px;
@@ -91,8 +88,5 @@
   }
   .shot {
     max-width: 300px;
-  }
-  .cta {
-    margin-top: var(--spacing-6);
   }
 }

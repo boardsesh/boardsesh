@@ -1,26 +1,19 @@
+/* One column since the gym cards came out. The rule stays a grid rather than
+   collapsing to block so the search controls keep their own min-width: 0 track
+   and long facet labels wrap instead of stretching the section. */
 .locator {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-8);
   border-block: 1px solid var(--separator);
   padding-block: var(--spacing-8);
 }
-.controls,
-.results {
+.controls {
   min-width: 0;
-}
-.results {
-  border-left: 1px solid var(--separator);
-  padding-left: var(--spacing-8);
 }
 @media (max-width: 900px) {
   .locator {
-    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-4);
     padding-block: var(--spacing-5);
-  }
-  .results {
-    border-left: 0;
-    padding-left: 0;
   }
 }

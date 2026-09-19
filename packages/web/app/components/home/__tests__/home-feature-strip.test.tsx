@@ -6,8 +6,15 @@ import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 /**
  * The strip is a server component, so what matters is the FIRST server render:
- * three columns and a crawlable store link in the HTML a crawler with no
- * JavaScript receives. Rendering through `renderToStaticMarkup` is that pass.
+ * three columns in the HTML a crawler with no JavaScript receives. Rendering
+ * through `renderToStaticMarkup` is that pass.
+ *
+ * The strip used to carry its own store CTA and this suite asserted it. The page
+ * asked for the install three times over, so the mid-page pair went; the hero and
+ * the footer still carry it. The crawlable-store-link guarantee now lives where it
+ * belongs, at page level: `app/__tests__/home-page-content.test.tsx` pins the hero
+ * buttons to each store URL, and `e2e/marketing-refresh.spec.ts` asserts the
+ * rendered page carries an apps.apple.com AND a play.google.com anchor in `main`.
  *
  * Copy resolves from the real en-US catalog rather than echoing keys back —
  * a missing key would otherwise render as its own dotted path and still pass.
@@ -42,7 +49,6 @@ vi.mock('next/image', () => ({
 }));
 
 const { default: HomeFeatureStrip } = await import('../home-feature-strip');
-const { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } = await import('@/app/lib/store-urls');
 
 async function renderStrip(): Promise<string> {
   return renderToStaticMarkup(await HomeFeatureStrip());
@@ -66,15 +72,6 @@ describe('HomeFeatureStrip', () => {
     expect(html.match(/<h2/g)).toHaveLength(1);
     expect(html).toContain(resolveMarketingKey('home.features.title'));
     expect(html).toContain(resolveMarketingKey('home.features.lead'));
-  });
-
-  it('carries the app CTA as a real anchor to each store', async () => {
-    const html = await renderStrip();
-
-    expect(html).toContain(`href="${IOS_APP_STORE_URL}"`);
-    expect(html).toContain(`href="${ANDROID_PLAY_STORE_URL}"`);
-    expect(html).toContain(resolveMarketingKey('home.hero.ctaInstallIos'));
-    expect(html).toContain(resolveMarketingKey('home.hero.ctaInstallAndroid'));
   });
 
   it('shows a real app capture for all three features', async () => {

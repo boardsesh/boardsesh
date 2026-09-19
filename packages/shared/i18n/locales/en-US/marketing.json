@@ -48,14 +48,10 @@
     "cards": {
       "auroraTitle": "Coming from Kilter?",
       "auroraDescription": "Bring your logbook and history over in one step",
-      "crewTitle": "Find your crew",
-      "crewDescription": "Follow friends and see what they're climbing",
       "playlistTitle": "Build a playlist",
       "playlistDescription": "Line up your climbs before you get to the gym",
       "bluetoothTitle": "Connect your board",
       "bluetoothDescription": "Pair via Bluetooth and light up your next climb",
-      "discordTitle": "Join the crew on Discord",
-      "discordDescription": "Share beta, report bugs, and help shape what's next",
       "gymTitle": "Find a gym near you",
       "gymDescription": "See which walls run a Kilter, Tension or MoonBoard"
     },
@@ -71,7 +67,6 @@
       "lead_other": "{{formattedCount}} gyms, club walls and garages already have a board listed. Search by name or town, or let your browser find you.",
       "leadNoCount": "Gyms, club walls and garages with a board on the wall are already listed. Search by name or town, or let your browser find you.",
       "geoHint": "Location off? Type a town instead — same results, no permission prompt.",
-      "cardsUnavailable": "The gym list isn't loading right now. The full directory is still there.",
       "browseAll": "Browse the full gym directory"
     },
     "boards": {

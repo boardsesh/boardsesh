@@ -48,14 +48,10 @@
     "cards": {
       "auroraTitle": "Vous venez de Kilter ?",
       "auroraDescription": "Importez votre carnet et votre historique en une étape",
-      "crewTitle": "Trouvez votre crew",
-      "crewDescription": "Suivez vos potes et voyez ce qu'ils grimpent",
       "playlistTitle": "Préparez une playlist",
       "playlistDescription": "Alignez vos blocs avant d'arriver à la salle",
       "bluetoothTitle": "Connectez votre board",
       "bluetoothDescription": "Appairez en Bluetooth et allumez votre prochain bloc",
-      "discordTitle": "Rejoignez le crew sur Discord",
-      "discordDescription": "Partagez la beta, signalez des bugs et donnez votre avis sur la suite",
       "gymTitle": "Trouve une salle près de chez toi",
       "gymDescription": "Vois quels murs ont une board Kilter, une board Tension ou un MoonBoard"
     },
@@ -71,7 +67,6 @@
       "lead_other": "{{formattedCount}} salles, murs de club et garages ont déjà une board référencée. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
       "leadNoCount": "Des salles, des murs de club et des garages avec une board au mur sont déjà référencés. Cherche par nom ou par ville, ou laisse le navigateur te localiser.",
       "geoHint": "Localisation désactivée ? Tape une ville : mêmes résultats, sans demande d'autorisation.",
-      "cardsUnavailable": "La liste des salles ne charge pas pour le moment. L'annuaire complet est toujours là.",
       "browseAll": "Voir tout l'annuaire des salles"
     },
     "boards": {

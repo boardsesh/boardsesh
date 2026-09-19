@@ -7,7 +7,6 @@ import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
 import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
-import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
@@ -29,10 +28,7 @@ import { track } from '@/app/lib/analytics';
 import { APP_INSTALL_CLICK_EVENT, buildAppInstallClickProperties } from '@/app/lib/app-install-event';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import OnboardingCard from '@/app/components/home/onboarding-card';
-import DiscordIcon from '@/app/components/home/discord-icon';
 import styles from './home-page-content.module.css';
-
-const DISCORD_INVITE_URL = 'https://discord.gg/YXA8GsXfQK';
 
 type HomePageContentProps = {
   initialBoards?: BoardDiscoveryBoard[];
@@ -310,25 +306,6 @@ export default function HomePageContent({
             accent="brand"
             href={APP_URL}
             external
-          />
-
-          <OnboardingCard
-            icon={<PeopleOutlined />}
-            title={t('home.cards.crewTitle')}
-            description={t('home.cards.crewDescription')}
-            accent="brand"
-            href={APP_URL}
-            external
-          />
-
-          <OnboardingCard
-            icon={<DiscordIcon />}
-            title={t('home.cards.discordTitle')}
-            description={t('home.cards.discordDescription')}
-            accent="brand"
-            href={DISCORD_INVITE_URL}
-            external
-            newTab
           />
         </Box>
 

@@ -48,14 +48,10 @@
     "cards": {
       "auroraTitle": "Kommst du von Kilter?",
       "auroraDescription": "Hol Routenbuch und Historie in einem Schritt rüber",
-      "crewTitle": "Find deine Crew",
-      "crewDescription": "Folg deinen Leuten und sieh, was sie klettern",
       "playlistTitle": "Bau eine Playlist",
       "playlistDescription": "Stell deine Boulder zusammen, bevor du in die Halle kommst",
       "bluetoothTitle": "Verbinde dein Board",
       "bluetoothDescription": "Per Bluetooth koppeln und den nächsten Boulder beleuchten",
-      "discordTitle": "Komm auf Discord zur Crew",
-      "discordDescription": "Beta teilen, Fehler melden und mitbestimmen, was als Nächstes kommt",
       "gymTitle": "Finde eine Halle in deiner Nähe",
       "gymDescription": "Sieh, welche Wände ein Kilter Board, Tension Board oder MoonBoard haben"
     },
@@ -71,7 +67,6 @@
       "lead_other": "{{formattedCount}} Hallen, Vereinswände und Garagen haben schon ein Board eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
       "leadNoCount": "Hallen, Vereinswände und Garagen mit einem Board an der Wand sind schon eingetragen. Such nach Name oder Stadt, oder lass dich vom Browser orten.",
       "geoHint": "Ortung aus? Tipp einfach eine Stadt ein: gleiche Ergebnisse, ohne Berechtigungsabfrage.",
-      "cardsUnavailable": "Die Hallenliste lädt gerade nicht. Das komplette Verzeichnis ist trotzdem da.",
       "browseAll": "Zum kompletten Hallenverzeichnis"
     },
     "boards": {
