@@ -564,6 +564,18 @@ describe('emptyManifest / sortManifestEntries', () => {
     // Non-destructive: re-recording must not shuffle the caller's own arrays.
     expect(shuffled.graphql[0].operationName).toBe('SyncTicks');
   });
+
+  it('canonicalizes approved account order without mutating the original list or inventing an absent list', () => {
+    const approvedTestUserIds = ['44444444-4444-4444-8444-444444444444', '33333333-3333-4333-8333-333333333333'];
+    const manifest = { ...validManifest(), approvedTestUserIds };
+    const sorted = sortManifestEntries(manifest);
+    expect(sorted.approvedTestUserIds).toEqual([...approvedTestUserIds].reverse());
+    expect(sorted).toEqual(
+      sortManifestEntries({ ...manifest, approvedTestUserIds: [...approvedTestUserIds].reverse() }),
+    );
+    expect(approvedTestUserIds[0]).toBe('44444444-4444-4444-8444-444444444444');
+    expect(sortManifestEntries(validManifest())).not.toHaveProperty('approvedTestUserIds');
+  });
 });
 
 describe('log grammar', () => {

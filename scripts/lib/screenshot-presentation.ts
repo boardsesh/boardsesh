@@ -96,6 +96,8 @@ export interface ScreenshotRecipe {
   sources: readonly string[];
 }
 
+// Legacy live captures and current wall/board captures are separate complete sets.
+// Their numeric prefixes may overlap; recipes match exact filenames, never slots.
 const ANDROID_LIVE_CAPTURES = ['09-live-queue.png', '10-live-climb.png', '11-live-climb-peer.png'] as const;
 const ANDROID_WALL_CAPTURES = ['09-live-queue.png', '10-wall-status.png'] as const;
 const MOONBOARD_CAPTURE = '08-moonboard-board-view.png';

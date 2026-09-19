@@ -1085,12 +1085,13 @@ export function emptyManifest(fields: {
 }
 
 /**
- * Both entry lists in a stable order, so re-recording an unchanged capture
+ * Entry lists and approved account IDs in a stable order, so re-recording an unchanged capture
  * produces a byte-identical manifest and the diff shows only what moved.
  */
 export function sortManifestEntries(manifest: ScreenshotFixtureManifest): ScreenshotFixtureManifest {
   return {
     ...manifest,
+    ...(manifest.approvedTestUserIds ? { approvedTestUserIds: [...manifest.approvedTestUserIds].sort() } : {}),
     graphql: [...manifest.graphql].sort((left, right) =>
       left.operationName === right.operationName
         ? left.variablesHash.localeCompare(right.variablesHash)
