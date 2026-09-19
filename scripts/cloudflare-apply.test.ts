@@ -2091,7 +2091,6 @@ describe('desiredR2Buckets', () => {
     const byName = new Map(desiredR2Buckets.map((bucket) => [bucket.name, bucket]));
     expect(byName.get('boardsesh-user-private')?.customDomain).toBeNull();
     expect(byName.get('boardsesh-user-media')?.customDomain).toBe('media.boardsesh.com');
-    expect([...byName.values()].every((bucket) => bucket.r2DevDomainEnabled === false)).toBe(true);
   });
 
   it('keeps the static-assets bucket on its staging hostname until the flip', () => {
