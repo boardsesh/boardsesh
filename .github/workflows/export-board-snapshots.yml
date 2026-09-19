@@ -265,9 +265,17 @@ jobs:
             verify_headers "$headers" '^access-control-allow-origin: \*$'
             verify_headers "$headers" '^cache-control: .*max-age=300'
             verify_headers "$headers" '^cf-ray:'
-            curl --fail --silent --show-error --retry 4 --retry-all-errors \
-              -H 'Origin: https://app.boardsesh.com' -D "$cached_headers" -o /dev/null "$manifest_url"
-            verify_headers "$cached_headers" '^cf-cache-status: HIT$'
+            for cache_attempt in 1 2 3 4 5; do
+              curl --fail --silent --show-error --retry 4 --retry-all-errors \
+                -H 'Origin: https://app.boardsesh.com' -D "$cached_headers" -o /dev/null "$manifest_url"
+              if tr -d '\r' < "$cached_headers" | grep -Eiq '^cf-cache-status: HIT$'; then break; fi
+              if [ "$cache_attempt" = 5 ]; then
+                echo '::error::Snapshot manifest did not reach cf-cache-status: HIT after five probes.'
+                cat "$cached_headers"
+                exit 1
+              fi
+              sleep 2
+            done
 
             if [ "$prefix" = 'v1-catalog' ]; then
               jq -e --arg base "$SNAPSHOT_R2_BASE_URL/" \
