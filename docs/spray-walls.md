@@ -217,11 +217,16 @@ changes nothing about what was matched.
 
 ### Detection post-processing, and why one full-frame pass
 
-`@boardsesh/hold-detection` is the platform-free half of on-device detection:
+This section records the original box-model experiment, not the current mobile
+runtime. Recognition is moving to a queued homelab service; the native runtime
+and benchmark have been removed. See [native cleanup](spray-recognition-native-cleanup.md)
+and rollout issue #5451 for the service integration and deployment gates.
+
+`@boardsesh/hold-detection` is the platform-free detection post-processing:
 tile planning, preprocessing into the model's input tensor, decoding RF-DETR's
 two output tensors, merging what several tiles saw, and handing back circles. The
 inference runtime and the image decoder are injected, so the same code runs in
-the Expo app, in a browser worker and under Node.
+a browser worker or Node, without a mobile native inference dependency.
 
 The default is **one full-frame pass**, not the 2x2 tiling the SW-01 harness
 config uses. SW-01 measured tiling making the small model 4.9 F1 points *worse*
@@ -273,7 +278,7 @@ one more reason the score threshold is a slider rather than a shipped constant.
 | `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
 | `anchors` | Optional, Skip by default. Four draggable handles; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
-| `detect` | The registered on-device detector, if this binary has one. No detector, or a failure, lands in the editor with nothing to review. |
+| `detect` | This release branch retains the legacy optional-detector seam until the service integration lands. No native detector is registered; new walls open manual editing. The service PR replaces this seam with queued recognition and resume/retry. |
 | `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
