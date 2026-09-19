@@ -1069,7 +1069,10 @@ describe('screenshot backend', () => {
         { id: 'invalid', type: 'subscribe', payload: { query: ' ' } },
         { id: 'invalid', type: 'subscribe', payload: { ...queueRequest, variables: [] } },
         { id: 'invalid', type: 'subscribe', payload: { ...queueRequest, operationName: 12 } },
-      ])('rejects malformed subscription frames without replaying a fixture: %j', async (frame) => {
+        { type: 'complete' },
+        { id: '', type: 'complete' },
+        { id: 12, type: 'complete' },
+      ])('rejects malformed subscription or completion frames without replaying a fixture: %j', async (frame) => {
         const client = await openGraphqlSocket();
         const closed = new Promise<number>((resolve) => client.socket.once('close', resolve));
         client.socket.send(JSON.stringify(frame));

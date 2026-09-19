@@ -1865,6 +1865,7 @@ export function buildAndroidMaestroArgs(
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const boards = context.boards ?? context.capture?.boards.join('|') ?? env.EXPO_PUBLIC_SCREENSHOT_BOARDS;
+  // Match screenshot-mode.ts: missing or blank selectors use its two default boards.
   const boardCount = boards?.split('|').filter((selector) => selector.trim().length > 0).length || 2;
   return [
     '--device',

@@ -177,8 +177,10 @@ export async function frameComposition(
     // its header/participants and its persistent current-climb bar. Keep their
     // native pixels together inside each card; never reconstruct app controls.
     panels.push(
+      // The peer capture's session header and participant avatars.
       { raw: sources[1], left: margin, top: screenshotTop, width: textWidth, crop: { top: 0.065, height: 0.14 } },
       { raw: sources[0], left: width * 0.14, top: screenshotTop + height * 0.11, width: width * 0.72 },
+      // The same peer capture's persistent current-climb bar above its bottom tabs.
       { raw: sources[1], left: margin, top: height * 0.89, width: textWidth, crop: { top: 0.793, height: 0.067 } },
     );
   } else if ((layout === 'board-family' || layout === 'more-boards') && sources.length === 3) {

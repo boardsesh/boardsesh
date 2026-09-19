@@ -144,7 +144,7 @@ const REPLAY_JWT_SIGNATURE = 'screenshot-replay';
 const REPLAY_SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 // These subscriptions only add live updates to screens whose initial state is
-// already loaded over HTTP. Session/queue snapshots are deliberately excluded:
+// already loaded over HTTP. QueueUpdates and SessionUpdates are deliberately excluded:
 // without them a shared-session capture would silently show an empty queue.
 const PASSIVE_SCREENSHOT_SUBSCRIPTIONS = new Set([
   'ClimbStatsUpdated',

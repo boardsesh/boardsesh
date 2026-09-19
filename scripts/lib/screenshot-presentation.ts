@@ -116,6 +116,7 @@ export function resolveScreenshotRecipes(
   const mapping = screenshotCaptions(platform, device);
   const legacyNames = Object.keys(mapping).sort();
   const actualNames = [...captureNames].sort();
+  // Sorting copies ignores capture order while retaining duplicate-name rejection.
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
   if (matches(legacyNames)) {
     return legacyNames.map((name) => ({ output: name, caption: mapping[name], layout: 'screen', sources: [name] }));

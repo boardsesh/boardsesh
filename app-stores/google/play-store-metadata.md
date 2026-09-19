@@ -84,7 +84,7 @@ changes the live listing. Replay uses the frozen fixture snapshot pinned in
 | `00-board-family.png` | Compatibility with Tension, Kilter, and MoonBoard 2016. |
 | `01-more-boards.png` | Compatibility with Woods Board, Grasshopper, and MoonBoard 2024. |
 | `02-live-queue.png` | A shared queue with climbs added by the crew. |
-| `03-wall-status.png` | The live wall-status capsule above the climb list while a different climb is selected locally. |
+| `03-wall-status.png` | The live wall-status capsule shows the lit climb while a different climb is selected locally. |
 | `04-climbs.png` | Browsing the board's climbs. |
 | `05-discover.png` | The playlist library. |
 | `06-workout-generator.png` | The Record tab's workout generator. |

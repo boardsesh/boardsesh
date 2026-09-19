@@ -223,6 +223,8 @@ describe('store screenshot presentation', () => {
       '13-moonboard-2024-view.png',
     ];
     const recipes = resolveScreenshotRecipes('android', 'pixel-2', names);
+    expect(resolveScreenshotRecipes('android', 'pixel-2', [...names].reverse())).toEqual(recipes);
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', [...names, names[0]])).toThrow('Incomplete or unknown');
     expect(recipes.map(({ output }) => output)).toEqual([
       '00-board-family.png',
       '01-more-boards.png',
