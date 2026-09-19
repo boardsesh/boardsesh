@@ -93,7 +93,7 @@ vi.mock('../SprayResetCompareScreen', () => ({
 }));
 
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
-vi.mock('../../../lib/spray/hold-suggestions', () => ({ suggestSprayHolds: vi.fn() }));
+vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () => false }));
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromLibrary: vi.fn(async () => pickResult.current),

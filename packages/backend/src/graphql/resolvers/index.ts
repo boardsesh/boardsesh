@@ -6,6 +6,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { boardQueries } from './board/queries';
 import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-overrides';
 import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
+import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
 import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { tickQueries } from './ticks/queries';
 import { tickMutations } from './ticks/mutations';
@@ -91,6 +92,7 @@ export const resolvers = {
     ...boardQueries,
     ...holdOutlineQueries,
     ...sprayWallQueries,
+    ...sprayDetectionQueries,
     ...sprayWallModerationQueries,
     ...climbQueries,
     ...tickQueries,
@@ -138,6 +140,7 @@ export const resolvers = {
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,
+    ...sprayDetectionMutations,
     ...sprayWallModerationMutations,
     ...pushTokenMutations,
     ...queueMutations,

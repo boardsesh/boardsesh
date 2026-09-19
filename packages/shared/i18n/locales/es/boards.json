@@ -1,4 +1,14 @@
 {
+  "sprayDetection": {
+    "queued": "Tu foto está en cola para reconocer las presas.",
+    "running": "Buscando presas en tu foto…",
+    "connection": "No podemos acceder al reconocimiento. Inténtalo cuando tengas conexión.",
+    "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
+    "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
+    "retry": "Intentar de nuevo",
+    "manual": "Colocar las presas a mano",
+    "resume": "Continuar este reseteo"
+  },
   "mobile": {
     "edit": {
       "screenTitle": "Editar plafón",
@@ -827,9 +837,7 @@
       "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
     },
     "detect": {
-      "title": "Buscando presas",
-      "working": "Buscando presas…",
-      "tiles": "Pasada {{done}} de {{total}}"
+      "title": "Buscando presas"
     },
     "review": {
       "found": "{{value}} presas por revisar",
@@ -869,7 +877,7 @@
     "nothingPublished": "Este muro todavía no está montado. Termina de añadirlo primero.",
     "openDraft": {
       "title": "Hay un reseteo a medias",
-      "body": "Una foto de un intento anterior sigue abierta en este muro. Tírala y empieza de nuevo: en el muro todavía no ha cambiado nada.",
+      "body": "Tu foto está guardada para continuar. El muro publicado no cambia hasta que confirmes el reseteo.",
       "discard": "Tírala y empezar de nuevo",
       "discarded": "Ese reseteo ya no está. Haz una foto nueva.",
       "discardFailed": "Ese reseteo no se pudo borrar. Inténtalo otra vez."
@@ -883,9 +891,6 @@
       "body": "Arrastra los cuatro círculos a las esquinas del muro. Esto no es opcional: es lo que alinea tu foto nueva con cada bloque que ya vive en el muro.",
       "use": "Usar estas esquinas",
       "notConvex": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden."
-    },
-    "detect": {
-      "title": "Viendo qué ha cambiado"
     },
     "leave": {
       "title": "¿Dejar el reseteo?",

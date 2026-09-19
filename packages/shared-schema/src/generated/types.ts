@@ -4018,6 +4018,7 @@ export type Mutation = {
    * notified). Requires authentication.
    */
   requestGymClaim: RequestGymClaimResult;
+  requestSprayWallDetection: SprayWallDetection;
   /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
@@ -4062,6 +4063,7 @@ export type Mutation = {
   resolveBoardForUuid: ResolvedBoard;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
+  retrySprayWallDetection: SprayWallDetection;
   /**
    * Approve or deny a pending gym claim (admin only). Approving transfers
    * ownership to the claimant.
@@ -4703,6 +4705,11 @@ export type MutationRequestGymClaimArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestSprayWallDetectionArgs = {
+  input: RequestSprayWallDetectionInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationResolveBoardCandidatesForSerialArgs = {
   advertisedBoardType?: InputMaybe<Scalars['String']['input']>;
   boardType: Scalars['String']['input'];
@@ -4738,6 +4745,11 @@ export type MutationResolveBoardForUuidArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRetrySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -6247,6 +6259,8 @@ export type Query = {
    * board config. Same visibility rules as `sprayWall`.
    */
   sprayWallByLayout?: Maybe<SprayWall>;
+  sprayWallDetection?: Maybe<SprayWallDetection>;
+  sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -6964,6 +6978,17 @@ export type QuerySprayWallByLayoutArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallDetectionArgs = {
+  id: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayWallDetectionForVersionArgs = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7449,6 +7474,11 @@ export type RequestGymClaimResult = {
   email?: Maybe<Scalars['String']['output']>;
   /** Which path the claim took. */
   status: GymClaimRequestStatus;
+};
+
+export type RequestSprayWallDetectionInput = {
+  versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
 };
 
 /**
@@ -8577,6 +8607,22 @@ export type SocialEntityType =
 
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
+export type SprayDetectionCandidate = {
+  __typename?: 'SprayDetectionCandidate';
+  confidence: Scalars['Float']['output'];
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+};
+
+export type SprayDetectionResult = {
+  __typename?: 'SprayDetectionResult';
+  candidates: Array<SprayDetectionCandidate>;
+  height: Scalars['Int']['output'];
+  width: Scalars['Int']['output'];
+};
+
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
@@ -8685,6 +8731,19 @@ export type SprayWallAddedDecisionInput = {
    * an unrelated hold as a successor, with nothing to notice it afterwards.
    */
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SprayWallDetection = {
+  __typename?: 'SprayWallDetection';
+  createdAt: Scalars['String']['output'];
+  error?: Maybe<Scalars['String']['output']>;
+  finishedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  modelVersion: Scalars['String']['output'];
+  result?: Maybe<SprayDetectionResult>;
+  status: Scalars['String']['output'];
+  versionId: Scalars['ID']['output'];
+  wallUuid: Scalars['ID']['output'];
 };
 
 /**
@@ -10373,6 +10432,7 @@ export type ResolversTypes = ResolversObject<{
   ReportSprayWallInput: ReportSprayWallInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: ResolverTypeWrapper<RequestGymClaimResult>;
+  RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolverTypeWrapper<ResolvedBoard>;
@@ -10437,10 +10497,13 @@ export type ResolversTypes = ResolversObject<{
   SmartPlaylistType: SmartPlaylistType;
   SocialEntityType: SocialEntityType;
   SortMode: SortMode;
+  SprayDetectionCandidate: ResolverTypeWrapper<SprayDetectionCandidate>;
+  SprayDetectionResult: ResolverTypeWrapper<SprayDetectionResult>;
   SprayHoldSource: SprayHoldSource;
   SprayRemixSeed: ResolverTypeWrapper<SprayRemixSeed>;
   SprayWall: ResolverTypeWrapper<SprayWall>;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetection: ResolverTypeWrapper<SprayWallDetection>;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: ResolverTypeWrapper<SprayWallHold>;
   SprayWallHoldInput: SprayWallHoldInput;
@@ -10800,6 +10863,7 @@ export type ResolversParentTypes = ResolversObject<{
   ReportSprayWallInput: ReportSprayWallInput;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: RequestGymClaimResult;
+  RequestSprayWallDetectionInput: RequestSprayWallDetectionInput;
   ResolveBoardResult: ResolveBoardResult;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolvedBoard;
@@ -10859,9 +10923,12 @@ export type ResolversParentTypes = ResolversObject<{
   SmartPlaylistCount: SmartPlaylistCount;
   SmartPlaylistMeta: SmartPlaylistMeta;
   SmartPlaylistResult: SmartPlaylistResult;
+  SprayDetectionCandidate: SprayDetectionCandidate;
+  SprayDetectionResult: SprayDetectionResult;
   SprayRemixSeed: SprayRemixSeed;
   SprayWall: SprayWall;
   SprayWallAddedDecisionInput: SprayWallAddedDecisionInput;
+  SprayWallDetection: SprayWallDetection;
   SprayWallDetectionInput: SprayWallDetectionInput;
   SprayWallHold: SprayWallHold;
   SprayWallHoldInput: SprayWallHoldInput;
@@ -13256,6 +13323,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRequestGymClaimArgs, 'input'>
   >;
+  requestSprayWallDetection?: Resolver<
+    ResolversTypes['SprayWallDetection'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestSprayWallDetectionArgs, 'input'>
+  >;
   resolveBoardCandidatesForSerial?: Resolver<
     ResolversTypes['ResolveBoardResult'],
     ParentType,
@@ -13288,6 +13361,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationResolveProposalArgs, 'input'>
+  >;
+  retrySprayWallDetection?: Resolver<
+    ResolversTypes['SprayWallDetection'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRetrySprayWallDetectionArgs, 'id'>
   >;
   reviewGymClaim?: Resolver<
     ResolversTypes['Boolean'],
@@ -14573,6 +14652,18 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySprayWallByLayoutArgs, 'layoutId'>
   >;
+  sprayWallDetection?: Resolver<
+    Maybe<ResolversTypes['SprayWallDetection']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallDetectionArgs, 'id'>
+  >;
+  sprayWallDetectionForVersion?: Resolver<
+    Maybe<ResolversTypes['SprayWallDetection']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySprayWallDetectionForVersionArgs, 'versionId' | 'wallUuid'>
+  >;
   sprayWallRenderData?: Resolver<
     Maybe<ResolversTypes['SprayWallRenderData']>,
     ParentType,
@@ -15474,6 +15565,28 @@ export type SmartPlaylistResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SprayDetectionCandidateResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayDetectionCandidate'] = ResolversParentTypes['SprayDetectionCandidate'],
+> = ResolversObject<{
+  confidence?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cx?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  cy?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  outline?: Resolver<Maybe<Array<ResolversTypes['Float']>>, ParentType, ContextType>;
+  r?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayDetectionResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayDetectionResult'] = ResolversParentTypes['SprayDetectionResult'],
+> = ResolversObject<{
+  candidates?: Resolver<Array<ResolversTypes['SprayDetectionCandidate']>, ParentType, ContextType>;
+  height?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  width?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SprayRemixSeedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayRemixSeed'] = ResolversParentTypes['SprayRemixSeed'],
@@ -15505,6 +15618,22 @@ export type SprayWallResolvers<
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   versions?: Resolver<Array<ResolversTypes['SprayWallVersion']>, ParentType, ContextType>;
   viewerCanEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SprayWallDetectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SprayWallDetection'] = ResolversParentTypes['SprayWallDetection'],
+> = ResolversObject<{
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  error?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  finishedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  modelVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  result?: Resolver<Maybe<ResolversTypes['SprayDetectionResult']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  versionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  wallUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16246,8 +16375,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SmartPlaylistCount?: SmartPlaylistCountResolvers<ContextType>;
   SmartPlaylistMeta?: SmartPlaylistMetaResolvers<ContextType>;
   SmartPlaylistResult?: SmartPlaylistResultResolvers<ContextType>;
+  SprayDetectionCandidate?: SprayDetectionCandidateResolvers<ContextType>;
+  SprayDetectionResult?: SprayDetectionResultResolvers<ContextType>;
   SprayRemixSeed?: SprayRemixSeedResolvers<ContextType>;
   SprayWall?: SprayWallResolvers<ContextType>;
+  SprayWallDetection?: SprayWallDetectionResolvers<ContextType>;
   SprayWallHold?: SprayWallHoldResolvers<ContextType>;
   SprayWallModerationResult?: SprayWallModerationResultResolvers<ContextType>;
   SprayWallMoveSuggestion?: SprayWallMoveSuggestionResolvers<ContextType>;

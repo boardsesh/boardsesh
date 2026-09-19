@@ -1,4 +1,14 @@
 {
+  "sprayDetection": {
+    "queued": "Dein Foto wartet auf die Grifferkennung.",
+    "running": "Griffe auf deinem Foto werden gesucht…",
+    "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
+    "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
+    "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
+    "retry": "Erneut versuchen",
+    "manual": "Griffe selbst platzieren",
+    "resume": "Dieses Zurücksetzen fortsetzen"
+  },
   "mobile": {
     "edit": {
       "screenTitle": "Board bearbeiten",
@@ -827,9 +837,7 @@
       "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
     },
     "detect": {
-      "title": "Suche nach Griffen",
-      "working": "Suche nach Griffen…",
-      "tiles": "Durchgang {{done}} von {{total}}"
+      "title": "Suche nach Griffen"
     },
     "review": {
       "found": "{{value}} Griffe zum Prüfen",
@@ -869,7 +877,7 @@
     "nothingPublished": "Diese Wand ist noch nicht fertig eingerichtet. Schließ das Hinzufügen erst ab.",
     "openDraft": {
       "title": "Ein Zurücksetzen ist halb fertig",
-      "body": "Ein Foto von einem früheren Anlauf ist auf dieser Wand noch offen. Wirf es weg und fang neu an — an der Wand hat sich noch nichts geändert.",
+      "body": "Dein gespeichertes Foto wartet auf dich. Die veröffentlichte Wand ändert sich erst, wenn du das Zurücksetzen bestätigst.",
       "discard": "Wegwerfen und neu anfangen",
       "discarded": "Das Zurücksetzen ist weg. Mach ein neues Foto.",
       "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal."
@@ -883,9 +891,6 @@
       "body": "Zieh die vier Ringe auf die Ecken der Wand. Das ist nicht optional: nur so passt dein neues Foto zu jedem Boulder, der schon auf der Wand steht.",
       "use": "Diese Ecken nehmen",
       "notConvex": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand."
-    },
-    "detect": {
-      "title": "Wir schauen, was sich geändert hat"
     },
     "leave": {
       "title": "Zurücksetzen verlassen?",

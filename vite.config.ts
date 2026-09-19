@@ -140,6 +140,7 @@ export default defineConfig({
       './packages/moonboard-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
       './packages/scheduler/vite.config.ts',
+      './packages/hold-detector/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
@@ -833,6 +834,10 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/mobile run typecheck',
         dependsOn: ['build:shared', 'build:constants', 'mobile:web-runtime:install'],
       },
+      'typecheck:hold-detector': {
+        command: 'pnpm --filter @boardsesh/hold-detector run typecheck',
+        dependsOn: ['build:db', 'build:shared'],
+      },
       'typecheck:kilter': {
         command: 'pnpm --filter @boardsesh/kilter-sync run typecheck',
         dependsOn: ['build:kilter'],
@@ -915,6 +920,7 @@ export default defineConfig({
           'typecheck:board-render',
           'typecheck:board-art-geometry',
           'typecheck:hold-detection',
+          'typecheck:hold-detector',
           'typecheck:spray-wall-geometry',
           'typecheck:play-view',
           'typecheck:playback-react',

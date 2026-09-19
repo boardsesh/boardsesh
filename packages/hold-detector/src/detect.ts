@@ -75,10 +75,11 @@ export async function detect(
   const { width: inputWidth, height: inputHeight, normalization } = manifest.input;
 
   const decodeStarted = Date.now();
-  const image = sharp(photoBytes, { failOn: 'none' }).rotate();
+  const image = sharp(photoBytes, { failOn: 'error', limitInputPixels: 40_000_000 }).rotate().toColourspace('srgb');
   const meta = await image.metadata();
-  const photoWidth = meta.width ?? 0;
-  const photoHeight = meta.height ?? 0;
+  const rotated = meta.orientation != null && meta.orientation >= 5;
+  const photoWidth = (rotated ? meta.height : meta.width) ?? 0;
+  const photoHeight = (rotated ? meta.width : meta.height) ?? 0;
   if (!photoWidth || !photoHeight) throw new Error('could not read the photo dimensions');
 
   // The whole pipeline works on the long-side-resized photo; the caller's

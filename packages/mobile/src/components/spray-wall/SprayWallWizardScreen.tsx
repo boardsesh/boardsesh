@@ -28,15 +28,9 @@ import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import {
-  SHARED_EVENTS,
-  sprayHoldsReviewed,
-  sprayWallDetectionFinished,
-  sprayWallPhotoPicked,
-  sprayWallUploadFinished,
-} from '@boardsesh/analytics';
+import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -70,7 +64,7 @@ import {
 } from '../../lib/spray/use-create-spray-wall';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
-import { suggestSprayHolds } from '../../lib/spray/hold-suggestions';
+import { SprayDetectionStep } from './SprayDetectionStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
 import {
@@ -262,6 +256,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       const target = resumeTargetFor(resumable, full.versions ?? []);
       if (target.at === 'review') {
         dispatch({ type: 'RESUMED_AT_REVIEW', draft: target.draft, savedHoldCount: target.savedHoldCount });
+        if (target.savedHoldCount === 0) dispatch({ type: 'DETECTION_STARTED' });
       } else {
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
@@ -335,30 +330,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // Steps 4 and 5 — upload, then suggest
   // ============================================
 
-  const runDetection = useCallback(
-    async (photo: { uri: string; width: number; height: number }, stored: { width: number; height: number }) => {
-      dispatch({ type: 'DETECTION_STARTED' });
-      const startedAt = Date.now();
-      const result = await suggestSprayHolds({
-        photo,
-        storedPhoto: stored,
-        onProgress: (done, total) => dispatch({ type: 'DETECTION_PROGRESS', done, total }),
-      });
-      trackSprayEvent(
-        sprayWallDetectionFinished({
-          outcome: result.outcome,
-          candidateCount: result.outcome === 'ok' ? result.candidates.length : 0,
-          durationMs: Date.now() - startedAt,
-        }),
-      );
-      if (result.outcome === 'ok') {
-        dispatch({ type: 'DETECTION_FINISHED', candidates: result.candidates });
-        return;
-      }
-      dispatch({ type: result.outcome === 'unavailable' ? 'DETECTION_UNAVAILABLE' : 'DETECTION_FAILED' });
-    },
-    [],
-  );
+  const runDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
+  const detectionCompleted = useCallback((candidates: SprayDetectionCandidate[]) => {
+    dispatch({ type: 'DETECTION_FINISHED', candidates });
+  }, []);
+  const useManualEditor = useCallback(() => dispatch({ type: 'DETECTION_UNAVAILABLE' }), []);
 
   const runUpload = useCallback(async () => {
     const photo = state.photo;
@@ -401,6 +377,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           // Straight to the editor, with no second detector pass: the photo was
           // already adopted, and the candidates from the first attempt are gone.
           dispatch({ type: 'RESUMED_AT_REVIEW', draft: plan.draft, savedHoldCount: plan.savedHoldCount });
+          if (plan.savedHoldCount === 0) runDetection();
           return;
         }
       }
@@ -440,7 +417,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       const version = await createVersionAsync({ wallUuid: wall.wallUuid, photoId: uploaded.photoId, anchors });
       const draft: CreatedWallDraft = { ...wall, versionId: version.id, versionNumber: version.number };
       dispatch({ type: 'DRAFT_CREATED', draft });
-      await runDetection(photo, stored);
+      runDetection();
     } catch (error) {
       reportError(error);
       trackSprayEvent(
@@ -611,7 +588,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     if (isBusy(state)) return;
     // `review` and `publish` have no step behind them — the draft is on the
     // server by then — so back means leaving, which keeps the draft.
-    if (state.step === 'meta' || state.step === 'review' || state.step === 'publish') {
+    if (state.draft || state.step === 'meta' || state.step === 'review' || state.step === 'publish') {
       leave();
       return;
     }
@@ -621,7 +598,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const candidateCount = state.detection.candidates.length;
   const onHoldsSaved = useCallback(
     ({ written }: { written: number; removed: number }) => {
-      trackSprayEvent(sprayHoldsReviewed({ holdCount: written, hadCandidates: candidateCount > 0 }));
+      trackSprayEvent(sprayHoldsReviewed({ holdCount: written, candidateCount, hadCandidates: candidateCount > 0 }));
       dispatch({ type: 'HOLDS_SAVED', holdCount: written });
     },
     [candidateCount],
@@ -814,18 +791,13 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           </>
         ) : null}
 
-        {state.step === 'detect' ? (
-          <>
-            <Text variant="title3">{t('sprayWizard.detect.title')}</Text>
-            <ProgressBlock
-              label={
-                state.detection.total > 0
-                  ? t('sprayWizard.detect.tiles', { done: state.detection.done, total: state.detection.total })
-                  : t('sprayWizard.detect.working')
-              }
-              progress={state.detection.total > 0 ? state.detection.done / state.detection.total : null}
-            />
-          </>
+        {state.step === 'detect' && state.draft ? (
+          <SprayDetectionStep
+            wallUuid={state.draft.wallUuid}
+            versionId={state.draft.versionId}
+            onComplete={detectionCompleted}
+            onManual={useManualEditor}
+          />
         ) : null}
 
         {state.step === 'publish' ? (

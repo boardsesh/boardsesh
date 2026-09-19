@@ -31,23 +31,46 @@ export interface LoadModelOptions {
   cacheDir: string;
   /** Threads for the ONNX session; defaults to letting onnxruntime decide. */
   threads?: number;
+  /** Pin the artifact before creating a native session, not after loading it. */
+  weightsSha256?: string;
   fetchImpl?: typeof fetch;
 }
 
-async function fetchBuffer(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
-  const response = await fetchImpl(url);
+async function fetchBuffer(url: string, fetchImpl: typeof fetch, limit = 200 * 1024 * 1024): Promise<Buffer> {
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(60_000) });
   if (!response.ok) throw new Error(`GET ${url} -> ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+  if (!response.body) throw new Error('EMPTY_MODEL_ARTIFACT');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > limit) throw new Error('MODEL_ARTIFACT_TOO_LARGE');
+      chunks.push(chunk.value);
+    }
+    return Buffer.concat(chunks);
+  } finally {
+    await reader.cancel();
+  }
 }
 
 export async function loadModel(options: LoadModelOptions): Promise<LoadedModel> {
   const { baseUrl, version, cacheDir, threads, fetchImpl = fetch } = options;
+  if (!/^[A-Za-z0-9_-]+$/.test(version)) throw new Error('Invalid model version');
   const base = `${baseUrl.replace(/\/$/, '')}/${version}`;
 
-  const manifest = JSON.parse((await fetchBuffer(`${base}/manifest.json`, fetchImpl)).toString('utf8')) as Manifest;
+  const manifest = JSON.parse(
+    (await fetchBuffer(`${base}/manifest.json`, fetchImpl, 64 * 1024)).toString('utf8'),
+  ) as Manifest;
   assertSupported(manifest);
+  if (manifest.version !== version) throw new Error('Model manifest version mismatch');
 
   const wanted = pickWeights(manifest);
+  if (options.weightsSha256 && wanted.sha256 !== options.weightsSha256) throw new Error('MODEL_IDENTITY_MISMATCH');
+  if (!/^[A-Za-z0-9_-]+\.onnx$/.test(wanted.path)) throw new Error('Invalid model artifact path');
   const cachePath = join(cacheDir, version, wanted.path);
 
   let bytes: Buffer | null = null;

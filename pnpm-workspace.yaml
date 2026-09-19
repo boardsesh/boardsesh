@@ -78,4 +78,5 @@ allowBuilds:
   tree-sitter-json: false
   # Browser downloads are performed explicitly only where they are needed.
   playwright: false
-  onnxruntime-node: set this to true or false
+  # CPU binaries are bundled; the install hook only fetches optional GPU providers.
+  onnxruntime-node: false

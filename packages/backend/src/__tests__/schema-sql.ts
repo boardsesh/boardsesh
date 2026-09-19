@@ -3,6 +3,14 @@
  * template DB) and by worker-db (to hydrate newly-minted per-worker DBs).
  */
 
+import { readFileSync } from 'node:fs';
+
+// Exercise the generated migration instead of maintaining a second detection schema.
+const detectionSchema = readFileSync(
+  new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
@@ -1838,4 +1846,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
             'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
             'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
     EXECUTE FUNCTION set_updated_at();
+
+  DROP TABLE IF EXISTS spray_wall_detections;
+  DROP TYPE IF EXISTS spray_detection_status;
+  ${detectionSchema}
 `;
