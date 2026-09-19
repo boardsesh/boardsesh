@@ -321,9 +321,7 @@
       "item1": "Build a queue and work through it with your crew.",
       "item2": "Run a party session so everyone's phone drives the same queue.",
       "item3": "Light up holds over Bluetooth on Kilter, Tension and MoonBoard walls.",
-      "item4": "Log your sends and keep your logbook in one place.",
-      "cta": "Open the app",
-      "ctaAriaLabel": "Open the Boardsesh app"
+      "item4": "Log your sends and keep your logbook in one place."
     },
     "aurora": {
       "title": "Coming from the Aurora apps",
@@ -341,10 +339,12 @@
     },
     "ask": {
       "title": "Still stuck?",
-      "intro": "Ask us. We read all three.",
+      "intro": "Ask in the Discord. That is where questions get answered fastest.",
       "discord": "Ask on Discord",
       "github": "Report a bug on GitHub",
-      "docs": "Read the developer docs"
+      "docs": "Read the developer docs",
+      "bugLead": "Found something broken?",
+      "devLead": "Building on the API?"
     },
     "topics": {
       "label": "Help topics",

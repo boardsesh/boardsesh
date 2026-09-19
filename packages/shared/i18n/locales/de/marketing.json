@@ -321,9 +321,7 @@
       "item1": "Bau dir eine Queue und arbeite sie mit deiner Crew ab.",
       "item2": "Starte eine gemeinsame Session, damit alle Handys dieselbe Queue steuern.",
       "item3": "Beleuchte das Board per Bluetooth an Kilter-, Tension- und MoonBoard-Wänden.",
-      "item4": "Trag deine Begehungen ein und halte dein Logbuch an einem Ort.",
-      "cta": "App öffnen",
-      "ctaAriaLabel": "Die Boardsesh-App öffnen"
+      "item4": "Trag deine Begehungen ein und halte dein Logbuch an einem Ort."
     },
     "aurora": {
       "title": "Du kommst von den Aurora-Apps?",
@@ -341,10 +339,12 @@
     },
     "ask": {
       "title": "Kommst du nicht weiter?",
-      "intro": "Frag uns. Wir lesen alle drei.",
+      "intro": "Frag im Discord. Da bekommst du am schnellsten eine Antwort.",
       "discord": "Auf Discord fragen",
       "github": "Fehler auf GitHub melden",
-      "docs": "Entwickler-Doku lesen"
+      "docs": "Entwickler-Doku lesen",
+      "bugLead": "Etwas kaputt gefunden?",
+      "devLead": "Du baust auf der API?"
     },
     "topics": {
       "label": "Hilfethemen",

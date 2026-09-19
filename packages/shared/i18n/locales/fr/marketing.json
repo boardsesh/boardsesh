@@ -321,9 +321,7 @@
       "item1": "Montez une file et enchaînez les blocs avec votre équipe.",
       "item2": "Lancez une session partagée : tous les téléphones pilotent la même file.",
       "item3": "Allumez les prises en Bluetooth sur les murs Kilter, Tension et MoonBoard.",
-      "item4": "Notez vos croix et gardez votre carnet au même endroit.",
-      "cta": "Ouvrir l'app",
-      "ctaAriaLabel": "Ouvrir l'app Boardsesh"
+      "item4": "Notez vos croix et gardez votre carnet au même endroit."
     },
     "aurora": {
       "title": "Vous venez des apps Aurora ?",
@@ -341,10 +339,12 @@
     },
     "ask": {
       "title": "Toujours bloqué ?",
-      "intro": "Demandez-nous. On lit les trois.",
+      "intro": "Demande sur le Discord. C'est là qu'on te répond le plus vite.",
       "discord": "Demander sur Discord",
       "github": "Signaler un bug sur GitHub",
-      "docs": "Lire la doc développeur"
+      "docs": "Lire la doc développeur",
+      "bugLead": "Tu as trouvé un bug ?",
+      "devLead": "Tu développes sur l'API ?"
     },
     "topics": {
       "label": "Rubriques d’aide",

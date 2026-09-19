@@ -2,10 +2,11 @@
 
 import React from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import StartClimbingButton from '@/app/components/start-climbing-button';
+import MarketingInstallLinks from '@/app/components/marketing/marketing-install-links';
 import { brandCtaSx } from '@/app/components/ui/brand-cta';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import styles from './help.module.css';
@@ -65,13 +66,11 @@ export default function HelpContent() {
                 <li>{t('help.app.item3')}</li>
                 <li>{t('help.app.item4')}</li>
               </ProseList>
+              {/* This section's own list includes "light up holds over Bluetooth",
+                  which the browser cannot do — Safari has no Web Bluetooth. It
+                  used to hand the reader the web app anyway. */}
               <Box sx={{ mt: 2 }}>
-                <StartClimbingButton
-                  label={t('help.app.cta')}
-                  ariaLabel={t('help.app.ctaAriaLabel')}
-                  size="medium"
-                  sx={CTA_SX}
-                />
+                <MarketingInstallLinks />
               </Box>
             </PageSection>
           </Box>
@@ -99,24 +98,34 @@ export default function HelpContent() {
             </ProseList>
           </PageSection>
 
+          {/* Three equal bullets sent a stuck climber to GitHub issues and
+              developer docs as peers of the place questions actually get
+              answered. Discord is the answer; the other two are for people who
+              already know which one they want. */}
           <PageSection id="get-help" title={t('help.ask.title')} lead={t('help.ask.intro')}>
-            <ProseList>
-              <li>
-                <MuiLink href={DISCORD_INVITE_URL} target="_blank" rel="noopener noreferrer">
-                  {t('help.ask.discord')}
-                </MuiLink>
-              </li>
-              <li>
-                <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
-                  {t('help.ask.github')}
-                </MuiLink>
-              </li>
-              <li>
-                <MuiLink component={LocaleLink} href="/docs">
-                  {t('help.ask.docs')}
-                </MuiLink>
-              </li>
-            </ProseList>
+            <Box sx={{ mt: 1 }}>
+              <Button
+                variant="contained"
+                sx={CTA_SX}
+                href={DISCORD_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('help.ask.discord')}
+              </Button>
+            </Box>
+            <Prose>
+              {t('help.ask.bugLead')}{' '}
+              <MuiLink href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
+                {t('help.ask.github')}
+              </MuiLink>
+            </Prose>
+            <Prose>
+              {t('help.ask.devLead')}{' '}
+              <MuiLink component={LocaleLink} href="/docs">
+                {t('help.ask.docs')}
+              </MuiLink>
+            </Prose>
           </PageSection>
         </Box>
       </Box>
