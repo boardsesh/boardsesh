@@ -9,6 +9,7 @@ describe('service-only spray recognition native contract', () => {
     expect(existsSync(new URL('../../spray/wall-photo.ts', import.meta.url))).toBe(true);
     expect(manifest.dependencies).not.toHaveProperty('onnxruntime-react-native');
     expect(manifest.dependencies).not.toHaveProperty('jpeg-js');
+    expect(manifest.dependencies).not.toHaveProperty('@boardsesh/hold-detection');
     expect(config).not.toContain('com.apple.developer.kernel.increased-memory-limit');
     expect(config).toContain('cameraPermission:');
     expect(config).toContain("'CAMERA'");

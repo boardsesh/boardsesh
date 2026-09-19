@@ -553,9 +553,6 @@ importers:
       '@boardsesh/gym-claim':
         specifier: workspace:*
         version: link:../shared/gym-claim
-      '@boardsesh/hold-detection':
-        specifier: workspace:*
-        version: link:../shared/hold-detection
       '@boardsesh/i18n':
         specifier: workspace:*
         version: link:../shared/i18n
