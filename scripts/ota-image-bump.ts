@@ -298,18 +298,19 @@ export function rewriteServerVersionConstant(text: string, newVersion: string): 
  * so a historical mention of an older release (which the parity test requires be
  * written as a bare version) is left untouched.
  */
-export function writeVersion(newVersion: string, oldVersion: string, oldCliSpec: string): string[] {
+export function writeVersion(
+  newVersion: string,
+  oldVersion: string,
+  oldCliSpec: string,
+  rootDir: string = ROOT_DIR,
+): string[] {
   const touched: string[] = [];
   const oldCliVersion = oldCliSpec.replace(/^eoas@/, '');
 
   for (const relativePath of VERSION_BEARING_FILES) {
-    const absolutePath = join(ROOT_DIR, relativePath);
+    const absolutePath = join(rootDir, relativePath);
     const before = readFileSync(absolutePath, 'utf-8');
-    const after = [
-      { prefix: 'eoas@', from: oldCliVersion },
-      { prefix: 'xprem:v', from: oldVersion },
-      { prefix: 'expo-open-ota:v', from: oldVersion },
-    ].reduce((text, { prefix, from }) => text.replace(versionPattern(prefix, from), `${prefix}${newVersion}`), before);
+    const after = rewriteVersionMentions(before, newVersion, oldVersion, oldCliVersion);
     if (after !== before) {
       writeFileSync(absolutePath, after);
       touched.push(relativePath);
@@ -317,7 +318,7 @@ export function writeVersion(newVersion: string, oldVersion: string, oldCliSpec:
   }
 
   // The deployed-version constant is a bare string, so it needs its own edit.
-  const configPath = join(ROOT_DIR, 'infra/railway/config.ts');
+  const configPath = join(rootDir, 'infra/railway/config.ts');
   const configBefore = readFileSync(configPath, 'utf-8');
   const configAfter = rewriteServerVersionConstant(configBefore, newVersion);
   if (configAfter !== configBefore) {

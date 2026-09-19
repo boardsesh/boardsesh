@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -17,6 +18,7 @@ import {
   rewriteServerVersionConstant,
   rewriteVersionMentions,
   selectCandidates,
+  writeVersion,
 } from './ota-image-bump';
 import type { BumpReport } from './ota-image-bump';
 
@@ -281,6 +283,30 @@ describe('rewriteVersionMentions', () => {
     const after = rewriteVersionMentions(before, '3.2.0', '3.2.0-beta3', '3.2.0-beta3');
 
     expect(after).toBe('xprem:v3.2.0 and eoas@3.2.0');
+  });
+
+  it('drives the repository write path with the same rewrite rules', () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'ota-image-bump-'));
+    const before = 'eoas@3.1.2 xprem:v3.1.2 expo-open-ota:v3.1.2';
+    try {
+      for (const relativePath of VERSION_BEARING_FILES) {
+        const absolutePath = join(rootDir, relativePath);
+        mkdirSync(dirname(absolutePath), { recursive: true });
+        writeFileSync(absolutePath, before);
+      }
+      const configPath = join(rootDir, 'infra/railway/config.ts');
+      mkdirSync(dirname(configPath), { recursive: true });
+      writeFileSync(configPath, "export const OTA_SERVER_VERSION = '3.1.2';");
+
+      const touched = writeVersion('3.1.3', '3.1.2', 'eoas@3.1.2', rootDir);
+
+      expect(touched).toEqual([...VERSION_BEARING_FILES, 'infra/railway/config.ts']);
+      for (const relativePath of VERSION_BEARING_FILES) {
+        expect(readFileSync(join(rootDir, relativePath), 'utf-8')).toBe('eoas@3.1.3 xprem:v3.1.3 expo-open-ota:v3.1.3');
+      }
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
   });
 });
 

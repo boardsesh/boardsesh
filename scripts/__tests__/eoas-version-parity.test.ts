@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { OTA_SERVER_VERSION } from '../../infra/railway/config';
 import { compareVersions } from '../../infra/railway/plan';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from '../lib/eoas';
+import { VERSION_BEARING_FILES } from '../ota-image-bump';
 
 /**
  * Root `scripts/` is only partly covered by `vp run typecheck:scripts`, so a
@@ -52,6 +53,7 @@ const EOAS_SPEC_FILES = [
 const SERVER_IMAGE_FILES = [
   'docs/mobile-ota-updates.md',
   'scripts/mobile-ota-setup.ts',
+  'scripts/mobile-ota-rollback.ts',
   'CLAUDE.md',
   'AGENTS.md',
 ] as const;
@@ -82,6 +84,12 @@ function serverImageReferences(relativePath: string): { imageName: string; versi
 }
 
 describe('eoas version parity', () => {
+  it('keeps the bump writer and parity checks on the same complete file set', () => {
+    const parityFiles = new Set([...EOAS_SPEC_FILES, ...SERVER_IMAGE_FILES, 'scripts/lib/eoas.ts']);
+    expect(new Set(VERSION_BEARING_FILES)).toEqual(parityFiles);
+    expect(SERVER_IMAGE_FILES).toContain('scripts/mobile-ota-rollback.ts');
+  });
+
   it('exports a pin in the `eoas@<version>` form the rest of the repo greps for', () => {
     expect(EOAS_PACKAGE_SPEC).toMatch(new RegExp(`^eoas@${VERSION}$`));
   });
