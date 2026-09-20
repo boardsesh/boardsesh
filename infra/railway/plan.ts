@@ -326,7 +326,13 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
         ? options.suppliedValues?.get(name)
         : live.variables[serviceName]?.[name],
     );
-    if (credentials.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (credentials.some((credential) => classifyVar(credential) !== 'set')) {
+      for (const change of proposedWrites) {
+        change.blocked = true;
+        change.detail = 'Every matching service credential must be present and non-placeholder before applying.';
+      }
+      continue;
+    }
     if (new Set(credentials).size <= 1) continue;
     for (const change of proposedWrites) change.blocked = true;
     changes.push({

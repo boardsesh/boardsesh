@@ -1081,6 +1081,18 @@ describe('apply mode', () => {
     expect(new Set(upserts.map((upsert) => upsert.value))).toEqual(new Set(['new-shared-credential']));
   });
 
+  it('rejects a supplied placeholder instead of reporting convergence', async () => {
+    const { code, upserts, output } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: '<generate-secret>' },
+      { 'svc-backend': {} },
+    );
+    expect(code).toBe(1);
+    expect(upserts).toEqual([]);
+    expect(output).not.toContain('project converged');
+    expect(output).not.toContain('<generate-secret>');
+  });
+
   it('refuses to invent a value it was not given', async () => {
     // Drift with no RAILWAY_VAR_*: the change is blocked, so nothing is written
     // and the run still exits non-zero.
