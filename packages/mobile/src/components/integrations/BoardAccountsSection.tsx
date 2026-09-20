@@ -1123,7 +1123,7 @@ function BoardAccountCard({
       case 'expired':
         return t('aurora.status.expired');
       case 'notSyncing':
-        return t('aurora.mobile.statusNotSyncing');
+        return t('aurora.status.notSyncing');
       case 'error':
         return t('aurora.status.error');
       case 'firstSync':

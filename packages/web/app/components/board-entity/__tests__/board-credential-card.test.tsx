@@ -102,7 +102,7 @@ describe('BoardCredentialCard', () => {
 
   it('offers Reconnect for an orphan mapping instead of claiming it is syncing', () => {
     renderCard(credentialWith({ syncStatus: 'linked', lastSyncAt: null }));
-    expect(screen.getByText(tFromCatalog('settings', 'aurora.mobile.statusNotSyncing'))).toBeTruthy();
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.notSyncing'))).toBeTruthy();
     expect(screen.getByRole('button', { name: tFromCatalog('settings', 'aurora.card.reconnect') })).toBeTruthy();
     expect(screen.queryByText(tFromCatalog('settings', 'aurora.status.syncing'))).toBeNull();
   });

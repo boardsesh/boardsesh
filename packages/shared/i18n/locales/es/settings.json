@@ -165,6 +165,7 @@
       "error": "Error",
       "expired": "Caducado",
       "syncing": "Sincronizando",
+      "notSyncing": "Sin sincronizar",
       "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando."
     },
     "unsynced": {
@@ -200,7 +201,6 @@
       "connectedAs": "Conectado como {{name}}",
       "connected": "Conectado",
       "notConnected": "No conectado",
-      "statusNotSyncing": "Sin sincronizar",
       "syncPending": "La sincronización está pendiente. Tus encadenes se actualizarán cuando termine la importación.",
       "firstSyncPending": "La primera sincronización está pendiente. Tus encadenes aparecerán aquí cuando termine la importación.",
       "lastSyncedAt": "Última sincronización {{when}}",

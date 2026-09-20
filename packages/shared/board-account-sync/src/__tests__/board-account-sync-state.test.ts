@@ -7,10 +7,10 @@ function credential(overrides: Partial<BoardAccountSyncInput> = {}): BoardAccoun
 }
 
 describe('resolveBoardAccountSyncState', () => {
-  it('reports a linked account that has never synced as waiting for its first sync', () => {
+  it.each(['pending', 'active'])('reports an unsynced %s account as waiting for its first sync', (syncStatus) => {
     // The #4741 case: the card used to call this "Connected", so an app with no
     // ascents in it looked broken rather than pending.
-    expect(resolveBoardAccountSyncState(credential({ syncStatus: 'pending', lastSyncAt: null }))).toBe('firstSync');
+    expect(resolveBoardAccountSyncState(credential({ syncStatus, lastSyncAt: null }))).toBe('firstSync');
   });
 
   it('reports a reconnected Kilter account as syncing despite a previous successful import', () => {

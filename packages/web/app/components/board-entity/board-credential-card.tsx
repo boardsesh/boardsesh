@@ -138,12 +138,7 @@ export function BoardCredentialCard({
         return <Chip icon={<WarningAmberOutlined />} label={t('aurora.status.error')} size="small" color="error" />;
       case 'notSyncing':
         return (
-          <Chip
-            icon={<WarningAmberOutlined />}
-            label={t('aurora.mobile.statusNotSyncing')}
-            size="small"
-            color="warning"
-          />
+          <Chip icon={<WarningAmberOutlined />} label={t('aurora.status.notSyncing')} size="small" color="warning" />
         );
       case 'expired':
         return <Chip icon={<AccessTimeOutlined />} label={t('aurora.status.expired')} size="small" color="warning" />;

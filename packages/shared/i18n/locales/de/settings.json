@@ -165,6 +165,7 @@
       "error": "Fehler",
       "expired": "Abgelaufen",
       "syncing": "Wird synchronisiert",
+      "notSyncing": "Keine Synchronisierung",
       "duplicateAccountCircuits": "Circuits synchronisieren gerade nicht: Ein anderes Boardsesh-Konto hängt an diesem Board-Login, deshalb pausiert die Playlist-Sync für euch beide. Deine Begehungen und Bewertungen kommen weiter an."
     },
     "unsynced": {
@@ -313,7 +314,6 @@
       "connectedAs": "Verbunden als {{name}}",
       "connected": "Verbunden",
       "notConnected": "Nicht verbunden",
-      "statusNotSyncing": "Keine Synchronisierung",
       "syncPending": "Die Synchronisierung steht noch aus. Deine Begehungen werden aktualisiert, sobald der Import abgeschlossen ist.",
       "firstSyncPending": "Die erste Synchronisierung steht noch aus. Deine Begehungen erscheinen hier, sobald der Import abgeschlossen ist.",
       "lastSyncedAt": "Zuletzt synchronisiert {{when}}",

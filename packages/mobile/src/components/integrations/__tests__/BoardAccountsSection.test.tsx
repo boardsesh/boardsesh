@@ -479,7 +479,7 @@ describe('BoardAccountsSection — first-sync state on a linked board card (#474
     mocks.credentials = [tensionCredential({ syncStatus: 'linked', lastSyncAt: null })];
     const { container } = render(<BoardAccountsSection />);
 
-    expect(container.textContent).toContain('aurora.mobile.statusNotSyncing');
+    expect(container.textContent).toContain('aurora.status.notSyncing');
     expect(container.textContent).toContain('aurora.mobile.notSyncingBody');
     expect(button(container, 'aurora.card.reconnect')).not.toBeNull();
     expect(container.textContent).not.toContain('aurora.mobile.firstSyncPending');

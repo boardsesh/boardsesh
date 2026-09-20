@@ -165,6 +165,7 @@
       "error": "Erreur",
       "expired": "Expiré",
       "syncing": "Synchronisation",
+      "notSyncing": "Pas de synchro",
       "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver."
     },
     "unsynced": {
@@ -200,7 +201,6 @@
       "connectedAs": "Connecté en tant que {{name}}",
       "connected": "Connecté",
       "notConnected": "Non connecté",
-      "statusNotSyncing": "Pas de synchro",
       "syncPending": "La synchro est en attente. Tes croix seront mises à jour une fois l’import terminé.",
       "firstSyncPending": "La première synchro est en attente. Tes croix apparaîtront ici une fois l’import terminé.",
       "lastSyncedAt": "Dernière synchro {{when}}",
