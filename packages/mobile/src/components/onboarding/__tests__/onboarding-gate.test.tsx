@@ -13,7 +13,6 @@ const getInitialURLMock = vi.hoisted(() => vi.fn());
 const activeBoardCtrl = vi.hoisted(() => ({
   board: null as { uuid: string } | null | undefined,
   isSuccess: true,
-  isFetched: true,
 }));
 // Controllable signed-in profile: the gate keys its first-run decision on the
 // profile id, so tests drive sign-out/sign-in by swapping this id.
@@ -37,7 +36,6 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({
     data: activeBoardCtrl.board,
     isSuccess: activeBoardCtrl.isSuccess,
-    isFetched: activeBoardCtrl.isFetched,
   }),
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
@@ -67,7 +65,6 @@ describe('OnboardingGate', () => {
     // asserts a push relies on.
     activeBoardCtrl.board = null;
     activeBoardCtrl.isSuccess = true;
-    activeBoardCtrl.isFetched = true;
     // Default: a plain launch (no cold-start deep link).
     getInitialURLMock.mockResolvedValue(null);
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
@@ -138,7 +135,6 @@ describe('OnboardingGate', () => {
   it('waits for the active-board read before deciding', async () => {
     hasSeenMock.mockResolvedValue(true);
     activeBoardCtrl.isSuccess = false;
-    activeBoardCtrl.isFetched = false;
     render(<OnboardingGate ready />);
     await Promise.resolve();
     await Promise.resolve();

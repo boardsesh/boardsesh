@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import { normalizeSetIdsForCompare, type UserBoard } from '@boardsesh/shared-schema';
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
 
@@ -52,7 +52,7 @@ export function useBoardPickerAnalytics({
               activeBoard.boardType === board.boardType &&
               activeBoard.layoutId === board.layoutId &&
               activeBoard.sizeId === board.sizeId &&
-              activeBoard.setIds === board.setIds,
+              normalizeSetIdsForCompare(activeBoard.setIds) === normalizeSetIdsForCompare(board.setIds),
       });
     },
     [activeBoard, analyticsReturnTo, source],

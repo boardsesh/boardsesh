@@ -77,7 +77,7 @@ describe('board picker analytics', () => {
         fromOnboarding: false,
       }),
     );
-    await result.current({ ...board, uuid: 'wall-b' });
+    await result.current({ ...board, uuid: 'wall-b', setIds: '2,1' });
     expect(track).toHaveBeenLastCalledWith(
       'Board Picker Selection Completed',
       expect.objectContaining({
@@ -92,6 +92,11 @@ describe('board picker analytics', () => {
         sameBoard: true,
         sameConfig: true,
       }),
+    );
+    await result.current({ ...board, setIds: '1,3' });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ sameConfig: false }),
     );
   });
 });

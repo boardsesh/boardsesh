@@ -10,6 +10,7 @@ export function useSessionBoardNavigation() {
   const hasNoBoard = boardQuery.isSuccess && activeBoard === null;
 
   const browseClimbs = useCallback(() => {
+    // Keep loading/error states on Session; browsing requires a restored board.
     if (activeBoard) router.navigate('/(tabs)/climbs');
   }, [activeBoard, router]);
 
