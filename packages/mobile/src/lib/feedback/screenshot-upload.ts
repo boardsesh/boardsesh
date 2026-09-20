@@ -1,4 +1,3 @@
-import { File } from 'expo-file-system';
 import { appendUploadImage } from '../upload-image';
 import { FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 import { authenticatedFetch } from '../auth-interceptor';
@@ -28,16 +27,10 @@ const UPLOAD_TIMEOUT_MS = 30_000;
  * the fetch layer, and `authenticatedFetch` only touches `Authorization`.
  */
 export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
-  // `appendUploadImage` refuses a file whose STAT says empty. That is not the
-  // failure we hit: a compressed file can stat non-empty and still read back
-  // with no bytes when the manipulator released its bitmap mid-write. Read it
-  // here so the bad read is named on the client, instead of travelling the
-  // network to come back as the server's "Uploaded file is empty".
-  const fileBytes = await new File(uri).bytes();
-  if (fileBytes.byteLength === 0) {
-    throw new Error('That screenshot could not be read from your photo library');
-  }
-
+  // `appendUploadImage` is the one place that refuses an empty or missing file,
+  // per platform, before anything reaches the network — so a screenshot the
+  // manipulator saved as zero bytes is named here rather than coming back as
+  // the server's "Uploaded file is empty".
   const formData = new FormData();
   await appendUploadImage(formData, 'screenshot', {
     uri,

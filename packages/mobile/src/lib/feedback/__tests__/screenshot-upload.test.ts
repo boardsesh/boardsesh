@@ -16,16 +16,19 @@ vi.mock('../../auth-interceptor', () => ({
 
 // expo-file-system is native; stub the File class so `.bytes()` resolves to a
 // per-URI payload in Node (the payload identifies which file a part carries).
-// Spied so a case can make one read come back empty, which is the failure that
-// broke uploads in the field; by default it echoes the URI as its payload.
+// `mockFileSizes` lets a case say a given URI is a zero-byte file, which is the
+// failure that broke uploads in the field.
 const mockFileBytes = vi.hoisted(() => vi.fn());
+const mockFileSizes = vi.hoisted(() => new Map<string, number>());
 vi.mock('expo-file-system', () => ({
   File: class {
     exists = true;
-    size = 3;
     uri: string;
     constructor(uri: string) {
       this.uri = uri;
+    }
+    get size() {
+      return mockFileSizes.get(this.uri) ?? 3;
     }
     bytes() {
       return mockFileBytes(this.uri);
@@ -47,6 +50,7 @@ beforeEach(() => {
   vi.stubGlobal('FormData', NativeFormData);
   vi.clearAllMocks();
   mockFileBytes.mockImplementation((uri: string) => Promise.resolve(new TextEncoder().encode(uri)));
+  mockFileSizes.clear();
   // The uploaded-key cache is module state that outlives a single call — it is
   // what stops a retry re-uploading shots that already landed. Without a reset
   // here, a later case reuses an earlier one's keys and never reaches its own
@@ -89,15 +93,14 @@ describe('uploadFeedbackScreenshot', () => {
     await expect(uploadFeedbackScreenshot('file:///tmp/shot.jpg')).rejects.toThrow('Screenshot upload failed');
   });
 
-  it('refuses to send a file that read back empty, naming the real problem', async () => {
+  it('refuses to send a file that came back empty, naming the real problem', async () => {
     // The compressed file coming back with no bytes is what actually broke
     // screenshot uploads: the request went out with an empty part and the
     // server answered "Uploaded file is empty", blaming the wrong side.
-    mockFileBytes.mockResolvedValueOnce(new Uint8Array());
+    // `appendUploadImage` now refuses it here, before any request is made.
+    mockFileSizes.set('file:///empty.jpg', 0);
 
-    await expect(uploadFeedbackScreenshot('file:///empty.jpg')).rejects.toThrow(
-      'could not be read from your photo library',
-    );
+    await expect(uploadFeedbackScreenshot('file:///empty.jpg')).rejects.toThrow('Selected image is empty');
     expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
   });
 });
