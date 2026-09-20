@@ -28,19 +28,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: Production
+    permissions:
+      contents: read
+      id-token: write
     env:
       BOARD: ${{ github.event.inputs.board || 'kilter' }}
       EPOCHS: ${{ github.event.inputs.epochs || '30' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
 
@@ -48,31 +51,41 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Install Python deps (offline training only)
-        run: |
-          python -m pip install --quiet -r ml/climb2vec/requirements.txt
-          python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+        run: >-
+          python -m pip install --quiet --require-hashes --only-binary=:all:
+          --extra-index-url https://download.pytorch.org/whl/cpu
+          -r ml/climb2vec/requirements-ci.lock
+
+      - name: Connect to the private production database network
+        uses: ./.github/actions/connect-production-db
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          forwarder-host: ${{ vars.POSTGRES_FORWARDER_HOST }}
+          database-url: ${{ secrets.CONTENT_MODEL_DATABASE_DIRECT_URL }}
+          expected-role: boardsesh_content_model_refresh
 
       - name: Extract training + score matrices
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CONTENT_MODEL_DATABASE_DIRECT_URL }}
         run: |
-          node --import tsx packages/db/scripts/extract-training-matrix.ts --board="$BOARD" --out=ml/climb2vec/data/${BOARD}-train.jsonl
-          node --import tsx packages/db/scripts/extract-training-matrix.ts --board="$BOARD" --score --out=ml/climb2vec/data/${BOARD}-score.jsonl
+          node --import tsx packages/db/scripts/extract-training-matrix.ts --board="$BOARD" --out="ml/climb2vec/data/${BOARD}-train.jsonl"
+          node --import tsx packages/db/scripts/extract-training-matrix.ts --board="$BOARD" --score --out="ml/climb2vec/data/${BOARD}-score.jsonl"
 
       - name: Train + score
         working-directory: ml/climb2vec
         run: |
-          python train_export.py --train data/${BOARD}-train.jsonl --score data/${BOARD}-score.jsonl --out data/${BOARD}-content.jsonl --epochs "$EPOCHS"
+          python train_export.py --train="data/${BOARD}-train.jsonl" --score="data/${BOARD}-score.jsonl" --out="data/${BOARD}-content.jsonl" --epochs="$EPOCHS"
 
       - name: Load into board_climb_embeddings
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CONTENT_MODEL_DATABASE_DIRECT_URL }}
         run: |
-          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-content.jsonl
+          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --in="ml/climb2vec/data/${BOARD}-content.jsonl"
 
       - name: Build + load similarity neighbours
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.CONTENT_MODEL_DATABASE_DIRECT_URL }}
         run: |
-          (cd ml/climb2vec && python similarity_export.py --content data/${BOARD}-content.jsonl --out data/${BOARD}-similar.jsonl)
-          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-similar.jsonl
+          (cd ml/climb2vec && python similarity_export.py --content="data/${BOARD}-content.jsonl" --out="data/${BOARD}-similar.jsonl")
+          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --in="ml/climb2vec/data/${BOARD}-similar.jsonl"
