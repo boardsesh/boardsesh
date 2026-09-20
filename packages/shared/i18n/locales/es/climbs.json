@@ -197,6 +197,12 @@
     "namePlaceholder": "Nombre del bloque",
     "descriptionPlaceholder": "Añade beta o notas sobre tu bloque...",
     "dismiss": "Descartar",
+    "cannotOpen": {
+      "boardCannotAuthor": "Todavía no puedes montar bloques en este plafón.",
+      "boardConfigIncomplete": "Los datos del plafón faltan o no son válidos. Vuelve a elegir el plafón para montar tu bloque.",
+      "noUsableBoard": "Elige un plafón primero y luego monta tu bloque.",
+      "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón."
+    },
     "alerts": {
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",

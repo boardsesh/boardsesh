@@ -203,6 +203,12 @@
     "namePlaceholder": "Nom du bloc",
     "descriptionPlaceholder": "Ajoutez du beta ou des notes sur votre bloc...",
     "dismiss": "Ignorer",
+    "cannotOpen": {
+      "boardCannotAuthor": "Tu ne peux pas encore ouvrir de blocs sur cette board.",
+      "boardConfigIncomplete": "Les détails de la board sont manquants ou invalides. Choisis à nouveau la board pour ouvrir ton bloc.",
+      "noUsableBoard": "Choisis d'abord une board, puis ouvre ton bloc.",
+      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board."
+    },
     "alerts": {
       "publishDuplicateNamed": "Cette configuration de prises correspond à « {{name}} ». Activez Brouillon pour l'enregistrer sans la publier, ou changez une prise.",
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
