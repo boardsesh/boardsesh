@@ -30,7 +30,14 @@ export const placeQueries = {
         longitude: places.longitude,
       })
       .from(places)
-      .where(and(...normalizedQuery.split(' ').map((token) => like(places.searchText, `%${token}%`))))
+      .where(
+        and(
+          ...normalizedQuery
+            .split(' ')
+            .filter(Boolean)
+            .map((token) => like(places.searchText, `%${token}%`)),
+        ),
+      )
       .orderBy(
         sql`CASE WHEN ${eq(places.normalizedName, normalizedQuery)} THEN 0 WHEN ${like(places.normalizedName, `${normalizedQuery}%`)} THEN 1 ELSE 2 END`,
         desc(places.population),
