@@ -12,6 +12,7 @@ import {
   PLACEHOLDER_PATTERN,
   POSTGRES_PRIMARY_SERVICE_NAME,
   WEB_SERVICE_NAME,
+  BACKEND_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
 import {
@@ -62,8 +63,10 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
       { id: 'svc-web', name: WEB_SERVICE_NAME },
       { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
+      { id: 'svc-backend', name: BACKEND_SERVICE_NAME },
     ],
     variables: {
+      [BACKEND_SERVICE_NAME]: { INTERNAL_SERVICE_SECRET: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET },
       [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
       // Presence is all this config asserts; the PEM bodies live only in Railway.
       [POSTGRES_PRIMARY_SERVICE_NAME]: {
@@ -269,7 +272,7 @@ describe('diffServiceVars', () => {
   });
 
   it('reports a missing web INTERNAL_SERVICE_SECRET (#5291)', () => {
-    const { INTERNAL_SERVICE_SECRET: _omitted, ...webWithoutSecret } = WEB_SYNC_VARIABLES;
+    const { INTERNAL_SERVICE_SECRET: _omitted, ...webWithoutSecret } = BASELINE_REQUIRED_VARS;
     const live = liveState({
       variables: { ...liveState().variables, [WEB_SERVICE_NAME]: webWithoutSecret },
     });
@@ -356,6 +359,35 @@ describe('diffTableRetention', () => {
 });
 
 describe('buildPlan', () => {
+  it.each([WEB_SERVICE_NAME, BACKEND_SERVICE_NAME])('reports a missing %s service secret', (serviceName) => {
+    const live = liveState();
+    delete live.variables[serviceName].INTERNAL_SERVICE_SECRET;
+    const changes = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
+    expect(changes).toEqual([
+      expect.objectContaining({ summary: `${serviceName}: INTERNAL_SERVICE_SECRET is absent`, blocked: true }),
+    ]);
+  });
+
+  it.each(['a-different-secret', 'test-internal-service-secret '])(
+    'reports unequal credentials without exposing or overwriting either value',
+    (backendSecret) => {
+      const live = liveState();
+      live.variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET = backendSecret;
+      const changes = buildPlan(desiredRailwayState, live, {
+        suppliedVars: new Set([varKey(BACKEND_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET')]),
+      });
+      expect(changes).toEqual([
+        expect.objectContaining({
+          summary: `INTERNAL_SERVICE_SECRET differs between ${WEB_SERVICE_NAME} and ${BACKEND_SERVICE_NAME}`,
+          blocked: true,
+        }),
+      ]);
+      expect(changes[0].target).toBeUndefined();
+      expect(JSON.stringify(changes)).not.toContain(backendSecret);
+      expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+    },
+  );
+
   it('is empty when everything matches', () => {
     expect(buildPlan(desiredRailwayState, liveState(), NO_SUPPLIED)).toEqual([]);
   });
@@ -369,7 +401,7 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {} });
     const plan = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(4);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(desiredRailwayState.services.length);
   });
 
   it('reports missing TTLs', () => {
@@ -484,6 +516,7 @@ describe('main', () => {
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                   { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+                  { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
                 ],
               },
             },
@@ -617,6 +650,7 @@ describe('Railway authentication', () => {
           { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
           { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
           { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+          { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
         ],
       },
     },
@@ -933,6 +967,7 @@ describe('apply mode', () => {
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                   { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+                  { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
                 ],
               },
             },

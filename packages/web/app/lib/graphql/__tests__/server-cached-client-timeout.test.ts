@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
  * nothing would go red.
  */
 const { constructorOptions, backend } = vi.hoisted(() => ({
-  constructorOptions: [] as ({ signal?: AbortSignal } | undefined)[],
+  constructorOptions: [] as ({ signal?: AbortSignal; headers?: Record<string, string> } | undefined)[],
   /** `wedged` never answers; flip it to model a healthy backend. */
   backend: { wedged: true, rejectWith: undefined as unknown },
 }));
@@ -20,7 +20,7 @@ vi.mock('graphql-request', () => ({
   GraphQLClient: class {
     constructor(
       public url: string,
-      options?: { signal?: AbortSignal },
+      options?: { signal?: AbortSignal; headers?: Record<string, string> },
     ) {
       constructorOptions.push(options);
     }
@@ -51,7 +51,7 @@ vi.mock('../server-graphql', () => ({
   serverPlaylistClimbs: vi.fn(),
 }));
 
-import { createCachedGraphQLQuery } from '../server-cached-client';
+import { createCachedGraphQLQuery, executeGraphQLInternal } from '../server-cached-client';
 
 describe('createCachedGraphQLQuery timeout', () => {
   beforeEach(() => {
@@ -126,5 +126,30 @@ describe('createCachedGraphQLQuery timeout', () => {
     expect(message).toBe('upstream 500');
     expect(message).not.toContain('similarClimbs(input');
     expect(message).not.toContain('boardType');
+  });
+});
+
+describe('executeGraphQLInternal service credential', () => {
+  beforeEach(() => {
+    constructorOptions.length = 0;
+    backend.wedged = false;
+    backend.rejectWith = undefined;
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('sends the server credential alongside the original deadline', async () => {
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', 'server-only-test-secret');
+    const controller = new AbortController();
+    await executeGraphQLInternal('query Q { x }', {}, controller.signal);
+    expect(constructorOptions[0]).toMatchObject({
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer server-only-test-secret' },
+      signal: controller.signal,
+    });
+  });
+
+  it.each(['', '   ', undefined])('omits a missing or blank credential (%s)', async (secret) => {
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', secret);
+    await executeGraphQLInternal('query Q { x }');
+    expect(constructorOptions[0]?.headers).toEqual({ 'Content-Type': 'application/json' });
   });
 });

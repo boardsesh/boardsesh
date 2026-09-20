@@ -14,7 +14,7 @@
 //   2. Never overwrite a value that is already set and not a placeholder. Only
 //      `absent` and `placeholder` are drift this tool will fix.
 //   3. Never surface a secret value. Variable values are inspected only to
-//      classify them or compare them to public configured values; no live value
+//      classify them or compare them against declared constraints; no live value
 //      reaches a PlannedChange.
 
 import {
@@ -34,8 +34,8 @@ export interface LiveService {
  * Live state for one environment.
  *
  * `variables` maps service name -> variable name -> raw value. The raw values are
- * needed to classify placeholder-vs-set and never leave this module: `classifyVar`
- * is the only thing that reads them, and it returns a state, not a value.
+ * needed for classification and equality checks. These checks return status,
+ * never credential values.
  */
 export interface LiveState {
   services: LiveService[];
@@ -309,6 +309,21 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
 
   for (const service of desired.services) {
     changes.push(...diffServiceVars(service, live, options));
+  }
+
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    // Missing services/values already have actionable drift above. Compare exact
+    // bytes: trimming here would hide a credential the backend will reject.
+    if (serviceNames.some((serviceName) => !findService(live, serviceName))) continue;
+    const credentials = serviceNames.map((serviceName) => live.variables[serviceName]?.[name]);
+    if (credentials.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (new Set(credentials).size <= 1) continue;
+    changes.push({
+      resource: 'env-var',
+      summary: `${name} differs between ${serviceNames.join(' and ')}`,
+      detail: 'Set the same credential on these services. Existing values are never overwritten automatically.',
+      blocked: true,
+    });
   }
 
   // A null map means the check was skipped for want of a DSN, which must not read
