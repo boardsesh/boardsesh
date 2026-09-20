@@ -64,6 +64,7 @@ import ClimbDetail from '../[climbUuid]';
 import { redirectSystemPath } from '../../../+native-intent';
 import { openClimbInPlayDrawer } from '../../../../src/lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../../../src/lib/tick-to-climb';
+import { consumeClimbHandoffIntent } from '../../../../src/lib/routing/climb-handoff-intent';
 
 const TICK: TickLike = {
   climbUuid: 'session-climb',
@@ -83,10 +84,12 @@ const PARAMS = {
   setIds: '1,20',
   angle: '40',
 };
+let latestActivationIntent: unknown;
 
 function startTick(preview = false) {
   openClimbInPlayDrawer({ kind: 'tick', tick: TICK }, { router, openPlayDrawer }, { preview });
   routeParams.current = router.push.mock.lastCall![0].params;
+  latestActivationIntent = routeParams.current.activationIntent;
 }
 
 function drawerOptions() {
@@ -96,10 +99,16 @@ function drawerOptions() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  latestActivationIntent = undefined;
   routeParams.current = { ...PARAMS };
   loadedClimb.current = tickToClimb({ ...TICK, frames: 'p1145r12' })!;
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  // Consume even a superseded test's latest pending intent without adding a
+  // production reset API. A mismatched target still clears a matching id.
+  consumeClimbHandoffIntent(latestActivationIntent, null);
+  vi.restoreAllMocks();
+});
 
 describe('session tick → public climb route → drawer handoff', () => {
   it.each([true, false])('previews an external URL carrying open=active (cold: %s)', (initial) => {
@@ -136,6 +145,16 @@ describe('session tick → public climb route → drawer handoff', () => {
     startTick(true);
     render(<ClimbDetail />);
     expect(drawerOptions().previewQueueItem.climb.uuid).toBe(TICK.climbUuid);
+  });
+
+  it('previews repeated activation query parameters even when one id is valid', () => {
+    startTick();
+    routeParams.current = {
+      ...routeParams.current,
+      activationIntent: [String(latestActivationIntent), 'forged'],
+    };
+    render(<ClimbDetail />);
+    expect(drawerOptions()).toHaveProperty('previewQueueItem');
   });
 
   it('keeps direct reference callers view-only', () => {
