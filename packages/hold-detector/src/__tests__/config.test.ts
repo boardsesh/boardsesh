@@ -39,6 +39,10 @@ describe('worker configuration', () => {
       detectorConfig({ ...environment, DATABASE_URL: `postgresql://worker:secret@${host}/boardsesh` }).databaseUrl,
     ).toContain(host);
   });
+  it.each(['localhost', '127.0.0.1', '[::1]'])('preserves explicit TLS verification at %s', (host) => {
+    const databaseUrl = `postgresql://worker:secret@${host}/boardsesh?sslmode=verify-full`;
+    expect(detectorConfig({ ...environment, DATABASE_URL: databaseUrl }).databaseUrl).toBe(databaseUrl);
+  });
   it('refuses plaintext photo storage and invalid ports', () => {
     expect(() => detectorConfig({ ...environment, PRIVATE_AWS_ENDPOINT_URL_S3: 'http://storage.example' })).toThrow(
       'HTTPS',

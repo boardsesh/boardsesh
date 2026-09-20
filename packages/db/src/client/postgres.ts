@@ -170,6 +170,7 @@ function buildPoolOptions(connectionString: string) {
   // including for localhost. An object also keeps NODE_TLS_REJECT_UNAUTHORIZED
   // from weakening this pool. Both primary and replica use this factory.
   const tlsModes = new URL(connectionString).searchParams.getAll('sslmode');
+  if (tlsModes.length > 1) throw new Error('Database URL must not repeat sslmode');
   if (tlsModes.includes('verify-full')) {
     return { ...options, ssl: { rejectUnauthorized: true } };
   }

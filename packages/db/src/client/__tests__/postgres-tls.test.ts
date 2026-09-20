@@ -12,6 +12,8 @@ import { createPool, createReadPool, closePool, closeReadPool } from '../postgre
 
 const runFile = promisify(execFile);
 
+// White-box tests of the installed driver's resolved options complement the
+// observable TLS handshake tests below; they protect legacy pool defaults.
 void describe('resolved pool TLS policy', () => {
   for (const poolKind of ['primary', 'replica'] as const) {
     for (const [url, expected] of [
@@ -40,6 +42,22 @@ void describe('resolved pool TLS policy', () => {
         }
       });
     }
+    void it(`${poolKind} rejects duplicate sslmode rather than choosing one`, async () => {
+      const previousPrimary = process.env.DATABASE_URL;
+      const previousReplica = process.env.READ_REPLICA_URL;
+      process.env.DATABASE_URL = 'postgres://user:secret@remote.example/db?sslmode=verify-full&sslmode=require';
+      process.env.READ_REPLICA_URL = process.env.DATABASE_URL;
+      try {
+        assert.throws(() => (poolKind === 'primary' ? createPool() : createReadPool()), /must not repeat sslmode/);
+      } finally {
+        await closeReadPool();
+        await closePool();
+        if (previousPrimary === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = previousPrimary;
+        if (previousReplica === undefined) delete process.env.READ_REPLICA_URL;
+        else process.env.READ_REPLICA_URL = previousReplica;
+      }
+    });
   }
 });
 
@@ -80,6 +98,8 @@ void describe('database driver TLS handshakes', { timeout: 60_000 }, () => {
     for (const scenario of ['trusted', 'untrusted', 'wrong-host', 'untrusted-bypass'] as const) {
       // Detector config rejects this global override before starting pg-boss.
       // The shared data pools additionally enforce verification themselves.
+      // PgBoss constructed outside the detector does not have that guard;
+      // those callers must not set NODE_TLS_REJECT_UNAUTHORIZED=0 either.
       if (poolKind === 'queue' && scenario === 'untrusted-bypass') continue;
       void it(`${poolKind} ${scenario}`, async () => {
         const certificateName = scenario === 'wrong-host' ? 'wrong.example' : 'localhost';
@@ -119,7 +139,7 @@ void describe('database driver TLS handshakes', { timeout: 60_000 }, () => {
             if (${JSON.stringify(poolKind)} === 'queue') await boss.start();
             else await (${JSON.stringify(poolKind)} === 'primary' ? createPool() : createReadPool()).unsafe('SELECT 1');
             throw new Error('UNEXPECTED_QUERY_SUCCESS');
-          } catch (error) { console.log(JSON.stringify({ code: error.code })); }
+          } catch (error) { console.log(JSON.stringify({ code: error?.code ?? 'NO_CODE' })); }
           finally { await boss.stop({ graceful: false }); await closeReadPool(); await closePool(); }
         `;
         try {

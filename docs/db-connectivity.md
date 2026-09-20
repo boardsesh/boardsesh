@@ -10,6 +10,8 @@ both certificate trust and hostname are checked, including for local hosts.
 An explicit verification request is never replaced by the legacy `require`
 default. Remote URLs without `verify-full` retain the existing
 encryption-only default; this change does not migrate other deployments' trust.
+Repeated `sslmode` parameters are rejected rather than choosing a driver-specific
+precedence.
 
 The hold detector requires `verify-full` for remote connections and accepts only
 `sslmode` and `application_name` URL query options, without duplicates. Use
