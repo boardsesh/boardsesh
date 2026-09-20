@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -22,9 +22,23 @@ export const HELP_CLIP_VIDEO_DIR = resolve(REPO_ROOT, 'packages/web/public/video
  */
 export const HELP_CLIP_POSTER_DIR = resolve(REPO_ROOT, 'packages/web/public/images/help/clips');
 
-/** Homebrew's ffmpeg. The system has no ffmpeg on PATH in every shell that runs this. */
-export const FFMPEG_BIN = '/opt/homebrew/bin/ffmpeg';
-export const FFPROBE_BIN = '/opt/homebrew/bin/ffprobe';
+/**
+ * ffmpeg and ffprobe, wherever this machine keeps them. `FFMPEG_BIN` /
+ * `FFPROBE_BIN` in the environment win; then PATH; then the usual Homebrew and
+ * /usr/local prefixes, because not every shell that runs this has Homebrew on
+ * PATH. A bare name is the last resort so the error names the missing tool.
+ */
+export function resolveMediaBinary(name: 'ffmpeg' | 'ffprobe', env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[`${name.toUpperCase()}_BIN`];
+  if (override) return override;
+  const directories = [...(env.PATH ?? '').split(delimiter), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'];
+  for (const directory of directories) {
+    if (directory && existsSync(join(directory, name))) return join(directory, name);
+  }
+  return name;
+}
+export const FFMPEG_BIN = resolveMediaBinary('ffmpeg');
+export const FFPROBE_BIN = resolveMediaBinary('ffprobe');
 
 /** Seconds into the source, and where to stop. Both are source-relative. */
 export type HelpClipTrim = Readonly<{ start: number; end: number }>;
@@ -36,6 +50,13 @@ export type HelpClipEntry = Readonly<{
   source: string;
   /** Optional source-relative trim. Omitted means the whole recording. */
   trim?: HelpClipTrim;
+  /**
+   * Seconds into the TRIMMED clip to lift the poster from. Omitted means the
+   * first frame. Set it when two clips open on the same screen, so their
+   * posters do not come out byte-identical, or when the first frame is a
+   * transition.
+   */
+  poster?: number;
   /** One line, for the conversion table and docs — not user-facing copy. */
   description: string;
 }>;
@@ -62,6 +83,9 @@ export const HELP_CLIPS = [
   {
     name: 'swipe-row-queue-playlist',
     source: 'swipe-row-queue-playlist',
+    // The first frame is the same climbs list the long-press clip opens on; 3 s
+    // in, the first swipe has landed and the "Climb added to queue" toast is up.
+    poster: 3,
     description: 'Swipe a climb row to reveal queue and playlist actions.',
   },
   {
@@ -87,7 +111,7 @@ export const HELP_CLIPS = [
   {
     name: 'grade-range-tap',
     source: 'grade-range-tap',
-    description: 'Set the grade range with the two-handle slider.',
+    description: 'Tap two grades on the grade rail to set a range.',
   },
   {
     name: 'preview-browsing',
@@ -195,7 +219,7 @@ export function helpClipVideoFilter(): string {
   return `fps=${HELP_CLIP_FPS},scale=${HELP_CLIP_WIDTH}:-2`;
 }
 
-export type HelpClipConversion = Readonly<{ input: string; output: string; trim?: HelpClipTrim }>;
+export type HelpClipConversion = Readonly<{ input: string; output: string; trim?: HelpClipTrim; poster?: number }>;
 
 /** H.264 for Safari and every older browser; `+faststart` so it plays before it finishes loading. */
 export function buildHelpClipMp4Args({ input, output, trim }: HelpClipConversion): string[] {
@@ -250,17 +274,19 @@ export function buildHelpClipWebmArgs({ input, output, trim }: HelpClipConversio
 }
 
 /**
- * The first trimmed frame as a PNG on stdout, for Sharp to encode.
+ * One frame of the trimmed clip as a PNG on stdout, for Sharp to encode: the
+ * first frame unless the entry names a `poster` offset.
  *
  * This ffmpeg has no libwebp encoder, and the poster has to come out of the
  * same Sharp call as every other help asset anyway, so the frame is piped
  * rather than written. Full source resolution: Sharp does the downsample.
  */
-export function buildHelpClipPosterFrameArgs({ input, trim }: Omit<HelpClipConversion, 'output'>): string[] {
+export function buildHelpClipPosterFrameArgs({ input, trim, poster }: Omit<HelpClipConversion, 'output'>): string[] {
+  const seek = (trim?.start ?? 0) + (poster ?? 0);
   return [
     '-loglevel',
     'error',
-    ...(trim ? ['-ss', String(trim.start)] : []),
+    ...(seek > 0 ? ['-ss', String(seek)] : []),
     '-i',
     input,
     '-frames:v',

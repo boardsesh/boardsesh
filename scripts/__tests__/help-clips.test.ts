@@ -150,6 +150,10 @@ describe('ffmpeg argument builders', () => {
     ]);
     // No trim means the first frame of the recording, and no -t: one frame is one frame.
     expect(buildHelpClipPosterFrameArgs({ input: conversion.input })).not.toContain('-ss');
+    expect(buildHelpClipPosterFrameArgs({ input: conversion.input, poster: 3 })).toContain('-ss');
+    expect(buildHelpClipPosterFrameArgs({ input: conversion.input, trim: { start: 2, end: 9 }, poster: 3 })).toEqual(
+      expect.arrayContaining(['-ss', '5']),
+    );
   });
 
   it('reads a bare duration out of ffprobe', () => {

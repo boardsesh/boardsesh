@@ -59,7 +59,7 @@ async function probeDurationSeconds(file: string): Promise<number> {
 async function captureFirstFrame(clip: ResolvedHelpClip): Promise<Buffer> {
   const { stdout } = await execFileAsync(
     FFMPEG_BIN,
-    buildHelpClipPosterFrameArgs({ input: clip.input, trim: clip.entry.trim }),
+    buildHelpClipPosterFrameArgs({ input: clip.input, trim: clip.entry.trim, poster: clip.entry.poster }),
     { encoding: 'buffer', maxBuffer: POSTER_FRAME_MAX_BYTES },
   );
   if (!stdout.length) throw new Error(`No poster frame came out of ${clip.entry.source}.mov`);

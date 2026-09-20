@@ -47,6 +47,11 @@ leaves on the account are all in
 
 ## Converting
 
+Needs `ffmpeg` and `ffprobe` with `libx264` and `libvpx-vp9` (`brew install ffmpeg`
+on a Mac; the distro package on Linux). The converter looks on PATH, then in the
+Homebrew and `/usr/local` prefixes; set `FFMPEG_BIN` / `FFPROBE_BIN` to point it
+somewhere else.
+
 ```
 vp run help:convert-clips -- --allow-partial
 vp run generate:static-assets
@@ -58,7 +63,7 @@ The first command writes, per clip:
 | --- | --- |
 | `packages/web/public/videos/help/<name>.mp4` | libx264, crf 24, preset slow, yuv420p, 30 fps, 736 px wide, `+faststart`, no audio |
 | `packages/web/public/videos/help/<name>.webm` | libvpx-vp9, crf 34, `-b:v 0`, row-mt, same scale, no audio |
-| `packages/web/public/images/help/clips/<name>.webp` | first trimmed frame through Sharp — `height: 1600`, `quality: 87`, `effort: 6`, identical to `help:convert-shots` |
+| `packages/web/public/images/help/clips/<name>.webp` | first trimmed frame (or the entry's `poster` offset) through Sharp — `height: 1600`, `quality: 87`, `effort: 6`, identical to `help:convert-shots` |
 
 Both encodings ship because no single container plays everywhere, and the poster
 comes out of Sharp rather than ffmpeg because this ffmpeg has no libwebp encoder.

@@ -330,7 +330,7 @@
   },
   "help": {
     "clip": {
-      "unsupported": "Votre navigateur ne peut pas lire cette vidéo.",
+      "unsupported": "Ton navigateur ne peut pas lire cette vidéo.",
       "playHint": "Appuyez sur lecture pour voir le geste."
     },
     "hero": {
