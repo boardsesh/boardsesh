@@ -98,6 +98,7 @@ export const tickBoardQueries = {
       or(
         eq(schema.userBoards.ownerId, userId),
         isNotNull(schema.boardFollows.boardUuid),
+        isNotNull(schema.userBoardActivity.pinnedAt),
         isNotNull(schema.userBoardActivity.lastUsedAt),
         tick.boardId == null ? undefined : eq(schema.userBoards.id, tick.boardId),
       ),
