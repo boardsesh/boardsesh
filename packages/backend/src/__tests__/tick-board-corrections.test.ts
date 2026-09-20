@@ -248,6 +248,11 @@ describe('tick board corrections', () => {
     expect(first.hasMore).toBe(true);
     expect(first.boards[0].uuid).toBe(recent.uuid);
     expect(rest.boards.map((board) => board.uuid).sort()).toEqual([homewall.uuid, saved.uuid].sort());
+    const pinned = await createBoard('Pinned Homewall');
+    await db.insert(schema.userBoardActivity).values({ userId, boardUuid: pinned.uuid, pinnedAt: new Date() });
+    const withPinned = await tickBoardQueries.tickBoardOptions(undefined, { tickUuid: uuid, limit: 1 }, ctx);
+    expect(withPinned.boards[0].uuid).toBe(pinned.uuid);
+    expect(withPinned.totalCount).toBe(4);
     await expect(
       tickMutations.updateTick(undefined, { uuid, input: { boardUuid: privateBoard.uuid } }, ctx),
     ).rejects.toMatchObject({ extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
