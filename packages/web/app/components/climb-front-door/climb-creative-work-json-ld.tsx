@@ -1,6 +1,5 @@
 import React from 'react';
-import { absoluteLocaleUrl, SITE_URL } from '@/app/lib/seo/base-url';
-import type { Locale } from '@/app/lib/i18n/config';
+import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { Climb } from '@/app/lib/types';
@@ -17,8 +16,6 @@ type ClimbCreativeWorkJsonLdProps = {
   currentAngleStats: ClimbStatsForAngle | undefined;
   /** Already-translated description, or null when the facts to fill it are missing. */
   description: string | null;
-  /** The locale this page is rendering on — the canonical is locale-prefixed. */
-  locale: Locale;
 };
 
 /**
@@ -86,7 +83,6 @@ export default function ClimbCreativeWorkJsonLd({
   overlayUrl,
   currentAngleStats,
   description,
-  locale,
 }: ClimbCreativeWorkJsonLdProps) {
   const aggregateRating = buildAggregateRating(currentAngleStats);
   const setter = climb.setter_username?.trim();
@@ -96,10 +92,12 @@ export default function ClimbCreativeWorkJsonLd({
     '@context': 'https://schema.org',
     '@type': 'CreativeWork',
     name: climbName,
-    // The canonical, on THIS locale, so the structured data names the exact URL
-    // the page's own `<link rel="canonical">` claims. `/es/...` pages canonicalise
-    // to the `/es` URL, and naming the en-US one here would contradict it.
-    url: absoluteLocaleUrl(canonicalClimbUrl, locale),
+    // Locale-FREE, because climb pages go through `createBoardContentPageMetadata`:
+    // it pins `<link rel="canonical">` to the default-locale URL and ships no
+    // `alternates.languages` at all. A `/es` render naming the `/es` URL here would
+    // advertise an address the canonical beside it disowns. Same rule as
+    // `front-door-breadcrumb.tsx`, which sits on these very pages.
+    url: absoluteUrl(canonicalClimbUrl),
     ...(description ? { description } : {}),
     // Preserve Railway's absolute image URL; the URL constructor also keeps the
     // same-origin compatibility path valid in local development and old HTML.

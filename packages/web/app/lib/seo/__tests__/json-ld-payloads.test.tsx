@@ -5,11 +5,11 @@ import ClimbCreativeWorkJsonLd from '@/app/components/climb-front-door/climb-cre
 import ClimbListJsonLd from '@/app/components/climb-front-door/climb-list-json-ld';
 import ProfileJsonLd from '@/app/profile/[user_id]/profile-json-ld';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
-import { absoluteUrl } from '@/app/lib/seo/base-url';
+import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BoardDetails, Climb } from '@/app/lib/types';
-import type { Locale } from '@/app/lib/i18n/config';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -82,7 +82,6 @@ function creativeWork(
     currentAngleStats?: ClimbStatsForAngle | undefined;
     description?: string | null;
     overlayUrl?: string | null;
-    locale?: Locale;
   } = {},
 ) {
   return payload(
@@ -93,7 +92,6 @@ function creativeWork(
       overlayUrl={overrides.overlayUrl === undefined ? '/api/internal/board-render?x=1' : overrides.overlayUrl}
       currentAngleStats={'currentAngleStats' in overrides ? overrides.currentAngleStats : stats()}
       description={overrides.description === undefined ? 'a climb' : overrides.description}
-      locale={overrides.locale ?? 'en-US'}
     />,
   );
 }
@@ -178,13 +176,24 @@ describe('CreativeWork JSON-LD', () => {
     expect((data.aggregateRating as Record<string, unknown>).ratingCount).not.toBe(4850);
   });
 
-  it('names the URL on THIS locale, matching the page canonical beside it', () => {
-    // `createPageMetadata` runs the canonical through `localeHref`, so an /es
-    // page canonicalises to the /es URL. Structured data naming the en-US URL on
-    // that page contradicts the canonical it sits next to.
-    expect(creativeWork({ locale: 'es' }).url).toBe(`https://www.boardsesh.com/es${CANONICAL}`);
-    expect(creativeWork({ locale: 'de' }).url).toBe(`https://www.boardsesh.com/de${CANONICAL}`);
-    expect(creativeWork().url).toBe(absoluteUrl(CANONICAL));
+  it('names the same URL the page canonical does, on every locale', () => {
+    // Climb pages go through `createBoardContentPageMetadata`, NOT
+    // `createPageMetadata`: it pins the canonical to the DEFAULT-locale URL and
+    // drops `alternates.languages` entirely. So a locale-prefixed `url` here
+    // would advertise an address the canonical beside it disowns — which is what
+    // this test used to assert was correct. Comparing against the helper itself
+    // keeps the two from drifting apart again.
+    for (const locale of ['en-US', 'es', 'de'] as const) {
+      const canonical = createBoardContentPageMetadata({
+        title: 'Test Climb',
+        description: 'a climb',
+        path: CANONICAL,
+        locale,
+      }).alternates?.canonical;
+
+      expect(`${SITE_URL}${canonical}`).toBe(absoluteUrl(CANONICAL));
+      expect(creativeWork().url).toBe(`${SITE_URL}${canonical}`);
+    }
   });
 
   it('ships no VideoObject', () => {
@@ -223,8 +232,8 @@ describe('ItemList JSON-LD', () => {
   ] as Climb[];
 
   it('numbers positions globally so page 2 does not restart at 1', () => {
-    const first = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />);
-    const second = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={2} locale="en-US" />);
+    const first = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} />);
+    const second = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={2} />);
 
     const positions = (list: Record<string, unknown>) =>
       (list.itemListElement as Array<Record<string, unknown>>).map((item) => item.position);
@@ -237,7 +246,7 @@ describe('ItemList JSON-LD', () => {
   it('advertises exactly the URLs the rows link to, unnamed climbs included', () => {
     // This is what pins the static-climb-row fix: the row anchor, the page
     // canonical and this url are one string, or a climb has three URLs.
-    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />);
+    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} />);
     const urls = (data.itemListElement as Array<Record<string, unknown>>).map((item) => item.url);
 
     expect(urls).toEqual(
@@ -255,17 +264,18 @@ describe('ItemList JSON-LD', () => {
     expect(urls[1]).toContain('kilter-climb-');
   });
 
-  it('prefixes every url with the rendering locale', () => {
-    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} locale="fr" />);
+  it('carries no locale prefix on any url, matching the list page canonical', () => {
+    // `/list` is board content too: `createBoardContentPageMetadata` canonicalises
+    // every locale twin to the default-locale URL, so a `/fr` prefix here would
+    // name URLs the canonical disowns.
+    const data = payload(<ClimbListJsonLd climbs={climbs} boardDetails={BOARD_DETAILS} page={1} />);
     const urls = (data.itemListElement as Array<Record<string, unknown>>).map((item) => item.url as string);
 
-    expect(urls.every((url) => url.startsWith('https://www.boardsesh.com/fr/'))).toBe(true);
+    expect(urls.every((url) => url.startsWith('https://www.boardsesh.com/kilter/'))).toBe(true);
   });
 
   it('renders nothing for an empty page', () => {
-    expect(renderToString(<ClimbListJsonLd climbs={[]} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />)).toBe(
-      '',
-    );
+    expect(renderToString(<ClimbListJsonLd climbs={[]} boardDetails={BOARD_DETAILS} page={1} />)).toBe('');
   });
 });
 
@@ -309,9 +319,7 @@ describe('the deferred work stays deferred', () => {
     const payloads = [
       JSON.stringify(creativeWork()),
       JSON.stringify(payload(await SiteJsonLd())),
-      JSON.stringify(
-        payload(<ClimbListJsonLd climbs={[climb()]} boardDetails={BOARD_DETAILS} page={1} locale="en-US" />),
-      ),
+      JSON.stringify(payload(<ClimbListJsonLd climbs={[climb()]} boardDetails={BOARD_DETAILS} page={1} />)),
       JSON.stringify(payload(<ProfileJsonLd userId="marco" displayName="Marco" locale="en-US" />)),
     ];
 

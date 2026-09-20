@@ -256,7 +256,6 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           boardDetailsByClimb={links.boardDetailsByClimb}
           unlinkedClimbUuids={links.unlinkedClimbUuids}
           page={page}
-          locale={locale}
         />
 
         <Box sx={actionsSx}>
