@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-19T22:43:01.536Z",
+  "generatedAt": "2026-09-20T01:59:24.402Z",
   "entries": [
+    {
+      "prNumber": 5600,
+      "category": "new",
+      "title": "The help guides on boardsesh.com now show short clips of the gestures they describe, and the copy was rewritten and fact-checked against the app.",
+      "mergedAt": "2026-09-20T01:57:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5600"
+    },
     {
       "prNumber": 5599,
       "category": "new",

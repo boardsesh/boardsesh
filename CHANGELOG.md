@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-20
+
+### New
+
+- The help guides on boardsesh.com now show short clips of the gestures they describe, and the copy was rewritten and fact-checked against the app. ([#5600](https://github.com/boardsesh/boardsesh/pull/5600))
+
 ## 2026-09-19
 
 ### App update
