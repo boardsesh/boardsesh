@@ -130,5 +130,18 @@
     "kilter": "Gyms with a Kilter board",
     "moonboard": "Gyms with a MoonBoard",
     "tension": "Gyms with a Tension board"
+  },
+  "places": {
+    "loading": "Finding towns…",
+    "clear": "Clear place",
+    "open": "Show places",
+    "close": "Hide places",
+    "hint": "Choose a town suggestion, or search for a gym by name.",
+    "empty": "No towns found. You can still search for a gym by name.",
+    "error": "Town suggestions are unavailable. You can still search for a gym by name.",
+    "attribution": "Place names from GeoNames",
+    "area": "Gyms within {{radius}} km of {{place}}",
+    "selectedArea": "the selected location",
+    "pinlessNotice": "Nearby results only include gyms with a map pin."
   }
 }

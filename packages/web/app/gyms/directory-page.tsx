@@ -251,6 +251,8 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             960px and up, and near-me swaps the list out for its own. The list
             stays first in the DOM either way. */}
         <GymDirectoryNearMe
+          key={buildFacetSwitchHref(facet, query)}
+          selectedArea={origin ? { facet, query } : undefined}
           boardTypes={query.boardTypes}
           // Threaded through, not dropped: the search box keeps rendering what
           // was typed, so near-me has to keep applying it.

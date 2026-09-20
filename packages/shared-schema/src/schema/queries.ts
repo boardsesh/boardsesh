@@ -635,6 +635,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     Search public gyms.
     """
     searchGyms(input: SearchGymsInput!): GymConnection!
+    "City/town suggestions; query must contain 3–80 characters. At most five results."
+    searchPlaces(query: String!): [PlaceSuggestion!]!
 
     """
     Live gyms that resemble one the user is about to create, so they can view or

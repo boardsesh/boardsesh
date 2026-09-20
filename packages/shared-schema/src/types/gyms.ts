@@ -1,5 +1,15 @@
 // Gym entity types
 
+export type PlaceSuggestion = {
+  id: number;
+  name: string;
+  region: string;
+  country: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+};
+
 /**
  * Max length of the free-text opening-hours line, shared by the backend
  * validator and every client that renders the field. A client capping below the

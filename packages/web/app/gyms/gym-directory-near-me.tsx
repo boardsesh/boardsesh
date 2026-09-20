@@ -23,6 +23,8 @@ import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import type { Locale } from '@/app/lib/i18n/config';
 import { themeTokens } from '@/app/theme/theme-config';
+import LocaleLink from '@/app/components/i18n/locale-link';
+import { buildDirectoryHref, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
 import { numberFormatFor } from './directory-card-model';
 import GymDirectoryCard from './gym-directory-card';
 import GymDirectoryMap from './gym-directory-map';
@@ -49,6 +51,7 @@ import {
 const WIDE_LAYOUT = '@media (min-width: 960px)';
 
 type GymDirectoryNearMeProps = {
+  selectedArea?: { facet: DirectoryFacet; query: DirectoryQuery };
   /** Board types the surrounding route is already filtered to. */
   boardTypes: string[];
   /** The visitor's `?q=` text, carried into the near-me query unchanged. */
@@ -92,6 +95,7 @@ type GymDirectoryNearMeProps = {
  * is not shareable and Back does not restore it.
  */
 export default function GymDirectoryNearMe({
+  selectedArea,
   boardTypes,
   searchQuery,
   locale,
@@ -123,7 +127,7 @@ export default function GymDirectoryNearMe({
 
   const latitude = coordinates ? roundCoordinate(coordinates.latitude) : null;
   const longitude = coordinates ? roundCoordinate(coordinates.longitude) : null;
-  const nearMeActive = nearMeOn && latitude !== null && longitude !== null;
+  const nearMeActive = !selectedArea && nearMeOn && latitude !== null && longitude !== null;
 
   const boardTypesKey = useMemo(() => [...boardTypes].sort().join(','), [boardTypes]);
 
@@ -232,7 +236,20 @@ export default function GymDirectoryNearMe({
           {/* Keyed on the RESULTS being on screen, not on "the button was
               pressed": after a denial the control has to offer the retry again,
               not a "show all" for a near-me list that never rendered. */}
-          {showingNearMeResults ? (
+          {selectedArea ? (
+            <Button
+              variant="outlined"
+              component={LocaleLink}
+              href={buildDirectoryHref(
+                selectedArea.facet,
+                { ...selectedArea.query, query: '', place: undefined, latitude: null, longitude: null, radiusKm: null },
+                1,
+              )}
+              sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}
+            >
+              {t('places.clear')}
+            </Button>
+          ) : showingNearMeResults ? (
             <Button
               variant="outlined"
               onClick={handleShowAll}
@@ -259,14 +276,20 @@ export default function GymDirectoryNearMe({
             <ToggleButtonGroup
               exclusive
               size="small"
-              value={radiusKm}
-              onChange={handleRadiusChange}
+              value={selectedArea ? (selectedArea.query.radiusKm ?? 50) : radiusKm}
+              onChange={selectedArea ? undefined : handleRadiusChange}
               aria-labelledby="gym-near-me-radius-label"
             >
               {NEAR_ME_RADIUS_OPTIONS_KM.map((option) => (
                 <ToggleButton
                   key={option}
                   value={option}
+                  {...(selectedArea
+                    ? {
+                        component: LocaleLink,
+                        href: buildDirectoryHref(selectedArea.facet, { ...selectedArea.query, radiusKm: option }, 1),
+                      }
+                    : {})}
                   // Same two states as the facet chips, for the same reason: on
                   // the near-black ground a default toggle group is a row of
                   // hairlines with no legible "this one".
@@ -307,7 +330,7 @@ export default function GymDirectoryNearMe({
         {/* `unsupported` shows unprompted: the button is disabled on a browser
             with no geolocation API, so waiting for a press would mean the hint
             never appears on the one browser that only has the text fallback. */}
-        {fallbackReason !== null && (nearMeOn || fallbackReason === 'unsupported') && (
+        {!selectedArea && fallbackReason !== null && (nearMeOn || fallbackReason === 'unsupported') && (
           <Alert severity="info" sx={{ mt: 1.5, borderRadius: `${themeTokens.borderRadius.lg}px` }}>
             {fallbackBody(t, fallbackReason)}
           </Alert>
@@ -319,9 +342,17 @@ export default function GymDirectoryNearMe({
           </Alert>
         )}
 
-        {showingNearMeResults && (
+        {selectedArea && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+            {t('places.area', {
+              place: selectedArea.query.place ?? t('places.selectedArea'),
+              radius: selectedArea.query.radiusKm ?? 50,
+            })}
+          </Typography>
+        )}
+        {(showingNearMeResults || selectedArea) && (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, maxWidth: '68ch' }}>
-            {t('nearMe.pinlessNotice')}
+            {selectedArea ? t('places.pinlessNotice') : t('nearMe.pinlessNotice')}
           </Typography>
         )}
       </Box>

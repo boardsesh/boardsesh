@@ -10,6 +10,7 @@ const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
 );
+const placesSchema = readFileSync(new URL('../../../db/drizzle/0235_places_search.sql', import.meta.url), 'utf8');
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
@@ -1850,4 +1851,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS spray_wall_detections;
   DROP TYPE IF EXISTS spray_detection_status;
   ${detectionSchema}
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  DROP TABLE IF EXISTS places, place_imports;
+  ${placesSchema}
 `;

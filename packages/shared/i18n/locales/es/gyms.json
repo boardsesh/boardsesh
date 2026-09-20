@@ -130,5 +130,18 @@
     "kilter": "Rocódromos con un plafón Kilter",
     "moonboard": "Rocódromos con un MoonBoard",
     "tension": "Rocódromos con un plafón Tension"
+  },
+  "places": {
+    "loading": "Buscando localidades…",
+    "clear": "Quitar localidad",
+    "open": "Mostrar localidades",
+    "close": "Ocultar localidades",
+    "hint": "Elige una localidad sugerida o busca un rocódromo por su nombre.",
+    "empty": "No se encontraron localidades. Puedes buscar un rocódromo por su nombre.",
+    "error": "Las sugerencias de localidades no están disponibles. Puedes buscar un rocódromo por su nombre.",
+    "attribution": "Nombres de localidades de GeoNames",
+    "area": "Rocódromos a menos de {{radius}} km de {{place}}",
+    "selectedArea": "la ubicación seleccionada",
+    "pinlessNotice": "Los resultados cercanos solo incluyen rocódromos con un marcador en el mapa."
   }
 }
