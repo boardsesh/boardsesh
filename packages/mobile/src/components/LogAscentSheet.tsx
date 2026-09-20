@@ -1,4 +1,5 @@
 import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
+import type { TickClimbIdentity } from '@boardsesh/board-config';
 // Bottom-sheet wrapper around the create-tick form. Used by every ticking entry
 // point — the play drawer's tick button, the persistent queue bar, the climb
 // detail screen — so the form, dismissal model (handle + pan-down + native
@@ -24,6 +25,7 @@ import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/u
 const SAVE_ICON = 'tick.outline' as const;
 
 type LogAscentSheetProps = {
+  climb?: TickClimbIdentity;
   visible: boolean;
   /** Request an animated close (close button, pan-down, tick complete). The
    * parent flips `visible` false; the sheet stays mounted until the animation
@@ -48,7 +50,23 @@ type LogAscentSheetProps = {
   consensusGradeName?: string;
 };
 
-export function LogAscentSheet({
+export function LogAscentSheet(props: LogAscentSheetProps) {
+  const snapshot = useRef(props);
+  const wasVisible = useRef(false);
+  if (props.visible && !wasVisible.current) snapshot.current = props;
+  wasVisible.current = props.visible;
+  return (
+    <LogAscentSheetContent
+      {...snapshot.current}
+      visible={props.visible}
+      onClose={props.onClose}
+      onFullyDismissed={props.onFullyDismissed}
+    />
+  );
+}
+
+function LogAscentSheetContent({
+  climb,
   visible,
   onClose,
   onFullyDismissed,
@@ -109,6 +127,8 @@ export function LogAscentSheet({
   }, [climbUuid, layoutId, onClose]);
 
   const form = useQuickTickForm({
+    visible,
+    climb,
     climbUuid,
     boardName,
     angle,

@@ -163,7 +163,13 @@
       "chooser": {
         "editTitle": "Welchen Eintrag bearbeiten?",
         "deleteTitle": "Welchen Eintrag löschen?"
-      }
+      },
+      "boardLabel": "Board",
+      "boardNone": "Keines",
+      "boardPickerLabel": "Board auswählen",
+      "boardBack": "Zurück zur Bearbeitung",
+      "boardRetry": "Boards konnten nicht geladen werden. Tippe zum Wiederholen.",
+      "boardEmpty": "Kein gespeichertes oder kürzlich genutztes Board passt zu diesem Boulder."
     },
     "boardLink": {
       "title": "Fehlen deine {{boardName}}-Begehungen?",

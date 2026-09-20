@@ -22,6 +22,13 @@ const TICK_DEPENDENT_KEYS = [
   // must refresh when a tick they contain is edited or deleted.
   'sessionGroupedFeed',
   'sessionDetail',
+  'tickBoardOptions',
+  'board',
+  'boardBySlug',
+  'myBoards',
+  'activityFeed',
+  'crewFeed',
+  'betaLinks',
 ];
 
 const updateVars = {
@@ -95,6 +102,8 @@ describe('useUpdateTick (shared)', () => {
         comment: 'sent it',
         climbedAt: '2026-07-01 10:00:00',
         angle: 25,
+        boardId: null,
+        boardDisplayName: null,
         updatedAt: '2026-07-03 09:00:00',
       },
     });
@@ -107,7 +116,17 @@ describe('useUpdateTick (shared)', () => {
               {
                 key: 'climb-1-2026-07-01',
                 items: [
-                  { uuid: 'tick-1', status: 'attempt', attemptCount: 4, quality: null, comment: '', angle: 40 },
+                  {
+                    uuid: 'tick-1',
+                    status: 'attempt',
+                    attemptCount: 4,
+                    quality: null,
+                    comment: '',
+                    angle: 40,
+                    boardId: 942,
+                    boardDisplayName: 'Original',
+                    renderBoard: { layoutId: 1 },
+                  },
                   { uuid: 'tick-2', status: 'attempt', attemptCount: 1, quality: null, comment: '', angle: 40 },
                 ],
               },
@@ -147,6 +166,9 @@ describe('useUpdateTick (shared)', () => {
       difficulty: 16,
       difficultyName: '6a/V3',
       angle: 25,
+      boardId: null,
+      boardDisplayName: null,
+      renderBoard: null,
     });
     // Sibling untouched — still at the original angle.
     expect(groupedItems?.[1]).toMatchObject({ uuid: 'tick-2', status: 'attempt', attemptCount: 1, angle: 40 });

@@ -23,6 +23,7 @@ import {
 import { resolveBoardFromPath } from '../social/boards';
 import { sprayWallMayAnnounceByLayout } from '../shared/spray-wall-announce';
 import { boardConfigMatchesTick, findActiveBoardById, isSharedConfigFeedBoard } from '../board-presence/shared';
+import { listableSprayWallCondition } from '../board/spray-wall-listing';
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
@@ -39,6 +40,8 @@ import { invalidateRecentBetaLinksCache } from '../beta-videos/queries';
 import { resolveClimbCatalogPresence } from '../../../db/queries/climbs';
 import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
+import { canAttributeTickToBoard } from '@boardsesh/board-config';
+import { findTickClimb, tickBoardFitsClimb } from './board-options';
 import { reconcileInferredSessions } from '../../../services/inferred-sessions/reconcile';
 import { parseClimbedAt } from '../../../services/inferred-sessions/timestamps';
 import {
@@ -859,6 +862,17 @@ export const tickMutations = {
     // updateTick needs no counterpart: UpdateTickInputSchema carries no
     // climbUuid, so an edit can never move a tick to a different climb.
     const climbUuid = await resolveCanonicalClimbUuid(db, validatedInput.boardType, validatedInput.climbUuid);
+    const catalogClimb = await findTickClimb(db, validatedInput.boardType, climbUuid);
+    const attributionConfig =
+      validatedInput.layoutId != null && validatedInput.sizeId != null && validatedInput.setIds
+        ? {
+            boardType: validatedInput.boardType,
+            layoutId: validatedInput.layoutId,
+            sizeId: validatedInput.sizeId,
+            setIds: validatedInput.setIds,
+          }
+        : null;
+    const canResolveBoard = attributionConfig != null && canAttributeTickToBoard(catalogClimb, attributionConfig);
 
     // A spray tick must name a climb that exists AND whose wall the climber can
     // see (#6032). The other eight board types are deliberately exempt: an Aurora
@@ -958,7 +972,7 @@ export const tickMutations = {
     let boardId: number | null = null;
     let sharedConfigFeedBoardId: number | null = null;
     let boardAssociationSource: 'boardUuid' | 'explicitBoardId' | 'config' | null = null;
-    if (validatedInput.boardUuid) {
+    if (canResolveBoard && validatedInput.boardUuid) {
       boardAssociationSource = 'boardUuid';
       const [board] = await db
         .select({
@@ -998,7 +1012,7 @@ export const tickMutations = {
             : `[saveTick] Ignoring tick boardUuid ${validatedInput.boardUuid} — input carries no layout/size/set to match against`,
         );
       }
-    } else if (validatedInput.boardId != null) {
+    } else if (canResolveBoard && validatedInput.boardId != null) {
       const explicitBoard = await findActiveBoardById(validatedInput.boardId);
       // Accept the explicit wall board only when its FULL config matches the
       // tick's target (type + layout + size + set). A stale presence boardId
@@ -1026,6 +1040,7 @@ export const tickMutations = {
     // home and at a gym, and the config lookup below cannot see which one the
     // climber is at, while the session can.
     if (
+      canResolveBoard &&
       boardId == null &&
       !validatedInput.boardUuid &&
       sessionBoardId != null &&
@@ -1047,6 +1062,7 @@ export const tickMutations = {
     // intentionally left unassociated (handled above), so it does not fall
     // through to here.
     if (
+      canResolveBoard &&
       boardId == null &&
       !validatedInput.boardUuid &&
       validatedInput.layoutId &&
@@ -1122,7 +1138,11 @@ export const tickMutations = {
         // Re-lock and canonicalise the association immediately before INSERT.
         // Board resolution above intentionally stays outside this transaction so
         // its network/catalog work does not lengthen the row-lock hold time.
-        const lockedBoardId = boardId === null ? null : await lockCanonicalTickBoardId(tx, boardId);
+        const canonicalBoardId = boardId === null ? null : await lockCanonicalTickBoardId(tx, boardId);
+        const lockedBoardId =
+          canonicalBoardId != null && (await tickBoardFitsClimb(tx, canonicalBoardId, catalogClimb))
+            ? canonicalBoardId
+            : null;
         const boardAssociationBecameUnavailable = boardId !== null && lockedBoardId === null;
         const [createdTick] = await tx
           .insert(dbSchema.boardseshTicks)
@@ -1427,9 +1447,46 @@ export const tickMutations = {
     let inferredPrivacyChanged = false;
     const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
+      // Board merges lock boards before ticks. Keep that order when changing
+      // attribution, otherwise an edit and a merge can deadlock each other.
+      let selectedBoard: typeof dbSchema.userBoards.$inferSelect | null = null;
+      if (validatedInput.boardUuid != null) {
+        const [ownedTick] = await tx
+          .select({ uuid: dbSchema.boardseshTicks.uuid })
+          .from(dbSchema.boardseshTicks)
+          .where(and(eq(dbSchema.boardseshTicks.uuid, uuid), eq(dbSchema.boardseshTicks.userId, userId)))
+          .limit(1);
+        if (!ownedTick) throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
+        const [requestedBoard] = await tx
+          .select()
+          .from(dbSchema.userBoards)
+          .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
+          .limit(1);
+        const selectedId = requestedBoard ? await lockCanonicalTickBoardId(tx, requestedBoard.id) : null;
+        if (selectedId != null) {
+          const [board] = await tx
+            .select()
+            .from(dbSchema.userBoards)
+            .where(and(eq(dbSchema.userBoards.id, selectedId), listableSprayWallCondition(userId)))
+            .limit(1);
+          selectedBoard = board ?? null;
+        }
+        if (!selectedBoard || (!selectedBoard.isPublic && selectedBoard.ownerId !== userId)) {
+          throw new GraphQLError('Board is no longer available', { extensions: { code: 'TICK_BOARD_UNAVAILABLE' } });
+        }
+      }
       const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
       const targetTick = existingTicks.find((tick) => tick.uuid === uuid)!;
       const affectedUuids = existingTicks.map((tick) => tick.uuid);
+
+      if (selectedBoard) {
+        const climb = await findTickClimb(tx, targetTick.boardType, targetTick.climbUuid);
+        if (!canAttributeTickToBoard(climb, selectedBoard)) {
+          throw new GraphQLError('This climb does not fit that board', {
+            extensions: { code: 'TICK_BOARD_INCOMPATIBLE' },
+          });
+        }
+      }
 
       if (!isBoardAngleSupported(targetTick.boardType, validatedInput.angle)) {
         throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
@@ -1440,6 +1497,7 @@ export const tickMutations = {
       const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
         updatedAt: new Date().toISOString(),
       };
+      if (validatedInput.boardUuid !== undefined) updates.boardId = selectedBoard?.id ?? null;
       if (validatedInput.status !== undefined) updates.status = validatedInput.status;
       if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
       if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
@@ -1485,13 +1543,28 @@ export const tickMutations = {
 
       // Keep linked beta videos at the angle of the edited ascent.
       let movedBetaLinks = false;
-      if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle)) {
+      if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle) || validatedInput.boardUuid !== undefined) {
         const moved = await tx
           .update(dbSchema.boardBetaLinks)
-          .set({ angle: updatedTarget.angle })
+          .set({
+            angle: updatedTarget.angle,
+            ...(validatedInput.boardUuid !== undefined ? { boardId: updatedTarget.boardId } : {}),
+          })
           .where(inArray(dbSchema.boardBetaLinks.tickUuid, affectedUuids))
           .returning({ link: dbSchema.boardBetaLinks.link });
         movedBetaLinks = moved.length > 0;
+      }
+
+      if (validatedInput.boardUuid !== undefined) {
+        await tx
+          .update(dbSchema.feedItems)
+          .set({
+            boardUuid: selectedBoard?.uuid ?? null,
+            metadata: sql`CASE WHEN ${dbSchema.feedItems.metadata} ? 'boardUuid'
+            THEN jsonb_set(${dbSchema.feedItems.metadata}, '{boardUuid}', ${JSON.stringify(selectedBoard?.uuid ?? null)}::jsonb)
+            ELSE ${dbSchema.feedItems.metadata} END`,
+          })
+          .where(and(eq(dbSchema.feedItems.entityType, 'tick'), inArray(dbSchema.feedItems.entityId, affectedUuids)));
       }
 
       const sessionIds = distinctTickSessions(existingTicks);
@@ -1510,7 +1583,21 @@ export const tickMutations = {
         inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
       }
 
-      return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };
+      const [attributedBoard] =
+        updatedTarget.boardId == null
+          ? []
+          : await tx
+              .select({ name: dbSchema.userBoards.name })
+              .from(dbSchema.userBoards)
+              .where(eq(dbSchema.userBoards.id, updatedTarget.boardId))
+              .limit(1);
+      return {
+        existingTicks,
+        updatedTicks,
+        updatedTarget,
+        movedBetaLinks,
+        boardDisplayName: attributedBoard?.name ?? null,
+      };
     });
 
     if (validatedInput.privacy || inferredPrivacyChanged) pubsub.publishPrivacyChanged();
@@ -1532,7 +1619,10 @@ export const tickMutations = {
         logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
       });
     }
-    for (const { boardId, boardType } of distinctTickBoards(mutationResult.updatedTicks)) {
+    for (const { boardId, boardType } of distinctTickBoards([
+      ...mutationResult.existingTicks,
+      ...mutationResult.updatedTicks,
+    ])) {
       queueBoardStatsPublish(boardId, boardType);
     }
     for (const sessionId of distinctTickSessions(mutationResult.existingTicks)) {
@@ -1548,6 +1638,8 @@ export const tickMutations = {
 
     return {
       uuid: updated.uuid,
+      boardId: updated.boardId,
+      boardDisplayName: mutationResult.boardDisplayName,
       userId: updated.userId,
       boardType: updated.boardType,
       climbUuid: updated.climbUuid,

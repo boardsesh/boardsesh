@@ -4,6 +4,7 @@ export * from './queue-list-model';
 export * from './grade-display';
 export * from './marquee-timing';
 export * from './tick-utils';
+export * from './tick-context';
 export * from './quick-tick-state';
 export * from './board-utils';
 export * from './climb-rules';

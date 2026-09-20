@@ -163,7 +163,13 @@
       "chooser": {
         "editTitle": "Which entry to edit?",
         "deleteTitle": "Which entry to delete?"
-      }
+      },
+      "boardLabel": "Board",
+      "boardNone": "None",
+      "boardPickerLabel": "Choose a board",
+      "boardBack": "Back to edit",
+      "boardRetry": "Couldn’t load boards. Tap to retry.",
+      "boardEmpty": "No saved or recent boards fit this climb."
     },
     "boardLink": {
       "title": "Missing your {{boardName}} sends?",

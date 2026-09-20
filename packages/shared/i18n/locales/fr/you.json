@@ -163,7 +163,13 @@
       "chooser": {
         "editTitle": "Quelle entrée modifier ?",
         "deleteTitle": "Quelle entrée supprimer ?"
-      }
+      },
+      "boardLabel": "Board",
+      "boardNone": "Aucune",
+      "boardPickerLabel": "Choisir une board",
+      "boardBack": "Revenir à la modification",
+      "boardRetry": "Impossible de charger les boards. Appuie pour réessayer.",
+      "boardEmpty": "Aucune board enregistrée ou récente ne convient à ce bloc."
     },
     "boardLink": {
       "title": "Vos croix {{boardName}} manquent à l’appel ?",

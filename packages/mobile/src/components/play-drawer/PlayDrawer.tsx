@@ -2421,6 +2421,7 @@ export function PlayDrawer({
           return (
             <LogAscentSheet
               key={composerCredentialScope}
+              climb={tickClimb}
               visible={isTickBarActive}
               onClose={handleTickBarDismiss}
               climbUuid={tickClimb.uuid}

@@ -76,6 +76,7 @@ export function useLogAscentAction(climb: Climb) {
       source: 'queue_bar',
     });
     openLogAscent({
+      climb,
       climbUuid: climb.uuid,
       climbName: climb.name,
       boardName: boardConfig.boardName,

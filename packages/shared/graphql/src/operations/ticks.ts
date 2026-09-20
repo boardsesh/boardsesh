@@ -558,6 +558,8 @@ export const UPDATE_TICK = gql`
   mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {
     updateTick(uuid: $uuid, input: $input) {
       uuid
+      boardId
+      boardDisplayName
       status
       attemptCount
       quality
@@ -577,6 +579,7 @@ export type DeleteTickVariables = {
 
 export type UpdateTickInput = {
   privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
+  boardUuid?: string | null;
   status?: 'flash' | 'send' | 'attempt';
   attemptCount?: number;
   quality?: number | null;
@@ -628,6 +631,8 @@ export type UpdateTickVariables = {
 export type UpdateTickResponse = {
   updateTick: {
     uuid: string;
+    boardId: number | null;
+    boardDisplayName: string | null;
     status: string;
     attemptCount: number;
     quality: number | null;
@@ -639,3 +644,46 @@ export type UpdateTickResponse = {
     updatedAt: string;
   };
 };
+
+export type TickBoardOption = {
+  uuid: string;
+  name: string;
+  boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+};
+
+export type TickBoardOptionsResponse = {
+  tickBoardOptions: {
+    currentBoard: TickBoardOption | null;
+    boards: TickBoardOption[];
+    totalCount: number;
+    hasMore: boolean;
+  };
+};
+
+export const TICK_BOARD_OPTIONS = gql`
+  query TickBoardOptions($tickUuid: ID!, $limit: Int, $offset: Int) {
+    tickBoardOptions(tickUuid: $tickUuid, limit: $limit, offset: $offset) {
+      currentBoard {
+        uuid
+        name
+        boardType
+        layoutId
+        sizeId
+        setIds
+      }
+      boards {
+        uuid
+        name
+        boardType
+        layoutId
+        sizeId
+        setIds
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
