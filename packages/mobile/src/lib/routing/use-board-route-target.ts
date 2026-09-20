@@ -50,6 +50,7 @@ import {
   resolveBoardForSession,
 } from '../board-path-to-user-board';
 import { openClimbInPlayDrawer } from '../open-climb-in-play-drawer';
+import { consumeClimbHandoffIntent } from './climb-handoff-intent';
 
 /**
  * What the entry route should draw.
@@ -497,9 +498,15 @@ function resolveStatus({
  */
 export function useBoardRouteTarget(
   target: BoardRouteTarget | null,
-  options?: { mode?: BoardRouteMode; onHandedOff?: () => void; anonymousClimbEnabled?: boolean },
+  options?: {
+    mode?: BoardRouteMode;
+    activationIntent?: string | string[];
+    onHandedOff?: () => void;
+    anonymousClimbEnabled?: boolean;
+  },
 ): BoardRouteResult {
   const mode = options?.mode ?? 'deep-link';
+  const activationIntent = options?.activationIntent;
   const adoptsBoard = mode === 'deep-link';
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
@@ -647,11 +654,10 @@ export function useBoardRouteTarget(
     if (!climb || !boardConfig) return;
     handedOffRef.current = targetKey;
     onHandedOffRef.current?.();
-    // preview:true so a deep-linked climb doesn't disturb the queue — in a
-    // session it would change the shared current climb for everyone. The drawer
-    // shows a "Preview" badge with "Set active" to opt into playing it.
+    // Public URLs preview. Only the internal tick's one-use target-bound intent activates.
+    const activate = !adoptsBoard && consumeClimbHandoffIntent(activationIntent, target);
     const openDrawer = () =>
-      openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: true });
+      openClimbInPlayDrawer({ kind: 'climb', climb, boardConfig }, { openPlayDrawer, router }, { preview: !activate });
 
     // This screen gets out of the way FIRST, whichever way it leaves.
     //
@@ -675,6 +681,7 @@ export function useBoardRouteTarget(
     boardConfig,
     climb,
     openPlayDrawer,
+    activationIntent,
     router,
     target,
     targetKey,

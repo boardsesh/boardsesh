@@ -10,6 +10,7 @@ type ClimbDetailParams = {
   sizeId?: string;
   setIds?: string;
   angle?: string;
+  activationIntent?: string | string[];
 };
 
 /**
@@ -20,18 +21,17 @@ type ClimbDetailParams = {
  * under `app/[board_name]/…` and `app/b/[board_slug]/…`. All four share one
  * hand-off path.
  *
- * `mode="in-app"`: the config comes from the app, not from a user's link, so the
- * board is used as given rather than adopted — tapping a tick from someone
- * else's wall must not switch (or mint) the user's active board — and the
- * redirector pops back where it came from.
+ * Uses the supplied board without adopting it, for both internal and external
+ * entries. Only a matching, unconsumed in-memory tick intent can activate a climb.
  */
 export default function ClimbDetail() {
-  const { climbUuid, boardName, layoutId, sizeId, setIds, angle } = useLocalSearchParams<ClimbDetailParams>();
+  const { climbUuid, boardName, layoutId, sizeId, setIds, angle, activationIntent } =
+    useLocalSearchParams<ClimbDetailParams>();
 
   const target = useMemo(
     () => buildBoardClimbTarget({ boardName, layoutId, sizeId, setIds, angle }, 'view', climbUuid),
     [climbUuid, boardName, layoutId, sizeId, setIds, angle],
   );
 
-  return <BoardRouteHandoff target={target} mode="in-app" />;
+  return <BoardRouteHandoff target={target} mode="in-app" activationIntent={activationIntent} />;
 }

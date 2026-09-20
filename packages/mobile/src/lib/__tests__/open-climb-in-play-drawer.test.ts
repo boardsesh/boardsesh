@@ -90,15 +90,36 @@ describe('openClimbInPlayDrawer', () => {
     expect(options.previewQueueItem?.climb?.uuid).toBe('climb-1');
   });
 
-  it('kind:tick without frames falls back to the climb route', () => {
+  // #5254: the fallback has to carry the ACTIVE intent the tap had, or tapping a
+  // session climb lights the wall only when the tick payload happened to carry
+  // frames — same gesture, two different outcomes, no explanation on screen.
+  it('kind:tick without frames falls back to the climb route, asking for an active open', () => {
     mockedGetBoardConfig.mockReturnValue(KILTER_CONFIG);
     const deps = makeDeps();
     openClimbInPlayDrawer({ kind: 'tick', tick: makeTick({ frames: null, climbUuid: 'c-2', angle: 45 }) }, deps);
     expect(deps.openPlayDrawer).not.toHaveBeenCalled();
     expect(deps.router.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/climbs/[climbUuid]',
-      params: { climbUuid: 'c-2', boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,20,33', angle: '45' },
+      params: {
+        climbUuid: 'c-2',
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,20,33',
+        angle: '45',
+        activationIntent: 'preview-uuid',
+      },
     });
+  });
+
+  it('kind:tick without frames keeps a preview open view-only through the fallback', () => {
+    mockedGetBoardConfig.mockReturnValue(KILTER_CONFIG);
+    const deps = makeDeps();
+    openClimbInPlayDrawer({ kind: 'tick', tick: makeTick({ frames: null, climbUuid: 'c-2', angle: 45 }) }, deps, {
+      preview: true,
+    });
+    const [pushed] = deps.router.push.mock.calls[0];
+    expect(pushed.params).not.toHaveProperty('activationIntent');
   });
 
   it('kind:tick with frames but an unresolvable board is a no-op (e.g. MoonBoard)', () => {
@@ -130,6 +151,31 @@ describe('openClimbInPlayDrawer', () => {
       pathname: '/(tabs)/climbs/[climbUuid]',
       params: { climbUuid: 'c-4', boardName: 'kilter', layoutId: '1', sizeId: '10', setIds: '1,20,33', angle: '35' },
     });
+  });
+
+  // The three direct `ref` callers (moderation feed, notification rows, the
+  // create screen's duplicate viewer) pass no options and all mean "show me this
+  // climb" — they must keep landing on the climb page's preview default, so the
+  // active param is never written for them.
+  it('kind:ref keeps the preview default when the caller asks for nothing', () => {
+    const deps = makeDeps();
+    openClimbInPlayDrawer(
+      { kind: 'ref', climbUuid: 'c-6', boardType: 'kilter', layoutId: 1, angle: 40, sizeId: 12, setIds: '1,2' },
+      deps,
+    );
+    const [pushed] = deps.router.push.mock.calls[0];
+    expect(pushed.params).not.toHaveProperty('activationIntent');
+  });
+
+  it('kind:ref remains a preview even with preview:false', () => {
+    const deps = makeDeps();
+    openClimbInPlayDrawer(
+      { kind: 'ref', climbUuid: 'c-7', boardType: 'kilter', layoutId: 1, angle: 40, sizeId: 12, setIds: '1,2' },
+      deps,
+      { preview: false },
+    );
+    const [pushed] = deps.router.push.mock.calls[0];
+    expect(pushed.params).not.toHaveProperty('activationIntent');
   });
 
   it('kind:ref is a no-op when the board cannot resolve', () => {
