@@ -13,6 +13,10 @@ import { HelpScreenshot, HelpShots } from '../help-screenshot';
  * join half gets as much room as the start half. The wall sections answer the
  * Discord thread about four or five people in one session: the app already
  * keeps a crew's browsing off the wall, and nobody knew.
+ *
+ * Every label quoted in the copy is checked against the mobile catalogs
+ * (session.json, feed.json, settings.json). A session is only ever created from
+ * the Record tab; the Home rail and the board sheet only navigate there.
  */
 export default function SessionsContent() {
   const { t } = useTranslation('marketing');
@@ -23,7 +27,7 @@ export default function SessionsContent() {
       lead={t('help.sessions.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.sessions.breadcrumb')} />}
     >
-      <PageSection title={t('help.sessions.start.title')} lead={t('help.sessions.start.intro')}>
+      <PageSection id="start" title={t('help.sessions.start.title')} lead={t('help.sessions.start.intro')}>
         <HelpShots>
           <HelpScreenshot
             shot="session-detail"
@@ -36,47 +40,48 @@ export default function SessionsContent() {
             caption={t('help.sessions.start.liveShotCaption')}
           />
         </HelpShots>
-        <Prose>{t('help.sessions.start.p1')}</Prose>
-        <Prose>{t('help.sessions.start.p2')}</Prose>
+        <ProseList ordered>
+          <li>{t('help.sessions.start.step1')}</li>
+          <li>{t('help.sessions.start.step2')}</li>
+          <li>{t('help.sessions.start.step3')}</li>
+        </ProseList>
       </PageSection>
 
-      <PageSection title={t('help.sessions.join.title')} lead={t('help.sessions.join.intro')}>
-        <Prose>{t('help.sessions.join.p1')}</Prose>
+      <PageSection id="join" title={t('help.sessions.join.title')}>
         <ProseList>
           <li>{t('help.sessions.join.way1')}</li>
           <li>{t('help.sessions.join.way2')}</li>
           <li>{t('help.sessions.join.way3')}</li>
         </ProseList>
+        <Prose>{t('help.sessions.join.p1')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.sessions.queue.title')} lead={t('help.sessions.queue.intro')}>
+      <PageSection id="queue" title={t('help.sessions.queue.title')}>
         <Prose>{t('help.sessions.queue.p1')}</Prose>
         <Prose>{t('help.sessions.queue.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.sessions.wall.title')} lead={t('help.sessions.wall.intro')}>
+      <PageSection id="wall" title={t('help.sessions.wall.title')}>
         <Prose>{t('help.sessions.wall.p1')}</Prose>
-        <Prose>{t('help.sessions.wall.p2')}</Prose>
         <Prose>
-          {t('help.sessions.wall.p3')}{' '}
+          {t('help.sessions.wall.p2')}{' '}
           <MuiLink component={LocaleLink} href="/help/board-and-bluetooth">
             {t('help.sessions.wall.bluetoothLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.sessions.crowd.title')} lead={t('help.sessions.crowd.intro')}>
+      <PageSection id="browsing" title={t('help.sessions.crowd.title')}>
         <Prose>{t('help.sessions.crowd.p1')}</Prose>
-        <Prose>{t('help.sessions.crowd.p2')}</Prose>
         <Prose>
-          {t('help.sessions.crowd.p3')}{' '}
+          {t('help.sessions.crowd.p2')}{' '}
           <MuiLink component={LocaleLink} href="/help/climb-actions">
             {t('help.sessions.crowd.previewLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.sessions.history.title')} lead={t('help.sessions.history.intro')}>
+      <PageSection id="history" title={t('help.sessions.history.title')}>
         <Prose>{t('help.sessions.history.p1')}</Prose>
         <Prose>{t('help.sessions.history.p2')}</Prose>
       </PageSection>

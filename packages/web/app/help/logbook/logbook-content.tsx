@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
+import { HelpScreenshot } from '../help-screenshot';
 
 /**
  * 91 climbers have ever edited a logbook entry, and the feature request that
@@ -23,7 +24,7 @@ export default function LogbookContent() {
       lead={t('help.logbook.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.logbook.breadcrumb')} />}
     >
-      <PageSection title={t('help.logbook.log.title')} lead={t('help.logbook.log.intro')}>
+      <PageSection title={t('help.logbook.log.title')}>
         <HelpShots>
           <HelpScreenshot
             shot="board-view"
@@ -40,7 +41,14 @@ export default function LogbookContent() {
         <Prose>{t('help.logbook.log.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.logbook.edit.title')} lead={t('help.logbook.edit.intro')}>
+      <PageSection title={t('help.logbook.edit.title')}>
+        <HelpShots>
+          <HelpClip
+            name="logbook-swipe-edit-delete"
+            alt={t('help.logbook.edit.clipAlt')}
+            caption={t('help.logbook.edit.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.logbook.edit.p1')}</Prose>
         <ProseList>
           <li>{t('help.logbook.edit.field1')}</li>
@@ -51,17 +59,17 @@ export default function LogbookContent() {
         <Prose>{t('help.logbook.edit.p3')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.logbook.delete.title')} lead={t('help.logbook.delete.intro')}>
+      <PageSection title={t('help.logbook.delete.title')}>
         <Prose>{t('help.logbook.delete.p1')}</Prose>
         <Prose>{t('help.logbook.delete.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.logbook.repeats.title')} lead={t('help.logbook.repeats.intro')}>
+      <PageSection title={t('help.logbook.repeats.title')}>
         <Prose>{t('help.logbook.repeats.p1')}</Prose>
         <Prose>{t('help.logbook.repeats.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.logbook.find.title')} lead={t('help.logbook.find.intro')}>
+      <PageSection title={t('help.logbook.find.title')}>
         <Prose>{t('help.logbook.find.p1')}</Prose>
         <Prose>
           {t('help.logbook.find.p2')}{' '}

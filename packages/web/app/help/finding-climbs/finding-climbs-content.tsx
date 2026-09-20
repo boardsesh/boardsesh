@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
+import { HelpScreenshot } from '../help-screenshot';
 
 /**
  * Three filters that ship and almost nobody has found: 147 climbers have ever
@@ -23,7 +24,14 @@ export default function FindingClimbsContent() {
       lead={t('help.findingClimbs.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.findingClimbs.breadcrumb')} />}
     >
-      <PageSection title={t('help.findingClimbs.start.title')} lead={t('help.findingClimbs.start.intro')}>
+      <PageSection title={t('help.findingClimbs.start.title')}>
+        <HelpShots>
+          <HelpClip
+            name="grade-range-tap"
+            alt={t('help.findingClimbs.start.clipAlt')}
+            caption={t('help.findingClimbs.start.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.findingClimbs.start.p1')}</Prose>
         <Prose>{t('help.findingClimbs.start.p2')}</Prose>
         <Prose>{t('help.findingClimbs.start.p3')}</Prose>
@@ -31,18 +39,12 @@ export default function FindingClimbsContent() {
 
       <PageSection title={t('help.findingClimbs.holds.title')} lead={t('help.findingClimbs.holds.intro')}>
         <HelpShots>
-          <HelpScreenshot
-            shot="holds-filter"
-            alt={t('help.findingClimbs.holds.shotAlt')}
-            caption={t('help.findingClimbs.holds.shotCaption')}
-          />
-          <HelpScreenshot
-            shot="zone-filter"
-            alt={t('help.findingClimbs.holds.zoneShotAlt')}
-            caption={t('help.findingClimbs.holds.zoneShotCaption')}
+          <HelpClip
+            name="hold-filter-paint"
+            alt={t('help.findingClimbs.holds.clipAlt')}
+            caption={t('help.findingClimbs.holds.clipCaption')}
           />
         </HelpShots>
-        <Prose>{t('help.findingClimbs.holds.p1')}</Prose>
         <ProseList ordered>
           <li>{t('help.findingClimbs.holds.step1')}</li>
           <li>{t('help.findingClimbs.holds.step2')}</li>
@@ -53,11 +55,18 @@ export default function FindingClimbsContent() {
       </PageSection>
 
       <PageSection title={t('help.findingClimbs.zone.title')} lead={t('help.findingClimbs.zone.intro')}>
+        <HelpShots>
+          <HelpClip
+            name="zone-filter-drag"
+            alt={t('help.findingClimbs.zone.clipAlt')}
+            caption={t('help.findingClimbs.zone.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.findingClimbs.zone.p1')}</Prose>
         <Prose>{t('help.findingClimbs.zone.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.setters.title')} lead={t('help.findingClimbs.setters.intro')}>
+      <PageSection title={t('help.findingClimbs.setters.title')}>
         <HelpShots>
           <HelpScreenshot
             shot="setters"
@@ -69,7 +78,14 @@ export default function FindingClimbsContent() {
         <Prose>{t('help.findingClimbs.setters.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.rows.title')} lead={t('help.findingClimbs.rows.intro')}>
+      <PageSection title={t('help.findingClimbs.rows.title')}>
+        <HelpShots>
+          <HelpClip
+            name="swipe-row-queue-playlist"
+            alt={t('help.findingClimbs.rows.clipAlt')}
+            caption={t('help.findingClimbs.rows.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.findingClimbs.rows.p1')}</Prose>
         <Prose>{t('help.findingClimbs.rows.p2')}</Prose>
         <Prose>
@@ -80,7 +96,7 @@ export default function FindingClimbsContent() {
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.keep.title')} lead={t('help.findingClimbs.keep.intro')}>
+      <PageSection title={t('help.findingClimbs.keep.title')}>
         <Prose>{t('help.findingClimbs.keep.p1')}</Prose>
         <Prose>{t('help.findingClimbs.keep.p2')}</Prose>
       </PageSection>

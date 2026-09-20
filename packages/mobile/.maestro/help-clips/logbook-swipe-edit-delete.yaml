@@ -1,0 +1,72 @@
+appId: com.boardsesh.app
+name: help clip - logbook row swipe actions
+---
+# Clip: logbook-swipe-edit-delete -> packages/web/public/videos/help/logbook-swipe-edit-delete.mp4
+#
+# Records: on the profile Logbook tab, a short swipe right reveals the edit
+# (pencil) panel and springs back, a short swipe left reveals the delete (bin)
+# panel and springs back, then a full swipe left raises the real delete confirm
+# — which the clip CANCELS. Nothing is edited and nothing is deleted.
+#
+# The two reveal swipes are deliberately SHORT. LogbookRow commits on release
+# past a 96pt translation (COMMIT_THRESHOLD), so a 79pt drag (18% of the
+# 440pt-wide iPhone 16 Pro Max) shows the icon without firing the action. Only
+# the last swipe is meant to cross, and its action is a confirm dialog, not a
+# write.
+#
+# Row targeted: y=35%, the "An easy problem" entry under Wed Aug 26 — a day
+# with a single climb, so the delete request goes straight to the confirm
+# instead of the multi-entry chooser sheet.
+#
+# The confirm is a native iOS Alert, which IS in Maestro's accessibility tree,
+# so Cancel is matched by text rather than by coordinate.
+#
+# The caller navigates to ://home then ://profile?screenshotTab=logbook BEFORE
+# recording starts.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Short swipe right: the pencil shows, the row springs back.
+- swipe:
+    start: '18%,35%'
+    end: '36%,35%'
+    duration: 700
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true
+
+# Short swipe left: the bin shows, the row springs back.
+- swipe:
+    start: '82%,35%'
+    end: '64%,35%'
+    duration: 700
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true
+
+# Full swipe left: this one commits, and the delete confirm comes up.
+- swipe:
+    start: '85%,35%'
+    end: '12%,35%'
+    duration: 700
+- extendedWaitUntil:
+    visible: 'Cancel'
+    timeout: 8000
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1300
+    optional: true
+
+# Cancel it. The tick stays in the logbook.
+- tapOn:
+    text: 'Cancel'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 800
+    optional: true

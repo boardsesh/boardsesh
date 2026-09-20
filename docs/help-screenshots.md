@@ -14,6 +14,12 @@ objects are retained, and content-hashed keys keep shared links stable.
 `packages/web/public/images/help/<name>.webp`. It requires the complete set and
 names every absent capture rather than shipping a short one.
 
+Gestures a still cannot teach — a long press, a swipe, a drag across the board —
+ship as short silent screen recordings instead, through a separate pipeline:
+`vp run help:convert-clips`, documented in [help-clips.md](help-clips.md). Those
+are simulator `recordVideo` captures rather than Maestro shots, and they never
+pass through this index.
+
 Add the variables from `.env.dev-artifacts.example` to the repository root’s
 ignored `.env.local`, then fill in the dev bucket credentials. These commands use
 only `DEV_*` storage variables, never production media credentials.

@@ -14,8 +14,8 @@
       "description": "Boardsesh is free and open source. Chip in for the hosting, database, and infrastructure bills that keep it running."
     },
     "help": {
-      "title": "Help",
-      "description": "What you can do on boardsesh.com, what happens in the app, and where to ask for help."
+      "title": "Boardsesh help",
+      "description": "Short guides for the Boardsesh app, how to bring your Kilter or Tension logbook across, and where to ask a question."
     },
     "docs": {
       "title": "API Documentation",
@@ -30,32 +30,32 @@
       "description": "Boardsesh privacy policy - how we handle your data."
     },
     "helpPlaylists": {
-      "title": "Build a board playlist and climb it in order",
-      "description": "Make a playlist, add and remove climbs, load the whole list into your queue, and use the eight lists Boardsesh curates for you."
+      "title": "Make a board playlist and climb it in order",
+      "description": "Create a playlist for your Kilter, Tension or MoonBoard, add and remove climbs, load it into your queue, and use the eight lists Boardsesh builds."
     },
     "helpSessions": {
-      "title": "Share a board session with your crew",
-      "description": "Start a live session, share it by link or QR, join someone else's, and keep four people browsing without anyone's lights flashing mid-burn."
+      "title": "Start or join a live session and share one queue",
+      "description": "Start a session on the Record tab, invite your crew by QR code or link, and share one queue and one board without lighting each other's climbs."
     },
     "helpFindingClimbs": {
-      "title": "Find board climbs by the holds they use",
-      "description": "Filter climbs by specific holds, box off one part of the wall, search by setter, and pin the filters you reach for every session."
+      "title": "Filter climbs by hold, wall region and setter",
+      "description": "Grade range, hold types, board region, setters you follow, swipe actions on a climb row and pinned filters in the Boardsesh app."
     },
     "helpLogbook": {
-      "title": "Edit a send you already logged",
-      "description": "Log a tick from the board in two taps, then change the grade, stars, tries or note afterwards — or delete the entry entirely."
+      "title": "Log, edit and delete sends in your logbook",
+      "description": "Log a tick from the board in the Boardsesh app, change the grade, stars, tries or status later, delete an entry, and find an old send."
     },
     "helpBoardAndBluetooth": {
-      "title": "Connect your phone to a Kilter or Tension board",
-      "description": "Connect over Bluetooth, fix a failed connection, tell two boards apart, turn the lights off, and move through a session hands-free."
+      "title": "Connect to your board over Bluetooth",
+      "description": "Connect Boardsesh to a Kilter, Tension or MoonBoard controller, fix a failed connection, and drive it from the lock screen with Live Activity."
     },
     "helpClimbActions": {
-      "title": "Preview a climb without lighting the board",
-      "description": "Hold any climb for the action menu: preview it view-only, log a tick, file it in a playlist, and everything else hiding behind a long-press."
+      "title": "Preview, log a tick or add to a playlist from any climb row",
+      "description": "The press-and-hold menu on a climb row in the Boardsesh app, from previewing without lighting the board to logging a tick or adding to a playlist."
     },
     "helpBetaVideos": {
-      "title": "Add a beta video to a board climb",
-      "description": "Share a reel from Instagram or TikTok straight into Boardsesh, find the beta already pinned to a climb, and keep your own on your profile."
+      "title": "Share a reel from Instagram or TikTok as beta",
+      "description": "Share an Instagram reel or TikTok into Boardsesh from its share sheet, attach it to a climb, film new beta, and find the beta others posted."
     }
   },
   "home": {
@@ -329,50 +329,54 @@
     "footer": "This document is provided for informational purposes and does not constitute legal advice. Last updated: 08-02-2026"
   },
   "help": {
+    "clip": {
+      "unsupported": "Your browser can't play this clip.",
+      "playHint": "Press play to watch the gesture."
+    },
     "hero": {
       "title": "Help",
-      "subtitle": "This site is where climbs live on the web. The app is where you climb them. Here's what each one does."
+      "subtitle": "Guides for the app, bringing your Kilter or Tension logbook across, and where to ask."
     },
     "web": {
       "title": "On this site",
-      "intro": "Everything here is a link you can send to someone. No install, no sign-in.",
-      "item1": "Look up a climb and read its grade, setter and ascents.",
-      "item2": "Browse a board's full catalogue by layout, size and angle.",
-      "item3": "Share a climb, a playlist or your profile with a plain URL.",
-      "item4": "Find a gym and see what's on its wall from the gym's kiosk screen.",
+      "intro": "Everything on boardsesh.com works in a browser, signed out.",
+      "item1": "Look up a climb's grade, setter, ascents and beta videos.",
+      "item2": "Browse a board's catalog by layout, size and angle.",
+      "item3": "Share a climb, playlist or profile as a link.",
+      "item4": "Find gyms with boards near you.",
       "playlistsLink": "Browse playlists",
       "aboutLink": "About Boardsesh"
     },
     "app": {
       "title": "In the app",
-      "intro": "Anything that talks to the wall happens in the app.",
+      "intro": "Anything that touches the wall or your logbook happens in the app.",
       "item1": "Build a queue and work through it with your crew.",
-      "item2": "Run a party session so everyone's phone drives the same queue.",
-      "item3": "Light up holds over Bluetooth on Kilter, Tension and MoonBoard walls.",
-      "item4": "Log your sends and keep your logbook in one place."
+      "item2": "Run a live session so every phone drives one queue.",
+      "item3": "Light holds over Bluetooth on Kilter, Tension and MoonBoard walls.",
+      "item4": "Log sends and attempts, and attach beta videos."
     },
     "aurora": {
-      "title": "Coming from the Aurora apps",
-      "intro": "Boardsesh reads your existing account, so your sends come with you.",
-      "item1": "In the app, tap your avatar and hit Settings. On the More screen that opens, pick Connected apps and hit Link next to Kilter or Tension. Your logbook syncs across.",
-      "item2": "Your ascents stay yours. We never write back anything you didn't log.",
+      "title": "Bring your Kilter or Tension logbook",
+      "intro": "Link your board account once and your sends come across.",
+      "item1": "Tap your avatar, then Settings, then Connected apps. Under Board Accounts, tap Link on the Tension card or Sign in to Kilter on the Kilter card, and enter that board's username and password.",
+      "item2": "Used the old Kilter app? The Kilter (Aurora) card takes a JSON export instead.",
       "link": "Read the migration guide",
-      "item3": "Sync runs one way. Your Kilter and Tension ticks come into Boardsesh; Boardsesh doesn't write anything back to their apps."
+      "item3": "Sync runs one way, from their apps into Boardsesh, about every 12 hours. Nothing goes back."
     },
     "climbCounts": {
       "title": "Why does Kilter's app show more climbs?",
-      "intro": "Both apps have the same climbs. They just count them differently.",
-      "item1": "Boardsesh counts each climb once and shows its grade and ascents at the angle you pick.",
-      "item2": "Kilter's app counts a climb once for every angle it has been logged at, so a climb with ascents at 40° and 45° counts as two.",
-      "item3": "That's why the same board can show up to about twice as many climbs in Kilter's app."
+      "intro": "Both apps have the same climbs and count them differently.",
+      "item1": "Boardsesh counts each climb once.",
+      "item2": "Kilter's app appears to count a climb once per angle it has been climbed at.",
+      "item3": "On an 8x12 Kilter home wall that is about 18,000 climbs in Boardsesh and about 36,000 in Kilter's app."
     },
     "ask": {
-      "title": "Still stuck?",
-      "intro": "Ask in the Discord. That is where questions get answered fastest.",
+      "title": "Ask a question",
+      "intro": "Discord is the fastest place to get an answer.",
       "discord": "Ask on Discord",
-      "github": "Report a bug on GitHub",
+      "github": "Open an issue on GitHub",
       "docs": "Read the developer docs",
-      "bugLead": "Found something broken?",
+      "bugLead": "Found a bug?",
       "devLead": "Building on the API?"
     },
     "nav": {
@@ -382,429 +386,418 @@
     },
     "guides": {
       "title": "Guides",
-      "intro": "Seven short pages on the things climbers ask us about most, with screenshots from the app.",
+      "intro": "Seven short pages with app screenshots.",
       "playlists": {
         "title": "Playlists",
-        "body": "Build one, take climbs back out, climb the whole list, and find the eight lists Boardsesh keeps for you."
+        "body": "Make a playlist, take a climb back out, queue the whole list, and use the eight built-in lists."
       },
       "climbActions": {
         "title": "Climb actions",
-        "body": "Hold any climb to preview it, tick it or file it — the menu most people never find."
+        "body": "Hold a climb to preview it without lighting the wall, log a tick or add to a playlist."
       },
       "sessions": {
         "title": "Live sessions",
-        "body": "One queue across everyone's phones, an invite link, and who gets to change the wall."
+        "body": "Start a session, invite your crew by QR code or link, and browse without moving the wall."
       },
       "findingClimbs": {
         "title": "Finding climbs",
-        "body": "Filter by hold, box off part of the wall, and search by setter instead of scrolling."
+        "body": "Filter climbs by grade, hold, part of the wall or setter, and pin the filters you use."
       },
       "logbook": {
         "title": "Your logbook",
-        "body": "Log a tick from the board, then fix the grade, stars or note whenever you want."
+        "body": "Log a send at the board, then change its grade, stars, tries or status later."
       },
       "bluetooth": {
         "title": "Board and Bluetooth",
-        "body": "Connect to the wall, sort out two boards in range, and turn the lights off again."
+        "body": "Connect to the board, fix a failed connection, and control it from the lock screen with Live Activity."
       },
       "betaVideos": {
         "title": "Beta videos",
-        "body": "Share a reel into Boardsesh, and find the beta that's already sitting on a climb."
+        "body": "Share a reel from Instagram or TikTok into Boardsesh, attach it to a climb, and find others' beta."
       }
     },
     "playlists": {
       "breadcrumb": "Playlists",
       "hero": {
-        "title": "Build a playlist and climb it in order",
-        "subtitle": "Stash your projects, pull the list up on board night, and take a climb back out when you're done with it."
+        "title": "Make a playlist and climb it in order",
+        "subtitle": "Save climbs for later and load the list into your queue."
       },
       "build": {
         "title": "Make a playlist",
-        "intro": "Playlists live on the Discover tab.",
-        "p1": "Pick your board first, then hit the plus on Discover. Give the list a name, a colour and an emoji and it lands under My Playlists. Climbs go in from the climbs themselves: swipe a row to the left, or hold it for a moment and choose Add to Playlist. The picker is a checklist, so one climb can go into several lists at once.",
-        "p2": "Playlists belong to a board. The picker only offers the lists that match the board and layout a climb comes from, so a Tension list never fills up with Kilter climbs.",
-        "shotAlt": "The Discover tab showing pinned playlists and auto-curated lists",
-        "shotCaption": "Discover: pinned lists up top, yours below, curated ones after that.",
-        "playlistShotAlt": "A playlist with its climbs and owner controls",
-        "playlistShotCaption": "A playlist you own: pin it, edit details, reorder and remove."
+        "intro": "Each playlist belongs to one board.",
+        "step1": "Open Discover. Check the board pill at the top.",
+        "step2": "Tap the plus. Name it, pick a color, tap Create.",
+        "step3": "It appears under My Playlists.",
+        "p1": "To add a climb, swipe its row left, or press and hold it and tap Add to Playlist.",
+        "p2": "The picker only shows playlists for the climb's board and layout.",
+        "clipAlt": "Swiping a climb row left to add it to a playlist",
+        "clipCaption": "Swipe left to file it in a playlist. Swipe right to queue it.",
+        "shotAlt": "The Discover tab",
+        "shotCaption": "Pinned, then My Playlists, then For You.",
+        "playlistShotAlt": "Your own playlist",
+        "playlistShotCaption": "Pin, edit, reorder or remove."
       },
       "remove": {
         "title": "Take a climb back out",
-        "intro": "Yes, you can. Two ways, and one works from anywhere.",
-        "p1": "Fastest: open Add to Playlist on the climb again and tap the list that already has a check next to it. The check clears and the climb leaves.",
-        "p2": "From the playlist itself, open Reorder & remove climbs — the pencil in the playlist's own toolbar, or the row in the ⋯ menu. Every climb grows a red minus and a drag handle: the minus pulls it out after a confirm, the handle changes the running order. Done closes edit mode.",
-        "p3": "The curated lists further down have no edit mode, because nothing went into them by hand. Change what feeds them instead: un-heart a climb and it leaves Liked Climbs, log the send and it drops out of Projects."
+        "p1": "From the climb, open Add to Playlist and tap the ticked playlist.",
+        "p2": "From the playlist, tap the pencil, or choose Reorder & remove climbs from the ⋯ menu. Tap the red minus and confirm. Drag the handle to reorder.",
+        "p3": "For You lists have no edit mode. Un-heart a climb or log the send instead.",
+        "clipAlt": "Unticking a playlist",
+        "clipCaption": "Tap a ticked playlist and the climb comes back out."
       },
       "queue": {
         "title": "Climb the whole list",
-        "intro": "Tap any climb in a playlist and your queue becomes that playlist.",
-        "p1": "A tap doesn't just open the climb. The queue is replaced by the playlist in order, starting where you tapped, so swiping in the play drawer walks the list. If you had climbs queued after your current one, you get a Start playlist? check first and those climbs drop out.",
-        "p2": "In a shared session a tap is a look rather than a takeover — the playlist opens for you without moving anyone else's wall.",
-        "sessionsLink": "How a session shares one queue"
+        "intro": "Tap a climb in a playlist and your queue becomes that playlist.",
+        "p1": "It loads in order from the climb you tapped. If climbs were queued after your current one, Start playlist? asks first. The header's play button starts from the top.",
+        "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
+        "sessionsLink": "How a session shares one queue",
+        "clipAlt": "The Start playlist? sheet",
+        "clipCaption": "With climbs already queued, Start playlist? asks first."
       },
       "smart": {
-        "title": "The eight lists you didn't build",
-        "intro": "Boardsesh keeps these running under For You.",
-        "crowdFavorites": "Crowd Favorites: the most-sent classics on your board that you haven't done yet.",
-        "hiddenGems": "Hidden Gems: highly rated climbs that haven't blown up yet.",
-        "atYourLevel": "At Your Level: climbs around the grade you've been sending.",
-        "fresh": "Fresh: new climbs from setters worth following.",
-        "fiveStars": "Five Stars: everything you gave five stars.",
-        "mostRepeated": "Most Repeated: the climbs you keep coming back to.",
-        "projects": "Projects: what you've worked hardest without sending.",
-        "likedClimbs": "Liked Climbs: every climb you've hearted.",
-        "p1": "Hearted a climb and wondered where it went? It went here. Liked Climbs is the list behind the heart on a climb row, and it's the fastest way back to something you spotted mid-session and meant to try later.",
-        "p2": "The first four read your board's whole catalogue at your angle and hold sets. The last four are built from your own ticks and hearts, so they fill up as you climb.",
-        "p3": "Tap the pin on a card to move it into Pinned at the top of Discover, where you don't have to scroll for it. Pinned playlists follow your account; pinned curated lists are per device."
+        "title": "The eight lists Boardsesh builds for you",
+        "crowdFavorites": "Crowd Favorites. Well-rated, well-sent climbs you haven't done.",
+        "hiddenGems": "Hidden Gems. Rated 4.5 stars or better, sent by few.",
+        "atYourLevel": "At Your Level. Popular climbs around your sending grade.",
+        "fresh": "Fresh. New on your board, followed setters first.",
+        "fiveStars": "Five Stars. Climbs you rated five stars.",
+        "mostRepeated": "Most Repeated. Climbs with more than one logged attempt.",
+        "projects": "Projects. Climbs you've logged but never sent.",
+        "likedClimbs": "Liked Climbs. Every climb you've hearted.",
+        "p1": "They sit under For You on Discover. The first four read your board at your angle and skip your sends. The last four come from your ticks and hearts.",
+        "p2": "Tap a card's pin to move it into Pinned. Pinned For You lists stay on this phone."
       },
       "tags": {
-        "title": "See which lists a climb is already in",
-        "intro": "Off by default, and worth turning on.",
-        "p1": "Tap your avatar, hit Settings, and scroll the More screen down to Display: Show playlist tags. Every row in the Climbs list that's already in a playlist grows an extra line carrying up to two small playlist chips and a +N for the rest, so you can skim a list and see what you've filed. Rows in no playlist stay as they were.",
-        "p2": "The chips are labels, not buttons — tapping one doesn't open the playlist. Leaving the setting off also stops the app looking up playlist membership while you scroll."
+        "title": "See which playlists a climb is in",
+        "p1": "Under Settings, then Display, turn on Show playlist tags. Rows in a playlist grow chips. Tapping a chip doesn't open the playlist."
       },
       "next": {
         "title": "Keep going",
-        "climbActions": "Everything hiding behind a long-press on a climb",
+        "climbActions": "What a long press can do",
         "browse": "Browse public playlists on the web",
-        "hub": "Back to all help topics"
+        "hub": "All help topics"
       }
     },
     "sessions": {
       "breadcrumb": "Live sessions",
       "hero": {
-        "title": "Climb one queue with your crew",
-        "subtitle": "Start a session, share the link, and everyone's phone drives the same queue — without anyone's browsing moving the wall."
+        "title": "Live sessions with your crew",
+        "subtitle": "Start a session, share the link, and every phone works one queue."
       },
       "start": {
-        "title": "Start one",
-        "intro": "The Record tab, and nothing else.",
-        "p1": "Open Record, check the board at the top is the one you're standing at, and hit Start. That's the only thing that creates a session: your solo queue stays on your phone until you start or join one.",
-        "p2": "Once it's live, Invite climbers opens a QR code with Copy link and Share under it. Show this session live also puts it in front of your followers and climbers on the same board; leave it off and the invite link is the only way in.",
-        "shotAlt": "A live session with its crew and shared queue",
-        "shotCaption": "A live session: who's climbing, what's queued, what's on the wall.",
-        "liveShotAlt": "The Climbing now rail listing live sessions",
-        "liveShotCaption": "Climbing now: live sessions you can join with one tap."
+        "title": "Start a session",
+        "intro": "Every session starts from the Record tab.",
+        "step1": "Open the Record tab. Check the board at the top.",
+        "step2": "Show this session live lets your crew see and join it. Off, only your invite link works.",
+        "step3": "Tap Start, then Invite climbers for a QR code, Copy link and Share.",
+        "shotAlt": "A live session",
+        "shotCaption": "Who has joined, what's queued and what's lit.",
+        "liveShotAlt": "The Climbing now rail",
+        "liveShotCaption": "Climbing now on the Home tab lists sessions you can join."
       },
       "join": {
-        "title": "Join someone else's",
-        "intro": "Three routes in, and no code to type.",
-        "p1": "Whichever route you take, you land on the same card. It carries the host's name, the board, and how many people are on it, and nothing changes on your phone until you confirm. Already in a session? It asks before pulling you out of that one.",
-        "way1": "Point your phone's camera at their QR code, or open the link they sent you.",
-        "way2": "Climbing now on the Home tab, which lists live sessions from climbers you follow and from the board you're on.",
-        "way3": "Climbing here now in the board sheet, which shows sessions already running on the wall in front of you."
+        "title": "Join a session",
+        "way1": "Scan the host's QR code or open their link.",
+        "way2": "On the Home tab, look under Climbing now.",
+        "way3": "Tap the board at the top of the Climbs tab, then Climbing here now.",
+        "p1": "Each opens a Join Sam's session? card. Tap Join session."
       },
       "queue": {
         "title": "One queue, every phone",
-        "intro": "Anyone in the session can change it.",
-        "p1": "Add a climb and it shows up on everyone's phone straight away, with your face on the row so the crew knows whose pick it is. Anyone can add, drag to reorder, or pull a climb out: there's no host who owns the list. Ending it for everyone is down to the climber who started the session or whoever's leading it, and anyone else leaving just leaves.",
-        "p2": "If a phone drops off the wifi mid-session it catches up when it comes back and says so: the queue was out of sync, refreshed from your crew."
+        "p1": "Anyone in the session can add, reorder or remove climbs. Your avatar marks your rows.",
+        "p2": "Only the climber who started the session can end it. Everyone else taps Leave session."
       },
       "wall": {
-        "title": "Who's driving the wall",
-        "intro": "One phone holds the board, and it isn't a competition.",
-        "p1": "A board controller only lets one phone connect at a time, so whoever connects first keeps the link. Everyone else's lightbulb changes job: instead of trying to connect, tapping it asks the connected phone to light your climb. Nobody has to pass a phone around.",
-        "p2": "On a wall with no lights the bulb takes and releases the wall instead. Taking it tells the crew, and the gym screen, which climb you're on. If someone else takes it, yours is released quietly.",
-        "p3": "Commit while the wall is busy and you get a choice: someone just lit theirs, so put mine up or keep theirs.",
-        "bluetoothLink": "Connecting, and what to do when it fails"
+        "title": "Who lights the wall",
+        "p1": "A board takes one Bluetooth connection at a time. On every other phone, preview a climb and tap the lightbulb, and the connected phone lights it for you.",
+        "p2": "On a wall with no lights the bulb says Take the wall.",
+        "bluetoothLink": "Connecting to a board"
       },
       "crowd": {
-        "title": "Four or five people in one session",
-        "intro": "Browsing stops moving the wall the moment you're not alone.",
-        "p1": "As soon as one other climber joins, swiping through climbs in the play drawer goes view-only. A Browsing pill appears at the top, and tapping it spells out why: you're just looking, the wall stays where it is. The lights only change when you use the commit row underneath. The app tells you once, the first time you join.",
-        "p2": "Climbing alone and want the same thing? Hold the lightbulb and turn off Light problems on swipe and Light problems when tapping the list.",
-        "p3": "So four people can flick through the catalogue while the fifth is pulling on, and nobody's holds go dark mid-burn.",
-        "previewLink": "Preview a climb straight from the list"
+        "title": "Browsing without moving the wall",
+        "p1": "With someone else in your session, swiping stops lighting the board and a Browsing pill appears. Tap Put on the wall when you want it.",
+        "p2": "Climbing alone? Hold the lightbulb and turn off Light problems on swipe and Light problems when tapping the list.",
+        "previewLink": "Preview a climb from any list"
       },
       "history": {
         "title": "Sessions on your profile",
-        "intro": "A different thing from a live session.",
-        "p1": "Profile → Sessions is your climbing history: what you did, when, and how it went. Those are records, not rooms, and nobody can join one. They carry no share button either. The recap that goes out to Strava or Apple Health is the summary you get when you end a session.",
-        "p2": "A live session is the one you start on Record. It's the only kind with a shared queue, an invite link and a crew."
+        "p1": "Your profile's Sessions tab lists every session with its climbs and sends.",
+        "p2": "The end-of-session summary has Save to Apple Health and Share to Strava. Connected apps in Settings automates it."
       },
       "next": {
         "title": "Keep going",
-        "playlists": "Load a whole playlist into the queue",
-        "hub": "Back to all help topics"
+        "playlists": "Load a playlist into the queue",
+        "hub": "All help topics"
       }
     },
     "findingClimbs": {
       "breadcrumb": "Finding climbs",
       "hero": {
-        "title": "Find climbs by the holds they use",
-        "subtitle": "The Climbs tab does more than a grade range. Box off one corner of the wall, demand the crimp you want to train, or narrow a search to one setter."
+        "title": "Find climbs by hold, region or setter",
+        "subtitle": "Where each filter on the Climbs tab lives."
       },
       "start": {
         "title": "Grade and angle first",
-        "intro": "The two things that change the whole list.",
-        "p1": "The Grade pill sits next to the search field. Tap a grade for a single grade; tap a second one within about three seconds and you get the range between them. Tap the same grade twice and it clears back to Any.",
-        "p2": "Angle isn't a filter — it belongs to the board you're on. Change it from the degree control and grades, ascents and recommendations all re-read at the new angle. Boards with a fixed angle don't show the control at all.",
-        "p3": "Signed in, the Progress chips do the thing people ask for most: Unsent hides everything you've already done, and Projects keeps the ones you've been working."
+        "p1": "Tap the Grade pill next to search. Tap a grade to show only that grade, a second grade within three seconds for a range, and the selected grade again to clear.",
+        "p2": "Every grade and send count is read at the board's angle. Tap the degrees chip to change it.",
+        "p3": "Signed in, the Progress chips filter by your history. Unsent hides your sends, Projects keeps climbs tried but not sent, Not tried keeps climbs never logged.",
+        "clipAlt": "Building a grade range",
+        "clipCaption": "Two quick taps build a range. Tap the same grade again to clear it."
       },
       "holds": {
         "title": "Filter by hold",
-        "intro": "Filters → The climb → Hold types.",
-        "p1": "You get the full board, pinch and pan included, and you paint on it:",
-        "step1": "Choose Include or Exclude — must use this hold, or must avoid it.",
-        "step2": "Choose a type: Start, Hand, Finish, Foot or Any.",
-        "step3": "Tap holds on the board. Tap one again with the same brush to clear it.",
-        "p2": "A single hold can carry more than one type, so you can ask for a climb that starts on one hold and tops out on another. Clear all in the header wipes the lot, and backing out hands your picks straight to the filter sheet.",
-        "p3": "MoonBoard has no separate footholds, so there's no Foot brush. Start, Hand, Finish and Any are all still there.",
-        "shotAlt": "The hold filter with holds marked on a board render",
-        "shotCaption": "Tap holds on the board to say what they have to be.",
-        "zoneShotAlt": "A region box drawn over part of the board",
-        "zoneShotCaption": "Drag the box and its corners to pick a part of the wall."
+        "intro": "Open Filters, scroll to The climb and tap Hold types.",
+        "step1": "Pick Include or Exclude.",
+        "step2": "Pick a hold type.",
+        "step3": "Pinch to zoom, then tap holds. Tap again with the same brush to clear a mark.",
+        "p2": "A hold can carry more than one mark. Clear all wipes the board.",
+        "p3": "MoonBoard has no Foot brush.",
+        "clipAlt": "Marking holds",
+        "clipCaption": "Pick a brush first, then tap holds."
       },
       "zone": {
         "title": "Box off part of the wall",
-        "intro": "Filters → The climb → Board region.",
-        "p1": "Add a region drops a box onto the board. Drag the middle to move it and drag a corner to resize it. All holds keeps only the climbs that stay entirely inside the box, which is how you find something on a short wall. Any hold keeps anything that reaches into it.",
-        "p2": "Clear region takes it off again. Both this and the hold filter need a connection: on a downloaded board with no signal the app offers to clear them so you can keep browsing."
+        "intro": "Open Filters, scroll to The climb and tap Board region.",
+        "p1": "Tap Add a region. Drag the middle to move the box, a corner to resize it. All holds keeps climbs entirely inside it, Any hold keeps climbs that reach in.",
+        "p2": "Clear region removes the box. Hold and region filters need a connection.",
+        "clipAlt": "Moving and resizing the region",
+        "clipCaption": "Drag the middle to move the box, a corner to resize it."
       },
       "setters": {
         "title": "Follow setters, then search only them",
-        "intro": "Two controls that do different jobs.",
-        "p1": "Follow sits on a setter's page, and on every row of Filters → The climb → Setters. Once you follow a few people, the switch Climbs by people I follow narrows the whole search to their climbs — no picking names each time.",
-        "p2": "The Setters screen is also a picker in its own right: tick boxes to filter the list to those names, or tap a name to go and browse everything they've set. Signed in, flip it between All setters and Following so you're choosing from a short list.",
-        "shotAlt": "The setters picker with checkboxes and follow buttons",
-        "shotCaption": "Check a setter to filter the list; tap the name to browse."
+        "p1": "Follow sits on a setter's page and on the Setters screen, under Filters. Then turn on Climbs by people I follow, just below Setters.",
+        "p2": "The Setters screen is also a picker. Check a box to filter, or tap a name to browse their climbs.",
+        "shotAlt": "The Setters screen",
+        "shotCaption": "Check a box to filter. Tap a name to browse."
       },
       "rows": {
         "title": "What a climb row can do",
-        "intro": "Two swipes and a hold, on every list in the app.",
-        "p1": "Swipe a row to the right and the climb drops into your queue. Swipe it to the left and the playlist picker opens. Neither one lights the board.",
-        "p2": "The glyphs on a row are shape-coded, not colour-coded: a bolt means you flashed it, a circled tick means you sent it, a circled cross means you tried it, and a circled C marks a benchmark.",
-        "actionsLink": "What the long-press menu offers",
-        "p3": "Holding a row opens the action menu, which is where preview, tick, share and the rest live."
+        "p1": "Swipe right to queue the climb. Swipe left for the playlist picker. Neither lights the board.",
+        "p2": "The small glyph is your history. A bolt means flashed, a circled tick sent, a circled cross tried, a circled C benchmark.",
+        "actionsLink": "Everything in the long-press menu",
+        "p3": "Press and hold a row for the full action menu.",
+        "clipAlt": "Swiping a row both ways",
+        "clipCaption": "Right queues it, left opens the playlist picker."
       },
       "keep": {
         "title": "Keep the filters you use",
-        "intro": "Anything you reach for twice can live on the chip row.",
-        "p1": "Most sections in the Filters sheet carry a pin. Pin to shortcuts promotes that filter to the chip row above the list, so next session it's one tap instead of three.",
-        "p2": "The footer button counts the results before you apply anything, and Reset in the header clears the lot. Each climb counts once, not once per angle — which is why the number is smaller than the one Kilter's app shows."
+        "p1": "Most filters have a pin next to their name. Tap it and the filter becomes a chip above the list.",
+        "p2": "The button at the bottom shows how many climbs match. Reset clears everything."
       },
       "next": {
         "title": "Keep going",
-        "climbActions": "What a long-press on a climb gets you",
-        "playlists": "Save what you find into a playlist",
-        "hub": "Back to all help topics"
+        "climbActions": "What a long press gets you",
+        "playlists": "Save finds into a playlist",
+        "hub": "All help topics"
       }
     },
     "logbook": {
       "breadcrumb": "Your logbook",
       "hero": {
-        "title": "Log a send, then fix it later",
-        "subtitle": "Tick a climb in two taps from the board, and go back to change the grade, the stars or the note whenever you want."
+        "title": "Log a send, then change it later",
+        "subtitle": "Tick a climb from the board in two taps, and change it any time."
       },
       "log": {
-        "title": "Log it while you're at the wall",
-        "intro": "The tick button in the play drawer is the fast path.",
-        "p1": "The big button in the middle of the play drawer's action bar logs the climb you're on, and the queue bar has a Log ascent button that opens the same sheet. Date and time arrive already filled in; the rest is yours to set — your grade opinion, stars, how many tries, and a note. None of it is required.",
-        "p2": "Two ways out of the sheet. Attempt records a go that didn't stick. The other button reads Flash when this is your first logged go on that climb at that angle and the tries are still set to one, and Send the rest of the time. Offline, or before your logbook has loaded, it stays on Send.",
-        "shotAlt": "A climb lit on the board with the tick button below it",
-        "shotCaption": "The tick button carries the climb's ascent count.",
-        "logbookShotAlt": "The logbook list of logged ascents",
-        "logbookShotCaption": "Swipe a logbook row for edit one way and delete the other."
+        "title": "Log it at the wall",
+        "p1": "Tap the big tick in the play drawer, or Log ascent on the queue bar. Date and Time are filled in as now, the rest is optional.",
+        "p2": "Attempt logs a go that didn't stick. The other button reads Flash on your first logged go at this angle, otherwise Send.",
+        "shotAlt": "The tick button",
+        "shotCaption": "The tick opens the log sheet.",
+        "logbookShotAlt": "The logbook",
+        "logbookShotCaption": "Swipe right to edit, left to delete."
       },
       "edit": {
         "title": "Change an entry you already logged",
-        "intro": "Including the grade and the stars you forgot at the time.",
-        "p1": "Your logbook is Profile → Logbook. Swipe a row to the right for the pencil, or hold the row and pick Edit logbook entry. A plain tap opens the climb instead, which is why this one hides. The edit sheet offers more than the log sheet did:",
-        "field1": "Status — Flash, Send or Attempt, so a send you logged as an attempt can be promoted.",
-        "field2": "Date, time, angle and how many tries it took.",
-        "field3": "Your grade opinion, your stars and your note.",
-        "p2": "If one row covers several goes on the same day, the app asks which entry you mean first.",
-        "p3": "Editing and deleting need a connection. Logging a new tick works offline and syncs when you're back; changing an old one has to reach the server."
+        "p1": "Open the Profile tab, then Logbook. Swipe a row right, or press and hold it and pick Edit logbook entry.",
+        "field1": "Status. Flash, Send or Attempt.",
+        "field2": "Angle and Tries. Date and time stay as logged.",
+        "field3": "Grade, Stars and Note.",
+        "p2": "If one row bundles several goes from one day, the app asks Which entry to edit?",
+        "p3": "Edits need a connection. A new tick saves offline and syncs later.",
+        "clipAlt": "Swiping a logbook row",
+        "clipCaption": "A short swipe shows the pencil or the bin. A full swipe left asks before deleting."
       },
       "delete": {
-        "title": "Delete one",
-        "intro": "Swipe the other way.",
-        "p1": "Swipe a logbook row to the left for the bin, or open the entry and use Delete this ascent at the bottom. Either way there's a confirm, because it can't be undone.",
-        "p2": "A deleted ascent takes its comments and its votes with it, and your session and climb stats recount without it. A beta video survives: it stays on the climb and only stops pointing at that ascent."
+        "title": "Delete an entry",
+        "p1": "Swipe the row left, or tap Delete this ascent at the bottom of the edit sheet. Both ask to confirm. There is no undo.",
+        "p2": "Deleting removes the ascent's comments and votes and recounts your stats."
       },
       "repeats": {
         "title": "Attempts, sends and repeats",
-        "intro": "How a night at the board turns into rows.",
-        "p1": "The default view groups by climb, day, angle and mirror, so four goes on the same problem this evening are one row with the tries added up and the best outcome of the day showing: a bolt for a flash, a tick for a send, a circle for a day it didn't happen. Climb it mirrored and those goes get a row of their own.",
-        "p2": "Come back to it next week and that's a new row. Repeats stay visible instead of collapsing into one lifetime entry."
+        "p1": "One row per climb, per day, per angle. Four goes tonight are one row with tries added up and the best result showing. Mirrored goes get their own row.",
+        "p2": "Next week's goes are a new row."
       },
       "find": {
         "title": "Find an old entry",
-        "intro": "Search by name, then narrow it.",
-        "p1": "The search field matches climb names. The filter sheet sorts by Latest or Hardest and narrows by status (sends, attempts or both), plus flashes only, a grade range, a minimum and maximum angle, a date range and benchmarks only. There's no board filter, because the logbook holds every board at once.",
-        "p2": "Ascents you logged in the Kilter or Tension app come across with your account, so an old logbook doesn't get left behind.",
+        "p1": "Search matches climb names. Filter sorts by Latest or Hardest and narrows by status, Flash only, grade, angle, date and Benchmarks only. There is no board filter.",
+        "p2": "Sends from a linked Kilter or Tension account come across too. Tap your avatar, then Settings, then Connected apps.",
         "auroraLink": "Read the migration guide"
       },
       "next": {
         "title": "Keep going",
-        "climbActions": "Log a tick from any climb in a list",
+        "climbActions": "Log a tick from any list",
         "findingClimbs": "Find the climb again",
-        "hub": "Back to all help topics",
-        "betaVideos": "Pin a beta video to what you just logged"
+        "hub": "All help topics",
+        "betaVideos": "Attach a beta video"
       }
     },
     "bluetooth": {
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "What the lightbulb does, how to turn the lights off again, why one board shows up twice, and how to move through a session without picking the phone up."
+        "subtitle": "Tap the lightbulb, pick your board, and your climb lights up."
       },
       "connect": {
         "title": "Connect",
-        "intro": "Everything starts at the lightbulb.",
-        "p1": "The bulb sits in the play drawer's action bar and in the top bar, and the small board chip next to the queue does the same job. Tap it and Select Board lists what's advertising nearby: a picture of each board, its name, its serial number, and three signal bars.",
-        "p2": "Pick yours and the app connects and lights your climb. The bulb fills whenever the wall is being driven, by your phone or by another phone in the session. The first time round, iOS asks for Bluetooth and Android asks to scan for nearby devices.",
-        "shotAlt": "The Select Board sheet listing nearby boards",
-        "shotCaption": "Select Board: nearest first, each row carrying its serial.",
-        "litShotAlt": "A climb lit on the board in the play view",
-        "litShotCaption": "A filled bulb means the wall is being driven, by you or by the crew.",
-        "p3": "Standing at a different wall? Change board is the first row of the menu behind your avatar, and the board capsule at the top of the Climbs list opens Now on the wall, which has Switch board at the bottom."
+        "p1": "Tap the lightbulb in the play drawer or the top bar, then tap your board in Select Board. The list runs strongest signal first, each row with its serial.",
+        "p2": "The first time, iOS asks for Bluetooth. Android asks for nearby devices, or Location on Android 11 and older.",
+        "shotAlt": "The Select Board sheet",
+        "shotCaption": "Strongest signal first, with serials.",
+        "litShotAlt": "A lit climb",
+        "litShotCaption": "A filled bulb means the wall is lit.",
+        "p3": "At a different wall? Change board is the first row behind your avatar."
       },
       "hidden": {
         "title": "Hold the lightbulb",
-        "intro": "The most useful control in the app is behind a long press.",
-        "p1": "While your phone is connected, press and hold the lightbulb instead of tapping it. A sheet opens with the controls that have nowhere else to live, in this order:",
-        "row1": "Auto-disconnect: after the idle time you set, your phone lets go of the board so somebody else can connect.",
-        "row2": "Light the hold above: a dimmer LED over every lit start and hand hold. MoonBoard controllers only, so you won't see it on a Kilter or a Tension.",
-        "row3": "Light problems on swipe: lights the board as you swipe between climbs in the play view.",
-        "row4": "Light problems when tapping the list: lights the board when you pick a climb out of a list. Turn both of these off and browsing stops changing the wall.",
-        "row5": "Re-light board: push the current climb to the LEDs again when a hold drops out.",
-        "row6": "Turn off all lights: go dark and climb from memory without disconnecting.",
-        "row7": "Disconnect board: the way out when you connected to the wrong wall.",
-        "p2": "Disconnected, a long press does nothing. A short press connects instead."
+        "p1": "While connected, press and hold the lightbulb for these controls, top to bottom.",
+        "row1": "Auto-disconnect. Frees the board after 30 seconds idle. Change the time under Settings.",
+        "row2": "Light the hold above. MoonBoard only.",
+        "row3": "Light problems on swipe.",
+        "row4": "Light problems when tapping the list. Turn both off and browsing stops changing the wall.",
+        "row5": "Re-light board. Sends the climb to the LEDs again.",
+        "row6": "Turn off all lights. Your phone stays connected.",
+        "row7": "Disconnect board. Use it when you connected to the wrong wall.",
+        "p2": "A short tap reconnects to the last board you used."
       },
       "failed": {
         "title": "When it won't connect",
-        "intro": "Couldn't connect comes with the reason on it. Work down this list.",
-        "fix1": "Couldn't find your board. Make sure it's on and nearby, and if another phone is connected to it, disconnect there first.",
-        "fix2": "Couldn't connect. Move closer to the board and try again.",
-        "fix3": "Connected, but the board didn't respond. That one's the controller rather than the app: power-cycle it and try again.",
-        "fix4": "Bluetooth is off. Turn it on and tap the bulb again. Android also hides scan results until Location is allowed, and on Android 11 and older until the Location toggle itself is on. The picker offers the button for both.",
-        "p1": "Back out of the picker yourself and you get no message at all. That's a cancel, not a failure."
+        "intro": "The Couldn't connect alert names the problem.",
+        "fix1": "Couldn't find your board. Check it's on and you're near it. If another phone is connected, disconnect there first.",
+        "fix2": "Couldn't connect. Move closer and try again.",
+        "fix3": "Connected, but the board didn't respond. Turn the board off and on.",
+        "fix4": "Bluetooth is off. Turn it on.",
+        "fix5": "Couldn't connect to your board. Try again. If it keeps happening, turn Bluetooth off and on.",
+        "p1": "On Android, if nothing is found, tap Allow Location or Turn on Location at the bottom of the sheet."
       },
       "twoBoards": {
         "title": "Two boards in range",
-        "intro": "Tell them apart by serial, not by name.",
-        "p1": "In a gym with two walls, both controllers advertise and both turn up. The list sorts by signal strength, but the bars are read once when a board is first seen and don't chase the signal while you stand there, so don't pick by bars alone. The serial on each row is the reliable one, and the board you used last is labelled Last connected board.",
-        "p2": "Pick the wrong one and the app catches it: a warning says the controller belongs to another board setup, and offers to switch your setup rather than light climbs wrong. If you're already on the wrong wall, hold the lightbulb and disconnect."
+        "p1": "Read the serial before you tap. The signal bars don't update while you stand there.",
+        "p2": "A Board configuration doesn't match alert means the controller belongs to a different board setup. Pick Cancel, Connect anyway or Switch board setup."
       },
       "duplicate": {
         "title": "The same board listed twice",
-        "intro": "Almost always two boxes, not two names.",
-        "p1": "An Aurora controller advertises its name, serial and API level together, like Kilter Board#751737@3. A row that reads just Kilter Board with nothing after it is a newer, manufacturer-built LED box, not a second listing of yours. The picker keeps one row per controller, so two rows really are two boards: read the serials before you pick.",
-        "p2": "There's no forget-this-device list to tidy up, because the app keeps no list of Bluetooth devices. It remembers only the last board you connected to. Connecting to another one replaces it, and disconnecting on purpose clears it.",
-        "p3": "A duplicate in Your boards is a different problem with a different fix. On the boards screen, Edit next to Your boards turns the cards into management cards: a board you own gets Delete, one you only follow gets Unfollow. Renaming a board you own is the pencil on its card, with no edit mode needed."
+        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym currently show as a single row (we're fixing it). If the wrong wall lights, hold the lightbulb, tap Disconnect board and try again.",
+        "p2": "There is no forget-this-device list. The app only remembers your last board.",
+        "p3": "A board showing twice under Your boards is different. Tap Edit next to Your boards, then Delete or Unfollow."
       },
       "control": {
         "title": "When someone else has the board",
-        "intro": "You don't need to take it off them.",
-        "p1": "In a session, the bulb on every other phone hands your climb over instead of connecting. Tap it and the phone that's connected lights your climb. When there's nothing to hand over, the bulb just shows that someone else is driving.",
-        "p2": "On walls with no lights the same control takes the wall: a virtual hold that tells the crew and the gym screen which climb you're on.",
+        "p1": "In a session, one phone holds the board. On the others, preview a climb and tap the lightbulb, and the holder's phone lights it.",
+        "p2": "On walls with no lights the button reads Take the wall.",
         "sessionsLink": "More on sharing a wall"
       },
-      "handsFree": {
-        "title": "Next climb without touching the phone",
-        "intro": "Chalk on your hands, phone on the mat.",
-        "p1": "On iPhone, a live session puts a Live Activity on the lock screen and in the Dynamic Island: the climb's name, its grade, where you are in the queue, and buttons for previous, next, re-light and, on boards that support it, mirror. It needs a session rather than a solo queue, and the navigation buttons appear on the phone holding the board.",
-        "p2": "Android gets the same controls as an ongoing notification, on the same terms. There's no headphone-button shortcut.",
-        "p3": "Either way the board link survives the screen going off and the app going to the background, so a session doesn't end because you put the phone down."
+      "liveActivity": {
+        "title": "Control the board from the lock screen (Live Activity)",
+        "intro": "Start or join a session first. A solo queue doesn't get one.",
+        "p1": "On iPhone, a session puts a Live Activity on the lock screen and in the Dynamic Island with the climb, its grade and your place in the queue. While your phone holds the board it also has Previous, Next, a lightbulb that re-lights the wall, and Mirror climb where supported.",
+        "p2": "Android shows the same controls in an ongoing notification called Active climbing session.",
+        "p3": "Locking the screen doesn't disconnect the board."
       },
       "next": {
         "title": "Keep going",
         "findingClimbs": "Find something to put on the wall",
-        "hub": "Back to all help topics"
+        "hub": "All help topics"
       }
     },
     "climbActions": {
       "breadcrumb": "Climb actions",
       "hero": {
-        "title": "Hold a climb to see what it can do",
-        "subtitle": "Every action on a climb lives behind a long press on its row — including a preview that shows you the climb without lighting the wall for everyone else."
+        "title": "Press and hold a climb",
+        "subtitle": "Every action on a climb sits behind a long press on its row."
       },
       "open": {
-        "title": "Hold any climb",
-        "intro": "It works on every screen that lists climbs.",
-        "p1": "Press and hold a climb for a moment, in the search list, in a playlist or in your logbook, and the row lifts into a card with the climb drawn on its board. Three buttons run across the top: Log a tick, Add to Playlist and Share. Everything else is in the list underneath.",
-        "p2": "If holding isn't your thing, the Climbs tab can put a ⋮ button at the end of every row, opening the same card. Turn it on from your avatar, then Settings, then Display on the More screen: Show quick-actions button.",
-        "shotAlt": "The climb actions card open over a list of climbs",
-        "shotCaption": "Hold a row: quick buttons on top, the rest of the list below.",
-        "previewShotAlt": "The play drawer in its browsing state",
-        "previewShotCaption": "Preview: the Browsing pill, and a commit row when you want the wall."
+        "title": "Open the menu",
+        "p1": "Press and hold a climb row. It lifts into a card with Log a tick, Add to Playlist and Share on top and the rest below.",
+        "p2": "Prefer a tap? Under Settings, then Display, turn on Show quick-actions button for a ⋮ on every Climbs row.",
+        "shotAlt": "The climb actions card",
+        "shotCaption": "Three quick buttons on top, the full list below.",
+        "clipAlt": "Holding a climb row",
+        "clipCaption": "Hold the row and the card lifts on its own."
       },
       "preview": {
-        "title": "Preview: look without committing",
-        "intro": "The first action in the list, and the least known.",
-        "p1": "Preview opens the climb in the play drawer without putting it in the queue. In a session, or with hold-lighting switched off, a Browsing pill sits at the top and a commit row waits underneath. Tap Set active when you actually want the wall, or Put on the wall if someone's climb is already lit. Climbing alone with lighting on there's no pill at all, and your next swipe hands the climb back to the queue and the LEDs.",
-        "p2": "In a session that matters twice over: your browsing doesn't light the board for the crew, and it doesn't reshuffle anyone's next climb. Someone can be mid-burn while you read the beta for the one after.",
-        "p3": "Climbing alone, the same thing is a setting — hold the lightbulb and turn off Light problems on swipe and Light problems when tapping the list, and nothing you look at reaches the LEDs.",
-        "p4": "Join a session and the app puts you in this view anyway.",
-        "sessionsLink": "How a session keeps browsing off the wall"
+        "title": "Preview a climb without lighting the board",
+        "intro": "Preview is the first item in the list.",
+        "p1": "It opens the climb in the play drawer without touching your queue. Your next swipe returns to your queue.",
+        "p2": "In a session, or with Light problems on swipe off, a Browsing pill appears. Tap Set active or Put on the wall when you want the climb.",
+        "sessionsLink": "How a session keeps browsing off the wall",
+        "clipAlt": "The Browsing pill",
+        "clipCaption": "The pill arrives after the swipe. The wall stays as it was."
       },
       "quick": {
-        "title": "The three across the top",
-        "intro": "The ones you reach for between burns.",
-        "p1": "Log a tick opens the ascent sheet for that climb, so you can log from a list without opening the climb first. Add to Playlist turns the card into a checklist of your playlists, ticking to add and unticking to remove, without leaving the list you were reading. Share hands the climb to your phone's share sheet as a link.",
-        "p2": "The card closes itself once an action fires. Add to Playlist is the exception: it stays open so you can tick several."
+        "title": "The three buttons across the top",
+        "tick": "Log a tick opens the ascent sheet.",
+        "playlist": "Add to Playlist is a checklist. Tick to add, untick to remove.",
+        "share": "Share hands a link to your phone's share sheet.",
+        "p1": "The card closes when an action fires, except Add to Playlist."
       },
       "rest": {
         "title": "The rest of the list",
-        "intro": "What's underneath, and when each one shows up.",
-        "queue": "Add to queue: put it after your current climb instead of replacing anything.",
-        "favorite": "Toggle favorite: the heart, which is also what fills your Liked Climbs list.",
-        "editEntry": "Edit logbook entry: on a climb you've logged, opened from your logbook.",
-        "betaVideo": "Add beta video: signed in only.",
-        "edit": "Edit climb: your own climbs, while they're still a draft or freshly published.",
-        "remix": "Remix this climb: start a new climb from this one's holds, on boards you can set on.",
-        "openInAurora": "Open in Aurora app: for the boards that have one.",
-        "report": "Report climb: signed in only, and only where moderation is switched on. It sits last, because it's the one action against a climb."
+        "queue": "Add to queue puts the climb after your current one.",
+        "favorite": "Toggle favorite is the heart. Hearted climbs fill Liked Climbs.",
+        "editEntry": "Edit logbook entry, when you came from your logbook.",
+        "betaVideo": "Add beta video, when signed in.",
+        "edit": "Edit climb, for your own climbs as a draft or within 24 hours of publishing.",
+        "remix": "Remix this climb starts a new climb from these holds.",
+        "openInAurora": "Open in Aurora app, for Tension and other Aurora boards. Kilter has none.",
+        "report": "Report climb, when signed in and moderation is on."
       },
       "next": {
         "title": "Keep going",
-        "logbook": "Editing what you already logged",
-        "playlists": "Playlists, pinning and the curated lists",
-        "hub": "Back to all help topics",
-        "betaVideos": "Attaching a beta video"
+        "logbook": "Edit what you logged",
+        "playlists": "Playlists",
+        "hub": "All help topics",
+        "betaVideos": "Beta videos"
       }
     },
     "betaVideos": {
       "breadcrumb": "Beta videos",
       "hero": {
-        "title": "Pin a beta video to a climb",
-        "subtitle": "Share a reel straight from Instagram or TikTok, find the beta already sitting on a climb, and keep your own in one place."
+        "title": "Attach a beta video to a climb",
+        "subtitle": "Boardsesh links Instagram reels and TikToks to climbs."
       },
       "share": {
-        "title": "Share a video into Boardsesh",
-        "intro": "From Instagram or TikTok, using the share button you already use.",
-        "p1": "Hit share on the reel and pick Boardsesh. The app opens on Attach your beta and asks you to tap the climb you sent it on, with your logged ascents underneath and a search field over them.",
-        "p2": "When the caption carries the climb's name in quotes, Boardsesh reads it and lifts that ascent to the top under Matched from the caption, with everything else under Your other ascents. One tap attaches it — there's no second confirm and no way to unpin it afterwards, so check the climb before you tap.",
-        "p3": "Instagram and TikTok links only; anything else is turned away. Boardsesh stores the link rather than the video, so the clip keeps living where you posted it."
+        "title": "Share a reel from Instagram or TikTok",
+        "step1": "On your reel or TikTok, tap Share. Pick Boardsesh. In Instagram it can hide under More.",
+        "step2": "Boardsesh opens Attach your beta, with the post on top and your logged climbs below.",
+        "step3": "Tap the climb the video shows. A Beta video attached message confirms it.",
+        "p1": "There is no confirm step and no way to remove a video once attached, so check the climb name first.",
+        "p2": "You need an account, and the climb must be in your logbook as a send or an attempt. Signed out? Sign in and the link is waiting. Only public Instagram and TikTok links work."
       },
       "find": {
-        "title": "Find the beta already on a climb",
-        "intro": "You have to scroll.",
-        "p1": "Open a climb and keep going past the board. Under it sit your logbook, the setter's notes, then a Beta Videos section with a row of clips pinned to that climb and the handle of whoever posted each one. Tapping a clip opens it in Instagram or TikTok — there's no player inside Boardsesh.",
-        "p2": "If nothing's there yet it says so and invites you to be first. The plus in that section's header opens the same form as the menu action, so you can add yours from where you noticed the gap.",
-        "p3": "Want only climbs that have beta? Beta videos only lives in the Filters sheet, and you can pin it to the chip row above the list so next time it's one tap.",
-        "filtersLink": "More filters worth knowing"
+        "title": "Find the beta on a climb",
+        "p1": "Open a climb and scroll down to Beta Videos. Tap a card and it opens in Instagram or TikTok.",
+        "p2": "Signed in, the plus in the section header opens Share your beta, described below.",
+        "p3": "To list only climbs with beta, open Filters and turn on Beta videos only.",
+        "filtersLink": "More about filters"
       },
       "add": {
-        "title": "Post one from a climb",
-        "intro": "Share your beta walks you through it in three steps.",
-        "p1": "Add beta video, from the long-press menu or the plus in the Beta Videos section, hands you a ready-made caption with the climb's name, angle and board already in it. Copy caption, then Open Instagram, and post the reel with that caption on it.",
-        "p2": "Then send it back: share your own reel to Boardsesh, or paste its link into the field at the bottom of the same sheet. The caption is what lets Boardsesh tie the reel to the climb, which is why it's step one.",
-        "p3": "There's no start time and no description to fill in. The climb, the board and the angle all come from wherever you opened it."
+        "title": "Film new beta from a climb",
+        "step1": "Press and hold a climb and choose Add beta video, or tap the plus in its Beta Videos section.",
+        "step2": "Tap Copy caption. It carries the climb name, angle and board.",
+        "step3": "Tap Open Instagram and post your video with that caption.",
+        "step4": "Share the posted reel to Boardsesh as above, or paste its link under Already have a link? and tap Attach.",
+        "p1": "Keep the quoted climb name in the caption. It's how Boardsesh matches the reel. MoonBoard captions have no quotes, so pick the climb yourself."
       },
       "shelf": {
-        "title": "Your own beta",
-        "intro": "At the bottom of your profile's Progress tab.",
-        "p1": "Everything you've pinned collects in a Beta videos shelf under your stats and charts, with See all for the full grid. Other climbers' shelves work the same way on their profiles, and a climber with no beta simply has no shelf.",
-        "p2": "Adding beta needs an account. Reading it doesn't — send someone a climb link and they'll see its beta without signing in."
+        "title": "Your beta on your profile",
+        "p1": "Open the Profile tab and scroll to the bottom of Progress. The Beta videos shelf shows your latest, and See all opens the full set.",
+        "p2": "Anyone can watch. A climb link shows its beta on boardsesh.com without signing in."
       },
       "next": {
         "title": "Keep going",
-        "climbActions": "Add beta from a climb's action menu",
-        "logbook": "Log the send first",
-        "hub": "Back to all help topics"
+        "climbActions": "Everything else behind press and hold",
+        "logbook": "Log the climb first",
+        "hub": "All help topics"
       }
     },
     "topics": {

@@ -35,7 +35,9 @@ export const HELP_WEBP_DIR = resolve(REPO_ROOT, 'packages/web/public/images/help
  * silently shipping eleven of twelve assets is how a help page ends up with a
  * broken image that nobody notices until it is live.
  *
- * The flow shoots FOURTEEN; this map ships twelve. `13-share-beta` and
+ * The flow shoots FOURTEEN; this map ships nine. `05-holds-filter`, `06-zone-filter`
+ * and `12-preview` photograph the empty state of screens that recorded clips now
+ * show in motion (see help-clips.ts), so they are captured but no longer shipped. `13-share-beta` and
  * `14-beta-shelf` are captured but not published, because the capture account
  * has no beta video attached, so both screens photograph their empty state. The
  * shots are honest — that really is what the app shows with nothing to list —
@@ -47,14 +49,11 @@ export const HELP_SHOTS = [
   { capture: '02-playlist-detail', asset: 'playlist-detail' },
   { capture: '03-home-live', asset: 'live-sessions' },
   { capture: '04-session-detail', asset: 'session-detail' },
-  { capture: '05-holds-filter', asset: 'holds-filter' },
-  { capture: '06-zone-filter', asset: 'zone-filter' },
   { capture: '07-setters', asset: 'setters' },
   { capture: '08-logbook', asset: 'logbook' },
   { capture: '09-board-sheet', asset: 'board-sheet' },
   { capture: '10-board-view', asset: 'board-view' },
   { capture: '11-climb-actions', asset: 'climb-actions' },
-  { capture: '12-preview', asset: 'preview' },
 ] as const;
 
 /** Sharp settings are fixed by prior art — see docs/design/marketing-campaign-assets.md. */
@@ -210,6 +209,12 @@ function renderIndex(links: Record<string, HelpShotLink>): string {
     '`vp run help:convert-shots` turns the same directory into',
     '`packages/web/public/images/help/<name>.webp`. It requires the complete set and',
     'names every absent capture rather than shipping a short one.',
+    '',
+    'Gestures a still cannot teach — a long press, a swipe, a drag across the board —',
+    'ship as short silent screen recordings instead, through a separate pipeline:',
+    '`vp run help:convert-clips`, documented in [help-clips.md](help-clips.md). Those',
+    'are simulator `recordVideo` captures rather than Maestro shots, and they never',
+    'pass through this index.',
     '',
     'Add the variables from `.env.dev-artifacts.example` to the repository root’s',
     'ignored `.env.local`, then fill in the dev bucket credentials. These commands use',

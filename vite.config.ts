@@ -561,6 +561,14 @@ export default defineConfig({
         command: 'tsx scripts/convert-help-shots.ts',
         cache: false,
       },
+      // Silent screen recordings, for the gestures a still cannot teach. The raw
+      // .mov files are gitignored device captures under .boardsesh/help-clips/raw;
+      // this writes the committed mp4/webm pair plus a webp poster frame.
+      // Recording contract and size budget: docs/help-clips.md.
+      'help:convert-clips': {
+        command: 'tsx scripts/help-convert-clips.ts',
+        cache: false,
+      },
       // Two-way i18n guard: catalog keys with no reference, code references with
       // no catalog key (#4416), and mobile files reading an unbundled namespace.
       'check:i18n:orphans': {

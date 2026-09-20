@@ -57,24 +57,21 @@ describe('help shot mapping', () => {
       'playlist-detail',
       'live-sessions',
       'session-detail',
-      'holds-filter',
-      'zone-filter',
       'setters',
       'logbook',
       'board-sheet',
       'board-view',
       'climb-actions',
-      'preview',
     ]);
     expect(helpShotAsset('03-home-live')).toBe('live-sessions');
     expect(helpShotAsset('03-nope')).toBeUndefined();
   });
 
   it('names every absent capture at once instead of failing one at a time', () => {
-    storage.files.delete(captureFile('05-holds-filter'));
+    storage.files.delete(captureFile('07-setters'));
     storage.files.delete(captureFile('10-board-view'));
     expect(() => resolveHelpShotSet(captureDir)).toThrow(
-      new RegExp(`Missing 2 of ${HELP_SHOTS.length}[\\s\\S]*05-holds-filter[\\s\\S]*10-board-view`),
+      new RegExp(`Missing 2 of ${HELP_SHOTS.length}[\\s\\S]*07-setters[\\s\\S]*10-board-view`),
     );
   });
 

@@ -1,0 +1,66 @@
+appId: com.boardsesh.app
+name: help clip - build a grade range from two taps
+---
+# Clip: grade-range-tap -> packages/web/public/videos/help/grade-range-tap.mp4
+#
+# Records: the Grade chip on the Climbs tab. Open it, tap one grade, then tap a
+# second one straight away — two quick taps build a RANGE rather than
+# switching grades, because the second tap lands inside
+# RANGE_EXTEND_WINDOW_MS (3000ms, packages/shared/climb-filters/src/grade-range.ts).
+# The clip then taps a grade inside the range to collapse it to a single grade,
+# and taps that same grade again to clear the filter back to "Any", so the
+# climb list ends unfiltered.
+#
+# Two quick taps really are quick here: Maestro spends about a second and a half
+# per tap, comfortably inside the 3s window. If this clip ever comes back
+# showing a grade SWITCH instead of a range, that window is what it missed.
+#
+# Coordinates, not selectors: the chip row and the grade rail are pressables
+# this RN Fabric build does not expose to Maestro.
+#   33%,15%  the "Grade" chip
+#   23%,23% / 36%,23% / 50%,23%  three adjacent chips on the grade rail.
+#            WHICH grades those are depends on where the rail is scrolled to
+#            (it opens near the last-used grade), so the clip teaches the
+#            gesture, not a specific pair of grades.
+#
+# Percentages must be WHOLE NUMBERS — Maestro fails to parse "50%,34.5%".
+#
+# The caller navigates to ://home then ://climbs BEFORE recording starts, with
+# the grade rail CLOSED and no grade filter set.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Open the grade rail.
+- tapOn:
+    point: '33%,15%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 800
+    optional: true
+
+# Two quick taps -> a range, not a switch.
+- tapOn:
+    point: '23%,23%'
+- tapOn:
+    point: '50%,23%'
+
+# Hold on the range: both endpoints filled, the grades between them outlined,
+# and the chip row now reads the range.
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 2000
+    optional: true
+
+# Tap inside the range -> it collapses to that single grade.
+- tapOn:
+    point: '36%,23%'
+# Tap the same grade again -> cleared back to "Any".
+- tapOn:
+    point: '36%,23%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1300
+    optional: true

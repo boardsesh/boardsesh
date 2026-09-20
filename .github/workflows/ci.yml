@@ -415,6 +415,8 @@ jobs:
               - 'scripts/__tests__/db-trigger-search-path.test.ts'
             staticAssets:
               - 'packages/web/public/images/**/*.webp'
+              - 'packages/web/public/videos/**/*.mp4'
+              - 'packages/web/public/videos/**/*.webm'
               - 'packages/web/public/brand/boardsesh-mark.png'
               - 'packages/web/public/icons/*.png'
               - 'packages/web/app/favicon.ico'
