@@ -43,7 +43,7 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
   const client = new GraphQLClient(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...(internalServiceSecret ? { Authorization: `Bearer ${internalServiceSecret}` } : {}),
+      ...(internalServiceSecret?.trim() ? { Authorization: `Bearer ${internalServiceSecret}` } : {}),
     },
     signal,
   });

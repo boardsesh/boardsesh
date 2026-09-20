@@ -16,7 +16,7 @@ describe('authenticateInternalServiceSecret', () => {
     expect(authenticateInternalServiceSecret('Bearer wrong-value')).toBe(false);
   });
 
-  it('rejects a secret of a different length (still constant-time, never throws)', () => {
+  it('rejects a secret of a different length without throwing', () => {
     vi.stubEnv('INTERNAL_SERVICE_SECRET', 'test-internal-secret');
     expect(authenticateInternalServiceSecret('Bearer short')).toBe(false);
     expect(authenticateInternalServiceSecret('Bearer way-way-way-too-long-to-match-anything')).toBe(false);
@@ -30,6 +30,11 @@ describe('authenticateInternalServiceSecret', () => {
   it('fails closed when INTERNAL_SERVICE_SECRET is blank whitespace', () => {
     vi.stubEnv('INTERNAL_SERVICE_SECRET', '   ');
     expect(authenticateInternalServiceSecret('Bearer   ')).toBe(false);
+  });
+
+  it('rejects an incorrect secret of the same length', () => {
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', 'test-internal-secret');
+    expect(authenticateInternalServiceSecret('Bearer test-internal-secrex')).toBe(false);
   });
 
   it('rejects a null header', () => {

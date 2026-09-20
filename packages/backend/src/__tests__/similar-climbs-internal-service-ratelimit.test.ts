@@ -1,140 +1,215 @@
-/**
- * Regression test for issue #5291: every anonymous climb-page SSR render
- * shared ONE 30/min `similar-climbs` rate-limit bucket, because the web
- * tier's internal call to the backend presented no per-visitor identity —
- * `resolveWebSocketClientIp` fell through to the constant socket address of
- * the web-tier-to-backend connection over Railway's private network
- * (`BACKEND_INTERNAL_URL`, no Cloudflare hop in between). One instance,
- * regardless of how many distinct climbs or visitors it was rendering for,
- * ran every SSR similar-climbs read through the exact same `ip:<addr>` key.
- *
- * This exercises the REAL in-memory rate limiter (`applyRateLimit`'s Tier 1)
- * — only the Redis-backed Tier 2 is mocked, since it depends on live infra
- * this test doesn't stand up — to prove that many "SSR renders" sharing one
- * identity do not throttle each other once the caller authenticates as the
- * trusted internal-service identity (`ctx.isInternalService`), while the
- * exact same burst against the old shared-clientIp identity does throttle.
- */
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+/** #5291: drive the real HTTP context, GraphQL schema, resolver and both limiters.
+ * Only database reads, token verification and Redis I/O are replaced. */
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { createServer, type Server } from 'node:http';
+import { resetAllRateLimits } from '../utils/rate-limiter';
 import { applyRateLimit } from '../graphql/resolvers/shared/helpers';
-import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
-vi.mock('../utils/redis-rate-limiter', () => ({
-  checkRateLimitRedis: vi.fn().mockResolvedValue(undefined),
+const { redisCounts, redisState, redisEval, validateTokenMock, findSimilarClimbsMock } = vi.hoisted(() => ({
+  redisCounts: new Map<string, number>(),
+  redisState: { connected: true, failing: false },
+  redisEval: vi.fn(),
+  validateTokenMock: vi.fn(),
+  findSimilarClimbsMock: vi.fn(),
 }));
 
-vi.mock('../graphql/context', () => ({ getContext: vi.fn() }));
-vi.mock('../services/distributed-state', () => ({ getDistributedState: vi.fn().mockReturnValue(null) }));
-vi.mock('../db/client', () => ({ db: {} }));
+vi.mock('../redis/client', () => ({
+  redisClientManager: {
+    onRedisReady: vi.fn(),
+    isRedisConnected: () => redisState.connected,
+    getClients: () => ({ publisher: { eval: redisEval } }),
+  },
+}));
+vi.mock('../db/client', () => {
+  const database = {
+    select: () => ({ from: () => ({ where: async () => [{ holdId: 1, holdState: 'STARTING' }] }) }),
+  };
+  return { db: database, dbRead: database };
+});
+vi.mock('../graphql/resolvers/climbs/similar-climbs-cache', () => ({
+  findSimilarClimbsCached: findSimilarClimbsMock,
+}));
+vi.mock('../middleware/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../middleware/auth')>()),
+  validateToken: validateTokenMock,
+}));
 
-// Mirrors the real `similarClimbs` resolver's ceiling
-// (packages/backend/src/graphql/resolvers/climbs/queries.ts).
-const SIMILAR_CLIMBS_LIMIT = 30;
-// More renders than the 30/min ceiling that used to be shared by every SSR
-// caller on the planet — a burst any single busy web instance can produce
-// while rendering many different climb pages for many different visitors.
-const CONCURRENT_SSR_RENDERS = 40;
+import { buildHttpConnectionContext, createYogaInstance } from '../graphql/yoga';
 
-describe('similar-climbs rate limit: internal-service SSR identity (#5291)', () => {
+const SERVICE_SECRET = 'test-internal-service-secret';
+const QUERY = `query SimilarClimbs($input: SimilarClimbsInput!) { similarClimbs(input: $input) { uuid } }`;
+type QueryResult = {
+  data?: { similarClimbs: { uuid: string }[] } | null;
+  errors?: { extensions: { code?: string; retryAfterSeconds?: number } }[];
+};
+
+describe('similar-climbs service identity over HTTP', () => {
+  let server: Server;
+  let graphqlUrl: string;
+
+  beforeAll(async () => {
+    const yoga = createYogaInstance();
+    server = createServer((request, response) => {
+      void yoga.handle(request, response);
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing HTTP test port');
+    graphqlUrl = `http://127.0.0.1:${address.port}/graphql`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  });
+
   beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  const internalServiceCtx = (index: number): ConnectionContext => ({
-    connectionId: `http-ssr-${index}`,
-    transport: 'http',
-    isAuthenticated: false,
-    isInternalService: true,
-    clientIp: '10.0.0.5',
-  });
-
-  it('a crawler walking more distinct climbs than any fixed ceiling cannot starve another visitor’s render', async () => {
-    const operation = `similar-climbs-crawl-${Date.now()}`;
-    // One allowed crawler IP gets ~360 requests/min past the edge, and every
-    // distinct climb is a separate web cache miss. 400 is above the 300/min
-    // fleet-wide internal-service bucket this partitioning replaces.
-    const crawl = Array.from({ length: 400 }, (_, index) =>
-      applyRateLimit(internalServiceCtx(index), SIMILAR_CLIMBS_LIMIT, operation, {
-        internalServicePartition: `kilter:1:crawled-climb-${index}:40`,
-      }),
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', SERVICE_SECRET);
+    vi.stubEnv('CRON_SECRET', 'test-cron-secret');
+    // Fix the bucket clock without faking timers used by the HTTP server.
+    vi.spyOn(Date, 'now').mockReturnValue(1_789_300_800_000);
+    resetAllRateLimits();
+    redisCounts.clear();
+    redisState.connected = true;
+    redisState.failing = false;
+    redisEval.mockReset();
+    redisEval.mockImplementation(async (_script: string, _numKeys: number, key: string) => {
+      if (redisState.failing) throw new Error('Redis unavailable');
+      const count = (redisCounts.get(key) ?? 0) + 1;
+      redisCounts.set(key, count);
+      return count;
+    });
+    validateTokenMock.mockReset();
+    validateTokenMock.mockImplementation(async (token: string) =>
+      token === 'user-token' ? { userId: 'user-42' } : null,
     );
-    await expect(Promise.all(crawl)).resolves.toBeDefined();
+    findSimilarClimbsMock.mockReset();
+    findSimilarClimbsMock.mockResolvedValue([{ uuid: 'related-climb' }]);
+  });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  async function read(climbUuid: string, authorization: string | undefined = `Bearer ${SERVICE_SECRET}`, angle = 40) {
+    const response = await fetch(graphqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}) },
+      body: JSON.stringify({
+        query: QUERY,
+        variables: { input: { boardType: 'kilter', layoutId: 1, climbUuid, angle } },
+      }),
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()) as QueryResult;
+  }
+
+  function expectLoaded(result: QueryResult) {
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.similarClimbs).toEqual([{ uuid: 'related-climb' }]);
+  }
+
+  function expectLimited(result: QueryResult) {
+    expect(result.errors?.[0].extensions).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryAfterSeconds: expect.any(Number),
+    });
+  }
+
+  it('serves 400 distinct climbs plus another visitor through one socket address', async () => {
+    const results = await Promise.all(Array.from({ length: 400 }, (_, index) => read(`climb-${index}`)));
+    results.forEach(expectLoaded);
+    expectLoaded(await read('another-visitor'));
+    expect(findSimilarClimbsMock).toHaveBeenCalledTimes(401);
+    expect(redisCounts.size).toBe(401);
+    expect(validateTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks request 31 for one climb while allowing another climb and angle', async () => {
+    for (let index = 0; index < 30; index++) expectLoaded(await read('same-climb'));
+    expectLimited(await read('same-climb'));
+    expectLoaded(await read('different-climb'));
+    expectLoaded(await read('same-climb', `Bearer ${SERVICE_SECRET}`, 0));
+  });
+
+  it.each(['', 'Bearer incorrect-secret', SERVICE_SECRET])(
+    'keeps public or invalid credentials on one IP bucket despite rotating climbs (%s)',
+    async (authorization) => {
+      for (let index = 0; index < 30; index++) expectLoaded(await read(`public-${index}`, authorization));
+      expectLimited(await read('public-31', authorization));
+      expect(redisCounts.size).toBe(0);
+    },
+  );
+
+  it('falls back to anonymous limits when the backend secret is absent', async () => {
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', '');
+    for (let index = 0; index < 30; index++) expectLoaded(await read(`missing-secret-${index}`));
+    expectLimited(await read('missing-secret-31'));
+  });
+
+  it('shares the partition ceiling through Redis after local counters reset on another instance', async () => {
+    for (let index = 0; index < 20; index++) expectLoaded(await read('shared-climb'));
+    resetAllRateLimits();
+    for (let index = 0; index < 10; index++) expectLoaded(await read('shared-climb'));
+    expectLimited(await read('shared-climb'));
+    expectLoaded(await read('other-instance-climb'));
+  });
+
+  it.each(['disconnected', 'command-failure'])(
+    'keeps the local ceiling without double-counting when Redis is %s',
+    async (failure) => {
+      redisState.connected = failure !== 'disconnected';
+      redisState.failing = failure === 'command-failure';
+      for (let index = 0; index < 30; index++) expectLoaded(await read('outage-climb'));
+      expectLimited(await read('outage-climb'));
+    },
+  );
+
+  it('does not honor an HTTP service flag on a WebSocket context', async () => {
+    const context = {
+      connectionId: 'ws-caller',
+      transport: 'ws' as const,
+      clientIp: '203.0.113.1',
+      isInternalService: true,
+    };
+    for (let index = 0; index < 30; index++) {
+      await applyRateLimit(context, 30, 'similar-climbs', { internalServicePartition: `climb-${index}` });
+    }
     await expect(
-      applyRateLimit(internalServiceCtx(401), SIMILAR_CLIMBS_LIMIT, operation, {
-        internalServicePartition: 'kilter:1:real-visitor-climb:40',
-      }),
-    ).resolves.toBeUndefined();
-    expect(checkRateLimitRedis).toHaveBeenLastCalledWith(
-      'internal-service:kilter:1:real-visitor-climb:40',
-      operation,
-      SIMILAR_CLIMBS_LIMIT,
-      60_000,
-      { fallbackToMemory: false },
-    );
+      applyRateLimit(context, 30, 'similar-climbs', { internalServicePartition: 'climb-31' }),
+    ).rejects.toMatchObject({ extensions: { code: 'RATE_LIMITED' } });
   });
 
-  it('still throttles our own code looping on ONE climb at the operation limit', async () => {
-    const operation = `similar-climbs-loop-${Date.now()}`;
-    const loop = Array.from({ length: SIMILAR_CLIMBS_LIMIT + 1 }, (_, index) =>
-      applyRateLimit(internalServiceCtx(index), SIMILAR_CLIMBS_LIMIT, operation, {
-        internalServicePartition: 'kilter:1:same-climb:40',
-      }),
-    );
-    await expect(Promise.all(loop)).rejects.toThrow(/Rate limit exceeded/);
-  });
-
-  it('ignores the partition for a public caller, so rotating climb ids cannot escape the per-IP bucket', async () => {
-    const operation = `similar-climbs-public-rotate-${Date.now()}`;
-    const rotating = Array.from({ length: SIMILAR_CLIMBS_LIMIT + 1 }, (_, index) =>
-      applyRateLimit(
-        { connectionId: `http-public-${index}`, transport: 'http', isAuthenticated: false, clientIp: '203.0.113.9' },
-        SIMILAR_CLIMBS_LIMIT,
-        operation,
-        { internalServicePartition: `kilter:1:rotated-${index}:40` },
-      ),
-    );
-    await expect(Promise.all(rotating)).rejects.toThrow(/Rate limit exceeded/);
-  });
-
-  it('does not throttle concurrent SSR renders for different climbs/visitors once authenticated as internal-service', async () => {
-    const operation = `similar-climbs-internal-${Date.now()}`;
-    // Every one of these represents a front-door SSR read for a different
-    // climb page and a different real-world visitor. None of them carry a
-    // per-visitor identity — clientIp is the SAME constant address on every
-    // call, exactly as it is in production, to prove the fix doesn't merely
-    // work by accident because some other field happens to vary per call.
-    const renders = Array.from({ length: CONCURRENT_SSR_RENDERS }, (_, index) => {
-      const ctx: ConnectionContext = {
-        connectionId: `http-ssr-${index}`,
-        transport: 'http',
-        isAuthenticated: false,
-        isInternalService: true,
-        clientIp: '10.0.0.5',
-      };
-      return applyRateLimit(ctx, SIMILAR_CLIMBS_LIMIT, operation);
+  it('keeps the unpartitioned service fallback finite', async () => {
+    const context = { connectionId: 'http-service', transport: 'http' as const, isInternalService: true };
+    for (let index = 0; index < 300; index++) await applyRateLimit(context, 30, 'unpartitioned');
+    await expect(applyRateLimit(context, 30, 'unpartitioned')).rejects.toMatchObject({
+      extensions: { code: 'RATE_LIMITED' },
     });
-
-    await expect(Promise.all(renders)).resolves.toBeDefined();
   });
 
-  it('control: the identical burst DOES throttle when the caller is not authenticated as internal-service', async () => {
-    // Proves the test above is meaningful: the exact same 40-call burst
-    // against the pre-#5291 anonymous-IP bucket — what every SSR render
-    // looked like before this fix — trips RATE_LIMITED, because they all
-    // still share one clientIp-derived key.
-    const operation = `similar-climbs-anon-${Date.now()}`;
-    const renders = Array.from({ length: CONCURRENT_SSR_RENDERS }, (_, index) => {
-      const ctx: ConnectionContext = {
-        connectionId: `http-ssr-${index}`,
+  it.each([
+    [`Bearer ${SERVICE_SECRET}`, false, false, true, undefined],
+    ['Bearer test-cron-secret', false, true, false, undefined],
+    ['Bearer user-token', true, false, false, 'user-42'],
+    ['Bearer incorrect', false, false, false, undefined],
+  ])(
+    'keeps user, cron and service privileges separate for %s',
+    async (authorization, isAuthenticated, isCronAuthenticated, isInternalService, userId) => {
+      const context = await buildHttpConnectionContext({
+        request: new Request(graphqlUrl, { headers: { Authorization: authorization } }),
+      });
+      expect(context).toMatchObject({
         transport: 'http',
-        isAuthenticated: false,
-        clientIp: '10.0.0.5',
-      };
-      return applyRateLimit(ctx, SIMILAR_CLIMBS_LIMIT, operation);
-    });
-
-    await expect(Promise.all(renders)).rejects.toThrow(/Rate limit exceeded/);
-  });
+        isAuthenticated,
+        isCronAuthenticated,
+        isInternalService,
+        userId,
+      });
+    },
+  );
 });

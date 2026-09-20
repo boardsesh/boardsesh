@@ -175,12 +175,9 @@ export type ConnectionContext = {
   isAuthenticated?: boolean;
   // Set only by HTTP cron bearer authentication; never grants user access.
   isCronAuthenticated?: boolean;
-  // Set only by HTTP internal-service bearer authentication (INTERNAL_SERVICE_SECRET);
-  // never grants user access. Identifies Boardsesh's own SSR data-fetch layer
-  // (`executeGraphQLInternal`), which has no per-visitor identity of its own — see
-  // issue #5291. `applyRateLimit` keys this caller on a dedicated fleet-wide
-  // "internal-service" bucket instead of the anonymous per-IP bucket, since a
-  // server-side render is our own trusted infrastructure, not a client to police.
+  // Verified HTTP INTERNAL_SERVICE_SECRET only; never grants user or cron access.
+  // SSR reads use per-read service buckets, with a finite fallback for operations
+  // without partitions, instead of sharing the web server's anonymous IP (#5291).
   isInternalService?: boolean;
   // Client IP for rate limiting anonymous callers on both transports: HTTP
   // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via

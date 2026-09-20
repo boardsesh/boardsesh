@@ -485,13 +485,9 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  * own, so keying it like an anonymous IP caller collapsed every visitor on
  * earth onto one 30/min bucket once the web tier started reaching the backend
  * over Railway's private network (no Cloudflare hop, so no per-visitor IP
- * survives the hop). This identity gets its own fleet-wide Redis bucket at a
- * deliberately generous, scaled ceiling — see
- * `INTERNAL_SERVICE_RATE_LIMIT_FLOOR`/`_MULTIPLIER` — rather than either the
- * per-visitor bucket (wrong identity) or no limit (no backstop against our
- * own bug). It is checked first because it is never also `isAuthenticated`
- * or WebSocket: `authenticateInternalServiceSecret` only runs on the HTTP
- * bearer path and clears `authResult` when it matches.
+ * survives the hop). Service requests use per-read buckets when supplied;
+ * unpartitioned reads use the scaled fallback ceiling above. Only the HTTP
+ * bearer path can grant this identity, and it never grants a user identity.
  *
  * When the resolver passes `internalServicePartition` (the identity of the
  * thing being read, e.g. board+layout+climb+angle), the internal-service
@@ -518,35 +514,26 @@ export async function applyRateLimit(
   if (process.env.NODE_ENV === 'development') return;
 
   const maxRequests = limit ?? 60;
-  const isInternalService = ctx.isInternalService === true;
-  const internalServicePartition = isInternalService
-    ? options.internalServicePartition?.slice(0, INTERNAL_SERVICE_PARTITION_MAX_LENGTH) || undefined
-    : undefined;
-  const internalServiceIdentity = internalServicePartition
-    ? `internal-service:${internalServicePartition}`
-    : 'internal-service';
-  const internalServiceMaxRequests = internalServicePartition
-    ? maxRequests
-    : Math.max(INTERNAL_SERVICE_RATE_LIMIT_FLOOR, maxRequests * INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER);
-
-  // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
-  // Use the internal-service identity first, then userId for authenticated
-  // users, then clientIp for anonymous HTTP requests, then connectionId as a
-  // last-resort fallback (WebSocket connections).
+  const isInternalService = ctx.transport === 'http' && ctx.isInternalService === true;
+  let internalServiceIdentity: string | undefined;
+  let effectiveMaxRequests = maxRequests;
   let key: string;
-  let effectiveMaxRequests: number;
   if (isInternalService) {
+    const partition = options.internalServicePartition?.slice(0, INTERNAL_SERVICE_PARTITION_MAX_LENGTH);
+    internalServiceIdentity = partition ? `internal-service:${partition}` : 'internal-service';
     key = `${internalServiceIdentity}:${operation}`;
-    effectiveMaxRequests = internalServiceMaxRequests;
+    if (!partition) {
+      effectiveMaxRequests = Math.max(
+        INTERNAL_SERVICE_RATE_LIMIT_FLOOR,
+        maxRequests * INTERNAL_SERVICE_RATE_LIMIT_MULTIPLIER,
+      );
+    }
   } else if (ctx.isAuthenticated && ctx.userId) {
     key = `${ctx.userId}:${operation}`;
-    effectiveMaxRequests = maxRequests;
   } else if (ctx.clientIp) {
     key = `ip:${ctx.clientIp}:${operation}`;
-    effectiveMaxRequests = maxRequests;
   } else {
     key = ctx.connectionId;
-    effectiveMaxRequests = maxRequests;
   }
 
   // Surface a structured RATE_LIMITED error (with retryAfterSeconds) so clients
@@ -560,8 +547,8 @@ export async function applyRateLimit(
 
     // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
     // failures must not increment the same in-memory bucket a second time.
-    if (isInternalService) {
-      await checkRateLimitRedis(internalServiceIdentity, operation, internalServiceMaxRequests, RATE_LIMIT_WINDOW_MS, {
+    if (internalServiceIdentity) {
+      await checkRateLimitRedis(internalServiceIdentity, operation, effectiveMaxRequests, RATE_LIMIT_WINDOW_MS, {
         fallbackToMemory: false,
       });
     } else if (ctx.isAuthenticated && ctx.userId) {
