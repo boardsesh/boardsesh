@@ -470,7 +470,7 @@
       "renameNotAllowed": "Only the session creator can rename it.",
       "editTitleAria": "Edit session name",
       "minimize": "Minimize session",
-      "recordTab": "Record",
+      "recordTab": "Session",
       "returnToSession": "Return to session",
       "preBoardLabel": "Board",
       "preGeneratorLabel": "Workout",
@@ -514,7 +514,6 @@
       "preGeneratorTuning": "Tuning",
       "preStart": "Start",
       "preStarting": "Starting…",
-      "preNoBoard": "Pick a board to start",
       "preStartError": "Couldn't start session. Try again.",
       "preWorkoutPreviewTitle": "Workout preview",
       "preWorkoutPreviewGenerating": "Building your workout…",
@@ -554,7 +553,11 @@
       "inviteCopied": "Link copied",
       "inviteShare": "Share",
       "inStatsHardestEach": "Hardest sends",
-      "inviteAction": "Invite"
+      "inviteAction": "Invite",
+      "browseClimbs": "Browse climbs",
+      "changeBoard": "Change board",
+      "chooseBoard": "Choose board",
+      "noBoardSelected": "No board selected"
     }
   },
   "playView": {

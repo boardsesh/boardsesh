@@ -64,12 +64,12 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
     decidedRef.current = false;
   }
 
-  // The gate's real input. `isFetched` is load-bearing: `data` is `undefined`
-  // while the AsyncStorage read is in flight, which is indistinguishable from
-  // "no board" and would flash the tour at every climber on every cold start.
+  // Only a successful storage read can confirm that no board is bound.
+  // `isFetched` also turns true after a failed read; treating that failure as
+  // a missing board sends a returning climber through setup again.
   // Read through a ref inside the effect so a board bound LATER in the session
   // (the picker, a Bluetooth adopt) doesn't re-run a decision already made.
-  const { data: activeBoard, isFetched: boardResolved } = useActiveBoard();
+  const { data: activeBoard, isSuccess: boardResolved } = useActiveBoard();
   const hasBoardRef = useRef(activeBoard != null);
   hasBoardRef.current = activeBoard != null;
 

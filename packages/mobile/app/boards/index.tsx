@@ -51,6 +51,7 @@ import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCt
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
+import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
@@ -78,7 +79,13 @@ export default function BoardSelection() {
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
+  const trackBoardSelection = useBoardPickerAnalytics({
+    activeBoard,
+    restoreFailed: boardRestoreFailed,
+    returnTo: boardReturnTo,
+    fromOnboarding,
+  });
   const clearActiveBoard = useClearActiveBoard();
   const deleteBoard = useDeleteBoard();
   const unfollowBoard = useUnfollowBoard();
@@ -192,6 +199,7 @@ export default function BoardSelection() {
     source: fromOnboarding ? 'onboarding' : undefined,
     returnTo: boardReturnTo,
     isLocalOnly,
+    onBound: trackBoardSelection,
   });
 
   // Only the user's OWN boards carry a download state.

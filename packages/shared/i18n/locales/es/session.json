@@ -470,7 +470,7 @@
       "renameNotAllowed": "Solo quien creó la sesión puede cambiarle el nombre.",
       "editTitleAria": "Editar el nombre de la sesión",
       "minimize": "Minimizar sesión",
-      "recordTab": "Grabar",
+      "recordTab": "Sesión",
       "returnToSession": "Volver a la sesión",
       "preBoardLabel": "Plafón",
       "preGeneratorLabel": "Entrenamiento",
@@ -514,7 +514,6 @@
       "preGeneratorTuning": "Ajustes",
       "preStart": "Empezar",
       "preStarting": "Empezando…",
-      "preNoBoard": "Elige un plafón para empezar",
       "preStartError": "No se pudo iniciar la sesión. Inténtalo de nuevo.",
       "preWorkoutPreviewTitle": "Vista previa del entrenamiento",
       "preWorkoutPreviewGenerating": "Creando tu entrenamiento…",
@@ -554,7 +553,11 @@
       "inviteCopied": "Enlace copiado",
       "inviteShare": "Compartir",
       "inStatsHardestEach": "Más difíciles",
-      "inviteAction": "Invitar"
+      "inviteAction": "Invitar",
+      "browseClimbs": "Explorar bloques",
+      "changeBoard": "Cambiar de plafón",
+      "chooseBoard": "Elegir plafón",
+      "noBoardSelected": "Ningún plafón seleccionado"
     }
   },
   "playView": {

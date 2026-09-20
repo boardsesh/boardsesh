@@ -35,7 +35,7 @@
     },
     "helpSessions": {
       "title": "Start or join a live session and share one queue",
-      "description": "Start a session on the Record tab, invite your crew by QR code or link, and share one queue and one board without lighting each other's climbs."
+      "description": "Start a session on the Session tab, invite your crew by QR code or link, and share one queue and one board without lighting each other's climbs."
     },
     "helpFindingClimbs": {
       "title": "Filter climbs by hold, wall region and setter",
@@ -486,8 +486,8 @@
       },
       "start": {
         "title": "Start a session",
-        "intro": "Every session starts from the Record tab.",
-        "step1": "Open the Record tab. Check the board at the top.",
+        "intro": "Every session starts from the Session tab.",
+        "step1": "Open the Session tab. Check the board at the top.",
         "step2": "Show this session live lets your crew see and join it. Off, only your invite link works.",
         "step3": "Tap Start, then Invite climbers for a QR code, Copy link and Share.",
         "shotAlt": "A live session",

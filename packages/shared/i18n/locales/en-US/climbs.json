@@ -385,6 +385,10 @@
       "offlineCatalogQueued": {
         "title": "Queued for download",
         "subtitle": "{{name}} downloads the moment you're back online, and these climbs turn up in search."
+      },
+      "boardRestoreFailed": {
+        "title": "Couldn’t restore your board",
+        "description": "Try again to get back to your climbs."
       }
     },
     "detail": {

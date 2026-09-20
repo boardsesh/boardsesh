@@ -385,6 +385,10 @@
       "offlineCatalogQueued": {
         "title": "En cola para descargar",
         "subtitle": "{{name}} se descarga en cuanto vuelvas a tener conexión y sus bloques aparecerán en la búsqueda."
+      },
+      "boardRestoreFailed": {
+        "title": "No se pudo recuperar tu plafón",
+        "description": "Inténtalo de nuevo para volver a tus bloques."
       }
     },
     "detail": {

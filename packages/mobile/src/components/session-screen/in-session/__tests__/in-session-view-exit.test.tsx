@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +24,7 @@ const sheet = vi.hoisted(() => ({
   onLeave: null as (() => void) | null,
 }));
 const chrome = vi.hoisted(() => ({ exitVariant: null as string | null }));
-const router = vi.hoisted(() => ({ push: vi.fn() }));
+const router = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const integrations = vi.hoisted(() => ({ runSessionEndExports: vi.fn() }));
@@ -78,7 +78,18 @@ vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQue
 vi.mock('@boardsesh/play-view', () => ({ formatGrade: (grade: string) => grade, getGradeTextColor: () => '#fff' }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { SessionLeft: 'Session Left' } }));
 
-vi.mock('../../../Button', () => ({ Button: () => createElement('button') }));
+vi.mock('../../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
+vi.mock('../../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({
+    data: { name: 'Saved board', boardType: 'kilter', angle: 40 },
+    isSuccess: true,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
 vi.mock('../../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -209,6 +220,7 @@ describe('InSessionView session exit (#3502)', () => {
     queue.clearSession.mockReset();
     queue.clearSession.mockResolvedValue(undefined);
     router.push.mockClear();
+    router.navigate.mockClear();
     toast.showToast.mockClear();
     analytics.track.mockClear();
     integrations.runSessionEndExports.mockReset();
@@ -229,6 +241,16 @@ describe('InSessionView session exit (#3502)', () => {
     expect(sheet.defaultMode).toBe('end');
     expect(sheet.canEnd).toBe(true);
     expect(chrome.exitVariant).toBe('end');
+  });
+
+  it('returns to climbs while leaving the live session running', async () => {
+    const view = await renderInSession();
+    fireEvent.click(view.getByRole('button', { name: 'mobile.session.browseClimbs' }));
+    expect(router.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(router.push).not.toHaveBeenCalled();
+    expect(queue.endSession).not.toHaveBeenCalled();
+    expect(queue.clearSession).not.toHaveBeenCalled();
+    expect(sheet.defaultMode).toBe('end');
   });
 
   // Provenance is a SecureStore read, so it can't be known on the first frame.

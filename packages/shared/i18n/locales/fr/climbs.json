@@ -385,6 +385,10 @@
       "offlineCatalogQueued": {
         "title": "En file d’attente",
         "subtitle": "{{name}} se télécharge dès que tu es reconnecté, et ses blocs apparaîtront dans la recherche."
+      },
+      "boardRestoreFailed": {
+        "title": "Impossible de retrouver ta board",
+        "description": "Réessaie pour retrouver tes blocs."
       }
     },
     "detail": {

@@ -477,6 +477,14 @@ export const SHARED_EVENTS = {
   // intent and explicit history actions; per-climb send/receive echoes are too
   // noisy for PostHog's event budget.
   BoardSheetOpened: 'Board Sheet Opened',
+  // The full board picker, once per presentation after the saved-board read.
+  // source: onboarding | session | board_picker (other/unknown entry).
+  // hadActiveBoard is null when storage could not be read, not false.
+  BoardPickerOpened: 'Board Picker Opened',
+  // Existing-board selection in that picker, only after a successful write.
+  // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
+  // New-board creation/onboarding activation have their own existing events.
+  BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
   BoardHistoryViewed: 'Board History Viewed',
   // Fired from the switch-board control's own `onPress`, before any other work.
   // Deliberately redundant with BoardSwapInvokedFromSheet (which fires one call

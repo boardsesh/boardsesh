@@ -3,7 +3,6 @@ import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -17,7 +16,6 @@ import { ScreenTitle } from '../../ScreenTitle';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
-import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { useAuth } from '../../../providers/auth-provider';
 import { useQueueActions } from '../../../providers/queue-provider';
 import { useToast } from '../../../providers/toast-provider';
@@ -27,6 +25,7 @@ import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
 import { SESSION_START_FAB_HEIGHT, SessionStartFab } from '../SessionStartFab';
 import { BoardSummaryCard } from './BoardSummaryCard';
+import { useSessionBoardNavigation } from '../use-session-board-navigation';
 import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionVisibilityRow } from '../SessionVisibilityRow';
 import {
@@ -94,9 +93,9 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   const { t: tCommon } = useTranslation('common');
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const bottomChrome = useBottomChromeMetrics();
-  const { data: activeBoard } = useActiveBoard();
+  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useSessionBoardNavigation();
+  const { data: activeBoard } = boardQuery;
   const { isAuthenticated } = useAuth();
   const { startSession, appendGeneratedSession } = useQueueActions();
   const { openPlayDrawer } = useDrawerHost();
@@ -134,9 +133,6 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
-  const handleOpenBoardSwitcher = useCallback(() => {
-    router.push('/boards');
-  }, [router]);
 
   const [selection, setSelection] = useState<GeneratorSelection>(initialGeneratorSelection);
   const [isStarting, setIsStarting] = useState(false);
@@ -323,7 +319,14 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
             keeps the full config (name · size · angle) persistently visible when a
             board is set, and prompts to pick one when none is. */}
         <View style={styles.cardInset} testID="pre-session-board-summary">
-          <BoardSummaryCard onPress={handleOpenBoardSwitcher} board={activeBoard ?? null} />
+          <BoardSummaryCard
+            board={activeBoard}
+            hasNoBoard={hasNoBoard}
+            isRestoreError={!activeBoard && boardQuery.isError}
+            onBrowseClimbs={browseClimbs}
+            onChangeBoard={openBoardSwitcher}
+            onRetry={retryBoard}
+          />
         </View>
 
         {/* Arm the rest timer for the session you're about to start (#5378). The
@@ -368,7 +371,11 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       activeBoard,
       activeTip,
       dismissTip,
-      handleOpenBoardSwitcher,
+      boardQuery.isError,
+      browseClimbs,
+      hasNoBoard,
+      openBoardSwitcher,
+      retryBoard,
       handleVisibilityChange,
       isPublic,
       isStarting,
@@ -414,7 +421,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       {showChrome ? (
         <RecordTopChrome
           title={t('mobile.session.headerStart')}
-          onOpenBoardSwitcher={handleOpenBoardSwitcher}
+          onOpenBoardSwitcher={openBoardSwitcher}
           onHeightChange={setChromeHeight}
         />
       ) : null}

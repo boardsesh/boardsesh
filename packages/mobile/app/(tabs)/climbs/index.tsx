@@ -428,7 +428,14 @@ function ClimbListInner() {
       .catch(() => {});
   }, [isAuthenticated]);
 
-  const { data: activeBoard, isLoading: isBoardLoading } = useActiveBoard();
+  const {
+    data: activeBoard,
+    isPending: isBoardPending,
+    isSuccess: isBoardResolved,
+    isError: isBoardRestoreError,
+    isFetching: isBoardFetching,
+    refetch: refetchActiveBoard,
+  } = useActiveBoard();
 
   // One-time board-history reveal banner: armed when the user binds a board from
   // the onboarding hand-off (app/boards/index.tsx) and consumed on focus so it
@@ -1195,16 +1202,16 @@ function ClimbListInner() {
   const showRecentPills = useNativeSearch && isSearchFocused && searchTextEmpty && recentFilters.length > 0;
   // Show the spinner (not a premature "no climbs" empty state) while a board is
   // resolving or its per-board restore hasn't landed yet.
-  const isBoardResolving = isBoardLoading || (hasBoardConfig && !searchReady);
+  const isBoardResolving = isBoardPending || (hasBoardConfig && !searchReady);
   // A placeholder with no rows (the previous search came up empty) is still a
   // load in progress, so it shows skeletons rather than the old empty state.
   //
   // Board resolution counts too. Switching board renames the screen the instant
   // the choice commits, so anything left over from the board before it reads as
   // the new board's climbs — the one thing a one-tap switcher must never do.
-  // With no board bound `isBoardResolving` collapses to `isBoardLoading`, and
-  // the no-board empty state returns before the list either way, so this cannot
-  // strand anyone on a permanent skeleton.
+  // An unresolved read keeps the skeleton even when a retry is paused. Only a
+  // successful null result reaches the no-board state; failed restoration has
+  // its own retry state below.
   const showInitialSkeletons = (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
@@ -1594,7 +1601,33 @@ function ClimbListInner() {
     [filterInTopChrome, searchBarHeight],
   );
 
-  if (!hasBoardConfig && !isBoardLoading) {
+  if (!hasBoardConfig && isBoardRestoreError) {
+    return (
+      <>
+        <Stack.Screen options={stackOptions} />
+        <View style={styles.emptyContainer}>
+          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Text variant="headline" style={styles.emptyTitle}>
+            {t('mobile.emptyState.boardRestoreFailed.title')}
+          </Text>
+          <Text variant="subheadline" style={styles.emptySubtitle}>
+            {t('mobile.emptyState.boardRestoreFailed.description')}
+          </Text>
+          <Button
+            title={tCommon('actions.retry')}
+            onPress={() => void refetchActiveBoard()}
+            loading={isBoardFetching}
+            disabled={isBoardFetching}
+            variant="filled"
+            size="large"
+            style={styles.emptyCta}
+          />
+        </View>
+      </>
+    );
+  }
+
+  if (isBoardResolved && activeBoard === null) {
     return (
       <>
         <Stack.Screen options={stackOptions} />

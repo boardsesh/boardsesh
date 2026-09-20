@@ -47,6 +47,8 @@ import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
 import { RecordTopChrome } from '../RecordTopChrome';
+import { BoardSummaryCard } from '../pre-session/BoardSummaryCard';
+import { useSessionBoardNavigation } from '../use-session-board-navigation';
 import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
@@ -262,6 +264,7 @@ export function InSessionView({
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
+  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useSessionBoardNavigation();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
@@ -445,9 +448,6 @@ export function InSessionView({
     },
     [scrollOffset],
   );
-  const handleOpenBoardSwitcher = useCallback(() => {
-    router.push('/boards');
-  }, [router]);
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
@@ -610,6 +610,15 @@ export function InSessionView({
         </PressableSurface>
       ) : null}
 
+      <BoardSummaryCard
+        board={boardQuery.data}
+        hasNoBoard={hasNoBoard}
+        isRestoreError={!boardQuery.data && boardQuery.isError}
+        onBrowseClimbs={browseClimbs}
+        onChangeBoard={openBoardSwitcher}
+        onRetry={retryBoard}
+      />
+
       <SessionPresenceRow users={sessionUsers} />
 
       {/* Solo teaching row for the chrome's bare share glyph (tab mode). A glass
@@ -716,7 +725,7 @@ export function InSessionView({
         <RecordTopChrome
           title={sessionTitle}
           onEditTitle={canEditTitle ? openTitleSheet : undefined}
-          onOpenBoardSwitcher={handleOpenBoardSwitcher}
+          onOpenBoardSwitcher={openBoardSwitcher}
           onHeightChange={setChromeHeight}
           onShare={onShare}
           onEndSession={onRequestEndSession}

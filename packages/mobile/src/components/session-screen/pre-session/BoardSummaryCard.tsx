@@ -4,6 +4,7 @@ import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { Card } from '../../Card';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
+import { Button } from '../../Button';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 
@@ -16,23 +17,31 @@ type BoardSummary = {
 };
 
 type BoardSummaryCardProps = {
-  /** Open the board switcher (the Boards tab, where the cascading picker lives). */
-  onPress: () => void;
+  onBrowseClimbs: () => void;
+  onChangeBoard: () => void;
+  onRetry: () => void;
+  hasNoBoard: boolean;
+  isRestoreError: boolean;
   /** The active board, or null when none is set. Drives summary-vs-prompt. */
   board?: BoardSummary | null;
 };
 
 /**
- * Pre-session board row. When a board is set it shows the config at a glance
- * (name · size · angle) — the chrome pill carries the same identity but collapses
- * on scroll, so this keeps the full config (incl. size) persistently visible.
- * When none is set it's a prompt guiding the climber to the Boards tab. Laid out
- * as a `ListRow`-style leading icon / label / chevron inside `Card` (so it picks
- * up the glass-vs-material surface) without `ListRow`'s extra inset doubling the
- * card padding.
+ * Session board context with separate browse and switch actions. Keeping the
+ * card itself static avoids nesting pressables or making a saved board look
+ * like a required selection step every time the climber returns here.
  */
-export function BoardSummaryCard({ onPress, board }: BoardSummaryCardProps) {
+export function BoardSummaryCard({
+  onBrowseClimbs,
+  onChangeBoard,
+  onRetry,
+  hasNoBoard,
+  isRestoreError,
+  board,
+}: BoardSummaryCardProps) {
   const { t } = useTranslation('session');
+  const { t: tCommon } = useTranslation('common');
+  const { t: tClimbs } = useTranslation('climbs');
   const { systemColors } = useTheme();
 
   const summary = board
@@ -46,7 +55,7 @@ export function BoardSummaryCard({ onPress, board }: BoardSummaryCardProps) {
     : null;
 
   return (
-    <Card onPress={onPress}>
+    <Card>
       <View style={styles.row}>
         <Icon name="boards" size={22} color={systemColors.secondaryLabel} />
         <View style={styles.textColumn}>
@@ -54,11 +63,32 @@ export function BoardSummaryCard({ onPress, board }: BoardSummaryCardProps) {
             {t('mobile.session.preBoardLabel')}
           </Text>
           <Text variant="body" color={systemColors.label}>
-            {summary ?? t('mobile.session.preNoBoard')}
+            {summary ??
+              (isRestoreError
+                ? tClimbs('mobile.emptyState.boardRestoreFailed.title')
+                : hasNoBoard
+                  ? t('mobile.session.noBoardSelected')
+                  : tCommon('actions.loading'))}
           </Text>
         </View>
-        <Icon name="chevron.right" size={18} color={systemColors.tertiaryLabel} />
       </View>
+      {board ? (
+        <View style={styles.actions}>
+          <Button title={t('mobile.session.browseClimbs')} onPress={onBrowseClimbs} variant="outlined" />
+          <Button title={t('mobile.session.changeBoard')} onPress={onChangeBoard} variant="text" />
+        </View>
+      ) : isRestoreError ? (
+        <View style={styles.actions}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {tClimbs('mobile.emptyState.boardRestoreFailed.description')}
+          </Text>
+          <Button title={tCommon('actions.retry')} onPress={onRetry} variant="outlined" />
+        </View>
+      ) : hasNoBoard ? (
+        <View style={styles.actions}>
+          <Button title={t('mobile.session.chooseBoard')} onPress={onChangeBoard} variant="outlined" />
+        </View>
+      ) : null}
     </Card>
   );
 }
@@ -72,5 +102,10 @@ const styles = StyleSheet.create({
   textColumn: {
     flex: 1,
     gap: 2,
+  },
+  actions: {
+    gap: spacing[2],
+    marginTop: spacing[3],
+    alignItems: 'flex-start',
   },
 });

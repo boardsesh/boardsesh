@@ -5,7 +5,11 @@
  * redirect the user to an unexpected screen, and default to Climbs (the screen
  * the switcher has always returned to, including the onboarding hand-off).
  */
-export type BoardReturnTo = '/(tabs)/climbs' | '/(tabs)/discover' | `/(tabs)/climbs/setter/${string}`;
+export type BoardReturnTo =
+  | '/(tabs)/climbs'
+  | '/(tabs)/discover'
+  | '/(tabs)/record'
+  | `/(tabs)/climbs/setter/${string}`;
 
 export function setterPlaylistReturnTo(username: string): BoardReturnTo {
   return `/(tabs)/climbs/setter/${encodeURIComponent(username)}`;
@@ -32,5 +36,5 @@ export function resolveBoardReturnTo(value: string | undefined): BoardReturnTo {
       // Invalid escapes are untrusted deep links; use the ordinary fallback.
     }
   }
-  return value === '/(tabs)/discover' ? '/(tabs)/discover' : '/(tabs)/climbs';
+  return value === '/(tabs)/discover' || value === '/(tabs)/record' ? value : '/(tabs)/climbs';
 }

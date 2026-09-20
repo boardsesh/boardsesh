@@ -8,10 +8,11 @@ const hasSeenMock = vi.hoisted(() => vi.fn());
 const markSeenMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
 // The gate's real input since issue #4961: onboarding shows whenever there is no
-// bound board. `isFetched` is separate because `data: undefined` mid-read is not
-// the same answer as `data: null`.
+// bound board. Only a successful read distinguishes a missing selection from
+// one whose storage read is pending or failed.
 const activeBoardCtrl = vi.hoisted(() => ({
-  board: null as { uuid: string } | null,
+  board: null as { uuid: string } | null | undefined,
+  isSuccess: true,
   isFetched: true,
 }));
 // Controllable signed-in profile: the gate keys its first-run decision on the
@@ -33,7 +34,11 @@ vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
   markOnboardingSeen: markSeenMock,
 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({ data: activeBoardCtrl.board, isFetched: activeBoardCtrl.isFetched }),
+  useActiveBoard: () => ({
+    data: activeBoardCtrl.board,
+    isSuccess: activeBoardCtrl.isSuccess,
+    isFetched: activeBoardCtrl.isFetched,
+  }),
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => ({
@@ -61,6 +66,7 @@ describe('OnboardingGate', () => {
     // Default: no board bound, so the flow is due — the state every test that
     // asserts a push relies on.
     activeBoardCtrl.board = null;
+    activeBoardCtrl.isSuccess = true;
     activeBoardCtrl.isFetched = true;
     // Default: a plain launch (no cold-start deep link).
     getInitialURLMock.mockResolvedValue(null);
@@ -131,12 +137,49 @@ describe('OnboardingGate', () => {
   // from "no board", so deciding early would flash the flow at everyone.
   it('waits for the active-board read before deciding', async () => {
     hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.isSuccess = false;
     activeBoardCtrl.isFetched = false;
     render(<OnboardingGate ready />);
     await Promise.resolve();
     await Promise.resolve();
     expect(hasSeenMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('does not decide during a failed board read and skips setup after recovery', async () => {
+    hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = undefined;
+    activeBoardCtrl.isSuccess = false;
+    const { rerender } = render(<OnboardingGate ready />);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(hasSeenMock).not.toHaveBeenCalled();
+    expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
+
+    activeBoardCtrl.board = { uuid: 'saved-board' };
+    activeBoardCtrl.isSuccess = true;
+    rerender(<OnboardingGate ready />);
+
+    await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+    expect(hasSeenMock).toHaveBeenCalledOnce();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('starts setup only after a retry successfully confirms no saved board', async () => {
+    hasSeenMock.mockResolvedValue(false);
+    activeBoardCtrl.board = undefined;
+    activeBoardCtrl.isSuccess = false;
+    const { rerender } = render(<OnboardingGate ready />);
+    await Promise.resolve();
+    expect(pushMock).not.toHaveBeenCalled();
+
+    activeBoardCtrl.board = null;
+    activeBoardCtrl.isSuccess = true;
+    rerender(<OnboardingGate ready />);
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));
   });
 
   it('does not interrupt a join deep-link landing', async () => {

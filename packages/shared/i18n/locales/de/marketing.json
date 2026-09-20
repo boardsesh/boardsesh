@@ -35,7 +35,7 @@
     },
     "helpSessions": {
       "title": "Eine Live-Session starten oder beitreten und eine Warteschlange teilen",
-      "description": "Starte eine Session im Tab Aufnehmen, lade deine Crew per QR-Code oder Link ein und teilt euch eine Warteschlange und ein Board, ohne euch gegenseitig die Boulder zu beleuchten."
+      "description": "Starte eine Session im Tab Session, lade deine Crew per QR-Code oder Link ein und teilt euch eine Warteschlange und ein Board, ohne euch gegenseitig die Boulder zu beleuchten."
     },
     "helpFindingClimbs": {
       "title": "Boulder nach Griff, Board-Bereich und Routenbauer*in filtern",
@@ -486,8 +486,8 @@
       },
       "start": {
         "title": "Eine Session starten",
-        "intro": "Jede Session startet im Tab Aufnehmen.",
-        "step1": "Öffne den Tab Aufnehmen. Prüf das Board oben.",
+        "intro": "Jede Session startet im Tab Session.",
+        "step1": "Öffne den Tab Session. Prüf das Board oben.",
         "step2": "Diese Session live zeigen lässt deine Crew sie sehen und beitreten. Aus geht nur noch dein Einladungslink.",
         "step3": "Tipp auf Starten, dann auf Kletterer*innen einladen für QR-Code, Link kopieren und Teilen.",
         "shotAlt": "Eine Live-Session",
