@@ -184,6 +184,11 @@ describe('CreativeWork JSON-LD', () => {
     // would advertise an address the canonical beside it disowns — which is what
     // this test used to assert was correct. Comparing against the helper itself
     // keeps the two from drifting apart again.
+    //
+    // The component takes no locale any more, so `creativeWork()` is the same
+    // call each time round: what the loop varies is the locale handed to the
+    // METADATA helper, pinning the invariant that its canonical stays on the
+    // default locale no matter which twin is rendering.
     for (const locale of ['en-US', 'es', 'de'] as const) {
       const canonical = createBoardContentPageMetadata({
         title: 'Test Climb',
