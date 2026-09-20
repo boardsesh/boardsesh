@@ -122,6 +122,10 @@ const feedbackMutation = vi.hoisted(() => ({
   isPending: false,
   reset: vi.fn(),
 }));
+// Mounted only while reporting; it reaches for expo-router, the active-board
+// query and the queue provider, none of which this seam is about.
+vi.mock('../../../lib/feedback/FeedbackMetadataCollector', () => ({ FeedbackMetadataCollector: () => null }));
+
 vi.mock('../../../lib/feedback/use-submit-app-feedback', () => ({
   useSubmitMobileAppFeedback: () => feedbackMutation,
 }));
@@ -208,7 +212,7 @@ describe('bug report with a screenshot, real picker inside the real sheet', () =
 
   it('keeps the typed report and a live submit button across the pick, then files it', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     // 1. A long-enough report arms the submit button.
     fireEvent.change(commentInput(container), { target: { value: REPORT_TEXT } });
@@ -233,7 +237,7 @@ describe('bug report with a screenshot, real picker inside the real sheet', () =
 
   it('leaves the button live when the reporter types after picking', async () => {
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     fireEvent.click(addTile(container));
     await vi.waitFor(() => expect(thumbnails(container)).toEqual(['file:///compressed-1.jpg']));
@@ -248,7 +252,7 @@ describe('bug report with a screenshot, real picker inside the real sheet', () =
   it('toasts and re-arms the button when the pick itself blows up', async () => {
     imagePicker.launchImageLibraryAsync.mockRejectedValue(new Error('library unavailable'));
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     fireEvent.change(commentInput(container), { target: { value: REPORT_TEXT } });
     fireEvent.click(addTile(container));
@@ -261,7 +265,7 @@ describe('bug report with a screenshot, real picker inside the real sheet', () =
   it('still shows the picker and a live button when permission is denied', async () => {
     imagePicker.requestMediaLibraryPermissionsAsync.mockResolvedValue({ granted: false });
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     fireEvent.change(commentInput(container), { target: { value: REPORT_TEXT } });
     fireEvent.click(addTile(container));
@@ -289,7 +293,7 @@ describe('an upload that never settles', () => {
   it('re-arms the button when the upload REJECTS — the differential against a stall', async () => {
     uploadFeedbackScreenshots.mockReset().mockRejectedValue(new Error('offline'));
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     fireEvent.change(commentInput(container), { target: { value: REPORT_TEXT } });
     fireEvent.click(addTile(container));
@@ -312,7 +316,7 @@ describe('an upload that never settles', () => {
     // worst case as a promise that never settles, and pin what the sheet does.
     uploadFeedbackScreenshots.mockReset().mockReturnValue(new Promise<string[]>(() => {}));
     const sheetRef = createRef<ManagedSheetHandle>();
-    const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
+    const { container } = render(<FeedbackSheet sheetRef={sheetRef} visible onClose={() => {}} mode="bug" />);
 
     fireEvent.change(commentInput(container), { target: { value: REPORT_TEXT } });
     fireEvent.click(addTile(container));
