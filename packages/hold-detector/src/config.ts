@@ -8,8 +8,17 @@ export function detectorConfig(environment: Readonly<Record<string, string | und
   };
   const databaseUrl = required('DATABASE_URL');
   const database = new URL(databaseUrl);
-  const local = ['localhost', '127.0.0.1', '::1'].includes(database.hostname);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(database.hostname);
+  // The data and queue drivers parse URL options differently. In particular,
+  // pg accepts host overrides and uses the last duplicate sslmode. Keep the
+  // worker's connection contract deliberately small and unambiguous.
+  const supportedOptions = new Set(['sslmode', 'application_name']);
+  const ambiguousOptions = [...database.searchParams.keys()].some(
+    (name) => !supportedOptions.has(name) || database.searchParams.getAll(name).length !== 1,
+  );
   if (
+    environment.NODE_TLS_REJECT_UNAUTHORIZED === '0' ||
+    ambiguousOptions ||
     !['postgres:', 'postgresql:'].includes(database.protocol) ||
     (!local && database.searchParams.get('sslmode') !== 'verify-full')
   ) {

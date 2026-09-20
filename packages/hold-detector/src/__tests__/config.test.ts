@@ -17,6 +17,32 @@ describe('worker configuration', () => {
       detectorConfig({ ...environment, DATABASE_URL: environment.DATABASE_URL.replace('verify-full', mode) }),
     ).toThrow('verify TLS');
   });
+  it.each(['sslmode=disable', 'host=other.example', 'ssl=false', 'sslrootcert=/tmp/ca.pem'])(
+    'refuses ambiguous or unsupported connection option %s',
+    (option) => {
+      expect(() => detectorConfig({ ...environment, DATABASE_URL: `${environment.DATABASE_URL}&${option}` })).toThrow(
+        'verify TLS',
+      );
+    },
+  );
+  it('refuses process-wide certificate verification bypass', () => {
+    expect(() => detectorConfig({ ...environment, NODE_TLS_REJECT_UNAUTHORIZED: '0' })).toThrow('verify TLS');
+  });
+  it('allows an application name without changing the TLS contract', () => {
+    expect(
+      detectorConfig({ ...environment, DATABASE_URL: `${environment.DATABASE_URL}&application_name=detector` })
+        .databaseUrl,
+    ).toContain('application_name=detector');
+  });
+  it.each(['localhost', '127.0.0.1', '[::1]'])('allows local development at %s', (host) => {
+    expect(
+      detectorConfig({ ...environment, DATABASE_URL: `postgresql://worker:secret@${host}/boardsesh` }).databaseUrl,
+    ).toContain(host);
+  });
+  it.each(['localhost', '127.0.0.1', '[::1]'])('preserves explicit TLS verification at %s', (host) => {
+    const databaseUrl = `postgresql://worker:secret@${host}/boardsesh?sslmode=verify-full`;
+    expect(detectorConfig({ ...environment, DATABASE_URL: databaseUrl }).databaseUrl).toBe(databaseUrl);
+  });
   it('refuses plaintext photo storage and invalid ports', () => {
     expect(() => detectorConfig({ ...environment, PRIVATE_AWS_ENDPOINT_URL_S3: 'http://storage.example' })).toThrow(
       'HTTPS',
