@@ -310,6 +310,7 @@ jobs:
               - 'packages/shared-schema/**'
               - 'packages/shared/analytics/**'
               - 'packages/shared/ble-protocol/**'
+              - 'packages/shared/board-account-sync/**'
               - 'packages/shared/board-config/**'
               - 'packages/shared/board-presence/**'
               - 'packages/shared/board-presence-react/**'
