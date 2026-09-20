@@ -82,19 +82,36 @@ export async function serverUserPlaylists(
 }
 
 /**
+ * Outcome of a single-playlist lookup.
+ *
+ * Three states, not two, because the playlist route now answers a missing
+ * playlist with `notFound()`. Collapsing "the backend said this UUID does not
+ * exist" into the same `null` as "the backend did not answer" would turn a
+ * transient GraphQL outage into a hard 404 on a playlist that is alive and
+ * indexed — the one mistake an SEO fix must not make.
+ */
+export type ServerPlaylistResult =
+  | { status: 'found'; playlist: Playlist }
+  | { status: 'missing' }
+  | { status: 'unavailable' };
+
+/**
  * Server-side fetch of a single playlist.
  */
-export async function serverPlaylist(authToken: string | undefined, playlistId: string): Promise<Playlist | null> {
+export async function serverPlaylist(authToken: string | undefined, playlistId: string): Promise<ServerPlaylistResult> {
   try {
     const response = await executeAuthenticatedGraphQL<GetPlaylistQueryResponse>(
       GET_PLAYLIST,
       { playlistId },
       authToken,
     );
-    return response.playlist;
+    // A 200 with `{ playlist: null }` is the backend's answer for an unknown
+    // UUID, and for a private playlist the caller is not allowed to see. Both
+    // are honest 404s from the crawler's point of view.
+    return response.playlist ? { status: 'found', playlist: response.playlist } : { status: 'missing' };
   } catch (error) {
     console.error('serverPlaylist failed:', error);
-    return null;
+    return { status: 'unavailable' };
   }
 }
 
