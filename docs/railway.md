@@ -96,6 +96,8 @@ Both services are declared in `infra/railway/config.ts`. The nightly drift job
 reports missing/placeholder credentials and unequal copies. Comparisons are exact
 (including whitespace); neither the secret nor a hash of it is logged. Mismatches
 are reported for manual correction, never automatically overwritten.
+When `--apply` fills a missing copy, it compares the supplied value with its peer
+before writing. A mismatched value is blocked and the command exits non-zero.
 
 Before merging the first deployment, provision both copies. Backend code verifies
 this identity only on HTTP requests; it does not grant user or cron permissions.

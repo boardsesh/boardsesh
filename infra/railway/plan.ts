@@ -76,10 +76,11 @@ export interface PlanOptions {
    * found it in its own environment as `RAILWAY_VAR_<VAR>`.
    *
    * This is what separates "drift we can fix" from "drift we can only report".
-   * Keeping it a plain set of keys — never the values — is what lets the whole plan
-   * layer stay pure and keeps secrets out of every PlannedChange.
+   * PlannedChange records contain names and status only, never secret values.
    */
   suppliedVars: ReadonlySet<string>;
+  /** Values by variable name, used only to validate matching groups before writes. */
+  suppliedValues?: ReadonlyMap<string, string>;
 }
 
 /** The key shape used by PlanOptions.suppliedVars. */
@@ -312,12 +313,22 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
   }
 
   for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
-    // Missing services/values already have actionable drift above. Compare exact
-    // bytes: trimming here would hide a credential the backend will reject.
+    // Compare the state after proposed writes, so filling a missing value cannot
+    // report convergence while leaving different credentials on the services.
+    // Compare exact bytes: trimming would hide a credential the backend rejects.
     if (serviceNames.some((serviceName) => !findService(live, serviceName))) continue;
-    const credentials = serviceNames.map((serviceName) => live.variables[serviceName]?.[name]);
+    const proposedWrites = changes.filter(
+      (change) =>
+        !change.blocked && change.target?.varName === name && serviceNames.includes(change.target.serviceName),
+    );
+    const credentials = serviceNames.map((serviceName) =>
+      proposedWrites.some((change) => change.target?.serviceName === serviceName)
+        ? options.suppliedValues?.get(name)
+        : live.variables[serviceName]?.[name],
+    );
     if (credentials.some((credential) => classifyVar(credential) !== 'set')) continue;
     if (new Set(credentials).size <= 1) continue;
+    for (const change of proposedWrites) change.blocked = true;
     changes.push({
       resource: 'env-var',
       summary: `${name} differs between ${serviceNames.join(' and ')}`,

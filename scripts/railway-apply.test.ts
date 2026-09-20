@@ -914,7 +914,10 @@ describe('apply mode', () => {
     };
   }
 
-  function stubApply(variables: Record<string, string>): {
+  function stubApply(
+    variables: Record<string, string>,
+    serviceVariables: Record<string, Record<string, string>>,
+  ): {
     fetch: typeof globalThis.fetch;
     upserts: Upsert[];
   } {
@@ -951,9 +954,11 @@ describe('apply mode', () => {
         );
       }
       if (body.query.includes('variables(')) {
-        return new Response(JSON.stringify({ data: { variables: withBaselineRequiredVars(variables) } }), {
-          status: 200,
-        });
+        const serviceId = String(body.variables.serviceId);
+        return new Response(
+          JSON.stringify({ data: { variables: serviceVariables[serviceId] ?? withBaselineRequiredVars(variables) } }),
+          { status: 200 },
+        );
       }
       return new Response(
         JSON.stringify({
@@ -983,11 +988,12 @@ describe('apply mode', () => {
   async function runApply(
     variables: Record<string, string>,
     env: Record<string, string> = {},
+    serviceVariables: Record<string, Record<string, string>> = {},
   ): Promise<{ code: number; output: string; upserts: Upsert[] }> {
     const originalFetch = globalThis.fetch;
     const originalEnv = { ...process.env };
     const captured = collectStdout();
-    const stub = stubApply(variables);
+    const stub = stubApply(variables, serviceVariables);
 
     globalThis.fetch = stub.fetch;
     process.env.RAILWAY_TOKEN = 'test-token';
@@ -1023,6 +1029,56 @@ describe('apply mode', () => {
     const { code, upserts } = await runApply({ CLICKHOUSE_URL: SECRET_VALUE });
     expect(code).toBe(0);
     expect(upserts).toEqual([]);
+  });
+
+  it.each([
+    ['svc-web', ''],
+    ['svc-web', '<generate-secret>'],
+    ['svc-backend', ''],
+    ['svc-backend', '<generate-secret>'],
+  ])('blocks a mismatched supplied credential before writing %s (%s)', async (serviceId, missingSecret) => {
+    const suppliedSecret = 'different-supplied-credential';
+    const { code, upserts, output } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: suppliedSecret },
+      { [serviceId]: { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: missingSecret } },
+    );
+    expect(code).toBe(1);
+    expect(upserts).toEqual([]);
+    expect(output).toContain('INTERNAL_SERVICE_SECRET differs between');
+    expect(output).not.toContain('project converged');
+    expect(output).not.toContain(suppliedSecret);
+    expect(output).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
+  it.each(['svc-web', 'svc-backend'])('fills %s when the supplied credential matches its peer', async (serviceId) => {
+    const { code, upserts } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET },
+      { [serviceId]: { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: '' } },
+    );
+    expect(code).toBe(0);
+    expect(upserts).toEqual([
+      expect.objectContaining({
+        serviceId,
+        name: 'INTERNAL_SERVICE_SECRET',
+        value: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET,
+      }),
+    ]);
+  });
+
+  it('fills both missing service credentials with the same supplied value', async () => {
+    const { code, upserts } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: 'new-shared-credential' },
+      {
+        'svc-web': { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: '' },
+        'svc-backend': {},
+      },
+    );
+    expect(code).toBe(0);
+    expect(upserts).toHaveLength(2);
+    expect(new Set(upserts.map((upsert) => upsert.value))).toEqual(new Set(['new-shared-credential']));
   });
 
   it('refuses to invent a value it was not given', async () => {
