@@ -1,3 +1,4 @@
+import type { TickClimbIdentity } from '@boardsesh/board-config';
 /**
  * DrawerHostProvider mounts PlayDrawer and LogAscentSheet once at the app root
  * and exposes imperative openers via `useDrawerHost()`. This lets the
@@ -100,6 +101,7 @@ export type OpenClimbActionsOptions = {
 };
 
 export type LogAscentInput = {
+  climb?: TickClimbIdentity;
   climbUuid: string;
   /** Shown in the tick sheet header so the climber sees what they are logging —
    *  the queue-bar entry point can open this on a climb they are no longer

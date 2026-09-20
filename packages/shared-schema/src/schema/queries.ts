@@ -3,6 +3,8 @@ export const queriesTypeDefs = /* GraphQL */ `
   Root query type for all read operations.
   """
   type Query {
+    "Compatible saved and recent physical boards for a tick owned by the viewer."
+    tickBoardOptions(tickUuid: ID!, limit: Int, offset: Int): TickBoardOptions!
     """
     Get details of a specific session by ID.
     Returns null if session doesn't exist.

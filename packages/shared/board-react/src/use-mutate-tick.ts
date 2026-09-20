@@ -46,6 +46,13 @@ function invalidateTickDependents(queryClient: QueryClient) {
   // refetch (pull-to-refresh, remount past staleTime, or a comment add).
   void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
   void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
+  void queryClient.invalidateQueries({ queryKey: ['tickBoardOptions'] });
+  void queryClient.invalidateQueries({ queryKey: ['board'] });
+  void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+  void queryClient.invalidateQueries({ queryKey: ['boardBySlug'] });
+  void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
+  void queryClient.invalidateQueries({ queryKey: ['crewFeed'] });
+  void queryClient.invalidateQueries({ queryKey: ['betaLinks'] });
 }
 
 /** Edit an existing tick (status / date / grade / quality / attempts / comment). */
@@ -96,6 +103,10 @@ function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTic
           comment: updatedTick.comment,
           climbedAt: updatedTick.climbedAt,
           angle: updatedTick.angle,
+          boardId: updatedTick.boardId,
+          boardDisplayName: updatedTick.boardDisplayName,
+          // A physical-board change invalidates the old rendering dimensions.
+          renderBoard: item.boardId === updatedTick.boardId ? item.renderBoard : null,
         }
       : item;
 

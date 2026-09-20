@@ -1,5 +1,6 @@
 import type { SocialEvent } from '@boardsesh/shared-schema';
 import type { SocialEntityType } from '@boardsesh/db/schema';
+import { acquireUserTickMutationLock } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { and, eq, or } from 'drizzle-orm';
@@ -23,7 +24,10 @@ function feedRowIdentityKey(row: Pick<FeedInsertRow, 'recipientId' | 'type' | 'e
   return JSON.stringify([row.recipientId, row.type, row.entityType, row.entityId]);
 }
 
-async function insertFeedRows(rows: FeedInsertRow[]): Promise<void> {
+async function insertFeedRows(
+  rows: FeedInsertRow[],
+  database: Pick<typeof db, 'select' | 'insert'> = db,
+): Promise<void> {
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += FANOUT_BATCH_SIZE) {
     const batchByIdentity = new Map<string, FeedInsertRow>();
     for (const row of rows.slice(rowIndex, rowIndex + FANOUT_BATCH_SIZE)) {
@@ -33,7 +37,7 @@ async function insertFeedRows(rows: FeedInsertRow[]): Promise<void> {
     const batch = [...batchByIdentity.values()];
     if (batch.length === 0) continue;
 
-    const existingRows = await db
+    const existingRows = await database
       .select({
         recipientId: dbSchema.feedItems.recipientId,
         type: dbSchema.feedItems.type,
@@ -56,7 +60,7 @@ async function insertFeedRows(rows: FeedInsertRow[]): Promise<void> {
 
     const existingKeys = new Set(existingRows.map(feedRowIdentityKey));
     const insertRows = batch.filter((row) => !existingKeys.has(feedRowIdentityKey(row)));
-    if (insertRows.length > 0) await db.insert(dbSchema.feedItems).values(insertRows);
+    if (insertRows.length > 0) await database.insert(dbSchema.feedItems).values(insertRows);
   }
 }
 
@@ -394,20 +398,33 @@ export async function fanoutFeedItems(event: SocialEvent): Promise<void> {
     ...(await getActorMetadata(event.actorId)),
   };
 
-  const allRows = uniqueRecipientIds(followerIds, event.actorId).map((recipientId) => ({
-    recipientId,
-    actorId: event.actorId,
-    type: 'ascent' as const,
-    entityType: 'tick' as SocialEntityType,
-    entityId: event.entityId,
-    // boardUuid is intentionally null when a climb isn't associated with a user board.
-    // Board-scoped feed filtering simply won't match these items — they still appear
-    // in the unfiltered "All" feed.
-    boardUuid: event.metadata.boardUuid || null,
-    metadata,
-  }));
+  // An ascent event can arrive after the climber corrects its board. Serialize
+  // with edit/delete and read the current association rather than resurrecting
+  // the event's old board in freshly inserted feed copies.
+  await db.transaction(async (tx) => {
+    await acquireUserTickMutationLock(tx, event.actorId);
+    const [tick] = await tx
+      .select({ uuid: dbSchema.boardseshTicks.uuid, boardUuid: dbSchema.userBoards.uuid })
+      .from(dbSchema.boardseshTicks)
+      .leftJoin(dbSchema.userBoards, eq(dbSchema.userBoards.id, dbSchema.boardseshTicks.boardId))
+      .where(and(eq(dbSchema.boardseshTicks.uuid, event.entityId), eq(dbSchema.boardseshTicks.userId, event.actorId)))
+      .limit(1);
+    if (!tick) return;
+    const allRows = uniqueRecipientIds(followerIds, event.actorId).map((recipientId) => ({
+      recipientId,
+      actorId: event.actorId,
+      type: 'ascent' as const,
+      entityType: 'tick' as SocialEntityType,
+      entityId: event.entityId,
+      // boardUuid is intentionally null when a climb isn't associated with a user board.
+      // Board-scoped feed filtering simply won't match these items — they still appear
+      // in the unfiltered "All" feed.
+      boardUuid: tick.boardUuid,
+      metadata,
+    }));
 
-  await insertFeedRows(allRows);
+    await insertFeedRows(allRows, tx);
+  });
 }
 
 /**

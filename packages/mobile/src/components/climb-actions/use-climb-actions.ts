@@ -350,6 +350,7 @@ export function useClimbActions({
           onTick(climb, boardConfig);
         } else {
           openLogAscent({
+            climb,
             climbUuid: climb.uuid,
             climbName: climb.name,
             boardName,

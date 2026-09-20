@@ -6580,6 +6580,8 @@ export type Query = {
   syncTicks: SyncResult;
   /** Pull the authenticated user's user-follows changed since the cursor. */
   syncUserFollows: SyncResult;
+  /** Compatible saved and recent physical boards for a tick owned by the viewer. */
+  tickBoardOptions: TickBoardOptions;
   /**
    * Get current user's ticks (recorded climb attempts).
    * Requires authentication.
@@ -7354,6 +7356,13 @@ export type QuerySyncTicksArgs = {
 export type QuerySyncUserFollowsArgs = {
   cursor?: InputMaybe<SyncCursorInput>;
   limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryTickBoardOptionsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  tickUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9651,6 +9660,8 @@ export type Tick = {
   auroraSyncedAt?: Maybe<Scalars['String']['output']>;
   /** Type of Aurora sync ('bid' or 'ascent') */
   auroraType?: Maybe<Scalars['String']['output']>;
+  /** Physical board name, populated by updateTick for immediate editor refresh. */
+  boardDisplayName?: Maybe<Scalars['String']['output']>;
   /** Board entity ID if tick was associated with a board */
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
@@ -9697,6 +9708,24 @@ export type Tick = {
   userId: Scalars['ID']['output'];
   /** Unique identifier for this tick */
   uuid: Scalars['ID']['output'];
+};
+
+export type TickBoardOption = {
+  __typename?: 'TickBoardOption';
+  boardType: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type TickBoardOptions = {
+  __typename?: 'TickBoardOptions';
+  boards: Array<TickBoardOption>;
+  currentBoard?: Maybe<TickBoardOption>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
 };
 
 /** Status of a climb attempt. */
@@ -10016,6 +10045,8 @@ export type UpdateTickInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Number of attempts */
   attemptCount?: InputMaybe<Scalars['Int']['input']>;
+  /** Omit to preserve attribution; null clears it; a UUID selects a compatible physical board. */
+  boardUuid?: InputMaybe<Scalars['String']['input']>;
   /** When the climb was attempted (ISO 8601) */
   climbedAt?: InputMaybe<Scalars['String']['input']>;
   /** User comment */
@@ -10899,6 +10930,8 @@ export type ResolversTypes = ResolversObject<{
   SyncDeletionsResult: ResolverTypeWrapper<SyncDeletionsResult>;
   SyncResult: ResolverTypeWrapper<SyncResult>;
   Tick: ResolverTypeWrapper<Tick>;
+  TickBoardOption: ResolverTypeWrapper<TickBoardOption>;
+  TickBoardOptions: ResolverTypeWrapper<TickBoardOptions>;
   TickStatus: TickStatus;
   TimePeriod: TimePeriod;
   ToggleFavoriteInput: ToggleFavoriteInput;
@@ -11335,6 +11368,8 @@ export type ResolversParentTypes = ResolversObject<{
   SyncDeletionsResult: SyncDeletionsResult;
   SyncResult: SyncResult;
   Tick: Tick;
+  TickBoardOption: TickBoardOption;
+  TickBoardOptions: TickBoardOptions;
   ToggleFavoriteInput: ToggleFavoriteInput;
   ToggleFavoriteResult: ToggleFavoriteResult;
   UnifiedSearchConnection: UnifiedSearchConnection;
@@ -15286,6 +15321,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QuerySyncUserFollowsArgs, 'limit'>
   >;
+  tickBoardOptions?: Resolver<
+    ResolversTypes['TickBoardOptions'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryTickBoardOptionsArgs, 'tickUuid'>
+  >;
   ticks?: Resolver<Array<ResolversTypes['Tick']>, ParentType, ContextType, RequireFields<QueryTicksArgs, 'input'>>;
   trendingFeed?: Resolver<
     ResolversTypes['ActivityFeedResult'],
@@ -16468,6 +16509,7 @@ export type TickResolvers<
   auroraId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   auroraSyncedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   auroraType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -16491,6 +16533,30 @@ export type TickResolvers<
   upvotes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type TickBoardOptionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['TickBoardOption'] = ResolversParentTypes['TickBoardOption'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type TickBoardOptionsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['TickBoardOptions'] = ResolversParentTypes['TickBoardOptions'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['TickBoardOption']>, ParentType, ContextType>;
+  currentBoard?: Resolver<Maybe<ResolversTypes['TickBoardOption']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16995,6 +17061,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SyncDeletionsResult?: SyncDeletionsResultResolvers<ContextType>;
   SyncResult?: SyncResultResolvers<ContextType>;
   Tick?: TickResolvers<ContextType>;
+  TickBoardOption?: TickBoardOptionResolvers<ContextType>;
+  TickBoardOptions?: TickBoardOptionsResolvers<ContextType>;
   ToggleFavoriteResult?: ToggleFavoriteResultResolvers<ContextType>;
   UnifiedSearchConnection?: UnifiedSearchConnectionResolvers<ContextType>;
   UnifiedSearchResult?: UnifiedSearchResultResolvers<ContextType>;
