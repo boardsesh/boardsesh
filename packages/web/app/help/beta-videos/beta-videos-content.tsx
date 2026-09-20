@@ -8,10 +8,11 @@ import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/pa
 import HelpBreadcrumb from '../help-breadcrumb';
 
 /**
- * /help/beta-videos, in the order a climber meets the feature: where the Beta
- * Videos section is on a climb, how to attach a post they already made (share
- * sheet → "Attach your beta"), how to film new beta from a climb ("Share your
- * beta", three steps), and where their own collect on the profile.
+ * /help/beta-videos. The share-sheet path leads because it is the feature
+ * nobody finds: share a reel from Instagram or TikTok into Boardsesh
+ * ("Attach your beta"). `#share` is the anchor for it. Then where the Beta
+ * Videos section is on a climb, how to film new beta from a climb ("Share your
+ * beta"), and where a climber's own collect on the profile.
  *
  * Every UI label here is checked against packages/mobile: `share-beta.tsx`,
  * `AddBetaVideoSheet.tsx`, `DeferredSections.tsx`, `ProfileBetaShelf.tsx` and
@@ -28,7 +29,17 @@ export default function BetaVideosContent() {
       lead={t('help.betaVideos.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.betaVideos.breadcrumb')} />}
     >
-      <PageSection title={t('help.betaVideos.find.title')} lead={t('help.betaVideos.find.intro')}>
+      <PageSection id="share" title={t('help.betaVideos.share.title')}>
+        <ProseList ordered>
+          <li>{t('help.betaVideos.share.step1')}</li>
+          <li>{t('help.betaVideos.share.step2')}</li>
+          <li>{t('help.betaVideos.share.step3')}</li>
+        </ProseList>
+        <Prose>{t('help.betaVideos.share.p1')}</Prose>
+        <Prose>{t('help.betaVideos.share.p2')}</Prose>
+      </PageSection>
+
+      <PageSection title={t('help.betaVideos.find.title')}>
         <Prose>{t('help.betaVideos.find.p1')}</Prose>
         <Prose>{t('help.betaVideos.find.p2')}</Prose>
         <Prose>
@@ -39,19 +50,17 @@ export default function BetaVideosContent() {
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.betaVideos.share.title')} lead={t('help.betaVideos.share.intro')}>
-        <Prose>{t('help.betaVideos.share.p1')}</Prose>
-        <Prose>{t('help.betaVideos.share.p2')}</Prose>
-        <Prose>{t('help.betaVideos.share.p3')}</Prose>
-      </PageSection>
-
-      <PageSection title={t('help.betaVideos.add.title')} lead={t('help.betaVideos.add.intro')}>
+      <PageSection title={t('help.betaVideos.add.title')}>
+        <ProseList ordered>
+          <li>{t('help.betaVideos.add.step1')}</li>
+          <li>{t('help.betaVideos.add.step2')}</li>
+          <li>{t('help.betaVideos.add.step3')}</li>
+          <li>{t('help.betaVideos.add.step4')}</li>
+        </ProseList>
         <Prose>{t('help.betaVideos.add.p1')}</Prose>
-        <Prose>{t('help.betaVideos.add.p2')}</Prose>
-        <Prose>{t('help.betaVideos.add.p3')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.betaVideos.shelf.title')} lead={t('help.betaVideos.shelf.intro')}>
+      <PageSection title={t('help.betaVideos.shelf.title')}>
         <Prose>{t('help.betaVideos.shelf.p1')}</Prose>
         <Prose>{t('help.betaVideos.shelf.p2')}</Prose>
       </PageSection>

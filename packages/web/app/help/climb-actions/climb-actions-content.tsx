@@ -30,7 +30,7 @@ export default function ClimbActionsContent() {
       lead={t('help.climbActions.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.climbActions.breadcrumb')} />}
     >
-      <PageSection title={t('help.climbActions.open.title')} lead={t('help.climbActions.open.intro')}>
+      <PageSection title={t('help.climbActions.open.title')}>
         <HelpShots>
           <HelpClip
             name="long-press-climb-actions"
@@ -56,17 +56,15 @@ export default function ClimbActionsContent() {
           />
         </HelpShots>
         <Prose>{t('help.climbActions.preview.p1')}</Prose>
-        <Prose>{t('help.climbActions.preview.p2')}</Prose>
-        <Prose>{t('help.climbActions.preview.p3')}</Prose>
         <Prose>
-          {t('help.climbActions.preview.p4')}{' '}
+          {t('help.climbActions.preview.p2')}{' '}
           <MuiLink component={LocaleLink} href="/help/sessions">
             {t('help.climbActions.preview.sessionsLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.climbActions.quick.title')} lead={t('help.climbActions.quick.intro')}>
+      <PageSection title={t('help.climbActions.quick.title')}>
         <ProseList>
           <li>{t('help.climbActions.quick.tick')}</li>
           <li>{t('help.climbActions.quick.playlist')}</li>
@@ -75,7 +73,7 @@ export default function ClimbActionsContent() {
         <Prose>{t('help.climbActions.quick.p1')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.climbActions.rest.title')} lead={t('help.climbActions.rest.intro')}>
+      <PageSection title={t('help.climbActions.rest.title')}>
         <ProseList ordered>
           <li>{t('help.climbActions.rest.queue')}</li>
           <li>{t('help.climbActions.rest.favorite')}</li>

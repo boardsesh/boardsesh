@@ -24,7 +24,7 @@ export default function FindingClimbsContent() {
       lead={t('help.findingClimbs.hero.subtitle')}
       breadcrumb={<HelpBreadcrumb current={t('help.findingClimbs.breadcrumb')} />}
     >
-      <PageSection title={t('help.findingClimbs.start.title')} lead={t('help.findingClimbs.start.intro')}>
+      <PageSection title={t('help.findingClimbs.start.title')}>
         <HelpShots>
           <HelpClip
             name="grade-range-tap"
@@ -45,7 +45,6 @@ export default function FindingClimbsContent() {
             caption={t('help.findingClimbs.holds.clipCaption')}
           />
         </HelpShots>
-        <Prose>{t('help.findingClimbs.holds.p1')}</Prose>
         <ProseList ordered>
           <li>{t('help.findingClimbs.holds.step1')}</li>
           <li>{t('help.findingClimbs.holds.step2')}</li>
@@ -67,7 +66,7 @@ export default function FindingClimbsContent() {
         <Prose>{t('help.findingClimbs.zone.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.setters.title')} lead={t('help.findingClimbs.setters.intro')}>
+      <PageSection title={t('help.findingClimbs.setters.title')}>
         <HelpShots>
           <HelpScreenshot
             shot="setters"
@@ -79,7 +78,7 @@ export default function FindingClimbsContent() {
         <Prose>{t('help.findingClimbs.setters.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.rows.title')} lead={t('help.findingClimbs.rows.intro')}>
+      <PageSection title={t('help.findingClimbs.rows.title')}>
         <HelpShots>
           <HelpClip
             name="swipe-row-queue-playlist"
@@ -97,7 +96,7 @@ export default function FindingClimbsContent() {
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.findingClimbs.keep.title')} lead={t('help.findingClimbs.keep.intro')}>
+      <PageSection title={t('help.findingClimbs.keep.title')}>
         <Prose>{t('help.findingClimbs.keep.p1')}</Prose>
         <Prose>{t('help.findingClimbs.keep.p2')}</Prose>
       </PageSection>

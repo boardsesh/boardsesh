@@ -45,11 +45,9 @@ export default function SessionsContent() {
           <li>{t('help.sessions.start.step2')}</li>
           <li>{t('help.sessions.start.step3')}</li>
         </ProseList>
-        <Prose>{t('help.sessions.start.p1')}</Prose>
-        <Prose>{t('help.sessions.start.p2')}</Prose>
       </PageSection>
 
-      <PageSection id="join" title={t('help.sessions.join.title')} lead={t('help.sessions.join.intro')}>
+      <PageSection id="join" title={t('help.sessions.join.title')}>
         <ProseList>
           <li>{t('help.sessions.join.way1')}</li>
           <li>{t('help.sessions.join.way2')}</li>
@@ -58,34 +56,32 @@ export default function SessionsContent() {
         <Prose>{t('help.sessions.join.p1')}</Prose>
       </PageSection>
 
-      <PageSection id="queue" title={t('help.sessions.queue.title')} lead={t('help.sessions.queue.intro')}>
+      <PageSection id="queue" title={t('help.sessions.queue.title')}>
         <Prose>{t('help.sessions.queue.p1')}</Prose>
         <Prose>{t('help.sessions.queue.p2')}</Prose>
       </PageSection>
 
-      <PageSection id="wall" title={t('help.sessions.wall.title')} lead={t('help.sessions.wall.intro')}>
+      <PageSection id="wall" title={t('help.sessions.wall.title')}>
         <Prose>{t('help.sessions.wall.p1')}</Prose>
-        <Prose>{t('help.sessions.wall.p2')}</Prose>
         <Prose>
-          {t('help.sessions.wall.p3')}{' '}
+          {t('help.sessions.wall.p2')}{' '}
           <MuiLink component={LocaleLink} href="/help/board-and-bluetooth">
             {t('help.sessions.wall.bluetoothLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection id="browsing" title={t('help.sessions.crowd.title')} lead={t('help.sessions.crowd.intro')}>
+      <PageSection id="browsing" title={t('help.sessions.crowd.title')}>
         <Prose>{t('help.sessions.crowd.p1')}</Prose>
-        <Prose>{t('help.sessions.crowd.p2')}</Prose>
         <Prose>
-          {t('help.sessions.crowd.p3')}{' '}
+          {t('help.sessions.crowd.p2')}{' '}
           <MuiLink component={LocaleLink} href="/help/climb-actions">
             {t('help.sessions.crowd.previewLink')}
           </MuiLink>
         </Prose>
       </PageSection>
 
-      <PageSection id="history" title={t('help.sessions.history.title')} lead={t('help.sessions.history.intro')}>
+      <PageSection id="history" title={t('help.sessions.history.title')}>
         <Prose>{t('help.sessions.history.p1')}</Prose>
         <Prose>{t('help.sessions.history.p2')}</Prose>
       </PageSection>

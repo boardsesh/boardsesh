@@ -53,7 +53,7 @@ export default function PlaylistsContent() {
         <Prose>{t('help.playlists.build.p2')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.playlists.remove.title')} lead={t('help.playlists.remove.intro')}>
+      <PageSection title={t('help.playlists.remove.title')}>
         <HelpShots>
           <HelpClip
             name="remove-from-playlist"
@@ -83,7 +83,7 @@ export default function PlaylistsContent() {
         </Prose>
       </PageSection>
 
-      <PageSection title={t('help.playlists.smart.title')} lead={t('help.playlists.smart.intro')}>
+      <PageSection title={t('help.playlists.smart.title')}>
         <ProseList>
           <li>{t('help.playlists.smart.crowdFavorites')}</li>
           <li>{t('help.playlists.smart.hiddenGems')}</li>
@@ -98,12 +98,10 @@ export default function PlaylistsContent() {
         </ProseList>
         <Prose>{t('help.playlists.smart.p1')}</Prose>
         <Prose>{t('help.playlists.smart.p2')}</Prose>
-        <Prose>{t('help.playlists.smart.p3')}</Prose>
       </PageSection>
 
-      <PageSection title={t('help.playlists.tags.title')} lead={t('help.playlists.tags.intro')}>
+      <PageSection title={t('help.playlists.tags.title')}>
         <Prose>{t('help.playlists.tags.p1')}</Prose>
-        <Prose>{t('help.playlists.tags.p2')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.playlists.next.title')}>
