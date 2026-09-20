@@ -46,11 +46,33 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
   const [autoplayRefused, setAutoplayRefused] = React.useState(false);
+  const [inView, setInView] = React.useState(false);
+
+  // A guide page carries three or four clips. Playing them all on mount would
+  // download and decode every loop at once, most of them below the fold, and
+  // defeat preload="metadata". Each clip plays only while it is near the
+  // viewport and pauses when it scrolls away.
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setInView(entry.isIntersecting);
+      },
+      { rootMargin: '200px 0px' },
+    );
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video || prefersReducedMotion === null) return;
-    if (prefersReducedMotion) {
+    if (prefersReducedMotion || !inView) {
       video.pause();
       return;
     }
@@ -58,7 +80,7 @@ export function HelpClip({ name, alt, caption }: { name: HelpClipName; alt: stri
     // a gesture first. The controls the catch reveals are the same fallback the
     // reduced-motion reader gets, so the clip is never a dead rectangle.
     void video.play().catch(() => setAutoplayRefused(true));
-  }, [prefersReducedMotion]);
+  }, [prefersReducedMotion, inView]);
 
   const showsControls = prefersReducedMotion === true || autoplayRefused;
 

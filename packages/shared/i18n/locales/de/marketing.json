@@ -38,7 +38,7 @@
       "description": "Starte eine Session im Tab Aufnehmen, lade deine Crew per QR-Code oder Link ein und teilt euch eine Warteschlange und ein Board, ohne euch gegenseitig die Boulder zu beleuchten."
     },
     "helpFindingClimbs": {
-      "title": "Boulder nach Griff, Wandbereich und Routenbauer*in filtern",
+      "title": "Boulder nach Griff, Board-Bereich und Routenbauer*in filtern",
       "description": "Gradbereich, Grifftypen, Board-Bereich, Routenbauer*innen, denen du folgst, Wischgesten auf einer Boulder-Zeile und angepinnte Filter in der Boardsesh-App."
     },
     "helpLogbook": {
@@ -401,7 +401,7 @@
       },
       "findingClimbs": {
         "title": "Boulder finden",
-        "body": "Boulder nach Grad, Griff, Wandbereich oder Routenbauer*in filtern und die Filter anpinnen, die du brauchst."
+        "body": "Boulder nach Grad, Griff, Board-Bereich oder Routenbauer*in filtern und die Filter anpinnen, die du brauchst."
       },
       "logbook": {
         "title": "Dein Routenbuch",
