@@ -134,7 +134,13 @@ describe('a local write lock lost while clearing the outbox', () => {
 describe('a genuine non-retryable failure', () => {
   it('still dead-letters immediately, so the lock branch swallowed nothing', async () => {
     const onMutationDeadLettered = vi.fn();
-    mockProcessMutation.mockRejectedValue(new Error('Cannot read property "climbUuid" of undefined'));
+    // A POSITIVELY IDENTIFIED server verdict, not a bare throw: since #5295 the
+    // classifier defaults to retry, so only a rejection status (or a GraphQL
+    // rejection code) still dead-letters on the first attempt. That is the
+    // branch the lock handling above must not have swallowed.
+    mockProcessMutation.mockRejectedValue(
+      Object.assign(new Error('GraphQL Error (Code: 400)'), { response: { status: 400 } }),
+    );
 
     await drainMutationQueue(db, createRecordingQueryClient(), graphqlFetch, {
       isOnline: () => true,
