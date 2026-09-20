@@ -254,14 +254,10 @@ describe('docker-web CI job contract', () => {
   });
 
   it('makes the aggregate status depend on the job', () => {
-    // Worth being precise about what this buys: main's branch protection
-    // requires a pull-request review but its required_status_checks list is
-    // EMPTY, and there are no rulesets, so no check — ci-status included —
-    // mechanically blocks a merge today. Without this wiring a failed build
-    // would not even turn ci-status red, so the failure would be invisible
-    // unless someone opened the job list. With it, the aggregate goes red and a
-    // reviewer sees it. That is a visible soft gate resting on maintainer
-    // discipline, not an enforced one.
+    // The required-check ruleset relies on ci-status aggregating every gate
+    // (docs/ci-required-checks.md records whether it has been applied). A build
+    // outside that roll-up could fail without blocking a merge. The full list
+    // is covered by ci-status-rollup.test.ts; this pins the web build's entry.
     expect(ciStatusJob).toContain('- docker-web');
   });
 });
