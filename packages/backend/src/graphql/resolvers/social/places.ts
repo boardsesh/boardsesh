@@ -1,4 +1,4 @@
-import { and, desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, like, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ConnectionContext, PlaceSuggestion } from '@boardsesh/shared-schema';
 import { places } from '@boardsesh/db/schema';
@@ -17,6 +17,9 @@ export const placeQueries = {
     await applyRateLimit(ctx, 120, 'searchPlaces');
     const normalizedQuery = normalizePlaceSearch(placeQuerySchema.parse(query));
     if (normalizedQuery.length < 3) return [];
+    // Match a complete city name even when country/region qualifiers surround
+    // it, without treating "York" as an exact name match inside "Yorkshire".
+    const containsCityName = sql<boolean>`strpos(${` ${normalizedQuery} `}, ' ' || ${places.normalizedName} || ' ') > 0`;
     // Normalization strips LIKE metacharacters. Every token must match, allowing
     // qualifiers such as "Sydney Australia" and aliases such as "Munchen".
     return db
@@ -39,7 +42,7 @@ export const placeQueries = {
         ),
       )
       .orderBy(
-        sql`CASE WHEN ${eq(places.normalizedName, normalizedQuery)} THEN 0 WHEN ${like(places.normalizedName, `${normalizedQuery}%`)} THEN 1 ELSE 2 END`,
+        sql`CASE WHEN ${containsCityName} THEN -length(${places.normalizedName}) WHEN ${like(places.normalizedName, `${normalizedQuery}%`)} THEN 1 ELSE 2 END`,
         desc(places.population),
         places.id,
       )

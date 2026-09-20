@@ -56,6 +56,12 @@ describe('local place search', () => {
     expect((await search('Sydney Canada')).map((result) => result.id)).toEqual([6354908]);
     expect(await search('nowhereimaginary')).toEqual([]);
   });
+  it('keeps exact city names ahead of larger prefix matches with qualifiers', async () => {
+    expect((await search('Sydney Australia')).map((result) => result.id).slice(0, 2)).toEqual([2147714, 900001]);
+    expect((await search('Australia Sydney'))[0].id).toBe(2147714);
+    expect((await search('Sydney Harbour Australia'))[0].id).toBe(900001);
+    expect((await search('Sydney Test 0 Australia'))[0].id).toBe(900010);
+  });
   it('validates bounds and does not interpret LIKE wildcards', async () => {
     await expect(search('ab')).rejects.toThrow();
     await expect(search('x'.repeat(81))).rejects.toThrow();

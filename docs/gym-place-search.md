@@ -19,7 +19,8 @@ appear in geographic results.
 The `places` table stores display names, regions, countries, coordinates,
 population, normalized names and searchable aliases. `pg_trgm` is already a
 database prerequisite (migration 0068). Search matches every normalized token,
-then ranks exact names before name prefixes and other matches, breaking ties by
+then ranks complete city names, longest first (including queries with country/region qualifiers),
+before name prefixes and other matches, breaking ties by
 population descending and GeoNames ID ascending. The public `searchPlaces`
 GraphQL query accepts 3–80 trimmed characters and returns at most five rows.
 
