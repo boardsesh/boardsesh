@@ -10,14 +10,11 @@ export type HelpShot =
   | 'playlist-detail'
   | 'live-sessions'
   | 'session-detail'
-  | 'holds-filter'
-  | 'zone-filter'
   | 'setters'
   | 'logbook'
   | 'board-sheet'
   | 'board-view'
-  | 'climb-actions'
-  | 'preview';
+  | 'climb-actions';
 
 export type HelpCapture = { src: string; width: number; height: number };
 

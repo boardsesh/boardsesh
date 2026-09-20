@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
+import { HelpScreenshot } from '../help-screenshot';
 
 /**
  * The least-found interaction in the app. `Climb Actions Opened` has fired for
@@ -31,15 +32,15 @@ export default function ClimbActionsContent() {
     >
       <PageSection title={t('help.climbActions.open.title')} lead={t('help.climbActions.open.intro')}>
         <HelpShots>
+          <HelpClip
+            name="long-press-climb-actions"
+            alt={t('help.climbActions.open.clipAlt')}
+            caption={t('help.climbActions.open.clipCaption')}
+          />
           <HelpScreenshot
             shot="climb-actions"
             alt={t('help.climbActions.open.shotAlt')}
             caption={t('help.climbActions.open.shotCaption')}
-          />
-          <HelpScreenshot
-            shot="preview"
-            alt={t('help.climbActions.open.previewShotAlt')}
-            caption={t('help.climbActions.open.previewShotCaption')}
           />
         </HelpShots>
         <Prose>{t('help.climbActions.open.p1')}</Prose>
@@ -47,6 +48,13 @@ export default function ClimbActionsContent() {
       </PageSection>
 
       <PageSection title={t('help.climbActions.preview.title')} lead={t('help.climbActions.preview.intro')}>
+        <HelpShots>
+          <HelpClip
+            name="preview-browsing"
+            alt={t('help.climbActions.preview.clipAlt')}
+            caption={t('help.climbActions.preview.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.climbActions.preview.p1')}</Prose>
         <Prose>{t('help.climbActions.preview.p2')}</Prose>
         <Prose>{t('help.climbActions.preview.p3')}</Prose>

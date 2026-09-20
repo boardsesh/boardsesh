@@ -1,0 +1,56 @@
+appId: com.boardsesh.app
+name: help clip - Start playlist? confirm
+---
+# Clip: start-playlist-queue -> packages/web/public/videos/help/start-playlist-queue.mp4
+#
+# Records: opening a playlist from Discover and tapping a climb in it. Because
+# there are climbs queued after the current one, the app asks "Start playlist?"
+# and says how many will drop out. The clip CANCELS — the queue is left alone.
+#
+# The sheet only appears when futureQueueCount > 0 (see
+# src/lib/playlists/use-playlist-activation.ts). With an empty or single-item
+# queue the tap opens the climb straight away and this clip records nothing.
+# Seed the queue with a few climbs before recording: on the Climbs tab, swipe
+# two or three rows left-to-right.
+#
+# Coordinates, not selectors: the playlist cards, the climb rows and the sheet's
+# buttons are all pressables this RN Fabric build does not expose to Maestro.
+#   48%,60%  the "Five Stars" card in the FOR YOU row on Discover
+#   50%,39%  the first climb in the playlist
+#   28%,89%  "Cancel" on the Start playlist? sheet
+#            (the purple "Start playlist" button sits at 72%,89% — do not tap it)
+#
+# Percentages must be WHOLE NUMBERS — Maestro fails to parse "50%,34.5%".
+#
+# The caller navigates to ://home then ://discover BEFORE recording starts.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Open the playlist.
+- tapOn:
+    point: '48%,60%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1200
+    optional: true
+
+# Tap a climb in it.
+- tapOn:
+    point: '50%,39%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 2600
+    optional: true
+
+# Cancel — the queue stays as it was.
+- tapOn:
+    point: '28%,89%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true

@@ -1,0 +1,60 @@
+appId: com.boardsesh.app
+name: help clip - paint holds in the hold-type filter
+---
+# Clip: hold-filter-paint -> packages/web/public/videos/help/hold-filter-paint.mp4
+#
+# Records: the Hold types filter (://climbs/holds). Pick Include, pick the
+# Finish hold type, then tap three holds on the wall — each one lights in the
+# type's colour and "Clear all" appears in the header. The clip ends by tapping
+# Clear all, so the filter is left exactly as it was found.
+#
+# Coordinates, not selectors: the board is a single rendered surface and the
+# segmented control / type chips are plain pressables, none of which this RN
+# Fabric build exposes to Maestro.
+#   27%,82%  "Include" in the Include/Exclude segmented control
+#   50%,88%  the "Finish" hold-type chip
+#   30%,30% / 50%,45% / 65%,58%  three holds spread across the wall
+#   88%,9%   "Clear all" in the native header (only rendered once something
+#            is selected)
+#
+# Percentages must be WHOLE NUMBERS — Maestro fails to parse a point like
+# "50%,34.5%".
+#
+# No pauses between the three hold taps: each tap already costs Maestro about a
+# second and a half of hierarchy work, which reads as the dwell a viewer needs.
+#
+# The caller navigates to ://home then ://climbs/holds BEFORE recording starts.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Include, then the hold type to paint with.
+- tapOn:
+    point: '27%,82%'
+- tapOn:
+    point: '50%,88%'
+
+# Three holds on the wall.
+- tapOn:
+    point: '30%,30%'
+- tapOn:
+    point: '50%,45%'
+- tapOn:
+    point: '65%,58%'
+
+# Hold on the painted wall.
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1600
+    optional: true
+
+# Clear all — back to an untouched filter.
+- tapOn:
+    point: '88%,9%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true

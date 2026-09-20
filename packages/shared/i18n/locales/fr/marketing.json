@@ -440,14 +440,18 @@
         "intro": "Tu peux retirer un bloc depuis le bloc lui-même ou depuis la playlist.",
         "p1": "Depuis le bloc, rouvre Ajouter à la playlist et touche la playlist qui a une coche. La coche part et le bloc est sorti.",
         "p2": "Depuis la playlist, touche le crayon dans la barre d'outils, ou ouvre le menu ⋯ et choisis Réorganiser et retirer des blocs. Chaque bloc reçoit un moins rouge à gauche et une poignée à droite. Touche le moins et confirme Retirer le bloc ? pour le sortir. Fais glisser la poignée pour changer l'ordre. Touche Terminé quand tu as fini.",
-        "p3": "Les listes sous Pour vous n'ont pas de mode édition, parce que tu n'y as rien mis à la main. Change plutôt ce qui les alimente. Retire le cœur d'un bloc et il quitte Voies aimées. Enregistre la croix et il quitte Projets."
+        "p3": "Les listes sous Pour vous n'ont pas de mode édition, parce que tu n'y as rien mis à la main. Change plutôt ce qui les alimente. Retire le cœur d'un bloc et il quitte Voies aimées. Enregistre la croix et il quitte Projets.",
+        "clipAlt": "Ajouter à la playlist ouvre une liste à cocher, une playlist est cochée et gagne le bloc, puis retouchée et le compte redescend.",
+        "clipCaption": "Touche une playlist qui a déjà une coche et le bloc en ressort aussitôt."
       },
       "queue": {
         "title": "Grimper toute la liste",
         "intro": "Touche un bloc dans une playlist et ta file devient cette playlist.",
         "p1": "La touche ouvre le bloc et remplace ta file par la playlist dans l'ordre, à partir du bloc que tu as touché, donc les swipes dans le lecteur parcourent la liste. S'il te restait des blocs en file après celui en cours, une fiche Lancer la playlist ? demande d'abord et t'annonce combien vont sauter. Le bouton lecture dans l'en-tête de la playlist (Mettre toutes les voies en file) fait la même chose depuis le début.",
         "p2": "Dans une session avec d'autres gens, toucher un bloc l'ouvre seulement pour toi. La file partagée et le mur ne bougent pas.",
-        "sessionsLink": "Comment une session partage une seule file"
+        "sessionsLink": "Comment une session partage une seule file",
+        "clipAlt": "Une playlist s'ouvre, le premier bloc est touché, et une fiche Lancer la playlist ? demande avant de reprendre la file.",
+        "clipCaption": "S'il te reste des blocs en file, Lancer la playlist ? demande avant que la liste prenne la main."
       },
       "smart": {
         "title": "Les huit listes que Boardsesh monte pour toi",
@@ -549,7 +553,9 @@
         "intro": "Règle ça avant tout le reste. Ces réglages changent tous les chiffres de la liste.",
         "p1": "La pastille Cotation est à côté du champ de recherche. Touche une cotation pour n'afficher qu'elle. Touche une deuxième cotation dans les trois secondes et tu obtiens la plage entre les deux. Retouche la cotation sélectionnée et ça revient à Toutes.",
         "p2": "L'angle n'est pas un filtre. Il appartient à la board où tu es, et chaque cotation et chaque nombre de croix de la liste sont lus à cet angle. Touche la pastille qui affiche les degrés actuels pour le changer. Une board à angle fixe n'a pas de pastille d'angle.",
-        "p3": "Quand tu es connecté, les pastilles Progression filtrent selon ton propre historique. Non enchaînées cache tout ce que tu as enchaîné. Projets ne garde que les blocs que tu as essayés sans les enchaîner. Non essayées garde les blocs sur lesquels tu n'as jamais noté d'essai, et Enchaînées montre ceux que tu as faits."
+        "p3": "Quand tu es connecté, les pastilles Progression filtrent selon ton propre historique. Non enchaînées cache tout ce que tu as enchaîné. Projets ne garde que les blocs que tu as essayés sans les enchaîner. Non essayées garde les blocs sur lesquels tu n'as jamais noté d'essai, et Enchaînées montre ceux que tu as faits.",
+        "clipAlt": "La pastille Cotation ouvre une rangée de cotations, deux touches rapides forment une plage, une autre la réduit à une seule cotation et la suivante efface le filtre.",
+        "clipCaption": "Deux touches rapides forment une plage. Retouche la même cotation pour tout effacer."
       },
       "holds": {
         "title": "Filtrer par prise",
@@ -560,16 +566,16 @@
         "step3": "Touche des prises sur la board. Retouche une prise avec le même pinceau pour effacer cette marque.",
         "p2": "Une prise peut porter plusieurs marques, donc tu peux demander un bloc qui part d'une prise et finit sur une autre. Tout effacer, dans le coin en haut, retire toutes les marques. Reviens en arrière et la fiche Filtres reprend tes prises.",
         "p3": "La MoonBoard n'a pas de prises réservées aux pieds, donc il n'y a pas de pinceau Pied là-bas. Départ, Main, Arrivée et Toutes marchent toujours.",
-        "shotAlt": "L'écran de filtre par prise avec des prises marquées sur la board",
-        "shotCaption": "Touche une prise pour marquer ce qu'elle doit être.",
-        "zoneShotAlt": "Un rectangle tracé sur une partie de la board",
-        "zoneShotCaption": "Fais glisser le cadre ou un coin pour régler la zone."
+        "clipAlt": "Inclure et un type de prise sont choisis, puis trois prises de la board sont touchées et s’allument, et Tout effacer les retire.",
+        "clipCaption": "Choisis le pinceau en premier, puis touche des prises. Tout effacer nettoie la board."
       },
       "zone": {
         "title": "Délimiter une partie du mur",
         "intro": "Ouvre Filtres, descends jusqu'à Le bloc et touche Zone du mur.",
         "p1": "Touche Ajouter une zone et un cadre se pose sur la board. Fais glisser le milieu pour le déplacer et un coin pour le redimensionner. Avec Toutes les prises sélectionné, seuls les blocs entièrement contenus dans le cadre restent dans la liste. Passe à Une prise pour garder tout bloc qui mord dans le cadre.",
-        "p2": "Effacer la zone retire le cadre. Les filtres par prise et par zone tournent sur le serveur, donc sur une board téléchargée sans réseau la liste affiche un bouton Effacer le filtre à la place des résultats."
+        "p2": "Effacer la zone retire le cadre. Les filtres par prise et par zone tournent sur le serveur, donc sur une board téléchargée sans réseau la liste affiche un bouton Effacer le filtre à la place des résultats.",
+        "clipAlt": "Ajouter une zone pose un cadre sur la board, le cadre est déplacé sur le mur puis étiré par un coin.",
+        "clipCaption": "Fais glisser le milieu pour déplacer le cadre, un coin pour le redimensionner."
       },
       "setters": {
         "title": "Suivez des ouvreurs, puis ne cherchez qu'eux",
@@ -585,7 +591,9 @@
         "p1": "Fais glisser une ligne vers la droite pour ajouter le bloc à ta file. Vers la gauche pour ouvrir le sélecteur de playlists. Ni l'un ni l'autre n'allume la board.",
         "p2": "Le petit symbole sur une ligne, c'est ton historique avec ce bloc. Un éclair veut dire que tu l'as flashé, une coche cerclée que tu l'as enchaîné, et une croix cerclée que tu l'as essayé. Un C cerclé marque une référence.",
         "actionsLink": "Voir tout le menu d'appui long",
-        "p3": "Fais un appui long sur une ligne pour ouvrir le menu d'actions. Ajouter à la file, Ajouter à la playlist, Enregistrer une croix, Ajouter une vidéo beta et Copier le lien y sont tous."
+        "p3": "Fais un appui long sur une ligne pour ouvrir le menu d'actions. Ajouter à la file, Ajouter à la playlist, Enregistrer une croix, Ajouter une vidéo beta et Copier le lien y sont tous.",
+        "clipAlt": "Une ligne de bloc glisse vers la droite et un panneau vert de file apparaît, une autre glisse vers la gauche et un panneau violet ouvre le sélecteur de playlists.",
+        "clipCaption": "À droite ça part dans ta file, à gauche ça ouvre le sélecteur de playlists."
       },
       "keep": {
         "title": "Garde les filtres que tu utilises",
@@ -624,7 +632,9 @@
         "field2": "Angle et Essais. La date et l'heure restent celles que tu as notées.",
         "field3": "Cotation, Étoiles et Note.",
         "p2": "Si une ligne regroupe plusieurs essais du même jour, l'app demande d'abord Quelle entrée modifier ?",
-        "p3": "Modifier et supprimer demandent une connexion. Une nouvelle croix s'enregistre hors ligne et se synchronise dès que tu retrouves du réseau. Une modification sur une ancienne part directement au serveur."
+        "p3": "Modifier et supprimer demandent une connexion. Une nouvelle croix s'enregistre hors ligne et se synchronise dès que tu retrouves du réseau. Une modification sur une ancienne part directement au serveur.",
+        "clipAlt": "Une ligne du carnet glisse vers la droite et montre le crayon de modification, vers la gauche et montre la corbeille, puis un glissement complet vers la gauche fait apparaître la confirmation de suppression.",
+        "clipCaption": "Un glissement court montre le crayon ou la corbeille. Un glissement complet vers la gauche demande avant de supprimer."
       },
       "delete": {
         "title": "Supprimer une entrée",
@@ -740,8 +750,8 @@
         "p2": "Si tu préfères toucher plutôt que garder appuyé, l'onglet Blocs peut afficher un bouton ⋮ sur chaque ligne, qui ouvre la même carte. Touche ton avatar, puis Paramètres, descends jusqu'à Affichage et active Afficher le bouton d'actions rapides.",
         "shotAlt": "La carte d'actions ouverte au-dessus d'une liste de blocs",
         "shotCaption": "La carte a trois boutons rapides en haut et la liste complète en dessous.",
-        "previewShotAlt": "Le lecteur en mode exploration",
-        "previewShotCaption": "En Aperçu, l'étiquette Exploration est en haut et la rangée de validation juste en dessous."
+        "clipAlt": "Un doigt fait un appui long sur la ligne d'un bloc jusqu'à ce que la carte d'actions se soulève au-dessus de la liste, puis touche le fond pour la refermer.",
+        "clipCaption": "Garde le doigt sur la ligne un instant. La carte se soulève toute seule."
       },
       "preview": {
         "title": "Voir un bloc sans allumer la board",
@@ -750,7 +760,9 @@
         "p2": "Dans une session avec d'autres gens, ou avec Allumer en faisant défiler les blocs désactivé, une étiquette Exploration se pose en haut et une rangée de validation attend en dessous. Touche Activer quand tu veux le bloc. Si un bloc est déjà allumé sur le mur, le bouton affiche plutôt Allumer au mur. Revenir au mur te ramène à ta file.",
         "p3": "Dans une session, ça veut dire que tu peux lire la beta du bloc suivant pendant que quelqu'un d'autre est dans son essai, et rien de ce que tu regardes n'atteint les LED ni ne bouge la file de qui que ce soit.",
         "p4": "Si tu grimpes seul, tu obtiens le même comportement avec un réglage. Garde l'ampoule appuyée dans le lecteur pour ouvrir les commandes de la board, puis désactive Allumer en faisant défiler les blocs et Allumer en sélectionnant dans la liste. Rejoins une session et l'exploration s'active toute seule.",
-        "sessionsLink": "Comment une session garde le mur tranquille"
+        "sessionsLink": "Comment une session garde le mur tranquille",
+        "clipAlt": "Toucher la ligne d'un bloc ouvre le lecteur, et un seul glissement latéral sur la board amène le bloc suivant et fait apparaître l'étiquette Exploration.",
+        "clipCaption": "Regarde l'étiquette Exploration arriver après le glissement. Le mur ne bouge pas."
       },
       "quick": {
         "title": "Les trois boutons du haut",

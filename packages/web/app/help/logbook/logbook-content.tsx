@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
+import { HelpScreenshot } from '../help-screenshot';
 
 /**
  * 91 climbers have ever edited a logbook entry, and the feature request that
@@ -41,6 +42,13 @@ export default function LogbookContent() {
       </PageSection>
 
       <PageSection title={t('help.logbook.edit.title')} lead={t('help.logbook.edit.intro')}>
+        <HelpShots>
+          <HelpClip
+            name="logbook-swipe-edit-delete"
+            alt={t('help.logbook.edit.clipAlt')}
+            caption={t('help.logbook.edit.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.logbook.edit.p1')}</Prose>
         <ProseList>
           <li>{t('help.logbook.edit.field1')}</li>

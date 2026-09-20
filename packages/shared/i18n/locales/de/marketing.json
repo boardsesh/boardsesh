@@ -440,14 +440,18 @@
         "intro": "Du kannst einen Boulder vom Boulder aus rausnehmen oder aus der Playlist heraus.",
         "p1": "Vom Boulder aus öffnest du wieder Zur Playlist hinzufügen und tippst auf die Playlist mit dem Haken. Der Haken geht weg, der Boulder ist raus.",
         "p2": "Aus der Playlist heraus tippst du auf den Stift in der Leiste, oder du öffnest das Menü ⋯ und wählst Boulder umsortieren & entfernen. Jeder Boulder bekommt links ein rotes Minus und rechts einen Griff zum Ziehen. Tipp auf das Minus und bestätige Boulder entfernen?, um ihn rauszunehmen. Zieh am Griff, um die Reihenfolge zu ändern. Tipp auf Fertig, wenn du durch bist.",
-        "p3": "Die Listen unter Für dich haben keinen Bearbeiten-Modus, weil du da nichts von Hand reingelegt hast. Ändere stattdessen, was sie füttert. Nimm das Herz weg, und der Boulder verlässt Gelikte Boulder. Trag die Begehung ein, und er verlässt Projekte."
+        "p3": "Die Listen unter Für dich haben keinen Bearbeiten-Modus, weil du da nichts von Hand reingelegt hast. Ändere stattdessen, was sie füttert. Nimm das Herz weg, und der Boulder verlässt Gelikte Boulder. Trag die Begehung ein, und er verlässt Projekte.",
+        "clipAlt": "Zur Playlist hinzufügen öffnet eine Liste mit Haken, eine Playlist wird angehakt und bekommt den Boulder, und beim erneuten Antippen fällt der Zähler zurück.",
+        "clipCaption": "Tipp eine Playlist an, die schon einen Haken hat, und der Boulder ist sofort wieder raus."
       },
       "queue": {
         "title": "Die ganze Liste klettern",
         "intro": "Tipp einen Boulder in einer Playlist an, und deine Warteschlange wird zu dieser Playlist.",
         "p1": "Der Tap öffnet den Boulder und ersetzt deine Warteschlange durch die Playlist in ihrer Reihenfolge, ab dem Boulder, den du angetippt hast. Wischen im Player läuft also die Liste ab. Standen nach deinem aktuellen Boulder noch welche in der Warteschlange, fragt vorher ein Sheet Playlist starten? und sagt dir, wie viele rausfallen. Der Play-Button im Playlist-Kopf (Alle Boulder in die Warteschlange) macht dasselbe von oben.",
         "p2": "In einer Session mit anderen öffnet ein Tap auf einen Boulder ihn nur für dich. Die gemeinsame Warteschlange und die Wand bleiben, wie sie sind.",
-        "sessionsLink": "Wie eine Session eine Warteschlange teilt"
+        "sessionsLink": "Wie eine Session eine Warteschlange teilt",
+        "clipAlt": "Eine Playlist wird geöffnet, der erste Boulder angetippt, und ein Sheet Playlist starten? fragt, bevor es die Warteschlange übernimmt.",
+        "clipCaption": "Stehen schon Boulder in der Warteschlange, fragt Playlist starten? bevor die Liste übernimmt."
       },
       "smart": {
         "title": "Die acht Listen, die Boardsesh für dich baut",
@@ -549,7 +553,9 @@
         "intro": "Diese stellst du als Erstes ein. Sie ändern jede Zahl in der Liste.",
         "p1": "Der Grad-Chip sitzt neben dem Suchfeld. Tipp einen Grad an, und nur der wird gezeigt. Tipp innerhalb von drei Sekunden einen zweiten an, und du bekommst den Bereich dazwischen. Tipp den gewählten Grad nochmal an, und er geht zurück auf Beliebig.",
         "p2": "Der Winkel ist kein Filter. Er gehört zum Board, an dem du bist, und jeder Grad und jede Begehungszahl in der Liste wird in diesem Winkel gelesen. Tipp auf den Chip mit der aktuellen Gradzahl, um ihn zu ändern. Ein Board mit festem Winkel hat keinen Winkel-Chip.",
-        "p3": "Wenn du angemeldet bist, filtern die Fortschritt-Chips nach deiner eigenen Historie. Nicht getoppt blendet alles aus, was du getoppt hast. Projekte behält nur Boulder, die du versucht und nicht getoppt hast. Nicht versucht behält Boulder, auf die du nie einen Versuch eingetragen hast, und Getoppt zeigt die, die du hast."
+        "p3": "Wenn du angemeldet bist, filtern die Fortschritt-Chips nach deiner eigenen Historie. Nicht getoppt blendet alles aus, was du getoppt hast. Projekte behält nur Boulder, die du versucht und nicht getoppt hast. Nicht versucht behält Boulder, auf die du nie einen Versuch eingetragen hast, und Getoppt zeigt die, die du hast.",
+        "clipAlt": "Der Grad-Chip öffnet eine Leiste mit Graden, zwei schnelle Taps bilden einen Bereich, ein weiterer schrumpft ihn auf einen Grad und der nächste löscht den Filter.",
+        "clipCaption": "Zwei schnelle Taps bilden einen Bereich. Tipp denselben Grad nochmal an, um ihn zu löschen."
       },
       "holds": {
         "title": "Nach Griff filtern",
@@ -560,16 +566,16 @@
         "step3": "Tipp Griffe auf dem Board an. Tipp einen Griff mit demselben Pinsel nochmal an, um die Markierung zu löschen.",
         "p2": "Ein Griff kann mehrere Markierungen tragen, du kannst also nach einem Boulder fragen, der auf einem Griff startet und auf einem anderen toppt. Alles zurücksetzen in der oberen Ecke löscht jede Markierung. Geh zurück, und das Filter-Sheet übernimmt deine Griffe.",
         "p3": "Das MoonBoard hat keine reinen Fußgriffe, dort gibt es also keinen Pinsel Fuß. Start, Hand, Top und Beliebig gehen weiterhin.",
-        "shotAlt": "Der Screen für den Grifffilter mit markierten Griffen auf dem Board",
-        "shotCaption": "Tipp einen Griff an, um zu markieren, was er sein muss.",
-        "zoneShotAlt": "Ein Rechteck über einem Teil des Boards",
-        "zoneShotCaption": "Zieh das Rechteck oder eine Ecke, um den Bereich zu setzen."
+        "clipAlt": "Einschließen und ein Grifftyp werden gewählt, dann werden drei Griffe auf dem Board angetippt und leuchten auf, und Alles zurücksetzen nimmt sie wieder weg.",
+        "clipCaption": "Erst den Pinsel wählen, dann Griffe antippen. Alles zurücksetzen räumt das Board leer."
       },
       "zone": {
         "title": "Einen Teil der Wand eingrenzen",
         "intro": "Öffne Filter, scroll zu Der Boulder und tipp auf Board-Bereich.",
         "p1": "Tipp auf Bereich hinzufügen, und ein Rechteck landet auf dem Board. Zieh die Mitte, um es zu verschieben, und eine Ecke, um es zu vergrößern. Mit Alle Griffe bleiben nur Boulder in der Liste, die komplett im Rechteck liegen. Wechsel auf Beliebiger Griff, um jeden Boulder zu behalten, der ins Rechteck hineinreicht.",
-        "p2": "Bereich löschen nimmt das Rechteck weg. Griff- und Bereichsfilter laufen auf dem Server. Auf einem heruntergeladenen Board ohne Empfang zeigt die Liste deshalb einen Button Filter zurücksetzen statt Ergebnissen."
+        "p2": "Bereich löschen nimmt das Rechteck weg. Griff- und Bereichsfilter laufen auf dem Server. Auf einem heruntergeladenen Board ohne Empfang zeigt die Liste deshalb einen Button Filter zurücksetzen statt Ergebnissen.",
+        "clipAlt": "Bereich hinzufügen setzt ein Rechteck auf das Board, das Rechteck wird über die Wand gezogen und danach an einer Ecke aufgezogen.",
+        "clipCaption": "Zieh die Mitte, um das Rechteck zu verschieben, eine Ecke, um es zu vergrößern."
       },
       "setters": {
         "title": "Folge Routenbauer*innen und such nur bei ihnen",
@@ -585,7 +591,9 @@
         "p1": "Wisch eine Zeile nach rechts, um den Boulder in deine Warteschlange zu legen. Wisch sie nach links, um die Playlist-Auswahl zu öffnen. Keine von beiden beleuchtet das Board.",
         "p2": "Das kleine Zeichen auf einer Zeile ist deine Historie mit dem Boulder. Ein Blitz heißt, du hast ihn geflasht, ein Haken im Kreis, du hast ihn getoppt, und ein Kreuz im Kreis, du hast ihn versucht. Ein C im Kreis markiert einen Benchmark.",
         "actionsLink": "Alles im Gedrückt-halten-Menü ansehen",
-        "p3": "Halte eine Zeile gedrückt für das Aktionsmenü. Zur Warteschlange hinzufügen, Zur Playlist hinzufügen, Eintrag machen, Beta-Video hinzufügen und Link kopieren stehen alle dort."
+        "p3": "Halte eine Zeile gedrückt für das Aktionsmenü. Zur Warteschlange hinzufügen, Zur Playlist hinzufügen, Eintrag machen, Beta-Video hinzufügen und Link kopieren stehen alle dort.",
+        "clipAlt": "Eine Boulder-Zeile wird nach rechts gewischt und ein grünes Warteschlangen-Panel erscheint, eine andere nach links und ein violettes Panel öffnet die Playlist-Auswahl.",
+        "clipCaption": "Nach rechts geht er in deine Warteschlange, nach links öffnet sich die Playlist-Auswahl."
       },
       "keep": {
         "title": "Behalte die Filter, die du nutzt",
@@ -624,7 +632,9 @@
         "field2": "Winkel und Versuche. Datum und Zeit bleiben so, wie du sie eingetragen hast.",
         "field3": "Grad, Sterne und Notiz.",
         "p2": "Bündelt eine Zeile mehrere Versuche vom selben Tag, fragt die App zuerst Welchen Eintrag bearbeiten?",
-        "p3": "Bearbeiten und Löschen brauchen eine Verbindung. Ein neuer Eintrag speichert offline und synchronisiert, sobald du wieder online bist. Eine Änderung an einem alten geht direkt an den Server."
+        "p3": "Bearbeiten und Löschen brauchen eine Verbindung. Ein neuer Eintrag speichert offline und synchronisiert, sobald du wieder online bist. Eine Änderung an einem alten geht direkt an den Server.",
+        "clipAlt": "Eine Routenbuch-Zeile wird nach rechts gewischt und zeigt den Stift zum Bearbeiten, nach links und zeigt den Papierkorb, und ein voller Wisch nach links holt die Löschabfrage.",
+        "clipCaption": "Ein kurzer Wisch zeigt den Stift oder den Papierkorb. Ein voller Wisch nach links fragt vor dem Löschen."
       },
       "delete": {
         "title": "Einen Eintrag löschen",
@@ -740,8 +750,8 @@
         "p2": "Wenn du lieber tippst als hältst, kann der Tab Boulder auf jeder Zeile einen Button ⋮ zeigen, der dieselbe Karte öffnet. Tipp auf deinen Avatar, dann auf Einstellungen, scroll zu Anzeige und schalte Schnellaktionen-Button anzeigen ein.",
         "shotAlt": "Die Aktionskarte über einer Boulder-Liste",
         "shotCaption": "Die Karte hat oben drei schnelle Buttons und darunter die volle Liste.",
-        "previewShotAlt": "Der Player im Stöber-Modus",
-        "previewShotCaption": "In der Vorschau sitzt oben die Anzeige Stöbern und darunter die Zeile zum Übernehmen."
+        "clipAlt": "Ein Finger hält die Zeile eines Boulders gedrückt, bis sich die Aktionskarte über der Liste hebt, und tippt dann auf den Hintergrund, um sie zu schließen.",
+        "clipCaption": "Halt die Zeile einen Moment gedrückt. Die Karte hebt sich von selbst."
       },
       "preview": {
         "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
@@ -750,7 +760,9 @@
         "p2": "In einer Session mit anderen, oder mit ausgeschaltetem Boulder beim Wischen beleuchten, sitzt oben die Anzeige Stöbern und darunter wartet eine Zeile zum Übernehmen. Tipp auf Aktiv setzen, wenn du den Boulder willst. Leuchtet schon ein Boulder an der Wand, heißt der Button stattdessen Am Board beleuchten. Zurück zu live bringt dich auf deine Warteschlange zurück.",
         "p3": "In einer Session heißt das: du kannst die Beta für den nächsten Boulder lesen, während jemand anderes mitten im Versuch hängt, und nichts, was du anschaust, erreicht die LEDs oder bewegt jemandes Warteschlange.",
         "p4": "Allein bekommst du dasselbe Verhalten über eine Einstellung. Halt im Player die Glühbirne gedrückt, um die Board-Steuerungen zu öffnen, und schalte dann Boulder beim Wischen beleuchten und Boulder beim Antippen in der Liste beleuchten aus. Trittst du einer Session bei, ist Stöbern automatisch an.",
-        "sessionsLink": "Wie eine Session die Wand in Ruhe lässt"
+        "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
+        "clipAlt": "Ein Tap auf die Zeile eines Boulders öffnet den Player, und ein einziges seitliches Ziehen über das Board holt den nächsten Boulder herein und lässt die Anzeige Stöbern erscheinen.",
+        "clipCaption": "Achte auf die Anzeige Stöbern nach dem Wischen. Die Wand bleibt, wie sie war."
       },
       "quick": {
         "title": "Die drei Buttons oben",

@@ -1,0 +1,42 @@
+appId: com.boardsesh.app
+name: help clip - long press a climb row
+---
+# Clip: long-press-climb-actions -> packages/web/public/videos/help/long-press-climb-actions.mp4
+#
+# Records: pressing and holding a climb row on the Climbs tab until the
+# iMessage-style action card lifts (Log a tick / Add to Playlist / Share / …),
+# then dismissing it by tapping the backdrop.
+#
+# Driven by coordinates: Maestro's accessibility tree on this RN Fabric build
+# does not expose climb rows, so there is nothing to match by text or id.
+# The caller navigates to ://home then ://climbs BEFORE recording starts, so the
+# clip contains only the gesture.
+#
+# 50%,23% is the first climb row; 50%,7% is the backdrop above the floating card.
+
+# Settle on the climb list.
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true
+
+# The gesture the clip teaches: press and hold the row (400ms minimum).
+- longPressOn:
+    point: '50%,23%'
+- waitForAnimationToEnd
+
+# Hold on the open action card long enough to read every item.
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 2600
+    optional: true
+
+# Dismiss: tap the scrim above the floating climb.
+- tapOn:
+    point: '50%,7%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1200
+    optional: true

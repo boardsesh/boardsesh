@@ -36,6 +36,15 @@ killing it any harder leaves an unplayable container.
 
 The operator can deliver incrementally; the converter takes what has arrived.
 
+## Re-recording one
+
+Every clip has a Maestro flow in `packages/mobile/.maestro/help-clips/`, named
+after the clip, whose header says what it records, which deep link the caller
+must already be on, and what each coordinate targets. The boot command, the
+lease-token and whole-percentage gotchas, the per-clip traps and what a session
+leaves on the account are all in
+[that directory's README](../packages/mobile/.maestro/help-clips/README.md).
+
 ## Converting
 
 ```

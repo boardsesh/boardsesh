@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
-import { HelpScreenshot, HelpShots } from '../help-screenshot';
+import { HelpClip, HelpShots } from '../help-clip';
+import { HelpScreenshot } from '../help-screenshot';
 
 /**
  * 329 climbers made a playlist in 90 days, and the questions that reach Discord
@@ -53,12 +54,26 @@ export default function PlaylistsContent() {
       </PageSection>
 
       <PageSection title={t('help.playlists.remove.title')} lead={t('help.playlists.remove.intro')}>
+        <HelpShots>
+          <HelpClip
+            name="remove-from-playlist"
+            alt={t('help.playlists.remove.clipAlt')}
+            caption={t('help.playlists.remove.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.playlists.remove.p1')}</Prose>
         <Prose>{t('help.playlists.remove.p2')}</Prose>
         <Prose>{t('help.playlists.remove.p3')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.playlists.queue.title')} lead={t('help.playlists.queue.intro')}>
+        <HelpShots>
+          <HelpClip
+            name="start-playlist-queue"
+            alt={t('help.playlists.queue.clipAlt')}
+            caption={t('help.playlists.queue.clipCaption')}
+          />
+        </HelpShots>
         <Prose>{t('help.playlists.queue.p1')}</Prose>
         <Prose>
           {t('help.playlists.queue.p2')}{' '}

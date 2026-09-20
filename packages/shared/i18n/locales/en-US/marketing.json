@@ -440,14 +440,18 @@
         "intro": "You can remove a climb from the climb itself or from inside the playlist.",
         "p1": "From the climb, open Add to Playlist again and tap the playlist that has a tick. The tick clears and the climb is out.",
         "p2": "From the playlist, tap the pencil in the toolbar, or open the ⋯ menu and choose Reorder & remove climbs. Each climb gets a red minus on the left and a drag handle on the right. Tap the minus and confirm Remove climb? to take it out. Drag the handle to change the order. Tap Done when you're finished.",
-        "p3": "The lists under For You have no edit mode, because you didn't put anything in them by hand. Change what feeds them instead. Un-heart a climb and it leaves Liked Climbs. Log the send and it leaves Projects."
+        "p3": "The lists under For You have no edit mode, because you didn't put anything in them by hand. Change what feeds them instead. Un-heart a climb and it leaves Liked Climbs. Log the send and it leaves Projects.",
+        "clipAlt": "Add to Playlist opens a checklist, a playlist is ticked and gains the climb, then untapped and the count drops back.",
+        "clipCaption": "Tap a playlist that already has a tick and the climb comes straight back out."
       },
       "queue": {
         "title": "Climb the whole list",
         "intro": "Tap a climb in a playlist and your queue becomes that playlist.",
         "p1": "The tap opens the climb and replaces your queue with the playlist in order, starting from the climb you tapped, so swiping in the play drawer walks the list. If you had climbs queued after your current one, a Start playlist? sheet asks first and tells you how many will drop out. The play button in the playlist header (Queue every climb) does the same from the top.",
         "p2": "In a session with other people, tapping a climb only opens it for you. The shared queue and the wall stay as they were.",
-        "sessionsLink": "How a session shares one queue"
+        "sessionsLink": "How a session shares one queue",
+        "clipAlt": "A playlist opens, the first climb is tapped, and a Start playlist? sheet asks before it takes over the queue.",
+        "clipCaption": "With climbs already queued, Start playlist? asks before the list takes over."
       },
       "smart": {
         "title": "The eight lists Boardsesh builds for you",
@@ -549,7 +553,9 @@
         "intro": "Set these before anything else. They change every number in the list.",
         "p1": "The Grade pill sits next to the search field. Tap a grade to show only that grade. Tap a second grade within three seconds and you get the range between them. Tap the selected grade again and it clears back to Any.",
         "p2": "Angle is not a filter. It belongs to the board you are on, and every grade and send count in the list is read at that angle. Tap the chip showing the current degrees to change it. A board with a fixed angle has no angle chip.",
-        "p3": "When you are signed in, the Progress chips filter by your own history. Unsent hides everything you have sent. Projects keeps only climbs you have tried and not sent. Not tried keeps climbs you have never logged a go on, and Sent shows the ones you have."
+        "p3": "When you are signed in, the Progress chips filter by your own history. Unsent hides everything you have sent. Projects keeps only climbs you have tried and not sent. Not tried keeps climbs you have never logged a go on, and Sent shows the ones you have.",
+        "clipAlt": "The Grade chip opens a rail of grades, two quick taps build a range, another tap shrinks it to one grade and the next clears the filter.",
+        "clipCaption": "Two quick taps build a range. Tap the same grade again to clear it."
       },
       "holds": {
         "title": "Filter by hold",
@@ -560,16 +566,16 @@
         "step3": "Tap holds on the board. Tap a hold again with the same brush to clear that mark.",
         "p2": "A hold can carry more than one mark, so you can ask for a climb that starts on one hold and finishes on another. Clear all in the top corner removes every mark. Go back and the Filters sheet picks up your holds.",
         "p3": "MoonBoard has no foot-only holds, so there is no Foot brush there. Start, Hand, Finish and Any still work.",
-        "shotAlt": "The hold filter screen with holds marked on the board",
-        "shotCaption": "Tap a hold to mark what it has to be.",
-        "zoneShotAlt": "A region box drawn over part of the board",
-        "zoneShotCaption": "Drag the box or a corner to set the region."
+        "clipAlt": "Include and a hold type are picked, then three holds on the board are tapped and light up, and Clear all takes them off again.",
+        "clipCaption": "Pick a brush first, then tap holds. Clear all wipes the board."
       },
       "zone": {
         "title": "Box off part of the wall",
         "intro": "Open Filters, scroll to The climb and tap Board region.",
         "p1": "Tap Add a region and a box lands on the board. Drag the middle to move it and drag a corner to resize it. With All holds selected, only climbs that sit entirely inside the box stay in the list. Switch to Any hold to keep any climb that reaches into the box.",
-        "p2": "Clear region removes the box. Hold and region filters run on the server, so on a downloaded board with no signal the list shows a Clear filter button instead of results."
+        "p2": "Clear region removes the box. Hold and region filters run on the server, so on a downloaded board with no signal the list shows a Clear filter button instead of results.",
+        "clipAlt": "Add a region drops a box on the board, the box is dragged across the wall and then stretched out by a corner handle.",
+        "clipCaption": "Drag the middle to move the box, a corner to resize it."
       },
       "setters": {
         "title": "Follow setters, then search only them",
@@ -585,7 +591,9 @@
         "p1": "Swipe a row to the right to add the climb to your queue. Swipe it to the left to open the playlist picker. Neither one lights the board.",
         "p2": "The small glyph on a row is your history with that climb. A bolt means you flashed it, a circled tick means you sent it, and a circled cross means you tried it. A circled C marks a benchmark.",
         "actionsLink": "See everything in the long-press menu",
-        "p3": "Press and hold a row for the action menu. Add to queue, Add to Playlist, Log a tick, Add beta video and Copy link all live there."
+        "p3": "Press and hold a row for the action menu. Add to queue, Add to Playlist, Log a tick, Add beta video and Copy link all live there.",
+        "clipAlt": "One climb row is swiped right and a green queue panel appears, another is swiped left and a purple panel opens the playlist picker.",
+        "clipCaption": "Right sends it to your queue, left opens the playlist picker."
       },
       "keep": {
         "title": "Keep the filters you use",
@@ -624,7 +632,9 @@
         "field2": "Angle and Tries. Date and time stay as you logged them.",
         "field3": "Grade, Stars and Note.",
         "p2": "If one row bundles several goes from the same day, the app first asks Which entry to edit?",
-        "p3": "Editing and deleting need a connection. A new tick saves offline and syncs when you are back online. A change to an old one goes straight to the server."
+        "p3": "Editing and deleting need a connection. A new tick saves offline and syncs when you are back online. A change to an old one goes straight to the server.",
+        "clipAlt": "A logbook row is swiped right to show the edit pencil, left to show the delete bin, then swiped the whole way left to raise the delete confirm.",
+        "clipCaption": "A short swipe shows the pencil or the bin. A full swipe left asks before it deletes."
       },
       "delete": {
         "title": "Delete an entry",
@@ -740,8 +750,8 @@
         "p2": "If you'd rather tap than hold, the Climbs tab can show a ⋮ button on every row that opens the same card. Tap your avatar, then Settings, scroll to Display and turn on Show quick-actions button.",
         "shotAlt": "The climb actions card open over a list of climbs",
         "shotCaption": "The card has three quick buttons on top and the full list below.",
-        "previewShotAlt": "The play drawer in its browsing state",
-        "previewShotCaption": "In Preview, the Browsing pill sits at the top and the commit row underneath."
+        "clipAlt": "A finger presses and holds a climb row until the actions card lifts over the list, then taps the backdrop to close it.",
+        "clipCaption": "Hold the row for a moment. The card lifts on its own."
       },
       "preview": {
         "title": "Preview a climb without lighting the board",
@@ -750,7 +760,9 @@
         "p2": "In a session with other people, or with Light problems on swipe turned off, a Browsing pill sits at the top and a commit row waits underneath. Tap Set active when you want the climb. If a climb is already lit on the wall, the button reads Put on the wall instead. Back to live returns you to your queue.",
         "p3": "In a session that means you can read the beta for the next climb while someone else is mid-burn, and nothing you look at reaches the LEDs or moves anyone's queue.",
         "p4": "Climbing alone, you get the same behavior from a setting. Hold the lightbulb in the play drawer to open the board controls, then turn off Light problems on swipe and Light problems when tapping the list. Join a session and browsing is on automatically.",
-        "sessionsLink": "How a session keeps browsing off the wall"
+        "sessionsLink": "How a session keeps browsing off the wall",
+        "clipAlt": "Tapping a climb row opens the play drawer, then one sideways drag across the board brings in the next climb and the Browsing pill appears.",
+        "clipCaption": "Watch the Browsing pill arrive after the swipe. The wall stays as it was."
       },
       "quick": {
         "title": "The three buttons across the top",

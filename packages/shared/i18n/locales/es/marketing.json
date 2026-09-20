@@ -440,14 +440,18 @@
         "intro": "Puedes quitar un bloque desde el bloque mismo o desde dentro de la playlist.",
         "p1": "Desde el bloque, vuelve a abrir Añadir a la playlist y toca la playlist que tiene la marca. La marca se quita y el bloque sale.",
         "p2": "Desde la playlist, toca el lápiz de la barra o abre el menú ⋯ y elige Reordenar y quitar bloques. Cada bloque saca un menos rojo a la izquierda y un asa para arrastrar a la derecha. Toca el menos y confirma ¿Quitar bloque? para sacarlo. Arrastra el asa para cambiar el orden. Dale a Listo cuando acabes.",
-        "p3": "Las listas de Para ti no tienen modo de edición, porque no has metido nada a mano. Cambia lo que las alimenta. Quítale el corazón a un bloque y sale de Bloques favoritos. Registra el encadene y sale de Proyectos."
+        "p3": "Las listas de Para ti no tienen modo de edición, porque no has metido nada a mano. Cambia lo que las alimenta. Quítale el corazón a un bloque y sale de Bloques favoritos. Registra el encadene y sale de Proyectos.",
+        "clipAlt": "Añadir a la playlist abre una lista con casillas, se marca una playlist y gana el bloque, y al volver a tocarla el contador baja otra vez.",
+        "clipCaption": "Toca una playlist que ya tiene la marca y el bloque sale al momento."
       },
       "queue": {
         "title": "Escalar la lista entera",
         "intro": "Toca un bloque de una playlist y tu cola pasa a ser esa playlist.",
         "p1": "El toque abre el bloque y sustituye tu cola por la playlist en orden, empezando por el bloque que has tocado, así que deslizar en el reproductor recorre la lista. Si tenías bloques en cola después del actual, primero sale una hoja ¿Iniciar playlist? que te dice cuántos se caen. El botón de play de la cabecera de la playlist (Poner en cola todos los bloques) hace lo mismo desde arriba.",
         "p2": "En una sesión con más gente, tocar un bloque solo lo abre para ti. La cola compartida y el muro se quedan como estaban.",
-        "sessionsLink": "Cómo una sesión comparte una sola cola"
+        "sessionsLink": "Cómo una sesión comparte una sola cola",
+        "clipAlt": "Se abre una playlist, se toca el primer bloque y una hoja ¿Iniciar playlist? pregunta antes de quedarse con la cola.",
+        "clipCaption": "Si ya tienes bloques en cola, ¿Iniciar playlist? pregunta antes de que la lista tome el mando."
       },
       "smart": {
         "title": "Las ocho listas que Boardsesh monta por ti",
@@ -549,7 +553,9 @@
         "intro": "Pon esto antes que nada. Cambia todos los números de la lista.",
         "p1": "El botón Grado está al lado del buscador. Toca un grado y solo sale ese grado. Toca un segundo grado antes de tres segundos y te quedas con el rango entre los dos. Vuelve a tocar el grado elegido y se limpia a Cualquiera.",
         "p2": "El ángulo no es un filtro. Es del plafón en el que estás, y todos los grados y todos los encadenes de la lista se leen a ese ángulo. Toca la etiqueta con los grados actuales para cambiarlo. Un plafón de ángulo fijo no tiene esa etiqueta.",
-        "p3": "Con la sesión iniciada, las etiquetas de Progreso filtran por tu propio historial. Sin encadenar esconde todo lo que has encadenado. Proyectos deja solo bloques que has probado y no has encadenado. Sin intentar deja los bloques en los que nunca has registrado un intento, y Encadenados enseña los que sí."
+        "p3": "Con la sesión iniciada, las etiquetas de Progreso filtran por tu propio historial. Sin encadenar esconde todo lo que has encadenado. Proyectos deja solo bloques que has probado y no has encadenado. Sin intentar deja los bloques en los que nunca has registrado un intento, y Encadenados enseña los que sí.",
+        "clipAlt": "El botón Grado abre una fila de grados, dos toques rápidos forman un rango, otro toque lo reduce a un solo grado y el siguiente limpia el filtro.",
+        "clipCaption": "Dos toques rápidos forman un rango. Vuelve a tocar el mismo grado para limpiarlo."
       },
       "holds": {
         "title": "Filtrar por presa",
@@ -560,16 +566,16 @@
         "step3": "Toca presas en el plafón. Vuelve a tocar una presa con el mismo pincel para quitarle esa marca.",
         "p2": "Una presa puede llevar más de una marca, así que puedes pedir un bloque que salga de una presa y termine en otra. Borrar todo, en la esquina de arriba, quita todas las marcas. Vuelve atrás y la hoja de Filtros recoge tus presas.",
         "p3": "MoonBoard no tiene presas solo de pie, así que ahí no hay pincel Pie. Salida, Mano, Final y Cualquiera siguen funcionando.",
-        "shotAlt": "La pantalla del filtro de presas con presas marcadas en el plafón",
-        "shotCaption": "Toca una presa para marcar lo que tiene que ser.",
-        "zoneShotAlt": "Un rectángulo dibujado sobre una parte del plafón",
-        "zoneShotCaption": "Arrastra el recuadro o una esquina para poner la zona."
+        "clipAlt": "Se eligen Incluir y un tipo de presa, luego se tocan tres presas del plafón que se encienden, y Borrar todo las vuelve a quitar.",
+        "clipCaption": "Elige primero el pincel y después toca presas. Borrar todo deja el plafón limpio."
       },
       "zone": {
         "title": "Acotar una parte del muro",
         "intro": "Abre Filtros, baja hasta El bloque y toca Zona del muro.",
         "p1": "Toca Añadir una zona y cae un recuadro en el plafón. Arrastra el centro para moverlo y una esquina para cambiarle el tamaño. Con Todas las presas elegido, en la lista solo quedan los bloques que caben enteros dentro del recuadro. Cambia a Alguna presa para quedarte con cualquier bloque que entre en el recuadro.",
-        "p2": "Borrar zona quita el recuadro. Los filtros de presa y de zona corren en el servidor, así que en un plafón descargado y sin cobertura la lista enseña un botón Borrar filtro en vez de resultados."
+        "p2": "Borrar zona quita el recuadro. Los filtros de presa y de zona corren en el servidor, así que en un plafón descargado y sin cobertura la lista enseña un botón Borrar filtro en vez de resultados.",
+        "clipAlt": "Añadir una zona deja caer un recuadro en el plafón, el recuadro se arrastra por el muro y después se estira desde una esquina.",
+        "clipCaption": "Arrastra el centro para mover el recuadro y una esquina para cambiarle el tamaño."
       },
       "setters": {
         "title": "Sigue equipadores y busca solo lo suyo",
@@ -585,7 +591,9 @@
         "p1": "Desliza una fila a la derecha para añadir el bloque a tu cola. Deslízala a la izquierda para abrir el selector de playlists. Ninguna de las dos enciende el plafón.",
         "p2": "El símbolo pequeño de una fila es tu historial con ese bloque. Un rayo es que lo hiciste a flash, una marca dentro de un círculo que lo encadenaste y una cruz dentro de un círculo que lo probaste. Una C dentro de un círculo marca una referencia.",
         "actionsLink": "Mira todo lo que hay en el menú de pulsación larga",
-        "p3": "Mantén pulsada una fila para el menú de acciones. Ahí viven Añadir a la cola, Añadir a la playlist, Registrar un encadene, Añadir vídeo de beta y Copiar enlace."
+        "p3": "Mantén pulsada una fila para el menú de acciones. Ahí viven Añadir a la cola, Añadir a la playlist, Registrar un encadene, Añadir vídeo de beta y Copiar enlace.",
+        "clipAlt": "La fila de un bloque se desliza a la derecha y sale un panel verde de cola, y otra fila se desliza a la izquierda y sale un panel morado que abre el selector de playlists.",
+        "clipCaption": "A la derecha va a tu cola, a la izquierda abre el selector de playlists."
       },
       "keep": {
         "title": "Guarda los filtros que usas",
@@ -624,7 +632,9 @@
         "field2": "Ángulo e Intentos. La fecha y la hora se quedan como las registraste.",
         "field3": "Grado, Estrellas y Nota.",
         "p2": "Si una fila junta varias pruebas del mismo día, la app pregunta antes ¿Qué registro quieres editar?",
-        "p3": "Editar y borrar necesitan conexión. Un registro nuevo se guarda sin cobertura y se sincroniza al volver. Cambiar uno viejo va directo al servidor."
+        "p3": "Editar y borrar necesitan conexión. Un registro nuevo se guarda sin cobertura y se sincroniza al volver. Cambiar uno viejo va directo al servidor.",
+        "clipAlt": "Una fila del logbook se desliza a la derecha y enseña el lápiz de editar, a la izquierda y enseña la papelera, y con un deslizamiento entero a la izquierda sale la confirmación de borrado.",
+        "clipCaption": "Un deslizamiento corto enseña el lápiz o la papelera. Uno entero a la izquierda pregunta antes de borrar."
       },
       "delete": {
         "title": "Borra un registro",
@@ -740,8 +750,8 @@
         "p2": "Si prefieres tocar a mantener pulsado, la pestaña Bloques puede enseñar un botón ⋮ en cada fila que abre la misma tarjeta. Toca tu avatar, luego Ajustes, baja hasta Visualización y activa Mostrar botón de acciones rápidas.",
         "shotAlt": "La tarjeta de acciones abierta sobre una lista de bloques",
         "shotCaption": "La tarjeta lleva tres botones rápidos arriba y la lista entera debajo.",
-        "previewShotAlt": "El reproductor en modo explorar",
-        "previewShotCaption": "En Vista previa, la etiqueta Explorando va arriba y la fila para confirmar debajo."
+        "clipAlt": "Un dedo mantiene pulsada la fila de un bloque hasta que la tarjeta de acciones se levanta sobre la lista, y luego toca el fondo para cerrarla.",
+        "clipCaption": "Mantén la fila pulsada un momento. La tarjeta se levanta sola."
       },
       "preview": {
         "title": "Mira un bloque sin encender el plafón",
@@ -750,7 +760,9 @@
         "p2": "En una sesión con más gente, o con Iluminar bloques al deslizar apagado, arriba sale una etiqueta Explorando y debajo espera una fila para confirmar. Dale a Activar cuando quieras el bloque. Si ya hay un bloque encendido en el muro, el botón pone Ponerlo en el muro. Volver al muro te devuelve a tu cola.",
         "p3": "En una sesión eso quiere decir que puedes leerte la beta del siguiente bloque mientras otra persona está a mitad de intento, y nada de lo que mires llega a los LEDs ni mueve la cola de nadie.",
         "p4": "Si escalas solo, consigues lo mismo con un ajuste. Mantén pulsada la bombilla del reproductor para abrir los controles del plafón y apaga Iluminar bloques al deslizar e Iluminar bloques al tocar la lista. Únete a una sesión y explorar se activa solo.",
-        "sessionsLink": "Cómo una sesión mantiene el muro quieto"
+        "sessionsLink": "Cómo una sesión mantiene el muro quieto",
+        "clipAlt": "Tocar la fila de un bloque abre el reproductor, y un solo arrastre lateral sobre el plafón trae el siguiente bloque y saca la etiqueta Explorando.",
+        "clipCaption": "Fíjate en la etiqueta Explorando después del deslizamiento. El muro se queda como estaba."
       },
       "quick": {
         "title": "Los tres botones de arriba",
