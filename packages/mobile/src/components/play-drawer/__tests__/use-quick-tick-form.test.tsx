@@ -458,9 +458,23 @@ describe('useQuickTickForm board attribution', () => {
 
     // No boardId at all rather than the wrong one: the Homewall's own id is not
     // knowable from a render board, and guessing costs other climbers' data.
-    // The server still resolves the board from the layout/size/sets below.
+    // No full config: the server must not guess another physical wall.
     expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8, sizeId: 17, setIds: '20' });
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('sizeId');
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('setIds');
+  });
+
+  it('ignores a queue button configuration when the climb belongs to Homewall', () => {
+    bindWall(942);
+    const { getByTestId } = renderForm({
+      ...ACTIVE_BOARD_FIELDS,
+      climb: { boardType: 'kilter', layoutId: 8, compatibleSizeIds: [17] },
+    });
+    fireEvent.click(getByTestId('save'));
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ layoutId: 8 });
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
+    expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('sizeId');
   });
 
   it('sends no board id while no wall is bound', () => {
@@ -471,6 +485,24 @@ describe('useQuickTickForm board attribution', () => {
     fireEvent.click(getByTestId('save'));
 
     expect(saveMock.mutate.mock.calls[0][0]).not.toHaveProperty('boardId');
+  });
+  it('keeps the opening board after presence and active board change', () => {
+    bindWall(4242);
+    const props: QuickTickFormInput = {
+      ...ACTIVE_BOARD_FIELDS,
+      climbUuid: CLIMB_UUID,
+      angle: ANGLE,
+      isMirror: false,
+      isBenchmark: false,
+      baseAscensionistCount: 37,
+      onDismiss: vi.fn(),
+    };
+    const { rerender, getByTestId } = render(createElement(Harness, props));
+    presenceState.boardId = 777;
+    activeBoardState.current = { ...ACTIVE_BOARD, layoutId: 8, sizeId: 17, setIds: '26,27' };
+    rerender(createElement(Harness, props));
+    fireEvent.click(getByTestId('save'));
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardId: 4242, layoutId: 1, sizeId: 10 });
   });
 });
 

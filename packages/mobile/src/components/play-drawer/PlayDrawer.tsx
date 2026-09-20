@@ -2210,6 +2210,7 @@ export function PlayDrawer({
           const tickClimb = tickTarget?.climb ?? displayedClimb;
           return (
             <LogAscentSheet
+              climb={tickClimb}
               visible={isTickBarActive}
               onClose={handleTickBarDismiss}
               climbUuid={tickClimb.uuid}
