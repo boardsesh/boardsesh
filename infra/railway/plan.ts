@@ -930,6 +930,21 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     changes.push(...diffForbiddenVars(service, live));
   }
 
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    // Missing services/values already have actionable drift above. Compare exact
+    // bytes: trimming here would hide a credential the backend will reject.
+    if (serviceNames.some((serviceName) => !findService(live, serviceName))) continue;
+    const credentials = serviceNames.map((serviceName) => live.variables[serviceName]?.[name]);
+    if (credentials.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (new Set(credentials).size <= 1) continue;
+    changes.push({
+      resource: 'env-var',
+      summary: `${name} differs between ${serviceNames.join(' and ')}`,
+      detail: 'Set the same credential on these services. Existing values are never overwritten automatically.',
+      blocked: true,
+    });
+  }
+
   // A null map means the check was skipped for want of a DSN, which must not read
   // as "retention is fine". The apply layer prints the skip separately.
   if (live.clickhouseTtl !== null) {

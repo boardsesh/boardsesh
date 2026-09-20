@@ -47,7 +47,7 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
     headers: {
       'Content-Type': 'application/json',
       ...webClientIdentityHeaders(),
-      ...(internalServiceSecret ? { Authorization: `Bearer ${internalServiceSecret}` } : {}),
+      ...(internalServiceSecret?.trim() ? { Authorization: `Bearer ${internalServiceSecret}` } : {}),
     },
     signal,
   });
