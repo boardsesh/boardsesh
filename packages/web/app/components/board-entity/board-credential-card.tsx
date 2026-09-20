@@ -16,6 +16,7 @@
  */
 
 import React from 'react';
+import { resolveBoardAccountSyncState } from '@boardsesh/board-account-sync';
 import MuiAlert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Button from '@mui/material/Button';
@@ -120,20 +121,30 @@ export function BoardCredentialCard({
   const { t } = useTranslation('settings');
   const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
-  const isExpired = credential?.syncStatus === 'expired';
+  const syncState = credential ? resolveBoardAccountSyncState(credential) : null;
+  const needsReconnect = syncState === 'expired' || syncState === 'notSyncing';
   const cardTitle =
     variant === 'kilterAurora' ? t('aurora.card.kilterAuroraTitle') : `${boardName} ${t('aurora.card.boardSuffix')}`;
 
   const getSyncStatusTag = () => {
     if (!credential) return null;
 
-    switch (credential.syncStatus) {
-      case 'active':
+    switch (syncState) {
+      case 'connected':
         return (
           <Chip icon={<CheckCircleOutlined />} label={t('aurora.status.connected')} size="small" color="success" />
         );
       case 'error':
         return <Chip icon={<WarningAmberOutlined />} label={t('aurora.status.error')} size="small" color="error" />;
+      case 'notSyncing':
+        return (
+          <Chip
+            icon={<WarningAmberOutlined />}
+            label={t('aurora.mobile.statusNotSyncing')}
+            size="small"
+            color="warning"
+          />
+        );
       case 'expired':
         return <Chip icon={<AccessTimeOutlined />} label={t('aurora.status.expired')} size="small" color="warning" />;
       default:
@@ -263,7 +274,7 @@ export function BoardCredentialCard({
           )}
         </div>
         <div className={styles.buttonRow}>
-          {isExpired && (
+          {needsReconnect && (
             <Button variant="contained" startIcon={<LinkOutlined />} onClick={onAdd}>
               {t('aurora.card.reconnect')}
             </Button>

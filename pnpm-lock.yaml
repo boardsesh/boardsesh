@@ -556,6 +556,9 @@ importers:
       '@boardsesh/ble-protocol':
         specifier: workspace:*
         version: link:../shared/ble-protocol
+      '@boardsesh/board-account-sync':
+        specifier: workspace:*
+        version: link:../shared/board-account-sync
       '@boardsesh/board-art-geometry':
         specifier: workspace:*
         version: link:../shared/board-art-geometry
@@ -994,6 +997,16 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../../board-constants
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/board-account-sync:
+    dependencies:
+      '@boardsesh/shared-schema':
+        specifier: workspace:*
+        version: link:../../shared-schema
     devDependencies:
       typescript:
         specifier: ~7.0.2
@@ -1596,6 +1609,9 @@ importers:
       '@boardsesh/ble-protocol':
         specifier: workspace:*
         version: link:../shared/ble-protocol
+      '@boardsesh/board-account-sync':
+        specifier: workspace:*
+        version: link:../shared/board-account-sync
       '@boardsesh/board-config':
         specifier: workspace:*
         version: link:../shared/board-config

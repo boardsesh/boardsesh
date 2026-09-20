@@ -144,6 +144,7 @@ export default defineConfig({
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
+      './packages/shared/board-account-sync/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
       './packages/shared/hold-detection/vite.config.ts',
       './packages/shared/spray-wall-geometry/vite.config.ts',

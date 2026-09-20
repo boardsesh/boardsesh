@@ -1,3 +1,4 @@
+import { useIsFocused } from 'expo-router';
 import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,6 +32,8 @@ import { OfflineState } from '../OfflineState';
 import { SectionHeader } from '../SectionHeader';
 import { Text } from '../Text';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
+import { formatRelativeTime } from '../../lib/format-relative-time';
+import { hasPendingAccountSync, resolveBoardAccountSyncState } from '@boardsesh/board-account-sync';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
@@ -94,6 +97,9 @@ type MoonBoardSharedSchemaModule = {
 };
 
 const MAX_IMPORT_SIZE_BYTES = 200 * 1024 * 1024;
+// Recheck pending imports and recoverable failures once a minute while this
+// screen is focused. Stop once every account has settled or needs a sign-in.
+const ACCOUNT_SYNC_POLL_MS = 60_000;
 const IMPORT_RESULT_LIMIT = 8;
 const AURORA_CREDENTIALS_QUERY_KEY = ['auroraCredentials'] as const;
 const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
@@ -263,6 +269,7 @@ function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
 }
 
 export function BoardAccountsSection() {
+  const isFocused = useIsFocused();
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors, colorScheme } = useTheme();
@@ -273,6 +280,10 @@ export function BoardAccountsSection() {
   const credentialsQuery = useQuery({
     queryKey: AURORA_CREDENTIALS_QUERY_KEY,
     queryFn: getAuroraCredentials,
+    // Recheck first imports, reconnects, and daemon retries while this query is
+    // focused. Settled accounts stop polling; background polling stays off.
+    refetchInterval: (query) =>
+      isFocused && hasPendingAccountSync(query.state.data?.credentials) ? ACCOUNT_SYNC_POLL_MS : false,
   });
   const unsyncedQuery = useQuery({
     queryKey: AURORA_UNSYNCED_QUERY_KEY,
@@ -1088,7 +1099,12 @@ function BoardAccountCard({
         ? t('aurora.card.kilterNewTitle')
         : boardName;
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
-  const isExpired = credential?.syncStatus === 'expired';
+  // One state for the pill, the body line and the Reconnect button, so the card
+  // can never say "Connected" about an account that has synced nothing (#4741)
+  // or about an orphan link the daemon can't claim at all.
+  const syncState = credential ? resolveBoardAccountSyncState(credential) : null;
+  const isExpired = syncState === 'expired';
+  const isNotSyncing = syncState === 'notSyncing';
   // The sync daemons write a machine-readable code here for conditions the
   // client is expected to explain in the viewer's language (#3526). Everything
   // else in `sync_error` is still free text from an older path — those keep the
@@ -1097,10 +1113,36 @@ function BoardAccountCard({
   // A warning, not a failure: the credential is active and syncing, only the
   // playlist mirror is paused. Red text here would tell a healthy account it is
   // broken, with nothing to act on.
-  const hasSyncFailure = Boolean(credential?.syncError) && !hasDuplicateAccountCircuits;
+  const hasSyncFailure = syncState === 'error';
   const connectedLabel = credential?.auroraUsername
     ? t('aurora.mobile.connectedAs', { name: credential.auroraUsername })
     : t('aurora.mobile.connected');
+  // Literal keys per branch — the i18n linter rejects `t(variable)`.
+  const statusLabel = (): string => {
+    switch (syncState) {
+      case 'expired':
+        return t('aurora.status.expired');
+      case 'notSyncing':
+        return t('aurora.mobile.statusNotSyncing');
+      case 'error':
+        return t('aurora.status.error');
+      case 'firstSync':
+      case 'syncing':
+        return t('aurora.status.syncing');
+      case 'connected':
+        return t('aurora.status.connected');
+      default:
+        return t('aurora.mobile.notConnected');
+    }
+  };
+  const statusTextColor =
+    syncState === 'connected'
+      ? brandColors.onPrimary
+      : syncState === 'error'
+        ? brandColors.error
+        : syncState === 'expired' || syncState === 'notSyncing'
+          ? brandColors.warning
+          : systemColors.secondaryLabel;
   // The legacy Kilter (Aurora) card is a data-import surface, not an account you
   // connect — so it drops the connection subtitle + status pill.
   const showStatus = variant !== 'kilterAurora';
@@ -1125,10 +1167,13 @@ function BoardAccountCard({
         </View>
         {showStatus ? (
           <View
-            style={[styles.statusPill, { backgroundColor: credential ? brandColors.primaryFill : systemColors.fill }]}
+            style={[
+              styles.statusPill,
+              { backgroundColor: syncState === 'connected' ? brandColors.primaryFill : systemColors.fill },
+            ]}
           >
-            <Text variant="caption1" color={credential ? brandColors.onPrimary : systemColors.secondaryLabel}>
-              {credential ? t('aurora.status.connected') : t('aurora.mobile.notConnected')}
+            <Text variant="caption1" color={statusTextColor}>
+              {statusLabel()}
             </Text>
           </View>
         ) : null}
@@ -1140,11 +1185,29 @@ function BoardAccountCard({
             <Text variant="footnote" color={brandColors.error} style={styles.accountCopy}>
               {t('aurora.status.expired')}
             </Text>
+          ) : isNotSyncing ? (
+            <Text variant="footnote" color={brandColors.warning} style={styles.accountCopy}>
+              {t('aurora.mobile.notSyncingBody')}
+            </Text>
           ) : hasSyncFailure ? (
             <Text variant="footnote" color={brandColors.error} style={styles.accountCopy}>
               {t('aurora.status.error')}
             </Text>
-          ) : null}
+          ) : syncState === 'syncing' ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.accountCopy}>
+              {t('aurora.mobile.syncPending')}
+            </Text>
+          ) : syncState === 'firstSync' ? (
+            // The whole point of #4741: a linked account with nothing in it yet
+            // looked identical to a synced one, so an empty app read as broken.
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.accountCopy}>
+              {t('aurora.mobile.firstSyncPending')}
+            </Text>
+          ) : (
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.accountCopy}>
+              {t('aurora.mobile.lastSyncedAt', { when: formatRelativeTime(credential.lastSyncAt) })}
+            </Text>
+          )}
           {!isExpired && hasDuplicateAccountCircuits ? (
             <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
@@ -1162,7 +1225,9 @@ function BoardAccountCard({
             </View>
           ) : null}
           <View style={styles.actionRow}>
-            {isExpired ? <Button title={t('aurora.card.reconnect')} icon="link" size="small" onPress={onLink} /> : null}
+            {isExpired || isNotSyncing ? (
+              <Button title={t('aurora.card.reconnect')} icon="link" size="small" onPress={onLink} />
+            ) : null}
             <Button title={t('aurora.card.import')} icon="upload" variant="outlined" size="small" onPress={onImport} />
             <Button
               title={t('aurora.card.unlink')}

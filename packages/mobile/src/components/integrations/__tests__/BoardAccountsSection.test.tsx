@@ -22,8 +22,12 @@ const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(() => Promise.resolve()),
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
+  isFocused: true,
   credentials: [] as AuroraCredentialStatus[],
+  pollInterval: undefined as ((query: { state: { data: AuroraCredentialsResponse } }) => number | false) | undefined,
 }));
+
+vi.mock('expo-router', () => ({ useIsFocused: () => mocks.isFocused }));
 
 vi.mock('../../../lib/aurora-credentials', () => ({
   BoardAccountError: class BoardAccountError extends Error {},
@@ -53,8 +57,9 @@ type MutationOptions = {
 
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mocks.invalidate }),
-  useQuery: (opts: { queryKey: readonly unknown[] }) => {
+  useQuery: (opts: { queryKey: readonly unknown[]; refetchInterval?: typeof mocks.pollInterval }) => {
     const isCredentials = opts.queryKey[0] === 'auroraCredentials' && opts.queryKey[1] !== 'unsynced';
+    if (isCredentials) mocks.pollInterval = opts.refetchInterval;
     return {
       data: isCredentials ? ({ credentials: mocks.credentials } as AuroraCredentialsResponse) : {},
       isPending: false,
@@ -116,6 +121,9 @@ vi.mock('expo-file-system', () => ({
   },
 }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: mocks.setClipboard }));
+// Fixed recency string: the card's "Last synced …" line is what's under test,
+// not the relative-time formatting (covered by its own suite).
+vi.mock('../../../lib/format-relative-time', () => ({ formatRelativeTime: () => '2 hours ago' }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -173,6 +181,7 @@ const input = (root: HTMLElement, placeholder: string) =>
 
 describe('BoardAccountsSection — Kilter password card', () => {
   beforeEach(() => {
+    mocks.isFocused = true;
     mocks.saveAurora.mockReset();
     mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
     mocks.showToast.mockReset();
@@ -240,6 +249,7 @@ describe('BoardAccountsSection — Kilter password card', () => {
 
 describe('BoardAccountsSection — MoonBoard card', () => {
   beforeEach(() => {
+    mocks.isFocused = true;
     mocks.showToast.mockReset();
     mocks.openURL.mockReset().mockResolvedValue(undefined);
     mocks.setClipboard.mockReset().mockResolvedValue(undefined);
@@ -388,6 +398,103 @@ describe('BoardAccountsSection — MoonBoard card', () => {
   });
 });
 
+describe('BoardAccountsSection — first-sync state on a linked board card (#4741)', () => {
+  const tensionCredential = (overrides: Partial<AuroraCredentialStatus> = {}): AuroraCredentialStatus => ({
+    boardType: 'tension',
+    auroraUsername: 'climber',
+    auroraUserId: 144574,
+    lastSyncAt: '2026-07-25T00:00:00.000Z',
+    syncStatus: 'active',
+    syncError: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    mocks.isFocused = true;
+    mocks.flags = {};
+    mocks.credentials = [];
+  });
+
+  it('says the first sync is still coming instead of calling an empty account Connected', () => {
+    mocks.credentials = [tensionCredential({ syncStatus: 'pending', lastSyncAt: null })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.syncing');
+    expect(container.textContent).toContain('aurora.mobile.firstSyncPending');
+    // The bug: a board account with nothing synced read exactly like a healthy
+    // one, so an empty app looked broken rather than pending.
+    expect(container.textContent).not.toContain('aurora.status.connected');
+  });
+
+  it('keeps a reconnected Kilter account syncing and rechecks despite its previous sync', () => {
+    mocks.credentials = [tensionCredential({ boardType: 'kilter', syncStatus: 'pending' })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.syncing');
+    expect(container.textContent).toContain('aurora.mobile.syncPending');
+    expect(container.textContent).not.toContain('aurora.status.connected');
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(60_000);
+  });
+
+  it('pauses pending-sync polling while the integrations screen is unfocused', () => {
+    mocks.credentials = [tensionCredential({ syncStatus: 'pending' })];
+    const { rerender } = render(<BoardAccountsSection />);
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(60_000);
+
+    mocks.isFocused = false;
+    rerender(<BoardAccountsSection />);
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(false);
+
+    mocks.isFocused = true;
+    rerender(<BoardAccountsSection />);
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(60_000);
+  });
+
+  it('rechecks a failed sync and stops once the daemon retry recovers', () => {
+    mocks.credentials = [tensionCredential({ syncStatus: 'error', syncError: 'service unavailable' })];
+    const { container, rerender } = render(<BoardAccountsSection />);
+    expect(container.textContent).toContain('aurora.status.error');
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(60_000);
+
+    mocks.credentials = [tensionCredential()];
+    rerender(<BoardAccountsSection />);
+    expect(container.textContent).toContain('aurora.status.connected');
+    expect(container.textContent).toContain('aurora.mobile.lastSyncedAt');
+    expect(mocks.pollInterval?.({ state: { data: { credentials: mocks.credentials } } })).toBe(false);
+  });
+
+  it('shows when a synced account last pulled data', () => {
+    mocks.credentials = [tensionCredential()];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.connected');
+    expect(container.textContent).toContain('aurora.mobile.lastSyncedAt');
+    expect(container.textContent).not.toContain('aurora.mobile.firstSyncPending');
+  });
+
+  it('offers Reconnect on an orphan link that can never sync', () => {
+    // `sync_status: 'linked'` is a user_board_mappings row with no credential
+    // behind it — the daemon can't claim it, so waiting never helps.
+    mocks.credentials = [tensionCredential({ syncStatus: 'linked', lastSyncAt: null })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.mobile.statusNotSyncing');
+    expect(container.textContent).toContain('aurora.mobile.notSyncingBody');
+    expect(button(container, 'aurora.card.reconnect')).not.toBeNull();
+    expect(container.textContent).not.toContain('aurora.mobile.firstSyncPending');
+  });
+
+  it('keeps the expired account on its own copy and Reconnect action', () => {
+    mocks.credentials = [tensionCredential({ syncStatus: 'expired', lastSyncAt: null })];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.expired');
+    expect(button(container, 'aurora.card.reconnect')).not.toBeNull();
+    expect(container.textContent).not.toContain('aurora.mobile.firstSyncPending');
+  });
+});
+
 describe('BoardAccountsSection — sync_error on a connected board card (#3526)', () => {
   const connectedCredential = (syncError: string | null): AuroraCredentialStatus => ({
     boardType: 'tension',
@@ -402,6 +509,7 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
   });
 
   beforeEach(() => {
+    mocks.isFocused = true;
     mocks.flags = {};
     mocks.credentials = [];
   });

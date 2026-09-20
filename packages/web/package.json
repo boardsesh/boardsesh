@@ -30,6 +30,7 @@
     "@boardsesh/analytics": "workspace:*",
     "@boardsesh/aurora-sync": "workspace:*",
     "@boardsesh/ble-protocol": "workspace:*",
+    "@boardsesh/board-account-sync": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/board-look": "workspace:*",

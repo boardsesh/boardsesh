@@ -27,7 +27,7 @@ function credentialWith(overrides: Partial<AuroraCredentialStatus> = {}): Aurora
     boardType: 'tension',
     auroraUsername: 'tensionuser',
     auroraUserId: 42,
-    lastSyncAt: null,
+    lastSyncAt: '2026-09-01T00:00:00.000Z',
     syncStatus: 'active',
     syncError: null,
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -88,6 +88,23 @@ describe('BoardCredentialCard', () => {
 
     expect(screen.getByText(tFromCatalog('settings', 'aurora.status.duplicateAccountCircuits'))).toBeTruthy();
     expect(screen.queryByText(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBeNull();
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.connected'))).toBeTruthy();
+  });
+
+  it.each([
+    { syncStatus: 'pending', lastSyncAt: '2026-09-01T00:00:00.000Z' },
+    { syncStatus: 'active', lastSyncAt: null },
+  ])('shows Syncing for an import still pending: %o', (pending) => {
+    renderCard(credentialWith(pending));
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.status.syncing'))).toBeTruthy();
+    expect(screen.queryByText(tFromCatalog('settings', 'aurora.status.connected'))).toBeNull();
+  });
+
+  it('offers Reconnect for an orphan mapping instead of claiming it is syncing', () => {
+    renderCard(credentialWith({ syncStatus: 'linked', lastSyncAt: null }));
+    expect(screen.getByText(tFromCatalog('settings', 'aurora.mobile.statusNotSyncing'))).toBeTruthy();
+    expect(screen.getByRole('button', { name: tFromCatalog('settings', 'aurora.card.reconnect') })).toBeTruthy();
+    expect(screen.queryByText(tFromCatalog('settings', 'aurora.status.syncing'))).toBeNull();
   });
 
   it('renders an unknown sync error verbatim', () => {
