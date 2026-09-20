@@ -430,6 +430,8 @@
         "step3": "Elle apparaît sous Mes playlists.",
         "p1": "Pour ajouter un bloc, fais glisser sa ligne vers la gauche, ou garde-la appuyée et touche Ajouter à la playlist.",
         "p2": "Le sélecteur n'affiche que les playlists de la board et du layout du bloc.",
+        "clipAlt": "Faire glisser la ligne d'un bloc vers la gauche pour l'ajouter à une playlist",
+        "clipCaption": "Glisse à gauche pour le ranger dans une playlist. À droite, tu le mets en file.",
         "shotAlt": "L'onglet Découvrir",
         "shotCaption": "Épinglée, puis Mes playlists, puis Pour vous.",
         "playlistShotAlt": "Ta propre playlist",

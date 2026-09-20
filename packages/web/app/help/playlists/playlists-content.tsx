@@ -33,6 +33,11 @@ export default function PlaylistsContent() {
     >
       <PageSection title={t('help.playlists.build.title')} lead={t('help.playlists.build.intro')}>
         <HelpShots>
+          <HelpClip
+            name="swipe-row-queue-playlist"
+            alt={t('help.playlists.build.clipAlt')}
+            caption={t('help.playlists.build.clipCaption')}
+          />
           <HelpScreenshot
             shot="discover"
             alt={t('help.playlists.build.shotAlt')}

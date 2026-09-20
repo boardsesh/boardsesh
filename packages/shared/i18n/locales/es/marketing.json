@@ -430,6 +430,8 @@
         "step3": "Aparece en Mis listas.",
         "p1": "Para añadir un bloque, desliza su fila a la izquierda, o mantenla pulsada y toca Añadir a la playlist.",
         "p2": "El selector solo enseña playlists del plafón y el layout del bloque.",
+        "clipAlt": "Deslizar la fila de un bloque a la izquierda para añadirlo a una playlist",
+        "clipCaption": "Desliza a la izquierda para guardarlo en una playlist. A la derecha, lo pones en cola.",
         "shotAlt": "La pestaña Descubre",
         "shotCaption": "Fijado, luego Mis listas, luego Para ti.",
         "playlistShotAlt": "Tu propia playlist",

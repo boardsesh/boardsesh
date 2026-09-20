@@ -430,6 +430,8 @@
         "step3": "It appears under My Playlists.",
         "p1": "To add a climb, swipe its row left, or press and hold it and tap Add to Playlist.",
         "p2": "The picker only shows playlists for the climb's board and layout.",
+        "clipAlt": "Swiping a climb row left to add it to a playlist",
+        "clipCaption": "Swipe left to file it in a playlist. Swipe right to queue it.",
         "shotAlt": "The Discover tab",
         "shotCaption": "Pinned, then My Playlists, then For You.",
         "playlistShotAlt": "Your own playlist",

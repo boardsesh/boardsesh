@@ -430,6 +430,8 @@
         "step3": "Sie taucht unter Meine Playlists auf.",
         "p1": "Wisch die Zeile eines Boulders nach links, oder halt sie gedrückt und tipp auf Zur Playlist hinzufügen.",
         "p2": "Die Auswahl zeigt nur Playlists für Board und Layout des Boulders.",
+        "clipAlt": "Die Zeile eines Boulders nach links wischen, um ihn in eine Playlist zu legen",
+        "clipCaption": "Nach links wischen legt ihn in eine Playlist. Nach rechts in die Warteschlange.",
         "shotAlt": "Der Tab Entdecken",
         "shotCaption": "Angepinnt, dann Meine Playlists, dann Für dich.",
         "playlistShotAlt": "Deine eigene Playlist",
