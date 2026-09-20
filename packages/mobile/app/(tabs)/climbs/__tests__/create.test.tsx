@@ -229,6 +229,7 @@ describe('CreateClimbRoute unresolvable board (#4760)', () => {
     render(<CreateClimbRoute />);
 
     expect(showToast).toHaveBeenCalledWith('createClimbForm.cannotOpen.boardConfigIncomplete', 'error');
+    expect(router.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
   });
 
   // The one case that must stay mute: the spinner is the honest answer while the

@@ -10,6 +10,7 @@ const CLIMBS_TAB = '/(tabs)/climbs' as const;
 /**
  * Leave an unusable board route, falling back to the climbs tab for cold links.
  * The optional root-level toast outlives the route dismissal.
+ * Dismisses at most once per mount; callers must unmount when navigation completes.
  */
 export function useUnsupportedBoardExit(shouldExit: boolean, reason?: string): void {
   const router = useRouter();

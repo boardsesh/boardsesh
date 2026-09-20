@@ -134,7 +134,10 @@ export default function CreateClimbRoute() {
   // arrives. `''` for every catalogue board.
   useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
 
-  const exitReason = createExitReason(params, activeBoard, activeBoardPending, resolvedBoard);
+  const exitReason = useMemo(
+    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard),
+    [params, activeBoard, activeBoardPending, resolvedBoard],
+  );
   const exitMessage = useMemo(() => {
     switch (exitReason) {
       case 'boardCannotAuthor':
