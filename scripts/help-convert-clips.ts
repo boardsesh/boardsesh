@@ -7,7 +7,10 @@ import sharp from 'sharp';
 import {
   assertHelpClipTableValid,
   buildHelpClipMp4Args,
+  buildHelpClipDimensionsProbeArgs,
   buildHelpClipPosterFrameArgs,
+  assertHelpClipDimensions,
+  parseHelpClipDimensions,
   buildHelpClipProbeArgs,
   buildHelpClipWebmArgs,
   FFMPEG_BIN,
@@ -56,6 +59,11 @@ async function probeDurationSeconds(file: string): Promise<number> {
   return parseHelpClipDuration(stdout);
 }
 
+async function assertEncodedDimensions(name: string, file: string): Promise<void> {
+  const { stdout } = await execFileAsync(FFPROBE_BIN, buildHelpClipDimensionsProbeArgs(file));
+  assertHelpClipDimensions(name, parseHelpClipDimensions(stdout));
+}
+
 async function captureFirstFrame(clip: ResolvedHelpClip): Promise<Buffer> {
   const { stdout } = await execFileAsync(
     FFMPEG_BIN,
@@ -77,6 +85,7 @@ type ConvertedHelpClip = Readonly<{
 async function convertClip(clip: ResolvedHelpClip): Promise<ConvertedHelpClip> {
   const { trim } = clip.entry;
   await runFfmpeg(buildHelpClipMp4Args({ input: clip.input, output: clip.mp4, trim }));
+  await assertEncodedDimensions(clip.entry.name, clip.mp4);
   await runFfmpeg(buildHelpClipWebmArgs({ input: clip.input, output: clip.webm, trim }));
   // Same Sharp call as help:convert-shots, so a poster and a still that sit in
   // the same row are encoded identically and cannot look like two sources.

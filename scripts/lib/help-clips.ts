@@ -138,6 +138,13 @@ export type HelpClipName = (typeof HELP_CLIPS)[number]['name'];
  * the exact argument vector without running ffmpeg.
  */
 export const HELP_CLIP_WIDTH = 736;
+/**
+ * The box every clip must land in. The page CSS (`aspect-ratio: 736 / 1600`) and
+ * the poster resize both assume it, so the converter checks the encoded stream
+ * rather than letting a capture from a different device silently ship a video
+ * whose intrinsic size disagrees with the page.
+ */
+export const HELP_CLIP_HEIGHT = 1600;
 export const HELP_CLIP_FPS = 30;
 export const HELP_CLIP_MP4_CRF = 24;
 export const HELP_CLIP_MP4_PRESET = 'slow';
@@ -302,6 +309,42 @@ export function buildHelpClipPosterFrameArgs({ input, trim, poster }: Omit<HelpC
 /** Duration in seconds, printed bare, for the conversion table. */
 export function buildHelpClipProbeArgs(file: string): string[] {
   return ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file];
+}
+
+/** Encoded stream width and height, one per line, for the dimension check. */
+export function buildHelpClipDimensionsProbeArgs(file: string): string[] {
+  return [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=width,height',
+    '-of',
+    'default=noprint_wrappers=1:nokey=1',
+    file,
+  ];
+}
+
+export function parseHelpClipDimensions(probeOutput: string): { width: number; height: number } {
+  const [width, height] = probeOutput
+    .trim()
+    .split(/\s+/)
+    .map((value) => Number.parseInt(value, 10));
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    throw new Error(`Could not read dimensions from: ${probeOutput}`);
+  }
+  return { width, height };
+}
+
+/** The encoded clip has to fit the page's box exactly; anything else is a capture from the wrong device. */
+export function assertHelpClipDimensions(name: string, dimensions: { width: number; height: number }): void {
+  if (dimensions.width !== HELP_CLIP_WIDTH || dimensions.height !== HELP_CLIP_HEIGHT) {
+    throw new Error(
+      `${name} encoded at ${dimensions.width}x${dimensions.height}, not ${HELP_CLIP_WIDTH}x${HELP_CLIP_HEIGHT}. ` +
+        'Help clips are shot on an iPhone 16 Pro Max (1320x2868); re-record on that device.',
+    );
+  }
 }
 
 export function parseHelpClipDuration(probeOutput: string): number {

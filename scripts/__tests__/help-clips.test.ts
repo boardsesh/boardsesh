@@ -6,7 +6,10 @@ import {
   assertHelpClipStem,
   assertHelpClipTableValid,
   buildHelpClipMp4Args,
+  buildHelpClipDimensionsProbeArgs,
   buildHelpClipPosterFrameArgs,
+  assertHelpClipDimensions,
+  parseHelpClipDimensions,
   buildHelpClipProbeArgs,
   buildHelpClipWebmArgs,
   HELP_CLIP_POSTER_DIR,
@@ -230,5 +233,20 @@ describe('argument parsing', () => {
 
   it('rejects an unknown flag instead of treating it as a directory', () => {
     expect(() => parseHelpClipArgs(['--fast'])).toThrow(/Unknown option: --fast/);
+  });
+});
+
+describe('encoded dimension check', () => {
+  it('probes the first video stream for width and height', () => {
+    expect(buildHelpClipDimensionsProbeArgs('/x/clip.mp4')).toEqual(
+      expect.arrayContaining(['-select_streams', 'v:0', '-show_entries', 'stream=width,height', '/x/clip.mp4']),
+    );
+    expect(parseHelpClipDimensions('736\n1600\n')).toEqual({ width: 736, height: 1600 });
+    expect(() => parseHelpClipDimensions('')).toThrow(/dimensions/);
+  });
+
+  it('accepts the page box and names the device on anything else', () => {
+    expect(() => assertHelpClipDimensions('a', { width: 736, height: 1600 })).not.toThrow();
+    expect(() => assertHelpClipDimensions('a', { width: 736, height: 1596 })).toThrow(/736x1596, not 736x1600/);
   });
 });

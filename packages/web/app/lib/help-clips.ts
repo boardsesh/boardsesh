@@ -35,6 +35,8 @@ export type HelpClipSources = {
  * 1600 px tall, matching the help stills exactly — so a clip and a still sit in
  * the same row without either one shifting the layout as it loads.
  */
+// `help:convert-clips` refuses an encode that is not exactly this box, so the
+// intrinsic size written on the <video> is never stale (scripts/lib/help-clips.ts).
 const CLIP_WIDTH = 736;
 const CLIP_HEIGHT = 1600;
 
