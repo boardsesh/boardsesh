@@ -4,6 +4,7 @@ import { renderToString } from 'react-dom/server';
 import ClimbCreativeWorkJsonLd from '@/app/components/climb-front-door/climb-creative-work-json-ld';
 import ClimbListJsonLd from '@/app/components/climb-front-door/climb-list-json-ld';
 import ProfileJsonLd from '@/app/profile/[user_id]/profile-json-ld';
+import SetterJsonLd from '@/app/setter/[setter_username]/setter-json-ld';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { absoluteUrl, SITE_URL } from '@/app/lib/seo/base-url';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
@@ -276,6 +277,70 @@ describe('ItemList JSON-LD', () => {
 
   it('renders nothing for an empty page', () => {
     expect(renderToString(<ClimbListJsonLd climbs={[]} boardDetails={BOARD_DETAILS} page={1} />)).toBe('');
+  });
+});
+
+describe('setter ProfilePage + ItemList JSON-LD', () => {
+  const setterClimbs = [
+    { ...climb(), uuid: 'cccc3333cccc3333cccc3333cccc3333', name: 'Crimp Ladder' },
+    { ...climb(), uuid: 'dddd4444dddd4444dddd4444dddd4444', name: 'Sloper Traverse' },
+  ] as Climb[];
+
+  const boardDetailsByClimb = Object.fromEntries(setterClimbs.map((entry) => [entry.uuid, BOARD_DETAILS]));
+
+  function setterGraph(page = 1, unlinked: ReadonlySet<string> = new Set()) {
+    const data = payload(
+      <SetterJsonLd
+        username="setterperson"
+        displayName="Setter Person"
+        climbs={setterClimbs}
+        boardDetailsByClimb={boardDetailsByClimb}
+        unlinkedClimbUuids={unlinked}
+        page={page}
+      />,
+    );
+
+    return data['@graph'] as Array<Record<string, unknown>>;
+  }
+
+  it('carries no locale prefix on any url in the graph', () => {
+    // Setter pages are board content: `createBoardContentPageMetadata` pins the
+    // canonical to the default-locale URL and ships no `alternates.languages`, so
+    // a `/de` prefix anywhere in here would name an address that canonical
+    // disowns. Deep scan, so a nested ListItem cannot smuggle one in.
+    const serialised = JSON.stringify(setterGraph());
+
+    for (const prefix of ['boardsesh.com/es/', 'boardsesh.com/fr/', 'boardsesh.com/de/']) {
+      expect(serialised).not.toContain(prefix);
+    }
+  });
+
+  it('names the profile and the page, and numbers items globally', () => {
+    const [profilePage, itemList] = setterGraph(2);
+
+    expect(profilePage['@id']).toBe('https://www.boardsesh.com/setter/setterperson?page=2');
+    expect((profilePage.mainEntity as Record<string, unknown>).url).toBe(
+      'https://www.boardsesh.com/setter/setterperson',
+    );
+    expect(itemList.mainEntityOfPage).toEqual({ '@id': 'https://www.boardsesh.com/setter/setterperson?page=2' });
+    expect((itemList.itemListElement as Array<Record<string, unknown>>).map((item) => item.position)).toEqual([51, 52]);
+  });
+
+  it('advertises exactly the URLs the rows link to, omitting the unlinked ones', () => {
+    const [, itemList] = setterGraph(1, new Set([setterClimbs[1].uuid]));
+    const urls = (itemList.itemListElement as Array<Record<string, unknown>>).map((item) => item.url);
+
+    expect(urls).toEqual([
+      absoluteUrl(
+        buildCanonicalClimbViewUrl(
+          BOARD_DETAILS,
+          setterClimbs[0].angle,
+          setterClimbs[0].uuid,
+          resolveClimbDisplayName(setterClimbs[0].name, BOARD_DETAILS.board_name),
+        ),
+      ),
+    ]);
+    expect(itemList.numberOfItems).toBe(1);
   });
 });
 
