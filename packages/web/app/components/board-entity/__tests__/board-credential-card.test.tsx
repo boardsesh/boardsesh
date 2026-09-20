@@ -107,9 +107,14 @@ describe('BoardCredentialCard', () => {
     expect(screen.queryByText(tFromCatalog('settings', 'aurora.status.syncing'))).toBeNull();
   });
 
-  it('renders an unknown sync error verbatim', () => {
-    renderCard(credentialWith({ syncError: 'legacy free text failure' }));
+  it.each([null, '2026-09-01T00:00:00.000Z'])(
+    'shows an unknown sync error even before the first import completes (lastSyncAt: %s)',
+    (lastSyncAt) => {
+      renderCard(credentialWith({ syncError: 'legacy free text failure', lastSyncAt }));
 
-    expect(screen.getByText('legacy free text failure')).toBeTruthy();
-  });
+      expect(screen.getByText('legacy free text failure')).toBeTruthy();
+      expect(screen.getByText(tFromCatalog('settings', 'aurora.status.error'))).toBeTruthy();
+      expect(screen.queryByText(tFromCatalog('settings', 'aurora.status.syncing'))).toBeNull();
+    },
+  );
 });
