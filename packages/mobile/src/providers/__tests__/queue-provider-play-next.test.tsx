@@ -116,7 +116,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => vi.fn(async () => {}),
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
-vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
+vi.mock('../../lib/analytics', () => ({ track: analytics.track, registerRenderSuperProperties: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
 vi.mock('../queue-snackbar-provider', () => ({
@@ -131,6 +131,14 @@ vi.mock('../queue/use-cross-board-add-gate', () => ({
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
 }));
+
+// The gym-sibling roster is a React Query hook and this harness mounts no
+// QueryClient. An empty set means "no other wall in reach", which is what these
+// tests are written against; the reachable-wall rule has its own coverage.
+vi.mock('../queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
+}));
+vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFeed: () => ({ climbs: [] }) }));
 
 import { QueueProvider, useQueue } from '../queue-provider';
 
