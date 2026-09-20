@@ -101,6 +101,10 @@ describe('gym page metadata', () => {
     const metadata = await metadataFor('private-gym', {});
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
+    // A private gym USED to keep its canonical and its hreflang cluster: it was
+    // noindexed with a `path`. It no longer is, and that change is deliberate —
+    // an owner's unpublished listing should advertise no locale twins either.
+    expect(metadata.alternates).toBeUndefined();
   });
 
   it('indexes a public gym that carries a pin', async () => {

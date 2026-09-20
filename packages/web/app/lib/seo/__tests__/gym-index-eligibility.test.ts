@@ -36,5 +36,7 @@ describe('gymIsIndexableVenue', () => {
 
   it('rejects a non-finite coordinate', () => {
     expect(gymIsIndexableVenue(candidate({ latitude: Number.NaN }))).toBe(false);
+    expect(gymIsIndexableVenue(candidate({ latitude: Number.POSITIVE_INFINITY }))).toBe(false);
+    expect(gymIsIndexableVenue(candidate({ longitude: Number.NEGATIVE_INFINITY }))).toBe(false);
   });
 });
