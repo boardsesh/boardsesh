@@ -1,0 +1,38 @@
+name: Database TLS
+
+on:
+  pull_request:
+    paths:
+      - 'packages/db/**'
+      - 'packages/hold-detector/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/database-tls.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/db/**'
+      - 'packages/hold-detector/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/database-tls.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verified-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+      - run: vp install --frozen-lockfile
+      - name: Verify primary, replica, and queue TLS handshakes
+        run: vp exec tsx --test packages/db/src/client/__tests__/postgres-tls.test.ts packages/db/src/client/__tests__/postgres.test.ts
+      - name: Verify detector connection contract
+        run: vp test run --project hold-detector --reporter=agent
