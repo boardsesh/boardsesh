@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratorSelection } from '../GeneratorPickerCard';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), navigate: vi.fn() }));
+const errors = vi.hoisted(() => ({ reportError: vi.fn(), showToast: vi.fn() }));
 
 const queue = vi.hoisted(() => ({
   startSession: vi.fn(async () => 'session-1' as string | null),
@@ -100,7 +102,8 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: (value: number) => ({ value }),
 }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('expo-router', () => ({ useRouter: () => navigation }));
+vi.mock('../../../../lib/error-reporting', () => ({ reportError: errors.reportError }));
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
@@ -157,7 +160,7 @@ vi.mock('../../../../providers/queue-provider', () => ({
 vi.mock('../../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: drawer.openPlayDrawer }),
 }));
-vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: errors.showToast }) }));
 vi.mock('../../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     insideTabs: true,
@@ -192,6 +195,10 @@ import { PreSessionView } from '../PreSessionView';
 
 beforeEach(() => {
   analytics.track.mockClear();
+  navigation.navigate.mockClear();
+  navigation.push.mockClear();
+  errors.reportError.mockClear();
+  errors.showToast.mockClear();
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
   queue.appendGeneratedSession.mockClear();
@@ -252,6 +259,10 @@ describe('PreSessionView analytics', () => {
     // current climb (it stays put unless nothing is active).
     expect(queue.appendGeneratedSession).toHaveBeenCalledTimes(1);
     expect(queue.appendGeneratedSession).toHaveBeenCalledWith(previewItems);
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(queue.appendGeneratedSession.mock.invocationCallOrder[0]).toBeLessThan(
+      navigation.navigate.mock.invocationCallOrder[0],
+    );
     expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
       workoutType: 'volume',
       boardName: 'kilter',
@@ -272,6 +283,7 @@ describe('PreSessionView analytics', () => {
 
     expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalledWith('Session Queue Generated', expect.anything());
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
   });
 
   it('does not start a generated session while the preview is still loading', async () => {
@@ -303,6 +315,43 @@ describe('PreSessionView analytics', () => {
 
     expect(queue.startSession).not.toHaveBeenCalled();
     expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('PreSessionView Start navigation', () => {
+  it('opens Climbs when session state replaces this screen before creation settles', async () => {
+    const creation = Promise.withResolvers<string | null>();
+    queue.startSession.mockReturnValueOnce(creation.promise);
+    const screen = render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    screen.unmount();
+
+    await act(async () => creation.resolve('session-1'));
+
+    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('stays on Session when creation returns no session', async () => {
+    queue.startSession.mockResolvedValue(null);
+    render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(queue.appendGeneratedSession).not.toHaveBeenCalled();
+  });
+
+  it('stays on Session and shows the error when creation rejects', async () => {
+    queue.startSession.mockRejectedValueOnce(new Error('Session unavailable'));
+    render(createElement(PreSessionView));
+
+    await act(async () => startButton.onPress?.());
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(errors.showToast).toHaveBeenCalledWith('mobile.session.preStartError', 'error');
   });
 });
 
@@ -346,6 +395,7 @@ describe('PreSessionView "Show this session live" switch', () => {
       startButton.onPress?.();
     });
     await waitFor(() => expect(visibilityRow.disabled).toBe(true));
+    expect(navigation.navigate).not.toHaveBeenCalled();
 
     act(() => {
       visibilityRow.onChange?.(false);

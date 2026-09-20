@@ -81,8 +81,7 @@ type PreSessionViewProps = {
  * then tap Start. The preview is built/refreshed by `useWorkoutPreview`; Start
  * creates the session (the ONLY create path besides joining — sessions are never
  * created lazily) and queues the preview behind the live queue without moving the
- * current climb, so SessionScreen re-renders into InSessionView when `sessionId`
- * flips.
+ * current climb, then opens Climbs with the new session running.
  */
 function previewKeyExtractor(previewItem: PreviewItem): string {
   return previewItem.item.uuid;
@@ -245,6 +244,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
           failedCount: plannedCount - generatedItems.length,
         });
       }
+      browseClimbs();
     } catch (error) {
       reportError(error, { tags: { source: 'preSessionStart' } });
       showToast(t('mobile.session.preStartError'), 'error');
@@ -261,6 +261,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
     startSession,
     isPublic,
     appendGeneratedSession,
+    browseClimbs,
     showToast,
     t,
   ]);
