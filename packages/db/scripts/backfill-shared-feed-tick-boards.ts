@@ -270,7 +270,7 @@ async function main() {
     const snapshot: Snapshot = { writtenAt: new Date().toISOString(), entries };
 
     if (!options.apply) {
-      console.log(`Dry run — would re-file ${entries.length} ticks. Nothing written.`);
+      console.log(`Dry run — would re-file ${entries.length} ticks. No database writes.`);
       writeSnapshot(outPath, snapshot);
       console.log(`Planned changes written to ${outPath} (inspect before re-running with --apply).`);
       return;
