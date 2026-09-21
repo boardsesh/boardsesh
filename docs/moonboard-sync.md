@@ -38,16 +38,20 @@ When the sync first runs against a database whose MoonBoard gyms were seeded wit
 ```bash
 moonboard-sync locations
 moonboard-sync locations --username <email> --password <password> -v
-moonboard-sync daemon --skip-if-missing-credentials
+moonboard-sync daemon
 ```
 
 `daemon` runs one location sync immediately during active hours, then repeats every six to eight hours with jitter. It uses the shared Postgres daemon lease under the `moonboard-sync` key, so a second container stays in standby during a rolling deploy and takes over when the active process releases or loses the lease. The location writes remain idempotent because the lease is an overlap reduction mechanism, not a correctness lock.
 
+The runner inherits `@boardsesh/sync-runtime`'s `resolveDaemonOptions` defaults: quiet hours are 22:00 inclusive to 07:00 exclusive in `Australia/Sydney`, including daylight saving, with a one-minute quiet-hours poll. It does not acquire a lease or start a new sync during that window; an already-running sync can finish. A delayed cycle that reaches quiet hours waits until active hours resume.
+
 The combined `boardsesh-sync` image includes this command. The production sync host must run a separate service with:
 
 ```bash
-bunx tsx packages/moonboard-sync/src/cli/index.ts daemon --skip-if-missing-credentials
+node --import tsx packages/moonboard-sync/src/cli/index.ts daemon
 ```
+
+The production command and `sync:daemon` script fail with a nonzero status when either credential is missing. Keep `--skip-if-missing-credentials` for optional development/seed commands, where a successful skip is intentional.
 
 Branch deploys do not run this daemon; they continue using the location snapshot in the dev database image.
 

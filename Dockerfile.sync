@@ -14,7 +14,7 @@
 # (see docs/scheduler.md):
 #   node --import tsx packages/kilter-sync/src/cli/index.ts daemon
 #   node --import tsx packages/aurora-sync/src/cli/index.ts daemon
-#   node --import tsx packages/moonboard-sync/src/cli/index.ts daemon --skip-if-missing-credentials
+#   node --import tsx packages/moonboard-sync/src/cli/index.ts daemon
 #   node --import tsx packages/scheduler/src/cli/index.ts start
 FROM node:22-alpine
 

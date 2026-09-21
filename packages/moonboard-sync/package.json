@@ -38,7 +38,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "vp lint",
     "lint-fix": "vp lint --fix",
-    "sync:daemon": "tsx src/cli/index.ts daemon --skip-if-missing-credentials",
+    "sync:daemon": "tsx src/cli/index.ts daemon",
     "sync:locations": "tsx src/cli/index.ts locations --skip-if-missing-credentials"
   },
   "dependencies": {

@@ -175,6 +175,41 @@ describe('MoonBoardSyncRunner', () => {
     await runner.stop();
   });
 
+  it.each([
+    ['standard time', '2026-06-01T12:30:00.000Z', '2026-06-01T21:00:00.000Z'],
+    ['daylight saving', '2026-12-01T11:30:00.000Z', '2026-12-01T20:00:00.000Z'],
+  ])(
+    'waits for Sydney quiet hours to end during %s before acquiring a lease or syncing',
+    async (_, quietTime, activeTime) => {
+      const runner = new MoonBoardSyncRunner({
+        username: 'sync@example.com',
+        password: 'secret',
+        onLog: vi.fn(),
+      });
+      let currentTime = new Date(quietTime);
+      const sleep = vi.fn(async (_milliseconds: number, signal?: AbortSignal) => {
+        if (currentTime.toISOString() === quietTime) {
+          expect(runnerHarness.createDb).not.toHaveBeenCalled();
+          expect(runnerHarness.acquireOrRenewDaemonLease).not.toHaveBeenCalled();
+          expect(runnerHarness.syncMoonBoardLocations).not.toHaveBeenCalled();
+          currentTime = new Date(activeTime);
+          return;
+        }
+        runner.requestStop();
+        expect(signal?.aborted).toBe(true);
+        throw abortError();
+      });
+
+      await runner.runDaemon({}, { now: () => currentTime, random: () => 0, sleep });
+
+      expect(sleep).toHaveBeenNthCalledWith(1, 60_000, expect.any(AbortSignal));
+      expect(sleep).toHaveBeenNthCalledWith(2, 6 * 60 * 60_000, expect.any(AbortSignal));
+      expect(runnerHarness.acquireOrRenewDaemonLease).toHaveBeenCalledOnce();
+      expect(runnerHarness.syncMoonBoardLocations).toHaveBeenCalledOnce();
+      await runner.stop();
+    },
+  );
+
   it('reports a failed cycle once without callbacks and stays alive for a later retry', async () => {
     const cycleError = new Error('MoonBoard is temporarily unavailable');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
