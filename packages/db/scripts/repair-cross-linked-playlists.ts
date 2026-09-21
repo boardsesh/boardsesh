@@ -702,13 +702,14 @@ async function main(): Promise<void> {
 
     console.info('');
     console.info(
-      `${LOG_TAG} Repair complete: ${counts.ownershipRowsDeleted} ownership row(s), ${counts.pinsDeleted} pin(s), ` +
+      `${LOG_TAG} Transaction committed: ${counts.ownershipRowsDeleted} ownership row(s), ${counts.pinsDeleted} pin(s), ` +
         `${counts.followsDeleted} follow(s) deleted, ${counts.tombstonesWritten} sync_deletions tombstone(s) written. ` +
         `No playlist, climb, tick, or credential was touched.`,
     );
     if (counts.skippedByDrift.length > 0) {
       console.info(
-        `${LOG_TAG} Skipped ${counts.skippedByDrift.length} playlist(s): ${counts.skippedByDrift.join(', ')}`,
+        `${LOG_TAG} Drift-skipped ${counts.skippedByDrift.length} playlist(s) were left unchanged: ` +
+          `${counts.skippedByDrift.join(', ')}. Other validated repairs in this run committed as counted above.`,
       );
     }
   } finally {
