@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Scripts legitimately import sibling packages (`../../board-constants`,
+    // `../../../scripts/lib`), so the root has to be the monorepo root or
+    // every cross-package import trips TS6059 during type-aware lint.
+    "rootDir": "../../..",
+    "types": ["node"]
+  },
+  "include": ["."]
+}
