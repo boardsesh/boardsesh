@@ -10,6 +10,7 @@ import {
   CANONICAL_WEB_ORIGIN,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
+  POSTGRES_PRIMARY_SERVICE_NAME,
   WEB_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
@@ -37,11 +38,16 @@ import {
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
+// The main stubs answer every service's variables() query with one set, so this
+// holds every variable any declared service requires. A service-specific value
+// is merged over it by the caller.
 const WEB_SYNC_VARIABLES = {
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
   BOARDSESH_WEB: '1',
   BASE_URL: CANONICAL_WEB_ORIGIN,
+  PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
+  PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
 };
 
 function withWebSyncVariables(variables: Record<string, string>): Record<string, string> {
@@ -54,9 +60,15 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-ota', name: OTA_SERVICE_NAME },
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
       { id: 'svc-web', name: WEB_SERVICE_NAME },
+      { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
     ],
     variables: {
       [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
+      // Presence is all this config asserts; the PEM bodies live only in Railway.
+      [POSTGRES_PRIMARY_SERVICE_NAME]: {
+        PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
+        PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      },
       [WEB_SERVICE_NAME]: {
         SMTP_USER: 'mailer@boardsesh.com',
         SMTP_PASSWORD: 'test-password',
@@ -269,7 +281,7 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {} });
     const plan = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(3);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(4);
   });
 
   it('reports missing TTLs', () => {
@@ -383,6 +395,7 @@ describe('main', () => {
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+                  { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
                 ],
               },
             },
@@ -515,6 +528,7 @@ describe('Railway authentication', () => {
           { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
           { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
           { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+          { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
         ],
       },
     },
@@ -828,6 +842,7 @@ describe('apply mode', () => {
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+                  { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
                 ],
               },
             },
