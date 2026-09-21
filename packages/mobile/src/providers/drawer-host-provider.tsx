@@ -87,6 +87,10 @@ export type OpenClimbActionsOptions = {
    *  stacks above the `/play` fullScreenModal (a root-tree sheet can't — see
    *  #3505). It receives the climb/board snapshot the menu was opened for. */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When set, the menu offers an "Open the queue" action that runs this after
+   *  the menu closes. The play drawer passes its own queue opener while the
+   *  connect-step pill (#5654) has taken the queue button's place. */
+  onOpenQueue?: () => void;
   /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
    * actions overlay. Omitted when the source is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
@@ -441,6 +445,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
     onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
     onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+    onOpenQueue?: () => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
@@ -673,6 +678,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         onAddBetaVideo: options?.onAddBetaVideo,
         onTick: options?.onTick,
         onReportClimb: options?.onReportClimb,
+        onOpenQueue: options?.onOpenQueue,
         dismissSourceSheet: options?.dismissSourceSheet,
         dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
@@ -1231,6 +1237,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               onAddBetaVideo={climbActions.onAddBetaVideo}
               onTick={climbActions.onTick}
               onReportClimb={climbActions.onReportClimb}
+              onOpenQueue={climbActions.onOpenQueue}
               dismissSourceSheet={climbActions.dismissSourceSheet}
               dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
               reduceMotion={reduceMotion}

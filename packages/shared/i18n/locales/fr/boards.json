@@ -100,6 +100,28 @@
       "openSettings": "Ouvrir Réglages",
       "notNow": "Pas maintenant"
     },
+    "firstConnect": {
+      "card": {
+        "title": "Allume les blocs sur {{board}}",
+        "titleNoName": "Allume les blocs sur ta board",
+        "body": "Connecte ce téléphone à la board, puis touche un bloc pour l'allumer.",
+        "connect": "Connecte la board",
+        "tryAgain": "Réessayer",
+        "noLights": "Ce mur n'a pas de LED",
+        "notNow": "Pas maintenant",
+        "connecting": "Connexion à {{board}}…",
+        "connectingNoName": "Connexion à ta board…",
+        "failed": "Impossible de joindre {{board}}. Rapproche-toi et réessaie.",
+        "failedNoName": "Impossible de joindre ta board. Rapproche-toi et réessaie."
+      },
+      "pill": "Allumer sur la board",
+      "confirm": {
+        "title": "Connecté à {{board}}",
+        "titleNoName": "Connecté à ta board",
+        "body": "Touche un bloc dans la liste : il s'allume au mur.",
+        "gotIt": "Compris"
+      }
+    },
     "discovery": {
       "findNearby": "À proximité",
       "bluetooth": "Bluetooth",

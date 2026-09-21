@@ -78,6 +78,12 @@ vi.mock('../PlayDrawerCommitBar', () => ({
   PlayDrawerCommitBar: ({ commitLabel }: { commitLabel?: string }) =>
     createElement('div', { 'data-commit-bar': 'true', 'data-commit-label': commitLabel }),
 }));
+// The connect-step pill has its own test; here only where it goes, and that it
+// is handed the bulb's own tap and pending state.
+vi.mock('../FirstConnectPill', () => ({
+  FirstConnectPill: ({ pending, onPress }: { pending: boolean; onPress: () => void }) =>
+    createElement('button', { 'data-connect-pill': 'true', 'data-pending': String(pending), onClick: onPress }),
+}));
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -363,5 +369,76 @@ describe('PlayDrawerActionBar (anonymous viewer)', () => {
     expect(rendered).toContain(ACTION_ICONS.ellipsis);
     expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
     expect(container.querySelector('[data-label="playView.tickFab.logAscentAria"]')).toBeTruthy();
+  });
+});
+
+// #5654, PR 7: the connect-step treatment turns the bulb into a labelled pill at
+// the right end of the second row. Share and queue go to ⋯ (the host adds them
+// to that menu); the tick keeps its slot.
+describe('PlayDrawerActionBar (connect-step pill)', () => {
+  const pillProps = { ...baseProps, connectPill: true };
+
+  it('moves the bulb into the second row as the pill, and share and queue out of it', () => {
+    const onLightbulb = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...pillProps, onLightbulb }));
+    const pill = container.querySelector('[data-connect-pill="true"]') as HTMLElement;
+
+    expect(pill).toBeTruthy();
+    expect(container.querySelector('[data-ble="true"]')).toBeNull();
+    expect(actions(container)).not.toContain(ACTION_ICONS.queue);
+    expect(container.querySelector('[data-icon="share"]')).toBeNull();
+    pill.click();
+    expect(onLightbulb).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the tick, the heart, the angle and ⋯', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, pillProps));
+    const rendered = actions(container);
+
+    expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
+    expect(rendered).toContain(ACTION_ICONS.favorite);
+    expect(rendered).toContain(ACTION_ICONS.ellipsis);
+    expect(container.querySelector('[data-label="mobile.angleSelector.title"]')).toBeTruthy();
+  });
+
+  it('shows a connect in flight on the pill', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...pillProps, lightbulbPending: true }));
+
+    expect(container.querySelector('[data-connect-pill="true"]')?.getAttribute('data-pending')).toBe('true');
+  });
+
+  it('gives way to the commit controls while the latch is up', () => {
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...pillProps,
+        secondaryMode: 'commit' as const,
+        onBackToLive: vi.fn(),
+        onCommit: vi.fn(),
+      }),
+    );
+
+    expect(container.querySelector('[data-connect-pill="true"]')).toBeNull();
+    expect(container.querySelector('[data-commit-bar="true"]')).toBeTruthy();
+    // The bulb is back in its slot rather than lost.
+    expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
+  });
+
+  it('never shows without a Bluetooth provider, or to a signed-out reader', () => {
+    const noBluetooth = render(createElement(PlayDrawerActionBar, { ...pillProps, showLightbulb: false }));
+    expect(noBluetooth.container.querySelector('[data-connect-pill="true"]')).toBeNull();
+
+    const anonymous = render(
+      createElement(PlayDrawerActionBar, { ...pillProps, viewer: 'anonymous' as const, onSignInPress: vi.fn() }),
+    );
+    expect(anonymous.container.querySelector('[data-connect-pill="true"]')).toBeNull();
+  });
+
+  it('leaves the bar as it was without the pill', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, baseProps));
+
+    expect(container.querySelector('[data-connect-pill="true"]')).toBeNull();
+    expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
+    expect(actions(container)).toContain(ACTION_ICONS.queue);
+    expect(container.querySelector('[data-icon="share"]')).toBeTruthy();
   });
 });

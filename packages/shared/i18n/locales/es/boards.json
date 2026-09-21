@@ -100,6 +100,28 @@
       "openSettings": "Abrir Ajustes",
       "notNow": "Ahora no"
     },
+    "firstConnect": {
+      "card": {
+        "title": "Ilumina bloques en {{board}}",
+        "titleNoName": "Ilumina bloques en tu plafón",
+        "body": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
+        "connect": "Conecta el plafón",
+        "tryAgain": "Reintentar",
+        "noLights": "Este muro no tiene luces",
+        "notNow": "Ahora no",
+        "connecting": "Conectando con {{board}}…",
+        "connectingNoName": "Conectando con tu plafón…",
+        "failed": "No se pudo conectar con {{board}}. Acércate e inténtalo de nuevo.",
+        "failedNoName": "No se pudo conectar con tu plafón. Acércate e inténtalo de nuevo."
+      },
+      "pill": "Iluminar en el plafón",
+      "confirm": {
+        "title": "Conectado a {{board}}",
+        "titleNoName": "Conectado a tu plafón",
+        "body": "Ahora, al tocar un bloque de la lista, se ilumina en el muro.",
+        "gotIt": "Entendido"
+      }
+    },
     "discovery": {
       "findNearby": "Buscar cerca",
       "bluetooth": "Bluetooth",

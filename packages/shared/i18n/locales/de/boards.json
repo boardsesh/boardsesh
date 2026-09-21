@@ -100,6 +100,28 @@
       "openSettings": "Einstellungen öffnen",
       "notNow": "Nicht jetzt"
     },
+    "firstConnect": {
+      "card": {
+        "title": "{{board}}: Boulder beleuchten",
+        "titleNoName": "Boulder am Board beleuchten",
+        "body": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "connect": "Verbinde das Board",
+        "tryAgain": "Nochmal versuchen",
+        "noLights": "Diese Wand hat kein Licht",
+        "notNow": "Nicht jetzt",
+        "connecting": "Verbinde mit {{board}}…",
+        "connectingNoName": "Verbinde mit deinem Board…",
+        "failed": "{{board}} ist nicht erreichbar. Geh näher ran und versuch es nochmal.",
+        "failedNoName": "Dein Board ist nicht erreichbar. Geh näher ran und versuch es nochmal."
+      },
+      "pill": "Am Board beleuchten",
+      "confirm": {
+        "title": "Mit {{board}} verbunden",
+        "titleNoName": "Mit deinem Board verbunden",
+        "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "gotIt": "Verstanden"
+      }
+    },
     "discovery": {
       "findNearby": "In der Nähe suchen",
       "bluetooth": "Bluetooth",

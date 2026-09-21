@@ -106,6 +106,7 @@ import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
+import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
 import {
   clearBoardRevealTipPending,
   hasBoardRevealTipPending,
@@ -470,7 +471,12 @@ function ClimbListInner() {
     }, []),
   );
   const dismissRevealTip = useCallback(() => setRevealTipVisible(false), []);
-  const showRevealTip = revealTipVisible && !!activeBoard;
+  // The connect-step card (#5654, treatment only) goes first: one card at a
+  // time, and both one-shot tips below wait until it is gone. Read from the
+  // card's own store, so for everyone outside the treatment this is false.
+  const connectCardBoardHasLights = activeBoard != null && activeBoard.hasLeds !== false;
+  const connectCardVisible = useFirstConnectCardExpected(connectCardBoardHasLights);
+  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible;
 
   // One-shot tip teaching the quick-actions menu (long-press or the ⋯ button).
   // Armed on focus if unseen; held back until the board-reveal banner is gone so
@@ -488,7 +494,7 @@ function ClimbListInner() {
     }, []),
   );
   const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
-  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip;
+  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip && !connectCardVisible;
   useEffect(() => {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
@@ -1554,9 +1560,15 @@ function ClimbListInner() {
 
   // Memoized so FlashList doesn't re-measure/re-render the header on every
   // ClimbListInner render — only when the title, pills, or filters change.
+  const connectCardBoardName = (activeBoard?.name ?? '').trim() || null;
   const listHeader = useMemo(
     () => (
       <>
+        <FirstConnectCard
+          boardName={connectCardBoardName}
+          boardHasLights={connectCardBoardHasLights}
+          style={styles.revealBanner}
+        />
         {showRevealTip ? (
           <OnboardingTipBanner
             text={tCommon('mobile.onboarding.boardRevealTip')}
@@ -1591,6 +1603,8 @@ function ClimbListInner() {
       </>
     ),
     [
+      connectCardBoardName,
+      connectCardBoardHasLights,
       showRevealTip,
       handleOpenBoardDetail,
       dismissRevealTip,

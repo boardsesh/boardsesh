@@ -44,6 +44,14 @@ type ClimbActionsSheetProps = {
    *  (hide the climb, or argue its grade). The caller gates it on auth + the
    *  moderation kill switch. */
   onReportClimb?: () => void;
+  /**
+   * When provided, shows "Open the queue", which opens it once this sheet has
+   * gone. The play drawer passes it while the connect-step pill (#5654) has
+   * taken the queue button's place in its second row.
+   */
+  onOpenQueue?: () => void;
+  /** When provided, shows "Share" (the native share sheet); same condition as `onOpenQueue`. */
+  onShare?: () => void;
   /** Supplied only by the `/play` route; omitted by the persistent iPad pane. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
   onClose: () => void;
@@ -75,6 +83,8 @@ function ClimbActionsSheet({
   onEditEntry,
   onAddBetaVideo,
   onReportClimb,
+  onOpenQueue,
+  onShare,
   dismissPlayerAndWait,
   onClose,
 }: ClimbActionsSheetProps) {
@@ -128,6 +138,21 @@ function ClimbActionsSheet({
     onReportClimb?.();
     onClose();
   }, [onReportClimb, onClose]);
+
+  // The queue is another sheet, so it waits until this one has really gone
+  // rather than presenting over its dismiss animation.
+  const handleOpenQueue = useCallback(() => {
+    if (!onOpenQueue) return;
+    void dismissActionsSheetAndWait().then(() => {
+      onClose();
+      onOpenQueue();
+    });
+  }, [dismissActionsSheetAndWait, onOpenQueue, onClose]);
+
+  const handleShare = useCallback(() => {
+    onShare?.();
+    onClose();
+  }, [onShare, onClose]);
 
   // Only boards with an official app page get the row; the guard is what turns
   // the loose board string into the AuroraBoardName the builder assumes.
@@ -241,6 +266,14 @@ function ClimbActionsSheet({
             showSeparator
           />
         )}
+        {onOpenQueue && (
+          <ListRow
+            title={t('mobile.climbActions.openQueue')}
+            leading={<Icon name="queue" size={22} color={accentActionIconColor} />}
+            onPress={handleOpenQueue}
+            showSeparator
+          />
+        )}
         {onOpenPlaylist && (
           <ListRow
             title={t('actions.playlist.popover.title')}
@@ -294,6 +327,14 @@ function ClimbActionsSheet({
             title={t('mobile.climbActions.fork')}
             leading={<Icon name="branch" size={22} color={accentActionIconColor} />}
             onPress={handleFork}
+            showSeparator
+          />
+        )}
+        {onShare && (
+          <ListRow
+            title={t('share.actionLabel')}
+            leading={<Icon name="share" size={22} color={accentActionIconColor} />}
+            onPress={handleShare}
             showSeparator
           />
         )}
