@@ -38,12 +38,7 @@ export const BOULDER_GRADES = [
 
 export type BoulderGrade = (typeof BOULDER_GRADES)[number];
 
-/**
- * Parse the V-number out of a grade label. Handles the plain V token ("V4"),
- * the combined font/V strings the backend emits ("6b+/V4", "V4 / 7A"), and is
- * case-insensitive. Returns null when there is no V token (e.g. a font-only
- * label), so callers can skip grade-axis anchoring rather than guess.
- */
+/** Read a case-insensitive V-number from a plain or combined grade, or return null. */
 export function vGradeNumber(gradeLabel: string): number | null {
   const match = /V(\d+)/i.exec(gradeLabel);
   return match ? Number(match[1]) : null;
