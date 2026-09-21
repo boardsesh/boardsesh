@@ -367,6 +367,41 @@ describe('createClimbStatsLiveSync — dropping revisions already settled', () =
 });
 
 describe('createClimbStatsLiveSync — the queue keeps the newer revision', () => {
+  it('persists a 1,500-row healthy reconciliation in bounded chunks after a delayed first write', async () => {
+    let releaseFirstWrite: (() => void) | undefined;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      if (!releaseFirstWrite) await new Promise<void>((resolve) => (releaseFirstWrite = resolve));
+      return events.map(() => applied());
+    });
+    const harness = createHarness({ writeEvents: writeEvents as never });
+    const events = Array.from({ length: 1_500 }, (_value, index) =>
+      makeEvent({ climbUuid: `climb-${index}`, syncSeq: `${index + 1}` }),
+    );
+    const persist = (async () => {
+      for (let offset = 0; offset < events.length; offset += CLIMB_STATS_MAX_PENDING_EVENTS) {
+        await harness.sync.persistReconciliationChunk(events.slice(offset, offset + CLIMB_STATS_MAX_PENDING_EVENTS));
+      }
+    })();
+
+    await settleWrites();
+    expect(writeEvents).toHaveBeenCalledTimes(1);
+    expect(writeEvents.mock.calls[0][1] as ClimbStatsWriteThroughInput[]).toHaveLength(CLIMB_STATS_MAX_PENDING_EVENTS);
+    releaseFirstWrite?.();
+    await persist;
+
+    expect(harness.writtenEvents()).toHaveLength(1_500);
+    expect(writeEvents.mock.calls.every((call) => (call[1] as ClimbStatsWriteThroughInput[]).length <= 500)).toBe(true);
+  });
+
+  it('keeps a newer streamed revision when an older reconciliation chunk follows', async () => {
+    const harness = createHarness();
+    harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
+    await settleWrites();
+
+    await harness.sync.persistReconciliationChunk([makeEvent({ syncSeq: '100' })]);
+
+    expect(harness.writtenEvents().map((event) => event.syncSeq)).toEqual(['101']);
+  });
   // The reconciliation read is a server snapshot taken BEFORE the recompute the
   // stream already published, so the two arrive out of order for the same key.
   // Latest-arrival-wins would let the older one replace the newer and lose it.
@@ -981,6 +1016,29 @@ describe('createClimbStatsLiveSync — coalescing and batching', () => {
 });
 
 describe('createClimbStatsLiveSync — contention and transient gates', () => {
+  it('drains rows retained when a background transition cuts a prior drain short', async () => {
+    let releaseFirstWrite: (() => void) | undefined;
+    let backgrounded = false;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      if (!releaseFirstWrite) await new Promise<void>((resolve) => (releaseFirstWrite = resolve));
+      return events.map(() => applied());
+    });
+    const harness = createHarness({ shouldSkipWrites: () => backgrounded, writeEvents: writeEvents as never });
+
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'first' }));
+    await settleWrites();
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'retained' }));
+    backgrounded = true;
+    releaseFirstWrite?.();
+    await settleWrites();
+
+    expect(harness.writtenEvents().map((event) => event.climbUuid)).toEqual(['first']);
+    backgrounded = false;
+    harness.sync.onForeground();
+    await settleWrites();
+
+    expect(harness.writtenEvents().map((event) => event.climbUuid)).toEqual(['first', 'retained']);
+  });
   it('keeps a lock-lost event queued instead of discarding it', async () => {
     // A VACUUM or a snapshot import holds the write lock for 5-20 s. Dropping
     // the batch would silently lose every recompute of that window.

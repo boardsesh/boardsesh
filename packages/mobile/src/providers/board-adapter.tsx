@@ -4,6 +4,7 @@
 // QueueProvider and BoardProvider.
 
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react';
@@ -149,7 +150,14 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         reportHandledError(error, { tags: { source: 'offline-sync', kind: 'climb-stats-write-through' } }),
     });
     climbStatsLiveSyncRef.current = liveSync;
+    const foregroundSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState !== 'active') return;
+      // startBackgroundTracking owns the shared background bit. Queue behind
+      // its listener so this sees the active state regardless of registration.
+      queueMicrotask(() => liveSync.onForeground());
+    });
     return () => {
+      foregroundSubscription.remove();
       unsubscribeSettings();
       liveSync.dispose();
       climbStatsLiveSyncRef.current = null;
@@ -259,6 +267,9 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         : (event) => {
             climbStatsLiveSyncRef.current?.handleEvent(event);
           },
+      persistClimbStatsReconciliationChunk: !offlineEnabled
+        ? undefined
+        : (events) => climbStatsLiveSyncRef.current?.persistReconciliationChunk(events) ?? Promise.resolve(),
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
       scheduleTask: (callback, delayMs) => {
         const timer = setTimeout(callback, delayMs);
@@ -358,7 +369,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
                       ? null
                       : fallbackError instanceof Error
                         ? fallbackError.message
-                        : String(fallbackError),
+                        : sanitizeErrorForAnalytics(fallbackError),
                 },
               });
               // Exactly one per failed local write, on both exits.

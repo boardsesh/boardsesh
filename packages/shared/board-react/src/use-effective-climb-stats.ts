@@ -414,10 +414,10 @@ function persistClimbStatsSafely(adapter: BoardAdapter, event: ClimbStatsEvent):
   }
 }
 
-function applyBatchRows(
+async function applyBatchRows(
   batch: ActiveBatch,
   rows: Awaited<ReturnType<NonNullable<BoardAdapter['fetchClimbStatsForClimbs']>>>,
-): void {
+): Promise<void> {
   const rowsByClimbUuid = new Map<string, typeof rows>();
   for (const row of rows) {
     const climbRows = rowsByClimbUuid.get(row.climbUuid) ?? [];
@@ -426,6 +426,17 @@ function applyBatchRows(
   }
 
   const now = Date.now();
+  const persistenceChunk: ClimbStatsEvent[] = [];
+  const flushPersistenceChunk = async (): Promise<void> => {
+    if (persistenceChunk.length === 0) return;
+    const chunk = persistenceChunk.splice(0, persistenceChunk.length);
+    try {
+      await batch.adapter.persistClimbStatsReconciliationChunk?.(chunk);
+    } catch {
+      // Local persistence is optional. A failure must not prevent later rows
+      // from updating the canonical store or retiring their optimistic tokens.
+    }
+  };
   for (const read of batch.reads) {
     if (!readIsCurrent(read)) {
       completeRead(read);
@@ -447,12 +458,19 @@ function applyBatchRows(
         // and a minAscents filter would still answer from the old row. The
         // write-through's own revision gate makes an unchanged row a single
         // autocommit read and no write, so sending every row is cheap.
-        persistClimbStatsSafely(batch.adapter, canonical);
+        if (batch.adapter.persistClimbStatsReconciliationChunk) {
+          persistenceChunk.push(canonical);
+          if (persistenceChunk.length === 500) await flushPersistenceChunk();
+        } else {
+          // Legacy/native-less adapters retain the synchronous event seam.
+          persistClimbStatsSafely(batch.adapter, canonical);
+        }
       }
     }
     retireAcknowledgedOptimisticAscents(read.acknowledgedTokens, read.authEpoch);
     completeRead(read);
   }
+  await flushPersistenceChunk();
 }
 
 function finishFailedRateLimitRetry(batch: ActiveBatch): void {
@@ -497,7 +515,7 @@ function drainReadQueue(): void {
     .then((rows) => {
       if (generation !== coordinatorGeneration) return;
       if (batch.isRateLimitRetry) clearRateLimitPause(batch.group);
-      applyBatchRows(batch, rows);
+      return applyBatchRows(batch, rows);
     })
     .catch((error: unknown) => {
       if (generation !== coordinatorGeneration) return;

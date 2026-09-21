@@ -77,6 +77,13 @@ export type BoardAdapter = {
    * web has no local database and omits it.
    */
   persistClimbStatsEvent?: (event: ClimbStatsEvent) => void;
+  /**
+   * Bounded, awaited persistence for rows from a primary reconciliation read.
+   * The shared hook calls this with at most 500 rows before producing another
+   * chunk, so a healthy SQLite writer cannot lose an ordered response to the
+   * live-stream backlog cap. Web has no local catalog and omits it.
+   */
+  persistClimbStatsReconciliationChunk?: (events: readonly ClimbStatsEvent[]) => Promise<void>;
   /** Offline outbox acknowledgement/dead-letter notifications keyed by tick UUID. */
   subscribeOfflineMutationDelivery?: (listener: (event: OfflineMutationDelivery) => void) => () => void;
   /** Renderer timer seam; returns cancellation for the scheduled one-shot task. */
