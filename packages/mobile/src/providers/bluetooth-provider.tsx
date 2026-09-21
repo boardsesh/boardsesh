@@ -1707,11 +1707,16 @@ export function BluetoothProvider({
   // board still lists when it advertises. A first attempt's initialFrames are
   // not carried over: the auto-sender lights the current climb once the new link
   // is up, and the climb editor re-sends its frame when it sees the link.
+  // No live picker means nothing to scan again from: a tap that lands after the
+  // picker closed (the climber cancelled it, or its connect already ended) must
+  // not queue a connect nobody asked for.
   const handlePickerScanAgain = useCallback(() => {
+    const activePickerState = pickerStateRef.current;
+    if (!activePickerState) return;
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
     const armUndoToastAfterRescan = undoWallChangeToastArmIdRef.current !== null;
     trackBoardConnectTapped({ surface: 'picker_scan_again', boardName, reconnect: false });
-    pickerStateRef.current?.handleCancel();
+    activePickerState.handleCancel();
     setPendingAutoConnect({
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
       armUndoToast: armUndoToastAfterRescan,

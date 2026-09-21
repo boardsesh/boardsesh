@@ -757,6 +757,23 @@ describe('BluetoothProvider picker Scan again', () => {
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
 
+  it('does nothing when Scan again lands after the picker already closed', async () => {
+    bluetooth.state.pickerState = makeEmptyPickerState();
+    bluetooth.state.loading = true;
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    const scanAgainFromClosedPicker = pickerSheet.props?.onScanAgain;
+    expect(scanAgainFromClosedPicker).toBeDefined();
+
+    // The climber cancelled the picker and its connect settled before the tap.
+    rerenderSettled(rerender, KILTER_PROPS);
+    act(() => scanAgainFromClosedPicker?.());
+    await act(async () => {});
+
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+
   // A remembered target would run the silent 10 s auto-select with the sheet
   // closed before the picker came back. The climber asked for the list again.
   const rememberedTargets: Array<
