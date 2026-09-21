@@ -57,6 +57,11 @@ directly into its shots — no Maestro element races a transient auth screen.
   session detail, Climbs, the workout generator, board view, and the board sheet.
 - `onboarding.yaml` / `onboarding-android.yaml` — capture app screens for
   onboarding-card illustrations (`--flow onboarding`).
+- `help.yaml` — the 14 screens the /help pages on boardsesh.com illustrate
+  (`--flow help`): Discover, playlist detail, Home, session detail, the hold and
+  zone filters, setters, Logbook, the share-beta matcher, the beta shelf, the
+  board sheet, board view, the climb-actions menu and the preview drawer. Raw
+  uncaptioned PNGs — only `--flow app-store` goes through `screenshot:frame`.
 
 ## Required env
 

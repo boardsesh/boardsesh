@@ -24,6 +24,7 @@ import {
 } from '../../../src/components/search/InteractiveFilterBoard';
 import { ZoneOverlay, type ZoneCornerLabels } from '../../../src/components/search/ZoneOverlay';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { getCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { emitZoneFilterSelection } from '../../../src/lib/zone-filter-handoff';
 import { track } from '../../../src/lib/analytics';
@@ -100,10 +101,15 @@ export default function ZoneFilterScreen() {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  const boardName = (params.boardName ?? '') as BoardName;
-  const layoutId = Number(params.layoutId ?? 0);
-  const sizeId = Number(params.sizeId ?? 0);
-  const setIds = params.setIds ?? '';
+  // A screenshot deep link (`://climbs/zone`) opens this route with none of the
+  // params the filter sheet pushes, which would render an empty board. In
+  // screenshot mode only, fall back to the wall the capture activated on boot;
+  // `null` in every normal build and whenever the route carried a board.
+  const screenshotBoard = useScreenshotBoardParams(params.boardName);
+  const boardName = (screenshotBoard?.boardName ?? params.boardName ?? '') as BoardName;
+  const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
+  const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
+  const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
   // The `boardLayout` analytics property is the layout NAME (e.g. "Original"),
   // matching web's `boardDetails.layout_name`. The route's `layoutName` param
   // carried the board family (e.g. "kilter"), so resolve the real name from the

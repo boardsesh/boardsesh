@@ -14,8 +14,8 @@
       "description": "Boardsesh est gratuit et open source. Participez aux factures d'hébergement, de base de données et d'infrastructure qui le font tourner."
     },
     "help": {
-      "title": "Aide",
-      "description": "Ce que vous pouvez faire sur boardsesh.com, ce qui se passe dans l'app et où demander de l'aide."
+      "title": "Aide Boardsesh",
+      "description": "Guides courts pour l'app Boardsesh, comment récupérer ton carnet Kilter ou Tension, et où poser une question."
     },
     "docs": {
       "title": "Documentation API",
@@ -28,6 +28,34 @@
     "privacy": {
       "title": "Politique de confidentialité",
       "description": "Politique de confidentialité de Boardsesh - comment nous gérons vos données."
+    },
+    "helpPlaylists": {
+      "title": "Crée une playlist de board et grimpe-la dans l'ordre",
+      "description": "Crée une playlist pour ta Kilter, ta Tension ou ta MoonBoard, ajoute et retire des blocs, charge-la dans ta file, et sers-toi des huit listes que Boardsesh construit."
+    },
+    "helpSessions": {
+      "title": "Lance ou rejoins une session en direct et partage une seule file",
+      "description": "Lance une session depuis l'onglet Enregistrer, invite ta crew par QR code ou par lien, et partage une file et une board sans allumer les blocs des autres."
+    },
+    "helpFindingClimbs": {
+      "title": "Filtre les blocs par prise, zone du mur et ouvreur",
+      "description": "Plage de cotation, types de prise, zone du mur, ouvreurs suivis, gestes sur une ligne de bloc et filtres épinglés dans l'app Boardsesh."
+    },
+    "helpLogbook": {
+      "title": "Note, modifie et supprime des croix dans ton carnet",
+      "description": "Note une croix depuis la board dans l'app Boardsesh, change la cotation, les étoiles, les essais ou le statut plus tard, supprime une entrée, et retrouve une vieille croix."
+    },
+    "helpBoardAndBluetooth": {
+      "title": "Connecte-toi à ta board en Bluetooth",
+      "description": "Connecte Boardsesh à un contrôleur Kilter, Tension ou MoonBoard, règle une connexion qui échoue, et pilote-la depuis l'écran verrouillé avec Live Activity."
+    },
+    "helpClimbActions": {
+      "title": "Aperçu, croix ou playlist depuis n'importe quelle ligne de bloc",
+      "description": "Le menu d'appui long sur une ligne de bloc dans l'app Boardsesh, de l'aperçu sans allumer la board à la croix ou à l'ajout dans une playlist."
+    },
+    "helpBetaVideos": {
+      "title": "Partager un reel Instagram ou TikTok en beta",
+      "description": "Partage un reel Instagram ou un TikTok vers Boardsesh depuis sa fiche de partage, joins-le à un bloc, filme une nouvelle beta, et trouve la beta des autres."
     }
   },
   "home": {
@@ -301,53 +329,480 @@
     "footer": "Ce document est fourni à titre informatif et ne constitue pas un avis juridique. Dernière mise à jour : 02-08-2026"
   },
   "help": {
+    "clip": {
+      "unsupported": "Ton navigateur ne peut pas lire cette vidéo.",
+      "playHint": "Appuie sur lecture pour voir le geste."
+    },
     "hero": {
       "title": "Aide",
-      "subtitle": "Ce site, c'est là que vivent les blocs. L'app, c'est là que vous les grimpez. Voici ce que fait chacun."
+      "subtitle": "Des guides pour l'app, comment récupérer ton carnet Kilter ou Tension, et où poser une question."
     },
     "web": {
       "title": "Sur ce site",
-      "intro": "Tout ici est un lien que vous pouvez envoyer à quelqu'un. Rien à installer, pas de connexion.",
-      "item1": "Cherchez un bloc et consultez sa cotation, son ouvreur et ses croix.",
-      "item2": "Parcourez tout le catalogue d'un board par layout, taille et inclinaison.",
-      "item3": "Partagez un bloc, une playlist ou votre profil avec une simple URL.",
-      "item4": "Trouvez une salle et voyez ce qu'il y a sur son mur depuis son écran kiosque.",
+      "intro": "Tout boardsesh.com marche dans un navigateur, sans compte.",
+      "item1": "Voir la cotation d'un bloc, son ouvreur, ses ascensions et ses vidéos de beta.",
+      "item2": "Parcourir le catalogue d'une board par layout, taille et angle.",
+      "item3": "Partager un bloc, une playlist ou un profil par lien.",
+      "item4": "Trouve des salles avec des boards près de chez toi.",
       "playlistsLink": "Voir les playlists",
       "aboutLink": "À propos de Boardsesh"
     },
     "app": {
       "title": "Dans l'app",
-      "intro": "Tout ce qui parle au mur se passe dans l'app.",
-      "item1": "Montez une file et enchaînez les blocs avec votre équipe.",
-      "item2": "Lancez une session partagée : tous les téléphones pilotent la même file.",
-      "item3": "Allumez les prises en Bluetooth sur les murs Kilter, Tension et MoonBoard.",
-      "item4": "Notez vos croix et gardez votre carnet au même endroit."
+      "intro": "Tout ce qui touche au mur ou à ton carnet se passe dans l'app.",
+      "item1": "Monte une file et enchaîne les blocs avec ta crew.",
+      "item2": "Lancer une session en direct pour que tous les téléphones pilotent une seule file.",
+      "item3": "Allumer les prises en Bluetooth sur les murs Kilter, Tension et MoonBoard.",
+      "item4": "Noter tes croix et tes essais, et joindre des vidéos de beta."
     },
     "aurora": {
-      "title": "Vous venez des apps Aurora ?",
-      "intro": "Boardsesh lit votre compte existant, donc vos croix vous suivent.",
-      "item1": "Connectez-vous avec votre compte Kilter ou Tension et votre carnet se synchronise.",
-      "item2": "Vos ascensions restent les vôtres. On n'écrit jamais rien que vous n'ayez pas noté.",
-      "link": "Lire le guide de migration"
+      "title": "Récupère ton carnet Kilter ou Tension",
+      "intro": "Relie ton compte de board une fois et tes croix arrivent.",
+      "item1": "Touche ton avatar, puis Paramètres, puis Applications connectées. Sous Comptes de board, touche Relier sur la carte Tension ou Se connecter à Kilter sur la carte Kilter, et saisis l'identifiant et le mot de passe de cette board.",
+      "item2": "Tu utilisais l'ancienne app Kilter ? La carte Kilter (Aurora) prend un export JSON à la place.",
+      "link": "Lire le guide de migration",
+      "item3": "La synchro va dans un seul sens, de leurs apps vers Boardsesh, toutes les 12 heures environ. Rien ne repart."
     },
     "climbCounts": {
       "title": "Pourquoi l'app Kilter affiche plus de blocs ?",
-      "intro": "Les deux apps ont les mêmes blocs. Elles ne les comptent juste pas de la même façon.",
-      "item1": "Boardsesh compte chaque bloc une seule fois et vous montre sa cotation et ses croix à l'angle que vous choisissez.",
-      "item2": "L'app Kilter compte un bloc une fois pour chaque angle où il a été noté : un bloc avec des croix à 40° et à 45° compte pour deux.",
-      "item3": "C'est pour ça qu'une même board peut afficher jusqu'à environ deux fois plus de blocs dans l'app Kilter."
+      "intro": "Les deux apps ont les mêmes blocs et les comptent différemment.",
+      "item1": "Boardsesh compte chaque bloc une fois.",
+      "item2": "L'app Kilter semble compter un bloc une fois par angle où il a été grimpé.",
+      "item3": "Sur un mur Kilter 8x12 à la maison, ça fait environ 18 000 blocs dans Boardsesh et environ 36 000 dans l'app Kilter."
     },
     "ask": {
-      "title": "Toujours bloqué ?",
-      "intro": "Demande sur le Discord. C'est là qu'on te répond le plus vite.",
+      "title": "Pose une question",
+      "intro": "Discord est l'endroit le plus rapide pour avoir une réponse.",
       "discord": "Demander sur Discord",
-      "github": "Signaler un bug sur GitHub",
+      "github": "Ouvrir un ticket sur GitHub",
       "docs": "Lire la doc développeur",
-      "bugLead": "Tu as trouvé un bug ?",
+      "bugLead": "Un bug ?",
       "devLead": "Tu développes sur l'API ?"
+    },
+    "nav": {
+      "label": "Fil d'Ariane",
+      "home": "Accueil",
+      "help": "Aide"
+    },
+    "guides": {
+      "title": "Guides",
+      "intro": "Sept pages courtes avec des captures de l'app.",
+      "playlists": {
+        "title": "Playlists",
+        "body": "Créer une playlist, en ressortir un bloc, mettre toute la liste en file, et utiliser les huit listes intégrées."
+      },
+      "climbActions": {
+        "title": "Actions sur un bloc",
+        "body": "Garde un bloc appuyé pour le voir sans allumer le mur, faire la croix ou l'ajouter à une playlist."
+      },
+      "sessions": {
+        "title": "Sessions en direct",
+        "body": "Lancer une session, inviter ta crew par QR code ou par lien, et explorer sans bouger le mur."
+      },
+      "findingClimbs": {
+        "title": "Trouver des blocs",
+        "body": "Filtrer les blocs par cotation, par prise, par partie du mur ou par ouvreur, et épingler les filtres que tu utilises."
+      },
+      "logbook": {
+        "title": "Ton carnet",
+        "body": "Faire la croix au pied de la board, puis changer sa cotation, ses étoiles, ses essais ou son statut plus tard."
+      },
+      "bluetooth": {
+        "title": "Board et Bluetooth",
+        "body": "Te connecter à la board, régler une connexion qui échoue, et la piloter depuis l'écran verrouillé avec Live Activity."
+      },
+      "betaVideos": {
+        "title": "Vidéos beta",
+        "body": "Partager un reel Instagram ou TikTok vers Boardsesh, le joindre à un bloc, et trouver la beta des autres."
+      }
+    },
+    "playlists": {
+      "breadcrumb": "Playlists",
+      "hero": {
+        "title": "Crée une playlist et grimpe-la dans l'ordre",
+        "subtitle": "Garde des blocs pour plus tard et charge la liste dans ta file."
+      },
+      "build": {
+        "title": "Créer une playlist",
+        "intro": "Chaque playlist appartient à une seule board.",
+        "step1": "Ouvre Découvrir. Vérifie la pastille de board en haut.",
+        "step2": "Touche le plus. Donne-lui un nom, choisis une couleur, touche Créer.",
+        "step3": "Elle apparaît sous Mes playlists.",
+        "p1": "Pour ajouter un bloc, fais glisser sa ligne vers la gauche, ou garde-la appuyée et touche Ajouter à la playlist.",
+        "p2": "Le sélecteur n'affiche que les playlists de la board et du layout du bloc.",
+        "clipAlt": "Faire glisser la ligne d'un bloc vers la gauche pour l'ajouter à une playlist",
+        "clipCaption": "Glisse à gauche pour le ranger dans une playlist. À droite, tu le mets en file.",
+        "shotAlt": "L'onglet Découvrir",
+        "shotCaption": "Épinglée, puis Mes playlists, puis Pour vous.",
+        "playlistShotAlt": "Ta propre playlist",
+        "playlistShotCaption": "Épingler, modifier, réorganiser ou retirer."
+      },
+      "remove": {
+        "title": "Retirer un bloc",
+        "p1": "Depuis le bloc, ouvre Ajouter à la playlist et touche la playlist cochée.",
+        "p2": "Depuis la playlist, touche le crayon, ou choisis Réorganiser et retirer des blocs dans le menu ⋯. Touche le moins rouge et confirme. Fais glisser la poignée pour réordonner.",
+        "p3": "Les listes Pour vous n'ont pas de mode édition. Enlève le cœur d'un bloc ou fais la croix à la place.",
+        "clipAlt": "Décocher une playlist",
+        "clipCaption": "Touche une playlist cochée et le bloc en ressort."
+      },
+      "queue": {
+        "title": "Grimper toute la liste",
+        "intro": "Touche un bloc dans une playlist et ta file devient cette playlist.",
+        "p1": "Elle se charge dans l'ordre à partir du bloc touché. Si des blocs suivaient le tien dans la file, Lancer la playlist ? demande d'abord. Le bouton lecture de l'en-tête part du début.",
+        "p2": "En session, toucher n'ouvre le bloc que pour toi. La file partagée ne bouge pas.",
+        "sessionsLink": "Comment une session partage une seule file",
+        "clipAlt": "La fiche Lancer la playlist ?",
+        "clipCaption": "Avec des blocs déjà en file, Lancer la playlist ? demande d'abord."
+      },
+      "smart": {
+        "title": "Les huit listes que Boardsesh monte pour toi",
+        "crowdFavorites": "Favoris de la communauté. Des blocs bien notés, souvent enchaînés, encore à faire.",
+        "hiddenGems": "Pépites cachées. Notées 4,5 étoiles ou plus, enchaînées par peu de monde.",
+        "atYourLevel": "À votre niveau. Des blocs populaires autour de ta cotation du moment.",
+        "fresh": "Nouveautés. Du neuf sur ta board, les ouvreurs suivis d'abord.",
+        "fiveStars": "Cinq étoiles. Les blocs que tu as notés cinq étoiles.",
+        "mostRepeated": "Les plus répétées. Les blocs avec plus d'un essai noté.",
+        "projects": "Projets. Les blocs notés mais jamais enchaînés.",
+        "likedClimbs": "Voies aimées. Tous les blocs auxquels tu as mis un cœur.",
+        "p1": "Elles sont sous Pour vous dans Découvrir. Les quatre premières lisent ta board à ton angle et sautent tes croix. Les quatre dernières viennent de tes entrées et de tes cœurs.",
+        "p2": "Touche l'épingle d'une carte pour la faire monter dans Épinglée. Les listes Pour vous épinglées restent sur ce téléphone."
+      },
+      "tags": {
+        "title": "Voir dans quelles playlists est un bloc",
+        "p1": "Sous Paramètres, puis Affichage, active Afficher les étiquettes de playlist. Les lignes rangées dans une playlist gagnent des étiquettes. Toucher une étiquette n'ouvre pas la playlist."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "climbActions": "Ce que fait un appui long",
+        "browse": "Parcourir les playlists publiques sur le web",
+        "hub": "Tous les sujets d'aide"
+      }
+    },
+    "sessions": {
+      "breadcrumb": "Sessions en direct",
+      "hero": {
+        "title": "Sessions en direct avec ta crew",
+        "subtitle": "Lance une session, partage le lien, et tous les téléphones travaillent une seule file."
+      },
+      "start": {
+        "title": "Lancer une session",
+        "intro": "Chaque session part de l'onglet Enregistrer.",
+        "step1": "Ouvre l'onglet Enregistrer. Vérifie la board en haut.",
+        "step2": "Afficher cette session en direct laisse ta crew la voir et la rejoindre. Désactivé, seul ton lien d'invitation marche.",
+        "step3": "Touche Démarrer, puis Inviter des grimpeurs pour un QR code, Copier le lien et Partager.",
+        "shotAlt": "Une session en direct",
+        "shotCaption": "Qui a rejoint, ce qui est en file et ce qui est allumé.",
+        "liveShotAlt": "Le rail En train de grimper",
+        "liveShotCaption": "En train de grimper, sur l'onglet Accueil, liste les sessions à rejoindre."
+      },
+      "join": {
+        "title": "Rejoindre une session",
+        "way1": "Scanne le QR code de l'hôte ou ouvre son lien.",
+        "way2": "Sur l'onglet Accueil, regarde sous En train de grimper.",
+        "way3": "Touche la board en haut de l'onglet Blocs, puis En train de grimper ici.",
+        "p1": "Chacun ouvre une carte Rejoindre la session de Sam ?. Touche Rejoindre la session."
+      },
+      "queue": {
+        "title": "Une file, tous les téléphones",
+        "p1": "Tout le monde dans la session peut ajouter, réordonner ou retirer des blocs. Ton avatar marque tes lignes.",
+        "p2": "Seul le grimpeur qui a lancé la session peut la terminer. Les autres touchent Quitter la session."
+      },
+      "wall": {
+        "title": "Qui allume le mur",
+        "p1": "Une board prend une connexion Bluetooth à la fois. Sur tous les autres téléphones, ouvre l'aperçu d'un bloc et touche l'ampoule, et le téléphone connecté l'allume pour toi.",
+        "p2": "Sur un mur sans lumières, l'ampoule dit Prendre le mur.",
+        "bluetoothLink": "Se connecter à une board"
+      },
+      "crowd": {
+        "title": "Explorer sans bouger le mur",
+        "p1": "Avec quelqu'un d'autre dans ta session, faire défiler n'allume plus la board et une étiquette Exploration apparaît. Touche Allumer au mur quand tu le veux.",
+        "p2": "Tu grimpes seul ? Garde l'ampoule appuyée et désactive Allumer en faisant défiler les blocs et Allumer en sélectionnant dans la liste.",
+        "previewLink": "Voir un bloc depuis n'importe quelle liste"
+      },
+      "history": {
+        "title": "Les sessions de ton profil",
+        "p1": "L'onglet Sessions de ton profil liste chaque session avec ses blocs et ses croix.",
+        "p2": "Le résumé de fin de session a Enregistrer dans Apple Santé et Partager sur Strava. Applications connectées, dans Paramètres, automatise tout ça."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "playlists": "Charger une playlist dans la file",
+        "hub": "Tous les sujets d'aide"
+      }
+    },
+    "findingClimbs": {
+      "breadcrumb": "Trouver des blocs",
+      "hero": {
+        "title": "Trouve des blocs par prise, par zone ou par ouvreur",
+        "subtitle": "Où se trouve chaque filtre de l'onglet Blocs."
+      },
+      "start": {
+        "title": "Cotation et inclinaison d'abord",
+        "p1": "Touche la pastille Cotation à côté de la recherche. Touche une cotation pour n'afficher qu'elle, une deuxième dans les trois secondes pour une plage, et la cotation sélectionnée à nouveau pour effacer.",
+        "p2": "Chaque cotation et chaque compte de croix se lit à l'angle de la board. Touche la pastille des degrés pour le changer.",
+        "p3": "Connecté, les étiquettes Progression filtrent sur ton historique. Non enchaînées cache tes croix, Projets garde les blocs essayés mais pas enchaînés, Non essayées garde les blocs jamais notés.",
+        "clipAlt": "Construire une plage de cotation",
+        "clipCaption": "Deux touches rapides forment une plage. Retouche la même cotation pour tout effacer."
+      },
+      "holds": {
+        "title": "Filtrer par prise",
+        "intro": "Ouvre Filtres, descends jusqu'à Le bloc et touche Types de prise.",
+        "step1": "Choisis Inclure ou Exclure.",
+        "step2": "Choisis un type de prise.",
+        "step3": "Pince pour zoomer, puis touche des prises. Touche à nouveau avec le même pinceau pour effacer une marque.",
+        "p2": "Une prise peut porter plusieurs marques. Tout effacer nettoie la board.",
+        "p3": "La MoonBoard n'a pas de pinceau Pied.",
+        "clipAlt": "Marquer des prises",
+        "clipCaption": "Choisis d'abord un pinceau, puis touche des prises."
+      },
+      "zone": {
+        "title": "Délimiter une partie du mur",
+        "intro": "Ouvre Filtres, descends jusqu'à Le bloc et touche Zone du mur.",
+        "p1": "Touche Ajouter une zone. Fais glisser le milieu pour déplacer le cadre, un coin pour le redimensionner. Toutes les prises garde les blocs entièrement dedans, Une prise garde les blocs qui y touchent.",
+        "p2": "Effacer la zone retire le cadre. Les filtres de prise et de zone ont besoin d'une connexion.",
+        "clipAlt": "Déplacer et redimensionner la zone",
+        "clipCaption": "Fais glisser le milieu pour déplacer le cadre, un coin pour le redimensionner."
+      },
+      "setters": {
+        "title": "Suis des ouvreurs, puis ne cherche qu'eux",
+        "p1": "Suivre est sur la page d'un ouvreur et sur l'écran Ouvreurs, sous Filtres. Ensuite, active Blocs des personnes que je suis, juste sous Ouvreurs.",
+        "p2": "L'écran Ouvreurs est aussi un sélecteur. Coche une case pour filtrer, ou touche un nom pour parcourir ses blocs.",
+        "shotAlt": "L'écran Ouvreurs",
+        "shotCaption": "Coche une case pour filtrer. Touche un nom pour parcourir."
+      },
+      "rows": {
+        "title": "Ce que fait une ligne de bloc",
+        "p1": "Fais glisser vers la droite pour mettre le bloc en file. Vers la gauche pour le sélecteur de playlist. Ni l'un ni l'autre n'allume la board.",
+        "p2": "Le petit symbole, c'est ton historique. Un éclair veut dire flashé, une coche cerclée enchaîné, une croix cerclée essayé, un C cerclé référence.",
+        "actionsLink": "Tout le menu d'appui long",
+        "p3": "Garde une ligne appuyée pour le menu d'actions complet.",
+        "clipAlt": "Faire glisser une ligne dans les deux sens",
+        "clipCaption": "À droite ça met en file, à gauche ça ouvre le sélecteur de playlist."
+      },
+      "keep": {
+        "title": "Garde les filtres que tu utilises",
+        "p1": "La plupart des filtres ont une épingle à côté de leur nom. Touche-la et le filtre devient une étiquette au-dessus de la liste.",
+        "p2": "Le bouton du bas affiche combien de blocs correspondent. Réinitialiser efface tout."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "climbActions": "Ce que donne un appui long",
+        "playlists": "Ranger tes trouvailles dans une playlist",
+        "hub": "Tous les sujets d'aide"
+      }
+    },
+    "logbook": {
+      "breadcrumb": "Ton carnet",
+      "hero": {
+        "title": "Enregistre une croix, puis modifie-la plus tard",
+        "subtitle": "Fais la croix depuis la board en deux touches, et change-la quand tu veux."
+      },
+      "log": {
+        "title": "Enregistre-la au pied du mur",
+        "p1": "Touche la grosse coche dans le lecteur, ou Enregistrer la croix sur la barre de file. Date et Heure sont déjà à maintenant, le reste est optionnel.",
+        "p2": "Essai note un essai manqué. L'autre bouton affiche Flash à ton premier essai noté à cet angle, sinon Enchaîné.",
+        "shotAlt": "Le bouton coche",
+        "shotCaption": "La coche ouvre la fiche de notation.",
+        "logbookShotAlt": "Le carnet",
+        "logbookShotCaption": "Glisse à droite pour modifier, à gauche pour supprimer."
+      },
+      "edit": {
+        "title": "Modifier une entrée déjà notée",
+        "p1": "Ouvre l'onglet Profil, puis Carnet. Fais glisser une ligne vers la droite, ou garde-la appuyée et choisis Modifier l'entrée du carnet.",
+        "field1": "Statut. Flash, Enchaîné ou Essai.",
+        "field2": "Angle et Essais. La date et l'heure restent comme notées.",
+        "field3": "Cotation, Étoiles et Note.",
+        "p2": "Si une ligne regroupe plusieurs essais du même jour, l'app demande Quelle entrée modifier ?",
+        "p3": "Les modifications ont besoin d'une connexion. Une nouvelle croix s'enregistre hors ligne et se synchronise plus tard.",
+        "clipAlt": "Faire glisser une ligne du carnet",
+        "clipCaption": "Un petit glissement montre le crayon ou la corbeille. Un glissement complet à gauche demande avant de supprimer."
+      },
+      "delete": {
+        "title": "Supprimer une entrée",
+        "p1": "Fais glisser la ligne vers la gauche, ou touche Supprimer cette croix en bas de la fiche de modification. Les deux demandent confirmation. Il n'y a pas de retour en arrière.",
+        "p2": "Supprimer retire les commentaires et les votes de l'ascension et recalcule tes stats."
+      },
+      "repeats": {
+        "title": "Essais, croix et répétitions",
+        "p1": "Une ligne par bloc, par jour, par angle. Quatre essais ce soir font une ligne, essais additionnés et meilleur résultat affiché. Les essais en miroir ont leur propre ligne.",
+        "p2": "Les essais de la semaine prochaine font une nouvelle ligne."
+      },
+      "find": {
+        "title": "Retrouver une vieille entrée",
+        "p1": "La recherche porte sur les noms de blocs. Filtres trie par Récents ou Plus dur et affine par statut, Flash seulement, cotation, angle, date et Références seulement. Il n'y a pas de filtre de board.",
+        "p2": "Les croix d'un compte Kilter ou Tension relié arrivent aussi. Touche ton avatar, puis Paramètres, puis Applications connectées.",
+        "auroraLink": "Lire le guide de migration"
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "climbActions": "Faire la croix depuis n'importe quelle liste",
+        "findingClimbs": "Retrouver le bloc",
+        "hub": "Tous les sujets d'aide",
+        "betaVideos": "Joindre une vidéo de beta"
+      }
+    },
+    "bluetooth": {
+      "breadcrumb": "Board et Bluetooth",
+      "hero": {
+        "title": "Connecte ton téléphone à la board",
+        "subtitle": "Touche l'ampoule, choisis ta board, et ton bloc s'allume."
+      },
+      "connect": {
+        "title": "Se connecter",
+        "p1": "Touche l'ampoule dans le lecteur ou dans la barre du haut, puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
+        "p2": "La première fois, iOS demande le Bluetooth. Android demande les appareils à proximité, ou la localisation sur Android 11 et antérieur.",
+        "shotAlt": "La fiche Sélectionner une board",
+        "shotCaption": "Signal le plus fort en premier, avec les numéros de série.",
+        "litShotAlt": "Un bloc allumé",
+        "litShotCaption": "Une ampoule pleine veut dire que le mur est allumé.",
+        "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar."
+      },
+      "hidden": {
+        "title": "Garde l'ampoule appuyée",
+        "p1": "Une fois connecté, garde l'ampoule appuyée pour ces réglages, de haut en bas.",
+        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres.",
+        "row2": "Allumer la prise du dessus. MoonBoard uniquement.",
+        "row3": "Allumer en faisant défiler les blocs.",
+        "row4": "Allumer en sélectionnant dans la liste. Désactive les deux et explorer ne change plus le mur.",
+        "row5": "Rallumer la board. Renvoie le bloc aux LED.",
+        "row6": "Tout éteindre. Ton téléphone reste connecté.",
+        "row7": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
+        "p2": "Une touche courte reconnecte à la dernière board utilisée."
+      },
+      "failed": {
+        "title": "Quand ça ne se connecte pas",
+        "intro": "L'alerte Connexion impossible nomme le problème.",
+        "fix1": "Board introuvable. Vérifie qu'elle est allumée et que tu es à côté. Si un autre téléphone y est connecté, déconnecte-le d'abord.",
+        "fix2": "Connexion impossible. Rapproche-toi et réessaie.",
+        "fix3": "Connecté, mais la board n'a pas répondu. Éteins et rallume la board.",
+        "fix4": "Le Bluetooth est éteint. Active-le.",
+        "fix5": "Connexion à la board impossible. Réessaie. Si ça continue, éteins et rallume le Bluetooth.",
+        "p1": "Sur Android, si rien n'est trouvé, touche Autoriser la localisation ou Activer la localisation en bas de la fiche."
+      },
+      "twoBoards": {
+        "title": "Deux boards à portée",
+        "p1": "Lis le numéro de série avant de toucher. Les barres de signal ne bougent pas pendant que tu es planté là.",
+        "p2": "Une alerte La configuration de la board ne correspond pas veut dire que le contrôleur appartient à une autre board. Choisis Annuler, Connecter quand même ou Changer de board."
+      },
+      "duplicate": {
+        "title": "La même board deux fois dans la liste",
+        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle n'apparaissent pour l'instant que sur une seule ligne (on corrige ça). Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
+        "p2": "Il n'y a pas de liste d'appareils à oublier. L'app ne retient que ta dernière board.",
+        "p3": "Une board affichée deux fois sous Tes boards, c'est autre chose. Touche Modifier à côté de Tes boards, puis Supprimer ou Se désabonner."
+      },
+      "control": {
+        "title": "Quand quelqu'un d'autre a la board",
+        "p1": "En session, un seul téléphone tient la board. Sur les autres, ouvre l'aperçu d'un bloc et touche l'ampoule, et le téléphone qui la tient l'allume.",
+        "p2": "Sur les murs sans lumières, le bouton affiche Prendre le mur.",
+        "sessionsLink": "Plus sur le partage d'un mur"
+      },
+      "liveActivity": {
+        "title": "Piloter la board depuis l'écran verrouillé (Live Activity)",
+        "intro": "Lance ou rejoins une session d'abord. Une file solo n'en a pas.",
+        "p1": "Sur iPhone, une session pose une Live Activity sur l'écran verrouillé et dans la Dynamic Island, avec le bloc, sa cotation et ta place dans la file. Tant que ton téléphone tient la board, elle a aussi Précédent, Suivant, une ampoule qui rallume le mur, et Miroir du bloc là où c'est géré.",
+        "p2": "Android affiche les mêmes commandes dans une notification permanente appelée Session d'escalade active.",
+        "p3": "Verrouiller l'écran ne déconnecte pas la board."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "findingClimbs": "Trouver quelque chose à mettre au mur",
+        "hub": "Tous les sujets d'aide"
+      }
+    },
+    "climbActions": {
+      "breadcrumb": "Actions sur un bloc",
+      "hero": {
+        "title": "Fais un appui long sur un bloc",
+        "subtitle": "Chaque action sur un bloc est derrière un appui long sur sa ligne."
+      },
+      "open": {
+        "title": "Ouvrir le menu",
+        "p1": "Garde une ligne de bloc appuyée. Elle se soulève en carte, avec Enregistrer une croix, Ajouter à la playlist et Partager en haut et le reste en dessous.",
+        "p2": "Tu préfères une touche ? Sous Paramètres, puis Affichage, active Afficher le bouton d'actions rapides pour un ⋮ sur chaque ligne de Blocs.",
+        "shotAlt": "La carte d'actions d'un bloc",
+        "shotCaption": "Trois boutons rapides en haut, la liste complète en dessous.",
+        "clipAlt": "Garder une ligne de bloc appuyée",
+        "clipCaption": "Garde la ligne appuyée et la carte se soulève toute seule."
+      },
+      "preview": {
+        "title": "Voir un bloc sans allumer la board",
+        "intro": "Aperçu est le premier élément de la liste.",
+        "p1": "Ça ouvre le bloc dans le lecteur sans toucher à ta file. Ton glissement suivant te ramène à ta file.",
+        "p2": "En session, ou avec Allumer en faisant défiler les blocs désactivé, une étiquette Exploration apparaît. Touche Activer ou Allumer au mur quand tu veux le bloc.",
+        "sessionsLink": "Comment une session garde le mur tranquille",
+        "clipAlt": "L'étiquette Exploration",
+        "clipCaption": "L'étiquette arrive après le glissement. Le mur ne bouge pas."
+      },
+      "quick": {
+        "title": "Les trois boutons du haut",
+        "tick": "Enregistrer une croix ouvre la fiche d'ascension.",
+        "playlist": "Ajouter à la playlist est une liste à cocher. Coche pour ajouter, décoche pour retirer.",
+        "share": "Partager passe un lien à la fiche de partage de ton téléphone.",
+        "p1": "La carte se ferme dès qu'une action part, sauf Ajouter à la playlist."
+      },
+      "rest": {
+        "title": "Le reste de la liste",
+        "queue": "Ajouter à la file place le bloc après celui en cours.",
+        "favorite": "Basculer favori, c'est le cœur. Les blocs avec un cœur remplissent Voies aimées.",
+        "editEntry": "Modifier l'entrée du carnet, quand tu viens de ton carnet.",
+        "betaVideo": "Ajouter une vidéo beta, quand tu es connecté.",
+        "edit": "Modifier le bloc, pour tes propres blocs en brouillon ou dans les 24 heures après publication.",
+        "remix": "Remixer ce bloc démarre un nouveau bloc à partir de ces prises.",
+        "openInAurora": "Ouvrir dans l'app Aurora, pour Tension et les autres boards Aurora. Kilter n'en a pas.",
+        "report": "Signaler le bloc, quand tu es connecté et que la modération est active."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "logbook": "Modifier ce que tu as noté",
+        "playlists": "Playlists",
+        "hub": "Tous les sujets d'aide",
+        "betaVideos": "Vidéos de beta"
+      }
+    },
+    "betaVideos": {
+      "breadcrumb": "Vidéos beta",
+      "hero": {
+        "title": "Attache une vidéo beta à un bloc",
+        "subtitle": "Boardsesh relie les reels Instagram et les TikToks aux blocs."
+      },
+      "share": {
+        "title": "Partager un reel Instagram ou TikTok",
+        "step1": "Sur ton reel ou ton TikTok, touche Partager. Choisis Boardsesh. Dans Instagram, ça peut se cacher sous Plus.",
+        "step2": "Boardsesh ouvre Joindre ta beta, avec la publication en haut et tes blocs notés en dessous.",
+        "step3": "Touche le bloc que montre la vidéo. Un message Video beta jointe confirme.",
+        "p1": "Il n'y a pas d'étape de confirmation et aucun moyen de retirer une vidéo une fois jointe, alors vérifie le nom du bloc d'abord.",
+        "p2": "Il te faut un compte, et le bloc doit être dans ton carnet en croix ou en essai. Pas connecté ? Connecte-toi et le lien t'attend. Seuls les liens Instagram et TikTok publics marchent."
+      },
+      "find": {
+        "title": "Trouver la beta d'un bloc",
+        "p1": "Ouvre un bloc et descends jusqu'à Vidéos de beta. Touche une carte et elle s'ouvre dans Instagram ou TikTok.",
+        "p2": "Connecté, le plus dans l'en-tête de section ouvre Partage ton beta, décrit plus bas.",
+        "p3": "Pour ne lister que les blocs avec de la beta, ouvre Filtres et active Avec vidéo de beta uniquement.",
+        "filtersLink": "En savoir plus sur les filtres"
+      },
+      "add": {
+        "title": "Filmer une nouvelle beta depuis un bloc",
+        "step1": "Garde un bloc appuyé et choisis Ajouter une vidéo beta, ou touche le plus dans sa section Vidéos de beta.",
+        "step2": "Touche Copier la légende. Elle porte le nom du bloc, l'angle et la board.",
+        "step3": "Touche Ouvrir Instagram et publie ta vidéo avec cette légende.",
+        "step4": "Partage le reel publié vers Boardsesh comme ci-dessus, ou colle son lien sous Tu as déjà un lien ? et touche Joindre.",
+        "p1": "Garde le nom du bloc entre guillemets dans la légende. C'est comme ça que Boardsesh reconnaît le reel. Les légendes MoonBoard n'ont pas de guillemets, alors choisis le bloc toi-même."
+      },
+      "shelf": {
+        "title": "Ta beta sur ton profil",
+        "p1": "Ouvre l'onglet Profil et descends en bas de Progression. L'étagère Vidéos de beta montre tes dernières, et Tout voir ouvre l'ensemble.",
+        "p2": "Tout le monde peut les regarder. Un lien de bloc affiche sa beta sur boardsesh.com sans compte."
+      },
+      "next": {
+        "title": "Pour aller plus loin",
+        "climbActions": "Tout le reste derrière l'appui long",
+        "logbook": "Note d'abord le bloc",
+        "hub": "Tous les sujets d'aide"
+      }
     },
     "topics": {
       "label": "Rubriques d’aide",
+      "guides": "Guides",
       "using": "Utiliser Boardsesh",
       "logbook": "Retrouve ton carnet",
       "counts": "Nombre de blocs",

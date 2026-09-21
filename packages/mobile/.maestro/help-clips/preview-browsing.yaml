@@ -1,0 +1,70 @@
+appId: com.boardsesh.app
+name: help clip - browse climbs in the play drawer
+---
+# Clip: preview-browsing -> packages/web/public/videos/help/preview-browsing.mp4
+#
+# Records: tapping a climb row opens the play drawer VIEW-ONLY. The climb that
+# is already on the wall opens with no pill; dragging the wall sideways moves to
+# the next climb and the orange "Browsing" pill appears beside the title — the
+# wall itself stays where it was. The clip closes the drawer with the chevron
+# and commits nothing: the commit row underneath is never touched.
+#
+# Why a row tap rather than ://climbs?screenshotOpenPreview=1: the preview latch
+# opens the drawer with no swipe track ("a preview with no suggestion source"),
+# so the wall will not swipe at all. A row tap goes through handleClimbPress,
+# whose view-only branch seeds the results as the swipe track (#5402) and lands
+# the same Browsing chrome. The ://climbs?screenshotOpenFirst=1 latch does the
+# same thing, but it is one-shot per active board, so it cannot be re-armed for
+# a retake.
+#
+# ONE swipe, deliberately. On this build the seeded preview track only offers a
+# single peek: after the first swipe both canNext and canPrevious go false and
+# every later drag is swallowed (verified in both directions, and after a 6s
+# settle). A second swipe step just records three seconds of nothing.
+#
+# Swiping is view-only here because `lightOnSwipe` is off on this simulator.
+# Confirm that before recording: a swipe with it ON puts each climb on the wall.
+#
+# Coordinates, not selectors: nothing in the drawer is exposed to Maestro on
+# this RN Fabric build.
+#   50%,23%  first climb row on the Climbs tab
+#   85%,42% -> 18%,42%  a right-to-left drag across the wall = next climb
+#   7%,10%   the chevron that closes the drawer
+#
+# Percentages must be WHOLE NUMBERS — Maestro fails to parse "50%,34.5%".
+#
+# The caller navigates to ://home then ://climbs BEFORE recording starts.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Open the drawer on the first climb — the one on the wall, view-only.
+- tapOn:
+    point: '50%,23%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1800
+    optional: true
+
+# Drag the wall sideways: the next climb slides in, and the Browsing pill
+# appears because what is on the wall has not changed.
+- swipe:
+    start: '85%,42%'
+    end: '18%,42%'
+    duration: 700
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 2600
+    optional: true
+
+# Close the drawer. Nothing was put on the wall.
+- tapOn:
+    point: '7%,10%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 800
+    optional: true

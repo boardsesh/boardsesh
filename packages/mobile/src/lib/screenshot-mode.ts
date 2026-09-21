@@ -186,8 +186,16 @@ export const SCREENSHOT_RENDER_MODE: string = process.env.EXPO_PUBLIC_SCREENSHOT
  * before Gradle. Splitting the default across those two would let the platforms
  * shoot different walls, which is the exact drift this pin exists to stop. It
  * dead-strips from shipped builds with the rest of screenshot mode.
+ *
+ * Slot 0 was "Marco's Board" until the wall was renamed to "Boardsesh HQ". A
+ * rename is the one way a pinned selector rots, and it fails quietly in the
+ * worst way: `resolveScreenshotBoard` logs a WARN and falls back to
+ * `createdAt`-ascending POSITION, so the capture keeps going on whatever wall
+ * happens to sort first — here a Tension board, which then missed every
+ * board-scoped fixture recorded against the real one. When a wall is renamed,
+ * this line is what has to move with it.
  */
-const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Board", 'High Point Climbing Orlando'];
+const DEFAULT_SCREENSHOT_BOARDS = ['Boardsesh HQ', 'High Point Climbing Orlando'];
 const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
   .split('|')
   .map((selector) => selector.trim())

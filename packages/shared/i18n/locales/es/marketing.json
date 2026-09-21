@@ -14,8 +14,8 @@
       "description": "Boardsesh es gratis y de código abierto. Echa una mano con las facturas de hosting, base de datos e infraestructura que lo mantienen en marcha."
     },
     "help": {
-      "title": "Ayuda",
-      "description": "Qué puedes hacer en boardsesh.com, qué pasa en la app y dónde pedir ayuda."
+      "title": "Ayuda de Boardsesh",
+      "description": "Guías cortas de la app Boardsesh, cómo traerte tu logbook de Kilter o Tension y dónde preguntar."
     },
     "docs": {
       "title": "Documentación de la API",
@@ -28,6 +28,34 @@
     "privacy": {
       "title": "Política de Privacidad",
       "description": "Política de privacidad de Boardsesh: cómo tratamos tus datos."
+    },
+    "helpPlaylists": {
+      "title": "Monta una playlist de plafón y escálala en orden",
+      "description": "Crea una playlist para tu Kilter, Tension o MoonBoard, añade y quita bloques, cárgala en tu cola y usa las ocho listas que arma Boardsesh."
+    },
+    "helpSessions": {
+      "title": "Empieza o únete a una sesión en directo y compartid una cola",
+      "description": "Empieza una sesión desde la pestaña Grabar, invita a tu grupo con un QR o un enlace y comparte una cola y un plafón sin encender los bloques de los demás."
+    },
+    "helpFindingClimbs": {
+      "title": "Filtra bloques por presa, zona del muro y equipador",
+      "description": "Rango de grados, tipos de presa, zona del muro, equipadores que sigues, gestos en la fila de un bloque y filtros fijados en la app Boardsesh."
+    },
+    "helpLogbook": {
+      "title": "Registra, edita y borra encadenes en tu logbook",
+      "description": "Registra un encadene desde el plafón en la app Boardsesh, cambia luego el grado, las estrellas, los intentos o el estado, borra un registro y encuentra un encadene antiguo."
+    },
+    "helpBoardAndBluetooth": {
+      "title": "Conecta con tu plafón por Bluetooth",
+      "description": "Conecta Boardsesh a un controlador de Kilter, Tension o MoonBoard, arregla una conexión fallida y manéjalo desde la pantalla de bloqueo con Live Activity."
+    },
+    "helpClimbActions": {
+      "title": "Vista previa, registro o playlist desde cualquier fila",
+      "description": "El menú de mantener pulsado en la fila de un bloque en la app Boardsesh, desde la vista previa sin encender el plafón hasta registrar un encadene o añadirlo a una playlist."
+    },
+    "helpBetaVideos": {
+      "title": "Comparte un reel de Instagram o TikTok como beta",
+      "description": "Comparte un reel de Instagram o un TikTok a Boardsesh desde su hoja de compartir, adjúntalo a un bloque, graba beta nueva y encuentra la beta que han publicado otros."
     }
   },
   "home": {
@@ -219,82 +247,6 @@
     "docsLink": "Mira cómo está construido en la documentación →",
     "footer": "Gratis para todos, financiado por quien puede echar una mano."
   },
-  "privacy": {
-    "title": "Política de Privacidad",
-    "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
-    "collect": {
-      "title": "Qué recogemos",
-      "accountLabel": "Información de cuenta.",
-      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
-      "activityLabel": "Actividad de escalada.",
-      "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
-      "locationLabel": "Ubicación.",
-      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de Modo Fiesta cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
-      "productAnalyticsLabel": "Analítica de producto.",
-      "productAnalyticsBody": "Usamos PostHog y Vercel Analytics para entender el uso de las funciones, las visitas a páginas, el rendimiento y dónde se atasca la app. Algunos eventos de producto registrados con la sesión iniciada se asocian a tu cuenta de Boardsesh para entender qué funciones resultan útiles. No usamos estos datos para publicidad."
-    },
-    "bluetooth": {
-      "title": "Bluetooth",
-      "body": "Boardsesh usa Bluetooth Low Energy (BLE) para conectar con el controlador de LEDs de tu plafón. La conexión Bluetooth se utiliza únicamente para enviar comandos de iluminación de presas al plafón. Ningún dato personal se transmite por Bluetooth. La app no lee datos del plafón más allá de la identificación básica del dispositivo durante el emparejamiento."
-    },
-    "location": {
-      "title": "Datos de ubicación",
-      "body1": "El acceso a la ubicación es opcional. Cuando se concede, se usa para una sola cosa: hacer que tu sesión de Modo Fiesta sea descubrible para escaladores cercanos. Tu ubicación se comparte con el servidor solo mientras una sesión de Modo Fiesta está activa. No guardamos historial, no construimos un perfil de ubicación ni compartimos datos de ubicación con nadie fuera de la función de descubrimiento de sesiones.",
-      "body2": "Puedes revocar el permiso de ubicación en cualquier momento desde los ajustes del dispositivo. La app funciona perfectamente sin él."
-    },
-    "thirdParty": {
-      "title": "Servicios de terceros",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
-      "vercelLink": "la política de privacidad de Vercel",
-      "auroraLabel": "API de Aurora Climbing.",
-      "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por los plafones Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
-      "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " para sus prácticas de datos.",
-      "posthogLabel": "PostHog.",
-      "posthogBody": "Usamos PostHog para analítica de producto, incluidos eventos del lado del servidor para funciones nativas como las Live Activities de iOS. Consulta ",
-      "posthogLink": "la política de privacidad de PostHog"
-    },
-    "sharing": {
-      "title": "Compartir de datos",
-      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto.",
-      "body1ProductAnalytics": "No vendemos tus datos. No mostramos anuncios. No compartimos tu información con anunciantes ni con brokers de datos. Los únicos datos que se comparten externamente son los descritos arriba (alojamiento y analítica de Vercel, analítica de producto de PostHog y sincronización con Aurora Climbing cuando lo activas tú)."
-    },
-    "retention": {
-      "title": "Retención de datos",
-      "body": "Conservamos los datos de tu cuenta y tu historial de escalada mientras tu cuenta esté activa. Si dejas de usar Boardsesh, tus datos se quedan hasta que borres la cuenta."
-    },
-    "deletion": {
-      "title": "Eliminación de cuenta",
-      "intro": "Puedes borrar tu cuenta y todos los datos asociados en cualquier momento. Hay dos formas:",
-      "inApp": "En la app:",
-      "inAppBody": " Abre Más desde tu perfil, baja del todo y toca Eliminar Cuenta. Te pediremos confirmar antes de borrar nada.",
-      "onWeb": "En la web:",
-      "onWebBody": " Inicia sesión en ",
-      "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " y abre Más desde tu perfil para encontrar el mismo botón Eliminar Cuenta.",
-      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
-    },
-    "children": {
-      "title": "Menores",
-      "body": "Boardsesh no está dirigido a menores de 13 años. No recogemos conscientemente información personal de menores de 13 años. Si crees que un menor de 13 ha creado una cuenta, contáctanos y la borraremos."
-    },
-    "changes": {
-      "title": "Cambios en esta política",
-      "body": "Si modificamos esta política de privacidad, actualizaremos esta página con el nuevo texto y la fecha de «última actualización». Para cambios significativos, también podemos avisarte en la app."
-    },
-    "contact": {
-      "title": "Contacto",
-      "body1Start": "¿Preguntas sobre esta política o tus datos? Escríbenos a ",
-      "body1Email": "support@boardsesh.com",
-      "body1End": ".",
-      "body2Start": "Boardsesh es código abierto. Puedes ver exactamente qué datos recoge la app y cómo se procesan leyendo el código fuente en ",
-      "body2Link": "GitHub",
-      "body2End": "."
-    },
-    "lastUpdatedProductAnalytics": "Última actualización: mayo de 2026",
-    "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos."
-  },
   "legal": {
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
@@ -377,53 +329,480 @@
     "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 08-02-2026"
   },
   "help": {
+    "clip": {
+      "unsupported": "Tu navegador no puede reproducir este clip.",
+      "playHint": "Pulsa reproducir para ver el gesto."
+    },
     "hero": {
       "title": "Ayuda",
-      "subtitle": "En esta web viven los bloques. En la app los escalas. Esto hace cada una."
+      "subtitle": "Guías de la app, cómo traerte tu logbook de Kilter o Tension y dónde preguntar."
     },
     "web": {
       "title": "En esta web",
-      "intro": "Todo lo de aquí es un enlace que puedes mandar a alguien. Sin instalar nada, sin iniciar sesión.",
-      "item1": "Busca un bloque y consulta su grado, quién lo equipó y sus encadenes.",
-      "item2": "Explora el catálogo completo de un plafón por layout, tamaño y ángulo.",
-      "item3": "Comparte un bloque, una lista o tu perfil con una URL normal.",
-      "item4": "Encuentra un rocódromo y mira qué hay en su plafón desde su pantalla de kiosco.",
+      "intro": "Todo en boardsesh.com funciona en el navegador, sin sesión iniciada.",
+      "item1": "Consulta el grado, el equipador, los ascensos y los vídeos de beta de un bloque.",
+      "item2": "Recorre el catálogo de un plafón por layout, tamaño y ángulo.",
+      "item3": "Comparte un bloque, una playlist o tu perfil como enlace.",
+      "item4": "Encuentra rocódromos con plafones cerca de ti.",
       "playlistsLink": "Ver listas",
       "aboutLink": "Sobre Boardsesh"
     },
     "app": {
       "title": "En la app",
-      "intro": "Todo lo que habla con el plafón pasa en la app.",
+      "intro": "Todo lo que toca el muro o tu logbook pasa en la app.",
       "item1": "Monta una cola y ve pasando bloques con tu gente.",
-      "item2": "Abre una sesión compartida para que todos los móviles muevan la misma cola.",
-      "item3": "Enciende las presas por Bluetooth en plafones Kilter, Tension y MoonBoard.",
-      "item4": "Registra tus encadenes y ten el cuaderno en un solo sitio."
+      "item2": "Monta una sesión en directo para que todos los móviles lleven una cola.",
+      "item3": "Enciende presas por Bluetooth en muros Kilter, Tension y MoonBoard.",
+      "item4": "Registra encadenes e intentos, y adjunta vídeos de beta."
     },
     "aurora": {
-      "title": "Si vienes de las apps de Aurora",
-      "intro": "Boardsesh lee tu cuenta actual, así que tus encadenes se vienen contigo.",
-      "item1": "Inicia sesión con tu cuenta de Kilter o Tension y tu cuaderno se sincroniza.",
-      "item2": "Tus ascensiones siguen siendo tuyas. Nunca escribimos nada que no hayas registrado.",
-      "link": "Leer la guía de migración"
+      "title": "Trae tu logbook de Kilter o de Tension",
+      "intro": "Vincula tu cuenta del plafón una vez y tus encadenes se traen solos.",
+      "item1": "Toca tu avatar, luego Ajustes y luego Aplicaciones conectadas. En Cuentas de Aurora, dale a Vincular en la tarjeta de Tension o a Iniciar sesión en Kilter en la de Kilter, y pon el usuario y la contraseña de ese plafón.",
+      "item2": "¿Usabas la app vieja de Kilter? La tarjeta Kilter (Aurora) acepta un export JSON.",
+      "link": "Leer la guía de migración",
+      "item3": "La sincronización va en un solo sentido, de sus apps a Boardsesh, cada 12 horas más o menos. No vuelve nada."
     },
     "climbCounts": {
       "title": "¿Por qué la app de Kilter muestra más bloques?",
-      "intro": "Las dos apps tienen los mismos bloques. Solo los cuentan de otra forma.",
-      "item1": "Boardsesh cuenta cada bloque una vez y te muestra su grado y sus encadenes en el ángulo que elijas.",
-      "item2": "La app de Kilter cuenta un bloque una vez por cada ángulo en el que se ha registrado, así que un bloque con encadenes a 40° y a 45° cuenta como dos.",
-      "item3": "Por eso el mismo plafón puede mostrar hasta cerca del doble de bloques en la app de Kilter."
+      "intro": "Las dos apps tienen los mismos bloques y los cuentan de otra manera.",
+      "item1": "Boardsesh cuenta cada bloque una vez.",
+      "item2": "La app de Kilter parece contar un bloque una vez por cada ángulo al que se ha escalado.",
+      "item3": "En un muro de casa Kilter de 8x12 eso son unos 18.000 bloques en Boardsesh y unos 36.000 en la app de Kilter."
     },
     "ask": {
-      "title": "¿Sigues atascado?",
-      "intro": "Pregunta en el Discord. Ahí es donde antes te responden.",
+      "title": "Pregunta",
+      "intro": "Discord es el sitio más rápido para tener respuesta.",
       "discord": "Preguntar en Discord",
-      "github": "Reportar un fallo en GitHub",
+      "github": "Abre un issue en GitHub",
       "docs": "Leer la documentación para desarrolladores",
-      "bugLead": "¿Has encontrado un fallo?",
+      "bugLead": "¿Has visto un fallo?",
       "devLead": "¿Estás construyendo sobre la API?"
+    },
+    "nav": {
+      "label": "Ruta de navegación",
+      "home": "Inicio",
+      "help": "Ayuda"
+    },
+    "guides": {
+      "title": "Guías",
+      "intro": "Siete páginas cortas con capturas de la app.",
+      "playlists": {
+        "title": "Playlists",
+        "body": "Crea una playlist, saca un bloque, pon la lista entera en cola y usa las ocho listas que vienen hechas."
+      },
+      "climbActions": {
+        "title": "Acciones de un bloque",
+        "body": "Mantén pulsado un bloque para verlo sin encender el muro, registrar un encadene o añadirlo a una playlist."
+      },
+      "sessions": {
+        "title": "Sesiones en directo",
+        "body": "Empieza una sesión, invita a tu grupo con un QR o un enlace y explora sin mover el muro."
+      },
+      "findingClimbs": {
+        "title": "Encontrar bloques",
+        "body": "Filtra bloques por grado, presa, parte del muro o equipador, y fija los filtros que uses."
+      },
+      "logbook": {
+        "title": "Tu logbook",
+        "body": "Registra un encadene en el plafón y cambia luego su grado, estrellas, intentos o estado."
+      },
+      "bluetooth": {
+        "title": "Plafón y Bluetooth",
+        "body": "Conéctate al plafón, arregla una conexión fallida y contrólalo desde la pantalla de bloqueo con Live Activity."
+      },
+      "betaVideos": {
+        "title": "Vídeos de beta",
+        "body": "Comparte un reel de Instagram o TikTok a Boardsesh, adjúntalo a un bloque y encuentra la beta de otros."
+      }
+    },
+    "playlists": {
+      "breadcrumb": "Playlists",
+      "hero": {
+        "title": "Monta una playlist y escálala en orden",
+        "subtitle": "Guarda bloques para luego y carga la lista en tu cola."
+      },
+      "build": {
+        "title": "Crear una playlist",
+        "intro": "Cada playlist pertenece a un plafón.",
+        "step1": "Abre Descubre. Mira la píldora de plafón de arriba.",
+        "step2": "Toca el más. Ponle nombre, elige color y dale a Crear.",
+        "step3": "Aparece en Mis listas.",
+        "p1": "Para añadir un bloque, desliza su fila a la izquierda, o mantenla pulsada y toca Añadir a la playlist.",
+        "p2": "El selector solo enseña playlists del plafón y el layout del bloque.",
+        "clipAlt": "Deslizar la fila de un bloque a la izquierda para añadirlo a una playlist",
+        "clipCaption": "Desliza a la izquierda para guardarlo en una playlist. A la derecha, lo pones en cola.",
+        "shotAlt": "La pestaña Descubre",
+        "shotCaption": "Fijado, luego Mis listas, luego Para ti.",
+        "playlistShotAlt": "Tu propia playlist",
+        "playlistShotCaption": "Fija, edita, reordena o quita."
+      },
+      "remove": {
+        "title": "Quitar un bloque",
+        "p1": "Desde el bloque, abre Añadir a la playlist y toca la playlist marcada.",
+        "p2": "Desde la playlist, toca el lápiz, o elige Reordenar y quitar bloques en el menú ⋯. Toca el menos rojo y confirma. Arrastra el asa para reordenar.",
+        "p3": "Las listas de Para ti no tienen modo edición. Quita el corazón a un bloque o registra el encadene.",
+        "clipAlt": "Desmarcar una playlist",
+        "clipCaption": "Toca una playlist marcada y el bloque sale."
+      },
+      "queue": {
+        "title": "Escalar la lista entera",
+        "intro": "Toca un bloque de una playlist y tu cola pasa a ser esa playlist.",
+        "p1": "Se carga en orden desde el bloque que tocaste. Si tenías bloques en cola después del actual, ¿Iniciar playlist? pregunta primero. El botón de play de la cabecera empieza desde arriba.",
+        "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
+        "sessionsLink": "Cómo una sesión comparte una sola cola",
+        "clipAlt": "La hoja ¿Iniciar playlist?",
+        "clipCaption": "Con bloques ya en cola, ¿Iniciar playlist? pregunta primero."
+      },
+      "smart": {
+        "title": "Las ocho listas que Boardsesh monta por ti",
+        "crowdFavorites": "Favoritos de todos. Bloques bien valorados y muy encadenados que no has hecho.",
+        "hiddenGems": "Joyas ocultas. Valorados con 4,5 estrellas o más y encadenados por pocos.",
+        "atYourLevel": "A tu nivel. Bloques populares cerca del grado que encadenas.",
+        "fresh": "Novedades. Nuevos en tu plafón, primero los equipadores que sigues.",
+        "fiveStars": "Cinco estrellas. Bloques que valoraste con cinco estrellas.",
+        "mostRepeated": "Más repetidos. Bloques con más de un intento registrado.",
+        "projects": "Proyectos. Bloques que has registrado pero nunca encadenado.",
+        "likedClimbs": "Bloques favoritos. Cada bloque al que le has dado corazón.",
+        "p1": "Están en Para ti, dentro de Descubre. Las cuatro primeras leen tu plafón a tu ángulo y saltan tus encadenes. Las cuatro últimas salen de tus registros y corazones.",
+        "p2": "Toca la chincheta de una tarjeta para moverla a Fijado. Las listas de Para ti fijadas se quedan en este móvil."
+      },
+      "tags": {
+        "title": "Mira en qué playlists está un bloque",
+        "p1": "En Ajustes, luego Visualización, activa Mostrar etiquetas de playlist. Las filas que estén en una playlist sacan etiquetas. Tocar una etiqueta no abre la playlist."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "climbActions": "Lo que da un pulsado largo",
+        "browse": "Ver playlists públicas en la web",
+        "hub": "Todos los temas de ayuda"
+      }
+    },
+    "sessions": {
+      "breadcrumb": "Sesiones en directo",
+      "hero": {
+        "title": "Sesiones en directo con tu grupo",
+        "subtitle": "Empieza una sesión, comparte el enlace y todos los móviles llevan una cola."
+      },
+      "start": {
+        "title": "Empieza una sesión",
+        "intro": "Toda sesión empieza en la pestaña Grabar.",
+        "step1": "Abre la pestaña Grabar. Mira el plafón de arriba.",
+        "step2": "Mostrar esta sesión en directo deja que tu grupo la vea y se una. Apagado, solo vale tu enlace de invitación.",
+        "step3": "Dale a Empezar y luego a Invitar escaladores para tener un QR, Copiar enlace y Compartir.",
+        "shotAlt": "Una sesión en directo",
+        "shotCaption": "Quién se ha unido, qué hay en cola y qué está encendido.",
+        "liveShotAlt": "El carrusel Escalando ahora",
+        "liveShotCaption": "Escalando ahora, en la pestaña Inicio, lista sesiones a las que unirte."
+      },
+      "join": {
+        "title": "Únete a una sesión",
+        "way1": "Escanea el QR de quien organiza o abre su enlace.",
+        "way2": "En la pestaña Inicio, mira en Escalando ahora.",
+        "way3": "Toca el plafón de arriba de la pestaña Bloques y luego Escalando aquí ahora.",
+        "p1": "Los tres abren una tarjeta ¿Unirte a la sesión de Sam? Dale a Unirse a la sesión."
+      },
+      "queue": {
+        "title": "Una cola, todos los móviles",
+        "p1": "Cualquiera en la sesión puede añadir, reordenar o quitar bloques. Tu avatar marca tus filas.",
+        "p2": "Solo quien empezó la sesión puede terminarla. El resto toca Salir de la sesión."
+      },
+      "wall": {
+        "title": "Quién enciende el muro",
+        "p1": "Un plafón admite una conexión Bluetooth a la vez. En los demás móviles, abre la vista previa de un bloque y toca la bombilla, y el móvil conectado lo enciende por ti.",
+        "p2": "En un muro sin luces la bombilla pone Tomar el muro.",
+        "bluetoothLink": "Conectarse a un plafón"
+      },
+      "crowd": {
+        "title": "Cotillear sin mover el muro",
+        "p1": "Con alguien más en tu sesión, deslizar deja de encender el plafón y sale una etiqueta Explorando. Toca Ponerlo en el muro cuando lo quieras.",
+        "p2": "¿Escalas solo? Mantén pulsada la bombilla y apaga Iluminar bloques al deslizar e Iluminar bloques al tocar la lista.",
+        "previewLink": "Vista previa de un bloque desde cualquier lista"
+      },
+      "history": {
+        "title": "Las sesiones de tu perfil",
+        "p1": "La pestaña Sesiones de tu perfil lista cada sesión con sus bloques y encadenes.",
+        "p2": "El resumen del final de la sesión trae Guardar en Apple Health y Compartir en Strava. Aplicaciones conectadas, en Ajustes, lo automatiza."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "playlists": "Cargar una playlist en la cola",
+        "hub": "Todos los temas de ayuda"
+      }
+    },
+    "findingClimbs": {
+      "breadcrumb": "Encontrar bloques",
+      "hero": {
+        "title": "Encuentra bloques por presa, zona o equipador",
+        "subtitle": "Dónde vive cada filtro de la pestaña Bloques."
+      },
+      "start": {
+        "title": "Primero grado y ángulo",
+        "p1": "Toca la píldora Grado, junto al buscador. Toca un grado para ver solo ese, un segundo grado antes de tres segundos para un rango, y otra vez el grado elegido para limpiarlo.",
+        "p2": "Cada grado y cada recuento de encadenes se lee al ángulo del plafón. Toca la etiqueta de grados para cambiarlo.",
+        "p3": "Con la sesión iniciada, las etiquetas de Progreso filtran por tu historial. Sin encadenar esconde tus encadenes, Proyectos deja los bloques probados y no encadenados, y Sin intentar deja los que nunca has registrado.",
+        "clipAlt": "Montar un rango de grados",
+        "clipCaption": "Dos toques rápidos forman un rango. Vuelve a tocar el mismo grado para limpiarlo."
+      },
+      "holds": {
+        "title": "Filtrar por presa",
+        "intro": "Abre Filtros, baja hasta El bloque y toca Tipos de presa.",
+        "step1": "Elige Incluir o Excluir.",
+        "step2": "Elige un tipo de presa.",
+        "step3": "Pellizca para hacer zoom y toca presas. Toca otra vez con el mismo pincel para quitar una marca.",
+        "p2": "Una presa puede llevar más de una marca. Borrar todo limpia el plafón.",
+        "p3": "MoonBoard no tiene pincel Pie.",
+        "clipAlt": "Marcar presas",
+        "clipCaption": "Elige pincel primero y luego toca presas."
+      },
+      "zone": {
+        "title": "Acotar una parte del muro",
+        "intro": "Abre Filtros, baja hasta El bloque y toca Zona del muro.",
+        "p1": "Toca Añadir una zona. Arrastra el centro para mover la caja y una esquina para cambiar su tamaño. Todas las presas deja los bloques enteros dentro, Alguna presa deja los que entran.",
+        "p2": "Borrar zona quita la caja. Los filtros de presa y zona necesitan conexión.",
+        "clipAlt": "Mover y redimensionar la zona",
+        "clipCaption": "Arrastra el centro para mover el recuadro y una esquina para cambiarle el tamaño."
+      },
+      "setters": {
+        "title": "Sigue equipadores y busca solo lo suyo",
+        "p1": "Seguir está en la página de un equipador y en la pantalla Equipadores, dentro de Filtros. Luego activa Bloques de personas que sigo, justo debajo de Equipadores.",
+        "p2": "La pantalla Equipadores también es un selector. Marca una casilla para filtrar, o toca un nombre para ver sus bloques.",
+        "shotAlt": "La pantalla Equipadores",
+        "shotCaption": "Marca una casilla para filtrar. Toca un nombre para ver."
+      },
+      "rows": {
+        "title": "Lo que hace una fila de bloque",
+        "p1": "Desliza a la derecha para poner el bloque en cola. A la izquierda para el selector de playlists. Ninguno enciende el plafón.",
+        "p2": "El icono pequeño es tu historial. Un rayo es flash, un tick en círculo encadenado, una cruz en círculo intentado y una C en círculo referencia.",
+        "actionsLink": "Todo el menú de pulsado largo",
+        "p3": "Mantén pulsada una fila para el menú de acciones completo.",
+        "clipAlt": "Deslizar una fila a los dos lados",
+        "clipCaption": "Derecha lo pone en cola, izquierda abre el selector de playlists."
+      },
+      "keep": {
+        "title": "Guarda los filtros que usas",
+        "p1": "Casi todos los filtros tienen una chincheta al lado. Tócala y el filtro pasa a ser una etiqueta sobre la lista.",
+        "p2": "El botón de abajo enseña cuántos bloques encajan. Restablecer lo limpia todo."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "climbActions": "Lo que te da un pulsado largo",
+        "playlists": "Guardar hallazgos en una playlist",
+        "hub": "Todos los temas de ayuda"
+      }
+    },
+    "logbook": {
+      "breadcrumb": "Tu logbook",
+      "hero": {
+        "title": "Registra un encadene y cámbialo luego",
+        "subtitle": "Registra un bloque desde el plafón en dos toques y cámbialo cuando quieras."
+      },
+      "log": {
+        "title": "Regístralo en el muro",
+        "p1": "Toca el tick grande del reproductor, o Registrar encadene en la barra de cola. Fecha y Hora salen puestas a ahora, el resto es opcional.",
+        "p2": "Intento registra una prueba que no cuajó. El otro botón pone Flash en tu primer registro a ese ángulo, y si no Encadene.",
+        "shotAlt": "El botón de tick",
+        "shotCaption": "El tick abre la hoja de registro.",
+        "logbookShotAlt": "El logbook",
+        "logbookShotCaption": "Desliza a la derecha para editar, a la izquierda para borrar."
+      },
+      "edit": {
+        "title": "Cambiar un registro que ya guardaste",
+        "p1": "Abre la pestaña Perfil y luego Registro. Desliza una fila a la derecha, o mantenla pulsada y elige Editar registro.",
+        "field1": "Estado. Flash, Encadene o Intento.",
+        "field2": "Ángulo e Intentos. La fecha y la hora se quedan como las registraste.",
+        "field3": "Grado, Estrellas y Nota.",
+        "p2": "Si una fila junta varias pruebas del mismo día, la app pregunta ¿Qué registro quieres editar?",
+        "p3": "Editar necesita conexión. Un registro nuevo se guarda sin conexión y se sincroniza luego.",
+        "clipAlt": "Deslizar una fila del logbook",
+        "clipCaption": "Un deslizamiento corto enseña el lápiz o la papelera. Uno largo a la izquierda pregunta antes de borrar."
+      },
+      "delete": {
+        "title": "Borra un registro",
+        "p1": "Desliza la fila a la izquierda, o toca Eliminar este encadene al final de la hoja de edición. Los dos piden confirmación. No hay vuelta atrás.",
+        "p2": "Borrar quita los comentarios y votos del ascenso y recalcula tus estadísticas."
+      },
+      "repeats": {
+        "title": "Intentos, encadenes y repeticiones",
+        "p1": "Una fila por bloque, por día y por ángulo. Cuatro pruebas esta noche son una fila con los intentos sumados y el mejor resultado a la vista. Las pruebas en espejo llevan su propia fila.",
+        "p2": "Las pruebas de la semana que viene son una fila nueva."
+      },
+      "find": {
+        "title": "Encontrar un registro antiguo",
+        "p1": "El buscador busca nombres de bloque. Filtrar ordena por Recientes o Más difícil y acota por estado, Solo flash, grado, ángulo, fecha y Solo referencias. No hay filtro de plafón.",
+        "p2": "Los encadenes de una cuenta vinculada de Kilter o Tension también se traen. Toca tu avatar, luego Ajustes y luego Aplicaciones conectadas.",
+        "auroraLink": "Leer la guía de migración"
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "climbActions": "Registrar un encadene desde cualquier lista",
+        "findingClimbs": "Volver a encontrar el bloque",
+        "hub": "Todos los temas de ayuda",
+        "betaVideos": "Adjuntar un vídeo de beta"
+      }
+    },
+    "bluetooth": {
+      "breadcrumb": "Plafón y Bluetooth",
+      "hero": {
+        "title": "Conecta el móvil al plafón",
+        "subtitle": "Toca la bombilla, elige tu plafón y tu bloque se enciende."
+      },
+      "connect": {
+        "title": "Conectar",
+        "p1": "Toca la bombilla del reproductor o de la barra de arriba, y luego toca tu plafón en Seleccionar plafón. La lista va de señal más fuerte a más débil, con el número de serie en cada fila.",
+        "p2": "La primera vez, iOS pide Bluetooth. Android pide dispositivos cercanos, o Ubicación en Android 11 y anteriores.",
+        "shotAlt": "La hoja Seleccionar plafón",
+        "shotCaption": "Señal más fuerte primero, con números de serie.",
+        "litShotAlt": "Un bloque encendido",
+        "litShotCaption": "La bombilla rellena significa que el muro está encendido.",
+        "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar."
+      },
+      "hidden": {
+        "title": "Mantén pulsada la bombilla",
+        "p1": "Con el plafón conectado, mantén pulsada la bombilla para estos controles, de arriba abajo.",
+        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes.",
+        "row2": "Iluminar la presa de arriba. Solo MoonBoard.",
+        "row3": "Iluminar bloques al deslizar.",
+        "row4": "Iluminar bloques al tocar la lista. Apaga los dos y explorar deja de mover el muro.",
+        "row5": "Reiluminar plafón. Manda el bloque a los LED otra vez.",
+        "row6": "Apagar todas las luces. Tu móvil sigue conectado.",
+        "row7": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
+        "p2": "Un toque corto reconecta al último plafón que usaste."
+      },
+      "failed": {
+        "title": "Cuando no conecta",
+        "intro": "El aviso No se pudo conectar dice cuál es el problema.",
+        "fix1": "No se encontró tu plafón. Mira que esté encendido y que estés cerca. Si hay otro móvil conectado, desconéctalo allí primero.",
+        "fix2": "No se pudo conectar. Acércate y prueba otra vez.",
+        "fix3": "Conectado, pero el plafón no respondió. Apaga y enciende el plafón.",
+        "fix4": "El Bluetooth está apagado. Actívalo.",
+        "fix5": "No se pudo conectar con tu plafón. Prueba otra vez. Si sigue pasando, apaga y enciende el Bluetooth.",
+        "p1": "En Android, si no encuentra nada, toca Permitir ubicación o Activar ubicación al final de la hoja."
+      },
+      "twoBoards": {
+        "title": "Dos plafones al alcance",
+        "p1": "Lee el número de serie antes de tocar. Las barras de señal no se actualizan mientras estás ahí.",
+        "p2": "Un aviso La configuración del plafón no coincide significa que el controlador es de otro montaje. Elige Cancelar, Conectar igualmente o Cambiar de plafón."
+      },
+      "duplicate": {
+        "title": "El mismo plafón dos veces en la lista",
+        "p1": "Dos filas con números de serie distintos son dos controladores. Una fila que solo pone Kilter Board, sin serie, es una caja LED nueva de fábrica. Dos de esas en un rocódromo salen ahora mismo como una sola fila (lo estamos arreglando). Si se enciende el muro equivocado, mantén pulsada la bombilla, toca Desconectar plafón y prueba otra vez.",
+        "p2": "No hay lista de dispositivos olvidados. La app solo recuerda tu último plafón.",
+        "p3": "Un plafón que sale dos veces en Tus plafones es otra cosa. Toca Editar junto a Tus plafones y luego Eliminar o Dejar de seguir."
+      },
+      "control": {
+        "title": "Cuando el plafón lo tiene otra persona",
+        "p1": "En una sesión, un móvil lleva el plafón. En los demás, abre la vista previa de un bloque y toca la bombilla, y el móvil que lo lleva lo enciende.",
+        "p2": "En muros sin luces el botón pone Tomar el muro.",
+        "sessionsLink": "Más sobre compartir un muro"
+      },
+      "liveActivity": {
+        "title": "Controla el plafón desde la pantalla de bloqueo (Live Activity)",
+        "intro": "Empieza o únete a una sesión primero. Una cola en solitario no tiene.",
+        "p1": "En iPhone, una sesión pone una Live Activity en la pantalla de bloqueo y en la Dynamic Island con el bloque, su grado y tu sitio en la cola. Mientras tu móvil lleva el plafón también trae Anterior, Siguiente, una bombilla que reenciende el muro y Espejear bloque donde se pueda.",
+        "p2": "Android enseña los mismos controles en una notificación fija llamada Sesión de escalada activa.",
+        "p3": "Bloquear la pantalla no desconecta el plafón."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "findingClimbs": "Encuentra algo que poner en el muro",
+        "hub": "Todos los temas de ayuda"
+      }
+    },
+    "climbActions": {
+      "breadcrumb": "Acciones de un bloque",
+      "hero": {
+        "title": "Mantén pulsado un bloque",
+        "subtitle": "Cada acción sobre un bloque está detrás de un pulsado largo en su fila."
+      },
+      "open": {
+        "title": "Abre el menú",
+        "p1": "Mantén pulsada la fila de un bloque. Se levanta en una tarjeta con Registrar un encadene, Añadir a la playlist y Compartir arriba, y el resto debajo.",
+        "p2": "¿Prefieres tocar? En Ajustes, luego Visualización, activa Mostrar botón de acciones rápidas para tener un ⋮ en cada fila de Bloques.",
+        "shotAlt": "La tarjeta de acciones del bloque",
+        "shotCaption": "Tres botones rápidos arriba, la lista completa debajo.",
+        "clipAlt": "Mantener pulsada la fila de un bloque",
+        "clipCaption": "Mantén pulsada la fila y la tarjeta se levanta sola."
+      },
+      "preview": {
+        "title": "Mira un bloque sin encender el plafón",
+        "intro": "Vista previa es lo primero de la lista.",
+        "p1": "Abre el bloque en el reproductor sin tocar tu cola. Tu siguiente deslizamiento vuelve a tu cola.",
+        "p2": "En una sesión, o con Iluminar bloques al deslizar apagado, sale una etiqueta Explorando. Toca Activar o Ponerlo en el muro cuando quieras el bloque.",
+        "sessionsLink": "Cómo una sesión mantiene el muro quieto",
+        "clipAlt": "La etiqueta Explorando",
+        "clipCaption": "La etiqueta llega tras el deslizamiento. El muro se queda como estaba."
+      },
+      "quick": {
+        "title": "Los tres botones de arriba",
+        "tick": "Registrar un encadene abre la hoja de ascenso.",
+        "playlist": "Añadir a la playlist es una lista de casillas. Marca para añadir, desmarca para quitar.",
+        "share": "Compartir pasa un enlace a la hoja de compartir de tu móvil.",
+        "p1": "La tarjeta se cierra al lanzar una acción, menos con Añadir a la playlist."
+      },
+      "rest": {
+        "title": "El resto de la lista",
+        "queue": "Añadir a la cola pone el bloque después del actual.",
+        "favorite": "Alternar favorito es el corazón. Los bloques con corazón llenan Bloques favoritos.",
+        "editEntry": "Editar registro, cuando vienes de tu logbook.",
+        "betaVideo": "Añadir vídeo de beta, con la sesión iniciada.",
+        "edit": "Editar bloque, para tus propios bloques en borrador o dentro de las 24 horas siguientes a publicarlos.",
+        "remix": "Remezclar este bloque arranca un bloque nuevo con estas presas.",
+        "openInAurora": "Abrir en la app Aurora, para Tension y otros plafones de Aurora. Kilter no tiene.",
+        "report": "Reportar bloque, con la sesión iniciada y la moderación activa."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "logbook": "Editar lo que registraste",
+        "playlists": "Playlists",
+        "hub": "Todos los temas de ayuda",
+        "betaVideos": "Vídeos de beta"
+      }
+    },
+    "betaVideos": {
+      "breadcrumb": "Vídeos de beta",
+      "hero": {
+        "title": "Engancha un vídeo de beta a un bloque",
+        "subtitle": "Boardsesh enlaza reels de Instagram y TikToks a los bloques."
+      },
+      "share": {
+        "title": "Comparte un reel de Instagram o TikTok",
+        "step1": "En tu reel o TikTok, toca Compartir. Elige Boardsesh. En Instagram puede estar escondido en Más.",
+        "step2": "Boardsesh abre Adjunta tu beta, con la publicación arriba y tus bloques registrados debajo.",
+        "step3": "Toca el bloque que sale en el vídeo. Un mensaje Video beta adjuntado lo confirma.",
+        "p1": "No hay paso de confirmación ni forma de quitar un vídeo ya adjuntado, así que mira el nombre del bloque primero.",
+        "p2": "Necesitas cuenta, y el bloque tiene que estar en tu logbook como encadene o intento. ¿Sin sesión iniciada? Inicia sesión y el enlace te espera. Solo valen enlaces públicos de Instagram y TikTok."
+      },
+      "find": {
+        "title": "Encuentra la beta de un bloque",
+        "p1": "Abre un bloque y baja hasta Vídeos de beta. Toca una tarjeta y se abre en Instagram o TikTok.",
+        "p2": "Con la sesión iniciada, el más de la cabecera abre Comparte tu beta, que se explica abajo.",
+        "p3": "Para ver solo bloques con beta, abre Filtros y activa Solo con vídeos de beta.",
+        "filtersLink": "Más sobre los filtros"
+      },
+      "add": {
+        "title": "Graba beta nueva desde un bloque",
+        "step1": "Mantén pulsado un bloque y elige Añadir vídeo de beta, o toca el más en su sección Vídeos de beta.",
+        "step2": "Toca Copiar descripción. Lleva el nombre del bloque, el ángulo y el plafón.",
+        "step3": "Toca Abrir Instagram y publica tu vídeo con esa descripción.",
+        "step4": "Comparte el reel publicado a Boardsesh como arriba, o pega su enlace en ¿Ya tienes el enlace? y toca Adjuntar.",
+        "p1": "Deja el nombre del bloque entre comillas en la descripción. Así casa Boardsesh el reel. Las descripciones de MoonBoard no llevan comillas, así que elige el bloque tú."
+      },
+      "shelf": {
+        "title": "Tu beta en tu perfil",
+        "p1": "Abre la pestaña Perfil y baja al final de Progreso. La estantería Vídeos de beta enseña los últimos, y Ver todas abre el conjunto.",
+        "p2": "Cualquiera puede verlos. Un enlace de bloque enseña su beta en boardsesh.com sin iniciar sesión."
+      },
+      "next": {
+        "title": "Sigue por aquí",
+        "climbActions": "Todo lo demás detrás de mantener pulsado",
+        "logbook": "Registra el bloque primero",
+        "hub": "Todos los temas de ayuda"
+      }
     },
     "topics": {
       "label": "Temas de ayuda",
+      "guides": "Guías",
       "using": "Usar Boardsesh",
       "logbook": "Trae tu logbook",
       "counts": "Recuento de bloques",
@@ -495,6 +874,82 @@
         "title": "Gestión de la conexión",
         "body": "La conexión WebSocket puede interrumpirse por cambios de red. Implementa la lógica de reconexión con las opciones de reintento de graphql-ws y usa la sincronización delta para mantener la coherencia del estado."
       }
+    }
+  },
+  "privacy": {
+    "title": "Política de Privacidad",
+    "lastUpdatedProductAnalytics": "Última actualización: mayo de 2026",
+    "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
+    "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos.",
+    "collect": {
+      "title": "Qué recogemos",
+      "accountLabel": "Información de cuenta.",
+      "accountBody": "Cuando creas una cuenta guardamos tu correo y tu nombre de usuario. El correo se usa para autenticación. El nombre de usuario aparece en tu perfil y es visible para otros usuarios en sesiones de Modo Fiesta y funciones sociales.",
+      "activityLabel": "Actividad de escalada.",
+      "activityBody": "Cuando registras un encadene o un intento guardamos los detalles del bloque, el grado, la fecha y las notas que añadas. Esto alimenta tu logbook y el seguimiento de progresión.",
+      "locationLabel": "Ubicación.",
+      "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de Modo Fiesta cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
+      "productAnalyticsLabel": "Analítica de producto.",
+      "productAnalyticsBody": "Usamos PostHog y Vercel Analytics para entender el uso de las funciones, las visitas a páginas, el rendimiento y dónde se atasca la app. Algunos eventos de producto registrados con la sesión iniciada se asocian a tu cuenta de Boardsesh para entender qué funciones resultan útiles. No usamos estos datos para publicidad."
+    },
+    "bluetooth": {
+      "title": "Bluetooth",
+      "body": "Boardsesh usa Bluetooth Low Energy (BLE) para conectar con el controlador de LEDs de tu plafón. La conexión Bluetooth se utiliza únicamente para enviar comandos de iluminación de presas al plafón. Ningún dato personal se transmite por Bluetooth. La app no lee datos del plafón más allá de la identificación básica del dispositivo durante el emparejamiento."
+    },
+    "location": {
+      "title": "Datos de ubicación",
+      "body1": "El acceso a la ubicación es opcional. Cuando se concede, se usa para una sola cosa: hacer que tu sesión de Modo Fiesta sea descubrible para escaladores cercanos. Tu ubicación se comparte con el servidor solo mientras una sesión de Modo Fiesta está activa. No guardamos historial, no construimos un perfil de ubicación ni compartimos datos de ubicación con nadie fuera de la función de descubrimiento de sesiones.",
+      "body2": "Puedes revocar el permiso de ubicación en cualquier momento desde los ajustes del dispositivo. La app funciona perfectamente sin él."
+    },
+    "thirdParty": {
+      "title": "Servicios de terceros",
+      "vercelLabel": "Vercel.",
+      "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
+      "vercelLink": "la política de privacidad de Vercel",
+      "posthogLabel": "PostHog.",
+      "posthogBody": "Usamos PostHog para analítica de producto, incluidos eventos del lado del servidor para funciones nativas como las Live Activities de iOS. Consulta ",
+      "posthogLink": "la política de privacidad de PostHog",
+      "auroraLabel": "API de Aurora Climbing.",
+      "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por los plafones Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
+      "auroraLink": "Aurora Climbing",
+      "auroraBodyEnd": " para sus prácticas de datos."
+    },
+    "sharing": {
+      "title": "Compartir de datos",
+      "body1ProductAnalytics": "No vendemos tus datos. No mostramos anuncios. No compartimos tu información con anunciantes ni con brokers de datos. Los únicos datos que se comparten externamente son los descritos arriba (alojamiento y analítica de Vercel, analítica de producto de PostHog y sincronización con Aurora Climbing cuando lo activas tú).",
+      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto."
+    },
+    "retention": {
+      "title": "Retención de datos",
+      "body": "Conservamos los datos de tu cuenta y tu historial de escalada mientras tu cuenta esté activa. Si dejas de usar Boardsesh, tus datos se quedan hasta que borres la cuenta."
+    },
+    "deletion": {
+      "title": "Eliminación de cuenta",
+      "intro": "Puedes borrar tu cuenta y todos los datos asociados en cualquier momento. Hay dos formas:",
+      "inApp": "En la app:",
+      "inAppBody": " Abre Más desde tu perfil, baja del todo y toca Eliminar Cuenta. Te pediremos confirmar antes de borrar nada.",
+      "onWeb": "En la web:",
+      "onWebBody": " Inicia sesión en ",
+      "onWebLink": "app.boardsesh.com",
+      "onWebBodyEnd": " y abre Más desde tu perfil para encontrar el mismo botón Eliminar Cuenta.",
+      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
+    },
+    "children": {
+      "title": "Menores",
+      "body": "Boardsesh no está dirigido a menores de 13 años. No recogemos conscientemente información personal de menores de 13 años. Si crees que un menor de 13 ha creado una cuenta, contáctanos y la borraremos."
+    },
+    "changes": {
+      "title": "Cambios en esta política",
+      "body": "Si modificamos esta política de privacidad, actualizaremos esta página con el nuevo texto y la fecha de «última actualización». Para cambios significativos, también podemos avisarte en la app."
+    },
+    "contact": {
+      "title": "Contacto",
+      "body1Start": "¿Preguntas sobre esta política o tus datos? Escríbenos a ",
+      "body1Email": "support@boardsesh.com",
+      "body1End": ".",
+      "body2Start": "Boardsesh es código abierto. Puedes ver exactamente qué datos recoge la app y cómo se procesan leyendo el código fuente en ",
+      "body2Link": "GitHub",
+      "body2End": "."
     }
   },
   "preview": {

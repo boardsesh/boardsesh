@@ -56,6 +56,17 @@ can be resumed from its stored photo after leaving the app.
 
 ## Release gates (not yet satisfied)
 
+Database TLS is a deployment gate for **both** pools (Drizzle/postgres.js and
+pg-boss/node-postgres). The credential URL must use `sslmode=verify-full` and the
+server certificate must match that URL's hostname. A self-signed `localhost`
+certificate does not meet this gate for a public Railway hostname. For a private
+issuer, mount its public trust certificate read-only and set `NODE_EXTRA_CA_CERTS`
+before Node starts. Never mount the server private key on the detector. Verify
+successful authenticated queries with both drivers, and rejection of untrusted
+and wrong-host certificates. Certificate changes on the primary require a
+separate reviewed operator rollout and rollback path; passing code tests alone
+does not resolve server trust or authorize starting the worker.
+
 The offline threshold remains **40% gesture savings**. The existing Node-model
 work reports **48.2%**; that is prior evidence, not a new measurement from this
 rollout. Reproduce on the pinned image/model before promotion. Do not substitute

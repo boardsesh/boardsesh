@@ -1,0 +1,71 @@
+appId: com.boardsesh.app
+name: help clip - add to and remove from a playlist
+---
+# Clip: remove-from-playlist -> packages/web/public/videos/help/remove-from-playlist.mp4
+#
+# Records: long-press a climb row -> Add to Playlist -> tick a list (it gains the
+# climb) -> tick it again to take the climb back out (the count drops back and
+# the check clears) -> dismiss. Net state on the account is unchanged, which is
+# why the clip unticks inside the same take.
+#
+# Coordinates, not selectors: nothing in this overlay is exposed to Maestro's
+# accessibility tree on this RN Fabric build.
+#   50%,23%  first climb row
+#   50%,60%  "Add to Playlist" in the lifted action card
+#   50%,71%  the second playlist row ("Test list", the empty one)
+#   50%,7%   the overlay scrim — one tap pops the playlist view back to the
+#            menu, a second tap closes the overlay
+#
+# `waitForAnimationToEnd` is used sparingly: each one costs about a second of
+# real time, and a 5-state clip runs long fast. The explicit pauses below are
+# what a viewer reads each state by.
+#
+# The caller navigates to ://home then ://climbs BEFORE recording starts.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 500
+    optional: true
+
+# Long-press the row -> the action card lifts.
+- longPressOn:
+    point: '50%,23%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 600
+    optional: true
+
+# Add to Playlist -> the card swaps to the playlist list.
+- tapOn:
+    point: '50%,60%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 600
+    optional: true
+
+# Tick the list: the climb goes in (count up, check on).
+- tapOn:
+    point: '50%,71%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1100
+    optional: true
+
+# Tick it again: the climb comes back out, so the account ends where it started.
+- tapOn:
+    point: '50%,71%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1100
+    optional: true
+
+# Back out of the playlist view, then close the overlay.
+- tapOn:
+    point: '50%,7%'
+- tapOn:
+    point: '50%,7%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 700
+    optional: true

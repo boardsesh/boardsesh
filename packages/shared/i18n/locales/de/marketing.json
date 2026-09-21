@@ -14,8 +14,8 @@
       "description": "Boardsesh ist kostenlos und Open Source. Hilf mit bei den Rechnungen für Hosting, Datenbank und Infrastruktur, die es am Laufen halten."
     },
     "help": {
-      "title": "Hilfe",
-      "description": "Was du auf boardsesh.com machen kannst, was in der App passiert und wo du fragen kannst."
+      "title": "Boardsesh Hilfe",
+      "description": "Kurze Guides für die Boardsesh-App, wie du dein Kilter- oder Tension-Routenbuch mitnimmst, und wo du fragen kannst."
     },
     "docs": {
       "title": "API-Dokumentation",
@@ -28,6 +28,34 @@
     "privacy": {
       "title": "Datenschutzerklärung",
       "description": "Datenschutzerklärung von Boardsesh - wie wir mit deinen Daten umgehen."
+    },
+    "helpPlaylists": {
+      "title": "Eine Board-Playlist bauen und der Reihe nach klettern",
+      "description": "Leg eine Playlist für dein Kilter, Tension oder MoonBoard an, füg Boulder hinzu und nimm sie wieder raus, lade sie in die Warteschlange und nutz die acht Listen, die Boardsesh baut."
+    },
+    "helpSessions": {
+      "title": "Eine Live-Session starten oder beitreten und eine Warteschlange teilen",
+      "description": "Starte eine Session im Tab Aufnehmen, lade deine Crew per QR-Code oder Link ein und teilt euch eine Warteschlange und ein Board, ohne euch gegenseitig die Boulder zu beleuchten."
+    },
+    "helpFindingClimbs": {
+      "title": "Boulder nach Griff, Board-Bereich und Routenbauer*in filtern",
+      "description": "Gradbereich, Grifftypen, Board-Bereich, Routenbauer*innen, denen du folgst, Wischgesten auf einer Boulder-Zeile und angepinnte Filter in der Boardsesh-App."
+    },
+    "helpLogbook": {
+      "title": "Begehungen im Routenbuch eintragen, ändern und löschen",
+      "description": "Trag in der Boardsesh-App direkt am Board einen Boulder ein, ändere Grad, Sterne, Versuche oder Status später, lösch einen Eintrag und find eine alte Begehung wieder."
+    },
+    "helpBoardAndBluetooth": {
+      "title": "Dein Board per Bluetooth verbinden",
+      "description": "Verbinde Boardsesh mit einem Kilter-, Tension- oder MoonBoard-Controller, bring eine fehlgeschlagene Verbindung in Ordnung und steuer alles per Live Activity vom Sperrbildschirm."
+    },
+    "helpClimbActions": {
+      "title": "Aus jeder Boulder-Zeile heraus ansehen, eintragen oder in eine Playlist legen",
+      "description": "Das Menü hinter dem langen Druck auf eine Boulder-Zeile in der Boardsesh-App: Vorschau ohne das Board zu beleuchten, Eintrag machen, zur Playlist hinzufügen."
+    },
+    "helpBetaVideos": {
+      "title": "Ein Reel von Instagram oder TikTok als Beta teilen",
+      "description": "Teile ein Instagram-Reel oder TikTok aus dem Teilen-Menü nach Boardsesh, häng es an einen Boulder, film neue Beta und find die Beta der anderen."
     }
   },
   "home": {
@@ -301,53 +329,480 @@
     "footer": "Dieses Dokument dient der Information und stellt keine Rechtsberatung dar. Zuletzt aktualisiert: 02.08.2026"
   },
   "help": {
+    "clip": {
+      "unsupported": "Dein Browser kann diesen Clip nicht abspielen.",
+      "playHint": "Tippe auf Play, um die Geste zu sehen."
+    },
     "hero": {
       "title": "Hilfe",
-      "subtitle": "Auf dieser Seite leben die Boulder. In der App kletterst du sie. Hier steht, was was macht."
+      "subtitle": "Guides für die App, dein Kilter- oder Tension-Routenbuch mitnehmen, und wo du fragen kannst."
     },
     "web": {
       "title": "Auf dieser Seite",
-      "intro": "Alles hier ist ein Link, den du weiterschicken kannst. Ohne Installation, ohne Anmeldung.",
-      "item1": "Such einen Boulder und sieh dir Grad, Routenbauer*in und Begehungen an.",
-      "item2": "Stöbere im ganzen Katalog eines Boards nach Layout, Größe und Winkel.",
-      "item3": "Teile einen Boulder, eine Playlist oder dein Profil mit einer normalen URL.",
-      "item4": "Finde eine Halle und sieh über ihren Kiosk-Screen, was an ihrem Board hängt.",
+      "intro": "Alles auf boardsesh.com läuft im Browser, ohne Anmeldung.",
+      "item1": "Grad, Routenbauer*in, Begehungen und Beta-Videos eines Boulders nachschlagen.",
+      "item2": "Den Katalog eines Boards nach Layout, Größe und Winkel durchstöbern.",
+      "item3": "Einen Boulder, eine Playlist oder ein Profil als Link teilen.",
+      "item4": "Finde Hallen mit Boards in deiner Nähe.",
       "playlistsLink": "Playlists ansehen",
       "aboutLink": "Über Boardsesh"
     },
     "app": {
       "title": "In der App",
-      "intro": "Alles, was mit dem Board spricht, passiert in der App.",
+      "intro": "Alles, was die Wand oder dein Routenbuch anfasst, passiert in der App.",
       "item1": "Bau dir eine Queue und arbeite sie mit deiner Crew ab.",
-      "item2": "Starte eine gemeinsame Session, damit alle Handys dieselbe Queue steuern.",
-      "item3": "Beleuchte das Board per Bluetooth an Kilter-, Tension- und MoonBoard-Wänden.",
-      "item4": "Trag deine Begehungen ein und halte dein Logbuch an einem Ort."
+      "item2": "Eine Live-Session fahren, damit jedes Handy dieselbe Warteschlange steuert.",
+      "item3": "Griffe per Bluetooth an Kilter-, Tension- und MoonBoard-Wänden beleuchten.",
+      "item4": "Begehungen und Versuche eintragen und Beta-Videos anhängen."
     },
     "aurora": {
-      "title": "Du kommst von den Aurora-Apps?",
-      "intro": "Boardsesh liest deinen bestehenden Account, deine Begehungen kommen also mit.",
-      "item1": "Melde dich mit deinem Kilter- oder Tension-Login an, dein Logbuch wird synchronisiert.",
-      "item2": "Deine Begehungen bleiben deine. Wir schreiben nie etwas zurück, was du nicht selbst eingetragen hast.",
-      "link": "Zum Migrations-Guide"
+      "title": "Nimm dein Kilter- oder Tension-Routenbuch mit",
+      "intro": "Verknüpf dein Board-Konto einmal, und deine Begehungen kommen rüber.",
+      "item1": "Tipp auf deinen Avatar, dann Einstellungen, dann Verbundene Apps. Unter Board-Konten tippst du auf der Tension-Karte auf Verknüpfen oder auf der Kilter-Karte auf Bei Kilter anmelden und gibst Benutzernamen und Passwort für dieses Board ein.",
+      "item2": "Noch die alte Kilter-App benutzt? Die Karte Kilter (Aurora) nimmt stattdessen einen JSON-Export.",
+      "link": "Zum Migrations-Guide",
+      "item3": "Der Sync läuft in eine Richtung, aus ihren Apps nach Boardsesh, etwa alle 12 Stunden. Zurück geht nichts."
     },
     "climbCounts": {
       "title": "Warum zeigt die Kilter-App mehr Boulder?",
-      "intro": "Beide Apps haben dieselben Boulder. Sie zählen sie nur anders.",
-      "item1": "Boardsesh zählt jeden Boulder einmal und zeigt dir Grad und Begehungen für den Winkel, den du wählst.",
-      "item2": "Die Kilter-App zählt einen Boulder einmal pro Winkel, in dem er eingetragen wurde. Ein Boulder mit Begehungen bei 40° und 45° zählt also doppelt.",
-      "item3": "Deshalb kann dasselbe Board in der Kilter-App bis zu etwa doppelt so viele Boulder anzeigen."
+      "intro": "Beide Apps haben dieselben Boulder und zählen sie unterschiedlich.",
+      "item1": "Boardsesh zählt jeden Boulder einmal.",
+      "item2": "Kilters App zählt einen Boulder offenbar einmal pro Winkel, in dem er geklettert wurde.",
+      "item3": "An einer 8x12 Kilter-Homewall sind das rund 18.000 Boulder in Boardsesh und rund 36.000 in Kilters App."
     },
     "ask": {
-      "title": "Kommst du nicht weiter?",
-      "intro": "Frag im Discord. Da bekommst du am schnellsten eine Antwort.",
+      "title": "Stell eine Frage",
+      "intro": "Auf Discord bekommst du am schnellsten eine Antwort.",
       "discord": "Auf Discord fragen",
-      "github": "Fehler auf GitHub melden",
+      "github": "Ein Issue auf GitHub aufmachen",
       "docs": "Entwickler-Doku lesen",
-      "bugLead": "Etwas kaputt gefunden?",
+      "bugLead": "Einen Fehler gefunden?",
       "devLead": "Du baust auf der API?"
+    },
+    "nav": {
+      "label": "Brotkrumen-Navigation",
+      "home": "Start",
+      "help": "Hilfe"
+    },
+    "guides": {
+      "title": "Guides",
+      "intro": "Sieben kurze Seiten mit Screenshots aus der App.",
+      "playlists": {
+        "title": "Playlists",
+        "body": "Playlist anlegen, einen Boulder wieder rausnehmen, die ganze Liste in die Warteschlange legen und die acht fertigen Listen nutzen."
+      },
+      "climbActions": {
+        "title": "Boulder-Aktionen",
+        "body": "Halt einen Boulder gedrückt: Vorschau ohne die Wand zu beleuchten, Eintrag machen oder zur Playlist hinzufügen."
+      },
+      "sessions": {
+        "title": "Live-Sessions",
+        "body": "Session starten, Crew per QR-Code oder Link einladen und stöbern, ohne die Wand zu bewegen."
+      },
+      "findingClimbs": {
+        "title": "Boulder finden",
+        "body": "Boulder nach Grad, Griff, Board-Bereich oder Routenbauer*in filtern und die Filter anpinnen, die du brauchst."
+      },
+      "logbook": {
+        "title": "Dein Routenbuch",
+        "body": "Am Board eine Begehung eintragen und Grad, Sterne, Versuche oder Status später ändern."
+      },
+      "bluetooth": {
+        "title": "Board und Bluetooth",
+        "body": "Mit dem Board verbinden, eine fehlgeschlagene Verbindung in Ordnung bringen und per Live Activity vom Sperrbildschirm steuern."
+      },
+      "betaVideos": {
+        "title": "Beta-Videos",
+        "body": "Ein Reel von Instagram oder TikTok nach Boardsesh teilen, an einen Boulder hängen und die Beta der anderen finden."
+      }
+    },
+    "playlists": {
+      "breadcrumb": "Playlists",
+      "hero": {
+        "title": "Eine Playlist bauen und der Reihe nach klettern",
+        "subtitle": "Heb Boulder für später auf und lade die Liste in deine Warteschlange."
+      },
+      "build": {
+        "title": "Eine Playlist anlegen",
+        "intro": "Jede Playlist gehört zu einem Board.",
+        "step1": "Öffne Entdecken. Prüf die Board-Anzeige oben.",
+        "step2": "Tipp auf das Plus. Name rein, Farbe wählen, auf Erstellen tippen.",
+        "step3": "Sie taucht unter Meine Playlists auf.",
+        "p1": "Wisch die Zeile eines Boulders nach links, oder halt sie gedrückt und tipp auf Zur Playlist hinzufügen.",
+        "p2": "Die Auswahl zeigt nur Playlists für Board und Layout des Boulders.",
+        "clipAlt": "Die Zeile eines Boulders nach links wischen, um ihn in eine Playlist zu legen",
+        "clipCaption": "Nach links wischen legt ihn in eine Playlist. Nach rechts in die Warteschlange.",
+        "shotAlt": "Der Tab Entdecken",
+        "shotCaption": "Angepinnt, dann Meine Playlists, dann Für dich.",
+        "playlistShotAlt": "Deine eigene Playlist",
+        "playlistShotCaption": "Anpinnen, bearbeiten, umsortieren oder entfernen."
+      },
+      "remove": {
+        "title": "Einen Boulder wieder rausnehmen",
+        "p1": "Vom Boulder aus: Zur Playlist hinzufügen öffnen und auf die angehakte Playlist tippen.",
+        "p2": "Aus der Playlist heraus: auf den Stift tippen oder im Menü ⋯ Boulder umsortieren & entfernen wählen. Tipp auf das rote Minus und bestätige. Zum Umsortieren am Griff ziehen.",
+        "p3": "Listen unter Für dich haben keinen Bearbeitungsmodus. Nimm stattdessen das Herz weg oder trag die Begehung ein.",
+        "clipAlt": "Den Haken bei einer Playlist wegnehmen",
+        "clipCaption": "Tipp auf eine angehakte Playlist, und der Boulder fliegt wieder raus."
+      },
+      "queue": {
+        "title": "Die ganze Liste klettern",
+        "intro": "Tipp einen Boulder in einer Playlist an, und deine Warteschlange wird zu dieser Playlist.",
+        "p1": "Sie lädt der Reihe nach ab dem Boulder, den du angetippt hast. Standen schon Boulder hinter deinem aktuellen, fragt Playlist starten? erst nach. Der Play-Button oben startet von vorn.",
+        "p2": "In einer Session öffnet das Antippen den Boulder nur für dich. Die geteilte Warteschlange bleibt, wie sie ist.",
+        "sessionsLink": "Wie eine Session eine Warteschlange teilt",
+        "clipAlt": "Das Sheet Playlist starten?",
+        "clipCaption": "Stehen schon Boulder in der Warteschlange, fragt Playlist starten? erst nach."
+      },
+      "smart": {
+        "title": "Die acht Listen, die Boardsesh für dich baut",
+        "crowdFavorites": "Publikumslieblinge. Gut bewertet, oft begangen, von dir noch nicht.",
+        "hiddenGems": "Geheimtipps. 4,5 Sterne oder besser, von wenigen begangen.",
+        "atYourLevel": "Auf deinem Level. Beliebte Boulder rund um deinen Grad.",
+        "fresh": "Frisch. Neu auf deinem Board, Routenbauer*innen, denen du folgst, zuerst.",
+        "fiveStars": "Fünf Sterne. Boulder, denen du fünf Sterne gegeben hast.",
+        "mostRepeated": "Am häufigsten wiederholt. Boulder mit mehr als einem eingetragenen Versuch.",
+        "projects": "Projekte. Boulder, die du eingetragen, aber nie getoppt hast.",
+        "likedClimbs": "Gelikte Boulder. Jeder Boulder, dem du ein Herz gegeben hast.",
+        "p1": "Sie stehen unter Für dich in Entdecken. Die ersten vier lesen dein Board in deinem Winkel und lassen deine Begehungen weg. Die letzten vier kommen aus deinen Einträgen und Herzen.",
+        "p2": "Tipp auf die Nadel einer Karte, und sie wandert nach Angepinnt. Angepinnte Listen aus Für dich bleiben auf diesem Handy."
+      },
+      "tags": {
+        "title": "Sehen, in welchen Playlists ein Boulder steckt",
+        "p1": "Unter Einstellungen, dann Anzeige, schaltest du Playlist-Tags anzeigen ein. Zeilen in einer Playlist bekommen Chips. Ein Tipp auf einen Chip öffnet die Playlist nicht."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "climbActions": "Was ein langer Druck kann",
+        "browse": "Öffentliche Playlists im Web durchstöbern",
+        "hub": "Alle Hilfethemen"
+      }
+    },
+    "sessions": {
+      "breadcrumb": "Live-Sessions",
+      "hero": {
+        "title": "Live-Sessions mit deiner Crew",
+        "subtitle": "Starte eine Session, teil den Link, und jedes Handy arbeitet an einer Warteschlange."
+      },
+      "start": {
+        "title": "Eine Session starten",
+        "intro": "Jede Session startet im Tab Aufnehmen.",
+        "step1": "Öffne den Tab Aufnehmen. Prüf das Board oben.",
+        "step2": "Diese Session live zeigen lässt deine Crew sie sehen und beitreten. Aus geht nur noch dein Einladungslink.",
+        "step3": "Tipp auf Starten, dann auf Kletterer*innen einladen für QR-Code, Link kopieren und Teilen.",
+        "shotAlt": "Eine Live-Session",
+        "shotCaption": "Wer dabei ist, was in der Warteschlange steht und was leuchtet.",
+        "liveShotAlt": "Die Leiste Gerade am Klettern",
+        "liveShotCaption": "Gerade am Klettern im Tab Start listet Sessions, denen du beitreten kannst."
+      },
+      "join": {
+        "title": "Einer Session beitreten",
+        "way1": "Scann den QR-Code der gastgebenden Person oder öffne ihren Link.",
+        "way2": "Im Tab Start unter Gerade am Klettern nachsehen.",
+        "way3": "Tipp im Tab Boulder oben auf das Board, dann auf Gerade hier am Klettern.",
+        "p1": "Jeder Weg öffnet die Karte Session von Sam beitreten?. Tipp auf Session beitreten."
+      },
+      "queue": {
+        "title": "Eine Warteschlange, alle Handys",
+        "p1": "Alle in der Session können Boulder hinzufügen, umsortieren oder entfernen. Dein Avatar markiert deine Zeilen.",
+        "p2": "Beenden kann die Session nur, wer sie gestartet hat. Alle anderen tippen auf Session verlassen."
+      },
+      "wall": {
+        "title": "Wer die Wand beleuchtet",
+        "p1": "Ein Board nimmt immer nur eine Bluetooth-Verbindung. Auf jedem anderen Handy rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder für dich.",
+        "p2": "An einer Wand ohne Licht heißt die Glühbirne Wand übernehmen.",
+        "bluetoothLink": "Mit einem Board verbinden"
+      },
+      "crowd": {
+        "title": "Stöbern, ohne die Wand zu bewegen",
+        "p1": "Ist noch jemand in deiner Session, beleuchtet Wischen das Board nicht mehr und die Anzeige Stöbern erscheint. Tipp auf Am Board beleuchten, wenn du die Wand willst.",
+        "p2": "Allein am Board? Halt die Glühbirne gedrückt und schalt Boulder beim Wischen beleuchten und Boulder beim Antippen in der Liste beleuchten aus.",
+        "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen"
+      },
+      "history": {
+        "title": "Die Sessions auf deinem Profil",
+        "p1": "Der Tab Sessions in deinem Profil listet jede Session mit ihren Bouldern und Begehungen.",
+        "p2": "Die Zusammenfassung am Ende hat In Apple Health speichern und Auf Strava teilen. Verbundene Apps in den Einstellungen macht das automatisch."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "playlists": "Eine Playlist in die Warteschlange laden",
+        "hub": "Alle Hilfethemen"
+      }
+    },
+    "findingClimbs": {
+      "breadcrumb": "Boulder finden",
+      "hero": {
+        "title": "Boulder nach Griff, Bereich oder Routenbauer*in finden",
+        "subtitle": "Wo jeder Filter im Tab Boulder steckt."
+      },
+      "start": {
+        "title": "Erst Grad und Winkel",
+        "p1": "Tipp auf die Anzeige Grad neben der Suche. Ein Grad zeigt nur diesen Grad, ein zweiter innerhalb von drei Sekunden ergibt einen Bereich, und der gewählte Grad nochmal setzt zurück.",
+        "p2": "Jeder Grad und jede Zahl an Begehungen gilt für den Winkel des Boards. Tipp auf den Winkel-Chip, um ihn zu ändern.",
+        "p3": "Angemeldet filtern die Fortschritt-Chips nach deiner Historie. Nicht getoppt blendet deine Begehungen aus, Projekte behält versuchte, aber nicht getoppte Boulder, Nicht versucht behält nie eingetragene.",
+        "clipAlt": "Einen Gradbereich setzen",
+        "clipCaption": "Zwei schnelle Taps bilden einen Bereich. Tipp denselben Grad nochmal an, um ihn zu löschen."
+      },
+      "holds": {
+        "title": "Nach Griff filtern",
+        "intro": "Öffne Filter, scroll zu Der Boulder und tipp auf Grifftypen.",
+        "step1": "Wähl Einschließen oder Ausschließen.",
+        "step2": "Wähl einen Grifftyp.",
+        "step3": "Zoom mit zwei Fingern, dann tipp auf Griffe. Nochmal mit demselben Pinsel tippen löscht die Markierung.",
+        "p2": "Ein Griff kann mehrere Markierungen tragen. Alles zurücksetzen räumt das Board leer.",
+        "p3": "Das MoonBoard hat keinen Pinsel Fuß.",
+        "clipAlt": "Griffe markieren",
+        "clipCaption": "Erst den Pinsel wählen, dann auf Griffe tippen."
+      },
+      "zone": {
+        "title": "Einen Teil der Wand eingrenzen",
+        "intro": "Öffne Filter, scroll zu Der Boulder und tipp auf Board-Bereich.",
+        "p1": "Tipp auf Bereich hinzufügen. Zieh in der Mitte, um den Rahmen zu verschieben, an einer Ecke, um ihn zu ändern. Alle Griffe behält Boulder, die ganz drin liegen, Beliebiger Griff behält alle, die hineinreichen.",
+        "p2": "Bereich löschen nimmt den Rahmen weg. Griff- und Bereichsfilter brauchen eine Verbindung.",
+        "clipAlt": "Den Bereich verschieben und in der Größe ändern",
+        "clipCaption": "Zieh die Mitte, um das Rechteck zu verschieben, eine Ecke, um es zu vergrößern."
+      },
+      "setters": {
+        "title": "Folge Routenbauer*innen und such nur bei ihnen",
+        "p1": "Folgen steht auf der Seite einer Routenbauer*in und auf dem Screen Routenbauer*innen unter Filter. Danach schaltest du direkt darunter Boulder von Leuten, denen ich folge ein.",
+        "p2": "Der Screen Routenbauer*innen ist auch eine Auswahl. Setz einen Haken zum Filtern, oder tipp auf einen Namen, um die Boulder durchzusehen.",
+        "shotAlt": "Der Screen Routenbauer*innen",
+        "shotCaption": "Haken setzen filtert. Auf einen Namen tippen zeigt die Boulder."
+      },
+      "rows": {
+        "title": "Was eine Boulder-Zeile kann",
+        "p1": "Nach rechts wischen legt den Boulder in die Warteschlange. Nach links wischen öffnet die Playlist-Auswahl. Beides beleuchtet das Board nicht.",
+        "p2": "Das kleine Zeichen ist deine Historie. Ein Blitz heißt geflasht, ein Haken im Kreis getoppt, ein Kreuz im Kreis versucht, ein C im Kreis Benchmark.",
+        "actionsLink": "Alles im Menü hinter dem langen Druck",
+        "p3": "Halt eine Zeile gedrückt für das volle Aktionsmenü.",
+        "clipAlt": "Eine Zeile in beide Richtungen wischen",
+        "clipCaption": "Rechts legt ihn in die Warteschlange, links öffnet die Playlist-Auswahl."
+      },
+      "keep": {
+        "title": "Behalte die Filter, die du nutzt",
+        "p1": "Die meisten Filter haben eine Nadel neben dem Namen. Tipp darauf, und der Filter wird zum Chip über der Liste.",
+        "p2": "Der Button unten zeigt, wie viele Boulder passen. Zurücksetzen räumt alles ab."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "climbActions": "Was dir ein langer Druck bringt",
+        "playlists": "Funde in eine Playlist retten",
+        "hub": "Alle Hilfethemen"
+      }
+    },
+    "logbook": {
+      "breadcrumb": "Dein Routenbuch",
+      "hero": {
+        "title": "Eine Begehung eintragen und später ändern",
+        "subtitle": "Trag einen Boulder direkt am Board mit zwei Tipps ein und ändere ihn jederzeit."
+      },
+      "log": {
+        "title": "Trag ihn an der Wand ein",
+        "p1": "Tipp auf den großen Haken im Player oder auf Begehung eintragen in der Warteschlangen-Leiste. Datum und Zeit stehen auf jetzt, der Rest ist freiwillig.",
+        "p2": "Versuch trägt einen Versuch ein, der nicht gehalten hat. Der andere Button heißt Flash beim ersten Eintrag in diesem Winkel, sonst Getoppt.",
+        "shotAlt": "Der Haken-Button",
+        "shotCaption": "Der Haken öffnet das Eintrags-Sheet.",
+        "logbookShotAlt": "Das Routenbuch",
+        "logbookShotCaption": "Nach rechts wischen bearbeitet, nach links löscht."
+      },
+      "edit": {
+        "title": "Einen Eintrag nachträglich ändern",
+        "p1": "Öffne den Tab Profil, dann Routenbuch. Wisch eine Zeile nach rechts, oder halt sie gedrückt und wähl Routenbuch-Eintrag bearbeiten.",
+        "field1": "Status. Flash, Getoppt oder Versuch.",
+        "field2": "Winkel und Versuche. Datum und Zeit bleiben, wie eingetragen.",
+        "field3": "Grad, Sterne und Notiz.",
+        "p2": "Bündelt eine Zeile mehrere Versuche von einem Tag, fragt die App Welchen Eintrag bearbeiten?",
+        "p3": "Änderungen brauchen eine Verbindung. Ein neuer Eintrag speichert offline und synct später.",
+        "clipAlt": "Eine Routenbuch-Zeile wischen",
+        "clipCaption": "Ein kurzer Wisch zeigt Stift oder Mülleimer. Ein voller Wisch nach links fragt vor dem Löschen."
+      },
+      "delete": {
+        "title": "Einen Eintrag löschen",
+        "p1": "Wisch die Zeile nach links, oder tipp unten im Sheet auf Diese Begehung löschen. Beides fragt nach. Rückgängig gibt es nicht.",
+        "p2": "Löschen nimmt Kommentare und Stimmen der Begehung mit und zählt deine Statistik neu."
+      },
+      "repeats": {
+        "title": "Versuche, Begehungen und Wiederholungen",
+        "p1": "Eine Zeile pro Boulder, pro Tag, pro Winkel. Vier Versuche heute Abend sind eine Zeile mit zusammengezählten Versuchen und dem besten Ergebnis. Gespiegelte Versuche bekommen ihre eigene Zeile.",
+        "p2": "Die Versuche nächste Woche sind eine neue Zeile."
+      },
+      "find": {
+        "title": "Einen alten Eintrag finden",
+        "p1": "Die Suche findet Boulder-Namen. Filter sortiert nach Neueste oder Schwerste und grenzt nach Status, Nur Flash, Grad, Winkel, Datum und Nur Benchmarks ein. Einen Board-Filter gibt es nicht.",
+        "p2": "Begehungen aus einem verknüpften Kilter- oder Tension-Konto kommen auch rüber. Tipp auf deinen Avatar, dann Einstellungen, dann Verbundene Apps.",
+        "auroraLink": "Zum Migrations-Guide"
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "climbActions": "Aus jeder Liste einen Eintrag machen",
+        "findingClimbs": "Den Boulder wiederfinden",
+        "hub": "Alle Hilfethemen",
+        "betaVideos": "Ein Beta-Video anhängen"
+      }
+    },
+    "bluetooth": {
+      "breadcrumb": "Board und Bluetooth",
+      "hero": {
+        "title": "Verbinde dein Handy mit dem Board",
+        "subtitle": "Tipp auf die Glühbirne, wähl dein Board, und dein Boulder leuchtet."
+      },
+      "connect": {
+        "title": "Verbinden",
+        "p1": "Tipp auf die Glühbirne im Player oder in der oberen Leiste, dann in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
+        "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
+        "shotAlt": "Das Sheet Board auswählen",
+        "shotCaption": "Stärkstes Signal zuerst, mit Seriennummern.",
+        "litShotAlt": "Ein beleuchteter Boulder",
+        "litShotCaption": "Eine gefüllte Glühbirne heißt, die Wand leuchtet.",
+        "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar."
+      },
+      "hidden": {
+        "title": "Halt die Glühbirne gedrückt",
+        "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
+        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du in den Einstellungen.",
+        "row2": "Griff darüber beleuchten. Nur MoonBoard.",
+        "row3": "Boulder beim Wischen beleuchten.",
+        "row4": "Boulder beim Antippen in der Liste beleuchten. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
+        "row5": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
+        "row6": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
+        "row7": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
+        "p2": "Ein kurzer Tipp verbindet wieder mit deinem letzten Board."
+      },
+      "failed": {
+        "title": "Wenn es nicht verbindet",
+        "intro": "Die Meldung Verbindung fehlgeschlagen nennt das Problem.",
+        "fix1": "Dein Board wurde nicht gefunden. Prüf, ob es an ist und du in Reichweite bist. Hängt ein anderes Handy dran, trenn dort zuerst.",
+        "fix2": "Verbindung fehlgeschlagen. Geh näher ran und versuch es nochmal.",
+        "fix3": "Verbunden, aber das Board hat nicht geantwortet. Schalt das Board aus und wieder ein.",
+        "fix4": "Bluetooth ist aus. Schalt es ein.",
+        "fix5": "Verbindung zu deinem Board fehlgeschlagen. Versuch es nochmal. Passiert es weiter, schalt Bluetooth aus und wieder ein.",
+        "p1": "Findet Android nichts, tipp unten im Sheet auf Standort erlauben oder Standort einschalten."
+      },
+      "twoBoards": {
+        "title": "Zwei Boards in Reichweite",
+        "p1": "Lies die Seriennummer, bevor du tippst. Die Signalbalken aktualisieren sich nicht, während du davorstehst.",
+        "p2": "Die Meldung Board-Konfiguration passt nicht heißt, der Controller gehört zu einem anderen Board-Setup. Wähl Abbrechen, Trotzdem verbinden oder Board-Setup wechseln."
+      },
+      "duplicate": {
+        "title": "Dasselbe Board zweimal in der Liste",
+        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle zeigen wir aktuell als eine Zeile (wir arbeiten dran). Leuchtet die falsche Wand, halt die Glühbirne gedrückt, tipp auf Board trennen und versuch es nochmal.",
+        "p2": "Eine Liste zum Vergessen von Geräten gibt es nicht. Die App merkt sich nur dein letztes Board.",
+        "p3": "Ein Board, das doppelt unter Deine Boards steht, ist etwas anderes. Tipp neben Deine Boards auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
+      },
+      "control": {
+        "title": "Wenn jemand anderes das Board hat",
+        "p1": "In einer Session hält ein Handy das Board. Auf den anderen rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder.",
+        "p2": "An Wänden ohne Licht heißt der Button Wand übernehmen.",
+        "sessionsLink": "Mehr zum Teilen einer Wand"
+      },
+      "liveActivity": {
+        "title": "Das Board vom Sperrbildschirm steuern (Live Activity)",
+        "intro": "Starte erst eine Session oder tritt einer bei. Eine Solo-Warteschlange bekommt keine.",
+        "p1": "Auf dem iPhone legt eine Session eine Live Activity auf den Sperrbildschirm und in die Dynamic Island, mit Boulder, Grad und deinem Platz in der Warteschlange. Solange dein Handy das Board hält, sind auch Zurück, Weiter, eine Glühbirne zum Neubeleuchten und Boulder spiegeln dabei, wo es geht.",
+        "p2": "Android zeigt dieselben Schalter in einer laufenden Benachrichtigung namens Aktive Kletter-Session.",
+        "p3": "Den Bildschirm zu sperren trennt das Board nicht."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "findingClimbs": "Etwas für die Wand finden",
+        "hub": "Alle Hilfethemen"
+      }
+    },
+    "climbActions": {
+      "breadcrumb": "Boulder-Aktionen",
+      "hero": {
+        "title": "Halte einen Boulder gedrückt",
+        "subtitle": "Jede Aktion an einem Boulder sitzt hinter einem langen Druck auf seine Zeile."
+      },
+      "open": {
+        "title": "Das Menü öffnen",
+        "p1": "Halt eine Boulder-Zeile gedrückt. Sie hebt sich zu einer Karte, oben Eintrag machen, Zur Playlist hinzufügen und Teilen, der Rest darunter.",
+        "p2": "Lieber tippen? Unter Einstellungen, dann Anzeige, schaltest du Schnellaktionen-Button anzeigen ein und bekommst ein ⋮ auf jeder Zeile im Tab Boulder.",
+        "shotAlt": "Die Karte mit den Boulder-Aktionen",
+        "shotCaption": "Oben drei Schnell-Buttons, darunter die volle Liste.",
+        "clipAlt": "Eine Boulder-Zeile gedrückt halten",
+        "clipCaption": "Halt die Zeile, und die Karte hebt sich von selbst."
+      },
+      "preview": {
+        "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
+        "intro": "Vorschau ist der erste Eintrag in der Liste.",
+        "p1": "Sie öffnet den Boulder im Player, ohne deine Warteschlange anzurühren. Dein nächster Wisch bringt dich zurück.",
+        "p2": "In einer Session, oder wenn Boulder beim Wischen beleuchten aus ist, erscheint die Anzeige Stöbern. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
+        "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
+        "clipAlt": "Die Anzeige Stöbern",
+        "clipCaption": "Die Anzeige kommt nach dem Wisch. Die Wand bleibt, wie sie war."
+      },
+      "quick": {
+        "title": "Die drei Buttons oben",
+        "tick": "Eintrag machen öffnet das Begehungs-Sheet.",
+        "playlist": "Zur Playlist hinzufügen ist eine Checkliste. Haken setzen legt rein, Haken wegnehmen nimmt raus.",
+        "share": "Teilen gibt einen Link an das Teilen-Menü deines Handys.",
+        "p1": "Die Karte schließt sich, sobald eine Aktion losgeht. Ausnahme: Zur Playlist hinzufügen."
+      },
+      "rest": {
+        "title": "Der Rest der Liste",
+        "queue": "Zur Warteschlange hinzufügen setzt den Boulder hinter deinen aktuellen.",
+        "favorite": "Favorit umschalten ist das Herz. Boulder mit Herz landen in Gelikte Boulder.",
+        "editEntry": "Routenbuch-Eintrag bearbeiten, wenn du aus deinem Routenbuch kommst.",
+        "betaVideo": "Beta-Video hinzufügen, wenn du angemeldet bist.",
+        "edit": "Boulder bearbeiten, bei eigenen Bouldern als Entwurf oder bis 24 Stunden nach dem Veröffentlichen.",
+        "remix": "Diesen Boulder remixen startet einen neuen Boulder aus diesen Griffen.",
+        "openInAurora": "In der Aurora-App öffnen, bei Tension und anderen Aurora-Boards. Kilter hat keine.",
+        "report": "Boulder melden, wenn du angemeldet bist und die Moderation läuft."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "logbook": "Ändern, was du eingetragen hast",
+        "playlists": "Playlists",
+        "hub": "Alle Hilfethemen",
+        "betaVideos": "Beta-Videos"
+      }
+    },
+    "betaVideos": {
+      "breadcrumb": "Beta-Videos",
+      "hero": {
+        "title": "Ein Beta-Video an einen Boulder hängen",
+        "subtitle": "Boardsesh hängt Instagram-Reels und TikToks an Boulder."
+      },
+      "share": {
+        "title": "Ein Reel von Instagram oder TikTok teilen",
+        "step1": "Tipp bei deinem Reel oder TikTok auf Teilen. Wähl Boardsesh. In Instagram versteckt es sich manchmal unter Mehr.",
+        "step2": "Boardsesh öffnet Häng deine Beta an, oben der Post, darunter deine eingetragenen Boulder.",
+        "step3": "Tipp auf den Boulder, den das Video zeigt. Die Meldung Beta-Video angehängt bestätigt es.",
+        "p1": "Es gibt keine Rückfrage und kein Entfernen, sobald das Video hängt. Prüf also vorher den Namen des Boulders.",
+        "p2": "Du brauchst ein Konto, und der Boulder muss als Begehung oder Versuch in deinem Routenbuch stehen. Abgemeldet? Meld dich an, der Link wartet. Es gehen nur öffentliche Links von Instagram und TikTok."
+      },
+      "find": {
+        "title": "Die Beta zu einem Boulder finden",
+        "p1": "Öffne einen Boulder und scroll runter zu Beta-Videos. Tipp auf eine Karte, und sie öffnet sich in Instagram oder TikTok.",
+        "p2": "Angemeldet öffnet das Plus in der Überschrift Teile deine Beta, weiter unten beschrieben.",
+        "p3": "Willst du nur Boulder mit Beta sehen, öffne Filter und schalt Nur mit Beta-Video ein.",
+        "filtersLink": "Mehr zu Filtern"
+      },
+      "add": {
+        "title": "Neue Beta zu einem Boulder filmen",
+        "step1": "Halt einen Boulder gedrückt und wähl Beta-Video hinzufügen, oder tipp auf das Plus in seinem Abschnitt Beta-Videos.",
+        "step2": "Tipp auf Bildunterschrift kopieren. Sie trägt Name, Winkel und Board.",
+        "step3": "Tipp auf Instagram öffnen und poste dein Video mit dieser Bildunterschrift.",
+        "step4": "Teil das gepostete Reel wie oben nach Boardsesh, oder setz seinen Link unter Schon einen Link? ein und tipp auf Anhängen.",
+        "p1": "Lass den Namen des Boulders in Anführungszeichen stehen. Daran erkennt Boardsesh das Reel. MoonBoard-Bildunterschriften haben keine Anführungszeichen, dort wählst du den Boulder selbst."
+      },
+      "shelf": {
+        "title": "Deine Beta in deinem Profil",
+        "p1": "Öffne den Tab Profil und scroll ans Ende von Fortschritt. Das Regal Beta-Videos zeigt deine neuesten, und Alle ansehen öffnet alles.",
+        "p2": "Zusehen kann jede*r. Ein Boulder-Link zeigt die Beta auf boardsesh.com ohne Anmeldung."
+      },
+      "next": {
+        "title": "Weiterlesen",
+        "climbActions": "Alles andere hinter langem Drücken",
+        "logbook": "Trag den Boulder zuerst ein",
+        "hub": "Alle Hilfethemen"
+      }
     },
     "topics": {
       "label": "Hilfethemen",
+      "guides": "Anleitungen",
       "using": "Boardsesh nutzen",
       "logbook": "Bring dein Routenbuch mit",
       "counts": "Boulder-Anzahl",
