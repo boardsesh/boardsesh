@@ -12,6 +12,8 @@
  *   - Dry-run by default. --apply is the only mode that writes.
  *   - The only rows it ever deletes are `playlist_ownership`, `user_playlist_pins`
  *     and `playlist_follows` rows belonging to the LATER of the two owners.
+ *     Pins and follows on public playlists are preserved: those remain valid
+ *     viewer relationships after ownership is revoked.
  *     It never deletes a playlist, a playlist_climbs row, a tick, a credential,
  *     or a user.
  *   - Duplicate-account pairs (two accounts with case-variant emails) are
@@ -203,7 +205,7 @@ function printHelp(): void {
 
 Options:
   --apply                       Delete the later owner's playlist_ownership row (plus that
-                                user's pin/follow on the same playlist) and write an
+                                user's private-playlist pin/follow) and write an
                                 adopter-scoped sync_deletions tombstone so their offline
                                 clients drop the playlist too. Omit for dry-run.
   --playlist-ids <a,b,c>        Restrict the run to these playlists.id values.
@@ -429,8 +431,12 @@ export function countPlannedDeletions(
 ): { ownershipRows: number; pins: number; follows: number } {
   return {
     ownershipRows: applyablePlans.length,
-    pins: applyablePlans.filter((plan) => attachments.pinnedPlaylistIds.has(plan.playlist.playlistId)).length,
-    follows: applyablePlans.filter((plan) => attachments.followedPlaylistUuids.has(plan.playlist.playlistUuid)).length,
+    pins: applyablePlans.filter(
+      (plan) => !plan.playlist.isPublic && attachments.pinnedPlaylistIds.has(plan.playlist.playlistId),
+    ).length,
+    follows: applyablePlans.filter(
+      (plan) => !plan.playlist.isPublic && attachments.followedPlaylistUuids.has(plan.playlist.playlistUuid),
+    ).length,
   };
 }
 
@@ -518,7 +524,7 @@ function printBoardAccountReport(boardAccounts: CrossLinkedBoardAccount[], email
 }
 
 /**
- * Delete the adopter's ownership row (and their pin/follow on the same playlist)
+ * Delete the adopter's ownership row (and their private-playlist pin/follow)
  * for every plan handed in, then tombstone the playlist for that adopter so
  * their offline clients drop it. Must run inside a transaction — the caller owns
  * the transaction so the integration test can roll the whole thing back.
@@ -544,18 +550,26 @@ export async function applyRepairPlans(
   for (const plan of plans) {
     const { adopter } = plan;
     if (!adopter) {
-      // Unreachable: selectApplyablePlans only passes revoke-adopter and
-      // defer-to-account-merge plans, and classifyCrossLinkedPlaylist always
-      // sets an adopter on both. Warn rather than fold it into the drift count
-      // so an unexpected shape is visible instead of looking like a lost race.
-      console.warn(
-        `${LOG_TAG} playlist #${plan.playlist.playlistId}: plan has no adopter — skipping (this should not happen).`,
-      );
+      // selectApplyablePlans only passes plans with an adopter. A malformed
+      // plan is an invariant failure: roll back this run instead of reporting
+      // it as ownership drift or silently applying only the preceding plans.
+      throw new Error(`${LOG_TAG} playlist #${plan.playlist.playlistId}: repair plan has no adopter.`);
+    }
+
+    const playlistId = BigInt(plan.playlist.playlistId);
+    // Public pins/follows remain valid viewer relationships. Lock visibility so
+    // a concurrent publish cannot turn planned private cleanup into data loss.
+    const [lockedPlaylist] = await transaction
+      .select({ isPublic: playlists.isPublic })
+      .from(playlists)
+      .where(eq(playlists.id, playlistId))
+      .for('update');
+    if (!lockedPlaylist || lockedPlaylist.isPublic !== plan.playlist.isPublic) {
+      console.warn(`${LOG_TAG} playlist #${plan.playlist.playlistId}: visibility changed since planning — skipping.`);
       counts.skippedByDrift.push(plan.playlist.playlistId);
       continue;
     }
 
-    const playlistId = BigInt(plan.playlist.playlistId);
     const lockedOwners = await transaction
       .select({
         userId: playlistOwnership.userId,
@@ -566,15 +580,21 @@ export async function applyRepairPlans(
       .where(eq(playlistOwnership.playlistId, playlistId))
       .for('update');
 
-    const plannedUserIds = plan.playlist.owners.map((owner) => owner.userId).sort();
-    const lockedUserIds = lockedOwners.map((owner) => owner.userId).sort();
+    const plannedOwnersByUserId = new Map(plan.playlist.owners.map((owner) => [owner.userId, owner]));
     const latestLockedOwner = [...lockedOwners].sort(
       (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
     )[0];
 
     const stillMatchesPlan =
-      lockedUserIds.length === plannedUserIds.length &&
-      lockedUserIds.every((userId, index) => userId === plannedUserIds[index]) &&
+      lockedOwners.length === plan.playlist.owners.length &&
+      lockedOwners.every((owner) => {
+        const plannedOwner = plannedOwnersByUserId.get(owner.userId);
+        return (
+          plannedOwner !== undefined &&
+          owner.role === plannedOwner.role &&
+          owner.createdAt.getTime() === plannedOwner.createdAt.getTime()
+        );
+      }) &&
       latestLockedOwner?.userId === adopter.userId;
 
     if (!stillMatchesPlan) {
@@ -591,22 +611,24 @@ export async function applyRepairPlans(
       .returning({ id: playlistOwnership.id });
     counts.ownershipRowsDeleted += deletedOwnership.length;
 
-    const deletedPins = await transaction
-      .delete(userPlaylistPins)
-      .where(and(eq(userPlaylistPins.playlistId, playlistId), eq(userPlaylistPins.userId, adopter.userId)))
-      .returning({ id: userPlaylistPins.id });
-    counts.pinsDeleted += deletedPins.length;
+    if (!lockedPlaylist.isPublic) {
+      const deletedPins = await transaction
+        .delete(userPlaylistPins)
+        .where(and(eq(userPlaylistPins.playlistId, playlistId), eq(userPlaylistPins.userId, adopter.userId)))
+        .returning({ id: userPlaylistPins.id });
+      counts.pinsDeleted += deletedPins.length;
 
-    const deletedFollows = await transaction
-      .delete(playlistFollows)
-      .where(
-        and(
-          eq(playlistFollows.playlistUuid, plan.playlist.playlistUuid),
-          eq(playlistFollows.followerId, adopter.userId),
-        ),
-      )
-      .returning({ id: playlistFollows.id });
-    counts.followsDeleted += deletedFollows.length;
+      const deletedFollows = await transaction
+        .delete(playlistFollows)
+        .where(
+          and(
+            eq(playlistFollows.playlistUuid, plan.playlist.playlistUuid),
+            eq(playlistFollows.followerId, adopter.userId),
+          ),
+        )
+        .returning({ id: playlistFollows.id });
+      counts.followsDeleted += deletedFollows.length;
+    }
 
     // The offline pull joins playlist_ownership (syncPlaylists /
     // syncPlaylistClimbs), and playlist_ownership carries no delete trigger, so

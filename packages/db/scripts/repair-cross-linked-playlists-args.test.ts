@@ -43,7 +43,7 @@ test('the dry-run preview counts only the plans --apply is allowed to write', ()
   };
   const planFor = (playlistId: string, playlistUuid: string): CrossLinkRepairPlan =>
     ({
-      playlist: { playlistId, playlistUuid },
+      playlist: { playlistId, playlistUuid, isPublic: false },
     }) as CrossLinkRepairPlan;
 
   assert.deepEqual(countPlannedDeletions([planFor('1', 'uuid-1'), planFor('2', 'uuid-2')], attachments), {
@@ -53,4 +53,17 @@ test('the dry-run preview counts only the plans --apply is allowed to write', ()
   });
   // A refused/deferred plan never reaches this list, so the preview is zero.
   assert.deepEqual(countPlannedDeletions([], attachments), { ownershipRows: 0, pins: 0, follows: 0 });
+});
+
+test('the dry-run deletion preview preserves public pins and follows', () => {
+  const plans = [false, true].map((isPublic, index) => ({
+    playlist: { playlistId: String(index), playlistUuid: `uuid-${index}`, isPublic },
+  })) as CrossLinkRepairPlan[];
+  assert.deepEqual(
+    countPlannedDeletions(plans, {
+      pinnedPlaylistIds: new Set(['0', '1']),
+      followedPlaylistUuids: new Set(['uuid-0', 'uuid-1']),
+    }),
+    { ownershipRows: 2, pins: 1, follows: 1 },
+  );
 });
