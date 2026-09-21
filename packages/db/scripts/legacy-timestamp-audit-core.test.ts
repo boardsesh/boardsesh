@@ -261,6 +261,17 @@ void describe('complete bipartite ambiguity graph', () => {
     assert.equal(result.edge?.targetEpochSeconds, 10 * HOUR + 17);
   });
 
+  void it('counts an unchanged reciprocal zero-offset pair as an aligned control', () => {
+    const analysis = analyzeTickGroup([tick({ climbedAtEpochSeconds: 10 * HOUR }), anchor()], policy);
+    assert.equal(analysis.edgeCount, 1);
+    const [matched] = analysis.candidates;
+    assert.equal(matched.classification, 'aligned_control');
+    assert.equal(matched.reciprocal, true);
+    assert.equal(matched.candidateDegree, 1);
+    assert.equal(matched.edge?.offsetSeconds, 0);
+    assert.equal(matched.edge?.residualSeconds, 0);
+  });
+
   void it('abstains both candidates when two candidates share one anchor', () => {
     const analysis = analyzeTickGroup(
       [

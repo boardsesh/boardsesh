@@ -170,7 +170,7 @@ const GIT_PROBE_TIMEOUT_MS = 5_000;
  * process values needed to locate and run Git plus fixed defensive settings.
  */
 function gitProbeEnvironment(): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = {};
+  const environment: NodeJS.ProcessEnv = { NODE_ENV: 'production' };
   for (const name of GIT_ENVIRONMENT_PASSTHROUGH) {
     const inheritedValue = process.env[name];
     if (inheritedValue !== undefined) environment[name] = inheritedValue;
@@ -302,8 +302,8 @@ not define the start of JSON safety. The origin-writer instant must be after
 migration 0156 completed and all old writers were retired. Each open rollout
 interval is uncertain and always abstains. There is intentionally no --apply
 mode and no stdout mode. The native safe-save instant must be after every active
-native writer was verified safe or retired, including the still-active legacy
-web saveAscent path whose shared-normalizer source fix is
+native writer was verified safe or retired, including the legacy web
+saveAscent path while it still served traffic. Its shared-normalizer source fix is
 cdf1406dfb53f1865513fd005d39b13f469a74e1. A native row can support evidence
 only when it was created at or after that instant and created_at exactly equals
 updated_at; pre-origin, pre-safe, edited, or otherwise unverifiable native rows
@@ -343,6 +343,9 @@ export async function validateOutputPath(rawOutputPath: string, cwd = process.cw
   }
 
   const outputParent = dirname(outputPath);
+  if (!(await pathExists(outputParent))) {
+    throw new CliUsageError(`Output parent directory does not exist: ${outputParent}`);
+  }
   await access(outputParent, fsConstants.W_OK);
   const realParent = await realpath(outputParent);
   if (realParent !== resolve(outputParent)) {
