@@ -49,7 +49,7 @@ function mintCertificate(commonName: string, altName: string, days: number): { c
  */
 function startFakePrimary(
   material: { cert: string; key: string },
-  answer: 'S' | 'N',
+  answer: 'S' | 'N' | 'stall',
 ): Promise<{
   port: number;
   close: () => Promise<void>;
@@ -61,7 +61,9 @@ function startFakePrimary(
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => {});
     socket.once('data', () => {
-      socket.write(answer);
+      // 'stall' answers the SSLRequest exactly like a healthy primary and then
+      // never starts negotiating, which is the shape the handshake timeout guards.
+      socket.write(answer === 'stall' ? 'S' : answer);
       if (answer !== 'S') return;
       const secured = new TLSSocket(socket, { isServer: true, secureContext: context });
       secured.on('error', () => secured.destroy());
@@ -127,6 +129,17 @@ describe('probePostgresCertificate', () => {
       ).rejects.toThrow(/refused TLS/);
     } finally {
       await plaintext.close();
+    }
+  });
+
+  it('gives up on a peer that answers the SSLRequest then stalls mid-handshake', async () => {
+    const stalling = await startFakePrimary(goodMaterial, 'stall');
+    try {
+      await expect(
+        probePostgresCertificate({ host: 'localhost', port: stalling.port, connectTimeoutMs: 300 }),
+      ).rejects.toThrow(/timed out during the TLS handshake/);
+    } finally {
+      await stalling.close();
     }
   });
 });
