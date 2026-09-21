@@ -16,6 +16,7 @@ export const reactNativePermissionHarness = {
     RESULTS: {
       GRANTED: 'granted',
       DENIED: 'denied',
+      NEVER_ASK_AGAIN: 'never_ask_again',
     },
     requestMultiple: vi.fn(),
     request: vi.fn(),

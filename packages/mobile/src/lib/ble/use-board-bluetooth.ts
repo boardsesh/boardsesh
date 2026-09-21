@@ -39,8 +39,9 @@ import {
   nativeBleSupportsBoard,
   subscribeNativeBleConnected,
 } from './adapter-factory';
-import { requestBleRuntimePermissions } from './use-ble-permissions';
+import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
+import { alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { manufacturerCompanyId } from './advertisement';
 import type {
   BleAdapterOptions,
@@ -847,6 +848,15 @@ export function useBoardBluetooth({
           setPickerState((prev) => (prev ? { ...prev, devices } : null));
         },
         () => {
+          // Nobody is looking at this picker: the Android session notification's
+          // bulb connects without bringing the app forward. Since the adapters
+          // stopped failing an empty scan, nothing else would end this connect,
+          // and connectInFlightRef would swallow every later bulb tap until the
+          // app is opened. End it with the silent cancel, as unmount does (#5654).
+          if (!isAppActive()) {
+            handleCancel();
+            return;
+          }
           // Scan window closed — drop the spinner. The picker stays open (a
           // device was found but not yet picked, or it shows the empty state).
           setPickerState((prev) => (prev ? { ...prev, isScanning: false } : null));
@@ -1414,14 +1424,28 @@ export function useBoardBluetooth({
       let connectAdapter: BluetoothAdapter | null = null;
 
       try {
-        const permissionsGranted = await requestBleRuntimePermissions({ requestNotificationPermission: true });
-        if (!permissionsGranted) {
+        // Bluetooth only: the Android 13+ notifications prompt waits until the
+        // board is connected (below), so a first connect shows one system dialog
+        // before the scan instead of two (#5654).
+        const permissionStatus = await requestBleRuntimePermissionStatus();
+        if (permissionStatus === 'unsupported') {
+          // Expo web in a browser with no Web Bluetooth. Not a denial: there is
+          // nothing to allow, so no permission copy and no Permission Denied event.
+          await alertBluetoothUnavailable({ reason: 'unsupported', boardName, t, tCommon });
+          return false;
+        }
+        if (permissionStatus !== 'granted') {
           // The Alert is the only trace this path used to leave — an entire
           // class of "Bluetooth doesn't work" was invisible in telemetry.
           void describeBlePermissionDenial().then((denialContext) => {
             track(SHARED_EVENTS.BluetoothPermissionDenied, { ...denialContext, surface: 'connect', boardName });
           });
-          Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          if (permissionStatus === 'blocked') {
+            // Android stopped showing the dialog, so re-asking is a dead tap.
+            await alertBluetoothUnavailable({ reason: 'unauthorized', boardName, t, tCommon });
+          } else {
+            Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          }
           return false;
         }
 
@@ -1434,7 +1458,8 @@ export function useBoardBluetooth({
 
         const available = await adapter.isAvailable();
         if (!available) {
-          Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+          // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
+          await alertBluetoothUnavailable({ boardName, t, tCommon });
           return false;
         }
 
@@ -1684,6 +1709,9 @@ export function useBoardBluetooth({
         setIsConnected(true);
         onConnectionChange?.(true);
         onConnectSuccess?.(parsedSerial, connectionHandle);
+        // Android 13+ only, and not awaited: the board is connected, and the
+        // dialog doesn't hold up the write that lights the climb (#5654).
+        void requestOptionalNotificationPermission();
         // Connect-time BLE write diagnostics (iOS native adapter only; null on
         // Android/web and on binaries too old to report them). Set as global
         // Sentry tags so they ride any later write-stall report, and recorded on
@@ -1760,13 +1788,14 @@ export function useBoardBluetooth({
         }
         setIsConnected(false);
 
-        // Dismiss the picker sheet if it's still showing. When a reconnect-by-
-        // serial grace window opens the picker but nothing ever advertises, the
-        // adapter rejects the selection promise on the scan timeout without
-        // settling the picker's own promise — so the sheet (and its spinner)
-        // would otherwise stay mounted until the user swipes it away. Settle the
-        // dangling picker promise before clearing it (matching the unmount
-        // cleanup) so it can't leak.
+        // Dismiss the picker sheet if it's still showing. When the scan fails
+        // while the picker is open (a scan error, Bluetooth switched off), the
+        // adapter rejects the selection promise without settling the picker's
+        // own promise — so the sheet (and its spinner) would otherwise stay
+        // mounted until the user swipes it away. A scan that simply ends empty
+        // doesn't come through here: the picker stays up with its empty state
+        // and Scan again (#5654). Settle the dangling picker promise before
+        // clearing it (matching the unmount cleanup) so it can't leak.
         pickerRejectRef.current?.(new Error('Connection failed'));
         pickerRejectRef.current = null;
         setPickerState(null);
@@ -1781,7 +1810,7 @@ export function useBoardBluetooth({
           case 'user_cancelled':
             break;
           case 'unavailable':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+            await alertBluetoothUnavailable({ boardName, t, tCommon });
             break;
           case 'board_not_found':
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.boardNotFound'));

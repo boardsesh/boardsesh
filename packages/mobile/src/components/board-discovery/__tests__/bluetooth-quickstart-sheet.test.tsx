@@ -5,6 +5,7 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
 const scan = vi.hoisted(() => ({
   status: 'done' as 'idle' | 'scanning' | 'done' | 'unavailable',
+  unavailableReason: null as 'permission_denied' | 'unauthorized' | 'powered_off' | 'unsupported' | 'unknown' | null,
   serials: [] as string[],
   advertisedTypes: new Map<string, string>(),
   start: vi.fn(async () => {}),
@@ -29,10 +30,13 @@ const locationHint = vi.hoisted(() => ({
   lastActive: null as boolean | null,
 }));
 
+const platform = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' | 'web' }));
+
 type ChildrenProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: ChildrenProps) => createElement('div', {}, children),
   Pressable: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  Platform: platform,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -42,6 +46,21 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../../lib/ble/use-board-scan', () => ({
   useBoardScan: () => scan,
+}));
+
+const appSettings = vi.hoisted(() => ({
+  canOpen: true,
+  openAppSettings: vi.fn(async () => true),
+}));
+vi.mock('../../../lib/open-app-settings', () => ({
+  canOpenAppSettings: () => appSettings.canOpen,
+  openAppSettings: appSettings.openAppSettings,
+}));
+
+// The platform wording is covered in bluetooth-unavailable.test.ts; here it only
+// has to reach the screen.
+vi.mock('../../../lib/ble/bluetooth-unavailable-alert', () => ({
+  bluetoothBlockedBody: () => 'blocked-body-for-this-platform',
 }));
 
 vi.mock('../../../lib/ble/use-android-scan-location-hint', () => ({
@@ -100,6 +119,9 @@ function renderSheet() {
 describe('BluetoothQuickstartSheet', () => {
   beforeEach(() => {
     scan.status = 'done';
+    scan.unavailableReason = null;
+    appSettings.canOpen = true;
+    appSettings.openAppSettings.mockClear();
     scan.serials = [];
     scan.advertisedTypes = new Map();
     resolveCalls.length = 0;
@@ -309,5 +331,126 @@ describe('BluetoothQuickstartSheet board rows', () => {
         advertisedTypes: [['12345', 'tension']],
       },
     );
+  });
+});
+
+// #5654: every stop read "Turn on Bluetooth to scan", including a climber whose
+// Bluetooth was on but blocked for Boardsesh, and nothing offered a retry.
+describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
+  beforeEach(() => {
+    platform.OS = 'android';
+    scan.status = 'unavailable';
+    scan.unavailableReason = null;
+    scan.serials = [];
+    scan.reset.mockReset();
+    boards.data = [];
+    boards.isLoading = false;
+    appSettings.canOpen = true;
+    appSettings.openAppSettings.mockClear();
+  });
+
+  const button = (root: HTMLElement, title: string) =>
+    root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
+
+  it('says Bluetooth is blocked and links to Settings', () => {
+    scan.unavailableReason = 'unauthorized';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'ble.blockedTitle')).toBe(true);
+    expect(hasText(container, 'blocked-body-for-this-platform')).toBe(true);
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(false);
+
+    button(container, 'ble.openSettings')?.click();
+    expect(appSettings.openAppSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the Settings button where the platform has no Settings link', () => {
+    scan.unavailableReason = 'unauthorized';
+    appSettings.canOpen = false;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'ble.blockedTitle')).toBe(true);
+    expect(button(container, 'ble.openSettings')).toBeNull();
+  });
+
+  it('asks for the permission again after a dialog "Don\'t allow"', () => {
+    scan.unavailableReason = 'permission_denied';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'ble.errorPermissionDenied')).toBe(true);
+    expect(button(container, 'ble.openSettings')).toBeNull();
+  });
+
+  it.each(['powered_off', 'unsupported', 'unknown'] as const)('keeps "Turn on Bluetooth to scan" for %s', (reason) => {
+    scan.unavailableReason = reason;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(true);
+    expect(hasText(container, 'ble.blockedTitle')).toBe(false);
+  });
+
+  it.each(['unauthorized', 'permission_denied', 'powered_off', 'unknown'] as const)(
+    'offers Scan again for %s on Android, which restarts the scan',
+    (reason) => {
+      scan.unavailableReason = reason;
+      const { container } = renderSheet();
+
+      button(container, 'ble.scanAgain')?.click();
+      expect(scan.reset).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('leaves blocked on iOS at Open Settings: nothing else can change it, and the switch relaunches the app', () => {
+    platform.OS = 'ios';
+    scan.unavailableReason = 'unauthorized';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'ble.blockedTitle')).toBe(true);
+    expect(button(container, 'ble.openSettings')).not.toBeNull();
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+
+  it('keeps Scan again on iOS where the radio can come back without a relaunch', () => {
+    platform.OS = 'ios';
+    scan.unavailableReason = 'powered_off';
+    const { container } = renderSheet();
+
+    expect(button(container, 'ble.scanAgain')).not.toBeNull();
+  });
+
+  it('offers no Scan again without Bluetooth LE, such as a browser with no Web Bluetooth', () => {
+    platform.OS = 'web';
+    scan.unavailableReason = 'unsupported';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(true);
+    expect(hasText(container, 'ble.errorPermissionDenied')).toBe(false);
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+
+  it('offers no Scan again in a browser that has Web Bluetooth, whose radio always reads as off', () => {
+    platform.OS = 'web';
+    scan.unavailableReason = 'powered_off';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(true);
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+
+  it('offers Scan again when the scan finished with no boards in range', () => {
+    scan.status = 'done';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.noResults')).toBe(true);
+    button(container, 'ble.scanAgain')?.click();
+    expect(scan.reset).toHaveBeenCalledOnce();
+  });
+
+  it('shows no Scan again while boards are listed', () => {
+    scan.status = 'done';
+    boards.data = [{ uuid: 'board-1', name: 'Gym Kilter', boardType: 'kilter', sizeName: 'Small' }];
+    const { container } = renderSheet();
+
+    expect(button(container, 'ble.scanAgain')).toBeNull();
   });
 });

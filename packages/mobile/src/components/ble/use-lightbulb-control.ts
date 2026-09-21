@@ -1,12 +1,21 @@
 import { useCallback, useMemo } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { trackBoardConnectTapped, type BoardConnectSurface } from '../../lib/analytics-board-connect';
 import {
   derivePlayDrawerLightbulbPressAction,
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
 
+/** Which bulb was tapped, for Board Connect Tapped. */
+export type LightbulbSurface = Extract<
+  BoardConnectSurface,
+  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator'
+>;
+
 type UseLightbulbControlOptions = {
+  /** Required so every bulb reports where a connect tap came from. */
+  surface: LightbulbSurface;
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
@@ -96,8 +105,8 @@ export type LightbulbControl = {
  * (`useOptionalBluetoothContext`, the raw board-presence context); the session
  * controls and board-presence controls are always present under the tab tree.
  */
-export function useLightbulbControl(options: UseLightbulbControlOptions = {}): LightbulbControl {
-  const { onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
+export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
+  const { surface, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
   const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
@@ -155,19 +164,22 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     // auto-pushes the displayed climb on connect, which reports to board presence
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
-    // The connect ATTEMPT is not tracked — Bluetooth Connection Success / Failed
-    // record the outcome a few hundred ms later, which is the question the BLE
-    // health dashboard actually asks.
+    // Bluetooth Connection Success / Failed record the outcome a few hundred ms
+    // later. The tap itself is tracked too (#5654): a tap that dies at a denied
+    // permission or a radio that's off never reaches either outcome event, so
+    // without it "tapped connect" couldn't be told apart from "never tried".
+    const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
+    const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
+    trackBoardConnectTapped({
+      surface,
+      boardName: bluetooth.boardName,
+      reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+    });
     bluetooth.armUndoWallChangeToast();
     // Reconnect straight to the same board — by serial (Aurora) or device id
     // (MoonBoard). With neither remembered, the adapter opens the picker.
-    void bluetooth.connect(
-      undefined,
-      undefined,
-      bluetooth.reconnectSerialForCurrentBoard ?? undefined,
-      bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
-    );
-  }, [bluetooth, pressAction, onRelayToHolder]);
+    void bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
+  }, [bluetooth, pressAction, onRelayToHolder, surface]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful

@@ -275,6 +275,45 @@ export const SHARED_EVENTS = {
   // `boardName` on the 'connect' surface only (the quickstart scan runs before
   // any board is chosen, so it has none to report).
   BluetoothPermissionDenied: 'Bluetooth Permission Denied',
+  // Mobile-only (#5654): a connect or the /boards quickstart scan stopped because
+  // Bluetooth can't be used, and the climber was told why. Fires with the alert or
+  // the sheet state, once per stop. Props: { reason, surface: 'connect' |
+  // 'quickstart_scan', platform }, plus `boardName` on 'connect'. `reason`:
+  //  - 'unauthorized': iOS Bluetooth permission is off for Boardsesh, or Android
+  //    has stopped showing its dialog ("never ask again"). The climber sees
+  //    "Bluetooth is blocked for Boardsesh" with Open Settings. An Android "Don't
+  //    allow" answered in the dialog is Bluetooth Permission Denied only, because
+  //    the next tap asks again. Android's never_ask_again counts only when it
+  //    came back inside 500 ms, i.e. with no dialog drawn: React Native also
+  //    reports it for a first dialog closed with back, which Android shows again.
+  //    A slow phone can miss that window, so this undercounts rather than
+  //    overcounts.
+  //  - 'powered_off': the radio is off.
+  //  - 'unsupported': the device has no Bluetooth LE, or (Expo web) the browser
+  //    has no Web Bluetooth.
+  //  - 'unknown': the connect or scan said Bluetooth is unavailable but the radio
+  //    state doesn't say why (still Unknown/Resetting, or it reads PoweredOn).
+  // The 'unauthorized' share of newcomer connect taps is the #5654 guardrail for
+  // moving the iOS Bluetooth prompt off app launch.
+  BluetoothUnavailable: 'Bluetooth Unavailable',
+  // Mobile-only (#5654): a climber tapped something that starts a Bluetooth
+  // connect. Fired on the tap, before permissions or scanning, so it also counts
+  // attempts that never reach Bluetooth Scan Started (denied, blocked, radio
+  // off). Props: { surface, boardName, reconnect }. `surface`: 'play_drawer' |
+  // 'toolbar' | 'app_bar' | 'board_control_indicator' | 'wall_empty_state' |
+  // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
+  // Android session notification's bulb). `reconnect` is true when
+  // a remembered board is targeted (silent auto-select), false when the tap
+  // opens the device picker.
+  BoardConnectTapped: 'Board Connect Tapped',
+  // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
+  // the quickstart scanned without any event, so a climber who found their board
+  // through it never counted as having scanned. Fires once per scan that started
+  // the radio. Props: { outcome, found_count }. `outcome`: 'completed' (the 15 s
+  // window ran out), 'stopped' (the sheet closed or a board was picked first),
+  // 'error' (the scan errored). `found_count` is the number of distinct board
+  // serials heard, before GraphQL resolves them to boards.
+  BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial
   // config, current-board fallback, or no preview at all. Measures how often
