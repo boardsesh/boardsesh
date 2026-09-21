@@ -1035,4 +1035,164 @@ describe('Climb Query Functions', () => {
       expect(await seededUuids(searchParams)).toEqual(ALL_SEEDED);
     });
   });
+
+  // Issue #5642. A Woods climb has stats only at the angle it was set at. Without
+  // the opt-in a search at 30° keeps only the climbs that belong to 30° — set
+  // there, with no set angle, or with a stats row there. With it, or by name, the
+  // list reaches every angle and grades each climb at its own set angle (#5405).
+  // The db package's unit tests pin the SQL; this pins the rows, the count, and the
+  // stats-driven → fallback boundary, which only a real database can.
+  describe('Woods browsed-angle restriction (#5642)', () => {
+    const PREFIX = 'woods-angle-5642-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const SETTER = 'woods-angle-5642-setter';
+    const OWNER_ID = 'woods-angle-5642-owner';
+    const woodsAt30: ParsedBoardRouteParameters = {
+      board_name: 'woods',
+      layout_id: 1,
+      size_id: 1,
+      set_ids: [1],
+      angle: 30,
+    };
+    const kilterAt40: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+    };
+
+    // In the order a restricted ascents-DESC search returns them: the two climbs
+    // with a 30° stats row by ascents, then the stats-less ones by uuid DESC.
+    const AT_30 = [id('set-30'), id('set-40-stats-at-30'), id('set-30-no-stats'), id('no-set-angle')];
+    const OTHER_ANGLES = [id('set-40'), id('set-40-no-stats')];
+    const ALL_LISTED = [...AT_30, ...OTHER_ANGLES];
+
+    const browse = (overrides: ClimbSearchParams = {}): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 100,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      settername: [SETTER],
+      ...overrides,
+    });
+
+    // Two rows a page, so the walk crosses from the stats-driven pages into the
+    // LEFT-JOIN fallback and the restriction has to hold on both sides of it.
+    async function walk(searchParams: ClimbSearchParams, userId?: string): Promise<string[]> {
+      const collected: string[] = [];
+      for (let page = 0; page < 10; page += 1) {
+        const result = await searchClimbs(woodsAt30, { ...searchParams, page, pageSize: 2 }, userId);
+        collected.push(...result.climbs.map((climb) => climb.uuid));
+        if (!result.hasMore) return collected;
+      }
+      throw new Error('hasMore never cleared');
+    }
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO users (id, email, name)
+        VALUES (${OWNER_ID}, ${`${OWNER_ID}@test.invalid`}, 'Woods angle owner')
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, angle, created_at, required_set_ids, compatible_size_ids, user_id)
+        VALUES
+          (${id('set-30')}, 'woods', 1, ${SETTER}, 'Woodsangle set 30', 'p1r4', 1, false, true, 30, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-30-no-stats')}, 'woods', 1, ${SETTER}, 'Woodsangle set 30 unclimbed', 'p2r4', 1, false, true, 30, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40-stats-at-30')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40 climbed at 30', 'p3r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('no-set-angle')}, 'woods', 1, ${SETTER}, 'Woodsangle no set angle', 'p4r4', 1, false, true, NULL, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40', 'p5r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('set-40-no-stats')}, 'woods', 1, ${SETTER}, 'Woodsangle set 40 unclimbed', 'p6r4', 1, false, true, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], NULL),
+          (${id('draft-40')}, 'woods', 1, ${SETTER}, 'Woodsangle draft 40', 'p7r4', 1, true, false, 40, '2024-01-01', ARRAY[]::int[], ARRAY[1], ${OWNER_ID}),
+          (${id('kilter-set-50')}, 'kilter', 1, ${SETTER}, 'Woodsangle kilter 50', 'p8r12', 1, false, true, 50, '2024-01-01', ARRAY[1], ARRAY[7], NULL)
+        ON CONFLICT DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('woods', ${id('set-30')}, 30, 12.0, 5, 12.0, 3.0),
+          ('woods', ${id('set-40-stats-at-30')}, 30, 14.0, 2, 14.0, 3.0),
+          ('woods', ${id('set-40-stats-at-30')}, 40, 16.0, 50, 16.0, 4.0),
+          ('woods', ${id('set-40')}, 40, 20.0, 500, 20.0, 5.0)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${OWNER_ID}`);
+    });
+
+    it('keeps only the climbs that belong to 30° by default, across the fallback boundary', async () => {
+      const collected = await walk(browse());
+
+      expect(collected).toEqual(AT_30);
+      // The count badge describes the same list.
+      expect(await countClimbs(woodsAt30, browse())).toBe(AT_30.length);
+    });
+
+    it('reads an explicit false as the default', async () => {
+      const searchParams = browse({ crossAngleStats: false });
+
+      expect(await walk(searchParams)).toEqual(AT_30);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(AT_30.length);
+    });
+
+    it('reads a restricted climb at the browsed angle, not its set angle', async () => {
+      const { climbs } = await searchClimbs(woodsAt30, browse());
+      const climbedAt30 = climbs.find((climb) => climb.uuid === id('set-40-stats-at-30'));
+
+      expect(climbedAt30?.statsAngle).toBe(30);
+      expect(climbedAt30?.ascensionist_count).toBe(2);
+    });
+
+    it('lists every angle with the opt-in, graded at the set angle', async () => {
+      const searchParams = browse({ crossAngleStats: true });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams);
+
+      expect(climbs.map((climb) => climb.uuid).sort()).toEqual([...ALL_LISTED].sort());
+      // Ranked on its 40° sends, not sunk below every 30° climb.
+      expect(climbs[0].uuid).toBe(id('set-40'));
+      expect(climbs[0].statsAngle).toBe(40);
+      expect(climbs[0].ascensionist_count).toBe(500);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(ALL_LISTED.length);
+    });
+
+    it('finds a climb set at another angle by name, graded there, without the opt-in', async () => {
+      const searchParams = browse({ name: 'Woodsangle' });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams);
+
+      expect(climbs.map((climb) => climb.uuid).sort()).toEqual([...ALL_LISTED].sort());
+      const setAt40 = climbs.find((climb) => climb.uuid === id('set-40'));
+      expect(setAt40?.statsAngle).toBe(40);
+      expect(setAt40?.ascensionist_count).toBe(500);
+      expect(await countClimbs(woodsAt30, searchParams)).toBe(ALL_LISTED.length);
+    });
+
+    it("shows the owner's drafts list whatever angle each draft was saved at", async () => {
+      const searchParams = browse({ onlyDrafts: true });
+      const { climbs } = await searchClimbs(woodsAt30, searchParams, OWNER_ID);
+
+      expect(climbs.map((climb) => climb.uuid)).toEqual([id('draft-40')]);
+      expect(await countClimbs(woodsAt30, searchParams, OWNER_ID)).toBe(1);
+    });
+
+    it('still opens a Woods climb at another angle with its set-angle grade', async () => {
+      const climb = await getClimbByUuid({ ...woodsAt30, climb_uuid: id('set-40') });
+
+      expect(climb?.angle).toBe(30);
+      expect(climb?.statsAngle).toBe(40);
+      expect(climb?.ascensionist_count).toBe(500);
+      expect(climb?.difficulty).not.toBe('');
+    });
+
+    it('leaves Kilter unrestricted — a climb set at 50° still lists at 40°', async () => {
+      const { climbs } = await searchClimbs(kilterAt40, browse());
+
+      expect(climbs.map((climb) => climb.uuid)).toContain(id('kilter-set-50'));
+      expect(await countClimbs(kilterAt40, browse())).toBe(1);
+    });
+  });
 });

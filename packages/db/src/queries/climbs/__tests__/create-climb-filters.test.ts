@@ -852,8 +852,13 @@ void describe('cross-angle stats conditions', () => {
     assert.equal(filters.isCrossAngleStats, false);
   });
 
-  void it('turns itself on for an angle-bound board without an explicit opt-in', () => {
+  // The builder never derives cross-angle on the board's behalf — not even for an
+  // angle-bound one. The decision is `resolveCrossAngleStats`'s, made once and
+  // passed in by searchClimbs and countClimbs alike.
+  void it('reports exactly the option it was given, on any board', () => {
     assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: true }).isCrossAngleStats, true);
+    assert.equal(createClimbFilters(woodsParams, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
+    assert.equal(createClimbFilters(woodsParams, {}).isCrossAngleStats, false);
     assert.equal(createClimbFilters(params, {}, undefined, { crossAngleStats: false }).isCrossAngleStats, false);
   });
 
@@ -871,6 +876,60 @@ void describe('cross-angle stats conditions', () => {
     const rendered = render(createClimbFilters(woodsParams, {}).getClimbGradesJoinConditions());
     assert.doesNotMatch(rendered, /COALESCE/i);
     assert.doesNotMatch(rendered, /stats_set_angle/);
+  });
+});
+
+// Issue #5642. Without the opt-in an angle-bound search keeps only the climbs that
+// belong to the browsed angle. The builder carries the predicate in
+// getClimbWhereConditions — the one array both searchClimbs and countClimbs build
+// their WHERE from — and only when asked.
+void describe('createClimbFilters: browsed-angle restriction', () => {
+  const woodsParams: BoardRouteParams = { ...params, board_name: 'woods', size_id: 1, angle: 30 };
+  const restricted = { restrictToBrowsedAngle: true };
+  const dialect = new PgDialect();
+  const renderWhere = (filters: ReturnType<typeof createClimbFilters>) =>
+    filters
+      .getClimbWhereConditions()
+      .map((fragment) => dialect.sqlToQuery(fragment))
+      .map((query) => ({ sql: query.sql, params: query.params }));
+  const restrictionPattern =
+    /\("board_climbs"\."angle" = \$\d+ or "board_climbs"\."angle" is null or "board_climb_stats"\."climb_uuid" is not null\)/i;
+
+  void it('adds set-here, no-set-angle and stats-here arms, bound to the browsed angle', () => {
+    const filters = createClimbFilters(woodsParams, {}, undefined, restricted);
+    assert.equal(filters.isBrowsedAngleRestricted, true);
+    const restriction = renderWhere(filters).find((query) => restrictionPattern.test(query.sql));
+    assert.ok(restriction, 'expected the restriction in getClimbWhereConditions');
+    assert.deepEqual(restriction.params, [30]);
+    // The stats arm is on the UNALIASED browsed-angle join, never the set-angle one.
+    assert.doesNotMatch(restriction.sql, /stats_set_angle/);
+  });
+
+  // The holds heatmap reuses getClimbWhereConditions from a FROM with no
+  // board_climbs and no board_climb_stats; it passes no options.
+  void it('stays out of the WHERE for a caller that passes no options', () => {
+    const filters = createClimbFilters(woodsParams, {});
+    assert.equal(filters.isBrowsedAngleRestricted, false);
+    assert.ok(renderWhere(filters).every((query) => !restrictionPattern.test(query.sql)));
+  });
+
+  void it("exempts a user's own drafts list", () => {
+    const filters = createClimbFilters(woodsParams, { onlyDrafts: true }, 'user-1', restricted);
+    assert.equal(filters.isOnlyDrafts, true);
+    assert.equal(filters.isBrowsedAngleRestricted, false);
+    assert.ok(renderWhere(filters).every((query) => !restrictionPattern.test(query.sql)));
+  });
+
+  void it('keeps it for onlyDrafts without a user, which is not a drafts query', () => {
+    const filters = createClimbFilters(woodsParams, { onlyDrafts: true }, undefined, restricted);
+    assert.equal(filters.isBrowsedAngleRestricted, true);
+  });
+
+  void it('gives cross-angle precedence when a caller passes both', () => {
+    const filters = createClimbFilters(woodsParams, {}, undefined, { ...restricted, crossAngleStats: true });
+    assert.equal(filters.isCrossAngleStats, true);
+    assert.equal(filters.isBrowsedAngleRestricted, false);
+    assert.ok(renderWhere(filters).every((query) => !restrictionPattern.test(query.sql)));
   });
 });
 

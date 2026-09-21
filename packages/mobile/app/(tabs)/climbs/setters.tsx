@@ -5,6 +5,7 @@ import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { Text } from '../../../src/components/Text';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Button } from '../../../src/components/Button';
@@ -233,6 +234,19 @@ export default function SettersFilterScreen() {
     debounceRef.current = setTimeout(() => setDebouncedSearch(text), SEARCH_DEBOUNCE_MS);
   }, []);
 
+  const baseCountInput = useMemo(() => parseCountInput(params.countInput), [params.countInput]);
+
+  // The sheet draft's "Other angles" switch (issue #5642). The count input is the
+  // draft's own ClimbSearchInput, where `includeOtherAngles` becomes
+  // `crossAngleStats: true`, so reading it there keeps the picker on the same
+  // angles as the list it filters: without it a Woods setter counts only the
+  // climbs the list shows at this angle, and a setter with none there is not
+  // offered at all. Sent only on an angle-bound board, the one place the server
+  // reads it, so every other board's query key is the one it always was. Part of
+  // `queryInput`, and so of the setterStats query key: a draft with the switch
+  // flipped is a different cache entry, never a stale list.
+  const crossAngleStats = getBoardCapabilities(boardName).angleBoundClimbs && baseCountInput?.crossAngleStats === true;
+
   const queryInput = useMemo(
     () => ({
       boardName,
@@ -242,8 +256,9 @@ export default function SettersFilterScreen() {
       angle,
       onlyFollowedAuthors: (followingOnly && isAuthenticated) || undefined,
       ...(debouncedSearch.length > 0 ? { search: debouncedSearch } : {}),
+      ...(crossAngleStats ? { crossAngleStats: true } : {}),
     }),
-    [boardName, layoutId, sizeId, setIds, angle, debouncedSearch, followingOnly, isAuthenticated],
+    [boardName, layoutId, sizeId, setIds, angle, debouncedSearch, followingOnly, isAuthenticated, crossAngleStats],
   );
 
   const { data: setters, isLoading, isError, refetch } = useSetterStats(queryInput, boardName.length > 0);
@@ -260,7 +275,6 @@ export default function SettersFilterScreen() {
   // Live "Show N climbs" count: the sheet's draft with this screen's picks swapped
   // in. Built with the same helper as the sheet's own count, so returning to the
   // sheet reads this result from the cache. No debounce: toggles are single taps.
-  const baseCountInput = useMemo(() => parseCountInput(params.countInput), [params.countInput]);
   const countInput = useMemo(
     () => (baseCountInput ? withSetterSelection(baseCountInput, selectedSetters) : null),
     [baseCountInput, selectedSetters],

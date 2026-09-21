@@ -919,13 +919,14 @@ describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping
 // Issue #5405. A Woods climb carries exactly one stats row, at the angle it was
 // set at, so pinning the read to the browsed angle made the list at 30° contain
 // only the 653 climbs set at 30° out of 5,392 — and rank a 0-ascent 30° climb
-// above a 500-ascent 40° one, because a stats row beats no stats row.
+// above a 500-ascent 40° one, because a stats row beats no stats row. Since #5642
+// that resolution is the climber's opt-in (`crossAngleStats: true`); the default
+// is the browsed-angle restriction in the suite after this one.
 describe('cross-angle stats resolution', () => {
   let db: TestSqliteDb;
 
   // `setAt30` has its stats where the climber is standing; `setAt40` does not, and
-  // is the popular one. Both are Woods, which is cross-angle by board capability
-  // with no flag involved.
+  // is the popular one.
   async function seedWoodsPair(): Promise<void> {
     await insertClimb(db, { uuid: 'set-at-30', boardType: 'woods', angle: 30, compatibleSizeIds: [1] });
     await insertStat(db, {
@@ -947,12 +948,21 @@ describe('cross-angle stats resolution', () => {
     });
   }
 
+  // Opted in, as the Woods "other angles" toggle does.
   function woodsAt30(overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput {
-    return makeInput({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '', angle: 30, ...overrides });
+    return makeInput({
+      boardName: 'woods',
+      layoutId: 1,
+      sizeId: 1,
+      setIds: '',
+      angle: 30,
+      crossAngleStats: true,
+      ...overrides,
+    });
   }
 
   beforeEach(async () => {
-    db = await createTestDatabase();
+    db = createTestDatabase();
     await runMigrations(db);
     await ensureMutationQueueTable(db);
     await stampLocalUserId(db, LOCAL_OWNER);
@@ -1018,5 +1028,120 @@ describe('cross-angle stats resolution', () => {
 
     const withFlag = (await searchClimbsLocal(db, { ...kilterAt30, crossAngleStats: true })).climbs;
     expect(withFlag.find((climb) => climb.uuid === 'kilter-40')?.statsAngle).toBe(40);
+  });
+});
+
+// Issue #5642. Without the opt-in a Woods search keeps only the climbs that belong
+// to the browsed angle: set there, with no set angle recorded, or with a stats row
+// there. A by-name search reaches every angle, graded at the set angle. Mirrors
+// `browsedAngleRestrictionSql` / `resolveCrossAngleStats` in
+// packages/db/src/queries/climbs/effective-stats.ts.
+describe('browsed-angle restriction (default on Woods)', () => {
+  let db: TestSqliteDb;
+
+  function woodsAt30(overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput {
+    return makeInput({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '', angle: 30, ...overrides });
+  }
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+    await ensureMutationQueueTable(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+
+    await insertClimb(db, {
+      uuid: 'set-at-30',
+      name: 'Crimp thirty',
+      boardType: 'woods',
+      angle: 30,
+      compatibleSizeIds: [1],
+    });
+    await insertStat(db, {
+      climbUuid: 'set-at-30',
+      boardType: 'woods',
+      angle: 30,
+      ascensionistCount: 5,
+      displayDifficulty: 12,
+    });
+    await insertClimb(db, { uuid: 'set-at-30-unclimbed', boardType: 'woods', angle: 30, compatibleSizeIds: [1] });
+    await insertClimb(db, { uuid: 'no-set-angle', boardType: 'woods', angle: null, compatibleSizeIds: [1] });
+    // Set at 40° but climbed at 30° too — it has a row where the climber is standing.
+    await insertClimb(db, { uuid: 'set-at-40-climbed-at-30', boardType: 'woods', angle: 40, compatibleSizeIds: [1] });
+    await insertStat(db, { climbUuid: 'set-at-40-climbed-at-30', boardType: 'woods', angle: 30, ascensionistCount: 2 });
+    await insertStat(db, {
+      climbUuid: 'set-at-40-climbed-at-30',
+      boardType: 'woods',
+      angle: 40,
+      ascensionistCount: 50,
+    });
+    await insertClimb(db, {
+      uuid: 'set-at-40',
+      name: 'Crimp forty',
+      boardType: 'woods',
+      angle: 40,
+      compatibleSizeIds: [1],
+    });
+    await insertStat(db, {
+      climbUuid: 'set-at-40',
+      boardType: 'woods',
+      angle: 40,
+      ascensionistCount: 500,
+      displayDifficulty: 20,
+    });
+    await insertClimb(db, { uuid: 'set-at-40-unclimbed', boardType: 'woods', angle: 40, compatibleSizeIds: [1] });
+  });
+
+  const AT_30 = ['set-at-30', 'set-at-40-climbed-at-30', 'set-at-30-unclimbed', 'no-set-angle'];
+
+  it('keeps climbs set here, with no set angle, or with stats here', async () => {
+    const { climbs } = await searchClimbsLocal(db, woodsAt30());
+    // Stats-having by ascents, then the stats-less ones by uuid DESC — the same
+    // order the server's stats-driven page and its fallback produce.
+    expect(climbs.map((climb) => climb.uuid)).toEqual(AT_30);
+  });
+
+  it('reads an explicit false as the default', async () => {
+    const { climbs } = await searchClimbsLocal(db, woodsAt30({ crossAngleStats: false }));
+    expect(climbs.map((climb) => climb.uuid)).toEqual(AT_30);
+  });
+
+  it('counts the same list it shows', async () => {
+    expect(await countClimbsLocal(db, woodsAt30())).toBe(AT_30.length);
+    expect(await countClimbsLocal(db, woodsAt30({ crossAngleStats: false }))).toBe(AT_30.length);
+  });
+
+  it('reads a climb it keeps at the browsed angle, not its set angle', async () => {
+    const { climbs } = await searchClimbsLocal(db, woodsAt30());
+    const climbedAt30 = climbs.find((climb) => climb.uuid === 'set-at-40-climbed-at-30');
+    expect(climbedAt30?.statsAngle).toBe(30);
+    expect(climbedAt30?.ascensionist_count).toBe(2);
+  });
+
+  it('reaches every angle with the opt-in', async () => {
+    const input = woodsAt30({ crossAngleStats: true });
+    const { climbs } = await searchClimbsLocal(db, input);
+    expect(climbs).toHaveLength(6);
+    expect(climbs[0].uuid).toBe('set-at-40');
+    expect(await countClimbsLocal(db, input)).toBe(6);
+  });
+
+  it('finds a climb set at another angle by name, graded at that angle', async () => {
+    const input = woodsAt30({ name: 'Crimp' });
+    const { climbs } = await searchClimbsLocal(db, input);
+    expect(climbs.map((climb) => climb.uuid)).toEqual(['set-at-40', 'set-at-30']);
+    expect(climbs[0].statsAngle).toBe(40);
+    expect(climbs[0].ascensionist_count).toBe(500);
+    expect(await countClimbsLocal(db, input)).toBe(2);
+  });
+
+  it('leaves Kilter unrestricted, with the field omitted or false', async () => {
+    await insertClimb(db, { uuid: 'kilter-set-50', boardType: 'kilter', angle: 50, compatibleSizeIds: [5] });
+    const kilterAt40 = makeInput({ angle: 40 });
+
+    for (const input of [kilterAt40, { ...kilterAt40, crossAngleStats: false }]) {
+      const { climbs } = await searchClimbsLocal(db, input);
+      expect(climbs.map((climb) => climb.uuid)).toContain('kilter-set-50');
+      expect(await countClimbsLocal(db, input)).toBe(1);
+    }
   });
 });

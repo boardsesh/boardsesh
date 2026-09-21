@@ -63,6 +63,11 @@ export type ClimbFilterState = {
   onlyTallClimbs?: boolean;
   onlyWideClimbs?: boolean;
   onlyWithBetaVideos?: boolean;
+  // Also list climbs set at another angle, graded and ranked at their own set
+  // angle. Only angle-bound boards (Woods, `angleBoundClimbs` in
+  // @boardsesh/board-config) offer the switch; there the browsed angle alone is
+  // the default. Maps to ClimbSearchInput.crossAngleStats.
+  includeOtherAngles?: boolean;
   // Climb-type toggles. Default is boulders-only (routes hidden) — see
   // DEFAULT_CLIMB_FILTER_STATE. Both-on or both-off means "no preference" and
   // maps to no frames_count constraint (both-on sends explicit boulders:
@@ -113,6 +118,7 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.onlyTallClimbs) return true;
   if (state.onlyWideClimbs) return true;
   if (state.onlyWithBetaVideos) return true;
+  if (state.includeOtherAngles) return true;
   if (state.hideAttempted) return true;
   if (state.hideCompleted) return true;
   if (state.showOnlyAttempted) return true;
@@ -215,6 +221,10 @@ export function toClimbSearchInput(
   if (state.onlyTallClimbs) input.onlyTallClimbs = true;
   if (state.onlyWideClimbs) input.onlyWideClimbs = true;
   if (state.onlyWithBetaVideos) input.onlyWithBetaVideos = true;
+  // Off is omitted, not sent as false: an angle-bound board already treats an
+  // absent value as "browsed angle only", and omitting keeps the cache key of
+  // the everyday search unchanged.
+  if (state.includeOtherAngles) input.crossAngleStats = true;
   if (state.hideAttempted) input.hideAttempted = true;
   if (state.hideCompleted) input.hideCompleted = true;
   if (state.showOnlyAttempted) input.showOnlyAttempted = true;

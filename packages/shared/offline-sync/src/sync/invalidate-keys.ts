@@ -93,7 +93,10 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // (#5407 made ['setterStats'] a local read too — a sync that adds/removes
   // climbs changes who's set on the board, so it must refresh alongside search).
   board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
-  board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb']],
+  // The setter picker reads stats too, on Woods only: a climb set at another angle
+  // counts toward its setter at the browsed angle once it has a stats row there
+  // (the browsed-angle restriction, #5642), so a stats pull can change a count.
+  board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
   board_climb_grades: [

@@ -3,9 +3,12 @@ export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
 export { createClimbFilters, hiddenClimbCondition } from './create-climb-filters';
 export {
   boardClimbStatsAtSetAngle,
+  browsedAngleRestrictionSql,
   effectiveStatsColumn,
   gradeJoinAngleSql,
+  resolveBrowsedAngleRestriction,
   resolveCrossAngleStats,
+  resolveDetailCrossAngleStats,
   resolvedStatsAngleSql,
   setAngleStatsJoinConditions,
   type StatsColumnKey,

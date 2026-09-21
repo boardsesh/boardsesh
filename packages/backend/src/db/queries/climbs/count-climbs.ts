@@ -4,6 +4,7 @@ import { boardClimbs, boardClimbStats, boardClimbGrades } from '@boardsesh/db/sc
 import {
   boardClimbStatsAtSetAngle,
   createClimbFilters,
+  resolveBrowsedAngleRestriction,
   resolveCrossAngleStats,
   withSerialPlan,
   type BoardRouteParams,
@@ -27,10 +28,13 @@ export const countClimbs = async (
   searchParams: ClimbSearchParams,
   userId?: string,
 ): Promise<number> => {
-  // Same derivation searchClimbs uses, from the same helper, so the count can never
-  // describe a different universe than the list it labels.
+  // Same derivation searchClimbs uses, from the same two helpers, so the count can
+  // never describe a different universe than the list it labels — including the
+  // browsed-angle restriction an angle-bound board gets without the opt-in
+  // (issue #5642), which lands in getClimbWhereConditions below.
   const filters = createClimbFilters(params, searchParams, userId, {
     crossAngleStats: resolveCrossAngleStats(params, searchParams),
+    restrictToBrowsedAngle: resolveBrowsedAngleRestriction(params, searchParams),
   });
 
   // Same unified drafts predicate searchClimbs uses (onlyDrafts AND a userId), so the
@@ -56,10 +60,12 @@ export const countClimbs = async (
   // references its columns (verified by the EXPLAIN harness), so there's nothing
   // to hand-optimize. That elimination stops applying under cross-angle with a
   // stats filter active: all three joins are then referenced by the WHERE and
-  // none can be dropped. board_climb_grades must be joined here to match
-  // searchClimbs' two query paths (search-climbs.ts) — a grade-range filter's
-  // WHERE clause (getClimbStatsConditions) can reference it as a Boardsesh-grade
-  // fallback for a climb with no board_climb_stats row at this angle.
+  // none can be dropped. The browsed-angle restriction references the stats join
+  // too (its row-presence arm), so a restricted Woods count keeps that one.
+  // board_climb_grades must be joined here to match searchClimbs' two query paths
+  // (search-climbs.ts) — a grade-range filter's WHERE clause
+  // (getClimbStatsConditions) can reference it as a Boardsesh-grade fallback for
+  // a climb with no board_climb_stats row at this angle.
   try {
     return await withSerialPlan(dbRead, async (tx) => {
       const base = tx

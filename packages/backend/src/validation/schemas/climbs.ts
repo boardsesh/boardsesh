@@ -432,6 +432,9 @@ export const SetterStatsInputSchema = z.object({
   // sends the live angle here.
   angle: z.number().int().min(-90).max(90),
   search: z.string().max(200).optional(),
+  // Only Woods reads it: without it a setter is counted for the browsed angle's
+  // climbs alone, the same restriction the list applies (#5642).
+  crossAngleStats: z.boolean().optional(),
 });
 
 export const SimilarClimbsInputSchema = z

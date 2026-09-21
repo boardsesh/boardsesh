@@ -351,11 +351,16 @@ export const climbQueries = {
       return [];
     }
 
+    // `crossAngleStats` is the list's "Other angles" opt-in. Without it a Woods
+    // setter is counted only for the browsed angle's climbs, the same restriction
+    // the list applies (#5642); every other board ignores it. Nothing caches this
+    // resolver, so the flag needs no cache-key entry.
     const rows = await getSetterStats(
       dbRead,
       params,
       validated.search,
       validated.onlyFollowedAuthors ? ctx.userId! : undefined,
+      { crossAngleStats: validated.crossAngleStats },
     );
 
     return rows.map((row) => ({

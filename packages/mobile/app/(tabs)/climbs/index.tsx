@@ -126,6 +126,7 @@ import {
 } from '../../../src/lib/recent-filter-store';
 import { getLastSearch, saveLastSearch, boardConfigKey } from '../../../src/lib/last-search-store';
 import { getFilterSummary, buildClimbFilterSummary } from '../../../src/lib/filter-summary';
+import { filtersForBoard } from '../../../src/lib/climb-filter-types';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
@@ -667,7 +668,7 @@ function ClimbListInner() {
     () =>
       mergeBoardFilters(
         toClimbSearchInput(
-          filters,
+          filtersForBoard(filters, boardName),
           { boardName, layoutId, sizeId, setIds, angle },
           { page: 0, pageSize: PAGE_SIZE },
           { name },
@@ -800,6 +801,7 @@ function ClimbListInner() {
         zeroResultOnlyTallClimbs: filters.onlyTallClimbs ?? false,
         zeroResultOnlyWideClimbs: filters.onlyWideClimbs ?? false,
         zeroResultOnlyWithBetaVideos: filters.onlyWithBetaVideos ?? false,
+        zeroResultIncludeOtherAngles: filters.includeOtherAngles ?? false,
         zeroResultBoulders: filters.boulders ?? true,
         zeroResultRoutes: filters.routes ?? false,
         zeroResultHideAttempted: filters.hideAttempted ?? false,
@@ -901,7 +903,7 @@ function ClimbListInner() {
       const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
       const input = mergeBoardFilters(
         toClimbSearchInput(
-          basisFilters,
+          filtersForBoard(basisFilters, boardName),
           { boardName, layoutId, sizeId, setIds, angle },
           { page, pageSize },
           { name: basisName },
@@ -1162,7 +1164,8 @@ function ClimbListInner() {
 
   const handleApplyRecentFilter = useCallback(
     (pillFilters: ClimbFilters, pillSearchText: string) => {
-      replaceSearch(pillFilters, pillSearchText);
+      // Pills are shared across boards; keep only what this board can show.
+      replaceSearch(filtersForBoard(pillFilters, boardName), pillSearchText);
       visibleSearchTextRef.current = '';
       applyVisibleSearchText(pillSearchText);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -1170,7 +1173,7 @@ function ClimbListInner() {
       searchHeaderRef.current?.blur();
       setIsSearchFocused(false);
     },
-    [applyVisibleSearchText, replaceSearch],
+    [applyVisibleSearchText, replaceSearch, boardName],
   );
 
   const handleClearRecentFilters = useCallback(() => {

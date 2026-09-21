@@ -528,6 +528,8 @@
       "betaVideos": "Nur mit Beta-Video",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Nur Boulder mit Beta-Video",
+      "otherAngles": "Andere Winkel",
+      "otherAnglesDescription": "Zeigt Boulder, die in einem anderen Winkel geschraubt wurden",
       "searchSetters": "Routenbauer*innen suchen",
       "noSetters": "Noch keine Routenbauer*innen",
       "clearAll": "Alles zurücksetzen",

@@ -1,6 +1,7 @@
 // Re-export the canonical filter state from the shared package so mobile
 // callers and the existing `ClimbFilters` / `DEFAULT_FILTERS` symbols
 // continue to work without churn.
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { type ClimbFilterState, DEFAULT_CLIMB_FILTER_STATE, type SortOption } from '@boardsesh/climb-filters';
 
 export type ClimbFilters = ClimbFilterState;
@@ -43,4 +44,24 @@ export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): 
     onlyRatedByMe: undefined,
     onlyFollowedAuthors: undefined,
   };
+}
+
+/**
+ * Drops the filters this board has no control for. Today that is only
+ * `includeOtherAngles`: its switch renders on angle-bound boards (Woods) alone,
+ * but recent pills are shared across boards, so a Woods pill replayed on Kilter
+ * would carry it over with no switch to turn it off, and opt that search into the
+ * cross-angle query, which costs ~5.6 s on Kilter's catalogue (see
+ * `angleBoundClimbs` in @boardsesh/board-config). Returns the same reference when
+ * there's nothing to drop.
+ *
+ * Applied where a pill is replayed, and again in every builder that turns filter
+ * state into a search input — the list's `searchInput`, the play drawer's
+ * `fetchSearchPage` and `buildCountPreviewInput` — so a future path that carries
+ * filter state across boards cannot reach the slow query either.
+ */
+export function filtersForBoard(filters: ClimbFilters, boardName: string): ClimbFilters {
+  if (!filters.includeOtherAngles || getBoardCapabilities(boardName).angleBoundClimbs) return filters;
+  const { includeOtherAngles: _droppedOtherAngles, ...filtersWithoutOtherAngles } = filters;
+  return filtersWithoutOtherAngles;
 }

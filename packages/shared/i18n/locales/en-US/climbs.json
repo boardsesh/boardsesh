@@ -528,6 +528,8 @@
       "betaVideos": "Beta videos only",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
+      "otherAngles": "Other angles",
+      "otherAnglesDescription": "Show climbs set at a different angle",
       "searchSetters": "Search setters",
       "noSetters": "No setters yet",
       "clearAll": "Clear all",

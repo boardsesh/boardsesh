@@ -109,7 +109,11 @@ function _getCachedFn(boardName: BoardName, revalidate: number): CachedClimbSear
     // problem was not set at, and every row carries statsAngle (#5405). Nothing in
     // the params JSON moved — the server decides it from the board — so a cached v9
     // page would keep serving the truncated list.
-    fn = unstable_cache(_executeClimbSearch, [`climb-search-v10:${boardName}`], {
+    // v11: Woods reverses that by default — a search without `crossAngleStats: true`
+    // (the SSR path never sends it) keeps only the climbs set at the browsed angle,
+    // with no set angle, or with stats there (#5642). The params JSON did not move
+    // for it either, so a cached v10 page would keep serving every angle's climbs.
+    fn = unstable_cache(_executeClimbSearch, [`climb-search-v11:${boardName}`], {
       revalidate,
       tags: ['climb-search', getBoardClimbSearchTag(boardName)],
     });

@@ -1025,6 +1025,7 @@ describe('ClimbList zero-result filter snapshot', () => {
         expect.objectContaining({
           resultCount: 0,
           zeroResultOnlyTallClimbs: true,
+          zeroResultIncludeOtherAngles: false,
           zeroResultStatus: 'any',
           zeroResultBoulders: true,
           zeroResultRoutes: false,
