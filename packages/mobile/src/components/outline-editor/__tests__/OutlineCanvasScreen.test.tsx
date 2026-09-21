@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   stroke: [80, 80, 120, 80, 120, 120, 80, 120, 80, 80],
   save: vi.fn(),
+  alert: vi.fn(),
   holdShape: 'outline' as 'outline' | 'circle',
   rejectNextFinish: false,
   rendererAvailable: true as boolean | null,
@@ -31,7 +32,7 @@ vi.mock('react-native', async () => {
     Pressable: ({ testID, onPress, disabled }: { testID: string; onPress?: () => void; disabled?: boolean }) =>
       createElement('button', { 'data-testid': testID, onClick: onPress, disabled }),
     ActivityIndicator: () => null,
-    Alert: { alert: vi.fn() },
+    Alert: { alert: state.alert },
     StyleSheet: { create: (styles: unknown) => styles, absoluteFillObject: {}, hairlineWidth: 1 },
   };
 });
@@ -82,16 +83,27 @@ vi.mock('../../search/InteractiveFilterBoard', async () => {
 });
 vi.mock('../DrawStrokeOverlay', async () => {
   const { createElement } = await import('react');
-  const { Pressable } = await import('react-native');
+  const { Pressable, View: MockView } = await import('react-native');
   return {
-    DrawStrokeOverlay: (props: { onStrokeStart: () => void; onStrokeEnd: (points: number[]) => void }) =>
-      createElement(Pressable, {
-        testID: 'stroke',
-        onPress: () => {
-          props.onStrokeStart();
-          props.onStrokeEnd(state.stroke);
-        },
-      }),
+    DrawStrokeOverlay: (props: {
+      onStrokeStart: () => void;
+      onStrokeEnd: (points: number[]) => void;
+      onStrokeCancel: () => void;
+    }) =>
+      createElement(
+        MockView,
+        null,
+        createElement(Pressable, {
+          testID: 'stroke',
+          onPress: () => {
+            props.onStrokeStart();
+            props.onStrokeEnd(state.stroke);
+          },
+        }),
+        createElement(Pressable, { testID: 'stroke-start', onPress: props.onStrokeStart }),
+        createElement(Pressable, { testID: 'stroke-end', onPress: () => props.onStrokeEnd(state.stroke) }),
+        createElement(Pressable, { testID: 'stroke-cancel', onPress: props.onStrokeCancel }),
+      ),
   };
 });
 vi.mock('../EditToolbar', async () => {
@@ -102,6 +114,11 @@ vi.mock('../EditToolbar', async () => {
       onNextPlacement: () => void;
       onDrawModeChange: (mode: 'add') => void;
       onSave: () => void;
+      onUndo: () => void;
+      onDiscardDraft: () => void;
+      onDeselect: () => void;
+      hasDraft: boolean;
+      canUndo: boolean;
       canBrush: boolean;
       previewAvailable: boolean;
       previewUnavailableNote?: string;
@@ -115,7 +132,10 @@ vi.mock('../EditToolbar', async () => {
           disabled: !props.canBrush,
           onPress: () => props.onDrawModeChange('add'),
         }),
-        createElement(Pressable, { testID: 'save', onPress: props.onSave }),
+        createElement(Pressable, { testID: 'save', onPress: props.onSave, disabled: !props.hasDraft }),
+        createElement(Pressable, { testID: 'undo', onPress: props.onUndo, disabled: !props.canUndo }),
+        createElement(Pressable, { testID: 'discard', onPress: props.onDiscardDraft }),
+        createElement(Pressable, { testID: 'deselect', onPress: props.onDeselect }),
         createElement(Pressable, { testID: 'preview', disabled: !props.previewAvailable }),
         createElement(MockText, null, props.previewUnavailableNote),
       ),
@@ -126,6 +146,7 @@ import { OutlineCanvasScreen } from '../OutlineCanvasScreen';
 
 beforeEach(() => {
   state.save.mockClear();
+  state.alert.mockClear();
   state.holdShape = 'outline';
   state.rejectNextFinish = false;
   state.rendererAvailable = true;
@@ -193,4 +214,46 @@ it.each([
   fireEvent.click(screen.getByTestId('next'));
   expect((screen.getByTestId('preview') as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(message)).toBeTruthy();
+});
+
+it('undo restores the previous saved ring, then disarms Save at the original state', () => {
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+  fireEvent.click(screen.getByTestId('next'));
+  fireEvent.click(screen.getByTestId('stroke'));
+  fireEvent.click(screen.getByTestId('save'));
+  const firstOutline = state.save.mock.calls.at(-1)?.[0].outline;
+  expect(firstOutline.length).toBeGreaterThanOrEqual(8);
+  state.stroke = [78, 80, 122, 80, 122, 120, 78, 120, 78, 80];
+  fireEvent.click(screen.getByTestId('stroke'));
+  fireEvent.click(screen.getByTestId('save'));
+  expect(state.save.mock.calls.at(-1)?.[0].outline).not.toEqual(firstOutline);
+
+  fireEvent.click(screen.getByTestId('undo'));
+  fireEvent.click(screen.getByTestId('save'));
+  expect(state.save.mock.calls.at(-1)?.[0].outline).toEqual(firstOutline);
+  fireEvent.click(screen.getByTestId('undo'));
+  expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByTestId('undo') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByTestId('deselect'));
+  expect(state.alert).not.toHaveBeenCalled();
+});
+
+it.each(['undo', 'discard'])('ignores a late stroke end after %s while allowing a fresh stroke', (action) => {
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+  fireEvent.click(screen.getByTestId('next'));
+  fireEvent.click(screen.getByTestId('stroke'));
+  fireEvent.click(screen.getByTestId('stroke-start'));
+  fireEvent.click(screen.getByTestId(action));
+  fireEvent.click(screen.getByTestId('stroke-end'));
+  fireEvent.click(screen.getByTestId('stroke-cancel'));
+  expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByTestId('undo') as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByTestId('deselect'));
+  expect(state.alert).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByTestId('next'));
+  fireEvent.click(screen.getByTestId('stroke'));
+  expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByTestId('save'));
+  expect(state.save.mock.calls.at(-1)?.[0].outline.length).toBeGreaterThanOrEqual(8);
 });
