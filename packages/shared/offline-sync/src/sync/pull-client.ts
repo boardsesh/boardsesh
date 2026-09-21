@@ -742,11 +742,7 @@ export function multiRowChunkSize(columnCount: number): number {
   return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
 }
 
-function buildMultiRowInsertSql(
-  tableName: string,
-  columns: readonly string[],
-  rowCount: number,
-): string {
+export function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
