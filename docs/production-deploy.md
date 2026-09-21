@@ -57,6 +57,11 @@ also park a run; the same [watchdog](#the-watchdog) rules apply. Configuring the
 optional administrator secret or manually changing production defaults remains
 an operator action; refreshing this PR does not perform either.
 
+Replacing the database has a separate
+[verify-before-cutover requirement](db-connectivity.md#preserving-the-default-through-a-database-restore).
+A restored migration ledger does not reapply database defaults, and a restore
+without `--create` must explicitly set and verify them before receiving traffic.
+
 ## Web deploy targets
 
 Railway is the only web deployer (image `ghcr.io/boardsesh/boardsesh-web`,

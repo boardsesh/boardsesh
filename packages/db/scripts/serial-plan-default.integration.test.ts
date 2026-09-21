@@ -40,6 +40,9 @@ const superuserUrl = process.env.SERIAL_PLAN_DB_URL;
 const suffix = `${process.pid}_${Math.floor(Math.random() * 1e6)}`;
 const databaseName = `serial_plan_${suffix}`;
 const cliDatabaseName = `serial_plan_cli_${suffix}`;
+const restoreDatabaseName = `serial_plan_restore_${suffix}`;
+const retainedDatabaseName = `serial_plan_retained_${suffix}`;
+const precreatedDatabaseName = `serial_plan_precreated_${suffix}`;
 const ownerRole = `sp_owner_${suffix}`;
 const migratorRole = `sp_migrator_${suffix}`;
 const runtimeRole = `sp_runtime_${suffix}`;
@@ -54,6 +57,40 @@ function urlFor(role: string | null, database: string): string {
   }
   parsed.pathname = `/${database}`;
   return parsed.toString();
+}
+
+/** Use matching clients from the fixture container in CI, or installed clients locally. */
+function runPostgresTool(command: 'pg_dump' | 'pg_restore', args: string[], database: string, input?: Buffer): Buffer {
+  const connection = new URL(superuserUrl!);
+  const container = process.env.SERIAL_PLAN_PG_CONTAINER;
+  const environment = {
+    ...process.env,
+    PGHOST: container ? '127.0.0.1' : connection.hostname,
+    PGPORT: container ? '5432' : connection.port || '5432',
+    PGUSER: decodeURIComponent(connection.username),
+    PGPASSWORD: decodeURIComponent(connection.password),
+    PGDATABASE: database,
+  };
+  const databaseArgs = ['--dbname', database, ...args];
+  const toolArgs = container
+    ? [
+        'exec',
+        '-i',
+        ...['PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'].flatMap((name) => ['--env', name]),
+        container,
+        command,
+        ...databaseArgs,
+      ]
+    : databaseArgs;
+  const result = spawnSync(container ? 'docker' : command, toolArgs, {
+    env: environment,
+    input,
+    timeout: 30_000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `${command} failed: ${result.stderr?.toString()}`);
+  return result.stdout;
 }
 
 function opener(connectionUrl: string): () => Promise<SerialPlanConnection> {
@@ -108,6 +145,9 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
     try {
       await bootstrap.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
       await bootstrap.unsafe(`DROP DATABASE IF EXISTS "${cliDatabaseName}" WITH (FORCE)`);
+      for (const database of [restoreDatabaseName, retainedDatabaseName, precreatedDatabaseName]) {
+        await bootstrap.unsafe(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
+      }
       for (const role of [migratorRole, runtimeRole, ownerRole]) {
         await bootstrap.unsafe(`DROP ROLE IF EXISTS "${role}"`);
       }
@@ -238,6 +278,86 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
       assert.equal(reading.databaseDefault, '0');
     } finally {
       await runtime.close();
+    }
+  });
+
+  void it('preserves the default with --create, and requires reapplication for a precreated restore', async () => {
+    const bootstrap = postgres(superuserUrl!, { max: 1 });
+    try {
+      await bootstrap.unsafe(`CREATE DATABASE "${restoreDatabaseName}"`);
+      await bootstrap.unsafe(`ALTER DATABASE "${restoreDatabaseName}" SET max_parallel_workers_per_gather = 0`);
+      const source = postgres(urlFor(null, restoreDatabaseName), { max: 1 });
+      try {
+        await source.unsafe('CREATE SCHEMA drizzle');
+        await source.unsafe(
+          'CREATE TABLE drizzle.__drizzle_migrations (id integer PRIMARY KEY, hash text NOT NULL, created_at bigint)',
+        );
+        await source.unsafe(
+          "INSERT INTO drizzle.__drizzle_migrations VALUES (225, 'already-applied-0225', 1780000000000)",
+        );
+        await source.unsafe(`GRANT USAGE ON SCHEMA drizzle TO "${runtimeRole}"`);
+        await source.unsafe(`GRANT SELECT ON drizzle.__drizzle_migrations TO "${runtimeRole}"`);
+      } finally {
+        await source.end();
+      }
+      const archive = runPostgresTool('pg_dump', ['--format=custom'], restoreDatabaseName);
+      // Keep the source fixture intact while freeing its name: --create restores
+      // the archive's database name, not the maintenance connection's database.
+      await bootstrap.unsafe(`ALTER DATABASE "${restoreDatabaseName}" RENAME TO "${retainedDatabaseName}"`);
+      runPostgresTool('pg_restore', ['--create', '--exit-on-error'], 'postgres', archive);
+
+      const restoredRuntimeUrl = urlFor(runtimeRole, restoreDatabaseName);
+      const restoredState = await readFreshState(restoredRuntimeUrl);
+      assert.equal(restoredState.databaseDefault, '0');
+      assert.equal(restoredState.effectiveValue, '0');
+      const restored = postgres(restoredRuntimeUrl, { max: 1 });
+      try {
+        const rows = await restored.unsafe('SELECT hash FROM drizzle.__drizzle_migrations WHERE id = 225');
+        assert.equal(
+          rows[0]?.hash,
+          'already-applied-0225',
+          'the migration ledger survives; migration 0225 will not replay',
+        );
+      } finally {
+        await restored.end();
+      }
+      assert.equal(
+        await runSerialPlanVerification({
+          openApplicationClient: opener(restoredRuntimeUrl),
+          openAdminClient: null,
+          log: () => {},
+          warn: () => {},
+        }),
+        0,
+        'a --create restore needs no administrator replay',
+      );
+
+      await bootstrap.unsafe(`CREATE DATABASE "${precreatedDatabaseName}"`);
+      runPostgresTool('pg_restore', ['--exit-on-error'], precreatedDatabaseName, archive);
+      const precreatedRuntimeUrl = urlFor(runtimeRole, precreatedDatabaseName);
+      assert.equal((await readFreshState(precreatedRuntimeUrl)).databaseDefault, null);
+      assert.equal(
+        await runSerialPlanVerification({
+          openApplicationClient: opener(precreatedRuntimeUrl),
+          openAdminClient: null,
+          log: () => {},
+          warn: () => {},
+        }),
+        1,
+        'restoring into a precreated database must not pass the cutover check',
+      );
+      assert.equal(
+        await runSerialPlanVerification({
+          openApplicationClient: opener(precreatedRuntimeUrl),
+          openAdminClient: opener(urlFor(null, precreatedDatabaseName)),
+          log: () => {},
+          warn: () => {},
+        }),
+        0,
+        'an owner-capable connection can explicitly reapply the missing default',
+      );
+    } finally {
+      await bootstrap.end();
     }
   });
 

@@ -734,6 +734,8 @@ jobs:
         working-directory: packages/db
         env:
           SERIAL_PLAN_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+          # Use the service's matching clients for the actual archive/restore regression.
+          SERIAL_PLAN_PG_CONTAINER: ${{ job.services.postgres.id }}
         run: >-
           vp exec tsx --test
           scripts/serial-plan-default.test.ts

@@ -447,10 +447,12 @@ It cannot change results, only latency — and on the top offender the serial pl
 Scan where the serial plan keeps the index.
 
 Plain SQL against a stock `docker run postgres:17`: no Railway knob, no dashboard
-setting, no extension. `ALTER DATABASE ... SET` is a `pg_dumpall` global rather
-than a `pg_dump` one, which is exactly why it lives in a migration — migrations
-are how every Boardsesh database gets built, so a restored dump picks it up on the
-next `db:migrate`.
+setting, no extension. Database settings can travel in a portable dump: a plain
+`pg_dump --create` includes them, and a custom archive restores them with
+`pg_restore --create`. A restore into an existing database does not restore those
+settings. A restored Drizzle ledger also prevents migration 0225 from rerunning;
+follow the [restore verification gate](#preserving-the-default-through-a-database-restore)
+before routing traffic to a restored database.
 
 Two caveats worth knowing:
 
@@ -546,9 +548,52 @@ ALTER DATABASE railway SET max_parallel_workers_per_gather = 0;
 ```
 
 or add `ADMIN_DATABASE_URL` to the `Production` environment pointing at such a
-connection, and the job applies it itself on the next run. Either way it survives
-restarts and is a `pg_dumpall` global, so it is a one-time action. Confirm with
-`GET /health/db → database.maxParallelWorkersPerGather`, which must read `"0"`.
+connection, and the job applies it itself on the next run. The setting survives
+restarts on that database. A replacement database needs the restore verification
+below. Confirm with `GET /health/db → database.maxParallelWorkersPerGather`,
+which must read `"0"`.
+
+### Preserving the default through a database restore
+
+PostgreSQL's [pg_dump documentation](https://www.postgresql.org/docs/current/app-pgdump.html)
+and [pg_restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html)
+specify that `--create` includes database-level `ALTER DATABASE ... SET` settings.
+For a full custom archive, use `pg_dump --format=custom` followed by
+`pg_restore --create --exit-on-error` through an operator-provided account allowed
+to create the target database. The restore connection selects a maintenance
+database; PostgreSQL creates the database under the name stored in the archive.
+The destination must not already have that name. Use a mode `0600` `PGPASSFILE`
+and separate connection flags rather than putting passwords in command arguments.
+Global roles still need separate provisioning; `--create` does not create them.
+
+A restore into a precreated or renamed destination without `--create`, a
+schema-only restore into an existing database, and logical replication need an
+explicit target default. The [Neon migration runbook](neon-migration.md)
+uses that path. The existing migration ledger is evidence of prior migration
+execution, not evidence that the replacement database inherited its settings.
+
+Before cutover, verify the **target** with application credentials:
+
+```bash
+# DATABASE_URL is injected for the target application role; no administrator is used.
+vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan -- --check-only
+```
+
+Do not route traffic to the target until this exits successfully and a fresh
+application connection reports both the database default and effective value as
+`0`. If it fails, an operator must apply the `ALTER DATABASE ... SET` above to the
+target through an owning connection, or run the verifier with an explicitly
+provided `ADMIN_DATABASE_URL` for that same target database, then repeat
+`--check-only`. Recheck the target application's `/health/db` after its pooled
+connections cycle. This is a database-migration cutover prerequisite; routine
+deployments retain the separate, nonblocking verification job described above.
+
+The integration suite exercises a real custom archive and both restore paths on
+stock PostgreSQL 17: `--create` preserves the setting and the applied migration
+ledger, while restoring into a precreated database fails verification until an
+owning connection reapplies the default. CI uses the service container's matching
+`pg_dump` and `pg_restore` clients via `SERIAL_PLAN_PG_CONTAINER`; local runs may
+use installed clients compatible with `SERIAL_PLAN_DB_URL` instead.
 
 ### The recurrence signal
 
