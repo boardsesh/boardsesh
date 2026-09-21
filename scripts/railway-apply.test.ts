@@ -39,9 +39,9 @@ import {
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
 // The main stubs answer every service's variables() query with one set, so this
-// holds every variable any declared service requires. A service-specific value
-// is merged over it by the caller.
-const WEB_SYNC_VARIABLES = {
+// holds every variable any declared service requires, across all of them. A
+// service-specific value is merged over it by the caller.
+const BASELINE_REQUIRED_VARS = {
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
   BOARDSESH_WEB: '1',
@@ -50,8 +50,8 @@ const WEB_SYNC_VARIABLES = {
   PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
 };
 
-function withWebSyncVariables(variables: Record<string, string>): Record<string, string> {
-  return { ...WEB_SYNC_VARIABLES, ...variables };
+function withBaselineRequiredVars(variables: Record<string, string>): Record<string, string> {
+  return { ...BASELINE_REQUIRED_VARS, ...variables };
 }
 
 function liveState(overrides: Partial<LiveState> = {}): LiveState {
@@ -459,7 +459,7 @@ describe('main', () => {
       }
 
       const data = body.query.includes('variables(')
-        ? { variables: withWebSyncVariables(variables) }
+        ? { variables: withBaselineRequiredVars(variables) }
         : {
             project: {
               name: 'boardsesh-ota',
@@ -659,7 +659,7 @@ describe('Railway authentication', () => {
       const data = query.includes('volumes {')
         ? VOLUMES_DATA
         : query.includes('variables(')
-          ? { variables: withWebSyncVariables({ CLICKHOUSE_URL: 'clickhouse://x/y' }) }
+          ? { variables: withBaselineRequiredVars({ CLICKHOUSE_URL: 'clickhouse://x/y' }) }
           : PROJECT_DATA;
       return new Response(JSON.stringify({ data }), { status: 200 });
     }) as typeof globalThis.fetch;
@@ -903,7 +903,9 @@ describe('apply mode', () => {
         );
       }
       if (body.query.includes('variables(')) {
-        return new Response(JSON.stringify({ data: { variables: withWebSyncVariables(variables) } }), { status: 200 });
+        return new Response(JSON.stringify({ data: { variables: withBaselineRequiredVars(variables) } }), {
+          status: 200,
+        });
       }
       return new Response(
         JSON.stringify({

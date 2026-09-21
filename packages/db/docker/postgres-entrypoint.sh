@@ -167,11 +167,18 @@ fi
 # image's snakeoil certificate. That is a silent downgrade of the one property this
 # file exists to provide, so it stops rather than warns.
 if tls_material_requested && [[ "$(basename -- "${1:-}")" == *sh ]]; then
+  take_next_argument='no'
+  shell_payload=''
   for argument in "$@"; do
-    if [[ "$argument" == *postgres* ]]; then
-      fail "refusing to start PostgreSQL through a shell with TLS material set, because the TLS settings cannot be applied to it; use a start command of 'postgres …' directly"
+    if [[ "$take_next_argument" == 'yes' ]]; then
+      shell_payload="$argument"
+      break
     fi
+    [[ "$argument" == '-c' ]] && take_next_argument='yes'
   done
+  if [[ "$shell_payload" =~ (^|[[:space:]\;\&\|\(])postgres([[:space:]]|$) ]]; then
+    fail "refusing to start PostgreSQL through a shell with TLS material set, because the TLS settings cannot be applied to it; use a start command of 'postgres …' directly"
+  fi
 fi
 
 if tls_material_requested && [[ "${1:-}" == 'postgres' ]]; then

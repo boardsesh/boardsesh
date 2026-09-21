@@ -261,4 +261,23 @@ PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
 [[ "$(head -n 1 "$ARGS_LOG")" == 'sh' ]] ||
   fail 'a shell that does not start the server must pass through'
 
+# 13. A shell whose payload merely mentions postgres in a path is not starting the
+#     server, and rejecting it would break honest one-offs.
+tls_dir="$TEST_ROOT/case-shell-path-mentions-postgres"
+PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  run_entrypoint "$tls_dir" sh -c 'echo /scripts/postgres-healthcheck.sh' >/dev/null
+[[ "$(head -n 1 "$ARGS_LOG")" == 'sh' ]] ||
+  fail 'a shell payload that only names a postgres-ish path must pass through'
+
+# 14. Empty is treated as unset, deliberately: a declared-but-unfilled variable is
+#     the placeholder case, which infra/railway/config.ts already refuses at the
+#     config layer. Recorded because it differs from the half-pair case, which
+#     fails closed.
+tls_dir="$TEST_ROOT/case-empty-strings"
+PG_TLS_SERVER_CERT='' PG_TLS_SERVER_KEY='' run_entrypoint "$tls_dir" postgres >/dev/null
+[[ "$(cat "$ARGS_LOG")" == 'postgres' ]] ||
+  fail "empty credentials must behave as unset, got: $(tr '\n' ' ' <"$ARGS_LOG")"
+[[ ! -d "$tls_dir" ]] || fail 'empty credentials must not create the TLS directory'
+
 printf 'postgres-entrypoint TLS contract passed\n'
