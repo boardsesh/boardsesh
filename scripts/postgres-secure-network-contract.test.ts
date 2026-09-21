@@ -109,6 +109,55 @@ describe('production database network workflow contract', () => {
     ).toThrow('EXPECTED_DATABASE_ROLE must be an approved task-specific Boardsesh role');
   });
 
+  it.each([
+    '-crole=boardsesh_owner',
+    '-c role=boardsesh_owner',
+    '--role=boardsesh_owner',
+    '-cROLE=boardsesh_owner',
+    '-csession_authorization=boardsesh_owner',
+    '--session-authorization=boardsesh_owner',
+    String.raw`-cro\le=boardsesh_owner`,
+    String.raw`-c session\_authorization=boardsesh_owner`,
+    '-c statement_timeout=1000 -crole=boardsesh_owner',
+  ])('rejects startup role assignment %s', (options) => {
+    const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+    const url = new URL(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway`);
+    url.searchParams.set('options', options);
+    expect(() => validateRoute(url.href, host)).toThrow('must not set a startup role');
+  });
+
+  it.each([
+    '-cstatement_timeout=1000',
+    '-c statement_timeout=1000 --lock-timeout=2000',
+    String.raw`-capplication_name=board\ refresh`,
+    '-csearch_path=',
+    '-capplication_name=role=label',
+    String.raw`-capplication_name=path\\name`,
+  ])('preserves safe startup settings %s', (options) => {
+    const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+    const url = new URL(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway`);
+    url.searchParams.set('options', options);
+    expect(() => validateRoute(url.href, host)).not.toThrow();
+  });
+
+  it.each(['-c', '--role', '-c=owner', '-d5 -crole=owner', '-capplication_name=unfinished\\'])(
+    'refuses unsupported startup options %s',
+    (options) => {
+      const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+      const url = new URL(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway`);
+      url.searchParams.set('options', options);
+      expect(() => validateRoute(url.href, host)).toThrow('unsupported startup options');
+    },
+  );
+
+  it('checks every repeated options parameter', () => {
+    const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+    const url = new URL(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway`);
+    url.searchParams.append('options', '-cstatement_timeout=1000');
+    url.searchParams.append('options', '-crole=boardsesh_owner');
+    expect(() => validateRoute(url.href, host)).toThrow('must not set a startup role');
+  });
+
   it('keeps the publisher immutable and deployment-free', () => {
     const workflowSource = readFileSync('.github/workflows/postgres-secure-network.yml', 'utf8');
     const unpinnedAction = workflowSource

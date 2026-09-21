@@ -68,6 +68,84 @@ func TestForwarderCancellationDrainsAnOpenSessionAfterWaitTimeout(t *testing.T) 
 	}
 }
 
+func TestForwarderDrainWaitsForLateAcceptRegistration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	route := routeConfig{Name: "primary", TargetAddr: "unused"}
+	metrics := newForwarderMetrics([]routeConfig{route})
+	proxy := newForwarder(config{MaxSessions: 1}, metrics, log.New(io.Discard, "", 0))
+	client, server := net.Pipe()
+	defer client.Close()
+	listener := &pausedAcceptListener{connection: server, accepted: make(chan struct{}), release: make(chan struct{}), closed: make(chan struct{})}
+	dialStarted := make(chan struct{})
+	releaseDial := make(chan struct{})
+	var releaseDialOnce sync.Once
+	proxy.dial = func(context.Context, string, string) (net.Conn, error) {
+		close(dialStarted)
+		<-releaseDial
+		return nil, context.Canceled
+	}
+	defer func() {
+		listener.releaseOnce.Do(func() { close(listener.release) })
+		releaseDialOnce.Do(func() { close(releaseDial) })
+		_ = listener.Close()
+	}()
+	proxy.startServing(ctx, route, listener, make(chan error, 1))
+	<-listener.accepted
+	cancel()
+	_ = listener.Close()
+	// Accept has obtained a connection but has not returned it for session
+	// registration. A zero session count must not mean shutdown is complete.
+	if proxy.wait(20 * time.Millisecond) {
+		t.Fatal("drain completed before the accepted connection was registered")
+	}
+	listener.releaseOnce.Do(func() { close(listener.release) })
+	select {
+	case <-dialStarted:
+	case <-time.After(time.Second):
+		t.Fatal("late accepted connection was not registered")
+	}
+	if proxy.wait(20 * time.Millisecond) {
+		t.Fatal("drain completed before the late session finished")
+	}
+	releaseDialOnce.Do(func() { close(releaseDial) })
+	if !proxy.wait(time.Second) {
+		t.Fatal("late accepted session did not drain")
+	}
+	if metrics.route("primary").activeSessions.Load() != 0 {
+		t.Fatal("drained late session retained capacity")
+	}
+}
+
+type pausedAcceptListener struct {
+	connection  net.Conn
+	accepted    chan struct{}
+	release     chan struct{}
+	closed      chan struct{}
+	releaseOnce sync.Once
+	closeOnce   sync.Once
+	acceptOnce  sync.Once
+}
+
+func (listener *pausedAcceptListener) Accept() (net.Conn, error) {
+	first := false
+	listener.acceptOnce.Do(func() { first = true })
+	if first {
+		close(listener.accepted)
+		<-listener.release
+		return listener.connection, nil
+	}
+	<-listener.closed
+	return nil, net.ErrClosed
+}
+
+func (listener *pausedAcceptListener) Close() error {
+	listener.closeOnce.Do(func() { close(listener.closed) })
+	return nil
+}
+
+func (listener *pausedAcceptListener) Addr() net.Addr { return testAddr("paused") }
+
 func TestForwarderCopiesBothDirections(t *testing.T) {
 	listener := newChannelListener()
 	upstreamDone := make(chan error, 1)

@@ -45,7 +45,7 @@ Runtime environment:
 | `FORWARD_MAX_SESSIONS` | `32` | Global cap across all routes (maximum 128) |
 | `FORWARD_DIAL_TIMEOUT` | `5s` | Private target TCP dial timeout |
 | `TS_STARTUP_TIMEOUT` | `30s` | Tailnet join deadline |
-| `FORWARD_SHUTDOWN_GRACE` | `20s` | Session drain deadline |
+| `FORWARD_SHUTDOWN_GRACE` | `20s` | Accept-loop and session drain deadline |
 | `PORT` | `8080` | Railway-private health/metrics listener |
 
 The session cap deliberately bounds total PostGIS connection pressure across all
@@ -155,9 +155,12 @@ The local `connect-production-db` action uses workload identity federation, an
 ephemeral CI node, and immutable pins for both the official action and the
 Tailscale client. Its dependency-free Node validator receives the URL only
 through its environment and rejects any hostname, port, database, query
-override, or login role outside the exact workflow contract. The URL remains
-scoped to the validator and the command that needs it, where it is mapped to the
-command's existing `DATABASE_URL` variable. Keep these task credentials out of
+override, or login role outside the exact workflow contract. Startup options
+accept only PostgreSQL setting assignments (`-c name=value`, `-cname=value`, or
+`--name=value`) and reject `role` and `session_authorization`, including escaped
+names and hyphenated aliases. Other backend command-line switches are refused.
+The URL remains scoped to the validator and the command that needs it, where it
+is mapped to the command's existing `DATABASE_URL` variable. Keep these task credentials out of
 application runtime environments.
 
 OIDC permission is job-wide, not step-wide. Before a consumer job gains
