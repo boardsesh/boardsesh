@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  NO_LOCKED_DIMENSIONS,
   buildDimensionChip,
   isDimensionChipLocked,
+  isDimensionLockEnforced,
   shouldClearDimensionLock,
   shouldReapplyDimension,
+  withLockedDimensions,
   type DimensionLockState,
 } from '../dimension-chips';
 
@@ -19,33 +22,66 @@ describe('isDimensionChipLocked', () => {
   });
 });
 
+describe('isDimensionLockEnforced', () => {
+  it('holds only while the lock is supported, set, in scope, pinned and the pins have loaded', () => {
+    expect(isDimensionLockEnforced(LIVE)).toBe(true);
+    for (const field of ['lockSupported', 'locked', 'inScope', 'pinned', 'pinsLoaded'] as const) {
+      expect(isDimensionLockEnforced({ ...LIVE, [field]: false })).toBe(false);
+    }
+  });
+});
+
 describe('shouldReapplyDimension', () => {
-  it('re-applies a live lock whose filter was cleared', () => {
-    expect(shouldReapplyDimension(LIVE, false)).toBe(true);
+  it('re-applies an enforced lock whose filter was cleared, once the search is restored', () => {
+    expect(shouldReapplyDimension(LIVE, false, true)).toBe(true);
+  });
+
+  it('waits for the board’s saved search to be restored (the restore replaces the whole search)', () => {
+    expect(shouldReapplyDimension(LIVE, false, false)).toBe(false);
   });
 
   it('does nothing when the filter is already on', () => {
-    expect(shouldReapplyDimension(LIVE, true)).toBe(false);
+    expect(shouldReapplyDimension(LIVE, true, true)).toBe(false);
   });
 
   it('never re-applies a locked but unpinned chip, so its token stays clearable', () => {
-    expect(shouldReapplyDimension({ ...LIVE, pinned: false }, false)).toBe(false);
+    expect(shouldReapplyDimension({ ...LIVE, pinned: false }, false, true)).toBe(false);
   });
 
   it('waits for the pinned set to load (the defaults include Tall and Wide)', () => {
-    expect(shouldReapplyDimension({ ...LIVE, pinsLoaded: false }, false)).toBe(false);
+    expect(shouldReapplyDimension({ ...LIVE, pinsLoaded: false }, false, true)).toBe(false);
   });
 
   it('ignores a lock on a board size without the dimension', () => {
-    expect(shouldReapplyDimension({ ...LIVE, inScope: false }, false)).toBe(false);
+    expect(shouldReapplyDimension({ ...LIVE, inScope: false }, false, true)).toBe(false);
   });
 
   it('ignores a stored lock on Android / web, where the chip cannot show or clear it', () => {
-    expect(shouldReapplyDimension({ ...LIVE, lockSupported: false }, false)).toBe(false);
+    expect(shouldReapplyDimension({ ...LIVE, lockSupported: false }, false, true)).toBe(false);
   });
 
   it('does nothing without a lock', () => {
-    expect(shouldReapplyDimension({ ...LIVE, locked: false }, false)).toBe(false);
+    expect(shouldReapplyDimension({ ...LIVE, locked: false }, false, true)).toBe(false);
+  });
+});
+
+describe('withLockedDimensions', () => {
+  it('switches on each locked dimension and leaves the rest of the filters alone', () => {
+    const filters: { sortBy: string; onlyTallClimbs?: boolean; onlyWideClimbs?: boolean } = { sortBy: 'popular' };
+    expect(withLockedDimensions(filters, { tall: true, wide: false })).toEqual({
+      sortBy: 'popular',
+      onlyTallClimbs: true,
+    });
+    expect(withLockedDimensions({}, { tall: true, wide: true })).toEqual({
+      onlyTallClimbs: true,
+      onlyWideClimbs: true,
+    });
+  });
+
+  it('returns the same object when nothing needs to change', () => {
+    const filters = { onlyTallClimbs: true };
+    expect(withLockedDimensions(filters, { tall: true, wide: false })).toBe(filters);
+    expect(withLockedDimensions(filters, NO_LOCKED_DIMENSIONS)).toBe(filters);
   });
 });
 

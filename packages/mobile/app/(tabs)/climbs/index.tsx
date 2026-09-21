@@ -56,7 +56,13 @@ import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
 import { useDimensionLockUpkeep, useDimensionLocks } from '../../../src/lib/dimension-lock-store';
-import { buildDimensionChip, isDimensionChipLocked, type DimensionLockState } from '../../../src/lib/dimension-chips';
+import {
+  buildDimensionChip,
+  isDimensionChipLocked,
+  isDimensionLockEnforced,
+  type DimensionLockState,
+  type LockedDimensions,
+} from '../../../src/lib/dimension-chips';
 import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
@@ -1420,13 +1426,32 @@ function ClimbListInner() {
     patchFilters,
     setDimensionLock,
   ]);
-  // A live lock (iOS, in scope, pinned, pins loaded) puts its filter back after
-  // any clear (sheet Reset, FAB clear, recent re-apply); unpinning a chip drops
-  // its lock.
+  // An enforced lock (iOS, in scope, pinned, pins loaded) puts its filter back
+  // after any clear (sheet Reset, FAB clear, recent re-apply), but only once this
+  // board's saved search has been restored (`searchReady`), since the restore
+  // replaces the whole search. Unpinning a chip drops its lock.
   const pinTall = useCallback(() => patchFilters({ onlyTallClimbs: true }), [patchFilters]);
   const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
-  useDimensionLockUpkeep('tall', tallLockState, !!filters.onlyTallClimbs, pinTall);
-  useDimensionLockUpkeep('wide', wideLockState, !!filters.onlyWideClimbs, pinWide);
+  useDimensionLockUpkeep({
+    key: 'tall',
+    state: tallLockState,
+    filterActive: !!filters.onlyTallClimbs,
+    searchReady,
+    pin: pinTall,
+  });
+  useDimensionLockUpkeep({
+    key: 'wide',
+    state: wideLockState,
+    filterActive: !!filters.onlyWideClimbs,
+    searchReady,
+    pin: pinWide,
+  });
+  // The filter sheet holds an enforced lock's switch on (disabled) and keeps it
+  // set through its Reset, so its "Show N" count matches what Apply will list.
+  const lockedDimensions = useMemo<LockedDimensions>(
+    () => ({ tall: isDimensionLockEnforced(tallLockState), wide: isDimensionLockEnforced(wideLockState) }),
+    [tallLockState, wideLockState],
+  );
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it
   // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
@@ -1985,6 +2010,7 @@ function ClimbListInner() {
           onApply={handleApplyFilters}
           onNameChange={handleSheetNameChange}
           onClearName={handleClearName}
+          lockedDimensions={lockedDimensions}
         />
       ) : null}
     </View>

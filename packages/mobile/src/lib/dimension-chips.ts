@@ -46,14 +46,53 @@ export function isDimensionChipLocked({ lockSupported, locked }: DimensionLockSt
 }
 
 /**
- * Re-apply rule: put a locked dimension's filter back on after a Reset or clear,
- * but only while its chip is actually in the row (supported platform, board in
- * scope, chip pinned, pinned set loaded). An unpinned chip's filter shows as a
- * removable token instead, and re-applying it there would make that token
- * impossible to clear.
+ * Whether a lock is in force: the platform can set it and its chip is actually
+ * in the row (board in scope, chip pinned, pinned set loaded). An unpinned
+ * chip's filter shows as a removable token instead, and forcing it on there
+ * would make that token impossible to clear. The filter sheet uses the same
+ * rule to hold the matching switch on.
  */
-export function shouldReapplyDimension(state: DimensionLockState, filterActive: boolean): boolean {
-  return isDimensionChipLocked(state) && state.inScope && state.pinned && state.pinsLoaded && !filterActive;
+export function isDimensionLockEnforced(state: DimensionLockState): boolean {
+  return isDimensionChipLocked(state) && state.inScope && state.pinned && state.pinsLoaded;
+}
+
+/**
+ * Re-apply rule: put an enforced lock's filter back on after a Reset or clear.
+ * Waits for the board's saved search to be restored (`searchReady`): the restore
+ * replaces the whole search, so a filter re-applied before it lands would be
+ * overwritten, and the chip would read locked over an unfiltered list.
+ */
+export function shouldReapplyDimension(
+  state: DimensionLockState,
+  filterActive: boolean,
+  searchReady: boolean,
+): boolean {
+  return isDimensionLockEnforced(state) && searchReady && !filterActive;
+}
+
+/** Which dimensions have an enforced lock (see {@link isDimensionLockEnforced}). */
+export type LockedDimensions = Readonly<Record<DimensionKey, boolean>>;
+
+export const NO_LOCKED_DIMENSIONS: LockedDimensions = { tall: false, wide: false };
+
+/**
+ * `filters` with every locked dimension switched on. The filter sheet runs its
+ * draft through this when seeding and on Reset, so the "Show N" count and Apply
+ * match what the chip row's lock will enforce. Returns `filters` itself when
+ * nothing changes.
+ */
+export function withLockedDimensions<Filters extends { onlyTallClimbs?: boolean; onlyWideClimbs?: boolean }>(
+  filters: Filters,
+  locked: LockedDimensions,
+): Filters {
+  const addTall = locked.tall && !filters.onlyTallClimbs;
+  const addWide = locked.wide && !filters.onlyWideClimbs;
+  if (!addTall && !addWide) return filters;
+  return {
+    ...filters,
+    ...(addTall ? { onlyTallClimbs: true } : null),
+    ...(addWide ? { onlyWideClimbs: true } : null),
+  };
 }
 
 /**
