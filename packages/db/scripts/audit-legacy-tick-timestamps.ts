@@ -350,13 +350,15 @@ async function pathExists(path: string): Promise<boolean> {
 
 export async function validateOutputPath(rawOutputPath: string, cwd = process.cwd()): Promise<string> {
   const outputPath = resolve(cwd, rawOutputPath);
-  if (await pathExists(outputPath)) {
+  try {
     const outputState = await lstat(outputPath);
     throw new CliUsageError(
       outputState.isSymbolicLink()
         ? `Refusing symlink output path: ${outputPath}`
         : `Refusing existing output path: ${outputPath}`,
     );
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 
   const outputParent = dirname(outputPath);
