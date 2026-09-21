@@ -350,8 +350,8 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
        * Miter joins would spike outward on every direction change and promise
        * area the disc stamp never fills.
        *
-       * Mounted in every mode and blanked by its worklet rather than unmounted,
-       * so a mode change never remounts a native node mid-gesture.
+       * Present in Add/Erase mode; redraw uses the thin path above. Within a
+       * stroke, the worklet controls visibility without a React remount.
        */}
       {brushing ? (
         <AnimatedPath

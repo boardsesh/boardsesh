@@ -266,7 +266,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     setContainerBox((current) => (current.width === width && current.height === height ? current : { width, height }));
   }, []);
 
-  const useRail = containerBox.width > 0 && containerBox.width / Math.max(1, containerBox.height) >= RAIL_MIN_ASPECT;
+  const isRail = containerBox.width > 0 && containerBox.width / Math.max(1, containerBox.height) >= RAIL_MIN_ASPECT;
 
   /** The outline this hold currently carries for the kind being edited, in
    *  radius units, or null when there is nothing to brush yet. */
@@ -283,7 +283,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   // Brushing needs something to brush. A placement with no outline of this kind
   // has to be traced once before add/erase mean anything, so the toolbar offers
   // Redraw alone there.
-  const canBrush = currentOutline != null;
+  const canBrush = draftOutline != null || currentOutline != null;
 
   const clearDraft = useCallback(() => {
     setDraftOutline(null);
@@ -517,15 +517,18 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       // Back through the same tail the freehand path uses, so the ring the brush
       // produced is rounded, closed and gated exactly as the server will.
       const finished = finishOutlineRing(brushed.outlineBoardPx, hold);
-      if (!finished.ok) return failStroke(rejectionMessage(finished.reason), hold);
+      if (!finished.ok) {
+        brushSession.restore(stepBefore.maskCells);
+        return failStroke(rejectionMessage(finished.reason), hold);
+      }
 
       pushUndoStep(stepBefore);
       showCommittedDraft(finished.outline, hold);
       if (brushed.droppedPieces > 0) {
         showToast(
           brushed.droppedPieces === 1
-            ? 'Kept the piece over the bolt, dropped 1 that came loose.'
-            : `Kept the piece over the bolt, dropped ${brushed.droppedPieces} that came loose.`,
+            ? 'Kept the piece nearest the bolt, dropped 1 that came loose.'
+            : `Kept the piece nearest the bolt, dropped ${brushed.droppedPieces} that came loose.`,
           'info',
         );
       }
@@ -700,18 +703,21 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   }, [selectedPlacementId, effectiveEditKind, overrideMetaByKey, layerData.shardByPlacement, placementOrder.length]);
 
   // ── The lit preview ────────────────────────────────────────────────────
-  // The renderer only draws traced outlines in Boardsesh mode, behind a native
+  // The renderer only draws traced outlines in Aura mode with traced hold shapes, behind a native
   // capability probe. Saying so beats previewing a lie: classic mode would show
   // the same board with a marker on it and none of the geometry being edited.
   const { effectiveRenderSettings, boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
   const previewAvailable =
-    selectedPlacementId != null && effectiveRenderSettings.mode === 'boardsesh' && boardseshRendererAvailable === true;
+    selectedPlacementId != null &&
+    effectiveRenderSettings.mode === 'aura' &&
+    effectiveRenderSettings.boardsesh.holdShape !== 'circle' &&
+    boardseshRendererAvailable === true;
 
   const previewUnavailableNote = useMemo(() => {
     if (selectedPlacementId == null) return 'Pick a hold to preview it.';
     if (boardseshRendererAvailable === null) return 'Checking whether this build can draw traced outlines…';
     if (!previewAvailable) {
-      return 'This build renders in classic mode, which ignores traced outlines, so there is nothing to preview.';
+      return 'Choose Aura with traced hold shapes in Board look to preview this outline on a compatible build.';
     }
     // A real limitation of what ships, not of the editor: the plate paint is
     // switched off in the renderer, so an inner edge changes no pixels today.
@@ -838,6 +844,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const toolbar = (
     <EditToolbar
+      outlineKinds={capabilities.outlineKinds}
       editKind={effectiveEditKind}
       onEditKindChange={handleEditKindChange}
       hasLedBasePlate={platedLayout}
@@ -874,7 +881,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       onPreviewLitChange={setPreviewLit}
       previewAvailable={previewAvailable}
       previewUnavailableNote={previewUnavailableNote}
-      layout={useRail ? 'rail' : 'stacked'}
+      layout={isRail ? 'rail' : 'stacked'}
     />
   );
 
@@ -906,7 +913,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       onLayout={handleContainerLayout}
       style={[
         styles.container,
-        useRail ? styles.containerRail : styles.containerStacked,
+        isRail ? styles.containerRail : styles.containerStacked,
         { backgroundColor: systemColors.background },
       ]}
     >
@@ -924,8 +931,8 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="automatic"
-        style={useRail ? styles.toolbarRail : styles.toolbarScroll}
-        contentContainerStyle={useRail ? styles.toolbarRailContent : undefined}
+        style={isRail ? styles.toolbarRail : styles.toolbarScroll}
+        contentContainerStyle={isRail ? styles.toolbarRailContent : undefined}
       >
         {toolbar}
       </ScrollView>
@@ -968,7 +975,7 @@ function rejectionMessage(reason: StrokeRejection): string {
  * broken.
  */
 function brushRejectionMessage(reason: BrushRejection, mode: DrawMode): string {
-  if (reason === 'anchor-erased') return "You erased the hold's centre. An outline has to cover its own bolt.";
+  if (reason === 'anchor-erased') return "No part of the outline remains close enough to this hold's bolt.";
   if (reason === 'nothing-left') return 'That erased the whole hold. There has to be some outline left.';
   if (reason === 'no-change') {
     return mode === 'erase'
