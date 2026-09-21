@@ -4,6 +4,7 @@ const DISCORD_API_ROOT = 'https://discord.com/api/v10';
 const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json';
 const DISCORD_GATEWAY_INTENTS = (1 << 0) | (1 << 9) | (1 << 15);
 const GATEWAY_HANDSHAKE_TIMEOUT_MS = 30_000;
+const DISCORD_RATE_LIMIT_RETRIES = 5;
 
 const GATEWAY_DISPATCH = 0;
 const GATEWAY_HEARTBEAT = 1;
@@ -42,6 +43,8 @@ export type DiscordGatewayClient = {
 export type DiscordGatewayClientOptions = {
   fetchImplementation?: typeof fetch;
   createSocket?: (url: string) => WebSocket;
+  sleep?: (milliseconds: number) => Promise<void>;
+  random?: () => number;
 };
 
 function isJsonRecord(input: unknown): input is JsonRecord {
@@ -120,9 +123,13 @@ function parseGatewayMessage(
 export function createDiscordGatewayClient(options: DiscordGatewayClientOptions = {}): DiscordGatewayClient {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const createSocket = options.createSocket ?? ((url: string) => new WebSocket(url));
+  const sleep =
+    options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const random = options.random ?? Math.random;
 
   let socket: WebSocket | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let firstHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   let sequenceNumber: number | null = null;
   let botUserId: string | null = null;
   let sessionId: string | null = null;
@@ -135,8 +142,9 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
   let disconnectListener: (error: Error) => void = () => undefined;
 
   const clearHeartbeat = (): void => {
-    if (heartbeatTimer === null) return;
-    clearInterval(heartbeatTimer);
+    if (firstHeartbeatTimer !== null) clearTimeout(firstHeartbeatTimer);
+    firstHeartbeatTimer = null;
+    if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
     heartbeatTimer = null;
   };
 
@@ -149,12 +157,39 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
   };
 
   const requestDiscord = async (path: string, init: RequestInit): Promise<void> => {
-    const response = await fetchImplementation(`${DISCORD_API_ROOT}${path}`, init);
-    if (response.ok) return;
-    const responseText = await response.text();
-    throw new Error(
-      `Discord REST request failed (${response.status}): ${responseText.slice(0, 500) || response.statusText}`,
-    );
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetchImplementation(`${DISCORD_API_ROOT}${path}`, init);
+      if (response.ok) return;
+      const responseText = await response.text();
+      // Only an explicit rate-limit rejection is safe to replay for POST replies.
+      // Network failures and 5xx responses may already have created the message.
+      if (response.status === 429 && attempt < DISCORD_RATE_LIMIT_RETRIES) {
+        let responseBody: unknown = null;
+        try {
+          responseBody = JSON.parse(responseText);
+        } catch {
+          responseBody = null;
+        }
+        const bodyDelay = isJsonRecord(responseBody) ? responseBody.retry_after : undefined;
+        const headerDelay = Number(response.headers.get('retry-after') ?? Number.NaN);
+        const seconds =
+          typeof bodyDelay === 'number' && Number.isFinite(bodyDelay) && bodyDelay >= 0
+            ? bodyDelay
+            : Number.isFinite(headerDelay) && headerDelay >= 0
+              ? headerDelay
+              : 1;
+        const milliseconds = Math.ceil(seconds * 1000) + 250;
+        // Oversized Node timers fire immediately; do not retry before Discord permits it.
+        if (!Number.isFinite(milliseconds) || milliseconds > 2_147_483_647) {
+          throw new Error('Discord REST rate-limit delay exceeds the supported timer range');
+        }
+        await sleep(milliseconds);
+        continue;
+      }
+      throw new Error(
+        `Discord REST request failed (${response.status}): ${responseText.slice(0, 500) || response.statusText}`,
+      );
+    }
   };
 
   return {
@@ -264,14 +299,28 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
               }
               clearHeartbeat();
               heartbeatAcknowledged = true;
-              heartbeatTimer = setInterval(() => {
+              const heartbeatInterval = parsedPayload.d.heartbeat_interval;
+              const heartbeatTick = (): void => {
+                if (socket !== currentSocket || disconnectHandled) return;
                 if (!heartbeatAcknowledged) {
                   currentSocket.terminate();
                   return;
                 }
                 sendHeartbeat();
-              }, parsedPayload.d.heartbeat_interval);
-              if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+              };
+              // Jitter only the first heartbeat; subsequent beats use the full interval.
+              // https://docs.discord.com/developers/events/gateway#heartbeat-interval
+              firstHeartbeatTimer = setTimeout(
+                () => {
+                  firstHeartbeatTimer = null;
+                  heartbeatTick();
+                  if (socket !== currentSocket || disconnectHandled) return;
+                  heartbeatTimer = setInterval(heartbeatTick, heartbeatInterval);
+                  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+                },
+                Math.floor(heartbeatInterval * random()),
+              );
+              if (typeof firstHeartbeatTimer.unref === 'function') firstHeartbeatTimer.unref();
               if (canResume) {
                 sendGatewayPayload({ op: GATEWAY_RESUME, d: { token, session_id: sessionId, seq: sequenceNumber } });
                 return;

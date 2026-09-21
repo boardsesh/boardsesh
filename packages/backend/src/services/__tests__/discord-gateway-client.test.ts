@@ -45,7 +45,7 @@ class FakeSocket {
   }
 }
 
-function gatewayHarness() {
+function gatewayHarness(random = () => 0.5) {
   const socket = new FakeSocket();
   const sockets = [socket];
   const createSocket = vi.fn((_url: string) => {
@@ -54,11 +54,14 @@ function gatewayHarness() {
     return nextSocket as unknown as WebSocket;
   });
   const fetchImplementation = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const sleep = vi.fn(async (_milliseconds: number): Promise<void> => undefined);
   const client = createDiscordGatewayClient({
     fetchImplementation,
     createSocket,
+    random,
+    sleep,
   });
-  return { client, fetchImplementation, socket, sockets, createSocket };
+  return { client, fetchImplementation, socket, sockets, createSocket, sleep };
 }
 
 async function connectGateway(
@@ -327,5 +330,141 @@ describe('Discord Gateway session recovery', () => {
     });
     await freshConnection;
     await client.destroy();
+  });
+});
+
+async function receiveGatewayMessage(harness: ReturnType<typeof gatewayHarness>): Promise<DiscordGatewayMessage> {
+  let receivedMessage: DiscordGatewayMessage | undefined;
+  harness.client.onMessage((message) => {
+    receivedMessage = message;
+  });
+  await connectGateway(harness.client, harness.socket);
+  harness.socket.emitGateway({
+    op: 0,
+    t: 'MESSAGE_CREATE',
+    s: 2,
+    d: {
+      id: MESSAGE_ID,
+      channel_id: CHANNEL_ID,
+      guild_id: GUILD_ID,
+      author: { id: MAINTAINER_ID },
+      content: `<@${BOT_ID}> file this`,
+      mentions: [{ id: BOT_ID }],
+    },
+  });
+  if (!receivedMessage) throw new Error('Expected the Gateway message');
+  return receivedMessage;
+}
+
+describe('Discord Gateway REST rate limits', () => {
+  it.each(['reaction', 'reply'] as const)(
+    'waits for a 429 delay before retrying a %s with the same request',
+    async (kind) => {
+      const harness = gatewayHarness();
+      const message = await receiveGatewayMessage(harness);
+      let releaseDelay: () => void = () => undefined;
+      const delay = new Promise<void>((resolve) => {
+        releaseDelay = resolve;
+      });
+      harness.sleep.mockImplementationOnce(async () => delay);
+      harness.fetchImplementation.mockResolvedValueOnce(
+        kind === 'reaction'
+          ? Response.json({ retry_after: 0.75, global: true }, { status: 429 })
+          : new Response('rate limited', { status: 429, headers: { 'Retry-After': '0.75' } }),
+      );
+      const operation = kind === 'reaction' ? message.react('👀') : message.reply('Queued');
+      const completion = operation.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.waitFor(() => expect(harness.sleep).toHaveBeenCalledWith(1000));
+      expect(harness.fetchImplementation).toHaveBeenCalledTimes(1);
+      releaseDelay();
+      expect(await completion).toBeUndefined();
+      expect(harness.fetchImplementation).toHaveBeenCalledTimes(2);
+      expect(harness.fetchImplementation.mock.calls[1]).toEqual(harness.fetchImplementation.mock.calls[0]);
+      await harness.client.destroy();
+    },
+  );
+
+  it('bounds repeated rate limits and uses a safe delay for malformed retry metadata', async () => {
+    const harness = gatewayHarness();
+    const message = await receiveGatewayMessage(harness);
+    harness.fetchImplementation.mockImplementation(async () =>
+      Response.json({ retry_after: 'invalid' }, { status: 429 }),
+    );
+    await expect(message.reply('Queued')).rejects.toThrow(/429/);
+    expect(harness.fetchImplementation).toHaveBeenCalledTimes(6);
+    expect(harness.sleep.mock.calls).toEqual(Array.from({ length: 5 }, () => [1250]));
+    await harness.client.destroy();
+  });
+
+  it('refuses a delay that would overflow Node timers instead of retrying immediately', async () => {
+    const harness = gatewayHarness();
+    const message = await receiveGatewayMessage(harness);
+    harness.fetchImplementation.mockResolvedValueOnce(Response.json({ retry_after: 3_000_000 }, { status: 429 }));
+    await expect(message.reply('Queued')).rejects.toThrow(/timer range/);
+    expect(harness.fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(harness.sleep).not.toHaveBeenCalled();
+    await harness.client.destroy();
+  });
+
+  it.each([403, 500])('does not replay a reply after HTTP %s', async (status) => {
+    const harness = gatewayHarness();
+    const message = await receiveGatewayMessage(harness);
+    harness.fetchImplementation.mockResolvedValueOnce(new Response('failed', { status }));
+    await expect(message.reply('Queued')).rejects.toThrow(String(status));
+    expect(harness.fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(harness.sleep).not.toHaveBeenCalled();
+    await harness.client.destroy();
+  });
+
+  it('does not replay an ambiguous reply after a network failure', async () => {
+    const harness = gatewayHarness();
+    const message = await receiveGatewayMessage(harness);
+    harness.fetchImplementation.mockRejectedValueOnce(new Error('network failed'));
+    await expect(message.reply('Queued')).rejects.toThrow('network failed');
+    expect(harness.fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(harness.sleep).not.toHaveBeenCalled();
+    await harness.client.destroy();
+  });
+});
+
+describe('Discord Gateway heartbeat schedule', () => {
+  it('jitters the first heartbeat only, then uses the full interval and latest sequence', async () => {
+    vi.useFakeTimers();
+    const { client, socket } = gatewayHarness(() => 0.25);
+    await connectGateway(client, socket);
+    await vi.advanceTimersByTimeAsync(7499);
+    expect(socket.sentPayloads).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.parse(socket.sentPayloads.at(-1)!)).toEqual({ op: 1, d: 1 });
+    socket.emitGateway({ op: 11, d: null });
+    socket.emitGateway({ op: 0, t: 'GUILD_CREATE', s: 8, d: {} });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(socket.sentPayloads).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.parse(socket.sentPayloads.at(-1)!)).toEqual({ op: 1, d: 8 });
+    await client.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('terminates when the jittered first heartbeat is not acknowledged', async () => {
+    vi.useFakeTimers();
+    const { client, socket } = gatewayHarness(() => 0.25);
+    await connectGateway(client, socket);
+    await vi.advanceTimersByTimeAsync(37_500);
+    expect(socket.terminate).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears the pending first heartbeat on destroy', async () => {
+    vi.useFakeTimers();
+    const { client, socket } = gatewayHarness(() => 0.25);
+    await connectGateway(client, socket);
+    await client.destroy();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(socket.sentPayloads).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

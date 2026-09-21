@@ -8,6 +8,7 @@ import {
   applyTriage,
   bundleDigest,
   collectMentionCommand,
+  DiscordClient,
   GitHubIssueClient,
   notifyFailure,
   runCli,
@@ -735,5 +736,63 @@ describe('GitHub duplicate verification', () => {
       fetcher: vi.fn(async () => Response.json({}, { status: 403 })),
     });
     await expect(client.findIssueByUrl(issueUrl)).rejects.toThrow(/GitHub 403/);
+  });
+});
+
+describe('REST rate-limit recovery', () => {
+  it.each(['user', 'global'])('retries Discord %s limits after the advertised fractional delay', async (scope) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ retry_after: 0.75 }, { status: 429, headers: { 'x-ratelimit-scope': scope } }),
+      )
+      .mockResolvedValueOnce(Response.json({ id: BOT_ID }));
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const client = new DiscordClient({ token: 'test', fetcher, sleep });
+    expect(await client.getSelfUserId()).toBe(BOT_ID);
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(1000);
+    expect(fetcher.mock.calls[1]).toEqual(fetcher.mock.calls[0]);
+  });
+
+  it('stops retrying Discord rate limits after five retries', async () => {
+    const fetcher = vi.fn(async () => Response.json({ retry_after: 0.1 }, { status: 429 }));
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const client = new DiscordClient({ token: 'test', fetcher, sleep });
+    await expect(client.getSelfUserId()).rejects.toThrow(/Discord 429/);
+    expect(fetcher).toHaveBeenCalledTimes(6);
+    expect(sleep).toHaveBeenCalledTimes(5);
+  });
+
+  it.each([401, 403])('does not retry Discord authorization failure %s', async (status) => {
+    const fetcher = vi.fn(async () => Response.json({}, { status }));
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const client = new DiscordClient({ token: 'test', fetcher, sleep });
+    await expect(client.getSelfUserId()).rejects.toThrow(`Discord ${status}`);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('preserves exact-marker deduplication after a rate-limited GitHub search', async () => {
+    const marker = discordFeedbackMarker(COMMAND_ID, 1);
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({}, { status: 429, headers: { 'Retry-After': '0.5' } }))
+      .mockResolvedValueOnce(
+        Response.json({
+          total_count: 1,
+          items: [{ number: 88, html_url: 'https://github.com/boardsesh/boardsesh/issues/88' }],
+        }),
+      );
+    const sleep = vi.fn(async (_milliseconds: number) => undefined);
+    const client = new GitHubIssueClient({ repositoryFullName: 'boardsesh/boardsesh', token: 'test', fetcher, sleep });
+    expect(await client.findIssueByMarker(marker)).toEqual({
+      number: 88,
+      htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/88',
+    });
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(500);
+    expect(fetcher.mock.calls[1]).toEqual(fetcher.mock.calls[0]);
+    const requestedUrl = new URL(String(fetcher.mock.calls[0]?.[0]));
+    expect(requestedUrl.pathname).toBe('/search/issues');
+    expect(requestedUrl.searchParams.get('q')).toBe(`repo:boardsesh/boardsesh is:issue "${marker}"`);
   });
 });
