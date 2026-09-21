@@ -50,6 +50,7 @@ ml/holds/
   model-manifest.schema.json   the manifest contract publish_model.py validates against
   test_publish_model.py        pytest for publish_model.py — --dry-run only, no R2 needed
   test_train.py                pytest for the tiled-dataset cache (no training, no torch)
+  test_tile_coco.py            polygon clipping and tiled-annotation propagation (Pillow + NumPy)
   test_fetch.py                pytest for data/fetch.py's missing-SDK message
   fixtures/         committed inputs + expected detections for the SW-06 Node tests
   .data/            downloads, scraped photos, labels, checkpoints, exports —
@@ -256,12 +257,42 @@ provenance (and its data licence, which the app's licences screen must
 credit), optional `eval` numbers, and the weights' own `licence`
 (`Apache-2.0` — every config in `configs.json` is an Apache-2.0 family).
 
-The mobile loader (issue #5435) fetches
-`models/hold-detector/<version>/manifest.json`, verifies each downloaded
-file's sha256 against the manifest before trusting it, and caches by version
-since weights never change under a version tag. A possible server-side
-inference container (issue #5451) reads the same manifest the same way — the
-manifest, not this script, is the interface between them.
+Every new publication includes `inference`: the photo's long-side resize,
+tile rows/columns/overlap and cross-tile NMS IoU. Publisher validation requires
+that plan even for an untiled full-frame pass. The shared schema leaves it
+optional for legacy version-1 manifests; absence does not establish how an older
+model was trained or evaluated. Segmentation exports also describe their mask
+tensor and require interpolation before thresholding.
+
+The recognition service (`packages/hold-detector/src/manifest.ts`) reads this
+contract and verifies the weights' byte count and SHA-256. Current deployment
+and exposure gates are in `docs/spray-recognition-rollout.md`; the earlier phone
+inference runtime has been superseded.
+
+### Lightweight preprocessing and publisher checks
+
+With pytest, Pillow, NumPy, boto3 and jsonschema installed from the pinned
+requirements, run from `ml/holds`:
+
+```sh
+vp exec python -m pytest test_tile_coco.py test_publish_model.py test_train.py test_fetch.py -q
+```
+
+These checks use generated images and model bytes; they do not train a model,
+download a corpus or publish objects. COCO polygon masks are clipped into every
+retained tile. RLE masks are rejected explicitly and must be converted to polygon
+annotations before using this preprocessing path.
+
+RF-DETR `seg-*` training requires a usable polygon for every annotated hold in
+train, validation and test splits. The default Way Up corpus is box-only and
+cannot train a mask model; choose a fully polygon-labelled corpus with
+`--dataset`. Mixed box/polygon labels, empty masks and stale tiled caches are
+rejected before model construction. If post-tiling validation fails, a retry
+reports the same mask error and leaves the generated files unstamped for
+inspection. A cache without its provenance record is never reused; after fixing
+the labels, remove that incomplete cache before re-tiling. Source labels and prepared/cached tiles
+are both checked, including the capped training subset. Ordinary box models
+and box models with classical postprocessing can still use box-only labels.
 
 ## Reproducing every number in the report
 
