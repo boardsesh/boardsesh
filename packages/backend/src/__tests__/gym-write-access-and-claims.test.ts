@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql, eq, is, SQL } from 'drizzle-orm';
+import { sql, eq, is, inArray, SQL } from 'drizzle-orm';
 import type { GraphQLError } from 'graphql';
 import { GYM_HOURS_MAX_LENGTH, type ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -2576,6 +2576,85 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
         expect(await claimStatus(pendingClaimId)).toBe('pending');
         expect(await gymOwnerId(canonical.uuid)).toBe(PRIOR_OWNER);
         expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: true, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: true, claimAfterHandover: true, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: true, currentOwner: 'neither' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'source' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'survivor' },
+  ])(
+    'expires superseded moved claims during gym merges: $secondMerge, newer claim: $claimAfterHandover, canonical origin: $claimOnCanonical, owns: $currentOwner',
+    async ({ secondMerge, claimAfterHandover, claimOnCanonical, currentOwner }) => {
+      const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Reassigned Duplicate' });
+      const canonical = await insertGym({
+        ownerId: currentOwner === 'survivor' ? CLAIMANT : SECOND_TARGET,
+        name: 'Reassignment Survivor',
+      });
+      const handoverTarget = currentOwner === 'source' ? CLAIMANT : SECOND_TARGET;
+      await db
+        .update(dbSchema.gyms)
+        .set({ latitude: 52, longitude: 4 })
+        .where(inArray(dbSchema.gyms.id, [duplicate.id, canonical.id]));
+      const originalClaimGym = claimOnCanonical ? canonical : duplicate;
+      let pendingClaimId: number;
+      if (claimAfterHandover) {
+        await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
+        pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
+      } else {
+        pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
+        await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
+      }
+      const [originalHistory] = await db
+        .select()
+        .from(dbSchema.gymOwnerReassignments)
+        .where(eq(dbSchema.gymOwnerReassignments.gymUuid, duplicate.uuid));
+      expect(originalHistory).toBeDefined();
+      await socialGymDuplicateMutations.mergeGyms(
+        null,
+        {
+          input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] },
+        },
+        authCtx(GLOBAL_ADMIN),
+      );
+      const shouldExpire = !claimAfterHandover && !claimOnCanonical && currentOwner === 'neither';
+      const [mergeAudit] = await db
+        .select({ movedCounts: dbSchema.gymMergeAudit.movedCounts, movedRows: dbSchema.gymMergeAudit.movedRows })
+        .from(dbSchema.gymMergeAudit)
+        .where(eq(dbSchema.gymMergeAudit.duplicateGymId, duplicate.id));
+      expect(mergeAudit.movedCounts).toMatchObject({ claimsExpired: shouldExpire ? 1 : 0 });
+      expect(mergeAudit.movedRows).toMatchObject({ expiredClaimIds: shouldExpire ? [pendingClaimId] : [] });
+      let survivor = canonical;
+      if (secondMerge) {
+        survivor = await insertGym({ ownerId: SECOND_TARGET, name: 'Second Reassignment Survivor' });
+        await db.update(dbSchema.gyms).set({ latitude: 52, longitude: 4 }).where(eq(dbSchema.gyms.id, survivor.id));
+        await socialGymDuplicateMutations.mergeGyms(
+          null,
+          {
+            input: { canonicalGymUuid: survivor.uuid, duplicateGymUuids: [canonical.uuid] },
+          },
+          authCtx(GLOBAL_ADMIN),
+        );
+      }
+      const [preservedHistory] = await db
+        .select()
+        .from(dbSchema.gymOwnerReassignments)
+        .where(eq(dbSchema.gymOwnerReassignments.id, originalHistory.id));
+      expect(preservedHistory).toEqual(originalHistory);
+      const review = approveAsAdmin(pendingClaimId);
+      if (!shouldExpire) {
+        await expect(review).resolves.toBe(true);
+        expect(await gymOwnerId(survivor.uuid)).toBe(CLAIMANT);
+      } else {
+        await expect(review).rejects.toThrow('Claim not found or already resolved');
+        expect(await gymOwnerId(survivor.uuid)).toBe(SECOND_TARGET);
+        expect(await claimStatus(pendingClaimId)).toBe('expired');
+        expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+        expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
       }
     },
   );
