@@ -24,7 +24,7 @@ import { CanvasImageProcessor } from './image-processor/canvas-processor';
 // Import from parser-core to avoid pulling in sharp via parser.ts
 import { parseWithProcessor, deduplicateClimbs, type ParseOptions } from './parser-core';
 export type { ParseOptions } from './parser-core';
-export { BOARD_PROFILES } from './board-profiles';
+export { BOARD_PROFILES, boardRows, GRID_POSITIONS_BY_ROWS } from './board-profiles';
 export type { HoldSetup, GridRows } from './board-profiles';
 import type { ParseResult, MoonBoardClimb, DetectedHold, GridCoordinate, HoldType } from './types';
 
