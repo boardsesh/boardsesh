@@ -1,23 +1,24 @@
-// When the Climbs list teaches the quick-actions menu, and whether it should
-// bother.
-//
-// The tip used to fire on the FIRST focus of the Climbs tab and mark itself seen
-// on render — the worst possible moment, before a climber has any reason to want
-// a menu, and one-shot forever. Production bore that out: of 214 people who
-// opened the menu in a week, 154 used the ⋮ and only 86 ever found the
-// long-press, with ~26 doing both. The two populations barely overlap.
-//
-// So the tip now waits for the climber's third landing on Climbs, and steps
-// aside entirely for anyone who has already opened the menu by any route. Both
-// signals are local: a counter and a boolean through the same keyed tip store
-// that backs every other just-in-time tip.
-
 import {
   ONBOARDING_TIP_QUICKACTIONS_KEY,
   ONBOARDING_TIP_QUICKACTIONS_USED_KEY,
   ONBOARDING_TIP_QUICKACTIONS_VISITS_KEY,
 } from '@boardsesh/key-value-storage';
 import { hasSeenTip, markTipSeen, recordTipVisit } from './onboarding-storage';
+
+let quickActionsUsedThisLaunch = false;
+let quickActionsTipSeenThisLaunch = false;
+const quickActionsUsedListeners = new Set<() => void>();
+
+export function subscribeToQuickActionsUsed(listener: () => void): () => void {
+  quickActionsUsedListeners.add(listener);
+  return () => {
+    quickActionsUsedListeners.delete(listener);
+  };
+}
+
+export function getQuickActionsUsedSnapshot(): boolean {
+  return quickActionsUsedThisLaunch;
+}
 
 /**
  * Climbs-tab visits required before the tip may show. Three, not one: the first
@@ -70,19 +71,29 @@ export function shouldArmQuickActionsTip({
  * visit armed it — otherwise the timing rule is unfalsifiable in PostHog.
  */
 export async function resolveQuickActionsTip(): Promise<{ armed: boolean; visitCount: number }> {
+  if (quickActionsUsedThisLaunch || quickActionsTipSeenThisLaunch) return { armed: false, visitCount: 0 };
   const [alreadySeen, hasOpenedActions] = await Promise.all([
     hasSeenTip(ONBOARDING_TIP_QUICKACTIONS_KEY),
     hasSeenTip(ONBOARDING_TIP_QUICKACTIONS_USED_KEY),
   ]);
-  if (alreadySeen || hasOpenedActions) return { armed: false, visitCount: 0 };
+  if (alreadySeen || hasOpenedActions || quickActionsUsedThisLaunch || quickActionsTipSeenThisLaunch) {
+    return { armed: false, visitCount: 0 };
+  }
   const visitCount = await recordTipVisit(ONBOARDING_TIP_QUICKACTIONS_VISITS_KEY, QUICK_ACTIONS_TIP_MIN_VISITS);
+  if (quickActionsUsedThisLaunch || quickActionsTipSeenThisLaunch) return { armed: false, visitCount: 0 };
   return { armed: shouldArmQuickActionsTip({ alreadySeen, hasOpenedActions, visitCount }), visitCount };
 }
 
-// Opening the menu is a hot path — every long-press and every ⋮ tap lands here —
-// and the flag only ever goes from unset to true. One write per launch is enough;
-// this guard keeps the other N out of SecureStore.
-let quickActionsUsedThisLaunch = false;
+/** Keep rapid refocus quiet before the persisted seen flag has finished writing. */
+export async function markQuickActionsTipSeen(): Promise<void> {
+  if (quickActionsTipSeenThisLaunch) return;
+  quickActionsTipSeenThisLaunch = true;
+  try {
+    await markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
+  } catch {
+    // A failed preference write must not re-show a tip during this launch.
+  }
+}
 
 /**
  * Record that the quick-actions menu was opened, so the tip never fires again.
@@ -93,10 +104,10 @@ let quickActionsUsedThisLaunch = false;
 export async function markQuickActionsUsed(): Promise<void> {
   if (quickActionsUsedThisLaunch) return;
   quickActionsUsedThisLaunch = true;
-  await markTipSeen(ONBOARDING_TIP_QUICKACTIONS_USED_KEY);
-}
-
-/** Test-only: forget the per-launch guard between cases. */
-export function resetQuickActionsUsedGuard(): void {
-  quickActionsUsedThisLaunch = false;
+  for (const listener of quickActionsUsedListeners) listener();
+  try {
+    await markTipSeen(ONBOARDING_TIP_QUICKACTIONS_USED_KEY);
+  } catch {
+    // Keep the launch-local flag when persistent storage is unavailable.
+  }
 }
