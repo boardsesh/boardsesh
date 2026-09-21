@@ -19,7 +19,7 @@ function feedTick(uuid: string, overrides: { userId?: string; boardId?: number }
   return { uuid, userId: overrides.userId ?? CLIMBER, boardId: overrides.boardId ?? FEED.id };
 }
 
-test('moves a tick onto the one board its climber owns with that config', () => {
+void test('moves a tick onto the one board its climber owns with that config', () => {
   const plan = planSharedFeedTickMoves({
     feeds: [FEED],
     ticks: [feedTick('tick-1')],
@@ -32,7 +32,7 @@ test('moves a tick onto the one board its climber owns with that config', () => 
   assert.equal(plan.noOwnedBoard, 0);
 });
 
-test('matches a board whose set ids were stored in another order', () => {
+void test('matches a board whose set ids were stored in another order', () => {
   // `createBoard` persists the order it was handed, so this is the same wall.
   const plan = planSharedFeedTickMoves({
     feeds: [FEED],
@@ -43,7 +43,7 @@ test('matches a board whose set ids were stored in another order', () => {
   assert.equal(plan.moves.length, 1);
 });
 
-test('leaves a tick alone when its climber owns two boards of that config', () => {
+void test('leaves a tick alone when its climber owns two boards of that config', () => {
   // #4174's "same wall at home and at the gym" — the row says nothing about
   // which one the climber was standing at, so guessing would scatter history.
   const plan = planSharedFeedTickMoves({
@@ -57,7 +57,7 @@ test('leaves a tick alone when its climber owns two boards of that config', () =
   assert.deepEqual([...plan.ambiguousUserIds], [CLIMBER]);
 });
 
-test('leaves a tick on the feed when its climber owns no board of that config', () => {
+void test('leaves a tick on the feed when its climber owns no board of that config', () => {
   // The feed is where these belong, and the fixed code still files them there.
   const plan = planSharedFeedTickMoves({
     feeds: [FEED],
@@ -70,7 +70,7 @@ test('leaves a tick on the feed when its climber owns no board of that config', 
   assert.equal(plan.ambiguous, 0);
 });
 
-test("never files a tick onto another climber's board", () => {
+void test("never files a tick onto another climber's board", () => {
   const plan = planSharedFeedTickMoves({
     feeds: [FEED],
     ticks: [feedTick('tick-1', { userId: 'climber-2' })],
@@ -81,7 +81,7 @@ test("never files a tick onto another climber's board", () => {
   assert.equal(plan.noOwnedBoard, 1);
 });
 
-test('ignores a tick that is no longer on a feed', () => {
+void test('ignores a tick that is no longer on a feed', () => {
   // The feeds and the ticks are read separately; a tick re-filed by the fixed
   // code in between must not be moved again on a stale plan.
   const plan = planSharedFeedTickMoves({
@@ -95,6 +95,33 @@ test('ignores a tick that is no longer on a feed', () => {
   assert.equal(plan.ambiguous, 0);
 });
 
-test('keeps configs that differ only by board type apart', () => {
+void test('keeps configs that differ only by board type apart', () => {
   assert.notEqual(boardConfigKey({ ...CONFIG, boardType: 'kilter' }), boardConfigKey(CONFIG));
+});
+
+void test('keeps mixed climbers and feed configurations independent while accumulating counters', () => {
+  const otherFeed: SharedFeedBoard = { ...FEED, id: 900, sizeId: 2 };
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED, otherFeed],
+    ticks: [
+      feedTick('move-a'),
+      feedTick('move-b'),
+      feedTick('ambiguous', { userId: 'climber-2' }),
+      feedTick('no-board', { boardId: otherFeed.id }),
+    ],
+    ownedBoards: [
+      ownedBoard(),
+      ownedBoard({ id: 700, ownerId: 'climber-2' }),
+      ownedBoard({ id: 701, ownerId: 'climber-2' }),
+      ownedBoard({ id: 702, ownerId: 'climber-2', sizeId: 2 }),
+    ],
+  });
+  assert.deepEqual(plan.moves, [
+    { uuid: 'move-a', oldBoardId: FEED.id, newBoardId: 770338 },
+    { uuid: 'move-b', oldBoardId: FEED.id, newBoardId: 770338 },
+  ]);
+  assert.deepEqual([...plan.movedUserIds], [CLIMBER]);
+  assert.equal(plan.ambiguous, 1);
+  assert.deepEqual([...plan.ambiguousUserIds], ['climber-2']);
+  assert.equal(plan.noOwnedBoard, 1);
 });
