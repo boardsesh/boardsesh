@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import fs from 'fs/promises';
 import path from 'path';
 import { parseScreenshot, parseMultipleScreenshots, deduplicateClimbs } from './parser';
@@ -9,10 +9,14 @@ import { boardRows, type HoldSetup } from './board-profiles';
 
 const setupOption = () =>
   new Option('--holdsetup <id>', 'Upstream MoonBoard setup ID (not Boardsesh layout ID)')
-    .argParser((value) => {
-      const id = Number(value) as HoldSetup;
-      boardRows(id);
-      return id;
+    .argParser((setupArgument) => {
+      const setupId = Number(setupArgument) as HoldSetup;
+      try {
+        boardRows(setupId);
+      } catch (error) {
+        throw new InvalidArgumentError(error instanceof Error ? error.message : String(error));
+      }
+      return setupId;
     })
     .default(21);
 const profileOption = () =>

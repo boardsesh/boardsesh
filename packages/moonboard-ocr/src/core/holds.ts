@@ -338,6 +338,8 @@ export function findCircleCenters(
             ...enclosed.map((center) => ({
               ...center,
               type: holdType,
+              // Equal-share estimate, not each ring's measured area: occlusion can
+              // make their actual counts differ. The component passed minPixels above.
               pixelCount: Math.round(component.length / enclosed.length),
             })),
           );

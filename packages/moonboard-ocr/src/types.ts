@@ -123,6 +123,8 @@ export const GRID_CONFIG = {
  * For 11 columns: cell width = 1/11, centers at (colIdx + 0.5) / 11
  * For 18 rows: cell height = 1/18, centers at (rowIdx + 0.5) / 18
  * Row 18 is at top (rowIdx 0), row 1 is at bottom (rowIdx 17)
+ *
+ * @deprecated Use GRID_POSITIONS_BY_ROWS[boardRows(holdsetup)] from board-profiles.
  */
 export const GRID_POSITIONS: Record<GridCoordinate, { x: number; y: number }> = (() => {
   const positions: Record<string, { x: number; y: number }> = {};

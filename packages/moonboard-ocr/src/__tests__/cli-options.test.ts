@@ -16,8 +16,11 @@ function invoke(command: string, ...options: string[]) {
 describe('real CLI board/profile option wiring', () => {
   it.each(['parse', 'test'])('%s rejects an unknown setup before accessing an image', (command) => {
     const result = invoke(command, '--holdsetup', '7');
+    expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: option '--holdsetup <id>' argument '7' is invalid");
     expect(result.stderr).toContain('Unsupported MoonBoard holdsetup');
+    expect(result.stderr).not.toMatch(/\n\s+at /);
     expect(result.stdout).not.toContain('Output written');
   });
 
