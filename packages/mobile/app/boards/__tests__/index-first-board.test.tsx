@@ -123,6 +123,7 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 }));
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => vi.fn().mockResolvedValue(undefined),
+  useWillFollowFoundBoard: () => () => false,
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: (options?: { retryAfterDenial?: boolean }) => {
@@ -405,7 +406,7 @@ describe('the ordinary onboarding picker', () => {
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: { returnTo: '/(tabs)/climbs', source: 'onboarding' },
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
   });
 
@@ -419,7 +420,7 @@ describe('the ordinary onboarding picker', () => {
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: { returnTo: '/(tabs)/climbs', source: undefined },
+      params: { returnTo: '/(tabs)/climbs', source: undefined, from: 'picker' },
     });
   });
 });
