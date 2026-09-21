@@ -288,7 +288,7 @@ export const climbQueries = {
           .flatMap((row) =>
             row.holdId === null || row.holdState === null ? [] : [{ holdId: row.holdId, holdState: row.holdState }],
           )
-          .filter(isSupportedSimilarityHold);
+          .filter((hold) => isSupportedSimilarityHold(hold, boardType));
       }
 
       // Multi-frame rows may reflect only fragments of an animation, so their
@@ -298,7 +298,7 @@ export const climbQueries = {
       if (holds.length === 0 && climbRow?.frames) {
         holds = parseFramesToHoldEntries(boardType, climbRow.frames)
           .map(({ holdId, holdState }) => ({ holdId, holdState }))
-          .filter(isSupportedSimilarityHold);
+          .filter((hold) => isSupportedSimilarityHold(hold, boardType));
       }
 
       if (isSizeScopedSimilarityBoard(boardType) && sizeId === undefined) {
@@ -310,7 +310,7 @@ export const climbQueries = {
     } else {
       holds = parseFramesToHoldEntries(boardType, validated.frames ?? '')
         .map(({ holdId, holdState }) => ({ holdId, holdState }))
-        .filter(isSupportedSimilarityHold);
+        .filter((hold) => isSupportedSimilarityHold(hold, boardType));
     }
 
     if (holds.length === 0) return [];

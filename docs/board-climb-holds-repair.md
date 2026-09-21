@@ -1,10 +1,10 @@
 # Repairing `board_climb_holds`
 
-This repair rebuilds stale materialized hold rows for multi-frame Aurora-family climbs and removes globally invalid rows (`hold_id <= 0`, an empty state, or a state containing `=`) elsewhere. A valid frame sequence that projects to no canonical holds is cleaned to an empty row set. The repair also migrates fingerprints only when the old value is provably derived from the old rows or the historical per-frame Grips tokens; independent fingerprints are left alone. It does not change climb frames or run against MoonBoard multi-frame data.
+This repair rebuilds stale materialized hold rows for multi-frame Aurora-family climbs and removes globally invalid rows (`hold_id < 0`, zero on boards other than Woods, an empty state, or a state containing `=`) elsewhere. A valid frame sequence that projects to no canonical holds is cleaned to an empty row set. The repair also migrates fingerprints only when the old value is provably derived from the old rows or the historical per-frame Grips tokens; independent fingerprints are left alone. It does not change climb frames or run against MoonBoard multi-frame data.
 
 ## Kilter rollout bridge
 
-Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned multi-frame Kilter rows once, proves which stored fingerprints came from the historical raw frame events, and adds their current projected fingerprints to the in-memory dedup index without changing the database. Existing stored fingerprint owners always win, and empty or unproven projections add no key.
+Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned Kilter rows with multi-frame or noncanonical single-frame text once, proves which stored fingerprints came from the historical raw frame events, and adds their current projected fingerprints to the in-memory dedup index without changing the database. Existing stored fingerprint owners always win, and empty or unproven projections add no key.
 
 That dual-key bridge prevents the Kilter daemon from creating a second canonical in the interval between deploy and repair, so the daemon does not need to stay paused for that whole rollout interval. The repair migrates proven legacy fingerprints to the projected key; after migration the stored key is already primary and the bridge is a no-op. Writers should still be paused for the short approved apply window below, when the repair takes table locks.
 
@@ -32,7 +32,7 @@ Run the report first. Dry-run performs only reads and takes no table or advisory
 vp run db:repair-board-climb-holds -- --report-limit 100
 ```
 
-Record the printed SHA-256 and the exact `scanned`, `changed`, `invalid_rows`, `fingerprint_updates`, and `affected` counts. `affected` includes fingerprint-only migrations, so use it for the apply ceiling even when the materialized rows are already canonical. Review every blocker and diagnostic, especially unknown roles, nonpositive IDs, missing placements, malformed frames, and `frames_count` mismatches. Do not apply while any blocker exists.
+Record the printed SHA-256 and the exact `scanned`, `changed`, `invalid_rows`, `fingerprint_updates`, and `affected` counts. `affected` includes fingerprint-only migrations, so use it for the apply ceiling even when the materialized rows are already canonical. Review every blocker and diagnostic, especially unknown roles, invalid hold IDs, missing placements, malformed frames, and `frames_count` mismatches. Do not apply while any blocker exists.
 
 A leading empty frame is the delayed-start encoding — the wall stays dark for one pace tick — and both Aurora and our own Kilter Grips importer emit it, so it is accepted rather than blocked. An empty unquoted frame anywhere after frame 0 is still corruption and still blocks. `frames_count` is compared against the raw comma-delimited slot count, which is what Aurora and Grips record.
 
@@ -54,7 +54,7 @@ vp run db:repair-board-climb-holds -- --apply \
   --report-limit 100
 ```
 
-After the locks are acquired, the script rebuilds the manifest inside the repeatable-read transaction. Any drift aborts before writes. It then verifies the exact projected rows for every rebuilt climb, including climbs whose authoritative projection is empty, and requires the global invalid-row count to be zero before commit. Only multi-frame projection is restricted to the Aurora-family board allowlist; invalid stored rows are discovered, deleted, and verified across all board types. A second approved dry-run should report `changed=0`, `invalid_rows=0`, and a new stable digest for that clean state.
+After the locks are acquired, the script rebuilds the manifest inside the repeatable-read transaction. Any drift aborts before writes. It then verifies the exact projected rows for every rebuilt climb, including climbs whose authoritative projection is empty, and requires the global invalid-row count to be zero before commit. Woods uses valid zero-based, code-driven hold IDs; its hold zero is preserved in both the repair and similarity readers. Only multi-frame projection is restricted to the Aurora-family board allowlist; invalid stored rows are discovered, deleted, and verified across all board types. A second approved dry-run should report `changed=0`, `invalid_rows=0`, and a new stable digest for that clean state.
 
 ## Popular-config cache
 

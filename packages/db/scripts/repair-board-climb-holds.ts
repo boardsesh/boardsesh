@@ -183,7 +183,7 @@ export async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promi
         UNION ALL
         SELECT invalid.board_type, invalid.climb_uuid AS uuid, FALSE AS multi_frame_target
         FROM board_climb_holds invalid
-        WHERE invalid.hold_id <= 0 OR invalid.hold_state = '' OR invalid.hold_state LIKE '%=%'
+        WHERE (invalid.hold_id < 0 OR (invalid.hold_id = 0 AND invalid.board_type <> 'woods')) OR invalid.hold_state = '' OR invalid.hold_state LIKE '%=%'
       ),
       candidate_identity AS (
         SELECT board_type, uuid, BOOL_OR(multi_frame_target) AS multi_frame_target
@@ -613,7 +613,7 @@ export async function verifyAppliedRepair(
     sql`
       SELECT COUNT(*)::integer AS invalid_count
       FROM board_climb_holds
-      WHERE hold_id <= 0 OR hold_state = '' OR hold_state LIKE '%=%'
+      WHERE (hold_id < 0 OR (hold_id = 0 AND board_type <> 'woods')) OR hold_state = '' OR hold_state LIKE '%=%'
     `,
   );
   if (invalidCount !== 0) throw new Error(`post-write global invalid row count is ${invalidCount}, expected 0`);
