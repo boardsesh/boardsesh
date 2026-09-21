@@ -25,6 +25,44 @@ describe('mixed-source current climb', () => {
     expect(mergeBoardHistory(history, [imported, native])).toBe(history);
   });
 
+  it('distinguishes UTC displays within the same millisecond', () => {
+    const first = { ...native, sentAt: '2026-09-18T10:00:00.122001Z' };
+    const later = { ...imported, sentAt: '2026-09-18T10:00:00.122999Z' };
+    expect(Date.parse(first.sentAt)).toBe(Date.parse(later.sentAt));
+    expect(mergeBoardHistory([first], [later])).toEqual([later, first]);
+    expect(merge(initialBoardPresenceState, [first, later]).currentClimb).toBe(later);
+  });
+
+  it('deduplicates native live delivery after mixed backfill and retains older missing history', () => {
+    const latest = { ...native, seq: 3 };
+    const state = merge(initialBoardPresenceState, [latest, newerImport]);
+    expect(boardPresenceReducer(state, { type: 'APPLY_CLIMB_SET', payload: { ...latest } })).toBe(state);
+    const older = { ...native, seq: 2, sentAt: '2026-09-18T09:59:00Z' };
+    const result = boardPresenceReducer(state, { type: 'APPLY_CLIMB_SET', payload: older });
+    expect(result.currentClimb).toBe(newerImport);
+    expect(result.lastSeq).toBe(3);
+    expect(result.history).toEqual([newerImport, latest, older]);
+  });
+
+  it('uses the latest native clear across a set and imported display between clears', () => {
+    const firstClear = clear(merge(initialBoardPresenceState, [native]));
+    const nextNative = { ...native, seq: 3, sentAt: '2026-09-18T10:02:00Z' };
+    const nextImport = { ...newerImport, sentAt: '2026-09-18T10:03:00Z' };
+    const betweenClears = merge(boardPresenceReducer(firstClear, { type: 'APPLY_CLIMB_SET', payload: nextNative }), [
+      nextImport,
+    ]);
+    expect(betweenClears.currentClimb).toBe(nextImport);
+    const secondClear = boardPresenceReducer(betweenClears, {
+      type: 'APPLY_CLIMB_CLEARED',
+      payload: { seq: 4, clearedAt: '2026-09-18T10:04:00Z' },
+    });
+    expect(secondClear.currentClimb).toBeNull();
+    expect(merge(secondClear, [nextImport])).toBe(secondClear);
+    expect(clear(secondClear)).toBe(secondClear);
+    const afterClear = { ...nextImport, seq: 11, sentAt: '2026-09-18T10:05:00Z' };
+    expect(merge(secondClear, [afterClear]).currentClimb).toBe(afterClear);
+  });
+
   it('keeps a newer native climb despite a higher imported sequence', () => {
     const state = boardPresenceReducer(initialBoardPresenceState, { type: 'APPLY_CLIMB_SET', payload: native });
     expect(merge(state, [imported])).toEqual({ ...state, history: [native, imported] });
