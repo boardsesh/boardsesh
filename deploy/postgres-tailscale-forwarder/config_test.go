@@ -71,6 +71,7 @@ func TestLoadConfigRejectsUnsafeInputs(t *testing.T) {
 		wantError string
 	}{
 		{name: "missing OAuth secret", overrides: map[string]string{"TS_CLIENT_SECRET": ""}, wantError: "TS_CLIENT_SECRET is required"},
+		{name: "empty OAuth secret suffix", overrides: map[string]string{"TS_CLIENT_SECRET": "tskey-client-"}, wantError: "unmodified Tailscale OAuth client secret"},
 		{name: "wrong credential type", overrides: map[string]string{"TS_CLIENT_SECRET": "tskey-auth-test"}, wantError: "unmodified Tailscale OAuth client secret"},
 		{name: "operator OAuth options", overrides: map[string]string{"TS_CLIENT_SECRET": "tskey-client-test?ephemeral=true"}, wantError: "unmodified Tailscale OAuth client secret"},
 		{name: "auth key precedence", overrides: map[string]string{"TS_AUTHKEY": "unexpected"}, wantError: "forbidden"},

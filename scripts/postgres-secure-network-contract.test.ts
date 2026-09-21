@@ -109,6 +109,24 @@ describe('production database network workflow contract', () => {
     ).toThrow('EXPECTED_DATABASE_ROLE must be an approved task-specific Boardsesh role');
   });
 
+  it.each(['boardsesh%5Fmigrator', '%62oardsesh_migrator'])(
+    'accepts %s only because it decodes to the exact allowed login',
+    (encodedRole) => {
+      const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+      expect(() => validateRoute(`postgresql://${encodedRole}:secret@${host}:5432/railway`, host)).not.toThrow();
+    },
+  );
+
+  it.each(['post%67res', 'boardsesh%5Fowner', 'boardsesh%255Fmigrator'])(
+    'rejects an encoded login outside the exact allowed role: %s',
+    (encodedRole) => {
+      const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+      expect(() => validateRoute(`postgresql://${encodedRole}:secret@${host}:5432/railway`, host)).toThrow(
+        'must use the expected task-specific role',
+      );
+    },
+  );
+
   it.each([
     '-crole=boardsesh_owner',
     '-c role=boardsesh_owner',
