@@ -12,6 +12,7 @@ const repositoryRoot = join(currentDirectory, '..', '..');
 const sourceGuardScript = join(repositoryRoot, 'scripts', 'mobile-web-bundle-check.sh');
 const sourceExportScript = join(repositoryRoot, 'scripts', 'build-expo-web-export.sh');
 const sourcePatchScript = join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs');
+const sourceSocialScript = join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-social.mjs');
 const sourceBudgetScript = join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs');
 
 const GLUE_PATH = 'board_renderer_wasm.js';
@@ -24,6 +25,7 @@ const WORKER_PATH = 'board-render.worker.js';
 // to emit real ones. A `touch`ed empty index.html, or a shell with no script
 // tag, would fail every case here for the wrong reason.
 const EXPORT_SHELL_AND_MANIFEST = `mkdir -p "$output_dir/_expo/static/js/web"
+printf 'preview image' > "$output_dir/og.png"
 printf 'globalThis.__stub=1;\\n' > "$output_dir/_expo/static/js/web/entry-stub.js"
 cat > "$output_dir/index.html" <<'SHELL_EOF'
 <!doctype html>
@@ -69,6 +71,7 @@ describe('mobile-web-bundle-check.sh', () => {
     // …and the PWA-manifest patcher the export script shells out to.
     mkdirSync(join(fixtureRoot, 'scripts', 'lib'), { recursive: true });
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
+    copyFileSync(sourceSocialScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-social.mjs'));
     // The export script's eager-payload budget step runs on every export, so the
     // fixture needs it too or every case dies on MODULE_NOT_FOUND before it
     // reaches the assertion it is actually about.

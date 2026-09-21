@@ -260,38 +260,40 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
 
   try {
     let parsedParams: ParsedBoardRouteParameters | null = null;
-    let boardAngle = seed.boardAngle != null ? Number(seed.boardAngle) : null;
-
-    if (seed.boardType && seed.layoutId != null && seed.sizeId != null) {
-      const parsedSetIds = parseSetIdString(seed.setIds);
-      if (parsedSetIds.length > 0) {
-        parsedParams = {
-          board_name: seed.boardType as BoardName,
-          layout_id: Number(seed.layoutId),
-          size_id: Number(seed.sizeId),
-          set_ids: parsedSetIds,
-          angle: boardAngle ?? 0,
-        };
-      }
-    }
-
+    let boardAngle: number | null = null;
     const pathname = extractPathname(rawBoardPath);
 
-    if (!parsedParams && pathname.startsWith('/b/')) {
+    if (pathname.startsWith('/b/')) {
       const parts = pathname.split('/').filter(Boolean);
-      const boardSlug = seed.boardSlug?.trim() || parts[1] || '';
+      const boardSlug = parts[1] || '';
       const pathAngle = parts[2] ? Number(parts[2]) : Number.NaN;
+      if (Number.isFinite(pathAngle)) boardAngle = pathAngle;
 
-      if (!Number.isNaN(pathAngle)) {
-        boardAngle = pathAngle;
+      // A board switch updates board_path without changing the original board_id.
+      if (
+        boardSlug &&
+        boardSlug === seed.boardSlug?.trim() &&
+        seed.boardType &&
+        seed.layoutId != null &&
+        seed.sizeId != null
+      ) {
+        const parsedSetIds = parseSetIdString(seed.setIds);
+        if (parsedSetIds.length > 0) {
+          boardAngle ??= seed.boardAngle;
+          parsedParams = {
+            board_name: seed.boardType as BoardName,
+            layout_id: Number(seed.layoutId),
+            size_id: Number(seed.sizeId),
+            set_ids: parsedSetIds,
+            angle: boardAngle ?? 0,
+          };
+        }
       }
 
-      if (boardSlug) {
+      if (!parsedParams && boardSlug) {
         const board = await resolveBoardBySlug(boardSlug);
         if (board) {
-          if (boardAngle == null || Number.isNaN(boardAngle)) {
-            boardAngle = board.angle;
-          }
+          boardAngle ??= board.angle;
           parsedParams = boardToRouteParams(board, boardAngle ?? board.angle);
         }
       }

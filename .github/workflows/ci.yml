@@ -152,6 +152,7 @@ jobs:
               # actual output. W-24 / #4438.
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
+              - 'scripts/lib/patch-expo-web-social.mjs'
               # The live fingerprint gates run in the mobile-bundle job; a PR
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
@@ -215,6 +216,7 @@ jobs:
               - 'deploy/app-subdomain/**'
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
+              - 'scripts/lib/patch-expo-web-social.mjs'
               - 'Dockerfile.web'
               - 'Dockerfile.backend'
               - 'packages/web/app/api/health/build-release.ts'
@@ -349,6 +351,7 @@ jobs:
               - 'scripts/create-service-docker-context.mjs'
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
+              - 'scripts/lib/patch-expo-web-social.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
               - 'scripts/lib/design-previews.ts'
               - 'scripts/lib/dev-object-store.ts'
