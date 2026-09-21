@@ -16,7 +16,7 @@
 // If this test ever starts failing because `dispose()` closes the socket on its
 // own, the hub's `terminate()` call can go with it.
 
-import { describe, it, expect } from 'vite-plus/test';
+import { beforeEach, describe, it, expect } from 'vite-plus/test';
 import { createClient } from 'graphql-ws';
 
 /** Accepts the upgrade, never sends `connection_ack`. */
@@ -56,8 +56,11 @@ const openedSockets: WedgedSocket[] = [];
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 describe('graphql-ws teardown of a socket that never acks', () => {
-  it('dispose() leaves it open forever; terminate() closes it', async () => {
+  beforeEach(() => {
     openedSockets.length = 0;
+  });
+
+  it('dispose() leaves it open forever; terminate() closes it', async () => {
     const client = createClient({
       url: 'ws://wedged.test/graphql',
       webSocketImpl: WedgedSocket as unknown as typeof WebSocket,
