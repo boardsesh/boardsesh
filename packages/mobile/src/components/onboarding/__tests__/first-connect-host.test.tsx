@@ -94,6 +94,20 @@ describe('FirstConnectHost', () => {
     expect(getFirstConnectSnapshot()).toMatchObject({ userId: 'user-1', enrolment: ENROLMENT });
   });
 
+  it('waits for the signed-in profile before it binds anyone', async () => {
+    profileCtrl.id = undefined;
+    const { rerender } = render(<FirstConnectHost />);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(registerArmMock).not.toHaveBeenCalled();
+
+    await writeConnectStepEnrolment(ENROLMENT);
+    profileCtrl.id = 'user-1';
+    rerender(<FirstConnectHost />);
+
+    await waitFor(() => expect(registerArmMock).toHaveBeenCalledWith('treatment'));
+    expect(registerArmMock).not.toHaveBeenCalledWith(null);
+  });
+
   it('clears the arm for an account that is not in the test', async () => {
     render(<FirstConnectHost />);
 

@@ -46,6 +46,9 @@ export function FirstConnectHost() {
   const { isAuthenticated } = useAuth();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const accountId = isAuthenticated ? (profile?.id ?? null) : null;
+  // While a signed-in profile is still loading there is nobody to bind yet, and
+  // binding "nobody" would clear the arm for a launch's worth of early events.
+  const accountKnown = !isAuthenticated || profile !== undefined;
   const enabled = useFirstConnectCtaEnabled();
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
@@ -79,6 +82,7 @@ export function FirstConnectHost() {
   const ledless = bluetooth?.ledless ?? false;
 
   useEffect(() => {
+    if (!accountKnown) return;
     let current = true;
     void bindFirstConnectAccount(accountId).then((enrolment) => {
       if (current) registerConnectStepArm(enrolment?.arm ?? null);
@@ -86,7 +90,7 @@ export function FirstConnectHost() {
     return () => {
       current = false;
     };
-  }, [accountId]);
+  }, [accountId, accountKnown]);
 
   // The first successful connect. The Bluetooth provider flips `isConnected`
   // once the link is up, whichever surface asked for it.
