@@ -20,8 +20,13 @@ import { bleManager } from './ble-manager';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from './scan-options';
-import { requestBleRuntimePermissions } from './use-ble-permissions';
+import { requestBleRuntimePermissionStatus } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
+import {
+  readBluetoothUnavailableReason,
+  trackBluetoothUnavailable,
+  type BluetoothUnavailableReason,
+} from './bluetooth-unavailable';
 
 const SCAN_TIMEOUT_MS = 15_000;
 
@@ -31,8 +36,20 @@ const EMPTY_ADVERTISED_TYPES: AdvertisedBoardTypes = new Map();
 
 export type BoardScanStatus = 'idle' | 'scanning' | 'done' | 'unavailable';
 
+/**
+ * Why a scan is 'unavailable', so the sheet can say something the climber can
+ * act on. 'permission_denied' is an Android "Don't allow" answered in the dialog:
+ * scanning again shows the dialog again. A blocked permission (iOS denial,
+ * Android never-ask-again) is 'unauthorized', which only the Settings app fixes.
+ */
+export type BoardScanUnavailableReason = 'permission_denied' | BluetoothUnavailableReason;
+
+type BoardScanOutcome = 'completed' | 'stopped' | 'error';
+
 export type BoardScan = {
   status: BoardScanStatus;
+  /** Set while `status` is 'unavailable', null otherwise. */
+  unavailableReason: BoardScanUnavailableReason | null;
   /** Distinct serial numbers parsed from in-range device names. */
   serials: string[];
   /** Board type advertised for each of those serials, where the name carried one. */
@@ -44,16 +61,21 @@ export type BoardScan = {
 
 export function useBoardScan(): BoardScan {
   const [status, setStatus] = useState<BoardScanStatus>('idle');
+  const [unavailableReason, setUnavailableReason] = useState<BoardScanUnavailableReason | null>(null);
   const [serials, setSerials] = useState<string[]>([]);
   const [advertisedTypes, setAdvertisedTypes] = useState<AdvertisedBoardTypes>(EMPTY_ADVERTISED_TYPES);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanningRef = useRef(false);
+  // Serials heard by the running scan, for Board Quickstart Scan Finished.
+  const foundCountRef = useRef(0);
   const scanAttemptRef = useRef(0);
   // A device event can land in the BLE callback just after unmount; gate the
   // state writes so we don't setState on an unmounted component.
   const mountedRef = useRef(true);
 
-  const stop = useCallback(() => {
+  // Every way a running scan ends comes through here, so each one reports once.
+  // A scan that never started the radio (blocked, radio off) reports nothing.
+  const stop = useCallback((outcome: BoardScanOutcome) => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -61,7 +83,13 @@ export function useBoardScan(): BoardScan {
     if (scanningRef.current) {
       bleManager.stopDeviceScan();
       scanningRef.current = false;
+      track(SHARED_EVENTS.BoardQuickstartScanFinished, { outcome, found_count: foundCountRef.current });
     }
+  }, []);
+
+  const showUnavailable = useCallback((reason: BoardScanUnavailableReason) => {
+    setUnavailableReason(reason);
+    setStatus('unavailable');
   }, []);
 
   const start = useCallback(async () => {
@@ -71,16 +99,21 @@ export function useBoardScan(): BoardScan {
     scanAttemptRef.current = scanAttempt;
     const isCurrentScanAttempt = () => mountedRef.current && scanAttemptRef.current === scanAttempt;
 
-    const permissionsGranted = await requestBleRuntimePermissions();
+    const permissionStatus = await requestBleRuntimePermissionStatus();
     if (!isCurrentScanAttempt()) return;
 
-    if (!permissionsGranted) {
+    if (permissionStatus !== 'granted') {
       // Previously silent: the sheet just flipped to 'unavailable' and nothing
       // told us a denial (rather than a dead radio) was behind it.
       void describeBlePermissionDenial().then((denialContext) => {
         track(SHARED_EVENTS.BluetoothPermissionDenied, { ...denialContext, surface: 'quickstart_scan' });
       });
-      setStatus('unavailable');
+      if (permissionStatus === 'blocked') {
+        trackBluetoothUnavailable('unauthorized', 'quickstart_scan');
+        showUnavailable('unauthorized');
+      } else {
+        showUnavailable('permission_denied');
+      }
       return;
     }
 
@@ -88,13 +121,20 @@ export function useBoardScan(): BoardScan {
     if (!isCurrentScanAttempt()) return;
 
     if (!bluetoothPoweredOn) {
-      setStatus('unavailable');
+      // iOS reports a denied Bluetooth permission here, as the Unauthorized radio
+      // state, not from the permission request above.
+      const reason = await readBluetoothUnavailableReason();
+      if (!isCurrentScanAttempt()) return;
+      trackBluetoothUnavailable(reason, 'quickstart_scan');
+      showUnavailable(reason);
       return;
     }
 
     const found = new Map<string, { deviceId: string; name?: string }>();
+    foundCountRef.current = 0;
     setSerials([]);
     setAdvertisedTypes(EMPTY_ADVERTISED_TYPES);
+    setUnavailableReason(null);
     setStatus('scanning');
     scanningRef.current = true;
 
@@ -106,8 +146,15 @@ export function useBoardScan(): BoardScan {
     void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (error, device) => {
       if (!isCurrentScanAttempt()) return;
       if (error) {
-        stop();
-        setStatus('unavailable');
+        stop('error');
+        showUnavailable('unknown');
+        // Radio switched off or permission pulled mid-scan: work out which. The
+        // read is async, so re-check the attempt before touching state.
+        void readBluetoothUnavailableReason().then((reason) => {
+          if (!isCurrentScanAttempt()) return;
+          trackBluetoothUnavailable(reason, 'quickstart_scan');
+          setUnavailableReason(reason);
+        });
         return;
       }
       if (!device) return;
@@ -126,6 +173,7 @@ export function useBoardScan(): BoardScan {
         // Keep the whole name, not just the serial: the advertised board type
         // lives in the same string and decides which board may claim it.
         found.set(serial, { deviceId: device.id, name: deviceName });
+        foundCountRef.current = found.size;
         setSerials([...found.keys()]);
         setAdvertisedTypes(advertisedBoardTypesBySerial([...found.values()]));
       }
@@ -133,16 +181,19 @@ export function useBoardScan(): BoardScan {
 
     timeoutRef.current = setTimeout(() => {
       if (!isCurrentScanAttempt()) return;
-      stop();
+      stop('completed');
       setStatus('done');
     }, SCAN_TIMEOUT_MS);
-  }, [stop]);
+  }, [stop, showUnavailable]);
 
+  // Also the sheet's "Scan again": back to idle, and the sheet's open effect
+  // starts a fresh scan.
   const reset = useCallback(() => {
     scanAttemptRef.current += 1;
-    stop();
+    stop('stopped');
     setSerials([]);
     setAdvertisedTypes(EMPTY_ADVERTISED_TYPES);
+    setUnavailableReason(null);
     setStatus('idle');
   }, [stop]);
 
@@ -152,9 +203,9 @@ export function useBoardScan(): BoardScan {
     return () => {
       mountedRef.current = false;
       scanAttemptRef.current += 1;
-      stop();
+      stop('stopped');
     };
   }, [stop]);
 
-  return { status, serials, advertisedTypes, start, reset };
+  return { status, unavailableReason, serials, advertisedTypes, start, reset };
 }

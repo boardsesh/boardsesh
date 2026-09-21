@@ -20,6 +20,20 @@ export function requestBleRuntimePermissions(_options?: { requestNotificationPer
   return Promise.resolve(isWebBluetoothAvailable());
 }
 
+// Same contract as the native module. A browser without Web Bluetooth reads as
+// 'denied', which keeps the connect flow's existing permission copy there; web
+// has no "blocked in Settings" state to send anyone to.
+export function requestBleRuntimePermissionStatus(_options?: {
+  requestNotificationPermission?: boolean;
+}): Promise<'granted' | 'denied' | 'blocked'> {
+  return Promise.resolve(isWebBluetoothAvailable() ? 'granted' : 'denied');
+}
+
+// Browsers have no Android foreground-service notification to ask for.
+export function requestOptionalNotificationPermission(): Promise<void> {
+  return Promise.resolve();
+}
+
 export function useBlePermissions(): BlePermissionsResult {
   const available = isWebBluetoothAvailable();
   return {

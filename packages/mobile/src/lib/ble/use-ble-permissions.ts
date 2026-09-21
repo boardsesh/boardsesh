@@ -16,7 +16,25 @@ type BleRuntimePermissionOptions = {
   requestNotificationPermission?: boolean;
 };
 
-async function requestOptionalNotificationPermission(): Promise<void> {
+/**
+ * - 'granted': every permission the scan needs is held.
+ * - 'denied': the climber said no in the system dialog. The next request shows
+ *   the dialog again, so asking again from the app is still a real option.
+ * - 'blocked': Android answered `never_ask_again` for at least one missing
+ *   permission, so no dialog will appear and only the Settings app can grant it.
+ *   iOS never reports this here: its denial shows up as the `Unauthorized` radio
+ *   state instead (see bluetooth-unavailable.ts).
+ */
+export type BleRuntimePermissionStatus = 'granted' | 'denied' | 'blocked';
+
+/**
+ * POST_NOTIFICATIONS (Android 13+) lets the session foreground service show its
+ * ongoing notification with Previous/Next controls. Optional: a denial only hides
+ * the notification, and the service keeps the board connection alive either way.
+ * Exported so the connect flow can ask after the board is connected rather than
+ * stacking a second system dialog in front of the scan (#5654).
+ */
+export async function requestOptionalNotificationPermission(): Promise<void> {
   if (Platform.OS !== 'android' || androidApiLevel() < 33) return;
 
   try {
@@ -26,18 +44,22 @@ async function requestOptionalNotificationPermission(): Promise<void> {
   }
 }
 
-export async function requestBleRuntimePermissions({
+export async function requestBleRuntimePermissions(options: BleRuntimePermissionOptions = {}): Promise<boolean> {
+  return (await requestBleRuntimePermissionStatus(options)) === 'granted';
+}
+
+export async function requestBleRuntimePermissionStatus({
   requestNotificationPermission = false,
-}: BleRuntimePermissionOptions = {}): Promise<boolean> {
+}: BleRuntimePermissionOptions = {}): Promise<BleRuntimePermissionStatus> {
   if (Platform.OS === 'ios') {
     // iOS handles BLE permissions via Info.plist entries; the system prompts
     // automatically on first scan. No runtime permission request needed, and
     // radio state is checked separately by scan/connect availability guards.
-    return true;
+    return 'granted';
   }
 
   if (Platform.OS !== 'android') {
-    return true;
+    return 'granted';
   }
 
   // The API-31+ branch is only *complete* once BLUETOOTH_SCAN is declared with
@@ -52,22 +74,25 @@ export async function requestBleRuntimePermissions({
 
   try {
     const permissionResults = await PermissionsAndroid.requestMultiple(requiredPermissions);
-    const requiredPermissionsGranted = requiredPermissions.every(
-      (permission) => permissionResults[permission] === PermissionsAndroid.RESULTS.GRANTED,
+    const missingPermissions = requiredPermissions.filter(
+      (permission) => permissionResults[permission] !== PermissionsAndroid.RESULTS.GRANTED,
     );
 
     if (requestNotificationPermission) {
-      // POST_NOTIFICATIONS (Android 13+) lets the session foreground-service show
-      // its ongoing notification with Previous/Next controls. Requested at
-      // connect time, but decoupled from the BLE gate: a denial only hides the
-      // notification; the foreground service still runs and keeps the board
-      // connection alive in the background.
+      // Decoupled from the BLE gate: a denial only hides the notification; the
+      // foreground service still runs and keeps the board connection alive.
       await requestOptionalNotificationPermission();
     }
 
-    return requiredPermissionsGranted;
+    if (missingPermissions.length === 0) return 'granted';
+    // Once Android stops showing the dialog, re-asking from the app is a dead
+    // tap; only the Settings app can grant it now.
+    const blockedForGood = missingPermissions.some(
+      (permission) => permissionResults[permission] === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+    );
+    return blockedForGood ? 'blocked' : 'denied';
   } catch {
-    return false;
+    return 'denied';
   }
 }
 

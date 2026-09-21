@@ -24,6 +24,8 @@ export type BlePickerHostValue = {
    * importing the provider would be a static import cycle.
    */
   onNoLeds: () => void;
+  /** Cancel this picker and start the connect over, for "Scan again" after an empty scan. */
+  onScanAgain: () => void;
 };
 
 export const BlePickerHostContext = createContext<BlePickerHostValue | null>(null);

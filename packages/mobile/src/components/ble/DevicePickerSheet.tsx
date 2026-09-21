@@ -31,6 +31,12 @@ type DevicePickerSheetProps = {
    * because BluetoothProvider renders this sheet.
    */
   onNoLeds?: () => void;
+  /**
+   * Scan again after a scan that found nothing. The host cancels this picker and
+   * starts the connect over, which scans afresh. Omitted where no host wires it;
+   * the button is then not rendered.
+   */
+  onScanAgain?: () => void;
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
@@ -44,6 +50,7 @@ export function DevicePickerSheet({
   resolvedBoards,
   currentBoardConfig,
   onNoLeds,
+  onScanAgain,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
@@ -178,6 +185,12 @@ export function DevicePickerSheet({
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('ble.noDevicesFound')}
           </Text>
+          {/* The only way on from an empty scan used to be Cancel, then finding
+              the bulb again. Shown next to the location hints too: their
+              "granted" copy asks for exactly this. */}
+          {onScanAgain && (
+            <Button title={t('ble.scanAgain')} onPress={onScanAgain} variant="tonal" size="medium" icon="refresh" />
+          )}
         </View>
       )}
 

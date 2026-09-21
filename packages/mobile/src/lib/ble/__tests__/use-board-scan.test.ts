@@ -265,8 +265,9 @@ describe('useBoardScan', () => {
       await result.current.start();
     });
 
-    act(() => {
+    await act(async () => {
       scanCallback()(new Error('scan failed'), null);
+      await Promise.resolve();
     });
 
     expect(result.current.status).toBe('unavailable');
@@ -302,5 +303,244 @@ describe('useBoardScan', () => {
     unmount();
 
     expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+  });
+});
+
+// #5654: the quickstart said "Turn on Bluetooth to scan" for every stop, and ran
+// without any event, so a climber who found their board here never counted as
+// having scanned.
+describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function trackedEventNames(): unknown[] {
+    return analytics.track.mock.calls.map(([eventName]) => eventName);
+  }
+
+  it('is unauthorized, and says so, when Android stopped showing the permission dialog', async () => {
+    reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+      BLUETOOTH_SCAN: 'never_ask_again',
+      BLUETOOTH_CONNECT: 'granted',
+    });
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('unauthorized');
+    expect(analytics.track).toHaveBeenCalledWith('Bluetooth Unavailable', {
+      reason: 'unauthorized',
+      surface: 'quickstart_scan',
+      platform: 'android',
+    });
+  });
+
+  it('is permission_denied for a dialog "Don\'t allow", which scanning again re-asks', async () => {
+    reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+      BLUETOOTH_SCAN: 'denied',
+      BLUETOOTH_CONNECT: 'granted',
+    });
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.unavailableReason).toBe('permission_denied');
+    expect(trackedEventNames()).not.toContain('Bluetooth Unavailable');
+  });
+
+  it('is unauthorized when iOS reports the Unauthorized radio state', async () => {
+    // waitForBlePoweredOn treats Unauthorized as transient and waits it out
+    // (2.5 s) before giving up; the reason is read after that.
+    reactNativePermissionHarness.platform.OS = 'ios';
+    mockBleManager.state.mockResolvedValue('Unauthorized');
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      const startPromise = result.current.start();
+      await vi.advanceTimersByTimeAsync(2_500);
+      await startPromise;
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('unauthorized');
+    expect(analytics.track).toHaveBeenCalledWith('Bluetooth Unavailable', {
+      reason: 'unauthorized',
+      surface: 'quickstart_scan',
+      platform: 'ios',
+    });
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['PoweredOff', 'powered_off'],
+    ['Unsupported', 'unsupported'],
+  ])('is %s → %s when the radio says so', async (radioState, reason) => {
+    mockBleManager.state.mockResolvedValue(radioState);
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.unavailableReason).toBe(reason);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Bluetooth Unavailable',
+      expect.objectContaining({ reason, surface: 'quickstart_scan' }),
+    );
+  });
+
+  it('works out why after a scan error, and clears the reason on reset', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    mockBleManager.state.mockResolvedValue('PoweredOff');
+
+    await act(async () => {
+      scanCallback()(new Error('BluetoothLE is powered off'), null);
+      await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('powered_off');
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'error',
+      found_count: 0,
+    });
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.status).toBe('idle');
+    expect(result.current.unavailableReason).toBeNull();
+  });
+
+  it('reports a scan that ran its full window, with the serials it heard', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      const cb = scanCallback();
+      cb(null, { localName: 'Kilter Board#alpha@3' });
+      cb(null, { localName: 'Tension Board#beta@3' });
+      cb(null, { localName: 'Kilter Board#alpha@3' });
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'completed',
+      found_count: 2,
+    });
+  });
+
+  it('reports a scan cut short by picking a board or closing the sheet', async () => {
+    // The success path: the climber taps their board before the 15 s window ends,
+    // the sheet closes and resets the scan. That still has to count as a scan.
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      scanCallback()(null, { localName: 'Kilter Board#alpha@3' });
+    });
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'stopped',
+      found_count: 1,
+    });
+  });
+
+  it('reports once per scan: the timeout, then closing the sheet, is one event', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    act(() => {
+      result.current.reset();
+    });
+
+    const finishedEvents = analytics.track.mock.calls.filter(
+      ([eventName]) => eventName === 'Board Quickstart Scan Finished',
+    );
+    expect(finishedEvents).toHaveLength(1);
+  });
+
+  it('reports a scan still running when the sheet unmounts', async () => {
+    const { result, unmount } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+
+    unmount();
+
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'stopped',
+      found_count: 0,
+    });
+  });
+
+  it('reports nothing for a scan that never started the radio', async () => {
+    mockBleManager.state.mockResolvedValue('PoweredOff');
+    const { result, unmount } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      result.current.reset();
+    });
+    unmount();
+
+    expect(trackedEventNames()).not.toContain('Board Quickstart Scan Finished');
+  });
+
+  it('starts a fresh count for each scan', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      scanCallback()(null, { localName: 'Kilter Board#alpha@3' });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    analytics.track.mockClear();
+
+    await act(async () => {
+      await result.current.start();
+    });
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'completed',
+      found_count: 0,
+    });
   });
 });

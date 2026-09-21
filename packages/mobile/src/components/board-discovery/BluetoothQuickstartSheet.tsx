@@ -7,6 +7,8 @@ import { boardRowSubtitle } from '@boardsesh/board-config';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
+import { bluetoothBlockedBody } from '../../lib/ble/bluetooth-unavailable-alert';
+import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -32,8 +34,9 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
   function BluetoothQuickstartSheet({ active, onClose, onSelect }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
+    const { t: tSettings } = useTranslation('settings');
     const labelOptions = useSprayLabelOptions();
-    const { status, serials, advertisedTypes, start, reset } = useBoardScan();
+    const { status, unavailableReason, serials, advertisedTypes, start, reset } = useBoardScan();
     // Scoped to what each controller announced. Aurora reuses a serial across
     // board apps, so unscoped this sheet would offer a stranger's Kilter board
     // for an in-range Tension controller and let the user make it active.
@@ -66,6 +69,15 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       });
     }, [promptEnableLocationServices, reset]);
 
+    // reset() drops the scan back to 'idle' and the open effect below starts a
+    // fresh one, the same restart the location grant uses.
+    const handleScanAgain = useCallback(() => {
+      reset();
+    }, [reset]);
+    const handleOpenSettings = useCallback(() => {
+      void openAppSettings();
+    }, []);
+
     // Start scanning when the sheet opens; reset back to idle when it closes so
     // the next open re-scans from scratch.
     useEffect(() => {
@@ -78,12 +90,51 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 
     const renderBody = () => {
       if (status === 'unavailable') {
+        const scanAgainButton = (
+          <Button
+            title={tSettings('ble.scanAgain')}
+            onPress={handleScanAgain}
+            variant="text"
+            size="medium"
+            icon="refresh"
+          />
+        );
+        // Blocked (a denied iOS prompt, or Android no longer asking) used to read
+        // "Turn on Bluetooth to scan", which a climber with Bluetooth on can't act
+        // on. Only the Settings app can fix it, so point there.
+        if (unavailableReason === 'unauthorized') {
+          return (
+            <View style={styles.state}>
+              <Icon name="bluetooth" size={40} color={systemColors.tertiaryLabel} />
+              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
+                {tSettings('ble.blockedTitle')}
+              </Text>
+              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                {bluetoothBlockedBody(tSettings)}
+              </Text>
+              {canOpenAppSettings() && (
+                <Button
+                  title={tSettings('ble.openSettings')}
+                  onPress={handleOpenSettings}
+                  variant="tonal"
+                  size="medium"
+                />
+              )}
+              {scanAgainButton}
+            </View>
+          );
+        }
+        // An Android "Don't allow" isn't a radio problem either, and scanning
+        // again brings the system dialog back.
         return (
           <View style={styles.state}>
             <Icon name="warning" size={40} color={systemColors.tertiaryLabel} />
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
-              {t('mobile.bluetooth.unavailable')}
+              {unavailableReason === 'permission_denied'
+                ? tSettings('ble.errorPermissionDenied')
+                : t('mobile.bluetooth.unavailable')}
             </Text>
+            {scanAgainButton}
           </View>
         );
       }
@@ -161,6 +212,16 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 {t('settings:ble.troubleshootTips')}
               </Text>
             )}
+            {/* A board that was asleep or out of range a moment ago is the usual
+                reason for an empty scan; the tips above say to fix that, this
+                runs the scan again once they have. */}
+            <Button
+              title={tSettings('ble.scanAgain')}
+              onPress={handleScanAgain}
+              variant="text"
+              size="medium"
+              icon="refresh"
+            />
           </View>
         );
       }

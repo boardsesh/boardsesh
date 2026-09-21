@@ -402,3 +402,53 @@ describe('DevicePickerSheet', () => {
     });
   });
 });
+
+// #5654: an empty scan used to end at Cancel, with no way to try again short of
+// finding the bulb again.
+describe('DevicePickerSheet Scan again', () => {
+  beforeEach(() => {
+    stats.noneMatchedSelectedType = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.wasGranted = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+  });
+
+  const scanAgainButton = (root: HTMLElement) =>
+    root.querySelector('[data-button="ble.scanAgain"]') as HTMLButtonElement | null;
+
+  it('offers Scan again next to "No boards found nearby" and the tips', () => {
+    const onScanAgain = vi.fn();
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain })} />);
+
+    expect(hasText(container, 'ble.noDevicesFound')).toBe(true);
+    expect(hasText(container, 'ble.troubleshootTips')).toBe(true);
+    act(() => scanAgainButton(container)?.click());
+    expect(onScanAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps it alongside the location hint, whose "granted" copy asks for a fresh scan', () => {
+    locationHint.wasGranted = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain: vi.fn() })} />);
+
+    expect(hasText(container, 'ble.locationHintGranted')).toBe(true);
+    expect(scanAgainButton(container)).not.toBeNull();
+  });
+
+  it('hides it while the first scan is still running', () => {
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, onScanAgain: vi.fn() })} />);
+    expect(scanAgainButton(container)).toBeNull();
+  });
+
+  it('hides it once boards are listed', () => {
+    const { container } = render(
+      <DevicePickerSheet {...makeProps({ devices: [device('a')], onScanAgain: vi.fn() })} />,
+    );
+    expect(scanAgainButton(container)).toBeNull();
+  });
+
+  it('renders nothing where no host wires a rescan', () => {
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain: undefined })} />);
+    expect(scanAgainButton(container)).toBeNull();
+  });
+});

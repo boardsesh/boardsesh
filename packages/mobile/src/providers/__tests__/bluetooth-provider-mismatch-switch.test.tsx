@@ -45,7 +45,8 @@ const bluetooth = vi.hoisted(() => {
       disconnect: vi.fn(async () => {}),
       sendFramesToBoard: vi.fn(async () => true as boolean | undefined),
       pickerState: null as PickerState | null,
-      reconnectSerialForCurrentBoard: null,
+      reconnectSerialForCurrentBoard: null as string | null,
+      reconnectDeviceIdForCurrentBoard: null as string | null,
       connectInitialSendRef: {
         current: null as {
           frames: string;
@@ -77,6 +78,7 @@ const presence = vi.hoisted(() => ({
 
 type PickerSheetProps = {
   onSelect: (deviceId: string) => void;
+  onScanAgain?: () => void;
 };
 
 const pickerSheet = vi.hoisted(() => ({
@@ -441,7 +443,7 @@ describe('BluetoothProvider mismatch switch', () => {
     );
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined);
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
 
@@ -483,7 +485,7 @@ describe('BluetoothProvider mismatch switch', () => {
       }),
     );
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined);
     });
 
     bluetooth.state.isConnected = true;
@@ -693,6 +695,101 @@ function makeBoardItem(uuid: string, boardType: string | undefined, layoutId: nu
     },
   };
 }
+
+// #5654: "Scan again" in a picker whose scan found nothing. The adapter's
+// connect owns that scan, so the provider cancels the picker and queues a fresh
+// connect through the pending auto-connect slot once the cancelled one settles.
+describe('BluetoothProvider picker Scan again', () => {
+  beforeEach(() => {
+    analytics.track.mockClear();
+    pickerSheet.props = null;
+    resolvedBoards.value = new Map();
+    bluetooth.state.isConnected = false;
+    bluetooth.state.loading = false;
+    bluetooth.state.pickerState = null;
+    bluetooth.state.reconnectSerialForCurrentBoard = null;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = null;
+    bluetooth.state.connect.mockClear();
+    bluetooth.state.connect.mockResolvedValue(true);
+    presence.enabled = false;
+    presence.boardId = null;
+    presence.currentClimb = null;
+    queue.currentClimbQueueItem = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function makeEmptyPickerState(): PickerState {
+    return { devices: [], isScanning: false, handleSelect: vi.fn(), handleCancel: vi.fn() };
+  }
+
+  function rerenderSettled(rerender: (ui: ReactNode) => void, props: BoardProps) {
+    // The cancelled connect settles: its picker is gone and `loading` clears.
+    bluetooth.state.pickerState = null;
+    bluetooth.state.loading = false;
+    rerender(createElement(BluetoothProvider, { ...props, children: createElement('div', null) }));
+  }
+
+  it('cancels the empty picker, then connects again once the cancelled connect settles', async () => {
+    const pickerState = makeEmptyPickerState();
+    bluetooth.state.pickerState = pickerState;
+    bluetooth.state.loading = true;
+    bluetooth.state.reconnectSerialForCurrentBoard = 'SN-1';
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    act(() => pickerSheet.props?.onScanAgain?.());
+
+    expect(pickerState.handleCancel).toHaveBeenCalledOnce();
+    // connect() bails while the old one is in flight, so it must wait.
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    expect(analytics.track).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'picker_scan_again',
+      boardName: 'kilter',
+      reconnect: true,
+    });
+
+    rerenderSettled(rerender, KILTER_PROPS);
+
+    await waitFor(() => {
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-1', undefined);
+    });
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it('targets a remembered MoonBoard by device id', async () => {
+    bluetooth.state.pickerState = makeEmptyPickerState();
+    bluetooth.state.loading = true;
+    bluetooth.state.reconnectDeviceIdForCurrentBoard = 'moon-1';
+    const moonboardProps: BoardProps = { boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: '1' };
+
+    const { rerender } = renderProvider(moonboardProps);
+    act(() => pickerSheet.props?.onScanAgain?.());
+    rerenderSettled(rerender, moonboardProps);
+
+    await waitFor(() => {
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-1');
+    });
+  });
+
+  it('opens the picker again when no board is remembered', async () => {
+    bluetooth.state.pickerState = makeEmptyPickerState();
+    bluetooth.state.loading = true;
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    act(() => pickerSheet.props?.onScanAgain?.());
+    rerenderSettled(rerender, KILTER_PROPS);
+
+    await waitFor(() => {
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Connect Tapped',
+      expect.objectContaining({ surface: 'picker_scan_again', reconnect: false }),
+    );
+  });
+});
 
 describe('BluetoothProvider spill skip', () => {
   beforeEach(() => {

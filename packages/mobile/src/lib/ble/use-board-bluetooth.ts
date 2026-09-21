@@ -39,8 +39,9 @@ import {
   nativeBleSupportsBoard,
   subscribeNativeBleConnected,
 } from './adapter-factory';
-import { requestBleRuntimePermissions } from './use-ble-permissions';
+import { requestBleRuntimePermissionStatus, requestOptionalNotificationPermission } from './use-ble-permissions';
 import { describeBlePermissionDenial } from './android-location-permission';
+import { alertBluetoothUnavailable } from './bluetooth-unavailable-alert';
 import { manufacturerCompanyId } from './advertisement';
 import type {
   BleAdapterOptions,
@@ -1414,14 +1415,22 @@ export function useBoardBluetooth({
       let connectAdapter: BluetoothAdapter | null = null;
 
       try {
-        const permissionsGranted = await requestBleRuntimePermissions({ requestNotificationPermission: true });
-        if (!permissionsGranted) {
+        // Bluetooth only: the Android 13+ notifications prompt waits until the
+        // board is connected (below), so a first connect shows one system dialog
+        // before the scan instead of two (#5654).
+        const permissionStatus = await requestBleRuntimePermissionStatus();
+        if (permissionStatus !== 'granted') {
           // The Alert is the only trace this path used to leave — an entire
           // class of "Bluetooth doesn't work" was invisible in telemetry.
           void describeBlePermissionDenial().then((denialContext) => {
             track(SHARED_EVENTS.BluetoothPermissionDenied, { ...denialContext, surface: 'connect', boardName });
           });
-          Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          if (permissionStatus === 'blocked') {
+            // Android stopped showing the dialog, so re-asking is a dead tap.
+            await alertBluetoothUnavailable({ reason: 'unauthorized', boardName, t, tCommon });
+          } else {
+            Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'));
+          }
           return false;
         }
 
@@ -1434,7 +1443,8 @@ export function useBoardBluetooth({
 
         const available = await adapter.isAvailable();
         if (!available) {
-          Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+          // Blocked (iOS denial) and radio-off used to share "Bluetooth is off".
+          await alertBluetoothUnavailable({ boardName, t, tCommon });
           return false;
         }
 
@@ -1684,6 +1694,9 @@ export function useBoardBluetooth({
         setIsConnected(true);
         onConnectionChange?.(true);
         onConnectSuccess?.(parsedSerial, connectionHandle);
+        // Android 13+ only, and not awaited: the board is connected, and the
+        // dialog doesn't hold up the write that lights the climb (#5654).
+        void requestOptionalNotificationPermission();
         // Connect-time BLE write diagnostics (iOS native adapter only; null on
         // Android/web and on binaries too old to report them). Set as global
         // Sentry tags so they ride any later write-stall report, and recorded on
@@ -1781,7 +1794,7 @@ export function useBoardBluetooth({
           case 'user_cancelled':
             break;
           case 'unavailable':
-            Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unavailable'));
+            await alertBluetoothUnavailable({ boardName, t, tCommon });
             break;
           case 'board_not_found':
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.boardNotFound'));
