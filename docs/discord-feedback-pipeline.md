@@ -152,6 +152,12 @@ to replay missed events. A failed reconnect preserves that state. Non-resumable
 invalid-session responses and invalid/expired sequence closes start a new
 Identify handshake; stopping the bot also clears the session. See the
 [Discord Gateway resumption contract](https://docs.discord.com/developers/events/gateway#resuming).
+The first heartbeat uses Discord's recommended random offset; later heartbeats
+use the server interval and retain missing-ACK disconnect detection. Gateway
+reactions and replies retry an explicit HTTP 429 at most five times after the
+advertised delay plus a 250ms margin. They do not retry ambiguous network or 5xx
+reply failures, which could otherwise duplicate a message. Acknowledgement
+failure remains nonfatal to authorized workflow dispatch.
 
 ### GitHub configuration
 
