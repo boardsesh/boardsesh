@@ -67,6 +67,7 @@ vi.mock('@boardsesh/board-react', async () => {
 });
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>

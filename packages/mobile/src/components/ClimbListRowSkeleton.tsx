@@ -1,24 +1,33 @@
 import { View, StyleSheet } from 'react-native';
-import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import {
+  separatorInsetForDensity,
+  thumbnailSizeForDensity,
+  type ClimbListDensity,
+} from './climb-list-thumbnail-metrics';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
 import { CLIMB_ROW_GUTTER } from './climb-list-row-styles';
 
-export function ClimbListRowSkeleton() {
+export function ClimbListRowSkeleton({ density = 'default' }: { density?: ClimbListDensity }) {
   const { systemColors } = useTheme();
   const blockColor = systemColors.fill;
 
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" testID="climb-list-row-skeleton">
       <View style={[styles.contentRow, { backgroundColor: systemColors.background }]}>
-        <View style={[styles.thumbnail, { backgroundColor: blockColor }]} />
+        <View style={[styles.thumbnail, thumbnailSizeForDensity(density), { backgroundColor: blockColor }]} />
         <View style={styles.centerColumn}>
           <View style={[styles.titleBlock, { backgroundColor: blockColor }]} />
-          <View style={[styles.subtitleBlock, { backgroundColor: blockColor }]} />
+          {density !== 'compact' ? <View style={[styles.subtitleBlock, { backgroundColor: blockColor }]} /> : null}
         </View>
         <View style={[styles.gradeBlock, { backgroundColor: blockColor }]} />
       </View>
-      <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+      <View
+        style={[
+          styles.separator,
+          { marginStart: separatorInsetForDensity(density), backgroundColor: systemColors.separator },
+        ]}
+      />
     </View>
   );
 }
@@ -32,8 +41,6 @@ const styles = StyleSheet.create({
     gap: spacing[3],
   },
   thumbnail: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
     borderRadius: borderRadius.md,
     opacity: 0.55,
   },
@@ -63,6 +70,5 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginStart: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
   },
 });

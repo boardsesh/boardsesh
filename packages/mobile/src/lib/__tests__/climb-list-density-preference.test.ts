@@ -1,4 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { reportError } from '../error-reporting';
+
+vi.mock('../error-reporting', () => ({ reportError: vi.fn() }));
+afterEach(cleanup);
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
@@ -25,7 +31,8 @@ async function asyncStorageMock() {
   return (await import('@react-native-async-storage/async-storage')).default as unknown as {
     __reset: () => void;
     __setRaw: (key: string, value: string) => void;
-    getItem: ReturnType<typeof vi.fn>;
+    getItem: Mock<(key: string) => Promise<string | null>>;
+    setItem: Mock<(key: string, serializedValue: string) => Promise<void>>;
   };
 }
 
@@ -73,6 +80,7 @@ describe('climb-list-density-preference', () => {
       await import('../climb-list-density-preference');
     await setClimbListDensityPreference('compact');
     await expect(loadClimbListDensityChoice()).resolves.toBe('compact');
+    await expect((await asyncStorageMock()).getItem('climbListDensity')).resolves.toBe(JSON.stringify('compact'));
   });
 
   it('lets a set() that races in during the initial load win over the (now stale) persisted value', async () => {
@@ -110,5 +118,18 @@ describe('climb-list-density-preference', () => {
 
     asyncStorage.__setRaw('climbListDensity', JSON.stringify('compact'));
     await expect(loadClimbListDensityChoice()).resolves.toBe('compact');
+  });
+
+  it('keeps the chosen density usable and reports a failed preference write', async () => {
+    const storageFailure = new Error('preference storage unavailable');
+    (await asyncStorageMock()).setItem.mockRejectedValueOnce(storageFailure);
+    const { useClimbListDensity } = await import('../climb-list-density-preference');
+    const { result } = renderHook(() => useClimbListDensity());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await act(async () => result.current.setDensity('compact'));
+    expect(result.current.density).toBe('compact');
+    expect(reportError).toHaveBeenCalledWith(storageFailure, {
+      tags: { source: 'climb-list-density-preference' },
+    });
   });
 });
