@@ -66,8 +66,9 @@ export type TableSyncConfig = {
    * (the live `climbStatsUpdated` write-through, #5227), and a pull page can
    * commit up to 5 s after it was fetched — long enough for the stream to have
    * landed a newer row that the page would otherwise revert until the next
-   * cycle. Every other table has exactly one writer, so a guard there would buy
-   * nothing and cost a wider statement.
+   * cycle. Other tables do not have a second local writer, but a refresh page
+   * can still race a newer ordinary pull. That separate `(updated_at, sync_seq)`
+   * guard lives in the pull client and applies only to refresh pages.
    *
    * The comparison is `>=`, not `>`: the pull usually carries the SAME revision
    * the stream did, and that row must still be applied because it fills the

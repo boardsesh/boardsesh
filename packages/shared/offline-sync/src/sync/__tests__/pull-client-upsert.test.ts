@@ -388,6 +388,80 @@ describe('the revision guard against a real SQLite row', () => {
   });
 });
 
+describe('the refresh guard against a real SQLite row', () => {
+  let database: TestSqliteDb;
+
+  beforeEach(async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+  });
+
+  afterEach(() => {
+    database.close();
+  });
+
+  async function applyRefresh(row: Record<string, SqlValue>): Promise<void> {
+    const columns = ['uuid', 'board_type', 'layout_id', 'updated_at', 'sync_seq'];
+    await database.runAsync(
+      buildMultiRowInsertSql('board_climbs', columns, 1, true),
+      columns.map((column) => row[column] ?? null),
+    );
+  }
+
+  it('keeps a newer ordinary-pull row when a slow refresh arrives with a shorter microsecond fraction', async () => {
+    // `.900Z` sorts before `.89Z` as text. The refresh guard normalizes both
+    // fractions to microseconds before comparing them, so the later local row
+    // remains authoritative even though the stale page has a higher sync seq.
+    await applyRefresh({
+      uuid: 'climb-1',
+      board_type: 'kilter',
+      layout_id: 1,
+      updated_at: '2026-09-01T00:00:00.900Z',
+      sync_seq: 20,
+    });
+    await applyRefresh({
+      uuid: 'climb-1',
+      board_type: 'tension',
+      layout_id: 2,
+      updated_at: '2026-09-01T00:00:00.89Z',
+      sync_seq: 999,
+    });
+
+    let row = await database.getFirstAsync<{
+      board_type: string;
+      layout_id: number;
+      updated_at: string;
+      sync_seq: number;
+    }>('SELECT board_type, layout_id, updated_at, sync_seq FROM board_climbs WHERE uuid = ?', ['climb-1']);
+    expect(row).toMatchObject({
+      board_type: 'kilter',
+      layout_id: 1,
+      updated_at: '2026-09-01T00:00:00.900Z',
+      sync_seq: 20,
+    });
+
+    // Equal wall-clock times with differently formatted fractions do use the
+    // sequence tie-breaker, so the next ordinary pull still applies normally.
+    await applyRefresh({
+      uuid: 'climb-1',
+      board_type: 'tension',
+      layout_id: 2,
+      updated_at: '2026-09-01T00:00:00.9Z',
+      sync_seq: 21,
+    });
+    row = await database.getFirstAsync<{ board_type: string; layout_id: number; updated_at: string; sync_seq: number }>(
+      'SELECT board_type, layout_id, updated_at, sync_seq FROM board_climbs WHERE uuid = ?',
+      ['climb-1'],
+    );
+    expect(row).toMatchObject({
+      board_type: 'tension',
+      layout_id: 2,
+      updated_at: '2026-09-01T00:00:00.9Z',
+      sync_seq: 21,
+    });
+  });
+});
+
 describe('both guarded writers derive their tail from the same config', () => {
   // The pull page insert and the snapshot import are the two writers that can
   // lose the race with the live stream. A second copy of the primary key, the

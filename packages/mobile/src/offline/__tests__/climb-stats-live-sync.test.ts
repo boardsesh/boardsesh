@@ -451,6 +451,49 @@ describe('createClimbStatsLiveSync — the queue keeps the newer revision', () =
     expect(retried.map((event) => event.syncSeq)).toEqual(['101']);
   });
 
+  it('caps lock-loss requeues while retaining a newer arrival for the same key', async () => {
+    let releaseFirstWrite: (() => void) | undefined;
+    let lockLost = true;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      if (!releaseFirstWrite) {
+        await new Promise<void>((resolve) => {
+          releaseFirstWrite = resolve;
+        });
+      }
+      return events.map(() =>
+        lockLost
+          ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null, settledBy: 'write' as const }
+          : applied(),
+      );
+    });
+    const harness = createHarness({ writeEvents: writeEvents as never });
+
+    // Fill the first deferred write to the cap, then hold it behind a lock.
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'same-key', syncSeq: '100' }));
+    for (let index = 1; index < CLIMB_STATS_MAX_PENDING_EVENTS; index += 1) {
+      harness.sync.handleEvent(makeEvent({ climbUuid: `in-flight-${index}`, syncSeq: '100' }));
+    }
+    await settleWrites();
+
+    // Another cap of arrivals lands while that batch waits. Put the newer copy
+    // of the shared key at the young end so it must beat the old in-flight copy
+    // when the failed batch requeues.
+    for (let index = 0; index < CLIMB_STATS_MAX_PENDING_EVENTS - 1; index += 1) {
+      harness.sync.handleEvent(makeEvent({ climbUuid: `arrival-${index}`, syncSeq: '101' }));
+    }
+    harness.sync.handleEvent(makeEvent({ climbUuid: 'same-key', syncSeq: '101' }));
+    releaseFirstWrite?.();
+    await settleWrites();
+
+    lockLost = false;
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
+    await settleWrites();
+
+    const retry = writeEvents.mock.calls[1]?.[1] as ClimbStatsWriteThroughInput[];
+    expect(retry).toHaveLength(CLIMB_STATS_MAX_PENDING_EVENTS);
+    expect(retry).toEqual(expect.arrayContaining([expect.objectContaining({ climbUuid: 'same-key', syncSeq: '101' })]));
+  });
+
   it('caps the pending queue and drops the oldest rather than growing unbounded', async () => {
     // The queue only grows while SQLite is unreachable, and every event on it
     // is disposable — the next pull carries the same values.
