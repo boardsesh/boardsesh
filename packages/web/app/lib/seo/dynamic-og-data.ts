@@ -2,6 +2,7 @@ import 'server-only';
 
 import { cache } from 'react';
 import { sql as drizzleSql } from 'drizzle-orm';
+import { parseNamedBoardPath } from '@boardsesh/board-config';
 import { buildBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { boardToRouteParams, resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -263,11 +264,10 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
     let boardAngle: number | null = null;
     const pathname = extractPathname(rawBoardPath);
 
-    if (pathname.startsWith('/b/')) {
-      const parts = pathname.split('/').filter(Boolean);
-      const boardSlug = parts[1] || '';
-      const pathAngle = parts[2] ? Number(parts[2]) : Number.NaN;
-      if (Number.isFinite(pathAngle)) boardAngle = pathAngle;
+    const namedBoardPath = parseNamedBoardPath(pathname);
+    if (namedBoardPath) {
+      const { slug: boardSlug, angle: pathAngle } = namedBoardPath;
+      if (pathAngle !== null && Number.isFinite(pathAngle)) boardAngle = pathAngle;
 
       // A board switch updates board_path without changing the original board_id.
       if (
