@@ -138,6 +138,49 @@ export async function applyMoveBatches(
 type SnapshotEntry = { uuid: string; oldBoardId: number; newBoardId: number };
 type Snapshot = { writtenAt: string; entries: SnapshotEntry[] };
 
+/** Validate the complete recovery plan before creating a database connection. */
+export function parseSnapshot(contents: string): Snapshot {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch {
+    throw new Error('Invalid snapshot: expected valid JSON.');
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !('writtenAt' in parsed) ||
+    typeof parsed.writtenAt !== 'string' ||
+    !Number.isFinite(Date.parse(parsed.writtenAt)) ||
+    !('entries' in parsed) ||
+    !Array.isArray(parsed.entries)
+  ) {
+    throw new Error('Invalid snapshot: expected writtenAt timestamp and entries array.');
+  }
+  const entries: SnapshotEntry[] = parsed.entries.map((entry: unknown, index) => {
+    if (
+      typeof entry !== 'object' ||
+      entry === null ||
+      !('uuid' in entry) ||
+      typeof entry.uuid !== 'string' ||
+      entry.uuid.trim().length === 0 ||
+      !('oldBoardId' in entry) ||
+      typeof entry.oldBoardId !== 'number' ||
+      !Number.isSafeInteger(entry.oldBoardId) ||
+      entry.oldBoardId <= 0 ||
+      !('newBoardId' in entry) ||
+      typeof entry.newBoardId !== 'number' ||
+      !Number.isSafeInteger(entry.newBoardId) ||
+      entry.newBoardId <= 0
+    ) {
+      throw new Error(`Invalid snapshot entry ${index + 1}: expected uuid and positive safe-integer board IDs.`);
+    }
+    return { uuid: entry.uuid, oldBoardId: entry.oldBoardId, newBoardId: entry.newBoardId };
+  });
+  return { writtenAt: parsed.writtenAt, entries };
+}
+
 export function writeSnapshot(snapshotPath: string, snapshot: Snapshot): void {
   try {
     writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), { flag: 'wx' });
@@ -150,7 +193,7 @@ export function writeSnapshot(snapshotPath: string, snapshot: Snapshot): void {
 }
 
 async function revert(snapshotPath: string, apply: boolean) {
-  const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Snapshot;
+  const snapshot = parseSnapshot(readFileSync(snapshotPath, 'utf8'));
   const { db, close } = createScriptDb();
   try {
     console.log(`Reverting ${snapshot.entries.length} rows from ${snapshotPath} (written ${snapshot.writtenAt})`);

@@ -24,3 +24,7 @@ vp run db:backfill-shared-feed-tick-boards -- --revert shared-feed-applied.json 
 ```
 
 Revert previews report the snapshot’s row count; apply reports the number still matching its current-board guard. Keep snapshots until the repair is verified. Preparing or merging this tooling does not authorize a production run.
+
+Recovery files are validated before opening a database connection. Invalid JSON,
+missing metadata, malformed entries, or non-integer/out-of-range board IDs fail
+with an entry-specific error; fix or recover the snapshot before retrying.
