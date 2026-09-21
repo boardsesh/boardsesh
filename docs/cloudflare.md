@@ -120,8 +120,13 @@ Verify:
 ```bash
 dig +short pgdr.boardsesh.com            # expect the Railway proxy address
 openssl s_client -starttls postgres -connect pgdr.boardsesh.com:17963 \
-  -CAfile <ca.crt> -verify_hostname pgdr.boardsesh.com </dev/null
+  -CAfile <ca.crt> -verify_hostname pgdr.boardsesh.com -verify_return_error </dev/null
 ```
+
+`-verify_return_error` is not optional if you act on the exit status. Without it
+`s_client` prints the verification failure and still exits 0 — measured against
+this endpoint: an untrusted chain reports `Verify return code: 18` and exits 0,
+and a hostname mismatch exits 0 too. With the flag both exit 1.
 
 ## www.boardsesh.com DNS, and the origin flip
 
