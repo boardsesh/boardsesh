@@ -5,7 +5,9 @@ import { Card } from '../../Card';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
 import { Button } from '../../Button';
+import { PressableSurface } from '../../PressableSurface';
 import { useTheme } from '../../../providers/theme-provider';
+import { hapticLight } from '../../../lib/haptics';
 import { spacing } from '../../../theme/tokens';
 
 /** The board fields shown at a glance — a structural subset of the active board. */
@@ -27,9 +29,9 @@ type BoardSummaryCardProps = {
 };
 
 /**
- * Session board context with separate browse and switch actions. Keeping the
- * card itself static avoids nesting pressables or making a saved board look
- * like a required selection step every time the climber returns here.
+ * Two grouped navigation rows: browse this board, or explicitly change it.
+ * The static card contains sibling pressables, so each action owns its whole
+ * row and long board names can wrap without shrinking either touch target.
  */
 export function BoardSummaryCard({
   onBrowseClimbs,
@@ -54,6 +56,59 @@ export function BoardSummaryCard({
         .join(' · ')
     : null;
 
+  if (board) {
+    return (
+      <Card style={styles.groupedCard}>
+        <View style={styles.groupedRows}>
+          <PressableSurface
+            onPress={() => {
+              hapticLight();
+              onBrowseClimbs();
+            }}
+            feedback="opacity"
+            rippleColor={systemColors.label as string}
+            accessibilityRole="button"
+            accessibilityLabel={[t('mobile.session.browseClimbs'), summary].filter(Boolean).join(', ')}
+            style={styles.navigationRow}
+          >
+            <View style={styles.iconColumn}>
+              <Icon name="search" size={22} color={systemColors.label} />
+            </View>
+            <View style={styles.textColumn}>
+              <Text variant="headline" color={systemColors.label}>
+                {t('mobile.session.browseClimbs')}
+              </Text>
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {summary}
+              </Text>
+            </View>
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          </PressableSurface>
+          <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
+          <PressableSurface
+            onPress={() => {
+              hapticLight();
+              onChangeBoard();
+            }}
+            feedback="opacity"
+            rippleColor={systemColors.label as string}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.session.changeBoard')}
+            style={styles.navigationRow}
+          >
+            <View style={styles.iconColumn}>
+              <Icon name="boards" size={22} color={systemColors.secondaryLabel} />
+            </View>
+            <Text variant="body" color={systemColors.label} style={styles.actionLabel}>
+              {t('mobile.session.changeBoard')}
+            </Text>
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          </PressableSurface>
+        </View>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <View style={styles.row}>
@@ -63,21 +118,15 @@ export function BoardSummaryCard({
             {t('mobile.session.preBoardLabel')}
           </Text>
           <Text variant="body" color={systemColors.label}>
-            {summary ??
-              (isRestoreError
-                ? tClimbs('mobile.emptyState.boardRestoreFailed.title')
-                : hasNoBoard
-                  ? t('mobile.session.noBoardSelected')
-                  : tCommon('actions.loading'))}
+            {isRestoreError
+              ? tClimbs('mobile.emptyState.boardRestoreFailed.title')
+              : hasNoBoard
+                ? t('mobile.session.noBoardSelected')
+                : tCommon('actions.loading')}
           </Text>
         </View>
       </View>
-      {board ? (
-        <View style={styles.actions}>
-          <Button title={t('mobile.session.browseClimbs')} onPress={onBrowseClimbs} variant="outlined" />
-          <Button title={t('mobile.session.changeBoard')} onPress={onChangeBoard} variant="text" />
-        </View>
-      ) : isRestoreError ? (
+      {isRestoreError ? (
         <View style={styles.actions}>
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {tClimbs('mobile.emptyState.boardRestoreFailed.description')}
@@ -94,6 +143,31 @@ export function BoardSummaryCard({
 }
 
 const styles = StyleSheet.create({
+  groupedCard: {
+    overflow: 'hidden',
+  },
+  groupedRows: {
+    // Both Card variants inset content by 16pt. Let each row own that gutter
+    // so the whole surface is tappable, including around the label and icon.
+    margin: -spacing[4],
+  },
+  navigationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    minHeight: spacing[12],
+  },
+  iconColumn: {
+    width: spacing[6],
+    flexShrink: 0,
+    alignItems: 'center',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing[4] + spacing[6] + spacing[3],
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -101,7 +175,12 @@ const styles = StyleSheet.create({
   },
   textColumn: {
     flex: 1,
-    gap: 2,
+    minWidth: 0,
+    gap: spacing[1],
+  },
+  actionLabel: {
+    flex: 1,
+    minWidth: 0,
   },
   actions: {
     gap: spacing[2],

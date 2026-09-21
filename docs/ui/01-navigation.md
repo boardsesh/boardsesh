@@ -64,6 +64,11 @@ Screenshot mode intentionally starts on Home to preserve the capture readiness c
   Change board is a separate action; its picker returns to Session. First-time
   board selection still finishes on Climbs. Start opens Climbs after creating the
   session and appending any generated workout; a failed start stays on Session.
+  The board card uses separate full-width Browse climbs and Change board rows;
+  board details wrap beneath Browse climbs. During Start, the setup form remains
+  visible and Start stays disabled until the native tab leaves Session, so live
+  settings never flash during the handoff. Switching tabs manually while creation
+  is pending cancels the automatic redirect, while session and queue creation finish.
 - **Restoring a board:** local disk reads and bounded retries run independently
   of internet connectivity. Pending reads show loading; failed reads offer Retry.
   Only a successful read returning no board permits setup or a Choose board prompt.

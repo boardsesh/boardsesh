@@ -38,6 +38,18 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+}));
+vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 
 import { BoardSummaryCard } from '../pre-session/BoardSummaryCard';
@@ -66,12 +78,22 @@ describe('Session board navigation', () => {
   it('browses the already selected board without activating it again', () => {
     const { container } = render(createElement(SessionBoardActions));
     expect(screen.getByText('My board · 12 × 12 · 40°')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'mobile.session.browseClimbs' }));
+    fireEvent.click(screen.getByRole('button', { name: /^mobile.session.browseClimbs/ }));
     expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     expect(navigation.push).not.toHaveBeenCalled();
     expect(mutations.setBoard).not.toHaveBeenCalled();
     expect(mutations.clearBoard).not.toHaveBeenCalled();
     expect(container.querySelector('button button')).toBeNull();
+  });
+
+  it('keeps the full board context available to the browse action', () => {
+    const boardName = 'Sharma Climbing Gavà - Kilter Board Original with a longer custom gym name';
+    boardState.data = { ...boardState.data, name: boardName } as UserBoard;
+    render(createElement(SessionBoardActions));
+    const browse = screen.getByRole('button', { name: /^mobile.session.browseClimbs/ });
+    expect(browse.textContent).toContain(boardName);
+    expect(browse.getAttribute('aria-label')).toBe(`mobile.session.browseClimbs, ${boardName} · 12 × 12 · 40°`);
+    expect(screen.getAllByRole('button')).toHaveLength(2);
   });
 
   it('changes boards through a separate action that returns to Session', () => {
@@ -92,7 +114,7 @@ describe('Session board navigation', () => {
       pathname: '/boards',
       params: { returnTo: '/(tabs)/climbs' },
     });
-    expect(screen.queryByRole('button', { name: 'mobile.session.browseClimbs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^mobile.session.browseClimbs/ })).toBeNull();
   });
 
   it('waits for storage instead of offering a new selection', () => {
@@ -121,7 +143,7 @@ describe('Session board navigation', () => {
     boardState.isSuccess = false;
     boardState.isError = true;
     render(createElement(SessionBoardActions));
-    fireEvent.click(screen.getByRole('button', { name: 'mobile.session.browseClimbs' }));
+    fireEvent.click(screen.getByRole('button', { name: /^mobile.session.browseClimbs/ }));
     expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     expect(screen.queryByRole('button', { name: 'actions.retry' })).toBeNull();
   });

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useIsFocused, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PanGesture } from 'react-native-gesture-handler';
@@ -39,12 +40,54 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
   const { sessionUsers } = useQueueLiveStats();
   const insets = useSafeAreaInsets();
   const [showInvite, setShowInvite] = useState(false);
+  const isFocused = useIsFocused();
+  const router = useRouter();
+  const [isStarting, setIsStarting] = useState(false);
+  const [isOpeningClimbs, setIsOpeningClimbs] = useState(false);
+  const mayOpenClimbs = useRef(false);
+
+  const handleStartingChange = useCallback(
+    (starting: boolean) => {
+      if (starting) mayOpenClimbs.current = isFocused;
+      setIsStarting(starting);
+    },
+    [isFocused],
+  );
+  const handleStarted = useCallback(() => {
+    if (!mayOpenClimbs.current) return;
+    setIsOpeningClimbs(true);
+    try {
+      router.navigate('/(tabs)/climbs');
+    } catch (error) {
+      setIsOpeningClimbs(false);
+      throw error;
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      // A deliberate tab switch cancels this start's automatic redirect, even
+      // if the climber returns before the creation request finishes.
+      mayOpenClimbs.current = false;
+      setIsOpeningClimbs(false);
+    }
+  }, [isFocused]);
+  useEffect(
+    () => () => {
+      mayOpenClimbs.current = false;
+    },
+    [],
+  );
   // Overlay mode owns its own header strip, so it needs the same exit read
   // InSessionView makes for the tab chrome — otherwise the two entry points
   // into one sheet would disagree about whether the button ends or leaves.
   const { defaultMode: exitVariant } = useSessionExitOptions();
 
   const sessionActive = sessionId !== null;
+  // Session state is published before startSession resolves. Retain the form
+  // through queue preparation AND the native tab handoff, otherwise the live
+  // settings briefly appear before Climbs. Release only after the tab blurs.
+  const showLiveSession = sessionActive && !isStarting && !isOpeningClimbs;
   // Teach the share affordance while solo; once a friend joins, the label drops
   // and the share glyph stands on its own.
   const soloInvite = sessionActive && countDistinctSessionUsers(sessionUsers) <= 1;
@@ -84,7 +127,7 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
           dragGesture={headerGesture}
         />
         <View style={styles.body}>
-          {sessionActive ? (
+          {showLiveSession ? (
             <InSessionView
               showChrome={false}
               endVisible={showEndSession}
@@ -93,7 +136,12 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
               screenHeight={screenHeight}
             />
           ) : (
-            <PreSessionView showChrome={false} />
+            <PreSessionView
+              showChrome={false}
+              onStartingChange={handleStartingChange}
+              onStarted={handleStarted}
+              isOpeningClimbs={isOpeningClimbs}
+            />
           )}
         </View>
         {sessionId ? (
@@ -108,7 +156,7 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
   // chrome height. No padded container, no header strip.
   return (
     <View style={styles.container}>
-      {sessionActive ? (
+      {showLiveSession ? (
         <InSessionView
           showChrome
           onShare={onShare}
@@ -117,7 +165,12 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
           onEndDismiss={dismissEndSession}
         />
       ) : (
-        <PreSessionView showChrome />
+        <PreSessionView
+          showChrome
+          onStartingChange={handleStartingChange}
+          onStarted={handleStarted}
+          isOpeningClimbs={isOpeningClimbs}
+        />
       )}
       {sessionId ? (
         <InviteSheet visible={showInvite} onDismiss={() => setShowInvite(false)} sessionId={sessionId} />

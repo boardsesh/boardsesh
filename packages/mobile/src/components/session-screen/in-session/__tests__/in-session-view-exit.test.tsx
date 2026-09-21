@@ -96,7 +96,22 @@ vi.mock('../../../Card', () => ({
 vi.mock('../../../GlassSurface', () => ({ GlassSurface: () => null }));
 vi.mock('../../../ListRow', () => ({ ListRow: () => null }));
 vi.mock('../../../PressableSurface', () => ({
-  PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+  }) =>
+    createElement(
+      onPress ? 'button' : 'div',
+      { onClick: onPress, role: accessibilityRole, 'aria-label': accessibilityLabel },
+      children,
+    ),
 }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../../ScreenTitle', () => ({ ScreenTitle: () => null }));
@@ -197,7 +212,7 @@ vi.mock('../../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: 
 vi.mock('../../../../theme/animations', () => ({ springs: { gentle: {} } }));
 vi.mock('../../../../theme/tokens', () => ({ borderRadius: { lg: 16 }, spacing: { 2: 8, 3: 12, 4: 16, 5: 20 } }));
 vi.mock('../../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#fff' }));
-vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn(), hapticMedium: vi.fn() }));
+vi.mock('../../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticSelection: vi.fn(), hapticMedium: vi.fn() }));
 vi.mock('../../../../lib/formatTickRelativeTime', () => ({}));
 vi.mock('../SessionAnalytics', () => ({ SessionAnalytics: () => null }));
 vi.mock('../SessionLeaderboard', () => ({ SessionLeaderboard: () => null }));
@@ -245,7 +260,7 @@ describe('InSessionView session exit (#3502)', () => {
 
   it('returns to climbs while leaving the live session running', async () => {
     const view = await renderInSession();
-    fireEvent.click(view.getByRole('button', { name: 'mobile.session.browseClimbs' }));
+    fireEvent.click(view.getByRole('button', { name: /^mobile.session.browseClimbs/ }));
     expect(router.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     expect(router.push).not.toHaveBeenCalled();
     expect(queue.endSession).not.toHaveBeenCalled();

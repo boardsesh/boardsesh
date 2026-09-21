@@ -73,6 +73,12 @@ type PreSessionViewProps = {
   /** Render the floating glass chrome (large title + board pill). True in the
    *  Record tab; false in the overlay host, where the header strip owns the top. */
   showChrome?: boolean;
+  /** The owning screen retains this form while session state becomes live. */
+  onStartingChange?: (starting: boolean) => void;
+  /** The owning screen completes the tab handoff after the queue is ready. */
+  onStarted?: () => void;
+  /** Keep Start disabled until the native tab has left this screen. */
+  isOpeningClimbs?: boolean;
 };
 
 /**
@@ -87,7 +93,12 @@ function previewKeyExtractor(previewItem: PreviewItem): string {
   return previewItem.item.uuid;
 }
 
-export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
+export function PreSessionView({
+  showChrome = false,
+  onStartingChange,
+  onStarted,
+  isOpeningClimbs = false,
+}: PreSessionViewProps) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, variant } = useTheme();
@@ -135,17 +146,18 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
 
   const [selection, setSelection] = useState<GeneratorSelection>(initialGeneratorSelection);
   const [isStarting, setIsStarting] = useState(false);
+  const isStartPending = isStarting || isOpeningClimbs;
   // "Show this session live". Public by default and not remembered between
   // sessions: every Start opens on, and turning it off is a per-session choice.
   const [isPublic, setIsPublic] = useState(true);
   const handleVisibilityChange = useCallback(
     (next: boolean) => {
       // Start has already read the choice; a flip now would change nothing.
-      if (isStarting) return;
+      if (isStartPending) return;
       setIsPublic(next);
       track(SHARED_EVENTS.SessionVisibilityChanged, { isPublic: next, phase: 'pre_session' });
     },
-    [isStarting],
+    [isStartPending],
   );
   const [activePreviewUuid, setActivePreviewUuid] = useState<string | null>(null);
   // Measured height of the Start capsule's container, so the list reserves exactly
@@ -217,13 +229,14 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   );
 
   const handleStart = useCallback(async () => {
-    if (!activeBoard) return;
+    if (!activeBoard || isStartPending) return;
     const generatedItems = selection.type === 'on' ? toQueueItems() : [];
     if (selection.type === 'on' && (status !== 'ready' || refreshingUuids.size > 0 || generatedItems.length === 0)) {
       return;
     }
 
     setIsStarting(true);
+    onStartingChange?.(true);
     try {
       const newSessionId = await startSession({ isPublic });
       if (!newSessionId) {
@@ -244,12 +257,14 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
           failedCount: plannedCount - generatedItems.length,
         });
       }
-      browseClimbs();
+      if (onStarted) onStarted();
+      else browseClimbs();
     } catch (error) {
       reportError(error, { tags: { source: 'preSessionStart' } });
       showToast(t('mobile.session.preStartError'), 'error');
     } finally {
       setIsStarting(false);
+      onStartingChange?.(false);
     }
   }, [
     activeBoard,
@@ -264,11 +279,14 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
     browseClimbs,
     showToast,
     t,
+    onStartingChange,
+    onStarted,
+    isStartPending,
   ]);
 
   const generatorPreviewReady =
     selection.type !== 'on' || (status === 'ready' && previewItems.length > 0 && refreshingUuids.size === 0);
-  const canStart = activeBoard != null && !isStarting && generatorPreviewReady;
+  const canStart = activeBoard != null && !isStartPending && generatorPreviewReady;
   // The single source of the Start capsule's bottom offset: passed to SessionStartFab
   // AND used for the list reservation, so the FAB position and the last-row clearance
   // can't drift. The Material-vs-glass arbitration lives in computeBottomChromeMetrics
@@ -340,7 +358,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
         {/* Whether the session you're about to start shows up live for your
             crew and climbers on this board. Sent with Start. */}
         <View style={styles.cardInset}>
-          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStarting} />
+          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStartPending} />
         </View>
 
         <GeneratorPickerCard
@@ -379,7 +397,7 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
       retryBoard,
       handleVisibilityChange,
       isPublic,
-      isStarting,
+      isStartPending,
       previewStateMessage,
       selection,
       setSelection,
@@ -431,11 +449,11 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
         testID="pre-session-footer"
         bottomOffset={footerBottom}
         onHeightChange={setFooterHeight}
-        label={isStarting ? t('mobile.session.preStarting') : t('mobile.session.preStart')}
+        label={isStartPending ? t('mobile.session.preStarting') : t('mobile.session.preStart')}
         icon="play.fill"
         onPress={() => void handleStart()}
         disabled={!canStart}
-        loading={isStarting}
+        loading={isStartPending}
       />
     </View>
   );
