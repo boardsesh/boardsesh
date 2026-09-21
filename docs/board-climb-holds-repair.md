@@ -78,7 +78,9 @@ materialized rows; it is not this guarded historical repair. It retains the
 full batch with no valid projected holds cannot be fetched forever. Each invocation
 starts that cursor from the beginning for each board type. Inserts sorting before
 the current cursor may wait for the next invocation; no resume cursor is persisted.
-The final remaining-row report includes rows whose frames could not be projected.
+After a long or concurrent backfill, run it again from the beginning and review
+the final remaining-row report before treating the pass as complete. That report
+includes rows whose frames could not be projected.
 Aurora-family frames use the canonical projection; Woods (including hold zero) and
 spray retain their existing single-frame parsing. This script is not wired into
 the board-snapshot publication pipeline.
