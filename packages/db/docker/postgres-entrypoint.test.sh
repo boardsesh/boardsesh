@@ -245,6 +245,13 @@ expect_failure 'a shell-wrapped server start with TLS material set' env \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" sh -c 'postgres -c shared_buffers=128MB'
+for shell_form in bash /bin/sh /bin/bash; do
+  expect_failure "a ${shell_form}-wrapped server start with TLS material set" env \
+    PG_TLS_DIR="$TEST_ROOT/case-shell-start-${shell_form//\//_}" \
+    PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+    PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+    bash "$ENTRYPOINT" "$shell_form" -c 'postgres -c shared_buffers=128MB'
+done
 
 # ...but a shell that is not starting PostgreSQL is still a legitimate one-off.
 tls_dir="$TEST_ROOT/case-shell-not-server"

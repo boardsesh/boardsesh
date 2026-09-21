@@ -92,6 +92,13 @@ install_tls_material() {
   local cert_staged="$TLS_CERT.incoming"
   local key_staged="$TLS_KEY.incoming"
 
+  # Anything that dies between the two writes -- a full disk is the realistic one --
+  # would otherwise leave a staged file behind, and in the worst ordering that is a
+  # partial private key sitting at rest on the volume. Cleared after the move, by
+  # which point these names no longer exist.
+  # shellcheck disable=SC2064  # expand the paths now; they are local to this call
+  trap "rm -f '$cert_staged' '$key_staged'" EXIT
+
   # umask first, so both files are created 0600 and the key is never briefly
   # world-readable between the write and the chmod.
   local previous_umask
@@ -110,6 +117,7 @@ install_tls_material() {
   chmod 0600 "$key_staged"
   mv -f "$cert_staged" "$TLS_CERT"
   mv -f "$key_staged" "$TLS_KEY"
+  trap - EXIT
 
   # PostgreSQL refuses a key it does not own, and the upstream entrypoint drops
   # to postgres via gosu after this runs.
