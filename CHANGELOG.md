@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Sessions you log on your own board now show up under that board on Home, instead of vanishing into a feed shared with every other wall like it. ([#5239](https://github.com/boardsesh/boardsesh/pull/5239))
 - See the latest climb displayed through Kilter in Now on the Wall. ([#5669](https://github.com/boardsesh/boardsesh/pull/5669))
 - Return to your board’s climbs without choosing it again. ([#5644](https://github.com/boardsesh/boardsesh/pull/5644))
   Open straight into your last board’s climbs, with Session controls a tap away.

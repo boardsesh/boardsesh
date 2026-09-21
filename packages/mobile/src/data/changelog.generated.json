@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T12:51:51.636Z",
+  "generatedAt": "2026-09-21T12:59:55.291Z",
   "entries": [
+    {
+      "prNumber": 5239,
+      "category": "fixed",
+      "title": "Sessions you log on your own board now show up under that board on Home, instead of vanishing into a feed shared with every other wall like it.",
+      "mergedAt": "2026-09-21T12:51:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5239"
+    },
     {
       "prNumber": 5669,
       "category": "fixed",
