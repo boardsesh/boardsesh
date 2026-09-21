@@ -23,7 +23,8 @@ export function patchExpoWebSocial(exportDir, basePrefix) {
     throw new Error('[patch-expo-web-social] unsupported export base prefix');
   }
   const imagePath = join(exportDir, 'og.png');
-  if (!statSync(imagePath, { throwIfNoEntry: false })?.isFile() || statSync(imagePath).size === 0) {
+  const imageStat = statSync(imagePath, { throwIfNoEntry: false });
+  if (!imageStat?.isFile() || imageStat.size === 0) {
     throw new Error(`[patch-expo-web-social] missing or empty preview image: ${imagePath}`);
   }
   const shellPath = join(exportDir, 'index.html');
