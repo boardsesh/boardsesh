@@ -1,3 +1,4 @@
+vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({ useOnboardingLinkOffer: () => () => false }));
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';

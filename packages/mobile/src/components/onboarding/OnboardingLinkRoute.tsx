@@ -26,7 +26,7 @@ export function OnboardingLinkRoute({
 
   const leave = useCallback(() => {
     setLeaving(true);
-    router.replace('/(tabs)/climbs');
+    router.dismissTo('/(tabs)/climbs');
   }, []);
 
   // Persist answers only; leaving without answering keeps the prompt eligible.

@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
 const willFollowFoundBoardMock = vi.hoisted(() => vi.fn((): boolean => true));
 const dismissToMock = vi.hoisted(() => vi.fn());
+const replaceMock = vi.hoisted(() => vi.fn());
+const linkState = vi.hoisted(() => ({
+  enabled: false,
+  offline: false,
+  authenticated: true,
+  answered: false,
+  credentials: [] as { boardType: string }[] | undefined,
+}));
+const readAnswered = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const hapticMock = vi.hoisted(() => vi.fn());
@@ -21,7 +30,7 @@ const nextViewerCallbacks = vi.hoisted(() => ({
   willFollow: undefined as ((board: UserBoard) => boolean) | undefined,
 }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock }) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock, replace: replaceMock }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
 vi.mock('../../board-discovery/use-adopt-found-board', () => ({
@@ -39,6 +48,13 @@ vi.mock('../../onboarding/onboarding-storage', () => ({
   setBoardRevealTipPending: setBoardRevealTipPendingMock,
 }));
 vi.mock('../../error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: linkState.authenticated }) }));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => linkState.enabled }));
+vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => linkState.offline }));
+vi.mock('../../integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: linkState.credentials }),
+}));
+vi.mock('../../onboarding/link-step-answered', () => ({ hasAnsweredLinkStep: readAnswered }));
 
 import { useActivateBoard, type ActivateBoardOptions } from '../use-activate-board';
 
@@ -55,6 +71,9 @@ describe('useActivateBoard', () => {
     adoptOptionsSeen.value = undefined;
     nextViewerCallbacks.adopt = undefined;
     nextViewerCallbacks.willFollow = undefined;
+    dismissToMock.mockReset();
+    Object.assign(linkState, { enabled: false, offline: false, authenticated: true, answered: false, credentials: [] });
+    readAnswered.mockImplementation(async () => linkState.answered);
     setActiveBoardMock.mockResolvedValue(undefined);
     willFollowFoundBoardMock.mockReturnValue(true);
     markOnboardingSeenMock.mockResolvedValue(undefined);
@@ -124,6 +143,75 @@ describe('useActivateBoard', () => {
 
     expect(dismissToMock).toHaveBeenCalled();
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+  });
+
+  describe('optional linking on every onboarding activation path', () => {
+    it.each(['picker', 'builder', 'carousel'] as const)('offers linking after a successful %s bind', async (entry) => {
+      linkState.enabled = true;
+      const navigate = entry === 'carousel' ? vi.fn() : undefined;
+      const result = activate({
+        source: 'onboarding',
+        navigate,
+        writeFailure: entry === 'builder' ? 'rethrow' : 'toast',
+      });
+      await act(async () => {});
+      await result.current(BOARD);
+      expect(replaceMock).toHaveBeenCalledExactlyOnceWith({
+        pathname: '/onboarding',
+        params: { step: 'link', boardType: 'kilter' },
+      });
+      expect(dismissToMock).not.toHaveBeenCalled();
+      if (navigate) expect(navigate).not.toHaveBeenCalled();
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+    });
+
+    it.each(['offline', 'linked', 'answered', 'unknown', 'unsupported', 'ordinary', 'disabled'] as const)(
+      'keeps the normal destination when %s',
+      async (reason) => {
+        linkState.enabled = reason !== 'disabled';
+        linkState.offline = reason === 'offline';
+        linkState.answered = reason === 'answered';
+        linkState.credentials = reason === 'unknown' ? undefined : reason === 'linked' ? [{ boardType: 'kilter' }] : [];
+        const result = activate({ source: reason === 'ordinary' ? undefined : 'onboarding' });
+        await act(async () => {});
+        await result.current(reason === 'unsupported' ? { ...BOARD, boardType: 'moonboard' } : BOARD);
+        expect(replaceMock).not.toHaveBeenCalled();
+        expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+      },
+    );
+
+    it('uses eligibility updated while the download offer is open', async () => {
+      linkState.enabled = true;
+      let finishDownload: (() => void) | undefined;
+      const onBound = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishDownload = resolve;
+          }),
+      );
+      const { result, rerender } = renderHook(() =>
+        useActivateBoard({ source: 'onboarding', returnTo: '/(tabs)/climbs', onBound }),
+      );
+      await act(async () => {});
+      const activation = result.current(BOARD);
+      await waitFor(() => expect(onBound).toHaveBeenCalled());
+      linkState.offline = true;
+      rerender();
+      finishDownload?.();
+      await activation;
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    });
+
+    it('does not offer linking after the builder fails to persist the board', async () => {
+      linkState.enabled = true;
+      setActiveBoardMock.mockRejectedValue(new Error('storage full'));
+      const result = activate({ source: 'onboarding', writeFailure: 'rethrow' });
+      await act(async () => {});
+      await expect(result.current(BOARD)).rejects.toThrow('storage full');
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(dismissToMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('an ordinary board switch', () => {

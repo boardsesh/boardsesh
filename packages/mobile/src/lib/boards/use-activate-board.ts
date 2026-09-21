@@ -19,6 +19,7 @@ import { useAdoptFoundBoard, useWillFollowFoundBoard } from '../board-discovery/
 import { useToast } from '../../providers/toast-provider';
 import { hapticSelection } from '../haptics';
 import { markOnboardingSeen, setBoardRevealTipPending } from '../onboarding/onboarding-storage';
+import { useOnboardingLinkOffer } from '../onboarding/use-onboarding-link-offer';
 import { reportError } from '../error-reporting';
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
@@ -126,6 +127,7 @@ export function useActivateBoard({
   // newcomer sees after picking their board. The follow still happens.
   const adoptFoundBoard = useAdoptFoundBoard({ offerOffline: source !== 'onboarding' });
   const willFollowFoundBoard = useWillFollowFoundBoard();
+  const shouldShowLink = useOnboardingLinkOffer(source === 'onboarding');
 
   return useCallback(
     async (board: UserBoard, pick?: ActivateBoardPick) => {
@@ -185,7 +187,9 @@ export function useActivateBoard({
       // written for, and raising it would undo submit state over a board that
       // really did land.
       try {
-        if (navigate) navigate();
+        if (source === 'onboarding' && shouldShowLink(board.boardType)) {
+          router.replace({ pathname: '/onboarding', params: { step: 'link', boardType: board.boardType } });
+        } else if (navigate) navigate();
         else router.dismissTo(returnTo);
       } catch (error: unknown) {
         reportError(error);
@@ -205,6 +209,7 @@ export function useActivateBoard({
       router,
       returnTo,
       navigate,
+      shouldShowLink,
       showToast,
       t,
       source,

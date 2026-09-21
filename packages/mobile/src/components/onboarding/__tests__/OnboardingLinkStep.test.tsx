@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   isFocused: true,
   linkEnabled: true,
   boardType: 'tension' as string | undefined,
-  replace: vi.fn(),
+  dismissTo: vi.fn(),
   markAnswered: vi.fn().mockResolvedValue(undefined),
   reportError: vi.fn(),
 }));
@@ -35,7 +35,7 @@ vi.mock('../../integrations/LinkBoardAccountModal', () => ({
 vi.mock('expo-router', () => ({
   useIsFocused: () => mocks.isFocused,
   useLocalSearchParams: () => ({ boardType: mocks.boardType }),
-  router: { replace: mocks.replace },
+  router: { dismissTo: mocks.dismissTo },
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => mocks.linkEnabled }));
 vi.mock('../../../lib/onboarding/link-step-answered', () => ({ markLinkStepAnswered: mocks.markAnswered }));
@@ -106,7 +106,7 @@ describe('OnboardingLinkStep', () => {
     mocks.isFocused = true;
     mocks.linkEnabled = true;
     mocks.boardType = 'tension';
-    mocks.replace.mockReset();
+    mocks.dismissTo.mockReset();
     mocks.markAnswered.mockReset().mockResolvedValue(undefined);
     mocks.reportError.mockReset();
     mocks.onResolved.mockReset();
@@ -228,7 +228,7 @@ describe('OnboardingLinkStep', () => {
     });
     expect(mocks.resolved).toHaveBeenCalledExactlyOnceWith('tension', 'declined');
     expect(mocks.markAnswered).toHaveBeenCalledTimes(1);
-    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     await waitFor(() => expect(mocks.reportError).toHaveBeenCalledExactlyOnceWith(storageError));
   });
 
@@ -242,7 +242,7 @@ describe('OnboardingLinkStep', () => {
     mocks.linkEnabled = enabled;
     mocks.boardType = boardType;
     render(<OnboardingLinkRoute accentColor="#6D28D9" iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
-    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     expect(mocks.shown).not.toHaveBeenCalled();
     expect(mocks.markAnswered).not.toHaveBeenCalled();
     expect(mocks.backHandler).toBeNull();
