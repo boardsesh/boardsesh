@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-21
 
+### New
+
+- Long-press any climb and hit "Play next" to slot it right behind the one on the wall — no more waiting out the whole queue while the crew rests. ([#4712](https://github.com/boardsesh/boardsesh/pull/4712))
+
 ### Fixed
 
 - Favorites and follows now stick. A single unlucky moment of database contention used to strand one for good — the heart stayed filled while the server never heard about it. ([#4567](https://github.com/boardsesh/boardsesh/pull/4567))

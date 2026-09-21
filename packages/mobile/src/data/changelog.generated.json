@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T13:08:16.201Z",
+  "generatedAt": "2026-09-21T13:17:41.728Z",
   "entries": [
+    {
+      "prNumber": 4712,
+      "category": "new",
+      "title": "Long-press any climb and hit \"Play next\" to slot it right behind the one on the wall — no more waiting out the whole queue while the crew rests.",
+      "mergedAt": "2026-09-21T12:53:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4712"
+    },
     {
       "prNumber": 4567,
       "category": "fixed",
