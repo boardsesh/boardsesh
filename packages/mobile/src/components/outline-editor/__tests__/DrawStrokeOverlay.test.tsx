@@ -100,6 +100,7 @@ function loupeFeed(): SprayLoupeFeed {
   };
 }
 type OptIns = {
+  strokeLiveSV?: SharedValue<boolean>;
   closeOnReturn?: boolean;
   declineOnSelection?: number[];
   declineHitHolds?: number[];
@@ -119,6 +120,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = 
       acceptStationaryTaps={acceptStationaryTaps}
       closeOnReturn={optIns.closeOnReturn}
       pointsSV={points}
+      strokeLiveSV={optIns.strokeLiveSV}
       fingerDrawSV={shared(fingerDraw)}
       scaleSV={shared(2)}
       translateXSV={shared(10)}
@@ -542,4 +544,29 @@ describe('Pencil surface opt-ins', () => {
     expect(stroke.end).toHaveBeenCalledExactlyOnceWith([80, 90]);
     expect(stroke.manager.fail).not.toHaveBeenCalled();
   });
+});
+
+
+it('stops UI-thread samples after Undo and resumes only with a fresh stroke', () => {
+  const active = shared(false);
+  const stroke = mount(false, false, { strokeLiveSV: active });
+  stroke.send('start', { x: 10, y: 10 });
+  stroke.send('update', { x: 20, y: 20 });
+  expect(stroke.points.value).toHaveLength(4);
+  const restoredRing = [1, 2, 3, 4, 1, 2];
+  active.value = false;
+  stroke.points.value = restoredRing;
+  stroke.send('update', { x: 50, y: 50 });
+  expect(stroke.points.value).toBe(restoredRing);
+  stroke.send('start', { x: 70, y: 70 });
+  stroke.send('update', { x: 80, y: 80 });
+  expect(stroke.points.value).toHaveLength(4);
+  expect(stroke.start).toHaveBeenCalledTimes(2);
+});
+
+it('keeps sampling without an external lifecycle flag', () => {
+  const stroke = mount(false, false);
+  stroke.send('start', { x: 10, y: 10 });
+  stroke.send('update', { x: 20, y: 20 });
+  expect(stroke.points.value).toHaveLength(4);
 });

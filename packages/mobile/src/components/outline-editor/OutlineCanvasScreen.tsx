@@ -286,6 +286,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const canBrush = draftOutline != null || currentOutline != null;
 
   const clearDraft = useCallback(() => {
+    drawingRef.current = false;
     setDraftOutline(null);
     setUndoStack([]);
     strokeLiveSV.value = false;
@@ -463,6 +464,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const handleStrokeEnd = useCallback(
     (strokeBoardPoints: number[]) => {
+      if (!drawingRef.current) return;
       drawingRef.current = false;
       const hold = selectedPlacementId == null ? null : holdById.get(selectedPlacementId);
       if (!hold) {
@@ -556,6 +558,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const handleUndo = useCallback(() => {
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
+    drawingRef.current = false;
     setUndoStack((stack) => stack.slice(0, -1));
     setErrorText(null);
     strokeLiveSV.value = false;
@@ -799,6 +802,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       selectedPlacementId == null ? null : (
         <DrawStrokeOverlay
           pointsSV={draftPointsSV}
+          strokeLiveSV={strokeLiveSV}
           fingerDrawSV={fingerDrawSV}
           scaleSV={context.scaleSV}
           translateXSV={context.translateXSV}
@@ -815,6 +819,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     [
       selectedPlacementId,
       draftPointsSV,
+      strokeLiveSV,
       fingerDrawSV,
       boardScale,
       handleStrokeStart,

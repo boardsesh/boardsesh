@@ -49,6 +49,8 @@ type DrawStrokeOverlayProps = {
    * Refine), whose strokes cross themselves on purpose.
    */
   closeOnReturn?: boolean;
+  /** Undo/discard can stop samples without rebuilding the active gesture. */
+  strokeLiveSV?: SharedValue<boolean>;
   /**
    * True when the finger-draw toggle is on. Off (the default) only an Apple
    * Pencil / stylus draws, and every finger touch falls through to the board's
@@ -187,6 +189,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
   acceptStationaryTaps = false,
   closeOnReturn = true,
+  strokeLiveSV,
   fingerDrawSV,
   scaleSV,
   translateXSV,
@@ -505,6 +508,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onStart((event) => {
         'worklet';
+        if (strokeLiveSV) strokeLiveSV.value = true;
         const centreX = containerWidthSV.value / 2;
         const centreY = containerHeightSV.value / 2;
         const renderX = (event.x - translateXSV.value - centreX) / scaleSV.value + centreX;
@@ -518,6 +522,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onUpdate((event) => {
         'worklet';
+        if (strokeLiveSV?.value === false) return;
         if (returnedSV.value) return;
         followWithLoupe(event.x, event.y);
         const current = pointsSV.value;
@@ -575,6 +580,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     strokeDownAtSV,
     ownerPointerIdSV,
     pointsSV,
+    strokeLiveSV,
     fingerDrawSV,
     scaleSV,
     translateXSV,
