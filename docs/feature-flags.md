@@ -124,6 +124,13 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `active-board-follow-heal-kill` is a kill switch (read through
+  `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
+  launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).
+  Unlike most kill switches it is only read after `useFeatureFlagsResolved()`,
+  because the heal is a one-shot server write at launch: acting on the
+  unresolved first frame would send the follow before a set switch could stop
+  it.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

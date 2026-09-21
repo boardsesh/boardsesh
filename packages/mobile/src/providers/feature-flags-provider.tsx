@@ -158,6 +158,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch: hides the Report climb action, the More-tab Moderation row and the community moderation status. Unresolved reads as enabled (kill switches invert the default; see docs/feature-flags.md).',
   },
+  {
+    key: 'active-board-follow-heal-kill',
+    label: 'Disable the active-board follow heal',
+    description:
+      'Emergency kill switch: stops the app silently following the board it launched on when that board is neither yours nor followed (#5654). The heal waits for flags to resolve before it runs, so turning this on takes effect on the next launch without an OTA. Unresolved reads as enabled.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -354,6 +360,21 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useClimbModerationEnabled(): boolean {
   return useFeatureFlag('climb-moderation-kill') !== true;
+}
+
+/**
+ * Kill switch for the active-board follow heal (#5654): the silent `followBoard`
+ * the app sends at launch for a board that is bound on this phone but missing
+ * from Your boards.
+ *
+ * A KILL switch because the heal is a silent server write that reaches the whole
+ * store fleet by OTA, and this is the only way to stop it without shipping
+ * another one. Missing/undefined reads as "not killed". The heal itself waits for
+ * `useFeatureFlagsResolved()` before it acts, so an unresolved first frame never
+ * slips a follow past a flag that is set.
+ */
+export function useActiveBoardFollowHealEnabled(): boolean {
+  return useFeatureFlag('active-board-follow-heal-kill') !== true;
 }
 
 /**

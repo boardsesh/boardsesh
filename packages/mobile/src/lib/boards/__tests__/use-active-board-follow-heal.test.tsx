@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   storedUserId: 'viewer-1' as string | undefined,
   storage: new Map<string, unknown>(),
   storageReadFails: false,
+  flagsResolved: true,
+  healKilled: false,
 }));
 
 const spies = vi.hoisted(() => ({
@@ -27,6 +29,10 @@ vi.mock('../../graphql/use-active-board', () => ({
 }));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: state.isAuthenticated }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlagsResolved: () => state.flagsResolved,
+  useActiveBoardFollowHealEnabled: () => !state.healKilled,
 }));
 vi.mock('../../../hooks/use-current-user-id', () => ({
   useStoredUserId: (enabled: boolean) => ({ userId: enabled ? state.storedUserId : undefined, isLoading: false }),
@@ -77,6 +83,8 @@ beforeEach(() => {
   state.storedUserId = 'viewer-1';
   state.storage = new Map();
   state.storageReadFails = false;
+  state.flagsResolved = true;
+  state.healKilled = false;
   spies.fetchBoardByUuid.mockImplementation(() => Promise.resolve(makeBoard()));
   spies.followBoard.mockImplementation(() => Promise.resolve(true));
 });
@@ -143,6 +151,59 @@ describe('useActiveBoardFollowHeal', () => {
 
     await waitFor(() => expect(state.storage.get(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toBeDefined());
     expect(spies.followBoard).not.toHaveBeenCalled();
+  });
+
+  // The fleet-wide off switch: a silent server write shipped by OTA needs one.
+  it('does nothing when the kill switch is on', async () => {
+    state.healKilled = true;
+    renderHook(() => useActiveBoardFollowHeal());
+    await settle();
+
+    expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
+    expect(spies.followBoard).not.toHaveBeenCalled();
+    expect(state.storage.has(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toBe(false);
+  });
+
+  // An unresolved kill switch reads as "on", so acting on the first frame would
+  // send the follow before a switch that IS set could stop it.
+  it('waits for the flags to resolve before acting', async () => {
+    state.flagsResolved = false;
+    const { rerender } = renderHook(() => useActiveBoardFollowHeal());
+    await settle();
+    expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
+
+    state.flagsResolved = true;
+    rerender();
+    await waitFor(() => expect(spies.followBoard).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays off when the flags resolve with the kill switch set', async () => {
+    state.flagsResolved = false;
+    const { rerender } = renderHook(() => useActiveBoardFollowHeal());
+    await settle();
+
+    state.flagsResolved = true;
+    state.healKilled = true;
+    rerender();
+    await settle();
+
+    expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
+  });
+
+  // The launch board is pinned before the flags answer, so a pick made while
+  // PostHog is still loading is not mistaken for the board the app launched on.
+  it('still leaves a board picked while the flags were loading to adoption', async () => {
+    state.flagsResolved = false;
+    state.activeBoard = null;
+    const { rerender } = renderHook(() => useActiveBoardFollowHeal());
+    await settle();
+
+    state.activeBoard = makeBoard({ uuid: 'board-b' });
+    state.flagsResolved = true;
+    rerender();
+    await settle();
+
+    expect(spies.fetchBoardByUuid).not.toHaveBeenCalled();
   });
 
   it('does nothing while signed out', async () => {

@@ -71,20 +71,21 @@ export default function GymDiscovery() {
   const insets = useSafeAreaInsets();
   const location = useDeviceLocation();
   const { geocode, isGeocoding } = useGeocodePlace();
-  const { returnTo, source } = useLocalSearchParams<{ returnTo?: string; source?: string }>();
+  const { returnTo, source, from } = useLocalSearchParams<{ returnTo?: string; source?: string; from?: string }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Pushed from the onboarding picker, which forwards its `source`: a gym pick
   // there is the activation bind, same as a pick on `/boards` itself.
   const fromOnboarding = source === 'onboarding';
   const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
-  // No `Board Picker Opened` from here: this screen is usually pushed from the
-  // picker, which already counted the opening.
+  // `from=picker` means the picker pushed this screen and already counted the
+  // opening. Home and My gyms push it bare, so those entries count their own
+  // opening under `source: 'gym_finder'`.
   const trackBoardSelection = useBoardPickerAnalytics({
     activeBoard,
     restoreFailed: boardRestoreFailed,
     returnTo: boardReturnTo,
     fromOnboarding,
-    trackOpened: false,
+    surface: from === 'picker' ? 'gym_finder_from_picker' : 'gym_finder',
   });
   // The same bind as every other picker: write first, then the pick event, then
   // leave, then follow the board so it lands in Your boards (and offer it

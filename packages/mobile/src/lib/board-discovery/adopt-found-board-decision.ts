@@ -39,6 +39,13 @@ export type AdoptFoundBoardParams = {
   autoOffline: boolean;
   /** This board's scope is already in `syncEnabledBoards`. */
   alreadyEnabledOffline: boolean;
+  /**
+   * The caller can put a download dialog up at this moment. False where one
+   * would interrupt: the onboarding bind, which makes its own offer, and the
+   * play drawer's wall switch, which happens mid-session. The `autoOfflineBoards`
+   * setting still downloads there, because the climber asked for that up front.
+   */
+  offerOffline: boolean;
 };
 
 /** The ownership half of the decision: whose board this is, from the viewer's side. */
@@ -78,9 +85,15 @@ export function shouldFollowBoard({ isViewerOwner, isFollowedByMe, isPrivate }: 
  * idempotent and `myBoards` is "owned OR followed", so it never lists twice.
  *
  * The offline offer only *asks* when we know the board is someone else's and new
- * to the viewer. Re-selecting a board you built or follow never nags, and neither
- * does an unresolved viewer; a global auto-offline default still silently
- * ensures any not-yet-enabled board gets downloaded.
+ * to the viewer, and the caller says a dialog fits the moment (`offerOffline`).
+ * Re-selecting a board you built or follow never nags, and neither does an
+ * unresolved viewer; a global auto-offline default still silently ensures any
+ * not-yet-enabled board gets downloaded.
+ *
+ * Since #5654 "someone else's" covers every board another climber built, not
+ * just the Aurora gym pins `isOwned` used to let through, so the ask reaches far
+ * more picks than it did. That is why the onboarding bind and the drawer's wall
+ * switch pass `offerOffline: false`.
  */
 export function decideAdoptFoundBoard({
   isViewerOwner,
@@ -89,11 +102,13 @@ export function decideAdoptFoundBoard({
   offlineEnabled,
   autoOffline,
   alreadyEnabledOffline,
+  offerOffline,
 }: AdoptFoundBoardParams): AdoptDecision {
   const alreadyTheirs = isViewerOwner === true || isFollowedByMe;
   const follow = shouldFollowBoard({ isViewerOwner, isFollowedByMe, isPrivate });
 
   if (!offlineEnabled || alreadyEnabledOffline) return { follow, offline: 'none' };
   if (autoOffline) return { follow, offline: 'auto' };
-  return { follow, offline: !alreadyTheirs && isViewerOwner === false ? 'ask' : 'none' };
+  const newToViewer = !alreadyTheirs && isViewerOwner === false;
+  return { follow, offline: offerOffline && newToViewer ? 'ask' : 'none' };
 }

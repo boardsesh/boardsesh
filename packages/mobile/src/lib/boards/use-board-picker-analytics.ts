@@ -5,18 +5,28 @@ import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
 import type { BoundBoard } from './use-activate-board';
 
+/**
+ * Which screen is measuring.
+ *
+ * - `'picker'`: `/boards`. Reports its own opening.
+ * - `'gym_finder_from_picker'`: `/gyms` pushed from the picker's "Find gym". The
+ *   picker already counted the opening, and a second one would double every
+ *   picker session that went through the map, so this reports picks only, under
+ *   the picker's `source`.
+ * - `'gym_finder'`: `/gyms` opened on its own, from Home or My gyms. Nothing
+ *   counted that opening, so it reports its own, and both events say
+ *   `source: 'gym_finder'`. Filed under the picker's source, its picks would
+ *   push the picker's opened-to-picked rate past 100%.
+ */
+export type PickerSurface = 'picker' | 'gym_finder_from_picker' | 'gym_finder';
+
 type PickerAnalyticsOptions = {
   activeBoard: UserBoard | null | undefined;
   restoreFailed: boolean;
   returnTo: BoardReturnTo;
   fromOnboarding: boolean;
-  /**
-   * Whether this surface reports `Board Picker Opened`. Off for the gym finder:
-   * it is pushed from the picker, so counting it as a second opening would
-   * double every picker session that went through "Find gym". Its picks still
-   * report `Board Picker Selection Completed`, tagged `pickSource: 'gym_finder'`.
-   */
-  trackOpened?: boolean;
+  /** Defaults to `'picker'`. */
+  surface?: PickerSurface;
 };
 
 /** Measures the picker itself, including same-board reselection. A read failure
@@ -26,10 +36,18 @@ export function useBoardPickerAnalytics({
   restoreFailed,
   returnTo,
   fromOnboarding,
-  trackOpened = true,
+  surface = 'picker',
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
-  const source = fromOnboarding ? 'onboarding' : returnTo === '/(tabs)/record' ? 'session' : 'board_picker';
+  const trackOpened = surface !== 'gym_finder_from_picker';
+  const source =
+    surface === 'gym_finder'
+      ? 'gym_finder'
+      : fromOnboarding
+        ? 'onboarding'
+        : returnTo === '/(tabs)/record'
+          ? 'session'
+          : 'board_picker';
   const analyticsReturnTo = returnTo.startsWith('/(tabs)/climbs/setter/')
     ? '/(tabs)/climbs/setter/[username]'
     : returnTo;

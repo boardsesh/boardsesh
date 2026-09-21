@@ -121,7 +121,10 @@ export function useActivateBoard({
   const { t } = useTranslation('boards');
   const { showToast } = useToast();
   const setActiveBoard = useSetActiveBoard();
-  const adoptFoundBoard = useAdoptFoundBoard();
+  // No "Download X?" on the onboarding bind: the onboarding step makes its own
+  // offer in `onBound`, and a second dialog on Climbs would be the first thing a
+  // newcomer sees after picking their board. The follow still happens.
+  const adoptFoundBoard = useAdoptFoundBoard({ offerOffline: source !== 'onboarding' });
   const willFollowFoundBoard = useWillFollowFoundBoard();
 
   return useCallback(

@@ -14,6 +14,7 @@ const base: AdoptFoundBoardParams = {
   offlineEnabled: false,
   autoOffline: false,
   alreadyEnabledOffline: false,
+  offerOffline: true,
 };
 
 const VIEWER = 'viewer-1';
@@ -93,6 +94,20 @@ describe('decideAdoptFoundBoard', () => {
     // An owner whose id hasn't loaded yet must not be asked about their own wall.
     it('asks nothing about offline while the viewer is unresolved', () => {
       expect(decideAdoptFoundBoard({ ...base, isViewerOwner: undefined, offlineEnabled: true }).offline).toBe('none');
+    });
+
+    // The onboarding bind and the drawer's wall switch: a dialog there interrupts.
+    it('never asks when the caller has no room for a dialog', () => {
+      expect(decideAdoptFoundBoard({ ...base, offlineEnabled: true, offerOffline: false })).toEqual({
+        follow: true,
+        offline: 'none',
+      });
+    });
+
+    it('still auto-downloads when the caller has no room for a dialog', () => {
+      expect(
+        decideAdoptFoundBoard({ ...base, offlineEnabled: true, autoOffline: true, offerOffline: false }).offline,
+      ).toBe('auto');
     });
 
     it('auto-downloads an already-followed board when auto-offline is on and it is not enabled yet', () => {

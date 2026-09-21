@@ -85,7 +85,11 @@ export function useSwitchBoard({
   inSession = false,
 }: SwitchBoardOptions) {
   const setActiveBoard = useSetActiveBoard();
-  const adoptFoundBoard = useAdoptFoundBoard();
+  // Follow the wall, but never ask "Download X?" here. This runs from the play
+  // drawer, often mid-session, and since #5654 every wall someone else built
+  // counts as new to the climber, so the dialog would land on nearly every hop.
+  // The `autoOfflineBoards` setting still downloads it.
+  const adoptFoundBoard = useAdoptFoundBoard({ offerOffline: false });
   const { showToast } = useToast();
   const { t } = useTranslation('session');
   // Single-flight. The active-board write queue already resolves two racing

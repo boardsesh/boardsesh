@@ -88,8 +88,11 @@ returns, and other picker entries; `returnTo` records the destination.
 `offline`, `bluetooth` or `gym_finder`) and `followed` says whether the pick
 added it to Your boards. The gym finder binds through the same `useActivateBoard`
 path, so its picks report this event (and close out onboarding when the picker
-forwarded `source=onboarding`), but it never reports an opening of its own:
-it is usually pushed from the picker, which already did. Creation
+forwarded `source=onboarding`). Pushed from the picker's "Find gym" (which adds
+`from=picker`), it reports no opening of its own, because the picker already
+did, and its picks carry the picker's `source`. Opened on its own from Home or
+My gyms, it reports its own opening, and both events say `source: gym_finder`,
+so those picks never count against the picker's openings. Creation
 flows retain their existing creation/activation events. Screen-event deduplication
 is unchanged, so these events diagnose reselection without restoring a per-screen
 navigation stream. They do not establish a retrospective before/after baseline.
@@ -99,10 +102,24 @@ already follows it. `UserBoard.isOwned` plays no part: it is the creator's "a
 real wall" flag and is true for almost every board built in the app, which is
 why, before #5654, a gym or community board someone else built was bound but
 never followed, and the picker said "No boards yet" on the next open. Someone
-else's private board is never followed, because the server refuses it. For
-climbers who picked such a board before the fix, the app follows the board it
-launched on once per account and board (`Active Board Follow Healed`), and only
-when the server says it is neither theirs nor followed.
+else's private board is never followed, because the server refuses it, and a
+signed-out climber follows nothing.
+
+Because nearly every board someone else built now counts as new to the climber,
+adoption's "Download X?" dialog only appears on picks from the picker and the
+gym finder. The onboarding bind (which makes its own offer) and the play
+drawer's wall switch pass `offerOffline: false`: they still follow the board,
+and the "keep boards offline" setting still downloads it, but they never ask.
+
+The app also follows the board it launched on, once per account and board
+(`Active Board Follow Healed`), when the server says it is neither the climber's
+nor followed. It started as the repair for picks made before #5654, but it is a
+lasting rule: it covers every board the app launches on, including boards bound
+without a pick at all (a party session join, a `/b/` or climb deep link, the
+Bluetooth mismatch switch, the drawer's board switch). So a friend's wall you
+joined a session on shows up in Your boards after the next launch. The
+`active-board-follow-heal-kill` mobile flag turns it off fleet-wide; the heal
+waits for flags to resolve, so the switch holds from the next launch.
 
 ### Header Patterns
 

@@ -13,12 +13,16 @@ const hapticMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const setBoardRevealTipPendingMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const reportErrorMock = vi.hoisted(() => vi.fn());
+const adoptOptionsSeen = vi.hoisted(() => ({ value: undefined as { offerOffline?: boolean } | undefined }));
 
 vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
 vi.mock('../../board-discovery/use-adopt-found-board', () => ({
-  useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useAdoptFoundBoard: (options?: { offerOffline?: boolean }) => {
+    adoptOptionsSeen.value = options;
+    return adoptFoundBoardMock;
+  },
   useWillFollowFoundBoard: () => willFollowFoundBoardMock,
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
@@ -42,6 +46,7 @@ function activate(options: Partial<ActivateBoardOptions> = {}) {
 describe('useActivateBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    adoptOptionsSeen.value = undefined;
     setActiveBoardMock.mockResolvedValue(undefined);
     willFollowFoundBoardMock.mockReturnValue(true);
     markOnboardingSeenMock.mockResolvedValue(undefined);
@@ -122,6 +127,11 @@ describe('useActivateBoard', () => {
       expect(setBoardRevealTipPendingMock).not.toHaveBeenCalled();
       expect(markOnboardingSeenMock).not.toHaveBeenCalled();
     });
+
+    it('lets adoption offer the offline download', () => {
+      activate();
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: true });
+    });
   });
 
   describe('the onboarding bind', () => {
@@ -147,6 +157,15 @@ describe('useActivateBoard', () => {
 
       expect(dismissToMock).toHaveBeenCalled();
       await waitFor(() => expect(reportErrorMock).toHaveBeenCalled());
+    });
+
+    // The onboarding step makes its own offer in onBound; a second "Download X?"
+    // from adoption would be the first thing a newcomer sees on Climbs.
+    it('still follows the board but tells adoption not to ask about offline', async () => {
+      const result = activate({ source: 'onboarding' });
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: false });
+      await result.current(BOARD);
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
     });
   });
 

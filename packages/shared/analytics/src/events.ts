@@ -478,22 +478,28 @@ export const SHARED_EVENTS = {
   // noisy for PostHog's event budget.
   BoardSheetOpened: 'Board Sheet Opened',
   // The full board picker, once per presentation after the saved-board read.
-  // source: onboarding | session | board_picker (other/unknown entry).
+  // source: onboarding | session | board_picker (other/unknown entry) |
+  // gym_finder (the gym map opened on its own, from Home or My gyms; the map
+  // pushed from the picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
-  // pickSource: your_boards | nearby | offline | bluetooth | gym_finder | null
-  // (the list the board was tapped in; the gym finder reports only this event,
-  // never an opening of its own). followed: the pick added the board to Your
-  // boards (#5654); false when it was already theirs, was someone else's
-  // private board, or came from the on-device rows shown with no connection.
+  // source matches the opening that led here: a pick on the gym map pushed from
+  // the picker carries the picker's source, a pick on a map opened on its own
+  // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth |
+  // gym_finder | null (the list the board was tapped in). followed: the pick
+  // added the board to Your boards (#5654); false when it was already theirs,
+  // was someone else's private board, the viewer was signed out, or it came
+  // from the on-device rows shown with no connection.
   // New-board creation/onboarding activation have their own existing events.
   BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
-  // The one-time repair for climbers whose active board was picked before picks
-  // followed boards (#5654): fired when the app follows the board they launched
-  // on because it was neither theirs nor followed. At most once per user and
-  // board. Props: { boardType, hasGym }.
+  // The launch follow heal (#5654): fired when the app follows the board it
+  // launched on because the server says it is neither the climber's nor
+  // followed. Repairs picks made before picks followed boards, and keeps
+  // covering boards bound without a pick (session joins, deep links, the
+  // Bluetooth and drawer switches). At most once per user and board; off when
+  // the `active-board-follow-heal-kill` mobile flag is set. Props: { boardType, hasGym }.
   ActiveBoardFollowHealed: 'Active Board Follow Healed',
   BoardHistoryViewed: 'Board History Viewed',
   // Fired from the switch-board control's own `onPress`, before any other work.

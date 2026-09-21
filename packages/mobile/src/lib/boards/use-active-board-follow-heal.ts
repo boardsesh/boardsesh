@@ -1,4 +1,5 @@
-// One-time follow for the board a climber is already on.
+// Follow the board a climber launches the app on, when it is missing from Your
+// boards.
 //
 // Until #5654, picking a board someone else built never followed it: adoption
 // read `UserBoard.isOwned` (the creator's "a real wall" flag, true for every
@@ -6,9 +7,17 @@
 // board on this phone, but it is missing from Your boards, so the picker says
 // "No boards yet" and the obvious next tap builds a duplicate (#5272).
 //
-// Fixing adoption only helps the next pick. This follows the board the app
-// launched on, once, when the server says it is neither the climber's own nor
-// followed. It is deliberately narrow:
+// Fixing adoption only helps the next pick, so this repairs the board the app
+// launched on. It is a lasting rule, not a migration that retires itself: it
+// runs on every launch, for every signed-in climber, for whatever board the app
+// launched on. That includes boards bound without adoption at all: a party
+// session join (`resolveBoardForSession` via the session commands), a `/b/slug`
+// or climb deep link (`use-board-route-target.ts`), the Bluetooth mismatch
+// switch (`bluetooth-provider.tsx`) and the drawer's board switch
+// (`drawer-host-provider.tsx`). So a friend's home wall you joined a session on
+// lands in Your boards on the next launch, and you count as one of its
+// followers. That is on purpose: the board you climb on should be one tap away
+// in the picker, and nothing records which path bound it. The limits:
 //
 // - Only the board this process launched on. A board picked during the session
 //   already went through adoption, and healing it too would race that follow.
@@ -16,6 +25,9 @@
 //   the self-heal validation epoch cancels a heal that is still in flight.
 // - Once per user and board, remembered on the device. A climber who unfollows
 //   the board later is not followed back on the next launch.
+// - Behind the `active-board-follow-heal-kill` flag (unresolved = on). It waits
+//   for flags to resolve before acting, so switching it on stops the heal on the
+//   next launch without an OTA.
 // - Silent. No toast: nothing on screen changed, the board just shows up in
 //   Your boards the next time they look.
 
@@ -24,6 +36,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { fetchBoardByUuid, useFollowBoard } from '../graphql/hooks';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { useAuth } from '../../providers/auth-provider';
+import { useActiveBoardFollowHealEnabled, useFeatureFlagsResolved } from '../../providers/feature-flags-provider';
 import { useStoredUserId } from '../../hooks/use-current-user-id';
 import { getPreference, setPreference } from '../preference-store';
 import { track } from '../analytics';
@@ -56,7 +69,8 @@ export function resetActiveBoardFollowHealForTests(): void {
 
 /**
  * A read error answers "already healed": the follow is a nicety, and a flaky
- * store must never turn a one-time repair into one that runs on every launch.
+ * store must never turn a once-per-board repair into one that runs on every
+ * launch.
  */
 async function hasHealed(healKey: string): Promise<boolean> {
   try {
@@ -82,6 +96,11 @@ export function useActiveBoardFollowHeal(): void {
   const { isAuthenticated } = useAuth();
   const { data: activeBoard, isPending } = useActiveBoard();
   const { userId: viewerId } = useStoredUserId(isAuthenticated);
+  // Read the kill switch only once PostHog has answered (or the 2 s backstop
+  // fired): an unresolved kill switch reads as "on", and acting on that first
+  // frame would send the follow before a set switch could stop it.
+  const flagsResolved = useFeatureFlagsResolved();
+  const healEnabled = useActiveBoardFollowHealEnabled();
   // No callbacks: a silent follow. It still invalidates `myBoards` on success.
   const followBoard = useFollowBoard();
   const followBoardAsync = followBoard.mutateAsync;
@@ -100,6 +119,7 @@ export function useActiveBoardFollowHeal(): void {
   useEffect(() => {
     if (isPending) return;
     if (launchBoardUuid === undefined) launchBoardUuid = boardUuid;
+    if (!flagsResolved || !healEnabled) return;
     if (!isAuthenticated || viewerId === undefined || boardUuid === null) return;
     if (boardUuid !== launchBoardUuid || snapshotIsTheirs) return;
     // Screenshot builds drive the active board to stage captures; following it
@@ -139,5 +159,5 @@ export function useActiveBoardFollowHeal(): void {
         if (__DEV__) console.warn('[ActiveBoardFollowHeal] follow heal failed; will retry next launch');
       }
     })();
-  }, [isPending, isAuthenticated, viewerId, boardUuid, snapshotIsTheirs, followBoardAsync]);
+  }, [isPending, flagsResolved, healEnabled, isAuthenticated, viewerId, boardUuid, snapshotIsTheirs, followBoardAsync]);
 }

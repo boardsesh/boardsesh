@@ -201,6 +201,42 @@ describe('useAdoptFoundBoard', () => {
     expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
   });
 
+  // The onboarding bind and the drawer's wall switch: the follow stays, the
+  // dialog goes, and only the climber's own auto-offline setting still downloads.
+  describe('with offerOffline: false', () => {
+    it('follows but never asks about offline', async () => {
+      cfg.offlineEnabled = true;
+      const { result } = renderHook(() => useAdoptFoundBoard({ offerOffline: false }));
+      const board = makeBoard();
+      await result.current(board);
+      expect(spies.mutate).toHaveBeenCalledWith(board);
+      expect(spies.confirm).not.toHaveBeenCalled();
+      expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
+    });
+
+    it('still auto-downloads when auto-offline is on', async () => {
+      cfg.offlineEnabled = true;
+      cfg.autoOffline = true;
+      const { result } = renderHook(() => useAdoptFoundBoard({ offerOffline: false }));
+      const board = makeBoard();
+      await result.current(board);
+      expect(spies.confirm).not.toHaveBeenCalled();
+      expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board, { trigger: 'adopt-auto', source: 'adopt' });
+    });
+  });
+
+  // followBoard needs a session. Without this gate a signed-out pick (guest mode)
+  // would end in a "Couldn't add X" toast and an error report.
+  it('never tries to follow while signed out', async () => {
+    cfg.isAuthenticated = false;
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    await result.current(makeBoard());
+    expect(spies.mutate).not.toHaveBeenCalled();
+    expect(spies.showToast).not.toHaveBeenCalled();
+    expect(spies.reportError).not.toHaveBeenCalled();
+    expect(spies.confirm).not.toHaveBeenCalled();
+  });
+
   it('shows a success toast via the follow onFollowed callback', async () => {
     const { result } = renderHook(() => useAdoptFoundBoard());
     const board = makeBoard();
@@ -227,5 +263,11 @@ describe('useWillFollowFoundBoard', () => {
     expect(result.current(makeBoard({ ownerId: 'viewer-1' }))).toBe(false);
     expect(result.current(makeBoard({ isFollowedByMe: true }))).toBe(false);
     expect(result.current(makeBoard({ isPublic: false }))).toBe(false);
+  });
+
+  it('says a signed-out pick follows nothing', () => {
+    cfg.isAuthenticated = false;
+    const { result } = renderHook(() => useWillFollowFoundBoard());
+    expect(result.current(makeBoard())).toBe(false);
   });
 });

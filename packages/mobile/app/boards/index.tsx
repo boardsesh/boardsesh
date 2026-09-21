@@ -561,9 +561,10 @@ export default function BoardSelection() {
   }, [router, boardReturnTo]);
 
   // `source` rides along for the same reason as the builder's: a board picked on
-  // the gym map during onboarding has to close out first-run too.
+  // the gym map during onboarding has to close out first-run too. `from=picker`
+  // tells the gym finder this picker already counted the opening.
   const onModeFindGym = useCallback(() => {
-    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source } });
+    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source, from: 'picker' } });
   }, [router, boardReturnTo, source]);
 
   // A popular config has no UserBoard — open the builder pre-seeded with the

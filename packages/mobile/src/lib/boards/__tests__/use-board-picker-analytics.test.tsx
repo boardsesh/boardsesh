@@ -124,22 +124,45 @@ describe('board picker analytics', () => {
     );
   });
 
-  // The gym finder is pushed from the picker, which already counted the opening.
-  it('reports only selections when the surface opts out of the opening', async () => {
+  // The picker pushed the gym finder and already counted the opening.
+  it("reports only selections from a gym finder the picker opened, under the picker's source", async () => {
     const { result } = renderHook(() =>
       useBoardPickerAnalytics({
         activeBoard: null,
         restoreFailed: false,
         returnTo: '/(tabs)/climbs',
-        fromOnboarding: false,
-        trackOpened: false,
+        fromOnboarding: true,
+        surface: 'gym_finder_from_picker',
       }),
     );
     expect(track).not.toHaveBeenCalled();
     await result.current(board, { pickSource: 'gym_finder', followed: true });
     expect(track).toHaveBeenCalledExactlyOnceWith(
       'Board Picker Selection Completed',
-      expect.objectContaining({ pickSource: 'gym_finder', followed: true }),
+      expect.objectContaining({ source: 'onboarding', pickSource: 'gym_finder', followed: true }),
+    );
+  });
+
+  // Home and My gyms open the gym finder directly: nothing else counted that
+  // opening, and its picks must not inflate the picker's own conversion.
+  it('counts its own opening under its own source when the gym finder was opened directly', async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        surface: 'gym_finder',
+      }),
+    );
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ source: 'gym_finder', hadActiveBoard: false }),
+    );
+    await result.current(board, { pickSource: 'gym_finder', followed: false });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ source: 'gym_finder', pickSource: 'gym_finder' }),
     );
   });
 });
