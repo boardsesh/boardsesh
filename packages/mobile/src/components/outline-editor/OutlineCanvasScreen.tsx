@@ -445,18 +445,12 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     [draftPointsSV, showToast, draftOutline, strokeLiveSV],
   );
 
-  /**
-   * Show back exactly what would be stored — the decimated, closed ring — rather
-   * than the raw stylus trail or the swept brush, so the preview and the write
-   * agree. Everything the commit does that the live overlay cannot show (the
-   * neck trim, hole filling, dropping an offcut, decimation) becomes visible as
-   * this one snap when the pencil lifts.
-   */
   /** Record the state a stroke is about to replace, so Undo can return to it. */
   const pushUndoStep = useCallback((step: EditStep) => {
     setUndoStack((stack) => [...stack, step].slice(-UNDO_LIMIT));
   }, []);
 
+  /** Show the final closed ring so the preview matches the saved outline. */
   const showCommittedDraft = useCallback(
     (outline: number[], hold: BoardHoldTarget) => {
       strokeLiveSV.value = false;
@@ -716,6 +710,9 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const previewUnavailableNote = useMemo(() => {
     if (selectedPlacementId == null) return 'Pick a hold to preview it.';
     if (boardseshRendererAvailable === null) return 'Checking whether this build can draw traced outlines…';
+    if (boardseshRendererAvailable === false) {
+      return 'This build cannot preview traced outlines. Install a newer app build to preview them.';
+    }
     if (!previewAvailable) {
       return 'Choose Aura with traced hold shapes in Board look to preview this outline on a compatible build.';
     }
