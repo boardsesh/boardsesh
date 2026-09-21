@@ -2,7 +2,7 @@ import 'server-only';
 
 import { cache } from 'react';
 import { sql as drizzleSql } from 'drizzle-orm';
-import { parseNamedBoardPath } from '@boardsesh/board-config';
+import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import { buildBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { boardToRouteParams, resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -11,6 +11,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 // READ_REPLICA_URL is unset, so this is safe before a replica exists.
 import { dbzRead as dbz, executeRows, getReadPool, rowsFromResult } from '@/app/lib/db/db';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
+import { detectLocale } from '@/app/lib/i18n/detect-locale';
 import type { BoardDetails, BoardName, ParsedBoardRouteParameters } from '@/app/lib/types';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgVersionToken } from './og';
@@ -300,18 +301,19 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
     }
 
     if (!parsedParams) {
-      const parts = pathname.split('/').filter(Boolean);
+      const positionalPath = parseBoardPath(pathname);
+      const { strippedPath } = detectLocale(pathname.startsWith('/') ? pathname : `/${pathname}`);
+      const parts = strippedPath.split('/').filter(Boolean);
       if (parts.length >= 4) {
-        const maybeAngle = parts[4] ? Number(parts[4]) : Number.NaN;
-        if (!Number.isNaN(maybeAngle)) {
-          boardAngle = maybeAngle;
-        }
+        const pathAngle = positionalPath ? positionalPath.angle : parts[4] ? Number(parts[4]) : null;
+        if (pathAngle !== null && Number.isFinite(pathAngle)) boardAngle = pathAngle;
 
+        // Readable layout/size slugs still use the server catalogue resolver.
         parsedParams = await parseBoardRouteParamsWithSlugs({
-          board_name: parts[0],
-          layout_id: parts[1],
-          size_id: parts[2],
-          set_ids: parts[3],
+          board_name: positionalPath?.boardName ?? parts[0],
+          layout_id: positionalPath ? String(positionalPath.layoutId) : parts[1],
+          size_id: positionalPath ? String(positionalPath.sizeId) : parts[2],
+          set_ids: positionalPath?.setIds ?? parts[3],
           angle: String(boardAngle ?? 0),
         });
       }

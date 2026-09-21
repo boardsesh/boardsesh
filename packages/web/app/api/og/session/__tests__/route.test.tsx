@@ -191,6 +191,35 @@ describe('api/og/session route', () => {
     if (absent) expect(textContent).not.toContain(absent);
   });
 
+  it('shows only observed grades when the current private board cannot be resolved', async () => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Private board session',
+      leaderName: null,
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 2,
+      gradeRows: [{ difficulty: 21, count: 2 }],
+      boardType: null,
+      boardLabel: null,
+      boardAngle: null,
+      boardPreviewPath: null,
+      version: 'private-switch',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'private-board-session', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    expect(textContent).toContain('6c');
+    expect(textContent).toContain('2 sends so far');
+    expect(textContent).toContain('Boardsesh session');
+    expect(textContent).not.toContain('4a');
+    expect(textContent).not.toContain('5a');
+    expect(
+      collectImageSources(sessionRouteState.capturedElement).some((source) => source.includes('board-render')),
+    ).toBe(false);
+  });
+
   it('keeps the grade floor when a session also contains an unknown difficulty', async () => {
     sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
       sessionType: 'party',

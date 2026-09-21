@@ -175,14 +175,19 @@ describe('getSessionOgSummary', () => {
     expect(summary.found).toBe(false);
   });
 
-  it('uses board config from legacy board paths when present', async () => {
+  it.each([
+    '/tension/original/8x10/main_aux/35',
+    '/es/tension/original/8x10/main_aux/35/list',
+    'fr/tension/original/8x10/main_aux/35',
+    'https://boardsesh.com/de/tension/original/8x10/main_aux/35/list',
+  ])('uses board config from readable board paths: %s', async (boardPath) => {
     executeMock
       .mockResolvedValueOnce([
         {
           name: 'Board Night',
           leader_name: 'Sam',
           version_at: '2024-01-06T00:00:00.000Z',
-          board_path: '/tension/original/8x10/main_aux/35',
+          board_path: boardPath,
           board_slug: null,
           board_angle: null,
           board_type: null,
@@ -230,6 +235,9 @@ describe('getSessionOgSummary', () => {
   it.each([
     ['kilter', 'moonboard', '/moonboard/1/7/1/25', false],
     ['moonboard', 'kilter', '/kilter/1/7/1/25', false],
+    ['kilter', 'moonboard', '/es/moonboard/1/7/1/25/list', false],
+    ['moonboard', 'kilter', 'fr/kilter/1/7/1/25', false],
+    ['kilter', 'moonboard', 'https://boardsesh.com/de/moonboard/1/7/1/25/list', false],
     ['kilter', 'moonboard', '/b/current-wall/25', true],
     ['moonboard', 'kilter', '/b/current-wall', true],
     ['kilter', 'moonboard', '/es/b/current-wall/25/list', true],
@@ -291,6 +299,42 @@ describe('getSessionOgSummary', () => {
       }
     },
   );
+
+  it('keeps switched private board details unknown when the slug lookup is masked', async () => {
+    executeMock
+      .mockResolvedValueOnce([
+        {
+          name: 'Private board session',
+          leader_name: null,
+          version_at: null,
+          board_path: '/b/private-current-wall/25',
+          board_slug: 'previous-wall',
+          board_angle: 40,
+          board_type: 'kilter',
+          layout_id: 1,
+          size_id: 7,
+          set_ids: '1',
+        },
+      ])
+      .mockResolvedValueOnce([{ participant_count: 1 }])
+      .mockResolvedValueOnce([{ display_name: 'Alex' }])
+      .mockResolvedValueOnce([{ total_sends: 2 }])
+      .mockResolvedValueOnce([{ difficulty: 21, cnt: 2 }]);
+    resolveBoardBySlugMock.mockResolvedValue(null);
+    parseBoardRouteParamsWithSlugsMock.mockRejectedValue(new Error('Not a positional board path'));
+
+    const { getSessionOgSummary } = await import('../dynamic-og-data');
+    const summary = await getSessionOgSummary('private-switch');
+
+    expect(resolveBoardBySlugMock).toHaveBeenCalledWith('private-current-wall');
+    expect(summary.boardType).toBeNull();
+    expect(summary.boardLabel).toBeNull();
+    expect(summary.boardPreviewPath).toBeNull();
+    expect(summary.gradeRows).toEqual([{ difficulty: 21, count: 2 }]);
+    expect(summary.totalSends).toBe(2);
+    expect(boardToRouteParamsMock).not.toHaveBeenCalled();
+    expect(getBoardDetailsForBoardMock).not.toHaveBeenCalled();
+  });
 
   it.each(['/b/same-wall/25', '/es/b/same-wall/25/list', 'b/same-wall/25'])(
     'keeps matching joined metadata while taking the current path angle: %s',
