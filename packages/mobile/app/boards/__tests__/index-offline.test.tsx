@@ -152,6 +152,16 @@ vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({ status: 'idle', coords: undefined, request: vi.fn() }),
 }));
 
+// Keep the activation/link decision real while replacing credential and preference I/O.
+vi.mock('../../../src/hooks/use-is-offline', () => ({
+  useIsOffline: () => state.isOffline,
+}));
+vi.mock('../../../src/lib/integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: [] }),
+}));
+vi.mock('../../../src/lib/onboarding/link-step-answered', () => ({
+  hasAnsweredLinkStep: vi.fn(async () => false),
+}));
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
 }));
@@ -193,6 +203,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   // The spray-wall tile is behind its own flag (epic #5346, SW-09). Off here so
   // these cases keep describing the board row they were written for.

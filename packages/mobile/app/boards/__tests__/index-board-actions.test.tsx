@@ -191,6 +191,16 @@ vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({ status: 'idle', coords: undefined, request: vi.fn() }),
 }));
+// Keep the activation/link decision real while replacing credential and preference I/O.
+vi.mock('../../../src/hooks/use-is-offline', () => ({
+  useIsOffline: () => false,
+}));
+vi.mock('../../../src/lib/integrations/use-board-account-credentials', () => ({
+  useBoardAccountCredentials: () => ({ data: [] }),
+}));
+vi.mock('../../../src/lib/onboarding/link-step-answered', () => ({
+  hasAnsweredLinkStep: vi.fn(async () => false),
+}));
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
 }));
@@ -226,6 +236,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 // tile's own describe block below flips it.
 const flagState = { sprayWalls: false };
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
   useSprayWallsEnabled: () => flagState.sprayWalls,
 }));
