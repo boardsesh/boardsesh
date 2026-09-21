@@ -142,6 +142,7 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useWillFollowFoundBoard: () => () => false,
 }));
 
 vi.mock('../../../src/lib/use-device-location', () => ({
@@ -322,6 +323,12 @@ describe('board picker with no usable network list', () => {
     // Adoption is a follow mutation plus a download confirm — offline all it can do is
     // raise a "Could not follow X" error toast on a board the user already has.
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'offline', followed: false }),
+      ),
+    );
   });
 
   it('shows the offline empty state, not "create a board", when nothing is downloaded', () => {
@@ -465,6 +472,11 @@ describe('board picker with no usable network list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Network board' }));
 
     await waitFor(() => expect(adoptFoundBoardMock).toHaveBeenCalledTimes(1));
+    // The pick event names the section the card was tapped in.
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: 'your_boards' }),
+    );
   });
 
   // The board-card glyph is the widest-reach discovery surface in #4318, and it

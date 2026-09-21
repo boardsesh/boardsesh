@@ -483,8 +483,18 @@ export const SHARED_EVENTS = {
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
+  // pickSource: your_boards | nearby | offline | bluetooth | gym_finder | null
+  // (the list the board was tapped in; the gym finder reports only this event,
+  // never an opening of its own). followed: the pick added the board to Your
+  // boards (#5654); false when it was already theirs, was someone else's
+  // private board, or came from the on-device rows shown with no connection.
   // New-board creation/onboarding activation have their own existing events.
   BoardPickerSelectionCompleted: 'Board Picker Selection Completed',
+  // The one-time repair for climbers whose active board was picked before picks
+  // followed boards (#5654): fired when the app follows the board they launched
+  // on because it was neither theirs nor followed. At most once per user and
+  // board. Props: { boardType, hasGym }.
+  ActiveBoardFollowHealed: 'Active Board Follow Healed',
   BoardHistoryViewed: 'Board History Viewed',
   // Fired from the switch-board control's own `onPress`, before any other work.
   // Deliberately redundant with BoardSwapInvokedFromSheet (which fires one call

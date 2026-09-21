@@ -83,10 +83,26 @@ and `Board Picker Selection Completed` after an existing-board selection is
 persisted. `sameBoard` compares UUIDs; `sameConfig` compares board type, layout,
 size and hold sets. A failed restoration records unknown (`null`) rather than
 claiming there was no board. `source` distinguishes onboarding, explicit Session
-returns, and other picker entries; `returnTo` records the destination. Creation
+returns, and other picker entries; `returnTo` records the destination.
+`pickSource` names the list the board was tapped in (`your_boards`, `nearby`,
+`offline`, `bluetooth` or `gym_finder`) and `followed` says whether the pick
+added it to Your boards. The gym finder binds through the same `useActivateBoard`
+path, so its picks report this event (and close out onboarding when the picker
+forwarded `source=onboarding`), but it never reports an opening of its own:
+it is usually pushed from the picker, which already did. Creation
 flows retain their existing creation/activation events. Screen-event deduplication
 is unchanged, so these events diagnose reselection without restoring a per-screen
 navigation stream. They do not establish a retrospective before/after baseline.
+
+A pick follows the board unless the climber built it (`ownerId` matches them) or
+already follows it. `UserBoard.isOwned` plays no part: it is the creator's "a
+real wall" flag and is true for almost every board built in the app, which is
+why, before #5654, a gym or community board someone else built was bound but
+never followed, and the picker said "No boards yet" on the next open. Someone
+else's private board is never followed, because the server refuses it. For
+climbers who picked such a board before the fix, the app follows the board it
+launched on once per account and board (`Active Board Follow Healed`), and only
+when the server says it is neither theirs nor followed.
 
 ### Header Patterns
 

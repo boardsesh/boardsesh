@@ -176,6 +176,7 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => vi.fn().mockResolvedValue(undefined),
+  useWillFollowFoundBoard: () => () => false,
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({ status: 'idle', coords: undefined, request: vi.fn() }),

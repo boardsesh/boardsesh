@@ -3,12 +3,20 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { normalizeSetIdsForCompare, type UserBoard } from '@boardsesh/shared-schema';
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
+import type { BoundBoard } from './use-activate-board';
 
 type PickerAnalyticsOptions = {
   activeBoard: UserBoard | null | undefined;
   restoreFailed: boolean;
   returnTo: BoardReturnTo;
   fromOnboarding: boolean;
+  /**
+   * Whether this surface reports `Board Picker Opened`. Off for the gym finder:
+   * it is pushed from the picker, so counting it as a second opening would
+   * double every picker session that went through "Find gym". Its picks still
+   * report `Board Picker Selection Completed`, tagged `pickSource: 'gym_finder'`.
+   */
+  trackOpened?: boolean;
 };
 
 /** Measures the picker itself, including same-board reselection. A read failure
@@ -18,6 +26,7 @@ export function useBoardPickerAnalytics({
   restoreFailed,
   returnTo,
   fromOnboarding,
+  trackOpened = true,
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
   const source = fromOnboarding ? 'onboarding' : returnTo === '/(tabs)/record' ? 'session' : 'board_picker';
@@ -26,7 +35,7 @@ export function useBoardPickerAnalytics({
     : returnTo;
 
   useEffect(() => {
-    if (opened.current || (activeBoard === undefined && !restoreFailed)) return;
+    if (!trackOpened || opened.current || (activeBoard === undefined && !restoreFailed)) return;
     opened.current = true;
     track(SHARED_EVENTS.BoardPickerOpened, {
       source,
@@ -34,15 +43,19 @@ export function useBoardPickerAnalytics({
       hadActiveBoard: activeBoard === undefined ? null : activeBoard !== null,
       restoreFailed,
     });
-  }, [activeBoard, restoreFailed, analyticsReturnTo, source]);
+  }, [activeBoard, restoreFailed, analyticsReturnTo, source, trackOpened]);
 
   // Supplied as useActivateBoard.onBound: called only after persistence succeeds,
   // with the previous board captured before the write updates the query cache.
   return useCallback(
-    async (board: UserBoard): Promise<void> => {
+    async (board: UserBoard, { pickSource, followed }: BoundBoard): Promise<void> => {
       track(SHARED_EVENTS.BoardPickerSelectionCompleted, {
         source,
         returnTo: analyticsReturnTo,
+        // Which list the board was tapped in; null when the caller didn't say.
+        pickSource: pickSource ?? null,
+        // Whether this pick added the board to Your boards (#5654).
+        followed,
         hadActiveBoard: activeBoard === undefined ? null : activeBoard !== null,
         sameBoard: activeBoard === undefined ? null : activeBoard?.uuid === board.uuid,
         sameConfig:

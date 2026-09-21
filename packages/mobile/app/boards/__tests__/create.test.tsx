@@ -103,6 +103,7 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
 // the sequence itself stays under test.
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useWillFollowFoundBoard: () => () => false,
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({

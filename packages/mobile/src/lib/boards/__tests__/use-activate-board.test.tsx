@@ -5,6 +5,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
+const willFollowFoundBoardMock = vi.hoisted(() => vi.fn((): boolean => true));
 const dismissToMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
@@ -16,7 +17,10 @@ const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
-vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
+vi.mock('../../board-discovery/use-adopt-found-board', () => ({
+  useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useWillFollowFoundBoard: () => willFollowFoundBoardMock,
+}));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
@@ -39,6 +43,7 @@ describe('useActivateBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setActiveBoardMock.mockResolvedValue(undefined);
+    willFollowFoundBoardMock.mockReturnValue(true);
     markOnboardingSeenMock.mockResolvedValue(undefined);
     setBoardRevealTipPendingMock.mockResolvedValue(undefined);
   });
@@ -155,6 +160,38 @@ describe('useActivateBoard', () => {
       await result.current(BOARD);
 
       expect(order).toEqual(['bind', 'onBound', 'navigate']);
+    });
+
+    // The pick event rides onBound, so it has to learn where the tap came from
+    // and whether this bind put the board in Your boards (#5654).
+    it('hears where the board was picked and whether the bind follows it', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD, { pickSource: 'nearby' });
+
+      expect(willFollowFoundBoardMock).toHaveBeenCalledWith(BOARD);
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'nearby', followed: true });
+    });
+
+    it('reports no follow for a board that is already theirs, and no pick source when none was given', async () => {
+      willFollowFoundBoardMock.mockReturnValue(false);
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD);
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: undefined, followed: false });
+    });
+
+    // Adoption is skipped for on-device rows, so nothing is followed.
+    it('reports no follow when the rows came from the on-device snapshots', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound, isLocalOnly: true });
+
+      await result.current(BOARD, { pickSource: 'offline' });
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'offline', followed: false });
     });
 
     // The board IS bound by this point. Refusing to navigate over a failed extra

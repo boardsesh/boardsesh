@@ -71,6 +71,7 @@ import { ConnectivityBridge } from '../src/components/connectivity-bridge';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-heal';
+import { useActiveBoardFollowHeal } from '../src/lib/boards/use-active-board-follow-heal';
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { Text } from '../src/components/Text';
 import { Icon } from '../src/components/Icon';
@@ -452,6 +453,9 @@ function BoardProviderWrapper({ children }: { children: ReactNode }) {
   // Reconcile a stored active board that a server-side merge collapsed away
   // after hydration and whenever the app returns to the foreground.
   useActiveBoardSelfHeal();
+  // Follow the board the app launched on, once, if it isn't in Your boards: the
+  // repair for picks made before picks followed boards (#5654).
+  useActiveBoardFollowHeal();
   return (
     <BoardProvider
       boardName={toBoardName(activeBoard?.boardType)}
