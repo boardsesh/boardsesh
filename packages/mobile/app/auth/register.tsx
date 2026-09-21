@@ -135,6 +135,7 @@ export default function RegisterScreen() {
           auth_method: 'credentials',
           flow: authFlow,
           is_registration: true,
+          screen: 'register',
         });
         track(SHARED_EVENTS.SignupCompleted, { auth_method: 'credentials', flow: authFlow });
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the

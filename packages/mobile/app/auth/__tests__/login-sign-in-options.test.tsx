@@ -188,7 +188,11 @@ describe('LoginScreen Auth Option Tapped', () => {
     });
 
     expect(authOptionTaps()).toEqual([{ option: 'email_sign_in', screen: 'login' }]);
-    expect(analytics.trackLoginSucceeded).toHaveBeenCalledWith({ auth_method: 'credentials', flow: 'native' });
+    expect(analytics.trackLoginSucceeded).toHaveBeenCalledWith({
+      auth_method: 'credentials',
+      flow: 'native',
+      screen: 'login',
+    });
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.anything());
   });
 

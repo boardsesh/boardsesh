@@ -133,6 +133,7 @@ describe('RegisterScreen analytics', () => {
         auth_method: 'credentials',
         flow: 'native',
         is_registration: true,
+        screen: 'register',
       }),
     );
     expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {

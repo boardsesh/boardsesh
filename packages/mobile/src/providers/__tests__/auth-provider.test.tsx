@@ -993,6 +993,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
       expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
         auth_method: 'apple',
         flow: 'web',
+        screen: 'register',
         is_registration: true,
       }),
     );

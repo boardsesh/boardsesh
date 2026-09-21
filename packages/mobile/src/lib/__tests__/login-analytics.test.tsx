@@ -44,20 +44,23 @@ describe('accountAgeProperties', () => {
     });
   });
 
-  it('keeps an account new up to 24 hours and not a minute past', () => {
+  it('keeps an account new up to 24 hours and not a minute past, measured in ms', () => {
     expect(accountAgeProperties(isoBeforeSignIn(NEW_ACCOUNT_MAX_AGE_MS), SIGNED_IN_AT.getTime())).toEqual({
       is_new_account: true,
       account_age_hours: 24,
     });
-    expect(
-      accountAgeProperties(isoBeforeSignIn(NEW_ACCOUNT_MAX_AGE_MS + 60_000), SIGNED_IN_AT.getTime()).is_new_account,
-    ).toBe(false);
+    // Same whole hour, but past the line: the flag reads the milliseconds.
+    expect(accountAgeProperties(isoBeforeSignIn(NEW_ACCOUNT_MAX_AGE_MS + 60_000), SIGNED_IN_AT.getTime())).toEqual({
+      is_new_account: false,
+      account_age_hours: 24,
+    });
   });
 
-  it('reports a returning account with its age in tenths of an hour', () => {
-    expect(accountAgeProperties(isoBeforeSignIn(30 * 24 * HOUR_MS + 0.26 * HOUR_MS), SIGNED_IN_AT.getTime())).toEqual({
+  it('reports the age in whole hours rounded down', () => {
+    expect(accountAgeProperties(isoBeforeSignIn(59 * 60_000), SIGNED_IN_AT.getTime()).account_age_hours).toBe(0);
+    expect(accountAgeProperties(isoBeforeSignIn(30 * 24 * HOUR_MS + 0.9 * HOUR_MS), SIGNED_IN_AT.getTime())).toEqual({
       is_new_account: false,
-      account_age_hours: 720.3,
+      account_age_hours: 720,
     });
   });
 
@@ -68,10 +71,11 @@ describe('accountAgeProperties', () => {
     });
   });
 
-  it('adds nothing when the creation time is missing or unreadable', () => {
-    expect(accountAgeProperties(null, SIGNED_IN_AT.getTime())).toEqual({});
-    expect(accountAgeProperties(undefined, SIGNED_IN_AT.getTime())).toEqual({});
-    expect(accountAgeProperties('not a date', SIGNED_IN_AT.getTime())).toEqual({});
+  it('sends both props as null when the creation time is missing or unreadable', () => {
+    const unknownAge = { is_new_account: null, account_age_hours: null };
+    expect(accountAgeProperties(null, SIGNED_IN_AT.getTime())).toEqual(unknownAge);
+    expect(accountAgeProperties(undefined, SIGNED_IN_AT.getTime())).toEqual(unknownAge);
+    expect(accountAgeProperties('not a date', SIGNED_IN_AT.getTime())).toEqual(unknownAge);
   });
 });
 
@@ -126,14 +130,14 @@ describe('useTrackLoginSucceeded', () => {
     const { result } = renderTracker(createTestQueryClient());
 
     await act(async () => {
-      result.current({ auth_method: 'google', flow: 'native' });
+      result.current({ auth_method: 'google', flow: 'native', screen: 'login' });
       await vi.runAllTimersAsync();
     });
 
     expect(analytics.track).toHaveBeenCalledTimes(1);
     expect(analytics.track).toHaveBeenCalledWith(
       'Login Succeeded',
-      { auth_method: 'google', flow: 'native', is_new_account: true, account_age_hours: 0 },
+      { auth_method: 'google', flow: 'native', screen: 'login', is_new_account: true, account_age_hours: 0 },
       { timestamp: SIGNED_IN_AT },
     );
   });
@@ -143,39 +147,46 @@ describe('useTrackLoginSucceeded', () => {
     const { result } = renderTracker(createTestQueryClient());
 
     await act(async () => {
-      result.current({ auth_method: 'credentials', flow: 'native' });
+      result.current({ auth_method: 'credentials', flow: 'native', screen: 'login' });
       await vi.runAllTimersAsync();
     });
 
     expect(analytics.track).toHaveBeenCalledWith(
       'Login Succeeded',
-      { auth_method: 'credentials', flow: 'native', is_new_account: false, account_age_hours: 9600 },
+      { auth_method: 'credentials', flow: 'native', screen: 'login', is_new_account: false, account_age_hours: 9600 },
       { timestamp: SIGNED_IN_AT },
     );
   });
 
-  it('still fires, without the account-age props, when the profile read fails', async () => {
+  it('still fires, with the account-age props null, when the profile read fails', async () => {
     graphql.request.mockRejectedValue(new Error('offline'));
     const { result } = renderTracker(createTestQueryClient());
 
     await act(async () => {
-      result.current({ auth_method: 'apple', flow: 'native' });
+      result.current({ auth_method: 'apple', flow: 'native', screen: 'register', is_registration: true });
       await vi.runAllTimersAsync();
     });
 
     expect(analytics.track).toHaveBeenCalledWith(
       'Login Succeeded',
-      { auth_method: 'apple', flow: 'native' },
+      {
+        auth_method: 'apple',
+        flow: 'native',
+        screen: 'register',
+        is_registration: true,
+        is_new_account: null,
+        account_age_hours: null,
+      },
       { timestamp: SIGNED_IN_AT },
     );
   });
 
-  it(`gives up on a hung profile read after ${PROFILE_READ_TIMEOUT_MS} ms and fires without the props`, async () => {
+  it(`gives up on a hung profile read after ${PROFILE_READ_TIMEOUT_MS} ms and fires with the props null`, async () => {
     graphql.request.mockReturnValue(new Promise(() => {}));
     const { result } = renderTracker(createTestQueryClient());
 
     await act(async () => {
-      result.current({ auth_method: 'google', flow: 'web_fallback' });
+      result.current({ auth_method: 'google', flow: 'web_fallback', screen: 'login' });
       await vi.advanceTimersByTimeAsync(PROFILE_READ_TIMEOUT_MS - 1);
     });
     expect(analytics.track).not.toHaveBeenCalled();
@@ -185,7 +196,7 @@ describe('useTrackLoginSucceeded', () => {
     });
     expect(analytics.track).toHaveBeenCalledWith(
       'Login Succeeded',
-      { auth_method: 'google', flow: 'web_fallback' },
+      { auth_method: 'google', flow: 'web_fallback', screen: 'login', is_new_account: null, account_age_hours: null },
       { timestamp: SIGNED_IN_AT },
     );
   });

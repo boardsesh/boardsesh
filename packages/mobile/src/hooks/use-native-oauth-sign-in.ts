@@ -66,6 +66,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       setInProgress(true);
       setError(null);
       const registrationProps = isRegistration ? { is_registration: true } : {};
+      // Login Succeeded only: it fires after a wait, so PostHog's session
+      // `$screen_name` has usually moved on by then (see login-analytics.ts).
+      const signInScreen = isRegistration ? 'register' : 'login';
       const primaryFlow = Platform.OS === 'web' ? 'web' : 'native';
       track(SHARED_EVENTS.LoginAttempted, { auth_method: provider, flow: primaryFlow, ...registrationProps });
       // duration_ms separates a human dismissing the system sheet (seconds) from
@@ -124,6 +127,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
             auth_method: provider,
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
+            screen: signInScreen,
             ...registrationProps,
           });
           setError(null);
@@ -183,7 +187,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (result.success) {
-          trackLoginSucceeded({ auth_method: provider, flow: primaryFlow, ...registrationProps });
+          trackLoginSucceeded({ auth_method: provider, flow: primaryFlow, screen: signInScreen, ...registrationProps });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }

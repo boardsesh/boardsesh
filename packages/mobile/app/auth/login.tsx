@@ -100,7 +100,7 @@ export default function LoginScreen() {
           setError(t('login.toasts.authFailed'));
         }
       } else {
-        trackLoginSucceeded({ auth_method: 'credentials', flow: 'native' });
+        trackLoginSucceeded({ auth_method: 'credentials', flow: 'native', screen: 'login' });
       }
       // On success, AuthProvider flips isAuthenticated and the redirect handles navigation.
     } catch (signInError) {
@@ -308,9 +308,10 @@ const styles = StyleSheet.create({
     flex: 1,
     height: StyleSheet.hairlineWidth,
   },
+  // No extra opacity: secondaryLabel is already the dimmed system colour, and
+  // dimming it again drops "or use email" below AA contrast in light mode.
   dividerLabel: {
     fontSize: 13,
-    opacity: 0.6,
   },
   forgotPasswordHit: {
     alignSelf: 'center',

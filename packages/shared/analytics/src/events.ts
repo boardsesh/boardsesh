@@ -10,12 +10,19 @@
 export const SHARED_EVENTS = {
   // Auth
   LoginAttempted: 'Login Attempted',
-  // Mobile also stamps `is_new_account` (the account is at most 24 h old) and
-  // `account_age_hours` on it, read from the profile's `createdAt` because the
-  // native token responses carry no creation time. That read happens after the
-  // tokens land, so the event waits for it (up to 5 s, then fires without the
-  // two props) and is backdated to the moment sign-in succeeded. See
-  // packages/mobile/src/lib/login-analytics.ts.
+  // Mobile also stamps three props on it (#5654):
+  // - `screen`: 'login' | 'register', the auth screen it fired from.
+  // - `is_new_account`: the account is at most 24 h old, compared in ms.
+  // - `account_age_hours`: whole hours since the account was created, rounded
+  //   down. This is the one definition of the prop for every event that
+  //   carries it (packages/mobile/src/lib/account-age.ts).
+  // The last two come from the profile's `createdAt`, because the native token
+  // responses carry no creation time, and are null when it can't be read. The
+  // read happens after the tokens land, so the event waits for it (up to 5 s)
+  // and is backdated to the moment sign-in succeeded. Backdating moves only the
+  // timestamp: session props such as `$screen_name` are read at capture, after
+  // the wait, so they usually name the first signed-in screen. Split by
+  // `screen`, not `$screen_name`. See packages/mobile/src/lib/login-analytics.ts.
   LoginSucceeded: 'Login Succeeded',
   LoginFailed: 'Login Failed',
   // A user dismissing the provider sheet or the browser is intent, not a failure.
