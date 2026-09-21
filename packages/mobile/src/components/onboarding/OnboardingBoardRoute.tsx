@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { OnboardingBoardStep } from './OnboardingBoardStep';
@@ -7,16 +7,13 @@ import { useAuth } from '../../providers/auth-provider';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useStoredUserId } from '../../hooks/use-current-user-id';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
-import { useFeatureFlag, useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
 import { useConfirmBoardDownload } from '../../offline/use-confirm-board-download';
 import { useDownloadedScopeKeys } from '../../offline/use-downloaded-scope-keys';
 import { useBoardOfflineState } from '../board-discovery/use-board-offline-state';
 import { trackNudgeAccepted, trackNudgeDismissed, trackNudgeShown } from '../../lib/offline-nudges/nudge-analytics';
 import type { NudgeEventContext } from '../../lib/offline-nudges/nudge-analytics';
 import { offlineBoardKeyForBoard } from '../../settings';
-import { shouldOfferLink } from '../../lib/onboarding/should-offer-link';
-import { hasAnsweredLinkStep } from '../../lib/onboarding/link-step-answered';
-import { useBoardAccountCredentials } from '../../lib/integrations/use-board-account-credentials';
 import { reportError } from '../../lib/error-reporting';
 
 // Module-level so an absent board list keeps a stable identity — a fresh `[]`
@@ -55,21 +52,6 @@ export function OnboardingBoardRoute({
   const { confirmAndDownload } = useConfirmBoardDownload();
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
   const boardOfflineState = useBoardOfflineState();
-
-  // Start optional link eligibility reads while the board picker is visible.
-  const linkStepEnabled = useFeatureFlag('board-link-onboarding-step') === true;
-  const { data: credentials } = useBoardAccountCredentials(linkStepEnabled && isAuthenticated);
-  const [linkStepAnswered, setLinkStepAnswered] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (!linkStepEnabled) return;
-    let cancelled = false;
-    void hasAnsweredLinkStep().then((answered) => {
-      if (!cancelled) setLinkStepAnswered(answered);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [linkStepEnabled]);
 
   const nudgeContextFor = useCallback(
     (board: UserBoard, surface: NudgeEventContext['surface']): NudgeEventContext => ({
@@ -115,33 +97,12 @@ export function OnboardingBoardRoute({
     router.replace('/(tabs)/climbs');
   }, []);
 
-  // Optional linking follows the download dialog; unresolved eligibility skips it.
-  const boardRef = useRef<UserBoard | null>(null);
   const bindingRef = useRef(false);
-  const leaveAfterBind = useCallback(() => {
-    const board = boardRef.current;
-    if (
-      board &&
-      shouldOfferLink({
-        enabled: linkStepEnabled,
-        boardType: board.boardType,
-        isOffline,
-        answered: linkStepAnswered,
-        // Tri-state: `undefined` while the read is in flight, never collapsed to
-        // false, or a climber who linked months ago gets a first-run card.
-        hasLinkedAccount: credentials === undefined ? undefined : credentials.length > 0,
-      }) === 'show'
-    ) {
-      router.replace({ pathname: '/onboarding', params: { step: 'link', boardType: board.boardType } });
-      return;
-    }
-    leaveToClimbs();
-  }, [credentials, isOffline, linkStepAnswered, linkStepEnabled, leaveToClimbs]);
 
   const activateBoard = useActivateBoard({
     source: 'onboarding',
     returnTo: '/(tabs)/climbs',
-    navigate: leaveAfterBind,
+    navigate: leaveToClimbs,
     onBound: offerDownload,
   });
 
@@ -150,7 +111,6 @@ export function OnboardingBoardRoute({
     (board: UserBoard) => {
       if (bindingRef.current) return;
       bindingRef.current = true;
-      boardRef.current = board;
       void activateBoard(board)
         .catch(reportError)
         .finally(() => {
