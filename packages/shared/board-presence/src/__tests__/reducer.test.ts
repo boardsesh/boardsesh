@@ -54,6 +54,7 @@ describe('initialBoardPresenceState', () => {
       previousClimb: null,
       history: [],
       lastSeq: 0,
+      lastClearedAt: null,
       stats: null,
       lastStatsSeq: 0,
       holder: null,
