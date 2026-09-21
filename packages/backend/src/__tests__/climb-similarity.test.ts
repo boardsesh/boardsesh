@@ -9,6 +9,7 @@ import {
   CLIMB_DUPLICATE_ERROR_CODE,
   findExactDuplicateMatch,
   findSimilarClimbs,
+  isSupportedSimilarityHold,
   parseFramesToHoldEntries,
 } from '../graphql/resolvers/climbs/climb-similarity';
 
@@ -70,6 +71,8 @@ describe('parseFramesToHoldEntries', () => {
     expect(parseFramesToHoldEntries('tension', 'p0r1p1r3')).toEqual([
       { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
     ]);
+    expect(isSupportedSimilarityHold({ holdId: 0, holdState: 'STARTING' }, 'woods')).toBe(true);
+    expect(isSupportedSimilarityHold({ holdId: 0, holdState: 'STARTING' }, 'kilter')).toBe(false);
   });
 
   it('returns an empty list for null / empty input', () => {
@@ -229,6 +232,18 @@ describe('findExactDuplicateMatch', () => {
     for (const state of ['STARTING', 'HAND', 'FINISH', 'FOOT']) {
       expect(params).toContain(state);
     }
+  });
+
+  it('keeps Woods hold zero in the duplicate-gate SQL', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'woods',
+      layoutId: 1,
+      signature: '0:STARTING',
+      ruleSignature: '',
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    expect(new PgDialect().sqlToQuery(query as SQL).sql).toContain('"hold_id" >= 0');
   });
 
   it('keys the gate on the rule signature instead of excluding no-match climbs', async () => {
@@ -426,6 +441,17 @@ describe('findSimilarClimbs', () => {
       threshold: 0.5,
     });
     expect(getRenderedSimilarityQuery().sql.match(/hold_id > 0/g)).toHaveLength(2);
+  });
+
+  it('keeps Woods hold zero in candidate overlap and size scans', async () => {
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'woods',
+      layoutId: 1,
+      holds: [{ holdId: 0, holdState: 'STARTING' }],
+      threshold: 0.5,
+    });
+    expect(getRenderedSimilarityQuery().sql.match(/hold_id >= 0/g)).toHaveLength(2);
   });
 
   it('maps each row to the SimilarClimbResult shape', async () => {
