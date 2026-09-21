@@ -8,7 +8,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import * as Updates from 'expo-updates';
 import { track } from '../analytics';
 import { nowMs } from '../clock';
-import { REPORTS_ONBOARDING_GATE_EVALUATIONS } from './onboarding-gate-reporting';
+import { REPORTS_LAUNCH_GATE_EVALUATIONS } from '../launch-gate-reporting';
 
 /**
  * `would_present` rather than `presented`: in #5654's first PR the gate decides
@@ -107,7 +107,7 @@ export function shouldReportOnboardingGate(
 
 export function trackOnboardingGateEvaluated(evaluation: OnboardingGateEvaluation): void {
   // Off in the Expo browser build, where every launch reads as a URL launch.
-  if (!REPORTS_ONBOARDING_GATE_EVALUATIONS) return;
+  if (!REPORTS_LAUNCH_GATE_EVALUATIONS) return;
   if (!shouldReportOnboardingGate(evaluation)) return;
   track(SHARED_EVENTS.OnboardingGateEvaluated, {
     outcome: evaluation.outcome,

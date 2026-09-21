@@ -470,6 +470,7 @@ export const SHARED_EVENTS = {
   //
   // Native builds only. The Expo browser build sends nothing: its launch URL is
   // always the page itself, so every launch would read as `launched_by_url`.
+  // The same goes for `Board Look Step Evaluated` below.
   //
   // `would_present` is deliberate: the gate evaluates and logs, and presents
   // nothing until the first-run redesign turns presenting on for new accounts.
@@ -1142,6 +1143,8 @@ export const SHARED_EVENTS = {
   // says nothing about the climber, so it waits for the next launch instead.
   // Log-only mode skips the example-climb query and the renderer probe, so
   // `would_present` is an upper bound on the audience the real step would reach.
+  // Native builds only, like `Onboarding Gate Evaluated`: in the Expo browser
+  // build every launch reads as a deep link, so only `look_chosen` could settle.
   BoardLookStepEvaluated: 'Board Look Step Evaluated',
   // Connectivity (issue #4862) — a backend outage used to look like a broken
   // app: the ONLY connectivity signal was NetInfo's `isConnected`, so a dead

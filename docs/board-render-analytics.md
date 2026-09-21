@@ -529,6 +529,10 @@ What the gate does send is `Board Look Step Evaluated`:
 - **`would_present` is an upper bound.** Log-only mode skips the example-climb
   query and the renderer capability probe, the two expensive checks, so a
   device that would fail either one still counts.
+- **Native builds only.** The Expo browser build sends nothing
+  (`packages/mobile/src/lib/launch-gate-reporting.web.ts`): its launch URL is
+  always the page, so every launch reads as a deep link and only `look_chosen`
+  could ever settle there.
 
 ### One cost worth knowing about
 

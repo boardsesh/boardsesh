@@ -2,12 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 const trackMock = vi.hoisted(() => vi.fn());
+// Stands in for the platform fork: native reports, the Expo browser build does not.
+const reportingCtrl = vi.hoisted(() => ({ reports: true }));
 const storage = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
   failReads: false,
 }));
 
 vi.mock('../../analytics', () => ({ track: trackMock }));
+vi.mock('../../launch-gate-reporting', () => ({
+  get REPORTS_LAUNCH_GATE_EVALUATIONS() {
+    return reportingCtrl.reports;
+  },
+}));
 vi.mock('../../preference-store', () => ({
   getPreference: async (key: string) => {
     if (storage.failReads) throw new Error('storage unavailable before first unlock');
@@ -24,6 +31,7 @@ beforeEach(() => {
   trackMock.mockClear();
   storage.values.clear();
   storage.failReads = false;
+  reportingCtrl.reports = true;
 });
 
 describe('reportBoardLookStepEvaluationOnce', () => {
@@ -63,5 +71,14 @@ describe('reportBoardLookStepEvaluationOnce', () => {
     storage.failReads = true;
     await reportBoardLookStepEvaluationOnce('never_asked');
     expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('reports nothing from the Expo browser build, and leaves the marker unspent', async () => {
+    // In a browser every launch reads as a deep link, so only `look_chosen`
+    // could ever settle there and the would_present share would skew low.
+    reportingCtrl.reports = false;
+    await reportBoardLookStepEvaluationOnce('look_chosen');
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(storage.values.has('boardLookStepEvaluationLogged')).toBe(false);
   });
 });

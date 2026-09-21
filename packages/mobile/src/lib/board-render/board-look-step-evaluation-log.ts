@@ -1,5 +1,6 @@
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
+import { REPORTS_LAUNCH_GATE_EVALUATIONS } from '../launch-gate-reporting';
 import { getPreference, setPreference } from '../preference-store';
 import { isSettledBoardLookReason, type BoardLookStepReason } from './board-look-step-decision';
 
@@ -24,6 +25,9 @@ const LOGGED_KEY = 'boardLookStepEvaluationLogged';
  * reason.
  */
 export async function reportBoardLookStepEvaluationOnce(reason: BoardLookStepReason): Promise<void> {
+  // Off in the Expo browser build, where every launch reads as a deep link and
+  // only `look_chosen` could ever settle. The marker stays unspent there.
+  if (!REPORTS_LAUNCH_GATE_EVALUATIONS) return;
   if (!isSettledBoardLookReason(reason)) return;
   try {
     if ((await getPreference<boolean>(LOGGED_KEY)) === true) return;

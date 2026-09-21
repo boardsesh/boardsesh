@@ -526,9 +526,9 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 ## Appendix C — 2026-09-21 launch-gate telemetry (#5654)
 
 The first-run gate went silent for 10 weeks (2.2.0 to #5654) and nothing noticed, because no event
-said whether it had decided anything. Mobile only, and `Onboarding Gate Evaluated` is native only:
-the Expo browser build does not send it, because its launch URL is always the page and every launch
-would read as `launched_by_url`. Names live in `SHARED_EVENTS`
+said whether it had decided anything. Native app only: the Expo browser build sends neither event,
+because its launch URL is always the page, so every launch would read as a deep-link launch. Names
+live in `SHARED_EVENTS`
 (`packages/shared/analytics/src/events.ts`), where the full property contracts sit beside them.
 
 ### New events (2)

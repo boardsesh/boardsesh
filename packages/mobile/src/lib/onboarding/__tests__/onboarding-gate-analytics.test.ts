@@ -15,8 +15,8 @@ vi.mock('expo-updates', () => ({
   },
 }));
 vi.mock('../../clock', () => ({ nowMs: () => clockCtrl.nowMs }));
-vi.mock('../onboarding-gate-reporting', () => ({
-  get REPORTS_ONBOARDING_GATE_EVALUATIONS() {
+vi.mock('../../launch-gate-reporting', () => ({
+  get REPORTS_LAUNCH_GATE_EVALUATIONS() {
     return reportingCtrl.reports;
   },
 }));
@@ -193,11 +193,11 @@ describe('trackOnboardingGateEvaluated', () => {
   });
 });
 
-describe('onboarding-gate-reporting forks', () => {
+describe('launch-gate-reporting forks', () => {
   it('reports on native and stays silent in the browser build', async () => {
-    const native = await vi.importActual<typeof import('../onboarding-gate-reporting')>('../onboarding-gate-reporting');
-    const web = await import('../onboarding-gate-reporting.web');
-    expect(native.REPORTS_ONBOARDING_GATE_EVALUATIONS).toBe(true);
-    expect(web.REPORTS_ONBOARDING_GATE_EVALUATIONS).toBe(false);
+    const native = await vi.importActual<typeof import('../../launch-gate-reporting')>('../../launch-gate-reporting');
+    const web = await import('../../launch-gate-reporting.web');
+    expect(native.REPORTS_LAUNCH_GATE_EVALUATIONS).toBe(true);
+    expect(web.REPORTS_LAUNCH_GATE_EVALUATIONS).toBe(false);
   });
 });
