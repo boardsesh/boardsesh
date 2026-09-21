@@ -7,9 +7,10 @@ retry, and where to point a monitor.
 
 The shared primary and replica pools honor explicit `sslmode=verify-full`:
 both certificate trust and hostname are checked, including for local hosts.
-An explicit verification request is never replaced by the legacy `require`
+An explicit `verify-full` request is never replaced by the legacy `require`
 default. Remote URLs without `verify-full` retain the existing
 encryption-only default; this change does not migrate other deployments' trust.
+That includes `verify-ca`: use `verify-full` when certificate verification is required.
 Repeated `sslmode` parameters are rejected rather than choosing a driver-specific
 precedence.
 
