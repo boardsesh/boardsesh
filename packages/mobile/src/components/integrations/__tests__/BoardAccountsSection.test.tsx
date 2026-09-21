@@ -176,7 +176,7 @@ beforeEach(() => {
   mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
 });
 
-describe('BoardAccountsSection — Kilter password card', () => {
+describe('BoardAccountsSection — board cards', () => {
   beforeEach(() => {
     mocks.saveAurora.mockReset();
     mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
