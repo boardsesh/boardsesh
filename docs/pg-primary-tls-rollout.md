@@ -161,10 +161,18 @@ mistake is silent at reload and fatal at the next restart.
 
 ### 6. Hygiene, in the same window
 
-- `ALTER SYSTEM RESET` the cutover-era `ssl_cert_file` / `ssl_key_file`. The
-  entrypoint passes them on the command line, which outranks
-  `postgresql.auto.conf`, so the old values are dead — but leaving them there
-  misleads the next operator.
+- **Re-point** the cutover-era `ssl_cert_file` / `ssl_key_file` at the new paths —
+  `ALTER SYSTEM SET` them to `/var/lib/postgresql/tls/server.crt` and `…/server.key`.
+  **Do not `RESET` them.** The entrypoint passes the same values on the command
+  line, which outranks `postgresql.auto.conf`, so they look redundant — but the
+  rollback for this change is *redeploying the previous digest*, and that image has
+  no entrypoint and therefore no command-line paths. It would fall back to
+  `postgresql.auto.conf`, and a `RESET` leaves nothing there but the PGDATA-relative
+  default `server.crt`, which does not exist: **FATAL at startup, on the image you
+  rolled back to in order to recover.** Pointing them at the new paths instead keeps
+  the rollback working, because the material is on the volume and outlives the
+  image. `RESET` only becomes safe once the pre-entrypoint digest is no longer a
+  rollback target.
 - Move the digest pin in `docs/postgres-image-digests.json`,
   `.github/workflows/ci.yml` and `Boardsesh DR artifacts.postgres_image_digest`.
 - Clear `pendingRollout` in `docs/pg-primary-tls.json` and fill `expected` with
@@ -206,6 +214,13 @@ differently instead of unblocking it.
 ## Rollback
 
 **Redeploy the previous image digest.** Not `ALTER SYSTEM RESET ssl_cert_file`.
+
+This works only because step 6 leaves `ssl_cert_file` / `ssl_key_file` in
+`postgresql.auto.conf` pointing at `/var/lib/postgresql/tls/`. The previous image
+has no entrypoint, so those settings are the only thing telling it where the
+certificate is, and the files are on the volume rather than in the image. If anyone
+has since `RESET` them, roll back the *settings* first — or the rollback image will
+not start at all.
 
 That distinction is load-bearing. `ssl = on` is live while the certificate sits
 under `/etc/ssl`, so the path must already be set explicitly in

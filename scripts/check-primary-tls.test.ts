@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   evaluateCertificate,
   isUnresolvedHost,
+  pendingRolloutIsCurrent,
   validateManifest,
   probePostgresCertificate,
   type ObservedCertificate,
@@ -270,6 +271,30 @@ describe('isUnresolvedHost', () => {
     expect(isUnresolvedHost(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }))).toBe(false);
     expect(isUnresolvedHost(new Error('timed out'))).toBe(false);
     expect(isUnresolvedHost(null)).toBe(false);
+  });
+});
+
+describe('pendingRolloutIsCurrent', () => {
+  const pending = { fingerprint256: 'AA:BB', reason: 'not yet', warnUntil: '2026-12-31' };
+
+  it('is true inside the window and false after it', () => {
+    const m = manifest({ pendingRollout: pending });
+    expect(pendingRolloutIsCurrent(m, Date.parse('2026-09-21T00:00:00Z'))).toBe(true);
+    expect(pendingRolloutIsCurrent(m, Date.parse('2027-01-01T00:00:00Z'))).toBe(false);
+  });
+
+  it('is false with no pending rollout, and with an unparseable deadline', () => {
+    expect(pendingRolloutIsCurrent(manifest())).toBe(false);
+    expect(pendingRolloutIsCurrent(manifest({ pendingRollout: { ...pending, warnUntil: 'not a date' } }))).toBe(false);
+  });
+
+  // The escape for "the DNS record does not exist yet" must expire with the
+  // rollout, or a record someone DELETED reads as "not yet" forever -- the two are
+  // indistinguishable from the probe's side, so only the deadline separates them.
+  it('is what stops the DNS escape outliving the rollout', () => {
+    const m = manifest({ pendingRollout: pending });
+    expect(isUnresolvedHost(Object.assign(new Error('x'), { code: 'ENOTFOUND' }))).toBe(true);
+    expect(pendingRolloutIsCurrent(m, Date.parse('2027-06-01T00:00:00Z'))).toBe(false);
   });
 });
 

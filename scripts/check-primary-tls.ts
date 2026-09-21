@@ -143,6 +143,11 @@ export async function probePostgresCertificate(
       await new Promise<void>((resolve, reject) => {
         secured.once('secureConnect', resolve);
         secured.once('error', reject);
+        // The underlying socket's timeout fires here too, and without this listener
+        // a peer that accepts TCP, answers the SSLRequest, then stalls during
+        // negotiation would hang until the workflow's own timeout rather than the
+        // manifest's.
+        socket.once('timeout', () => reject(new Error(`timed out during the TLS handshake with ${host}:${port}`)));
       });
       const peer = secured.getPeerCertificate();
       if (!peer || Object.keys(peer).length === 0) throw new Error(`${host}:${port} presented no certificate`);
@@ -153,6 +158,14 @@ export async function probePostgresCertificate(
   } finally {
     socket.destroy();
   }
+}
+
+/** Whether a pending rollout is still inside its own deadline. */
+export function pendingRolloutIsCurrent(manifest: TlsManifest, now: number = Date.now()): boolean {
+  const pending = manifest.pendingRollout;
+  if (pending === null) return false;
+  const deadline = Date.parse(`${pending.warnUntil}T23:59:59Z`);
+  return !Number.isNaN(deadline) && now <= deadline;
 }
 
 /** Everything wrong with the observed certificate. No failures means the run passes. */
@@ -167,8 +180,7 @@ export function evaluateCertificate(
 
   const pending = manifest.pendingRollout;
   const pendingMatches = pending !== null && normaliseFingerprint(pending.fingerprint256) === observedFingerprint;
-  const pendingDeadline = pending === null ? Number.NaN : Date.parse(`${pending.warnUntil}T23:59:59Z`);
-  const pendingStillAllowed = pendingMatches && !Number.isNaN(pendingDeadline) && now <= pendingDeadline;
+  const pendingStillAllowed = pendingMatches && pendingRolloutIsCurrent(manifest, now);
 
   for (const [fingerprint, reason] of Object.entries(manifest.rejectedFingerprints)) {
     if (normaliseFingerprint(fingerprint) !== observedFingerprint) continue;
@@ -215,7 +227,9 @@ export function evaluateCertificate(
  *
  * While a rollout is pending this is expected rather than alarming -- the DNS
  * record and this check can land in either order. Once `pendingRollout` is
- * cleared, an unresolvable primary is a hard failure like any other.
+ * cleared, or its deadline passes, an unresolvable primary is a hard failure like
+ * any other: a record that never landed and a record someone deleted look
+ * identical from here, so only the deadline distinguishes "not yet" from "gone".
  */
 export function isUnresolvedHost(error: unknown): boolean {
   return (
@@ -270,7 +284,7 @@ async function main(): Promise<number> {
   try {
     observed = await probePostgresCertificate(manifest);
   } catch (error) {
-    if (manifest.pendingRollout !== null && isUnresolvedHost(error)) {
+    if (manifest.pendingRollout !== null && isUnresolvedHost(error) && pendingRolloutIsCurrent(manifest)) {
       console.log(
         annotate(
           'warning',
