@@ -484,6 +484,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           track(SHARED_EVENTS.LoginSucceeded, {
             auth_method: marker.provider,
             flow: 'web',
+            screen: marker.isRegistration ? 'register' : 'login',
             ...(marker.isRegistration ? { is_registration: true } : {}),
           });
         });
