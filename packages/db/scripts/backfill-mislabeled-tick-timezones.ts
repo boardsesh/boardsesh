@@ -60,6 +60,7 @@ import {
   buildAudit,
   fetchAuditTickRows,
   formatOffset,
+  parseCliOptions,
   parseBatchSize,
   parseOriginSelectors,
   type SuspectOriginSelector,
@@ -98,21 +99,12 @@ export type BackfillArgs = {
 
 /** Parse + validate everything before a connection exists. */
 export function parseArgs(argv: readonly string[]): BackfillArgs {
-  const args = argv[0] === '--' ? argv.slice(1) : [...argv];
-  const value = (name: string): string | undefined => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-
-  const valueFlags = new Set(['--origin', '--user', '--limit', '--revert', '--batch']);
-  const booleanFlags = new Set(['--apply']);
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token.startsWith('--')) continue;
-    if (booleanFlags.has(token)) continue;
-    if (!valueFlags.has(token)) throw new ArgError(`Unknown argument "${token}"`);
-    index += 1;
-  }
+  const { values, booleans } = parseCliOptions(
+    argv,
+    ['--origin', '--user', '--limit', '--revert', '--batch'],
+    ['--apply'],
+  );
+  const value = (name: string): string | undefined => values.get(name);
 
   const limitRaw = value('--limit');
   const limit = limitRaw === undefined ? null : Number(limitRaw);
@@ -121,7 +113,7 @@ export function parseArgs(argv: readonly string[]): BackfillArgs {
   }
 
   const revertRunId = value('--revert') ?? null;
-  if (args.includes('--revert') && (revertRunId === null || revertRunId.startsWith('--'))) {
+  if (values.has('--revert') && (revertRunId === null || revertRunId.startsWith('--'))) {
     throw new ArgError('--revert needs a run id');
   }
 
@@ -131,7 +123,7 @@ export function parseArgs(argv: readonly string[]): BackfillArgs {
     origins: parseOriginSelectors(value('--origin')),
     userId: value('--user') ?? null,
     limit,
-    apply: args.includes('--apply'),
+    apply: booleans.has('--apply'),
     revertRunId,
     batchSize: parseBatchSize(value('--batch')),
   };

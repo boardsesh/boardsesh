@@ -88,25 +88,51 @@ export type ReportArgs = {
 
 export class ArgError extends Error {}
 
+type ParsedCliOptions = {
+  values: Map<string, string>;
+  booleans: Set<string>;
+};
+
+export function parseCliOptions(
+  argv: readonly string[],
+  valueFlags: readonly string[],
+  booleanFlags: readonly string[] = [],
+): ParsedCliOptions {
+  const args = argv[0] === '--' ? argv.slice(1) : [...argv];
+  const knownValueFlags = new Set(valueFlags);
+  const knownBooleanFlags = new Set(booleanFlags);
+  const values = new Map<string, string>();
+  const booleans = new Set<string>();
+
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (!token.startsWith('--')) throw new ArgError(`Unexpected operand "${token}"`);
+    if (knownBooleanFlags.has(token)) {
+      booleans.add(token);
+      continue;
+    }
+    if (!knownValueFlags.has(token)) throw new ArgError(`Unknown argument "${token}"`);
+    if (values.has(token)) throw new ArgError(`Duplicate argument "${token}"`);
+
+    const operand = args[index + 1];
+    if (operand === undefined || operand.trim().length === 0 || operand.startsWith('--')) {
+      throw new ArgError(`${token} needs a nonempty value`);
+    }
+    values.set(token, operand);
+    index += 1;
+  }
+
+  return { values, booleans };
+}
+
 /**
  * Pure arg parsing so both scripts validate identically and BEFORE a connection
  * is opened. A garbage `--batch` that silently coerced to NaN would page zero
  * rows and print a clean, completely wrong "nothing to fix" report.
  */
 export function parseReportArgs(argv: readonly string[], today: string): ReportArgs {
-  const args = argv[0] === '--' ? argv.slice(1) : [...argv];
-  const value = (name: string): string | undefined => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-
-  const known = new Set(['--origin', '--user', '--out', '--batch']);
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token.startsWith('--')) continue;
-    if (!known.has(token)) throw new ArgError(`Unknown argument "${token}"`);
-    index += 1; // every known flag takes a value
-  }
+  const { values } = parseCliOptions(argv, ['--origin', '--user', '--out', '--batch']);
+  const value = (name: string): string | undefined => values.get(name);
 
   return {
     origins: parseOriginSelectors(value('--origin')),
