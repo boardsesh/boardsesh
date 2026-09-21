@@ -187,7 +187,7 @@ def validate_mask_training_dataset(config: DetectorConfig, dataset_dir: Path) ->
                     f"{config.name} requires a usable polygon mask for every hold: "
                     f"{annotation_path}, annotation {annotation.get('id', '?')}: {error}. "
                     "Use a fully polygon-labelled corpus; box-only labels cannot train a mask model. "
-                    "Rebuild tiled caches whose masks are missing."
+                    "After correcting source labels, rebuild any tiled cache generated without masks."
                 ) from error
 
 

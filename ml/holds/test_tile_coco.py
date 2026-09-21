@@ -92,3 +92,13 @@ def test_tiled_annotations_keep_clipped_polygons(tmp_path: Path) -> None:
     assert vertices(annotations[0]["segmentation"][0]) == {(40, 10), (50, 10), (50, 30), (40, 30)}
     assert annotations[1]["bbox"] == [0, 10, 10, 20]
     assert vertices(annotations[1]["segmentation"][0]) == {(0, 10), (10, 10), (10, 30), (0, 30)}
+
+
+def test_fractional_collinear_points_do_not_survive_floating_point_area_noise() -> None:
+    polygon = [[0.01, 0.03, 0.02, 0.05, 0.03, 0.07]]
+    assert clip_polygon_to_tile(polygon, 1, 0, 0, 1, 1) == []
+
+
+def test_smallest_nonzero_triangle_on_the_rounded_grid_is_preserved() -> None:
+    polygon = [[0, 0, 0.01, 0, 0, 0.01]]
+    assert clip_polygon_to_tile(polygon, 1, 0, 0, 1, 1) == polygon

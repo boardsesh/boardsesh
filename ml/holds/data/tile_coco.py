@@ -100,9 +100,13 @@ def clip_polygon_to_tile(
         if len(points) < 3:
             continue
         local_points = [(round(point[0] - x0, 2), round(point[1] - y0, 2)) for point in points]
+        # Coordinates are already rounded to hundredths. Test area on that
+        # integer grid so fractional collinear rings cannot survive float noise,
+        # without discarding the smallest real triangle on the grid.
+        grid_points = [(round(x * 100), round(y * 100)) for x, y in local_points]
         twice_area = sum(
             previous[0] * current[1] - current[0] * previous[1]
-            for previous, current in zip(local_points, local_points[1:] + local_points[:1])
+            for previous, current in zip(grid_points, grid_points[1:] + grid_points[:1])
         )
         if twice_area == 0:
             continue

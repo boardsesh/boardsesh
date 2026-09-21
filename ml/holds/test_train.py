@@ -180,7 +180,7 @@ def test_segmentation_training_refuses_a_matching_cache_with_empty_masks(
     dataset = _mask_set(tmp_path / "segmented", VALID_POLYGON)
     cached = _mask_set(train.tiled_dataset_dir(config, dataset), [])
     (cached / train.TILE_SOURCE_FILENAME).write_text(json.dumps(train.tile_source_record(config, dataset)))
-    with pytest.raises(SystemExit, match="Rebuild tiled caches"):
+    with pytest.raises(SystemExit, match="rebuild any tiled cache"):
         train.prepare_dataset(config, dataset)
     assert fake_tiler == []
 
