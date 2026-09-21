@@ -5,12 +5,14 @@
  * Kept separate from `ClimbListThumbnail` so list-adjacent components can align
  * placeholders and separators without importing the native image renderer.
  */
+import { spacing } from '../theme/tokens';
+
 export const THUMBNAIL_WIDTH = 76;
 export const THUMBNAIL_HEIGHT = 96;
 
 /**
  * How much of a climb the climbs list shows per row. A user setting
- * (More → Climb list), read ONLY by the climbs list — every other surface that
+ * (Avatar → Settings → Climb list), read ONLY by the climbs list — every other surface that
  * renders a `ClimbListRow` (playlist detail, profile climbs, the two board-presence
  * lists) stays on `default`.
  *
@@ -23,25 +25,14 @@ export const THUMBNAIL_HEIGHT = 96;
 export type ClimbListDensity = 'compact' | 'default' | 'rich';
 
 /**
- * Compact thumbnail cell. SMALLER than the default on purpose, and no tier in the
- * app renders one LARGER.
- *
- * The thumbnail pins the row height (76×96 plus 8pt of vertical padding IS the
- * 112pt row), so a compact tier that only drops text lines would save nothing — it
- * has to shrink the cell. Shrinking is free: `ClimbListThumbnail` renders at
- * `Math.max(400, cellWidth * 5)`, so a 56pt cell resolves to the SAME 400px render
- * as the 76pt cell — byte-identical, no new cache generation. Growing it is not
- * free: a 132pt cell would ask for 660px and mint a second generation in both the
- * native render cache and expo-image's disk cache, on the app's largest memory
- * consumer (docs/react-native-performance.md §7 — foreground OOM kills on 4 GB
- * iPhones, #3479). So a richer tier adds LINES, never pixels.
+ * Compact uses a smaller cell so its thumbnail no longer keeps the row at the
+ * standard height. Every tier stays within the existing 76pt width.
+ * ClimbListThumbnail requests Math.max(400, Math.round(cellWidth * 5)), so both
+ * supported widths keep the same 400px render request. LayeredClimbImage uses
+ * memory caching; density does not add a larger native render variant.
  */
 export const COMPACT_THUMBNAIL_WIDTH = 56;
 export const COMPACT_THUMBNAIL_HEIGHT = 72;
-
-/** Row padding + thumbnail-to-text gap, mirroring `climbListRowStyles.contentRow`. */
-const ROW_HORIZONTAL_PADDING = 8;
-const ROW_COLUMN_GAP = 12;
 
 /** The thumbnail cell for a density tier. `default` and `rich` share the 76×96 cell. */
 export function thumbnailSizeForDensity(density: ClimbListDensity): { width: number; height: number } {
@@ -56,5 +47,5 @@ export function thumbnailSizeForDensity(density: ClimbListDensity): { width: num
  * not carry a second hardcoded inset that silently drifts from its cell.
  */
 export function separatorInsetForDensity(density: ClimbListDensity): number {
-  return thumbnailSizeForDensity(density).width + ROW_HORIZONTAL_PADDING + ROW_COLUMN_GAP;
+  return thumbnailSizeForDensity(density).width + spacing[2] + spacing[3];
 }

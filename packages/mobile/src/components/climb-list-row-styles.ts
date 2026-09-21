@@ -1,5 +1,4 @@
 import { StyleSheet } from 'react-native';
-import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { separatorInsetForDensity } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 
@@ -27,7 +26,7 @@ export const climbListRowStyles = StyleSheet.create({
   // Separator inset to start at the text column (after the thumbnail).
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + spacing[2] + spacing[3],
+    marginLeft: separatorInsetForDensity('default'),
   },
   // Same separator against the compact tier's narrower thumbnail. Derived from the
   // metrics module, not a second hardcoded number, so the inset can't drift from

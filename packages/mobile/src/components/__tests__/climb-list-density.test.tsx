@@ -25,7 +25,8 @@ vi.mock('@boardsesh/board-react', () => ({
 // View keeps its style on the DOM node so the thumbnail cell's width/height are
 // assertable — the whole point of the compact tier.
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
+  Platform: { OS: 'android' },
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 0.5 },
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
     const flattened = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
     return createElement('div', { 'data-style': JSON.stringify(flattened) }, children);
@@ -80,6 +81,7 @@ vi.mock('../ClimbPlaylistChips', () => ({
 }));
 
 import { ClimbListItemContent } from '../ClimbListItemContent';
+import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import {
   COMPACT_THUMBNAIL_HEIGHT,
   COMPACT_THUMBNAIL_WIDTH,
@@ -182,5 +184,39 @@ describe('climb list density metrics', () => {
     expect(separatorInsetForDensity('default')).toBe(76 + 8 + 12);
     expect(separatorInsetForDensity('rich')).toBe(76 + 8 + 12);
     expect(separatorInsetForDensity('compact')).toBe(COMPACT_THUMBNAIL_WIDTH + 8 + 12);
+  });
+});
+
+describe('climb list loading density', () => {
+  it.each([
+    { density: 'compact' as const, width: 56, height: 72, textLines: 1 },
+    { density: 'default' as const, width: 76, height: 96, textLines: 2 },
+    { density: 'rich' as const, width: 76, height: 96, textLines: 2 },
+  ])('matches the $density row before its climb loads', ({ density, width, height, textLines }) => {
+    const { container } = render(<ClimbListRowSkeleton density={density} />);
+    const contentRow = container.firstElementChild?.firstElementChild;
+    const thumbnail = contentRow?.children[0];
+    const centerColumn = contentRow?.children[1];
+    const separator = container.firstElementChild?.lastElementChild;
+    expect(JSON.parse(thumbnail?.getAttribute('data-style') ?? '{}')).toMatchObject({ width, height });
+    const contentStyle = JSON.parse(contentRow?.getAttribute('data-style') ?? '{}') as {
+      paddingHorizontal: number;
+      gap: number;
+    };
+    expect(JSON.parse(separator?.getAttribute('data-style') ?? '{}')).toMatchObject({
+      marginLeft: width + contentStyle.paddingHorizontal + contentStyle.gap,
+    });
+    expect(centerColumn?.children.length).toBe(textLines);
+  });
+
+  it('keeps other surfaces standard and updates placeholders when the tier changes', () => {
+    const { container, rerender } = render(<ClimbListRowSkeleton />);
+    const standard = container.innerHTML;
+    rerender(<ClimbListRowSkeleton density="default" />);
+    expect(container.innerHTML).toBe(standard);
+    rerender(<ClimbListRowSkeleton density="compact" />);
+    expect(container.innerHTML).not.toBe(standard);
+    rerender(<ClimbListRowSkeleton density="rich" />);
+    expect(container.innerHTML).toBe(standard);
   });
 });

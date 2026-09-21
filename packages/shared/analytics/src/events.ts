@@ -112,8 +112,7 @@ export const SHARED_EVENTS = {
   // Fired when the climber picks a climbs-list density in More → Climb list, with a
   // `density` prop ('compact' | 'default' | 'rich'). Only an explicit choice fires
   // it — never a load — so it measures how many people want a shape other than the
-  // shipped one, and which way they lean. Pair with `Climb List Paginated` to see
-  // whether compact actually makes people scan deeper.
+  // shipped one, and which way they lean. The retired pagination event remains removed.
   ClimbListDensityChanged: 'Climb List Density Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',

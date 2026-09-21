@@ -3,8 +3,10 @@ import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
-import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
+import { ClimbListThumbnail } from './ClimbListThumbnail';
 import {
+  THUMBNAIL_WIDTH,
+  THUMBNAIL_HEIGHT,
   COMPACT_THUMBNAIL_HEIGHT,
   COMPACT_THUMBNAIL_WIDTH,
   thumbnailSizeForDensity,

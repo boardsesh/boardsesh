@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
+import { reportError } from './error-reporting';
 import type { ClimbListDensity } from '../components/climb-list-thumbnail-metrics';
 
 // How much of a climb the climbs list packs into a row — compact / default / rich.
@@ -112,7 +113,10 @@ export function useClimbListDensity(): {
   }, []);
 
   const setDensity = useCallback((next: ClimbListDensity) => {
-    void setClimbListDensityPreference(next);
+    void setClimbListDensityPreference(next).catch((error: unknown) => {
+      // Keep the current choice usable while recording a persistence failure.
+      reportError(error, { tags: { source: 'climb-list-density-preference' } });
+    });
   }, []);
 
   return { density: choice ?? DEFAULT_DENSITY, loaded, setDensity };
