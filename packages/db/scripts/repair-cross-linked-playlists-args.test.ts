@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { countPlannedDeletions, parseArgs } from './repair-cross-linked-playlists.js';
 import {
   DEFAULT_MIN_OWNERSHIP_SPREAD_MINUTES,
@@ -67,3 +69,26 @@ test('the dry-run deletion preview preserves public pins and follows', () => {
     { ownershipRows: 2, pins: 1, follows: 1 },
   );
 });
+
+for (const { args, message } of [
+  { args: ['--aply'], message: /Unknown argument/ },
+  { args: ['--playlist-ids'], message: /requires a value/ },
+  { args: ['--playlist-ids', '--apply'], message: /requires a value/ },
+  { args: ['--playlist-ids='], message: /requires at least one id/ },
+  { args: ['--playlist-ids', ' , '], message: /requires at least one id/ },
+  { args: ['--playlist-ids', 'abc'], message: /is not a playlist id/ },
+  { args: ['--min-spread-minutes'], message: /requires a value/ },
+  { args: ['--min-spread-minutes=-1'], message: /requires a non-negative number/ },
+  { args: ['--min-spread-minutes=NaN'], message: /requires a non-negative number/ },
+  { args: ['--min-spread-minutes=Infinity'], message: /requires a non-negative number/ },
+]) {
+  void test(`invalid CLI arguments exit before database use: ${args.join(' ')}`, () => {
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('./repair-cross-linked-playlists.ts', import.meta.url)), ...args],
+      { encoding: 'utf8', env: { ...process.env, DB_URL: 'invalid-database-url' }, timeout: 10000 },
+    );
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, message);
+  });
+}

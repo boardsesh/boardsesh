@@ -1,19 +1,24 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { createScriptDb, isLocalDatabaseUrl } from './db-connection.js';
 import { playlistClimbs, playlistOwnership, playlists, userPlaylistPins } from '../src/schema/app/playlists.js';
 import { playlistFollows } from '../src/schema/app/follows.js';
 import { syncDeletions } from '../src/schema/app/sync-deletions.js';
 import { users } from '../src/schema/auth/users.js';
-import { applyRepairPlans, loadAdopterAttachments, loadCrossLinkedPlaylists } from './repair-cross-linked-playlists.js';
+import {
+  applyRepairPlans,
+  loadAdopterAttachments,
+  loadCrossLinkedBoardAccounts,
+  loadCrossLinkedPlaylists,
+} from './repair-cross-linked-playlists.js';
 import { planCrossLinkedPlaylistRepairs, selectApplyablePlans } from './repair-cross-linked-playlists-helpers.js';
 
 /**
  * Required before changing the apply path: run this suite with
  * REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL pointing to a local migrated database,
  * using `vp exec tsx --test packages/db/scripts/repair-cross-linked-playlists.integration.test.ts`.
- * Both cases must pass with zero skips. Standard CI does not run this suite;
+ * All three cases must pass with zero skips. Standard CI does not run this suite;
  * CI green alone does not validate ownership changes, drift refusal, or rollback.
  *
  * Only ever runs against a local database. `.env.local` carries a real
@@ -33,7 +38,7 @@ function repairTestDatabaseUrl(): string | null {
 const CREATOR_OWNED_AT = new Date('2026-03-29T08:00:00Z');
 const ADOPTER_OWNED_AT = new Date('2026-03-29T14:00:00Z');
 
-void describe('repair-cross-linked-playlists apply path', () => {
+void describe('repair-cross-linked-playlists local database behavior', () => {
   void it('revokes only the adopter ownership row and its pin/follow, leaving everything else intact', async (testContext) => {
     const databaseUrl = repairTestDatabaseUrl();
     if (!databaseUrl) {
@@ -357,104 +362,188 @@ void describe('repair-cross-linked-playlists apply path', () => {
       await close();
     }
   });
-});
 
-void it('preserves public viewer attachments and refuses visibility drift', async (testContext) => {
-  const databaseUrl = repairTestDatabaseUrl();
-  if (!databaseUrl) {
-    testContext.skip('set REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL to a local migrated database');
-    return;
-  }
-  const { db, close } = createScriptDb(databaseUrl);
-  const rollbackMarker = new Error('rollback public attachment fixture');
-  try {
-    await db.transaction(async (transaction) => {
-      const tag = `repair-public-${Date.now()}`;
-      const creatorUserId = `${tag}-creator`;
-      const adopterUserId = `${tag}-adopter`;
-      await transaction.insert(users).values([
-        { id: creatorUserId, email: `${creatorUserId}@example.test` },
-        { id: adopterUserId, email: `${adopterUserId}@example.test` },
-      ]);
-      const [playlist] = await transaction
-        .insert(playlists)
-        .values({
-          uuid: tag,
-          boardType: 'kilter',
-          name: 'Public cross-linked fixture',
-          auroraType: 'circuits',
-          auroraId: `json-import-circuit-${tag}`,
-          isPublic: true,
-        })
-        .returning({ id: playlists.id });
-      assert.ok(playlist);
-      await transaction.insert(playlistOwnership).values([
-        { playlistId: playlist.id, userId: creatorUserId, role: 'owner', createdAt: CREATOR_OWNED_AT },
-        { playlistId: playlist.id, userId: adopterUserId, role: 'owner', createdAt: ADOPTER_OWNED_AT },
-      ]);
-      await transaction.insert(userPlaylistPins).values([
-        { playlistId: playlist.id, userId: creatorUserId },
-        { playlistId: playlist.id, userId: adopterUserId },
-      ]);
-      await transaction.insert(playlistFollows).values([
-        { playlistUuid: tag, followerId: creatorUserId },
-        { playlistUuid: tag, followerId: adopterUserId },
-      ]);
-      const plans = selectApplyablePlans(
-        planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
-        { includeMergeCandidates: false },
-      );
-      assert.equal(plans.length, 1);
-      await transaction.update(playlists).set({ isPublic: false }).where(eq(playlists.id, playlist.id));
-      const staleCounts = await applyRepairPlans(transaction, plans);
-      assert.deepEqual(staleCounts, {
-        ownershipRowsDeleted: 0,
-        pinsDeleted: 0,
-        followsDeleted: 0,
-        tombstonesWritten: 0,
-        skippedByDrift: [String(playlist.id)],
+  void it('preserves public viewer attachments and refuses visibility drift', async (testContext) => {
+    const databaseUrl = repairTestDatabaseUrl();
+    if (!databaseUrl) {
+      testContext.skip('set REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL to a local migrated database');
+      return;
+    }
+    const { db, close } = createScriptDb(databaseUrl);
+    const rollbackMarker = new Error('rollback public attachment fixture');
+    try {
+      await db.transaction(async (transaction) => {
+        const tag = `repair-public-${Date.now()}`;
+        const creatorUserId = `${tag}-creator`;
+        const adopterUserId = `${tag}-adopter`;
+        await transaction.insert(users).values([
+          { id: creatorUserId, email: `${creatorUserId}@example.test` },
+          { id: adopterUserId, email: `${adopterUserId}@example.test` },
+        ]);
+        const [playlist] = await transaction
+          .insert(playlists)
+          .values({
+            uuid: tag,
+            boardType: 'kilter',
+            name: 'Public cross-linked fixture',
+            auroraType: 'circuits',
+            auroraId: `json-import-circuit-${tag}`,
+            isPublic: true,
+          })
+          .returning({ id: playlists.id });
+        assert.ok(playlist);
+        await transaction.insert(playlistOwnership).values([
+          { playlistId: playlist.id, userId: creatorUserId, role: 'owner', createdAt: CREATOR_OWNED_AT },
+          { playlistId: playlist.id, userId: adopterUserId, role: 'owner', createdAt: ADOPTER_OWNED_AT },
+        ]);
+        await transaction.insert(userPlaylistPins).values([
+          { playlistId: playlist.id, userId: creatorUserId },
+          { playlistId: playlist.id, userId: adopterUserId },
+        ]);
+        await transaction.insert(playlistFollows).values([
+          { playlistUuid: tag, followerId: creatorUserId },
+          { playlistUuid: tag, followerId: adopterUserId },
+        ]);
+        const plans = selectApplyablePlans(
+          planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
+          { includeMergeCandidates: false },
+        );
+        assert.equal(plans.length, 1);
+        await transaction.update(playlists).set({ isPublic: false }).where(eq(playlists.id, playlist.id));
+        const staleCounts = await applyRepairPlans(transaction, plans);
+        assert.deepEqual(staleCounts, {
+          ownershipRowsDeleted: 0,
+          pinsDeleted: 0,
+          followsDeleted: 0,
+          tombstonesWritten: 0,
+          skippedByDrift: [String(playlist.id)],
+        });
+        // Also cover private-to-public drift: a stale private plan must never
+        // delete attachments that became valid viewer relationships meanwhile.
+        const privatePlans = selectApplyablePlans(
+          planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
+          { includeMergeCandidates: false },
+        );
+        await transaction.update(playlists).set({ isPublic: true }).where(eq(playlists.id, playlist.id));
+        assert.deepEqual(await applyRepairPlans(transaction, privatePlans), staleCounts);
+        const applied = await applyRepairPlans(transaction, plans);
+        assert.deepEqual(applied, {
+          ownershipRowsDeleted: 1,
+          pinsDeleted: 0,
+          followsDeleted: 0,
+          tombstonesWritten: 1,
+          skippedByDrift: [],
+        });
+        const owners = await transaction
+          .select({ userId: playlistOwnership.userId })
+          .from(playlistOwnership)
+          .where(eq(playlistOwnership.playlistId, playlist.id));
+        assert.deepEqual(owners, [{ userId: creatorUserId }]);
+        const pins = await transaction
+          .select({ userId: userPlaylistPins.userId })
+          .from(userPlaylistPins)
+          .where(eq(userPlaylistPins.playlistId, playlist.id));
+        assert.deepEqual(pins.map((pin) => pin.userId).sort(), [creatorUserId, adopterUserId].sort());
+        const follows = await transaction
+          .select({ userId: playlistFollows.followerId })
+          .from(playlistFollows)
+          .where(eq(playlistFollows.playlistUuid, tag));
+        assert.deepEqual(follows.map((follow) => follow.userId).sort(), [creatorUserId, adopterUserId].sort());
+        const tombstones = await transaction
+          .select({ userId: syncDeletions.userId })
+          .from(syncDeletions)
+          .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.recordId, tag)));
+        assert.deepEqual(tombstones, [{ userId: adopterUserId }], 'only the old owned offline copy is revoked');
+        throw rollbackMarker;
       });
-      // Also cover private-to-public drift: a stale private plan must never
-      // delete attachments that became valid viewer relationships meanwhile.
-      const privatePlans = selectApplyablePlans(
-        planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
-        { includeMergeCandidates: false },
+    } catch (error: unknown) {
+      if (error !== rollbackMarker) throw error;
+    } finally {
+      await close();
+    }
+  });
+
+  void it('audits cross-linked board accounts without changing credential or mapping rows', async (testContext) => {
+    const databaseUrl = repairTestDatabaseUrl();
+    if (!databaseUrl) {
+      testContext.skip('set REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL to a local migrated database');
+      return;
+    }
+    const { db, close } = createScriptDb(databaseUrl);
+    const rollbackMarker = new Error('rollback board-account audit fixture');
+    try {
+      await assert.rejects(
+        db.transaction(async (transaction) => {
+          await transaction.execute(sql`CREATE TEMP TABLE aurora_credentials (
+        user_id text, board_type text, aurora_user_id integer
+      ) ON COMMIT DROP`);
+          await transaction.execute(sql`CREATE TEMP TABLE user_board_mappings (
+        user_id text, board_type text, board_user_id integer, board_user_id_text text
+      ) ON COMMIT DROP`);
+          await transaction.execute(sql`INSERT INTO aurora_credentials VALUES
+        ('user-b', 'kilter', 321), ('user-a', 'kilter', 321),
+        ('single', 'kilter', 111), ('other-board', 'tension', 321),
+        ('missing-a', 'kilter', NULL), ('missing-b', 'kilter', NULL)
+      `);
+          await transaction.execute(sql`INSERT INTO user_board_mappings VALUES
+        ('user-b', 'tension', 55, NULL), ('user-a', 'tension', 55, NULL),
+        ('user-b', 'kilter', 55, 'subject-uuid'), ('user-a', 'kilter', 66, 'subject-uuid'),
+        ('user-d', 'kilter', 100, NULL), ('user-c', 'kilter', NULL, '100'),
+        ('single', 'kilter', NULL, 'other-subject'), ('other-board', 'woods', 55, NULL),
+        ('missing-a', 'kilter', NULL, NULL), ('missing-b', 'kilter', NULL, NULL)
+      `);
+          const credentialsBefore = Array.from(
+            await transaction.execute(sql`SELECT * FROM aurora_credentials ORDER BY user_id`),
+          );
+          const mappingsBefore = Array.from(
+            await transaction.execute(sql`SELECT * FROM user_board_mappings ORDER BY user_id, board_type`),
+          );
+          const accounts = await loadCrossLinkedBoardAccounts(transaction);
+          accounts.sort((first, second) =>
+            `${first.source}:${first.boardType}:${first.boardAccountKey}`.localeCompare(
+              `${second.source}:${second.boardType}:${second.boardAccountKey}`,
+            ),
+          );
+          assert.deepEqual(accounts, [
+            {
+              source: 'aurora_credentials',
+              boardType: 'kilter',
+              boardAccountKey: '321',
+              userIds: ['user-a', 'user-b'],
+            },
+            {
+              source: 'user_board_mappings',
+              boardType: 'kilter',
+              boardAccountKey: '100',
+              userIds: ['user-c', 'user-d'],
+            },
+            {
+              source: 'user_board_mappings',
+              boardType: 'kilter',
+              boardAccountKey: 'subject-uuid',
+              userIds: ['user-a', 'user-b'],
+            },
+            {
+              source: 'user_board_mappings',
+              boardType: 'tension',
+              boardAccountKey: '55',
+              userIds: ['user-a', 'user-b'],
+            },
+          ]);
+          assert.deepEqual(
+            Array.from(await transaction.execute(sql`SELECT * FROM aurora_credentials ORDER BY user_id`)),
+            credentialsBefore,
+          );
+          assert.deepEqual(
+            Array.from(await transaction.execute(sql`SELECT * FROM user_board_mappings ORDER BY user_id, board_type`)),
+            mappingsBefore,
+          );
+          throw rollbackMarker;
+        }),
+        (error: unknown) => error === rollbackMarker,
       );
-      await transaction.update(playlists).set({ isPublic: true }).where(eq(playlists.id, playlist.id));
-      assert.deepEqual(await applyRepairPlans(transaction, privatePlans), staleCounts);
-      const applied = await applyRepairPlans(transaction, plans);
-      assert.deepEqual(applied, {
-        ownershipRowsDeleted: 1,
-        pinsDeleted: 0,
-        followsDeleted: 0,
-        tombstonesWritten: 1,
-        skippedByDrift: [],
-      });
-      const owners = await transaction
-        .select({ userId: playlistOwnership.userId })
-        .from(playlistOwnership)
-        .where(eq(playlistOwnership.playlistId, playlist.id));
-      assert.deepEqual(owners, [{ userId: creatorUserId }]);
-      const pins = await transaction
-        .select({ userId: userPlaylistPins.userId })
-        .from(userPlaylistPins)
-        .where(eq(userPlaylistPins.playlistId, playlist.id));
-      assert.deepEqual(pins.map((pin) => pin.userId).sort(), [creatorUserId, adopterUserId].sort());
-      const follows = await transaction
-        .select({ userId: playlistFollows.followerId })
-        .from(playlistFollows)
-        .where(eq(playlistFollows.playlistUuid, tag));
-      assert.deepEqual(follows.map((follow) => follow.userId).sort(), [creatorUserId, adopterUserId].sort());
-      const tombstones = await transaction
-        .select({ userId: syncDeletions.userId })
-        .from(syncDeletions)
-        .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.recordId, tag)));
-      assert.deepEqual(tombstones, [{ userId: adopterUserId }], 'only the old owned offline copy is revoked');
-      throw rollbackMarker;
-    });
-  } catch (error: unknown) {
-    if (error !== rollbackMarker) throw error;
-  } finally {
-    await close();
-  }
+    } finally {
+      await close();
+    }
+  });
 });
