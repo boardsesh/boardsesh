@@ -164,7 +164,7 @@ void describe('decodeGripsClimbConcat — animated multi-frame (issue #3523)', (
 
 void describe('decodeGripsClimbConcat — holds and fingerprint', () => {
   it('decodes holds into (placement, state, frame) tuples', () => {
-    expect(decodeOk('h10p12h20p13h30p14h40p15', REMAP, 1).holds).toEqual([
+    expect(decodeOk('h10p12h20p13h30p14h40p15', REMAP, 1).holdRowsToInsert).toEqual([
       { holdId: 100, holdState: 'STARTING', frameNumber: 0 },
       { holdId: 200, holdState: 'HAND', frameNumber: 0 },
       { holdId: 300, holdState: 'FINISH', frameNumber: 0 },
@@ -175,7 +175,7 @@ void describe('decodeGripsClimbConcat — holds and fingerprint', () => {
   it('numbers hold frames from zero and records only the frame a hold lights on', () => {
     // Matches how board_climb_holds already stores multi-frame climbs: one row
     // per hold on the frame it appears, no rows for the frames it stays lit.
-    expect(decodeOk('h10p12h20p13s2e2h30p14s3', REMAP, 3).holds).toEqual([
+    expect(decodeOk('h10p12h20p13s2e2h30p14s3', REMAP, 3).holdRowsToInsert).toEqual([
       { holdId: 100, holdState: 'STARTING', frameNumber: 0 },
       { holdId: 200, holdState: 'HAND', frameNumber: 1 },
       { holdId: 300, holdState: 'FINISH', frameNumber: 2 },
@@ -185,45 +185,72 @@ void describe('decodeGripsClimbConcat — holds and fingerprint', () => {
   it('gives a real animated climb one canonical row per placement', () => {
     const climb = fixtureClimb('DA658EAACBE54AC89DB4060ED07BAF6C');
     const result = decodeOk(climb.climbConcat, fixtureRemap(climb), climb.frameCount);
-    const holdIds = result.holds.map((hold) => hold.holdId);
+    const holdIds = result.holdRowsToInsert.map((hold) => hold.holdId);
     expect(holdIds).toHaveLength(new Set(holdIds).size);
-    expect(result.holds.every((hold) => hold.frameNumber < climb.frameCount)).toBe(true);
+    expect(result.holdRowsToInsert.every((hold) => hold.frameNumber < climb.frameCount)).toBe(true);
 
     const relitPlacement = climb.holeToPlacement['1549'];
-    expect(result.holds.filter((hold) => hold.holdId === relitPlacement)).toEqual([
+    expect(result.holdRowsToInsert.filter((hold) => hold.holdId === relitPlacement)).toEqual([
       { holdId: relitPlacement, holdState: 'HAND', frameNumber: 13 },
     ]);
   });
 
   it('skips an unknown first role but accepts the same placement when it later has a valid role', () => {
-    expect(decodeOk('h10p999e1h10p13s2', REMAP, 2).holds).toEqual([{ holdId: 100, holdState: 'HAND', frameNumber: 1 }]);
+    expect(decodeOk('h10p999e1h10p13s2', REMAP, 2).holdRowsToInsert).toEqual([
+      { holdId: 100, holdState: 'HAND', frameNumber: 1 },
+    ]);
   });
 
-  it('fingerprints a re-lit placement from the same canonical row the table stores', () => {
-    const decoded = decodeOk('h10p12e1h10p14s2', REMAP, 2);
-    expect(decoded.holds).toEqual([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]);
-    expect(fingerprintFromHolds(decoded.holds)).toBe(
-      fingerprintFromHolds([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]),
-    );
+  it('fingerprints every relight while inserting only the first row for a placement', () => {
+    const relit = decodeOk('h10p12e1h10p14s2', REMAP, 2);
+    const simple = decodeOk('h10p12', REMAP, 2);
+    expect(relit.holdRowsToInsert).toEqual([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]);
+    expect(relit.fingerprintEvents).toEqual([
+      { holdId: 100, holdState: 'STARTING', frameNumber: 0 },
+      { holdId: 100, holdState: 'FINISH', frameNumber: 1 },
+    ]);
+    expect(fingerprintFromHolds(relit.fingerprintEvents)).not.toBe(fingerprintFromHolds(simple.fingerprintEvents));
+  });
+
+  it('keeps a delayed start raw frame ordinal without changing its insertion projection', () => {
+    const delayed = decodeOk('h10p13s2', REMAP, 2);
+    const immediate = decodeOk('h10p13', REMAP, 2);
+    expect(delayed.holdRowsToInsert).toEqual([{ holdId: 100, holdState: 'HAND', frameNumber: 0 }]);
+    expect(delayed.fingerprintEvents).toEqual([{ holdId: 100, holdState: 'HAND', frameNumber: 1 }]);
+    expect(fingerprintFromHolds(delayed.fingerprintEvents)).not.toBe(fingerprintFromHolds(immediate.fingerprintEvents));
   });
 
   it('fingerprints identically regardless of hold order (sorted tuples)', () => {
     const first = decodeOk('h10p12h20p13h30p14', REMAP, 1);
     const second = decodeOk('h30p14h10p12h20p13', REMAP, 1);
     expect(first.frames).not.toBe(second.frames); // raw strings differ…
-    expect(fingerprintFromHolds(first.holds)).toBe(fingerprintFromHolds(second.holds)); // …fingerprints match
+    expect(fingerprintFromHolds(first.fingerprintEvents)).toBe(fingerprintFromHolds(second.fingerprintEvents));
   });
 
   it('fingerprints differently when the same holds move between frames', () => {
     const together = decodeOk('h10p12h20p13', REMAP, 2);
     const staggered = decodeOk('h10p12h20p13s2', REMAP, 2);
-    expect(fingerprintFromHolds(together.holds)).not.toBe(fingerprintFromHolds(staggered.holds));
+    expect(fingerprintFromHolds(together.fingerprintEvents)).not.toBe(
+      fingerprintFromHolds(staggered.fingerprintEvents),
+    );
   });
 
   it('different holds produce different fingerprints', () => {
     const first = decodeOk('h10p12h20p13', REMAP, 1);
     const second = decodeOk('h10p12h30p13', REMAP, 1);
-    expect(fingerprintFromHolds(first.holds)).not.toBe(fingerprintFromHolds(second.holds));
+    expect(fingerprintFromHolds(first.fingerprintEvents)).not.toBe(fingerprintFromHolds(second.fingerprintEvents));
+  });
+
+  it('preserves the historical raw-set policy for clears and trailing hold frames', () => {
+    const cleared = decodeOk('h10p12e1', REMAP, 2);
+    const persistent = decodeOk('h10p12', REMAP, 2);
+    const extraTrailingFrame = decodeOk('h10p12', REMAP, 3);
+    expect(cleared.frames).not.toBe(persistent.frames);
+    expect(persistent.frames).not.toBe(extraTrailingFrame.frames);
+    expect(fingerprintFromHolds(cleared.fingerprintEvents)).toBe(fingerprintFromHolds(persistent.fingerprintEvents));
+    expect(fingerprintFromHolds(persistent.fingerprintEvents)).toBe(
+      fingerprintFromHolds(extraTrailingFrame.fingerprintEvents),
+    );
   });
 });
 
