@@ -1382,7 +1382,9 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
     );
     await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1));
     authEpoch = 2;
-    releaseFirstChunk?.();
+    await act(async () => {
+      releaseFirstChunk?.();
+    });
     await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1));
 
     expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1);
