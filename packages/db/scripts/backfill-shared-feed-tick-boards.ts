@@ -114,13 +114,14 @@ export async function applyMoveBatches(
     if (group) group.uuids.push(entry.uuid);
     else groups.set(key, { fromBoardId, toBoardId, uuids: [entry.uuid] });
   }
+  const updatedAt = new Date().toISOString();
   return db.transaction(async (transaction) => {
     let applied = 0;
     for (const { fromBoardId, toBoardId, uuids } of groups.values()) {
       for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
         const rows = await transaction
           .update(boardseshTicks)
-          .set({ boardId: toBoardId, updatedAt: new Date().toISOString() })
+          .set({ boardId: toBoardId, updatedAt })
           .where(
             and(
               inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)),

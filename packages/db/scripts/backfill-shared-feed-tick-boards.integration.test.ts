@@ -76,11 +76,14 @@ void test(
       const state = await db.execute(sql`
       SELECT count(*) FILTER (WHERE board_id = 20)::int AS moved,
         count(*) FILTER (WHERE board_id = 20 AND updated_at > '2020-01-01')::int AS stamped,
+        count(DISTINCT updated_at) FILTER (WHERE board_id = 20)::int AS timestamps,
         count(*) FILTER (WHERE uuid = 'tick-1000' AND board_id = 30 AND updated_at = '2020-01-01')::int AS untouched,
         count(*) FILTER (WHERE user_id <> 'owner-' || (replace(uuid, 'tick-', '')::int % 2))::int AS owner_changes
       FROM boardsesh_ticks
     `);
-      assert.deepEqual(Array.from(state), [{ moved: 1000, stamped: 1000, untouched: 1, owner_changes: 0 }]);
+      assert.deepEqual(Array.from(state), [
+        { moved: 1000, stamped: 1000, timestamps: 1, untouched: 1, owner_changes: 0 },
+      ]);
       // A later edit must also survive reversal. Reverting twice is harmless.
       await db.execute(sql`UPDATE boardsesh_ticks SET board_id = 40 WHERE uuid = 'tick-0'`);
       await db.execute(sql`TRUNCATE update_batches`);
@@ -90,10 +93,11 @@ void test(
       assert.equal(await applyMoveBatches(db, moves, 'revert'), 0);
       const restored = await db.execute(sql`
       SELECT count(*) FILTER (WHERE board_id = 10)::int AS restored,
+        count(DISTINCT updated_at) FILTER (WHERE board_id = 10)::int AS timestamps,
         count(*) FILTER (WHERE board_id IN (30, 40))::int AS preserved
       FROM boardsesh_ticks
     `);
-      assert.deepEqual(Array.from(restored), [{ restored: 999, preserved: 2 }]);
+      assert.deepEqual(Array.from(restored), [{ restored: 999, timestamps: 1, preserved: 2 }]);
     });
   },
 );
