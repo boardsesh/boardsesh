@@ -2,7 +2,7 @@
  * Re-file ticks that landed on a per-config SHARED FEED board onto the wall
  * their climber actually owns.
  *
- * Resolves the data half of #5121. The code path was fixed in the same issue's
+ * Prepares tooling for the historical data half of #5121. The code path was fixed in the same issue's
  * first PR; this is the separate decision about the rows already written.
  *
  * A wall with no BLE serial — every MoonBoard, and any serial-less
@@ -31,26 +31,31 @@
  * whatever order it was handed, so a board saved as '25,26,27,24' is the same
  * wall as a feed keyed '24,25,26,27'.
  *
- * Approved by maintainer 2026-09-07.
+ * The original author recorded maintainer approval on 2026-09-07. That
+ * historical context does not authorize a current production run.
  *
  * Usage (needs a DB_URL with UPDATE rights — the usual read-only credential can
  * run --dry-run but not the apply step):
  *   vp run db:backfill-shared-feed-tick-boards -- --dry-run
- *   vp run db:backfill-shared-feed-tick-boards
- *   vp run db:backfill-shared-feed-tick-boards -- --revert <snapshot.json>
+ *   vp run db:backfill-shared-feed-tick-boards -- --apply
+ *   vp run db:backfill-shared-feed-tick-boards -- --revert <snapshot.json> --apply
  *
  * Options:
- *   --dry-run        Match and report, write nothing. Still writes the plan file.
- *   --revert <file>  Restore board ids from a snapshot written by a prior run.
+ *   --apply          Enable database writes (forward or revert).
+ *   --dry-run        Default: match and report, write no database rows. Still writes the plan file.
+ *   --revert <file>  Preview a prior snapshot; add --apply to restore board ids.
  *   --out <file>     Snapshot path (default ./shared-feed-tick-boards-<date>.json).
  *
- * Safe to re-run: a tick already moved off the feed stops matching.
+ * A tick already moved off the feed stops matching. Use a new --out path on
+ * every run: existing plan/recovery files are never overwritten.
  */
 
 import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { planSharedFeedTickMoves } from './backfill-shared-feed-tick-boards-helpers.js';
+import { planSharedFeedTickMoves, type PlannedMove } from './backfill-shared-feed-tick-boards-helpers.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { userBoards } from '../src/schema/app/boards.js';
 
@@ -62,44 +67,98 @@ import { userBoards } from '../src/schema/app/boards.js';
 const SYSTEM_BOARD_OWNER_ID = '00000000-0000-0000-0000-000000000000';
 const PRESENCE_SLUG_PREFIX = 'presence-';
 
-const args = process.argv.slice(2);
-function flag(name: string): string | undefined {
-  const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+export type RepairOptions = { apply: boolean; revertPath?: string; outPath?: string; help: boolean };
+
+export function parseArgs(args: string[]): RepairOptions {
+  const options: RepairOptions = { apply: false, help: false };
+  let explicitDryRun = false;
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--') continue;
+    if (argument === '--apply') options.apply = true;
+    else if (argument === '--dry-run') explicitDryRun = true;
+    else if (argument === '--help' || argument === '-h') options.help = true;
+    else if (argument === '--revert' || argument === '--out') {
+      const filename = args[++index];
+      if (!filename || filename.startsWith('--')) throw new Error(`${argument} requires a filename`);
+      if (argument === '--revert') options.revertPath = filename;
+      else options.outPath = filename;
+    } else throw new Error(`Unknown option: ${argument}`);
+  }
+  if (options.apply && explicitDryRun) throw new Error('--apply and --dry-run cannot be combined');
+  return options;
 }
 
-const revertPath = flag('--revert');
-const dryRun = args.includes('--dry-run');
-const outPath = flag('--out') ?? `./shared-feed-tick-boards-${new Date().toISOString().slice(0, 10)}.json`;
+const HELP = `Re-file shared-feed ticks. Dry-run is the default; database writes require --apply.
+  --apply         Apply the forward plan or the selected revert.
+  --dry-run       Explicitly select the default read-only database mode.
+  --revert <file> Restore a prior snapshot (dry-run unless --apply is supplied).
+  --out <file>    New snapshot path; existing files are never overwritten.
+  --help          Show this help without connecting to a database.`;
+
+const BATCH_SIZE = 500;
+type ScriptDb = ReturnType<typeof createScriptDb>['db'];
+
+/** Both directions use one atomic transaction and guard every tick's current board. */
+export async function applyMoveBatches(
+  db: Pick<ScriptDb, 'transaction'>,
+  entries: PlannedMove[],
+  direction: 'forward' | 'revert',
+): Promise<number> {
+  const groups = new Map<string, { fromBoardId: number; toBoardId: number; uuids: string[] }>();
+  for (const entry of entries) {
+    const fromBoardId = direction === 'forward' ? entry.oldBoardId : entry.newBoardId;
+    const toBoardId = direction === 'forward' ? entry.newBoardId : entry.oldBoardId;
+    const key = `${fromBoardId}|${toBoardId}`;
+    const group = groups.get(key);
+    if (group) group.uuids.push(entry.uuid);
+    else groups.set(key, { fromBoardId, toBoardId, uuids: [entry.uuid] });
+  }
+  return db.transaction(async (transaction) => {
+    let applied = 0;
+    for (const { fromBoardId, toBoardId, uuids } of groups.values()) {
+      for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
+        const rows = await transaction
+          .update(boardseshTicks)
+          .set({ boardId: toBoardId, updatedAt: new Date().toISOString() })
+          .where(
+            and(
+              inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)),
+              eq(boardseshTicks.boardId, fromBoardId),
+            ),
+          )
+          .returning({ uuid: boardseshTicks.uuid });
+        applied += rows.length;
+      }
+    }
+    return applied;
+  });
+}
 
 type SnapshotEntry = { uuid: string; oldBoardId: number; newBoardId: number };
 type Snapshot = { writtenAt: string; entries: SnapshotEntry[] };
 
-async function revert(snapshotPath: string) {
+export function writeSnapshot(snapshotPath: string, snapshot: Snapshot): void {
+  try {
+    writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), { flag: 'wx' });
+  } catch (error: unknown) {
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+      throw new Error(`Snapshot already exists: ${snapshotPath}. Choose a new --out path to preserve recovery files.`);
+    }
+    throw error;
+  }
+}
+
+async function revert(snapshotPath: string, apply: boolean) {
   const snapshot = JSON.parse(readFileSync(snapshotPath, 'utf8')) as Snapshot;
   const { db, close } = createScriptDb();
   try {
     console.log(`Reverting ${snapshot.entries.length} rows from ${snapshotPath} (written ${snapshot.writtenAt})`);
-    if (dryRun) {
+    if (!apply) {
       console.log('Dry run — nothing written.');
       return;
     }
-    // Atomic, same reasoning as the forward pass: a half-reverted logbook is
-    // the one state with no clean recovery path.
-    const restored = await db.transaction(async (txn) => {
-      let applied = 0;
-      for (const entry of snapshot.entries) {
-        // Only revert rows still holding the board we wrote, so a later change
-        // — the climber re-filing the tick, a board merge — is never clobbered.
-        const rows = await txn
-          .update(boardseshTicks)
-          .set({ boardId: entry.oldBoardId, updatedAt: new Date().toISOString() })
-          .where(and(eq(boardseshTicks.uuid, entry.uuid), eq(boardseshTicks.boardId, entry.newBoardId)))
-          .returning({ uuid: boardseshTicks.uuid });
-        applied += rows.length;
-      }
-      return applied;
-    });
+    const restored = await applyMoveBatches(db, snapshot.entries, 'revert');
     console.log(`Reverted ${restored}/${snapshot.entries.length} rows (skipped rows changed since).`);
   } finally {
     await close();
@@ -107,7 +166,13 @@ async function revert(snapshotPath: string) {
 }
 
 async function main() {
-  if (revertPath) return revert(revertPath);
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    console.log(HELP);
+    return;
+  }
+  if (options.revertPath) return revert(options.revertPath, options.apply);
+  const outPath = options.outPath ?? `./shared-feed-tick-boards-${new Date().toISOString().slice(0, 10)}.json`;
 
   const { db, close } = createScriptDb();
   try {
@@ -143,20 +208,29 @@ async function main() {
       return;
     }
 
-    // Every candidate wall in one read, matched in memory so the report can
+    // Read candidate walls in bounded owner batches, then match in memory so the report can
     // tell "no board" apart from "two boards and no way to choose".
-    const ownerIds = [...new Set(ticks.map((tick) => tick.userId))];
-    const ownedBoards = await db
-      .select({
-        id: userBoards.id,
-        ownerId: userBoards.ownerId,
-        boardType: userBoards.boardType,
-        layoutId: userBoards.layoutId,
-        sizeId: userBoards.sizeId,
-        setIds: userBoards.setIds,
-      })
-      .from(userBoards)
-      .where(and(inArray(userBoards.ownerId, ownerIds), isNull(userBoards.deletedAt)));
+    const ownerIds = [...new Set(ticks.map((tick) => tick.userId))].filter(
+      (ownerId) => ownerId !== SYSTEM_BOARD_OWNER_ID,
+    );
+    const ownedBoards = [];
+    for (let offset = 0; offset < ownerIds.length; offset += BATCH_SIZE) {
+      ownedBoards.push(
+        ...(await db
+          .select({
+            id: userBoards.id,
+            ownerId: userBoards.ownerId,
+            boardType: userBoards.boardType,
+            layoutId: userBoards.layoutId,
+            sizeId: userBoards.sizeId,
+            setIds: userBoards.setIds,
+          })
+          .from(userBoards)
+          .where(
+            and(inArray(userBoards.ownerId, ownerIds.slice(offset, offset + BATCH_SIZE)), isNull(userBoards.deletedAt)),
+          )),
+      );
+    }
 
     const plan = planSharedFeedTickMoves({
       feeds: feeds.map((feed) => ({
@@ -195,49 +269,18 @@ async function main() {
 
     const snapshot: Snapshot = { writtenAt: new Date().toISOString(), entries };
 
-    if (dryRun) {
+    if (!options.apply) {
       console.log(`Dry run — would re-file ${entries.length} ticks. Nothing written.`);
-      writeFileSync(outPath, JSON.stringify(snapshot, null, 2));
-      console.log(`Planned changes written to ${outPath} (inspect before re-running without --dry-run).`);
+      writeSnapshot(outPath, snapshot);
+      console.log(`Planned changes written to ${outPath} (inspect before re-running with --apply).`);
       return;
     }
 
     // Snapshot BEFORE mutating, so an interrupted run is still revertible.
-    writeFileSync(outPath, JSON.stringify(snapshot, null, 2));
-    console.log(`Snapshot written to ${outPath} — revert with --revert ${outPath}`);
+    writeSnapshot(outPath, snapshot);
+    console.log(`Snapshot written to ${outPath} — revert with --revert ${outPath} --apply`);
 
-    // Grouped by destination so each batch is one UPDATE, and guarded on the
-    // feed id the plan was built against: a tick re-filed by the fixed code
-    // between the read and the write keeps its newer board.
-    const byDestination = new Map<string, string[]>();
-    for (const entry of entries) {
-      const key = `${entry.oldBoardId}|${entry.newBoardId}`;
-      const bucket = byDestination.get(key);
-      if (bucket) bucket.push(entry.uuid);
-      else byDestination.set(key, [entry.uuid]);
-    }
-
-    const batchSize = 500;
-    // One transaction across every batch. Batching keeps each statement's
-    // parameter list sane, but a run interrupted between batches would leave
-    // the repair half-applied — recoverable from the snapshot, but only if the
-    // operator still has it. All-or-nothing is cheap at this size.
-    const updated = await db.transaction(async (txn) => {
-      let applied = 0;
-      for (const [key, uuids] of byDestination) {
-        const [oldBoardId, newBoardId] = key.split('|').map(Number);
-        for (let offset = 0; offset < uuids.length; offset += batchSize) {
-          const batch = uuids.slice(offset, offset + batchSize);
-          const rows = await txn
-            .update(boardseshTicks)
-            .set({ boardId: newBoardId, updatedAt: new Date().toISOString() })
-            .where(and(inArray(boardseshTicks.uuid, batch), eq(boardseshTicks.boardId, oldBoardId)))
-            .returning({ uuid: boardseshTicks.uuid });
-          applied += rows.length;
-        }
-      }
-      return applied;
-    });
+    const updated = await applyMoveBatches(db, entries, 'forward');
 
     console.log('');
     console.log(`Re-filed ${updated} ticks onto their climber's own board.`);
@@ -246,7 +289,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
