@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-21
+
+### Fixed
+
+- App Store 2.5.0 can receive compatible previews and app updates again. ([#5646](https://github.com/boardsesh/boardsesh/pull/5646))
+
 ## 2026-09-20
 
 ### New

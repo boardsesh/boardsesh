@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-20T01:59:24.402Z",
+  "generatedAt": "2026-09-21T05:12:33.901Z",
   "entries": [
+    {
+      "prNumber": 5646,
+      "category": "fixed",
+      "title": "App Store 2.5.0 can receive compatible previews and app updates again.",
+      "mergedAt": "2026-09-21T05:10:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5646"
+    },
     {
       "prNumber": 5600,
       "category": "new",
