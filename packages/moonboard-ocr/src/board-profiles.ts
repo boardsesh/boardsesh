@@ -14,7 +14,9 @@ export const BOARD_PROFILES = {
 export type HoldSetup = keyof typeof BOARD_PROFILES;
 export type GridRows = 12 | 18;
 
-export function boardRows(holdsetup: HoldSetup = 21): GridRows {
+export const MOONBOARD_2024_HOLDSETUP: HoldSetup = 21;
+
+export function boardRows(holdsetup: HoldSetup = MOONBOARD_2024_HOLDSETUP): GridRows {
   if (!Object.hasOwn(BOARD_PROFILES, holdsetup)) throw new Error('Unsupported MoonBoard holdsetup');
   return BOARD_PROFILES[holdsetup].rows;
 }

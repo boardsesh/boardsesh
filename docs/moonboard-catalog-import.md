@@ -33,6 +33,34 @@ in stages and not every directory is finished; the scraper repo marks the ones
 that must never be imported. A partial capture looks exactly like a complete one
 to these scripts.
 
+## Local screenshot preparation
+
+The catalog importer reads the structured capture described above. Local screenshot
+OCR is a separate preparation and validation tool; it does not emit a catalog or
+connect to a database. Its CLI uses `--holdsetup` and `--screenshot-profile`:
+
+```sh
+vp exec tsx packages/moonboard-ocr/src/cli.ts parse /path/to/screenshots \
+  --holdsetup 22 --screenshot-profile android-pixel8pro-1.3.68 \
+  --no-dedupe --output /path/to/ocr-results.json
+```
+
+Use the upstream setup IDs in the table above. The explicit Android profile covers
+all seven setups only at its calibrated Pixel 8 Pro resolution, 1008 × 2244.
+Both Mini setups use 12 rows. The default legacy iOS profile covers MoonBoard 2024
+only. These options belong to the OCR CLI, not the catalog or beta-link importers;
+there are no `--setup` or `--profile` aliases. See the
+[screenshot parser README](../packages/moonboard-ocr/README.md) for calibration,
+missing metadata and damaged-ring limits.
+
+Re-parsing an older screenshot can now leave its setter grade as `Unknown` when
+no setter grade was read. Earlier OCR output copied the community grade into that
+field. Compare old and new output before any downstream re-import; retain the
+missing grade instead of restoring an inferred setter grade. This parser change
+does not modify previously stored climbs or alter the catalog importer's monotonic
+grade-update rules. Unseparated large marker components carry a centroid-fallback
+warning in the OCR result and still require reference or human review.
+
 ## Order of operations
 
 Each step depends on the one above it. Run them in this order.

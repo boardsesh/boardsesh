@@ -85,7 +85,9 @@ describe('touching MoonBoard hold outlines', () => {
       ],
       [0, 255, 0],
     );
-    const centers = findCircleCenters(pixels);
+    const warnings: string[] = [];
+    const centers = findCircleCenters(pixels, 18, 'combined', warnings);
+    expect(warnings).toEqual([]);
     expect(centers.map(({ x, y }) => [x, y])).toEqual([
       [330, 870],
       [414, 870],
@@ -138,7 +140,17 @@ describe('touching MoonBoard hold outlines', () => {
       }
     }
     expect(count).toBeGreaterThan(0);
-    const centers = findCircleCenters(pixels);
+    const warnings: string[] = [];
+    const centers = findCircleCenters(pixels, 18, 'combined', warnings);
+    expect(warnings).toEqual(['Large hold-marker component could not be separated; used centroid fallback']);
+    detectHoldsFromPixelData(
+      pixels,
+      { x: 0, y: 0, width: pixels.width, height: pixels.height },
+      18,
+      'combined',
+      warnings,
+    );
+    expect(warnings).toHaveLength(1);
     expect(centers).toHaveLength(1);
     expect(centers[0]).toMatchObject({ x: Math.round(sumX / count), y: Math.round(sumY / count), type: 'start' });
     // This documents the limitation, not a claim of two-hold recovery.

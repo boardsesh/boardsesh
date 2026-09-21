@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { parseScreenshot, parseMultipleScreenshots, deduplicateClimbs } from './parser';
 import type { MoonBoardClimb } from './types';
-import { boardRows, type HoldSetup } from './board-profiles';
+import { boardRows, MOONBOARD_2024_HOLDSETUP, type HoldSetup } from './board-profiles';
 
 const setupOption = () =>
   new Option('--holdsetup <id>', 'Upstream MoonBoard setup ID (not Boardsesh layout ID)')
@@ -18,7 +18,7 @@ const setupOption = () =>
       }
       return setupId;
     })
-    .default(21);
+    .default(MOONBOARD_2024_HOLDSETUP);
 const profileOption = () =>
   new Option('--screenshot-profile <profile>', 'Validated screenshot layout')
     .choices(['legacy-ios', 'android-pixel8pro-1.3.68'])

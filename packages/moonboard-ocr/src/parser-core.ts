@@ -9,7 +9,7 @@ import type { ImageProcessor } from './image-processor/types';
 import { runOCR, type OcrOptions } from './core/ocr';
 import { detectHoldsFromPixelData, detectBoardRegion, detectBenchmarkCircle } from './core/holds';
 import { calculateRegions, calculateRegionsFromDetectedBoard, calculateAndroidRegions } from './core/regions';
-import { boardRows, type HoldSetup } from './board-profiles';
+import { boardRows, MOONBOARD_2024_HOLDSETUP, type HoldSetup } from './board-profiles';
 import type { MoonBoardClimb, ParseResult, GridCoordinate } from './types';
 
 export type ParseOptions = OcrOptions & {
@@ -38,7 +38,7 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
       throw new Error('Unsupported screenshot profile');
     }
     if (rows === 12 && !android) throw new Error('Mini screenshots require a validated Android profile');
-    if (!android && options.holdsetup !== undefined && options.holdsetup !== 21) {
+    if (!android && options.holdsetup !== undefined && options.holdsetup !== MOONBOARD_2024_HOLDSETUP) {
       throw new Error('This setup requires a validated Android screenshot profile');
     }
 
@@ -65,7 +65,13 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
 
     // Extract board region for hold detection
     const boardPixels = await processor.extractRegion(regions.board);
-    const detectedHolds = detectHoldsFromPixelData(boardPixels, regions.board, rows, android ? 'android' : 'combined');
+    const detectedHolds = detectHoldsFromPixelData(
+      boardPixels,
+      regions.board,
+      rows,
+      android ? 'android' : 'combined',
+      warnings,
+    );
 
     // Group holds by type
     const startHolds: GridCoordinate[] = [];

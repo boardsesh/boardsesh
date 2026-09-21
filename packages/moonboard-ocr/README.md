@@ -72,6 +72,9 @@ than silently accepting a partial prefix; spacing/format changes need fixtures.
 Touching-ring recovery requires at least two plausible enclosed interiors. With
 only one (for example, a second ring damaged by a wide open gap), detection keeps
 the existing component-centroid fallback and can undercount or misplace a hold.
+Large components that reach the interior scan without two plausible interiors
+include a centroid-fallback warning in the parser result. Normal single-ring
+centroids do not trigger that warning.
 A dedicated synthetic regression documents this limitation; the barely-touching
 **closed** pair is a separate passing test. A successful parse is not a guarantee
 of complete holds. The reference validator rejects the incomplete set and never

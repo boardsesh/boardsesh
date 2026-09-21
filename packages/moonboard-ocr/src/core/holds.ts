@@ -184,6 +184,7 @@ function enclosedCircleCenters(
   cellWidth: number,
   cellHeight: number,
   palette: HoldPalette,
+  warnings?: string[],
 ): { x: number; y: number }[] {
   const { width: imageWidth, data, channels } = pixelData;
   let left = Infinity,
@@ -292,6 +293,10 @@ function enclosedCircleCenters(
       }
     }
   }
+  if (centers.length < 2 && warnings) {
+    const warning = 'Large hold-marker component could not be separated; used centroid fallback';
+    if (!warnings.includes(warning)) warnings.push(warning);
+  }
   return centers.length >= 2 ? centers : [];
 }
 
@@ -303,6 +308,7 @@ export function findCircleCenters(
   pixelData: RawPixelData,
   rows: GridRows = 18,
   palette: HoldPalette = 'combined',
+  warnings?: string[],
 ): CircleCenter[] {
   const { data, width, height, channels } = pixelData;
   const visited = new Set<number>();
@@ -330,7 +336,7 @@ export function findCircleCenters(
       const component = floodFill(data, width, height, channels, x, y, holdType, visited, palette);
 
       if (component.length >= minPixels) {
-        const enclosed = enclosedCircleCenters(component, pixelData, width / 11, height / rows, palette);
+        const enclosed = enclosedCircleCenters(component, pixelData, width / 11, height / rows, palette, warnings);
         // The helper currently returns zero or >=2 centers. Keep the >=2 guard
         // explicit: one interior must not replace the ordinary centroid path.
         if (enclosed.length >= 2) {
@@ -508,8 +514,9 @@ export function detectHoldsFromPixelData(
   boardRegion: ImageRegion,
   rows: GridRows = 18,
   palette: HoldPalette = 'combined',
+  warnings?: string[],
 ): DetectedHold[] {
-  const circles = findCircleCenters(pixelData, rows, palette);
+  const circles = findCircleCenters(pixelData, rows, palette, warnings);
   return mapCirclesToHolds(
     circles,
     boardRegion,
