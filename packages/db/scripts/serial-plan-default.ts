@@ -54,6 +54,7 @@ export const SERIAL_PLAN_TARGET_VALUE = '0';
 /** SQLSTATE for `must be owner of database ...`. */
 export const INSUFFICIENT_PRIVILEGE = '42501';
 
+// Automated ALTER accepts simple ASCII names such as the production database `railway`.
 const SIMPLE_POSTGRES_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
@@ -255,12 +256,17 @@ export type SerialPlanVerificationPorts = {
 async function withConnection<T>(
   open: () => Promise<SerialPlanConnection>,
   use: (client: SerialPlanClient) => Promise<T>,
+  warn: (message: string) => void,
 ): Promise<T> {
   const { client, close } = await open();
   try {
     return await use(client);
   } finally {
-    await close().catch(() => {});
+    try {
+      await close();
+    } catch (error: unknown) {
+      warn(`[serial-plan] connection cleanup failed: ${describeError(error)}`);
+    }
   }
 }
 
@@ -274,7 +280,7 @@ async function withConnection<T>(
  * connection side effects.
  */
 export async function runSerialPlanVerification(ports: SerialPlanVerificationPorts): Promise<number> {
-  const reading = await withConnection(ports.openApplicationClient, readSerialPlanState);
+  const reading = await withConnection(ports.openApplicationClient, readSerialPlanState, ports.warn);
 
   ports.log(
     `[serial-plan] ${reading.databaseName}: application sessions see ${SERIAL_PLAN_SETTING}=${reading.effectiveValue} ` +
@@ -290,8 +296,10 @@ export async function runSerialPlanVerification(ports: SerialPlanVerificationPor
     return reportSerialPlanFailure(ports, reading.databaseName);
   }
 
-  const outcome = await withConnection(ports.openAdminClient, (client) =>
-    applySerialPlanDatabaseDefault(client, reading.databaseName),
+  const outcome = await withConnection(
+    ports.openAdminClient,
+    (client) => applySerialPlanDatabaseDefault(client, reading.databaseName),
+    ports.warn,
   );
 
   if (outcome.status === 'wrong-database') {
@@ -314,7 +322,7 @@ export async function runSerialPlanVerification(ports: SerialPlanVerificationPor
   // what future sessions start with, never the session that issued it or one
   // already open. Trusting the ALTER instead of re-reading is the same vacuous
   // check that made 0225 look like it worked.
-  const confirmed = await withConnection(ports.openApplicationClient, readSerialPlanState);
+  const confirmed = await withConnection(ports.openApplicationClient, readSerialPlanState, ports.warn);
 
   if (confirmed.effectiveValue !== SERIAL_PLAN_TARGET_VALUE) {
     ports.warn(

@@ -79,7 +79,14 @@ void test('the ALTER statement names the database and the target value', () => {
 });
 
 void test('rejects a database name that is not a simple identifier', () => {
-  for (const databaseName of ['', 'rail way', 'railway"; DROP DATABASE x; --', '1railway']) {
+  for (const databaseName of [
+    '',
+    'rail way',
+    'railway-abc123',
+    'râilway',
+    'railway"; DROP DATABASE x; --',
+    '1railway',
+  ]) {
     assert.throws(() => serialPlanAlterStatement(databaseName), /simple PostgreSQL identifier/);
   }
 });
@@ -276,4 +283,46 @@ void test('an apply that never reaches application sessions is a failure, not a 
   });
 
   assert.equal(exitCode, 1);
+});
+
+void test('a cleanup warning preserves the verification exit code', async () => {
+  for (const [reading, expectedExit] of [
+    [ON, 0],
+    [OFF, 1],
+  ] as const) {
+    const warnings: string[] = [];
+    const exitCode = await runSerialPlanVerification({
+      openApplicationClient: () =>
+        Promise.resolve({
+          client: fakeClient(reading),
+          close: () => Promise.reject(new Error('pool close failed')),
+        }),
+      openAdminClient: null,
+      log: () => {},
+      warn: (message) => warnings.push(message),
+    });
+    assert.equal(exitCode, expectedExit);
+    assert.ok(warnings.includes('[serial-plan] connection cleanup failed: pool close failed'));
+  }
+});
+
+void test('a cleanup warning preserves the original operation error', async () => {
+  const operationError = new Error('runtime probe failed');
+  const warnings: string[] = [];
+  await assert.rejects(
+    runSerialPlanVerification({
+      openApplicationClient: () =>
+        Promise.resolve({
+          client: { unsafe: () => Promise.reject(operationError) },
+          close: () => {
+            throw new Error('pool close also failed');
+          },
+        }),
+      openAdminClient: null,
+      log: () => {},
+      warn: (message) => warnings.push(message),
+    }),
+    (error: unknown) => error === operationError,
+  );
+  assert.deepEqual(warnings, ['[serial-plan] connection cleanup failed: pool close also failed']);
 });

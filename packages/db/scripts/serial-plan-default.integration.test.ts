@@ -22,6 +22,8 @@
  * migration-owner integration suites use.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 import postgres from 'postgres';
 import {
@@ -37,6 +39,7 @@ const superuserUrl = process.env.SERIAL_PLAN_DB_URL;
 
 const suffix = `${process.pid}_${Math.floor(Math.random() * 1e6)}`;
 const databaseName = `serial_plan_${suffix}`;
+const cliDatabaseName = `serial_plan_cli_${suffix}`;
 const ownerRole = `sp_owner_${suffix}`;
 const migratorRole = `sp_migrator_${suffix}`;
 const runtimeRole = `sp_runtime_${suffix}`;
@@ -60,6 +63,15 @@ function opener(connectionUrl: string): () => Promise<SerialPlanConnection> {
   };
 }
 
+async function readFreshState(connectionUrl: string) {
+  const connection = await opener(connectionUrl)();
+  try {
+    return await readSerialPlanState(connection.client);
+  } finally {
+    await connection.close();
+  }
+}
+
 /**
  * A session shaped exactly like the production migration session: connected as
  * the restricted LOGIN role, then `SET ROLE` to the NOLOGIN owner.
@@ -75,6 +87,7 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
     const bootstrap = postgres(superuserUrl!, { max: 1 });
     try {
       await bootstrap.unsafe(`CREATE DATABASE "${databaseName}"`);
+      await bootstrap.unsafe(`CREATE DATABASE "${cliDatabaseName}"`);
       await bootstrap.unsafe(
         `CREATE ROLE "${ownerRole}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS`,
       );
@@ -94,6 +107,7 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
     const bootstrap = postgres(superuserUrl!, { max: 1 });
     try {
       await bootstrap.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+      await bootstrap.unsafe(`DROP DATABASE IF EXISTS "${cliDatabaseName}" WITH (FORCE)`);
       for (const role of [migratorRole, runtimeRole, ownerRole]) {
         await bootstrap.unsafe(`DROP ROLE IF EXISTS "${role}"`);
       }
@@ -167,6 +181,44 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
 
     assert.equal(exitCode, 1);
     assert.ok(warnings.some((line) => line.includes(`ALTER DATABASE "${databaseName}"`)));
+  });
+
+  void it('--check-only ignores an owner-capable URL and leaves the database default unchanged', async () => {
+    const runtimeUrl = urlFor(runtimeRole, cliDatabaseName);
+    const adminUrl = urlFor(null, cliDatabaseName);
+    const before = await readFreshState(runtimeUrl);
+    assert.equal(before.databaseDefault, null);
+    assert.notEqual(before.effectiveValue, '0');
+
+    const cliPath = fileURLToPath(new URL('./verify-serial-plan.ts', import.meta.url));
+    const cliEnvironment = {
+      ...process.env,
+      DATABASE_URL: runtimeUrl,
+      POSTGRES_URL: runtimeUrl,
+      ADMIN_DATABASE_URL: adminUrl,
+    };
+    const checked = spawnSync(process.execPath, ['--import', 'tsx', cliPath, '--check-only'], {
+      env: cliEnvironment,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(checked.error);
+    assert.equal(checked.status, 1, 'check-only must report the unapplied default');
+    assert.match(checked.stderr, /parallel query is ON/);
+
+    assert.deepEqual(await readFreshState(runtimeUrl), before);
+
+    // Positive control: the exact same credentials can apply when the flag is absent.
+    const applied = spawnSync(process.execPath, ['--import', 'tsx', cliPath], {
+      env: cliEnvironment,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(applied.error);
+    assert.equal(applied.status, 0, 'the admin URL must genuinely be capable of applying the default');
+    const confirmed = await readFreshState(runtimeUrl);
+    assert.equal(confirmed.databaseDefault, '0');
+    assert.equal(confirmed.effectiveValue, '0');
   });
 
   void it('applies the default through an owning connection and application sessions inherit it', async () => {

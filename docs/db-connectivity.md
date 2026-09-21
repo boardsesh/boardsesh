@@ -514,6 +514,13 @@ after `migrate`:
    the maintenance database.
 4. Otherwise **exits 1**, printing the one statement an operator runs once.
 
+The automated ALTER and generated remediation accept simple ASCII database
+identifiers (`[A-Za-z_][A-Za-z0-9_]*`), including the production name `railway`.
+Names containing hyphens, spaces or non-ASCII characters are refused; an operator
+must handle those names with properly quoted SQL in a separately authorized
+session. Connection-cleanup failures emit a warning while preserving the
+verification result or original query error.
+
 A **fresh database still gets the default from migrations**: 0225 applies
 normally wherever the migrating role owns the database — local docker, the
 `boardsesh-dev-db` image, CI service containers, branch deploys — which is every
