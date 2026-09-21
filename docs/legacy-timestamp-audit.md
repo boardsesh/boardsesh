@@ -93,6 +93,10 @@ mode-`0600` partial file, syncs it, and publishes it with an exclusive hard link
 so a racing file is never overwritten. If removal of the staging link fails after
 publication, the complete report remains valid and a private mode-`0600` partial
 link may remain beside it; cleanup does not invalidate a completed artifact.
+The parent directory is synced after publication and the cleanup attempt before
+success is reported, persisting the directory entry as well as the file contents.
+If that sync fails, the command fails and retains the complete output for
+inspection; choose a fresh output path for a retry rather than overwriting it.
 
 Database startup is limited to 30 seconds. Inside the transaction, PostgreSQL
 aborts any individual statement or cursor fetch that runs for more than 300

@@ -427,6 +427,77 @@ void describe('JSONL output safety', () => {
     assert.equal(JSON.parse(lines[2]).type, 'runtime_footer');
   });
 
+  void it('waits for directory durability after publishing the complete artifact and removing the staging link', async () => {
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-directory-sync-');
+    const output = join(directory, 'durable.jsonl');
+    let releaseSync!: () => void;
+    let syncStarted!: () => void;
+    const syncGate = new Promise<void>((resolve) => {
+      releaseSync = resolve;
+    });
+    const enteredSync = new Promise<void>((resolve) => {
+      syncStarted = resolve;
+    });
+    let publicationCompleted = false;
+    const publication = writeAuditArtifact(
+      output,
+      async (sink) => {
+        await sink.writeCanonicalRecord({ type: 'durable_record' });
+        return {};
+      },
+      {
+        cwd: directory,
+        syncDirectory: async (parent) => {
+          assert.equal(parent, directory);
+          assert.deepEqual(await readdir(directory), ['durable.jsonl']);
+          const lines = (await readFile(output, 'utf8')).trim().split('\n');
+          assert.equal(JSON.parse(lines.at(-1)!).type, 'runtime_footer');
+          syncStarted();
+          await syncGate;
+        },
+      },
+    ).then((result) => {
+      publicationCompleted = true;
+      return result;
+    });
+    await Promise.race([
+      enteredSync,
+      publication.then(() => {
+        throw new Error('publication returned before the directory sync');
+      }),
+    ]);
+    assert.equal(publicationCompleted, false, 'success must wait for the directory sync');
+    releaseSync();
+    assert.equal((await publication).outputPath, output);
+  });
+
+  void it('reports a directory-sync failure without deleting the complete published artifact', async () => {
+    const directory = await createFixtureDirectory('boardsesh-tick-audit-directory-failure-');
+    const output = join(directory, 'retained.jsonl');
+    const syncFailure = new Error('fixture directory fsync failed');
+    await assert.rejects(
+      writeAuditArtifact(
+        output,
+        async (sink) => {
+          await sink.writeCanonicalRecord({ type: 'retained_record' });
+          return {};
+        },
+        {
+          cwd: directory,
+          syncDirectory: async () => {
+            throw syncFailure;
+          },
+        },
+      ),
+      (error) => error === syncFailure,
+    );
+    assert.deepEqual(await readdir(directory), ['retained.jsonl']);
+    const lines = (await readFile(output, 'utf8')).trim().split('\n');
+    assert.equal(JSON.parse(lines[0]).type, 'retained_record');
+    assert.equal(JSON.parse(lines.at(-1)!).type, 'runtime_footer');
+    await assert.rejects(validateOutputPath(output, directory), /existing/);
+  });
+
   void it('leaves no requested output or partial file when production fails', async () => {
     const directory = await createFixtureDirectory('boardsesh-tick-audit-failure-');
     const output = join(directory, 'failed.jsonl');
