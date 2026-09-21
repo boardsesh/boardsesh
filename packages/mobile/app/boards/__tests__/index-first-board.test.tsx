@@ -216,7 +216,11 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
 vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
   BoardModeCard: (props: ModeCardProps) => {
     modeCards.byLabel.set(props.label, props);
-    return createElement('button', { 'data-mode-card': props.label, onClick: props.onPress, type: 'button' }, props.label);
+    return createElement(
+      'button',
+      { 'data-mode-card': props.label, onClick: props.onPress, type: 'button' },
+      props.label,
+    );
   },
 }));
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({

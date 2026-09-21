@@ -69,6 +69,16 @@ describe('presetBoardConfig', () => {
     expect(preset?.setIds).toEqual(setup.setIds);
   });
 
+  // A known layout and size with no set this build lists would open the builder
+  // on a board with no holds, so the entry is skipped like an unknown layout.
+  it('skips a popular setup none of whose sets this build lists', () => {
+    const setup = secondKilterSetup();
+    const noKnownSets = popular({ ...setup, setIds: [99_998, 99_999] });
+
+    expect(presetBoardConfig('kilter', [noKnownSets])).toBeNull();
+    expect(presetBoardConfig('kilter', [noKnownSets, popular({ ...setup })])).toEqual(setup);
+  });
+
   // A guessed setup is worse than none: one Save makes a board with the wrong
   // climbs and the wrong holds lit, and a duplicate once the climber fixes it.
   it('presets nothing while the popular list has not loaded', () => {
