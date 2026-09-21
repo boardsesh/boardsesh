@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vite-plus/test';
 import { parseHeaderText } from '../core/ocr';
 
 describe('metadata distinctions exposed by the old-catalog comparison', () => {
+  it('keeps the first meaningful title when the setter boundary is missing', () => {
+    const result = parseHeaderText(['Small title', 'LONG UPPERCASE OCR ARTIFACT', 'User 7A/V6 - Setter 6C+/V5']);
+    expect(result.name).toBe('Small title');
+    expect(result.setter).toBe('Unknown');
+    expect(result.userGrade).toBe('7A/V6');
+    expect(result.setterGrade).toBe('6C+/V5');
+    expect(result.warnings).toContain('Could not extract setter name');
+  });
+
   it('does not invent a community grade from the only setter grade', () => {
     const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'Setter 6C+/V5']);
     expect(result.userGrade).toBe('Unknown');

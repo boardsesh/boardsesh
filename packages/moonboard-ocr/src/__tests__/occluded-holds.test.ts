@@ -35,7 +35,7 @@ describe('overlapping rings with different roles', () => {
         }
       }
     }
-    expect(seam.length).toBeGreaterThan(0);
+    expect(seam, 'Synthetic fixture must contain red/blue seam pixels').not.toHaveLength(0);
     for (const index of seam) pixels.data.set([127, 51, 127], index * 4);
     const holds = detectHoldsFromPixelData(
       pixels,
