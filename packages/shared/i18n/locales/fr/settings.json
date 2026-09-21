@@ -185,12 +185,12 @@
       "submit": "Lier le compte",
       "submitting": "Liaison...",
       "linkError": "Liaison du compte impossible",
-      "linkSuccess": "Compte {{boardName}} lié. Vos croix sont en route — la plupart arrivent en quelques minutes.",
+      "linkSuccess": "Compte {{boardName}} lié. Vos croix apparaîtront après la synchronisation.",
       "accountAlreadyLinked": "Un autre membre de Boardsesh a déjà lié ce compte. S'il est à toi, délie-le d'abord de son compte, puis réessaie."
     },
     "kilterLinkDialog": {
       "title": "Se connecter à Kilter",
-      "description": "Saisissez votre identifiant et mot de passe Kilter. Votre mot de passe est échangé contre un jeton sécurisé et n'est jamais stocké. Vos croix commencent à arriver en quelques minutes.",
+      "description": "Saisissez votre identifiant et mot de passe Kilter. Votre mot de passe est échangé contre un jeton sécurisé et n'est jamais stocké.",
       "passwordHelp": "Fonctionne avec votre connexion Kilter habituelle. Les comptes avec double authentification ou connexion sociale uniquement ne peuvent pas se connecter ainsi — utilisez Importer."
     },
     "unlinkError": "Déliaison du compte impossible",
@@ -201,7 +201,7 @@
       "connected": "Connecté",
       "notConnected": "Non connecté",
       "kilterNotAllowed": "La synchronisation Kilter n'est pas encore activée pour ce compte.",
-      "linkSuccess": "{{boardName}} lié — vos croix sont en route.",
+      "linkSuccess": "Compte {{boardName}} lié. Vos croix apparaîtront après la synchronisation.",
       "unlinkSuccess": "{{boardName}} délié",
       "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
       "invalidCredentials": "Cet identifiant ou ce mot de passe n'a pas fonctionné.",

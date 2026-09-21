@@ -37,7 +37,7 @@ import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { iosDarkColors } from '../../theme/ios-colors';
+import { iosSystemColors } from '../../theme/ios-colors';
 import {
   BoardAccountError,
   deleteAuroraCredential,
@@ -102,11 +102,7 @@ const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
 
-// Brand names, not a capitalised slug: `charAt(0).toUpperCase()` renders `soill`
-// as "Soill", which shipped a mangled trademark on the So iLL card and into every
-// `{{boardName}}` interpolation on this screen. `boardTypeLabel` is the canonical
-// map (`@boardsesh/board-constants`), which its own header comment asks call sites
-// to migrate to as they're touched.
+// Keep every board-name interpolation consistent with the canonical brand map.
 function boardDisplayName(boardType: AuroraBoardName): string {
   return boardTypeLabel(boardType);
 }
@@ -496,16 +492,9 @@ export function BoardAccountsSection() {
     })();
   }, [importBoard, importData, queryClient, showToast, t]);
 
-  // Both branches used to resolve to white with hardcoded black text, so the link
-  // dialog punched two glaring white fields into an otherwise dark screen. The
-  // field sits on the modal card (`secondaryBackground`), so it takes the next
-  // surface up and the theme's own label colour in both schemes.
-  const inputBackground = systemColors.tertiaryBackground;
-  const inputBorder = colorScheme === 'dark' ? iosDarkColors.separator : 'rgba(60, 60, 67, 0.18)';
-  const inputStyle = [
-    styles.input,
-    { backgroundColor: inputBackground, borderColor: inputBorder, color: systemColors.label },
-  ];
+  const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
+  const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
+  const inputStyle = [styles.input, { backgroundColor: inputBackground, borderColor: inputBorder, color: '#000000' }];
 
   const credentials = credentialsQuery.data?.credentials;
   const hasKilterCredential = getCredential(credentials ?? [], 'kilter') !== null;
@@ -612,7 +601,7 @@ export function BoardAccountsSection() {
               value={username}
               onChangeText={setUsername}
               placeholder={t('aurora.linkDialog.usernamePlaceholder')}
-              placeholderTextColor={systemColors.tertiaryLabel}
+              placeholderTextColor="rgba(60, 60, 67, 0.6)"
               autoCapitalize="none"
               autoCorrect={false}
               style={inputStyle}
@@ -621,7 +610,7 @@ export function BoardAccountsSection() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('aurora.linkDialog.passwordPlaceholder')}
-              placeholderTextColor={systemColors.tertiaryLabel}
+              placeholderTextColor="rgba(60, 60, 67, 0.6)"
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry

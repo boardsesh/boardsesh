@@ -185,12 +185,12 @@
       "submit": "Konto verknüpfen",
       "submitting": "Wird verknüpft...",
       "linkError": "Konto konnte nicht verknüpft werden",
-      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Begehungen sind unterwegs — die meisten sind in ein paar Minuten da.",
+      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Begehungen erscheinen nach der Synchronisierung.",
       "accountAlreadyLinked": "Ein anderes Boardsesh-Mitglied hat dieses Konto schon verknüpft. Wenn es deins ist, trenn es dort zuerst und versuch es dann nochmal."
     },
     "kilterLinkDialog": {
       "title": "Bei Kilter anmelden",
-      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert. Deine Begehungen sind in ein paar Minuten da.",
+      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert.",
       "passwordHelp": "Funktioniert mit deinem bestehenden Kilter-Login. Konten mit Zwei-Faktor oder reinem Social-Login kommen hier nicht rein – nutz stattdessen den Import."
     },
     "unlinkError": "Konto konnte nicht getrennt werden",
@@ -314,7 +314,7 @@
       "connected": "Verbunden",
       "notConnected": "Nicht verbunden",
       "kilterNotAllowed": "Die Kilter-Sync ist für dieses Konto noch nicht freigeschaltet.",
-      "linkSuccess": "{{boardName}} verknüpft — deine Begehungen sind unterwegs.",
+      "linkSuccess": "{{boardName}}-Konto verknüpft. Deine Begehungen erscheinen nach der Synchronisierung.",
       "unlinkSuccess": "{{boardName}} getrennt",
       "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",

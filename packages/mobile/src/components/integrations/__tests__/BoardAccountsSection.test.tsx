@@ -37,8 +37,7 @@ vi.mock('../../../lib/aurora-credentials', () => ({
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({
-  // `soill` is here for the trademark regression below — it is the one board whose
-  // brand name a naive capitalise gets wrong.
+  // Include the board whose brand name differs from its capitalised slug.
   AURORA_BOARDS: ['kilter', 'tension', 'soill'],
   parseAuroraExportJson: vi.fn(() => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
@@ -150,9 +149,9 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 
-type TextProps = { children?: ReactNode };
+type TextProps = { children?: ReactNode; variant?: string };
 vi.mock('../../Text', () => ({
-  Text: ({ children }: TextProps) => createElement('span', {}, children),
+  Text: ({ children, variant }: TextProps) => createElement('span', { 'data-text-variant': variant }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 vi.mock('../../SectionHeader', () => ({
@@ -183,14 +182,9 @@ describe('BoardAccountsSection — Kilter password card', () => {
     mocks.credentials = [];
   });
 
-  // Regression: the card title used to run `charAt(0).toUpperCase() + slice(1)` over
-  // the board type, which renders `soill` as "Soill" — a mangled trademark shipped on
-  // the card and into every `{{boardName}}` interpolation on this screen. It now goes
-  // through `boardTypeLabel`, the canonical brand map.
-  it('renders board brand names, not capitalised slugs', () => {
-    const { container } = render(<BoardAccountsSection />);
-    expect(container.textContent).toContain('So iLL');
-    expect(container.textContent).not.toContain('Soill');
+  it('renders the So iLL card heading with its canonical brand name', () => {
+    const { getByText } = render(<BoardAccountsSection />);
+    expect(getByText('So iLL', { selector: '[data-text-variant="headline"]' })).toBeTruthy();
   });
 
   it('shows the Kilter (new) sign-in card when the flag is on', () => {

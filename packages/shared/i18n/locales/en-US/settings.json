@@ -185,12 +185,12 @@
       "submit": "Link Account",
       "submitting": "Linking...",
       "linkError": "Failed to link account",
-      "linkSuccess": "{{boardName}} linked. Your sends are on their way — most land within a few minutes.",
+      "linkSuccess": "{{boardName}} linked. Your sends will appear after syncing.",
       "accountAlreadyLinked": "Another Boardsesh member already has this account linked. If it's yours, unlink it from their account first, then try again."
     },
     "kilterLinkDialog": {
       "title": "Sign in to Kilter",
-      "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored. Your sends start arriving within minutes.",
+      "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored.",
       "passwordHelp": "Works with your existing Kilter login. Two-factor or social-login-only accounts can't sign in this way — use Import instead."
     },
     "unlinkError": "Failed to unlink account",
@@ -314,7 +314,7 @@
       "connected": "Connected",
       "notConnected": "Not connected",
       "kilterNotAllowed": "Kilter sync is not enabled for this account yet.",
-      "linkSuccess": "{{boardName}} linked — your sends are on their way.",
+      "linkSuccess": "{{boardName}} linked. Your sends will appear after syncing.",
       "unlinkSuccess": "{{boardName}} unlinked",
       "unlinkPartial": "{{boardName}} was removed here, but the provider session may still be live.",
       "invalidCredentials": "That username or password didn't work.",

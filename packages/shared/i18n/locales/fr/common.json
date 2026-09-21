@@ -611,7 +611,7 @@
     "statistics": "Statistiques",
     "sessions": "Sessions",
     "createdClimbs": "Blocs créés",
-    "auroraMigration": "Importer votre carnet",
+    "auroraMigration": "Récupérer votre carnet",
     "startClimbing": "Commencer à grimper",
     "signIn": "Se connecter",
     "nav": {
@@ -874,7 +874,7 @@
       "help": "Aide",
       "docs": "Doc développeur",
       "playlists": "Playlists",
-      "auroraMigration": "Importer votre carnet",
+      "auroraMigration": "Récupérer votre carnet",
       "legal": "Mentions légales",
       "privacy": "Confidentialité",
       "gymsKilter": "Salles avec une board Kilter",
