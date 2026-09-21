@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T21:17:16.730Z",
+  "generatedAt": "2026-09-21T21:26:06.587Z",
   "entries": [
+    {
+      "prNumber": 5673,
+      "category": "fixed",
+      "title": "Boards you pick nearby or on the gym map now stay in Your boards, so you won't have to find them again.",
+      "mergedAt": "2026-09-21T21:10:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5673",
+      "body": "If the board you climb on was missing from Your boards, it's back the next time you open the app."
+    },
     {
       "prNumber": 5674,
       "category": "new",

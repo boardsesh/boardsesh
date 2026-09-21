@@ -14,6 +14,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Boards you pick nearby or on the gym map now stay in Your boards, so you won't have to find them again. ([#5673](https://github.com/boardsesh/boardsesh/pull/5673))
+  If the board you climb on was missing from Your boards, it's back the next time you open the app.
 - Open a climb's actions with VoiceOver or TalkBack even when its quick-actions button is hidden. ([#5218](https://github.com/boardsesh/boardsesh/pull/5218))
   Hear the climb row's existing grade and status labels alongside its name.
 - Fixed: the Profile, Discover, and Climbs tabs no longer get stuck on a screen you opened from another tab (Settings, My Playlists, a setter's profile) — tapping back always returns you to that tab's own home. ([#5670](https://github.com/boardsesh/boardsesh/pull/5670))
