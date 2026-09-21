@@ -175,14 +175,24 @@ def validate_mask_training_dataset(config: DetectorConfig, dataset_dir: Path) ->
         images = {image["id"]: image for image in payload["images"]}
         for annotation in annotations:
             try:
-                image = images[annotation["image_id"]]
+                image_id = annotation["image_id"]
+                image = images.get(image_id)
+                if image is None:
+                    raise ValueError(f"image_id {image_id} has no matching image")
                 width, height = image["width"], image["height"]
                 if width <= 0 or height <= 0:
                     raise ValueError("image dimensions must be positive")
+            except (KeyError, TypeError, ValueError) as error:
+                raise SystemExit(
+                    f"{config.name}: invalid COCO image metadata in {annotation_path}, "
+                    f"annotation {annotation.get('id', '?')}: {error}. "
+                    "Correct the image reference and dimensions before training."
+                ) from error
+            try:
                 polygons = clip_polygon_to_tile(annotation.get("segmentation"), 1, 0, 0, width, height)
                 if not polygons:
                     raise ValueError("missing or empty polygon mask")
-            except (KeyError, TypeError, ValueError) as error:
+            except (TypeError, ValueError) as error:
                 raise SystemExit(
                     f"{config.name} requires a usable polygon mask for every hold: "
                     f"{annotation_path}, annotation {annotation.get('id', '?')}: {error}. "

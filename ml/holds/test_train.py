@@ -147,6 +147,31 @@ def test_segmentation_training_rejects_box_only_and_empty_masks_before_tiling(
     assert fake_tiler == []
 
 
+@pytest.mark.parametrize("malformation", ["orphaned annotation", "missing width", "missing height"])
+def test_malformed_image_metadata_is_not_reported_as_a_mask_label_problem(
+    malformation: str, holds_dir: Path, tmp_path: Path, fake_tiler: list[dict[str, str]]
+) -> None:
+    dataset = _mask_set(tmp_path / "malformed", VALID_POLYGON)
+    path = dataset / "train" / "_annotations.coco.json"
+    payload = json.loads(path.read_text())
+    if malformation == "orphaned annotation":
+        payload["annotations"][0]["image_id"] = 999
+        expected_detail = "image_id 999 has no matching image"
+    else:
+        field = malformation.removeprefix("missing ")
+        payload["images"][0].pop(field)
+        expected_detail = field
+    path.write_text(json.dumps(payload))
+
+    with pytest.raises(SystemExit, match="invalid COCO image metadata") as failure:
+        train.prepare_dataset(load_config("seg-nano-tiled-1024"), dataset)
+    assert str(path) in str(failure.value)
+    assert "annotation 1" in str(failure.value)
+    assert expected_detail in str(failure.value)
+    assert "box-only" not in str(failure.value)
+    assert fake_tiler == []
+
+
 def test_segmentation_training_rejects_a_mixed_box_and_polygon_corpus(
     holds_dir: Path, tmp_path: Path, fake_tiler: list[dict[str, str]]
 ) -> None:
