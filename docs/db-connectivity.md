@@ -540,10 +540,21 @@ complete while the workflow reports the database condition. See
 [production deploys](production-deploy.md#serial-plan-verification-after-migrations)
 for its environment and concurrency behavior.
 
-**Operator handoff.** When the deploy job goes red, either:
+**Operator handoff.** A green workflow requires the default to be applied. Before
+rolling out verification, arrange either the one-off owner action below or the
+owner-capable credential; otherwise every deploy reports verification failure
+and sends the failure alert until the missing default is fixed. The credential
+itself is optional because an already-correct database needs no administrator.
+
+Database ownership is sufficient for this setting; use a dedicated database-owner
+connection, not a cluster-superuser URL. Keep it separate from the restricted
+migration and runtime credentials. A one-off owner session avoids retaining an
+owner credential in the deployment environment.
+
+When the deploy job goes red, either:
 
 ```sql
--- once, from any psql session that owns the database (or is superuser)
+-- once, from a separately authorized psql session that owns the database
 ALTER DATABASE railway SET max_parallel_workers_per_gather = 0;
 ```
 
