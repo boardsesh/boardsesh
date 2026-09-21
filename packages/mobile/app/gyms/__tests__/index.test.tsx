@@ -13,7 +13,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 type Children = { children?: ReactNode };
 type ActivateOptions = { source?: 'onboarding'; returnTo: string; onBound?: unknown };
-type AnalyticsOptions = { fromOnboarding: boolean; surface?: string; returnTo: string };
+type AnalyticsOptions = { fromOnboarding: boolean; fromNoBoard?: boolean; surface?: string; returnTo: string };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn(), canGoBack: () => true }));
 const bindMock = vi.hoisted(() => vi.fn((): Promise<void> => Promise.resolve()));
@@ -152,6 +152,16 @@ describe('picking a board on the gym finder', () => {
     expect(captured.analyticsOptions?.fromOnboarding).toBe(true);
   });
 
+  // The no-board picker's gym picks are ordinary switches, filed under its source.
+  it('files picks under the no-board picker when it forwarded its source', () => {
+    captured.params = { source: 'no_board', from: 'picker' };
+    render(createElement(GymDiscovery));
+
+    expect(captured.activateOptions?.source).toBeUndefined();
+    expect(captured.analyticsOptions?.fromOnboarding).toBe(false);
+    expect(captured.analyticsOptions?.fromNoBoard).toBe(true);
+  });
+
   // A stray value must not turn an ordinary gym pick into a first-run close-out.
   it('ignores any other source', () => {
     captured.params = { source: 'board_picker' };
@@ -159,6 +169,7 @@ describe('picking a board on the gym finder', () => {
 
     expect(captured.activateOptions?.source).toBeUndefined();
     expect(captured.analyticsOptions?.fromOnboarding).toBe(false);
+    expect(captured.analyticsOptions?.fromNoBoard).toBe(false);
   });
 });
 

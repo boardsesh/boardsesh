@@ -360,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Folge deiner Wand",
-        "subtitle": "Wähl das Board, an dem du kletterst, um seine Boulder zu durchstöbern und zu sehen, was gerade beleuchtet ist.",
+        "title": "Wähl dein Board",
+        "subtitle": "Such dir das Board aus, an dem du kletterst, um seine Boulder zu durchstöbern und sie am Board zu beleuchten.",
         "cta": "Mein Board finden"
       },
       "noClimbs": {

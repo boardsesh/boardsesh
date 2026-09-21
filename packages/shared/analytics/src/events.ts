@@ -493,18 +493,22 @@ export const SHARED_EVENTS = {
   // opens for a new account with no board (#5654), and that `Onboarding Gate
   // Evaluated` logs as `presented`. It also fires `Board Picker Opened` with
   // source 'onboarding' like any picker. These two answer what the newcomer did
-  // with it.
+  // with it. The same "Where do you climb?" block also shows when a climber
+  // with no boards taps "Find my board" on Climbs; both events carry `entry`
+  // ('launch_gate' | 'no_board') to tell the two apart. Read the launch gate's
+  // skip rate on `entry = 'launch_gate'` only.
   //
   // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
-  // 'own' | 'scan' | 'gym_map' }. 'gym_map' is "Find your gym on the map",
-  // offered under At a gym. A climber can try several; each tap fires.
+  // 'own' | 'scan' | 'gym_map', entry }. 'gym_map' is "Find your gym on the
+  // map", offered under At a gym. A climber can try several; each tap fires.
   //
   // FirstBoardPickerSkipped: the picker closed with no board bound, which is
   // the skip rate the launch reads against. Props: { method: 'close_button' |
-  // 'dismissed' ('close_button' is the header X, "Not now"; 'dismissed' is a
-  // swipe down or Android back), secondsOpen, lastPath (the last choice tapped,
-  // or null) }. A bind from ANY path the picker leads to (the list, the builder,
-  // the gym map, the Bluetooth scan) counts as not skipped.
+  // 'dismissed' ('close_button' is the header X, "Not now" from the launch
+  // gate and Close from Climbs; 'dismissed' is a swipe down or Android back),
+  // secondsOpen, lastPath (the last choice tapped, or null), entry }. A bind
+  // from ANY path the picker leads to (the list, the builder, the gym map, the
+  // Bluetooth scan) counts as not skipped.
   FirstBoardPathChosen: 'First Board Path Chosen',
   FirstBoardPickerSkipped: 'First Board Picker Skipped',
   // Mobile-only: the connect-step test (#5654, PR 7). The treatment puts a
@@ -544,6 +548,16 @@ export const SHARED_EVENTS = {
   FirstRunExposed: 'First Run Exposed',
   FirstRunCardAction: 'First Run Card Action',
   BoardLightsDeclined: 'Board Lights Declined',
+
+  // Mobile-only, iOS 26 Liquid Glass iPhones (#5654): the one-time tip "To get
+  // back to your climbs, tap the magnifier in the tab bar". There the Climbs tab
+  // is the tab bar's search-role magnifier, set apart from the other tabs, and
+  // newcomers who leave Climbs often never come back. Shown once per device, to
+  // an account at most 7 days old, the first time another tab is open. Read it
+  // with "left Climbs, never returned" by platform for the tab-label decision.
+  // Props: { fromTab: 'home' | 'record' | 'discover' | 'profile' | other tab
+  //          segment (where the climber was when it showed) }.
+  ClimbsTabTipShown: 'Climbs Tab Tip Shown',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
@@ -584,6 +598,20 @@ export const SHARED_EVENTS = {
   // (there is no existing board to switch to), so they never convert to
   // ReusedExisting — split on `source` before reading that ratio.
   BoardDuplicatePrompted: 'Board Duplicate Prompted',
+  // Mobile-only (#5654): the board builder closed without a board. Of the
+  // newcomers who reached Climbs and never opened a climb, 41% opened it and
+  // 10% created a board, and nothing said where the rest stopped. Fired on the
+  // create screen's unmount unless a board was created, reused or followed on
+  // the way out.
+  // Props: { boardType, hadLayout, hadSize (what was selected when they left),
+  //          source: 'popular_seed' | 'scratch' (as on Board Created),
+  //          preset (opened from "My own board" with a setup already chosen,
+  //          so hadLayout/hadSize start true: split on it),
+  //          openedFrom: 'onboarding' | 'no_board' | 'board_picker' (the
+  //          picker path that opened it), submitAttempted (Save was tapped at
+  //          least once, so a server refusal or a duplicate prompt came first),
+  //          secondsOpen }.
+  BoardBuilderAbandoned: 'Board Builder Abandoned',
   // Spray walls — the add-a-wall funnel (epic #5346, SW-09). Four steps, each
   // fired once per wall, so the drop-off between them is readable without a
   // per-gesture event: picking the photo, the upload landing, detection
@@ -642,9 +670,10 @@ export const SHARED_EVENTS = {
   // noisy for PostHog's event budget.
   BoardSheetOpened: 'Board Sheet Opened',
   // The full board picker, once per presentation after the saved-board read.
-  // source: onboarding | session | board_picker (other/unknown entry) |
-  // gym_finder (the gym map opened on its own, from Home or My gyms; the map
-  // pushed from the picker's "Find gym" reports no opening, the picker did).
+  // source: onboarding | no_board (Climbs' "Pick your board" empty state,
+  // #5654) | session | board_picker (other/unknown entry) | gym_finder (the
+  // gym map opened on its own, from Home or My gyms; the map pushed from the
+  // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.

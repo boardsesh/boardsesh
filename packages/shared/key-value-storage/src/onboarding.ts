@@ -29,3 +29,7 @@ export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_seen';
 // climb (or tap the ⋯ button) for queue / tick / playlists and more. Fires once,
 // after the board-reveal banner has had its turn.
 export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen';
+// One-shot tip for new accounts on iOS 26 Liquid Glass iPhones, where Climbs is
+// the tab bar's search-role magnifier (#5654): shown the first time another tab
+// is open, pointing back to the magnifier. Written as soon as it shows.
+export const ONBOARDING_TIP_CLIMBS_TAB_KEY = 'onboarding_tip_climbs_tab_seen';

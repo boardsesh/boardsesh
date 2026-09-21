@@ -252,6 +252,13 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}
           </Text>
+          {/* On screen for the whole scan, not only once it comes up empty
+              (#5654): the scan cannot see MoonBoards or Kilter boxes that don't
+              put a serial in their name, and a climber standing at one should
+              know before waiting 15 seconds for "No boards in range". */}
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.firstBoard.scanFootnote')}
+          </Text>
           {renderBody()}
         </View>
       </Sheet>
@@ -296,5 +303,8 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+  },
+  footnote: {
+    marginBottom: spacing[3],
   },
 });

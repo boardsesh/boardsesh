@@ -27,6 +27,8 @@ type PickerAnalyticsOptions = {
   fromOnboarding: boolean;
   /** Defaults to `'picker'`. */
   surface?: PickerSurface;
+  /** Opened from Climbs' "Pick your board" empty state (`source=no_board`). */
+  fromNoBoard?: boolean;
 };
 
 /** Measures the picker itself, including same-board reselection. A read failure
@@ -37,6 +39,7 @@ export function useBoardPickerAnalytics({
   returnTo,
   fromOnboarding,
   surface = 'picker',
+  fromNoBoard = false,
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
   const trackOpened = surface !== 'gym_finder_from_picker';
@@ -45,9 +48,11 @@ export function useBoardPickerAnalytics({
       ? 'gym_finder'
       : fromOnboarding
         ? 'onboarding'
-        : returnTo === '/(tabs)/record'
-          ? 'session'
-          : 'board_picker';
+        : fromNoBoard
+          ? 'no_board'
+          : returnTo === '/(tabs)/record'
+            ? 'session'
+            : 'board_picker';
   const analyticsReturnTo = returnTo.startsWith('/(tabs)/climbs/setter/')
     ? '/(tabs)/climbs/setter/[username]'
     : returnTo;

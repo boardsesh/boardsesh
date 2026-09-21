@@ -571,8 +571,8 @@ skip rate and `Board Created` per newcomer as guardrails.
 | `First Board Path Chosen` | `path` (`gym` / `own` / `scan` / `gym_map`) | `use-first-board-picker-tracking.ts`, from the picker's choices | One per tap; a climber can try several |
 | `First Board Picker Skipped` | `method` (`close_button` = the header X "Not now" / `dismissed` = swipe or Android back), `secondsOpen`, `lastPath` | `use-first-board-picker-tracking.ts`, when the picker unmounts with no board stored | At most one per showing, so at most two per account |
 
-- **Skip rate** = `First Board Picker Skipped` ÷ `Onboarding Gate Evaluated` with
-  `outcome = 'presented'`. A bind from any path the picker leads to (the list, the builder, the gym
+- **Skip rate** = `First Board Picker Skipped` (`entry = 'launch_gate'` or absent, see PR 5 below)
+  ÷ `Onboarding Gate Evaluated` with `outcome = 'presented'`. A bind from any path the picker leads to (the list, the builder, the gym
   map, the Bluetooth scan) is not a skip, because every bind writes the board before it navigates.
 - **Bound from the picker**: `Onboarding Board Activated` (source `onboarding`) after a `presented`
   decision. The picker also fires `Board Picker Opened` with source `onboarding` like any picker.
@@ -631,3 +631,29 @@ Reading it:
   lights never sees the card or the pill for a lit board B on the same phone, so read a decline
   as "this phone left the treatment", not "this board is dark".
 - **SRM**: exposures per arm should sit near 50/50 every week.
+
+### No-board states and the iOS 26 tab tip (#5654, PR 5)
+
+Climbs' no-board empty state ("Pick your board" / **Find my board**) now opens the picker as its
+own entry, `source=no_board`. A climber with no boards at all gets the same "Where do you climb?"
+block the launch gate opens; one whose active board was only cleared gets their list. That entry is
+an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
+| `First Board Picker Skipped` (changed) | adds `entry`; `close_button` now also covers the plain Close X on the `no_board` entry | `use-first-board-picker-tracking.ts` | Adds the Climbs showings |
+| `Board Picker Opened` / `Board Picker Selection Completed` (changed) | `source` gains `no_board`, a gym-map pick made from that picker included | `use-board-picker-analytics.ts` (the picker and `/gyms`) | Unchanged (those rows used to read `board_picker`) |
+| `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board" with a layout and size already chosen), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
+| `Climbs Tab Tip Shown` | `fromTab` (the tab segment it showed on: `home` / `record` / `discover` / `profile`) | `ClimbsTabReturnTip.tsx` (root overlay) | At most once per device; iOS 26 Liquid Glass iPhones, accounts at most 7 days old |
+
+- **Read the launch gate's skip rate on `entry = 'launch_gate'` only.** Rows without `entry` came
+  from builds that had PR 3 but not PR 5, where every showing was the gate's.
+- **Builder funnel**: mobile builder visits ≈ `Board Created` (`source` `popular_seed` / `scratch`) +
+  `Board Create Reused Existing` + `Board Builder Abandoned`. The one path with no event of its own is
+  "use that wall" on the serial-reuse prompt, which follows an existing board. Split `Board Builder Abandoned` on `preset` before reading
+  `hadLayout` / `hadSize`: a preset visit starts with both true. `submitAttempted = true` means the
+  climber tapped Save and a server refusal or a duplicate prompt came first.
+- **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
+  tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
+  goes away when they tap back to Climbs or close it, and never shows again on that device.

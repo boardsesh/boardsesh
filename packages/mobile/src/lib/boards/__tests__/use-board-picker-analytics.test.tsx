@@ -44,6 +44,21 @@ describe('board picker analytics', () => {
     });
   });
 
+  // #5654: Climbs' "Pick your board" is where a climber with no board is sent,
+  // so its opens are their own source rather than the catch-all.
+  it('names the Climbs no-board entry', () => {
+    renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        fromNoBoard: true,
+      }),
+    );
+    expect(track).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ source: 'no_board' }));
+  });
+
   it('records unknown rather than no board when restoration fails', () => {
     renderHook(() =>
       useBoardPickerAnalytics({
@@ -140,6 +155,27 @@ describe('board picker analytics', () => {
     expect(track).toHaveBeenCalledExactlyOnceWith(
       'Board Picker Selection Completed',
       expect.objectContaining({ source: 'onboarding', pickSource: 'gym_finder', followed: true }),
+    );
+  });
+
+  // Climbs' "Pick your board" picker forwards `source=no_board` to the gym map,
+  // so a gym pick made there counts under that picker too.
+  it("files a gym pick under the no-board picker's source", async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        fromNoBoard: true,
+        surface: 'gym_finder_from_picker',
+      }),
+    );
+    expect(track).not.toHaveBeenCalled();
+    await result.current(board, { pickSource: 'gym_finder', followed: true });
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ source: 'no_board', pickSource: 'gym_finder' }),
     );
   });
 

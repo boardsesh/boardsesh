@@ -537,6 +537,20 @@ describe('ClimbList binding a board on the mounted screen', () => {
   });
 });
 
+// #5654: "Find my board" opens the picker's no-board entry, which shows "Where
+// do you climb?" to a climber with no boards. Not the onboarding entry: this
+// state shows for anyone with no board bound, so its bind is an ordinary pick.
+describe('ClimbList with no board bound', () => {
+  it('sends "Find my board" to the picker as the no-board entry', async () => {
+    mocks.activeBoard = null;
+    const { findByRole } = render(<ClimbList />);
+
+    fireEvent.click(await findByRole('button', { name: 'mobile.emptyState.noBoard.cta' }));
+
+    expect(mocks.push).toHaveBeenCalledWith({ pathname: '/boards', params: { source: 'no_board' } });
+  });
+});
+
 describe('ClimbList saved-board restoration', () => {
   it.each(['fetching', 'paused'] as const)('shows skeletons while the board read is %s', (fetchStatus) => {
     mocks.activeBoard = undefined;
