@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T13:35:55.959Z",
+  "generatedAt": "2026-09-21T13:59:05.557Z",
   "entries": [
+    {
+      "prNumber": 5661,
+      "category": "fixed",
+      "title": "Tall and Wide are back as their own one-tap filter chips on the Climbs screen",
+      "mergedAt": "2026-09-21T13:24:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5661",
+      "body": "On iPhone, long-press Tall or Wide to lock it, so Reset keeps it on"
+    },
     {
       "prNumber": 5639,
       "category": "fixed",

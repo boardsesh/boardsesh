@@ -12,6 +12,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Tall and Wide are back as their own one-tap filter chips on the Climbs screen ([#5661](https://github.com/boardsesh/boardsesh/pull/5661))
+  On iPhone, long-press Tall or Wide to lock it, so Reset keeps it on
 - Open a playlist link that was deleted or made private and you now get a proper "not found" page instead of an empty one. ([#5639](https://github.com/boardsesh/boardsesh/pull/5639))
   Playlists you share now show their name and board in the link preview, rather than the same generic line every playlist had.
 - Get a clear explanation when your board cannot open the climb creator. ([#5632](https://github.com/boardsesh/boardsesh/pull/5632))
