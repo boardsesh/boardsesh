@@ -18,7 +18,7 @@ export const ALLOWED_IANA_UTC_OFFSET_SECONDS = [
   -7 * 3600,
   -6 * 3600,
   -5 * 3600,
-  -(4 * 3600 + 30 * 60), // America/Caracas, including 2007-2016
+  -(4 * 3600 + 30 * 60), // America/Caracas; date-gated below
   -4 * 3600,
   -(3 * 3600 + 30 * 60),
   -3 * 3600,
@@ -39,7 +39,7 @@ export const ALLOWED_IANA_UTC_OFFSET_SECONDS = [
   6 * 3600 + 30 * 60,
   7 * 3600,
   8 * 3600,
-  8 * 3600 + 30 * 60, // Asia/Pyongyang, including 2015-2018
+  8 * 3600 + 30 * 60, // Asia/Pyongyang; date-gated below
   8 * 3600 + 45 * 60,
   9 * 3600,
   9 * 3600 + 30 * 60,
@@ -52,6 +52,28 @@ export const ALLOWED_IANA_UTC_OFFSET_SECONDS = [
   13 * 3600 + 45 * 60,
   14 * 3600,
 ] as const;
+
+// Historical-only offsets are evidence only in the recent civil periods this
+// audit supports. IANA UNTIL times use the preceding local offset; these bounds
+// are converted to UTC (inclusive start, exclusive end):
+// https://data.iana.org/time-zones/tzdb/southamerica (America/Caracas)
+// https://data.iana.org/time-zones/tzdb/asia (Asia/Pyongyang)
+const HISTORICAL_OFFSET_WINDOWS = new Map<number, { startEpochSeconds: number; endEpochSeconds: number }>([
+  [
+    -(4 * 3600 + 30 * 60),
+    {
+      startEpochSeconds: Date.parse('2007-12-09T07:00:00Z') / 1000,
+      endEpochSeconds: Date.parse('2016-05-01T07:00:00Z') / 1000,
+    },
+  ],
+  [
+    8 * 3600 + 30 * 60,
+    {
+      startEpochSeconds: Date.parse('2015-08-14T15:00:00Z') / 1000,
+      endEpochSeconds: Date.parse('2018-05-04T15:00:00Z') / 1000,
+    },
+  ],
+]);
 
 export type TickOrigin = 'native' | 'aurora_pull' | 'kilter_pull' | 'json_import';
 export type TickStatus = 'flash' | 'send' | 'attempt';
@@ -272,13 +294,24 @@ export function anchorTimestampEvidence(tick: AuditTick, policy: AuditPolicy): A
   return 'native_unchanged_since_verified_safe_save';
 }
 
-export function inferAllowedOffset(rawDeltaSeconds: number): OffsetInference | null {
-  if (!Number.isFinite(rawDeltaSeconds)) return null;
+export function inferAllowedOffset(rawDeltaSeconds: number, candidateEpochSeconds: number): OffsetInference | null {
+  if (!Number.isFinite(rawDeltaSeconds) || !Number.isFinite(candidateEpochSeconds)) return null;
   let bestOffset: number | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   let tied = false;
 
   for (const offsetSeconds of ALLOWED_IANA_UTC_OFFSET_SECONDS) {
+    const historicalWindow = HISTORICAL_OFFSET_WINDOWS.get(offsetSeconds);
+    // Preserve source seconds: the corrected event date, not the anchor or
+    // import date, determines whether this historical offset was in use.
+    const targetEpochSeconds = candidateEpochSeconds - offsetSeconds;
+    if (
+      historicalWindow &&
+      (targetEpochSeconds < historicalWindow.startEpochSeconds ||
+        targetEpochSeconds >= historicalWindow.endEpochSeconds)
+    ) {
+      continue;
+    }
     const distance = Math.abs(rawDeltaSeconds - offsetSeconds);
     if (distance < bestDistance) {
       bestOffset = offsetSeconds;
@@ -380,7 +413,7 @@ export function analyzeTickGroup(rows: AuditTick[], policy: AuditPolicy): GroupA
         const { anchor, anchorIndex } = compatibleAnchors[compatibleIndex];
         if (candidate.uuid !== anchor.uuid && areSemanticsCompatible(candidate, anchor)) {
           const rawDeltaSeconds = candidate.climbedAtEpochSeconds - anchor.climbedAtEpochSeconds;
-          const inferred = inferAllowedOffset(rawDeltaSeconds);
+          const inferred = inferAllowedOffset(rawDeltaSeconds, candidate.climbedAtEpochSeconds);
           // The closest-allowlisted-offset check prevents overlapping windows
           // from emitting the same pair twice.
           if (inferred?.offsetSeconds === offsetSeconds) {
