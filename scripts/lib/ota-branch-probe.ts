@@ -98,7 +98,8 @@ export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] 
  *
  * The verification above waits out propagation because its answer is final. This
  * one only asks whether the branch is offered for this runtime. It does not verify
- * this attempt's bundle identity, and it has the retry ladder behind it — a wrong "no" costs one more attempt, not a red X. Spending the full
+ * this attempt's bundle identity, and it has the retry ladder behind it — a wrong
+ * "no" costs one more attempt, not a red X. Spending the full
  * 31s-plus-six-capped-requests here on every 524 would eat a large share of the
  * ~2.5-minute re-export the confirmation exists to avoid.
  */
