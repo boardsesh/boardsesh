@@ -157,7 +157,7 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
 2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
 3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`. `--layouts` scopes which layouts are *pulled*, but not the hole→placement preload the reroute resolver needs: every listed layout still resolves, so a scoped run also persists those layout aliases and reports unmapped layouts from outside the filter.
-4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
+4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format. The decoder keeps raw set events for fingerprinting and separately projects the first valid row per hold for `board_climb_holds` insertion.
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
 6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
 7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default. The deletion list is fetched **once per run**, right after the skip backlog is loaded, and shared with the identity re-list in step 5. A failed or empty fetch leaves it null, which disables both (see [Climb dedup](#climb-dedup)) — an absent list is not evidence that nothing was deleted.
@@ -344,7 +344,18 @@ The package `sync:locations` script passes `--skip-if-missing-credentials` so ag
 
 Kilter's catalog has duplicate climbs at different UUIDs with identical hold layouts. We collapse them behind a canonical row.
 
-**Fingerprint.** `sha256` of sorted `hold_id:hold_state:frame_number` tuples (`packages/kilter-sync/src/sync/fingerprint.ts`), stored on `board_climbs.hold_fingerprint`, indexed `(board_type, layout_id, hold_fingerprint)`.
+**Fingerprint.** `sha256` of every raw `p…r…` set event as a sorted
+`hold_id:hold_state:frame_number` tuple (`packages/kilter-sync/src/sync/fingerprint.ts`), stored on
+`board_climbs.hold_fingerprint`, indexed `(board_type, layout_id, hold_fingerprint)`. Raw comma-slot
+frame ordinals and repeated relights remain part of identity even though `board_climb_holds` can store
+only the first projected row per hold. Existing catalog rows carrying the repair-era projected hash
+are normalized to their proven raw-event key in memory; the projected key may broaden a reroute DB
+fetch but is never a dedup identity.
+
+This deliberately preserves the historical raw-set-event hash policy. Clear-only timing and trailing
+empty hold frames do not add `p…r…` events, so they remain outside fingerprint identity. Distinguishing
+those requires a versioned fingerprint policy and data migration; the catalog sync does not silently
+change that contract.
 
 **Resolution, per incoming climb:**
 

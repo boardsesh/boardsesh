@@ -45,8 +45,8 @@ import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
 import {
   decideCatalogFingerprint,
   enrichFingerprintOwnersWithLegacyCompatibility,
-  indexStoredFingerprintOwners,
   partitionLegacyFingerprintCompatibilityRows,
+  storedFingerprintsForRawCandidates,
   type LegacyFingerprintCompatibilityRow,
 } from './catalog-fingerprint-compat';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
@@ -620,7 +620,7 @@ export function buildLayoutCatalogIndex(input: {
 }): LayoutCatalogIndex {
   const existingByLowerUuid = new Map<string, string>();
   const fingerprintToCanonical = enrichFingerprintOwnersWithLegacyCompatibility(
-    indexStoredFingerprintOwners(input.climbRows),
+    input.climbRows,
     input.legacyFingerprintCompatibilityRows ?? [],
   );
   const existingCanonicalMeta = new Map<string, ExistingClimbMeta>();
@@ -822,7 +822,7 @@ export function stageCatalogClimb(
           sourceLayoutId: index.layoutId,
           sourceLayoutUuid: context.sourceLayoutUuid,
           targetLayoutId: alternateLayout.layoutId,
-          fingerprint: fingerprintFromHolds(alternateLayout.decoded.holds),
+          fingerprint: fingerprintFromHolds(alternateLayout.decoded.fingerprintEvents),
           sourceFailure: decoded,
           stats: [],
         });
@@ -841,8 +841,13 @@ export function stageCatalogClimb(
     );
     return 'skipped';
   }
-  const { frames, holds } = decoded;
-  const fingerprintDecision = decideCatalogFingerprint(index.fingerprintToCanonical, climb.climbUuid, holds);
+  const { frames, fingerprintEvents, holdRowsToInsert } = decoded;
+  const fingerprintDecision = decideCatalogFingerprint(
+    index.fingerprintToCanonical,
+    climb.climbUuid,
+    fingerprintEvents,
+    holdRowsToInsert,
+  );
   const { fingerprint } = fingerprintDecision;
   const resolvedByDecode = openSkips.get(lowerUuid);
   if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
@@ -1318,23 +1323,13 @@ async function ingestRerouteCandidatesForLayout(input: {
   const result = createGroupResult();
   const candidateLowerUuids = candidates.map((candidate) => candidate.climb.climbUuid.toLowerCase());
   const candidateFingerprints = [...new Set(candidates.map((candidate) => candidate.fingerprint))];
-  const compatibilityOwners = enrichFingerprintOwnersWithLegacyCompatibility(
-    indexStoredFingerprintOwners(input.legacyFingerprintCompatibilityRows),
+  // Projected hashes broaden this DB fetch only when that row's frames prove an
+  // exact candidate raw-event hash. buildLayoutCatalogIndex reconstructs the
+  // semantic owner map and never treats those projected lookup keys as identity.
+  const lookupFingerprints = storedFingerprintsForRawCandidates(
+    new Set(candidateFingerprints),
     input.legacyFingerprintCompatibilityRows,
   );
-  const candidateCompatibilityOwners = new Set(
-    candidateFingerprints.map((fingerprint) => compatibilityOwners.get(fingerprint)).filter(Boolean),
-  );
-  // Keep the narrow target read, including only legacy keys that may own an
-  // incoming projected fingerprint. The DB rows still decide primary owners.
-  const lookupFingerprints = [
-    ...new Set([
-      ...candidateFingerprints,
-      ...input.legacyFingerprintCompatibilityRows
-        .filter((row) => candidateCompatibilityOwners.has(row.uuid))
-        .map((row) => row.fingerprint),
-    ]),
-  ];
 
   // Two narrow loads rather than the whole target layout: the candidate uuids
   // wherever they live (one already on another layout must not be ingested a

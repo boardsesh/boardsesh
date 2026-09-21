@@ -12,9 +12,9 @@ approved target, commit, timestamp, manifest digest and exact before/after count
 
 ## Kilter rollout bridge
 
-Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned Kilter rows with multi-frame or noncanonical single-frame text once, proves which stored fingerprints came from the historical raw frame events, and adds their current projected fingerprints to the in-memory dedup index without changing the database. Existing stored fingerprint owners always win, and empty or unproven projections add no key.
+Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned Kilter rows with multi-frame or noncanonical single-frame text once and proves whether each stored fingerprint came from historical raw frame events or the stored-row projection. The owner index uses the proven raw-event key for either generation and never adds the lossy projected key as an alias. It rebuilds owners from all UUID-ordered rows, so suppressing an animated row's projected key still lets a true single-frame row with that key become its owner. Empty projections add no key, and independent fingerprints remain unchanged.
 
-That dual-key bridge prevents the Kilter daemon from creating a second canonical in the interval between deploy and repair, so the daemon does not need to stay paused for that whole rollout interval. The repair migrates proven legacy fingerprints to the projected key; after migration the stored key is already primary and the bridge is a no-op. Writers should still be paused for the short approved apply window below, when the repair takes table locks.
+That compatibility normalization prevents the Kilter daemon from creating a second canonical across the historical and repair-era stored hashes without letting a simple climb alias to an animated projection. When applied, the repair writes proven legacy fingerprints to the projected key; the sync reconstructs their exact raw-event identity from the unchanged frames. Writers should still be paused for the short approved apply window below, when the repair takes table locks.
 
 ## Approval gates
 

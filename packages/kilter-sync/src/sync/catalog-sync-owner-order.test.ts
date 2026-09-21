@@ -7,10 +7,7 @@ import {
   projectAuroraFramesToStoredRows,
 } from '@boardsesh/board-constants/hold-states';
 
-import {
-  enrichFingerprintOwnersWithLegacyCompatibility,
-  indexStoredFingerprintOwners,
-} from './catalog-fingerprint-compat';
+import { enrichFingerprintOwnersWithLegacyCompatibility } from './catalog-fingerprint-compat';
 import { fingerprintFromHolds } from './fingerprint';
 import {
   existingCatalogLayoutRowsQuery,
@@ -40,19 +37,17 @@ describe('catalog fingerprint owner ordering', () => {
       { uuid: 'a-stable-owner', fingerprint: legacyFingerprint },
       { uuid: 'z-secondary-owner', fingerprint: legacyFingerprint },
     ];
-    const storedFingerprintOwners = indexStoredFingerprintOwners(orderedExistingRows);
-
     const compatibilityRows = orderedExistingRows.map((row) => ({
       layoutId: 42,
       uuid: row.uuid,
       frames,
       fingerprint: row.fingerprint,
     }));
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(storedFingerprintOwners, compatibilityRows);
+    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(orderedExistingRows, compatibilityRows);
     const projectedFingerprint = fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
 
-    expect(storedFingerprintOwners.get(legacyFingerprint)).toBe('a-stable-owner');
-    expect(enriched.get(projectedFingerprint)).toBe('a-stable-owner');
+    expect(enriched.get(legacyFingerprint)).toBe('a-stable-owner');
+    expect(enriched.has(projectedFingerprint)).toBe(false);
   });
 });
 

@@ -18,7 +18,7 @@ export type HoldTuple = {
   holdState: string;
 };
 
-export function fingerprintFromHolds(holds: HoldTuple[]): string {
+export function fingerprintFromHolds(holds: ReadonlyArray<HoldTuple>): string {
   const tuples = holds
     .map((h) => `${h.holdId}:${h.holdState}:${h.frameNumber}`)
     .sort()

@@ -1,169 +1,152 @@
 import { describe, expect, it } from 'vite-plus/test';
-import {
-  legacyAuroraRawFrameHoldEvents,
-  projectAuroraFramesToStoredRows,
-} from '@boardsesh/board-constants/hold-states';
 
 import {
   decideCatalogFingerprint,
   enrichFingerprintOwnersWithLegacyCompatibility,
   partitionLegacyFingerprintCompatibilityRows,
+  storedFingerprintsForRawCandidates,
   type LegacyFingerprintCompatibilityRow,
 } from './catalog-fingerprint-compat';
 import { decodeGripsClimbConcat } from './catalog-parse';
 import { fingerprintFromHolds } from './fingerprint';
 
-function legacyFingerprint(frames: string): string {
-  return fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+const REMAP = new Map([[10, 100]]);
+
+function decode(concat: string, frameCount = 2) {
+  const result = decodeGripsClimbConcat(concat, REMAP, frameCount);
+  if (!result.ok) throw new Error(`unexpected decode failure: ${result.reason}`);
+  return result;
 }
 
-function projectedFingerprint(frames: string): string {
-  return fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
+function fingerprints(concat: string, frameCount = 2) {
+  const decoded = decode(concat, frameCount);
+  return {
+    decoded,
+    raw: fingerprintFromHolds(decoded.fingerprintEvents),
+    projected: fingerprintFromHolds(decoded.holdRowsToInsert),
+  };
 }
 
 function compatibilityRow(
   uuid: string,
-  frames: string,
-  fingerprint = legacyFingerprint(frames),
-  layoutId = 1,
+  concat: string,
+  storedForm: 'raw' | 'projected',
+  frameCount = 2,
 ): LegacyFingerprintCompatibilityRow {
-  return { layoutId, uuid, frames, fingerprint };
+  const { decoded, raw, projected } = fingerprints(concat, frameCount);
+  return { layoutId: 1, uuid, frames: decoded.frames, fingerprint: storedForm === 'raw' ? raw : projected };
 }
 
-describe('legacy fingerprint compatibility index', () => {
+describe('raw-event fingerprint compatibility index', () => {
   it('partitions the single preload by layout without reordering rows', () => {
-    const rows = [compatibilityRow('layout-8-a', 'p1r12', undefined, 8), compatibilityRow('layout-1', 'p2r13')];
-    const partitioned = partitionLegacyFingerprintCompatibilityRows([
-      ...rows,
-      compatibilityRow('layout-8-b', 'p3r14', undefined, 8),
-    ]);
-
+    const first = { ...compatibilityRow('layout-8-a', 'h10p12', 'raw'), layoutId: 8 };
+    const second = compatibilityRow('layout-1', 'h10p13', 'raw');
+    const third = { ...compatibilityRow('layout-8-b', 'h10p14', 'raw'), layoutId: 8 };
+    const partitioned = partitionLegacyFingerprintCompatibilityRows([first, second, third]);
     expect(partitioned.get(1)?.map((row) => row.uuid)).toEqual(['layout-1']);
     expect(partitioned.get(8)?.map((row) => row.uuid)).toEqual(['layout-8-a', 'layout-8-b']);
   });
 
-  it('bridges relights and unknown sentinels only after proving their legacy hashes', () => {
-    const relight = compatibilityRow('historical-relight', 'p1r12,"x1p1r13');
-    const unknownThenValid = compatibilityRow('historical-unknown', 'p2r999,"p2r13');
-    const storedOwners = new Map([
-      [relight.fingerprint, relight.uuid],
-      [unknownThenValid.fingerprint, unknownThenValid.uuid],
-    ]);
+  it.each(['raw', 'projected'] as const)(
+    'matches an identical relight stored with a %s hash without owning the simple hash',
+    (storedForm) => {
+      const animated = compatibilityRow('animated', 'h10p12e1h10p14s2', storedForm);
+      const animatedFingerprint = fingerprints('h10p12e1h10p14s2').raw;
+      const simpleFingerprint = fingerprints('h10p12').raw;
+      const owners = enrichFingerprintOwnersWithLegacyCompatibility(
+        [{ uuid: animated.uuid, fingerprint: animated.fingerprint }],
+        [animated],
+      );
+      expect(owners.get(animatedFingerprint)).toBe('animated');
+      expect(owners.has(simpleFingerprint)).toBe(false);
+    },
+  );
 
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(storedOwners, [relight, unknownThenValid]);
+  it.each(['raw', 'projected'] as const)(
+    'matches an identical delayed start stored with a %s hash without owning the immediate hash',
+    (storedForm) => {
+      const delayed = compatibilityRow('delayed', 'h10p13s2', storedForm);
+      const delayedFingerprint = fingerprints('h10p13s2').raw;
+      const immediateFingerprint = fingerprints('h10p13').raw;
+      const owners = enrichFingerprintOwnersWithLegacyCompatibility(
+        [{ uuid: delayed.uuid, fingerprint: delayed.fingerprint }],
+        [delayed],
+      );
+      expect(owners.get(delayedFingerprint)).toBe('delayed');
+      expect(owners.has(immediateFingerprint)).toBe(false);
+    },
+  );
 
-    expect(relight.fingerprint).not.toBe(projectedFingerprint(relight.frames));
-    expect(legacyAuroraRawFrameHoldEvents(unknownThenValid.frames, 'kilter')[0]?.holdState).toBe('2=999');
-    expect(enriched.get(projectedFingerprint(relight.frames))).toBe(relight.uuid);
-    expect(enriched.get(projectedFingerprint(unknownThenValid.frames))).toBe(unknownThenValid.uuid);
-    expect(storedOwners.has(projectedFingerprint(relight.frames))).toBe(false);
+  it.each([
+    ['animated-first', ['animated', 'simple']],
+    ['simple-first', ['simple', 'animated']],
+  ] as const)('re-elects the exact simple owner when UUID order is %s', (_label, order) => {
+    const animated = compatibilityRow('animated', 'h10p12e1h10p14s2', 'projected');
+    const simpleFingerprint = fingerprints('h10p12').raw;
+    const rows = order.map((uuid) => ({
+      uuid,
+      fingerprint: uuid === 'animated' ? animated.fingerprint : simpleFingerprint,
+    }));
+    const owners = enrichFingerprintOwnersWithLegacyCompatibility(rows, [animated]);
+    expect(owners.get(fingerprints('h10p12e1h10p14s2').raw)).toBe('animated');
+    expect(owners.get(simpleFingerprint)).toBe('simple');
   });
 
-  it('rejects independent fingerprints and rows that are not the stored fingerprint primary owner', () => {
-    const independent = compatibilityRow('independent', 'p1r12,"p1r13', 'independent-source');
-    const duplicateOwner = compatibilityRow('secondary-owner', 'p2r12,"p2r13');
-    const storedOwners = new Map([
-      [independent.fingerprint, independent.uuid],
-      [duplicateOwner.fingerprint, 'primary-owner'],
-    ]);
-
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(storedOwners, [independent, duplicateOwner]);
-
-    expect(enriched.has(projectedFingerprint(independent.frames))).toBe(false);
-    expect(enriched.has(projectedFingerprint(duplicateOwner.frames))).toBe(false);
-  });
-
-  it('never replaces a projected primary owner or indexes an empty projection', () => {
-    const occupiedProjection = compatibilityRow('historical', 'p1r12,"p1r13');
-    const emptyProjection = compatibilityRow('invalid-only', 'p0r12,"p-2r13');
-    const existingProjectedOwner = 'already-current-owner';
-    const storedOwners = new Map([
-      [occupiedProjection.fingerprint, occupiedProjection.uuid],
-      [projectedFingerprint(occupiedProjection.frames), existingProjectedOwner],
-      [emptyProjection.fingerprint, emptyProjection.uuid],
-    ]);
-
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(storedOwners, [
-      occupiedProjection,
-      emptyProjection,
-    ]);
-
-    expect(enriched.get(projectedFingerprint(occupiedProjection.frames))).toBe(existingProjectedOwner);
-    expect(projectAuroraFramesToStoredRows(emptyProjection.frames, 'kilter').rows).toEqual([]);
-    expect(enriched.has(fingerprintFromHolds([]))).toBe(false);
-  });
-
-  it('leaves current rows unchanged and keeps the first bridge when legacy encodings share a projection', () => {
-    const currentFrames = 'p1r12,"x1p1r13';
-    const current = compatibilityRow('already-repaired', currentFrames, projectedFingerprint(currentFrames));
-    const first = compatibilityRow('first-legacy-owner', 'p2r12,"x2p2r13');
-    const second = compatibilityRow('second-legacy-owner', 'p2r12,"x2p2r14');
-    const storedOwners = new Map([
-      [current.fingerprint, current.uuid],
-      [first.fingerprint, first.uuid],
-      [second.fingerprint, second.uuid],
-    ]);
-
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(storedOwners, [current, first, second]);
-
-    expect(enriched.size).toBe(storedOwners.size + 1);
-    expect(enriched.get(projectedFingerprint(currentFrames))).toBe(current.uuid);
-    expect(projectedFingerprint(first.frames)).toBe(projectedFingerprint(second.frames));
-    expect(enriched.get(projectedFingerprint(first.frames))).toBe(first.uuid);
-  });
-
-  it('never dedups two hold-less climbs onto each other', () => {
-    const firstEmpty = decodeGripsClimbConcat('h10p999', new Map([[10, 100]]), 1);
-    const secondEmpty = decodeGripsClimbConcat('h20p999', new Map([[20, 200]]), 1);
-    if (!firstEmpty.ok || !secondEmpty.ok) throw new Error('unexpected decode failure');
-    expect(firstEmpty.holds).toEqual([]);
-    expect(secondEmpty.holds).toEqual([]);
-
-    const fingerprintOwners = new Map<string, string>();
-    const firstDecision = decideCatalogFingerprint(fingerprintOwners, 'first-empty', firstEmpty.holds);
-    expect(firstDecision.fingerprint).toBeNull();
-    expect(firstDecision.canonicalToInsert).toBe('first-empty');
-    if (firstDecision.fingerprint !== null) fingerprintOwners.set(firstDecision.fingerprint, 'first-empty');
-
-    const secondDecision = decideCatalogFingerprint(fingerprintOwners, 'second-empty', secondEmpty.holds);
-
-    expect(fingerprintOwners.has(fingerprintFromHolds([]))).toBe(false);
-    expect(secondDecision.fingerprint).toBeNull();
-    expect(secondDecision.canonicalUuid).toBe('second-empty');
-    expect(secondDecision.canonicalToInsert).toBe('second-empty');
-  });
-
-  it('ignores a stored SHA256(empty) owner instead of aliasing onto it', () => {
-    const strandedEmptyOwner = new Map([[fingerprintFromHolds([]), 'stranded-empty-canonical']]);
-
-    const decision = decideCatalogFingerprint(strandedEmptyOwner, 'incoming-empty', []);
-
-    expect(decision.fingerprint).toBeNull();
-    expect(decision.canonicalUuid).toBe('incoming-empty');
-    expect(decision.canonicalToInsert).toBe('incoming-empty');
-  });
-
-  it('bridges a delayed-start animation using its original legacy frame ordinal', () => {
-    const decoded = decodeGripsClimbConcat('h10p13s2', new Map([[10, 100]]), 2);
-    if (!decoded.ok) throw new Error(`unexpected decode failure: ${decoded.reason}`);
-    expect(decoded.frames).toBe(',"p100r13');
-    expect(legacyAuroraRawFrameHoldEvents(decoded.frames, 'kilter')).toEqual([
-      { holdId: 100, frameNumber: 1, holdState: 'HAND' },
-    ]);
-    expect(decoded.holds).toEqual([{ holdId: 100, frameNumber: 0, holdState: 'HAND' }]);
-
-    const historical = compatibilityRow('historical-canonical', decoded.frames);
-    expect(historical.fingerprint).not.toBe(fingerprintFromHolds(decoded.holds));
-    const enriched = enrichFingerprintOwnersWithLegacyCompatibility(
-      new Map([[historical.fingerprint, historical.uuid]]),
-      [historical],
+  it('keeps unproven stored keys opaque and stable-first', () => {
+    const unproven = { ...compatibilityRow('first', 'h10p12e1h10p14s2', 'raw'), fingerprint: 'unproven' };
+    const owners = enrichFingerprintOwnersWithLegacyCompatibility(
+      [
+        { uuid: 'first', fingerprint: 'independent' },
+        { uuid: 'second', fingerprint: 'independent' },
+      ],
+      [unproven],
     );
-    expect(enriched.get(fingerprintFromHolds(decoded.holds))).toBe(historical.uuid);
+    expect(owners.get('independent')).toBe('first');
+  });
 
-    const decision = decideCatalogFingerprint(enriched, 'incoming-alias', decoded.holds);
+  it('uses projected fingerprints only to broaden a matching reroute fetch', () => {
+    const animated = compatibilityRow('animated', 'h10p12e1h10p14s2', 'projected');
+    const animatedRaw = fingerprints('h10p12e1h10p14s2').raw;
+    const simpleRaw = fingerprints('h10p12').raw;
+    expect(storedFingerprintsForRawCandidates(new Set([animatedRaw]), [animated])).toEqual([
+      animatedRaw,
+      animated.fingerprint,
+    ]);
+    expect(storedFingerprintsForRawCandidates(new Set([simpleRaw]), [animated])).toEqual([simpleRaw]);
+  });
+});
 
-    expect(decision.canonicalUuid).toBe(historical.uuid);
-    expect(decision.canonicalToInsert).toBeNull();
-    expect(decision.holdRowsToInsert).toEqual([]);
+describe('catalog fingerprint decision', () => {
+  it('hashes raw events but returns only projected insertion rows', () => {
+    const { decoded, raw } = fingerprints('h10p12e1h10p14s2');
+    const decision = decideCatalogFingerprint(
+      new Map(),
+      'animated',
+      decoded.fingerprintEvents,
+      decoded.holdRowsToInsert,
+    );
+    expect(decision.fingerprint).toBe(raw);
+    expect(decision.holdRowsToInsert).toEqual([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]);
+  });
+
+  it('never dedups empty projections even when raw unknown-role events exist', () => {
+    const first = decode('h10p999', 1);
+    const second = decode('h10p999', 1);
+    expect(first.fingerprintEvents).not.toEqual([]);
+    expect(first.holdRowsToInsert).toEqual([]);
+    const strandedEmptyOwner = new Map([[fingerprintFromHolds(first.fingerprintEvents), 'stranded']]);
+    for (const [uuid, decoded] of [
+      ['first-empty', first],
+      ['second-empty', second],
+    ] as const) {
+      const decision = decideCatalogFingerprint(
+        strandedEmptyOwner,
+        uuid,
+        decoded.fingerprintEvents,
+        decoded.holdRowsToInsert,
+      );
+      expect(decision).toMatchObject({ fingerprint: null, canonicalUuid: uuid, canonicalToInsert: uuid });
+      expect(decision.holdRowsToInsert).toEqual([]);
+    }
   });
 });
