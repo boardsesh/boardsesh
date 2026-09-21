@@ -147,3 +147,8 @@ export function enrolInConnectStep(request: ConnectStepEnrolmentRequest): Promis
   enrolmentChain = settled;
   return settled;
 }
+
+/** Drops any queued enrolment so each test starts from an empty chain. */
+export function resetConnectStepEnrolmentForTests(): void {
+  enrolmentChain = Promise.resolve();
+}

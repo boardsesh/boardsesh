@@ -42,6 +42,7 @@ vi.mock('../connect-step-build', () => ({
 import {
   CONNECT_STEP_FORCE_ARM_FLAG,
   enrolInConnectStep,
+  resetConnectStepEnrolmentForTests,
   type ConnectStepEnrolmentRequest,
 } from '../connect-step-enrolment';
 import {
@@ -89,6 +90,7 @@ describe('enrolInConnectStep', () => {
     registerArmMock.mockClear();
     reportErrorMock.mockClear();
     resetFirstConnectStoreForTests();
+    resetConnectStepEnrolmentForTests();
   });
 
   it('enrols a new account, stores the arm, registers it and fires the exposure', async () => {
