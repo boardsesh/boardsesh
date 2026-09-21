@@ -1,6 +1,6 @@
 /**
  * Re-file ticks that landed on a per-config SHARED FEED board onto the wall
- * their climber actually owns.
+ * the active matching session wall, or their climber's unique matching wall.
  *
  * Prepares tooling for the historical data half of #5121. The code path was fixed in the same issue's
  * first PR; this is the separate decision about the rows already written.
@@ -19,13 +19,12 @@
  * 10,879 of them (655 climbers) belong to someone who owns a board of that
  * exact configuration.
  *
- * The rule, deliberately narrow: a tick moves only when its climber owns
- * EXACTLY ONE non-deleted board with the same (board_type, layout_id, size_id,
- * normalised set_ids). Two same-config boards is the #4174 "same wall at home
- * and at the gym" case, and nothing in the row says which one the climber was
- * standing at — those are counted and left alone. So are ticks from climbers
- * who own no matching board: the shared feed is where those belong, and the
- * fixed code still files them there.
+ * The rule follows saveTick's session-before-owned-board resolution: an active
+ * session board with the same full config wins, even when another climber owns
+ * it. Otherwise require EXACTLY ONE non-deleted owned board with the same
+ * (board_type, layout_id, size_id, normalised set_ids). Without a usable session,
+ * two owned same-config boards (#4174) are ambiguous and remain on the feed,
+ * as do ticks with no matching owned board.
  *
  * Set ids are compared normalised, not as raw strings. `createBoard` stores
  * whatever order it was handed, so a board saved as '25,26,27,24' is the same
@@ -55,9 +54,14 @@ import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { planSharedFeedTickMoves, type PlannedMove } from './backfill-shared-feed-tick-boards-helpers.js';
+import {
+  planSharedFeedTickMoves,
+  type FeedTick,
+  type PlannedMove,
+} from './backfill-shared-feed-tick-boards-helpers.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { userBoards } from '../src/schema/app/boards.js';
+import { boardSessions } from '../src/schema/app/sessions.js';
 
 // Mirrors the backend's `SYSTEM_BOARD_OWNER_ID` and
 // `BOARD_CONFIG_PRESENCE_SLUG_PREFIX` (graphql/resolvers/board-presence/shared.ts).
@@ -98,6 +102,28 @@ const HELP = `Re-file shared-feed ticks. Dry-run is the default; database writes
 
 const BATCH_SIZE = 500;
 type ScriptDb = ReturnType<typeof createScriptDb>['db'];
+
+/** Match saveTick's session rung: another user's session is valid, deleted walls are not. */
+export async function loadSharedFeedTicks(db: Pick<ScriptDb, 'select'>, feedIds: number[]): Promise<FeedTick[]> {
+  const ticks = await db
+    .select({
+      uuid: boardseshTicks.uuid,
+      userId: boardseshTicks.userId,
+      boardId: boardseshTicks.boardId,
+      sessionBoard: {
+        id: userBoards.id,
+        boardType: userBoards.boardType,
+        layoutId: userBoards.layoutId,
+        sizeId: userBoards.sizeId,
+        setIds: userBoards.setIds,
+      },
+    })
+    .from(boardseshTicks)
+    .leftJoin(boardSessions, eq(boardSessions.id, boardseshTicks.sessionId))
+    .leftJoin(userBoards, and(eq(userBoards.id, boardSessions.boardId), isNull(userBoards.deletedAt)))
+    .where(inArray(boardseshTicks.boardId, feedIds));
+  return ticks.map((tick) => ({ ...tick, boardId: Number(tick.boardId) }));
+}
 
 /** Both directions use one atomic transaction and guard every tick's current board. */
 export async function applyMoveBatches(
@@ -241,10 +267,7 @@ async function main() {
     const feedIds = feeds.map((feed) => Number(feed.id));
     console.log(`Found ${feeds.length} per-config shared feed boards`);
 
-    const ticks = await db
-      .select({ uuid: boardseshTicks.uuid, userId: boardseshTicks.userId, boardId: boardseshTicks.boardId })
-      .from(boardseshTicks)
-      .where(inArray(boardseshTicks.boardId, feedIds));
+    const ticks = await loadSharedFeedTicks(db, feedIds);
     console.log(`Found ${ticks.length} ticks filed on those feeds`);
 
     if (ticks.length === 0) {
@@ -284,7 +307,7 @@ async function main() {
         sizeId: Number(feed.sizeId),
         setIds: feed.setIds,
       })),
-      ticks: ticks.map((tick) => ({ uuid: tick.uuid, userId: tick.userId, boardId: Number(tick.boardId) })),
+      ticks,
       ownedBoards: ownedBoards.map((board) => ({
         id: Number(board.id),
         ownerId: board.ownerId,
@@ -297,7 +320,10 @@ async function main() {
     const entries: SnapshotEntry[] = plan.moves;
 
     console.log('');
-    console.log(`Move       ${entries.length} ticks across ${plan.movedUserIds.size} climbers onto their own board`);
+    console.log(`Move       ${entries.length} ticks across ${plan.movedUserIds.size} climbers onto resolved walls`);
+    console.log(
+      `Session    ${plan.sessionMoves} moves to session walls; ${plan.sessionRetained} already correctly on the feed`,
+    );
     console.log(
       `Ambiguous  ${plan.ambiguous} ticks from ${plan.ambiguousUserIds.size} climbers who own several boards of that config`,
     );
@@ -327,7 +353,7 @@ async function main() {
     const updated = await applyMoveBatches(db, entries, 'forward');
 
     console.log('');
-    console.log(`Re-filed ${updated} ticks onto their climber's own board.`);
+    console.log(`Re-filed ${updated} ticks onto their resolved walls.`);
   } finally {
     await close();
   }

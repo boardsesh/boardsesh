@@ -15,8 +15,16 @@ function ownedBoard(overrides: Partial<OwnedBoard> = {}): OwnedBoard {
   return { id: 770338, ownerId: CLIMBER, ...CONFIG, ...overrides };
 }
 
-function feedTick(uuid: string, overrides: { userId?: string; boardId?: number } = {}) {
-  return { uuid, userId: overrides.userId ?? CLIMBER, boardId: overrides.boardId ?? FEED.id };
+function feedTick(
+  uuid: string,
+  overrides: { userId?: string; boardId?: number; sessionBoard?: SharedFeedBoard | null } = {},
+) {
+  return {
+    uuid,
+    userId: overrides.userId ?? CLIMBER,
+    boardId: overrides.boardId ?? FEED.id,
+    sessionBoard: overrides.sessionBoard ?? null,
+  };
 }
 
 void test('moves a tick onto the one board its climber owns with that config', () => {
@@ -70,7 +78,7 @@ void test('leaves a tick on the feed when its climber owns no board of that conf
   assert.equal(plan.ambiguous, 0);
 });
 
-void test("never files a tick onto another climber's board", () => {
+void test("never infers another climber's board from ownership alone", () => {
   const plan = planSharedFeedTickMoves({
     feeds: [FEED],
     ticks: [feedTick('tick-1', { userId: 'climber-2' })],
@@ -124,4 +132,34 @@ void test('keeps mixed climbers and feed configurations independent while accumu
   assert.equal(plan.ambiguous, 1);
   assert.deepEqual([...plan.ambiguousUserIds], ['climber-2']);
   assert.equal(plan.noOwnedBoard, 1);
+});
+
+void test('session wall wins over the climber home wall and disambiguates multiple owned walls', () => {
+  const sessionBoard = { id: 990001, ...CONFIG, setIds: '27,26,25,24' };
+  for (const ownedBoards of [[], [ownedBoard()], [ownedBoard(), ownedBoard({ id: 770339 })]]) {
+    const plan = planSharedFeedTickMoves({ feeds: [FEED], ticks: [feedTick('party', { sessionBoard })], ownedBoards });
+    assert.deepEqual(plan.moves, [{ uuid: 'party', oldBoardId: FEED.id, newBoardId: sessionBoard.id }]);
+    assert.equal(plan.ambiguous, 0);
+    assert.equal(plan.noOwnedBoard, 0);
+  }
+});
+
+void test('a matching session already on the feed remains there despite an owned wall', () => {
+  const plan = planSharedFeedTickMoves({
+    feeds: [FEED],
+    ticks: [feedTick('feed-session', { sessionBoard: FEED })],
+    ownedBoards: [ownedBoard()],
+  });
+  assert.deepEqual(plan.moves, []);
+});
+
+void test('missing or config-mismatched session walls retain the unique-owned fallback', () => {
+  for (const sessionBoard of [null, { ...FEED, id: 990001, sizeId: 2 }, { ...FEED, id: 990001, setIds: '24,25' }]) {
+    const plan = planSharedFeedTickMoves({
+      feeds: [FEED],
+      ticks: [feedTick('fallback', { sessionBoard })],
+      ownedBoards: [ownedBoard()],
+    });
+    assert.deepEqual(plan.moves, [{ uuid: 'fallback', oldBoardId: FEED.id, newBoardId: 770338 }]);
+  }
 });

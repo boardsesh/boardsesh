@@ -15,7 +15,7 @@ export type BoardConfigRow = {
 
 export type SharedFeedBoard = BoardConfigRow & { id: number };
 export type OwnedBoard = BoardConfigRow & { id: number; ownerId: string };
-export type FeedTick = { uuid: string; userId: string; boardId: number };
+export type FeedTick = { uuid: string; userId: string; boardId: number; sessionBoard: SharedFeedBoard | null };
 
 export type PlannedMove = { uuid: string; oldBoardId: number; newBoardId: number };
 
@@ -23,6 +23,10 @@ export type MovePlan = {
   moves: PlannedMove[];
   /** Climbers with at least one moved tick. */
   movedUserIds: Set<string>;
+  /** Moves whose active, matching session wall resolved the destination. */
+  sessionMoves: number;
+  /** Ticks already on the active, matching board named by their session. */
+  sessionRetained: number;
   /** Ticks left alone because their climber owns several boards of that config. */
   ambiguous: number;
   ambiguousUserIds: Set<string>;
@@ -47,11 +51,10 @@ export function boardConfigKey(board: BoardConfigRow): string {
  * Which ticks can be moved off a per-config shared feed, and why the rest
  * cannot.
  *
- * A tick moves only when its climber owns EXACTLY ONE non-deleted board with
- * the feed's configuration. Two same-config boards is the #4174 "same wall at
- * home and at the gym" case and nothing in the row says which one the climber
- * was standing at; zero means the feed is where the tick belongs, and the fixed
- * code still files it there. Both are counted rather than guessed at.
+ * An active session wall with the feed's full configuration wins, even when
+ * another climber owns it. Otherwise require exactly one owned matching wall.
+ * Without a usable session, multiple same-config walls (#4174) are ambiguous;
+ * no owned match retains the feed. Neither fallback guesses a destination.
  */
 export function planSharedFeedTickMoves(input: {
   feeds: SharedFeedBoard[];
@@ -71,6 +74,8 @@ export function planSharedFeedTickMoves(input: {
   const plan: MovePlan = {
     moves: [],
     movedUserIds: new Set(),
+    sessionMoves: 0,
+    sessionRetained: 0,
     ambiguous: 0,
     ambiguousUserIds: new Set(),
     noOwnedBoard: 0,
@@ -81,6 +86,17 @@ export function planSharedFeedTickMoves(input: {
     // Not on a feed at all — the caller's query shouldn't return these, but a
     // tick that moved between the two reads must not be re-filed on a guess.
     if (!feedConfig) continue;
+
+    if (tick.sessionBoard && boardConfigKey(tick.sessionBoard) === feedConfig) {
+      if (tick.sessionBoard.id === tick.boardId) {
+        plan.sessionRetained += 1;
+      } else {
+        plan.sessionMoves += 1;
+        plan.movedUserIds.add(tick.userId);
+        plan.moves.push({ uuid: tick.uuid, oldBoardId: tick.boardId, newBoardId: tick.sessionBoard.id });
+      }
+      continue;
+    }
 
     const candidates = ownedByOwnerConfig.get(`${tick.userId}|${feedConfig}`) ?? [];
     if (candidates.length === 0) {

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { applyMoveBatches } from './backfill-shared-feed-tick-boards.js';
+import { applyMoveBatches, loadSharedFeedTicks } from './backfill-shared-feed-tick-boards.js';
+import { planSharedFeedTickMoves } from './backfill-shared-feed-tick-boards-helpers.js';
 
 // Explicit opt-in only. Temporary tables shadow production names on this one
 // connection; all fixture writes roll back and no existing rows are touched.
@@ -10,7 +11,7 @@ const databaseUrl = process.env.SHARED_FEED_TICK_TEST_DB_URL;
 const rollbackMarker = new Error('rollback temporary shared-feed fixture');
 
 async function withFixture(
-  run: (db: Pick<ReturnType<typeof createScriptDb>['db'], 'transaction' | 'execute'>) => Promise<void>,
+  run: (db: Pick<ReturnType<typeof createScriptDb>['db'], 'transaction' | 'execute' | 'select'>) => Promise<void>,
 ) {
   assert.ok(databaseUrl);
   assert.ok(
@@ -26,6 +27,7 @@ async function withFixture(
           uuid text PRIMARY KEY,
           user_id text NOT NULL,
           board_id bigint NOT NULL CHECK (board_id <> 999),
+          session_id text,
           updated_at timestamptz NOT NULL DEFAULT '2020-01-01'
         ) ON COMMIT DROP
       `);
@@ -120,3 +122,73 @@ void test('a later batch failure rolls back all earlier batches', { skip: !datab
     assert.deepEqual(Array.from(unchanged), [{ unchanged: 501 }]);
   });
 });
+
+void test(
+  'actual session loader and repair preserve another climber session wall before owned-board fallback',
+  { skip: !databaseUrl },
+  async () => {
+    await withFixture(async (db) => {
+      await db.execute(sql`CREATE TEMP TABLE user_boards (
+      id bigint PRIMARY KEY, owner_id text NOT NULL, board_type text NOT NULL,
+      layout_id integer NOT NULL, size_id integer NOT NULL, set_ids text NOT NULL, deleted_at timestamptz
+    ) ON COMMIT DROP`);
+      await db.execute(
+        sql`CREATE TEMP TABLE board_sessions (id text PRIMARY KEY, board_id bigint, created_by_user_id text) ON COMMIT DROP`,
+      );
+      await db.execute(sql`INSERT INTO user_boards VALUES
+      (10, 'system', 'moonboard', 6, 1, '24,25', NULL),
+      (20, 'climber', 'moonboard', 6, 1, '24,25', NULL),
+      (30, 'party-host', 'moonboard', 6, 1, '25,24', NULL),
+      (31, 'party-host', 'moonboard', 6, 2, '24,25', NULL),
+      (32, 'party-host', 'moonboard', 6, 1, '24,25', '2026-01-01')`);
+      await db.execute(sql`INSERT INTO board_sessions VALUES
+      ('party', 30, 'party-host'), ('wrong-config', 31, 'party-host'), ('deleted-wall', 32, 'party-host'),
+      ('feed-session', 10, 'party-host'), ('no-wall', NULL, 'party-host')`);
+      await db.execute(sql`INSERT INTO boardsesh_ticks (uuid, user_id, board_id, session_id) VALUES
+      ('party-home', 'climber', 10, 'party'), ('party-no-home', 'visitor', 10, 'party'),
+      ('party-ambiguous', 'two-walls', 10, 'party'), ('no-session', 'climber', 10, NULL),
+      ('mismatch', 'climber', 10, 'wrong-config'), ('deleted', 'climber', 10, 'deleted-wall'),
+      ('already-session-feed', 'climber', 10, 'feed-session'), ('missing-session', 'climber', 10, 'missing'),
+      ('no-session-wall', 'climber', 10, 'no-wall'), ('not-on-feed', 'climber', 20, 'party')`);
+      const ticks = await loadSharedFeedTicks(db, [10]);
+      assert.equal(ticks.length, 9);
+      assert.equal(ticks.find((tick) => tick.uuid === 'party-home')?.sessionBoard?.id, 30);
+      assert.equal(ticks.find((tick) => tick.uuid === 'deleted')?.sessionBoard, null);
+      assert.equal(ticks.find((tick) => tick.uuid === 'missing-session')?.sessionBoard, null);
+      assert.equal(ticks.find((tick) => tick.uuid === 'no-session-wall')?.sessionBoard, null);
+      const config = { boardType: 'moonboard', layoutId: 6, sizeId: 1, setIds: '24,25' };
+      const plan = planSharedFeedTickMoves({
+        feeds: [{ id: 10, ...config }],
+        ticks,
+        ownedBoards: [
+          { id: 20, ownerId: 'climber', ...config },
+          { id: 40, ownerId: 'two-walls', ...config },
+          { id: 41, ownerId: 'two-walls', ...config },
+        ],
+      });
+      assert.equal(plan.sessionMoves, 3);
+      assert.equal(plan.sessionRetained, 1);
+      assert.equal(await applyMoveBatches(db, plan.moves, 'forward'), 8);
+      const rows = Array.from(
+        await db.execute(sql`SELECT uuid, user_id, board_id::integer, session_id FROM boardsesh_ticks ORDER BY uuid`),
+      );
+      assert.deepEqual(rows, [
+        { uuid: 'already-session-feed', user_id: 'climber', board_id: 10, session_id: 'feed-session' },
+        { uuid: 'deleted', user_id: 'climber', board_id: 20, session_id: 'deleted-wall' },
+        { uuid: 'mismatch', user_id: 'climber', board_id: 20, session_id: 'wrong-config' },
+        { uuid: 'missing-session', user_id: 'climber', board_id: 20, session_id: 'missing' },
+        { uuid: 'no-session', user_id: 'climber', board_id: 20, session_id: null },
+        { uuid: 'no-session-wall', user_id: 'climber', board_id: 20, session_id: 'no-wall' },
+        { uuid: 'not-on-feed', user_id: 'climber', board_id: 20, session_id: 'party' },
+        { uuid: 'party-ambiguous', user_id: 'two-walls', board_id: 30, session_id: 'party' },
+        { uuid: 'party-home', user_id: 'climber', board_id: 30, session_id: 'party' },
+        { uuid: 'party-no-home', user_id: 'visitor', board_id: 30, session_id: 'party' },
+      ]);
+      assert.equal(await applyMoveBatches(db, plan.moves, 'revert'), 8);
+      const restored = Array.from(
+        await db.execute(sql`SELECT count(*)::integer AS restored FROM boardsesh_ticks WHERE board_id = 10`),
+      );
+      assert.deepEqual(restored, [{ restored: 9 }]);
+    });
+  },
+);
