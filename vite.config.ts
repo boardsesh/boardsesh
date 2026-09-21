@@ -434,6 +434,12 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:backfill-clamped-send-attempts',
         cache: false,
       },
+      // Re-files historical ticks from per-config shared feeds. Dry-run by
+      // default; the operator must pass `-- --apply` after reviewing a plan.
+      'db:backfill-shared-feed-tick-boards': {
+        command: 'pnpm --filter @boardsesh/db run db:backfill-shared-feed-tick-boards',
+        cache: false,
+      },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct workspace-binary invocation; no remote package runner.

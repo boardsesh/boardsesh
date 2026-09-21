@@ -2,17 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { applyMoveBatches, loadSharedFeedTicks } from './backfill-shared-feed-tick-boards.js';
+import {
+  applyForwardMoveBatches,
+  applyRevertMoveBatches,
+  loadSharedFeedTicks,
+} from './backfill-shared-feed-tick-boards.js';
 import { planSharedFeedTickMoves } from './backfill-shared-feed-tick-boards-helpers.js';
 
 // Local runs opt in; CI runs these in test-backend against its disposable service.
-// Temporary tables shadow existing names on this one connection; all fixture
-// writes roll back and no existing rows are touched.
+// Temporary tables shadow existing names on this one connection and disappear
+// when it closes, so no existing rows are touched.
 const databaseUrl = process.env.SHARED_FEED_TICK_TEST_DB_URL;
 if (process.env.CI) {
   assert.ok(databaseUrl, 'CI requires SHARED_FEED_TICK_TEST_DB_URL; integration coverage must not be skipped.');
 }
-const rollbackMarker = new Error('rollback temporary shared-feed fixture');
+const sharedFeedOwnerId = '00000000-0000-0000-0000-000000000000';
 
 async function withFixture(
   run: (db: Pick<ReturnType<typeof createScriptDb>['db'], 'transaction' | 'execute' | 'select'>) => Promise<void>,
@@ -24,39 +28,153 @@ async function withFixture(
   );
   const { db, close } = createScriptDb(databaseUrl);
   try {
-    await assert.rejects(
-      db.transaction(async (transaction) => {
-        await transaction.execute(sql`
+    await db.execute(sql`
         CREATE TEMP TABLE boardsesh_ticks (
           uuid text PRIMARY KEY,
           user_id text NOT NULL,
           board_id bigint NOT NULL CHECK (board_id <> 999),
           session_id text,
           updated_at timestamptz NOT NULL DEFAULT '2020-01-01'
-        ) ON COMMIT DROP
+        ) ON COMMIT PRESERVE ROWS
       `);
-        await transaction.execute(
-          sql`CREATE TEMP TABLE update_batches (id integer GENERATED ALWAYS AS IDENTITY, touched integer) ON COMMIT DROP`,
-        );
-        await transaction.execute(sql`
+    await db.execute(
+      sql`CREATE TEMP TABLE update_batches (id integer GENERATED ALWAYS AS IDENTITY, touched integer) ON COMMIT PRESERVE ROWS`,
+    );
+    await db.execute(sql`CREATE TEMP TABLE user_boards (
+      id bigint PRIMARY KEY, owner_id text NOT NULL, board_type text NOT NULL,
+      layout_id integer NOT NULL, size_id integer NOT NULL, set_ids text NOT NULL,
+      slug text NOT NULL DEFAULT '', deleted_at timestamptz
+    ) ON COMMIT PRESERVE ROWS`);
+    await db.execute(
+      sql`CREATE TEMP TABLE board_sessions (id text PRIMARY KEY, board_id bigint, created_by_user_id text) ON COMMIT PRESERVE ROWS`,
+    );
+    await db.execute(sql`
           CREATE FUNCTION pg_temp.record_tick_batch() RETURNS trigger LANGUAGE plpgsql AS $$
           BEGIN
             INSERT INTO update_batches (touched) SELECT count(*) FROM batch_ticks;
             RETURN NULL;
           END $$
         `);
-        await transaction.execute(sql`
+    await db.execute(sql`
           CREATE TRIGGER record_tick_batch AFTER UPDATE ON boardsesh_ticks
           REFERENCING NEW TABLE AS batch_ticks FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.record_tick_batch()
         `);
-        await run(transaction);
-        throw rollbackMarker;
-      }),
-      (error: unknown) => error === rollbackMarker,
-    );
+    await run(db);
   } finally {
     await close();
   }
+}
+
+type FixtureDb = Pick<ReturnType<typeof createScriptDb>['db'], 'transaction' | 'execute' | 'select'>;
+const matchingConfig = { boardType: 'moonboard', layoutId: 6, sizeId: 1, setIds: '24,25' };
+
+function forwardPlan(entries: { uuid: string; oldBoardId: number; newBoardId: number }[]) {
+  return { feeds: [{ id: 10, ...matchingConfig }], entries };
+}
+
+function errorChainIncludes(error: unknown, message: string): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if (current.message.includes(message)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+async function createForwardPlan(db: FixtureDb, sessionId: string | null = null) {
+  await db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug) VALUES
+    (10, ${sharedFeedOwnerId}, 'moonboard', 6, 1, '24,25', 'presence-moonboard-6-1-24-25'),
+    (20, 'climber', 'moonboard', 6, 1, '25,24', 'climber-wall'),
+    (30, 'party-host', 'moonboard', 6, 1, '24,25', 'party-wall')`);
+  if (sessionId) {
+    await db.execute(
+      sql`INSERT INTO board_sessions (id, board_id, created_by_user_id) VALUES (${sessionId}, 20, 'climber')`,
+    );
+  }
+  await db.execute(
+    sql`INSERT INTO boardsesh_ticks (uuid, user_id, board_id, session_id) VALUES ('planned-tick', 'climber', 10, ${sessionId})`,
+  );
+  const ticks = await loadSharedFeedTicks(db, [10]);
+  const plan = planSharedFeedTickMoves({
+    feeds: [{ id: 10, ...matchingConfig }],
+    ticks,
+    ownedBoards: [{ id: 20, ownerId: 'climber', ...matchingConfig }],
+  });
+  assert.deepEqual(plan.moves, [{ uuid: 'planned-tick', oldBoardId: 10, newBoardId: 20 }]);
+  return { feeds: [{ id: 10, ...matchingConfig }], entries: plan.moves };
+}
+
+void test('forward apply revalidates the original destination before updating', { skip: !databaseUrl }, async () => {
+  await withFixture(async (db) => {
+    const forwardPlan = await createForwardPlan(db);
+    assert.equal(await applyForwardMoveBatches(db, forwardPlan), 1);
+    assert.deepEqual(Array.from(await db.execute(sql`SELECT board_id::integer FROM boardsesh_ticks`)), [
+      { board_id: 20 },
+    ]);
+  });
+});
+
+void test(
+  'forward apply skips a tick re-filed after planning without choosing another destination',
+  { skip: !databaseUrl },
+  async () => {
+    await withFixture(async (db) => {
+      const forwardPlan = await createForwardPlan(db);
+      await db.execute(sql`UPDATE boardsesh_ticks SET board_id = 99 WHERE uuid = 'planned-tick'`);
+      assert.equal(await applyForwardMoveBatches(db, forwardPlan), 0);
+      assert.deepEqual(Array.from(await db.execute(sql`SELECT board_id::integer FROM boardsesh_ticks`)), [
+        { board_id: 99 },
+      ]);
+    });
+  },
+);
+
+for (const staleCase of [
+  {
+    name: 'source feed reconfiguration',
+    change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET size_id = 2 WHERE id = 10`),
+  },
+  {
+    name: 'destination deletion',
+    change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET deleted_at = '2026-09-21' WHERE id = 20`),
+  },
+  {
+    name: 'destination reconfiguration',
+    change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET size_id = 2 WHERE id = 20`),
+  },
+  {
+    name: 'destination owner change',
+    change: (db: FixtureDb) => db.execute(sql`UPDATE user_boards SET owner_id = 'other-climber' WHERE id = 20`),
+  },
+  {
+    name: 'second matching owned board',
+    change: (db: FixtureDb) =>
+      db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug)
+        VALUES (21, 'climber', 'moonboard', 6, 1, '24,25', 'another-climber-wall')`),
+  },
+  {
+    name: 'session destination change',
+    change: async (db: FixtureDb) => {
+      await db.execute(sql`UPDATE board_sessions SET board_id = 30 WHERE id = 'active-session'`);
+    },
+    sessionId: 'active-session',
+  },
+]) {
+  void test(`forward apply aborts all writes after ${staleCase.name}`, { skip: !databaseUrl }, async () => {
+    await withFixture(async (db) => {
+      const forwardPlan = await createForwardPlan(db, staleCase.sessionId);
+      await db.execute(
+        sql`INSERT INTO boardsesh_ticks (uuid, user_id, board_id) VALUES ('other-planned-tick', 'climber', 10)`,
+      );
+      forwardPlan.entries.push({ uuid: 'other-planned-tick', oldBoardId: 10, newBoardId: 20 });
+      await staleCase.change(db);
+      await assert.rejects(applyForwardMoveBatches(db, forwardPlan), /Forward plan is stale/);
+      assert.deepEqual(Array.from(await db.execute(sql`SELECT board_id::integer FROM boardsesh_ticks ORDER BY uuid`)), [
+        { board_id: 10 },
+        { board_id: 10 },
+      ]);
+    });
+  });
 }
 
 void test(
@@ -64,9 +182,12 @@ void test(
   { skip: !databaseUrl },
   async () => {
     await withFixture(async (db) => {
+      await db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug) VALUES
+        (10, ${sharedFeedOwnerId}, 'moonboard', 6, 1, '24,25', 'presence-moonboard-6-1-24-25'),
+        (20, 'owner', 'moonboard', 6, 1, '24,25', 'owner-wall')`);
       await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_id)
-      SELECT 'tick-' || sequence, 'owner-' || (sequence % 2), 10 FROM generate_series(0, 1000) sequence
+      SELECT 'tick-' || sequence, 'owner', 10 FROM generate_series(0, 1000) sequence
     `);
       const moves = Array.from({ length: 1001 }, (_, index) => ({
         uuid: `tick-${index}`,
@@ -76,15 +197,15 @@ void test(
       // A concurrent re-file after planning must survive the forward update.
       await db.execute(sql`UPDATE boardsesh_ticks SET board_id = 30 WHERE uuid = 'tick-1000'`);
       await db.execute(sql`TRUNCATE update_batches`);
-      assert.equal(await applyMoveBatches(db, moves, 'forward'), 1000);
+      assert.equal(await applyForwardMoveBatches(db, forwardPlan(moves)), 1000);
       const forwardBatches = await db.execute(sql`SELECT touched FROM update_batches ORDER BY id`);
-      assert.deepEqual(Array.from(forwardBatches), [{ touched: 500 }, { touched: 500 }, { touched: 0 }]);
+      assert.deepEqual(Array.from(forwardBatches), [{ touched: 500 }, { touched: 500 }]);
       const state = await db.execute(sql`
       SELECT count(*) FILTER (WHERE board_id = 20)::int AS moved,
         count(*) FILTER (WHERE board_id = 20 AND updated_at > '2020-01-01')::int AS stamped,
         count(DISTINCT updated_at) FILTER (WHERE board_id = 20)::int AS timestamps,
         count(*) FILTER (WHERE uuid = 'tick-1000' AND board_id = 30 AND updated_at = '2020-01-01')::int AS untouched,
-        count(*) FILTER (WHERE user_id <> 'owner-' || (replace(uuid, 'tick-', '')::int % 2))::int AS owner_changes
+        count(*) FILTER (WHERE user_id <> 'owner')::int AS owner_changes
       FROM boardsesh_ticks
     `);
       assert.deepEqual(Array.from(state), [
@@ -93,10 +214,10 @@ void test(
       // A later edit must also survive reversal. Reverting twice is harmless.
       await db.execute(sql`UPDATE boardsesh_ticks SET board_id = 40 WHERE uuid = 'tick-0'`);
       await db.execute(sql`TRUNCATE update_batches`);
-      assert.equal(await applyMoveBatches(db, moves, 'revert'), 999);
+      assert.equal(await applyRevertMoveBatches(db, moves), 999);
       const reverseBatches = await db.execute(sql`SELECT touched FROM update_batches ORDER BY id`);
       assert.deepEqual(Array.from(reverseBatches), [{ touched: 499 }, { touched: 500 }, { touched: 0 }]);
-      assert.equal(await applyMoveBatches(db, moves, 'revert'), 0);
+      assert.equal(await applyRevertMoveBatches(db, moves), 0);
       const restored = await db.execute(sql`
       SELECT count(*) FILTER (WHERE board_id = 10)::int AS restored,
         count(DISTINCT updated_at) FILTER (WHERE board_id = 10)::int AS timestamps,
@@ -108,43 +229,58 @@ void test(
   },
 );
 
-void test('a later batch failure rolls back all earlier batches', { skip: !databaseUrl }, async () => {
-  await withFixture(async (db) => {
-    await db.execute(sql`
+void test(
+  'guarded forward apply rolls back an earlier batch after a later batch fails',
+  { skip: !databaseUrl },
+  async () => {
+    await withFixture(async (db) => {
+      await db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug) VALUES
+      (10, ${sharedFeedOwnerId}, 'moonboard', 6, 1, '24,25', 'presence-moonboard-6-1-24-25'),
+      (20, 'owner', 'moonboard', 6, 1, '24,25', 'owner-wall')`);
+      await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, board_id)
       SELECT 'tick-' || sequence, 'owner', 10 FROM generate_series(0, 500) sequence
     `);
-    const moves = Array.from({ length: 501 }, (_, index) => ({
-      uuid: `tick-${index}`,
-      oldBoardId: 10,
-      newBoardId: index === 500 ? 999 : 20,
-    }));
-    await assert.rejects(applyMoveBatches(db, moves, 'forward'));
-    const unchanged = await db.execute(sql`
+      const moves = Array.from({ length: 501 }, (_, index) => ({
+        uuid: `tick-${index}`,
+        oldBoardId: 10,
+        newBoardId: 20,
+      }));
+      await db.execute(sql`
+      CREATE FUNCTION pg_temp.fail_late_tick_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM batch_ticks WHERE uuid = 'tick-500') THEN
+          RAISE EXCEPTION 'late batch failure';
+        END IF;
+        RETURN NULL;
+      END $$
+    `);
+      await db.execute(sql`
+      CREATE TRIGGER fail_late_tick_batch AFTER UPDATE ON boardsesh_ticks
+      REFERENCING NEW TABLE AS batch_ticks FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.fail_late_tick_batch()
+    `);
+      await assert.rejects(applyForwardMoveBatches(db, forwardPlan(moves)), (error: unknown) =>
+        errorChainIncludes(error, 'late batch failure'),
+      );
+      const unchanged = await db.execute(sql`
       SELECT count(*)::int AS unchanged FROM boardsesh_ticks WHERE board_id = 10 AND updated_at = '2020-01-01'
     `);
-    assert.deepEqual(Array.from(unchanged), [{ unchanged: 501 }]);
-  });
-});
+      assert.deepEqual(Array.from(unchanged), [{ unchanged: 501 }]);
+    });
+  },
+);
 
 void test(
   'actual session loader and repair preserve another climber session wall before owned-board fallback',
   { skip: !databaseUrl },
   async () => {
     await withFixture(async (db) => {
-      await db.execute(sql`CREATE TEMP TABLE user_boards (
-      id bigint PRIMARY KEY, owner_id text NOT NULL, board_type text NOT NULL,
-      layout_id integer NOT NULL, size_id integer NOT NULL, set_ids text NOT NULL, deleted_at timestamptz
-    ) ON COMMIT DROP`);
-      await db.execute(
-        sql`CREATE TEMP TABLE board_sessions (id text PRIMARY KEY, board_id bigint, created_by_user_id text) ON COMMIT DROP`,
-      );
-      await db.execute(sql`INSERT INTO user_boards VALUES
-      (10, 'system', 'moonboard', 6, 1, '24,25', NULL),
-      (20, 'climber', 'moonboard', 6, 1, '24,25', NULL),
-      (30, 'party-host', 'moonboard', 6, 1, '25,24', NULL),
-      (31, 'party-host', 'moonboard', 6, 2, '24,25', NULL),
-      (32, 'party-host', 'moonboard', 6, 1, '24,25', '2026-01-01')`);
+      await db.execute(sql`INSERT INTO user_boards (id, owner_id, board_type, layout_id, size_id, set_ids, slug, deleted_at) VALUES
+      (10, ${sharedFeedOwnerId}, 'moonboard', 6, 1, '24,25', 'presence-moonboard-6-1-24-25', NULL),
+      (20, 'climber', 'moonboard', 6, 1, '24,25', 'climber-wall', NULL),
+      (30, 'party-host', 'moonboard', 6, 1, '25,24', 'party-wall', NULL),
+      (31, 'party-host', 'moonboard', 6, 2, '24,25', 'wrong-config-wall', NULL),
+      (32, 'party-host', 'moonboard', 6, 1, '24,25', 'deleted-wall', '2026-01-01')`);
       await db.execute(sql`INSERT INTO board_sessions VALUES
       ('party', 30, 'party-host'), ('wrong-config', 31, 'party-host'), ('deleted-wall', 32, 'party-host'),
       ('feed-session', 10, 'party-host'), ('no-wall', NULL, 'party-host')`);
@@ -172,7 +308,7 @@ void test(
       });
       assert.equal(plan.sessionMoves, 3);
       assert.equal(plan.sessionRetained, 1);
-      assert.equal(await applyMoveBatches(db, plan.moves, 'forward'), 8);
+      assert.equal(await applyForwardMoveBatches(db, forwardPlan(plan.moves)), 8);
       const rows = Array.from(
         await db.execute(sql`SELECT uuid, user_id, board_id::integer, session_id FROM boardsesh_ticks ORDER BY uuid`),
       );
@@ -188,7 +324,7 @@ void test(
         { uuid: 'party-home', user_id: 'climber', board_id: 30, session_id: 'party' },
         { uuid: 'party-no-home', user_id: 'visitor', board_id: 30, session_id: 'party' },
       ]);
-      assert.equal(await applyMoveBatches(db, plan.moves, 'revert'), 8);
+      assert.equal(await applyRevertMoveBatches(db, plan.moves), 8);
       const restored = Array.from(
         await db.execute(sql`SELECT count(*)::integer AS restored FROM boardsesh_ticks WHERE board_id = 10`),
       );
