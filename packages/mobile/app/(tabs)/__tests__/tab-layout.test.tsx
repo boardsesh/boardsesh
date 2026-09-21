@@ -202,9 +202,9 @@ vi.mock('expo-keep-awake', () => ({
 
 vi.mock('expo-router/unstable-native-tabs', () => {
   const Trigger = Object.assign(
-    ({ name, hidden, children }: { name: string; hidden?: boolean; children?: ReactNode }) =>
+    ({ name, hidden, role, children }: { name: string; hidden?: boolean; role?: string; children?: ReactNode }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
-      hidden ? null : createElement('section', { 'data-trigger': name }, children),
+      hidden ? null : createElement('section', { 'data-trigger': name, 'data-tab-role': role }, children),
     {
       Icon: () => createElement('span', { 'data-icon': 'true' }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -281,8 +281,8 @@ describe('TabLayout', () => {
     keepAwake.deactivate.mockClear();
   });
 
-  it('lands on the home tab by default', () => {
-    expect(unstable_settings.initialRouteName).toBe('home');
+  it('selects Climbs by default without changing the tab order', () => {
+    expect(unstable_settings.initialRouteName).toBe('climbs');
   });
 
   it('renders Home as the leftmost native tab', () => {
@@ -292,6 +292,13 @@ describe('TabLayout', () => {
     );
 
     expect(triggerNames).toEqual(['home', 'climbs', 'record', 'discover', 'profile']);
+  });
+
+  it('keeps Climbs in the native search role when it is the initial tab', () => {
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe('search');
+    expect(container.querySelectorAll('[data-tab-role="search"]')).toHaveLength(1);
   });
 
   it('registers Home as the leftmost material tab', () => {

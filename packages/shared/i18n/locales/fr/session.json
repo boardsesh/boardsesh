@@ -470,7 +470,7 @@
       "renameNotAllowed": "Seul le créateur de la session peut la renommer.",
       "editTitleAria": "Modifier le nom de la session",
       "minimize": "Réduire la session",
-      "recordTab": "Enregistrer",
+      "recordTab": "Session",
       "returnToSession": "Retour à la session",
       "preBoardLabel": "Mur",
       "preGeneratorLabel": "Entraînement",
@@ -514,7 +514,6 @@
       "preGeneratorTuning": "Réglages",
       "preStart": "Démarrer",
       "preStarting": "Démarrage…",
-      "preNoBoard": "Choisis un mur pour démarrer",
       "preStartError": "Impossible de démarrer la session. Réessaie.",
       "preWorkoutPreviewTitle": "Aperçu de la séance",
       "preWorkoutPreviewGenerating": "Création de ta séance…",
@@ -554,7 +553,11 @@
       "inviteCopied": "Lien copié",
       "inviteShare": "Partager",
       "inStatsHardestEach": "Croix les plus dures",
-      "inviteAction": "Inviter"
+      "inviteAction": "Inviter",
+      "browseClimbs": "Parcourir les blocs",
+      "changeBoard": "Changer de board",
+      "chooseBoard": "Choisir une board",
+      "noBoardSelected": "Aucune board sélectionnée"
     }
   },
   "playView": {

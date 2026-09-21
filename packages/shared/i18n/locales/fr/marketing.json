@@ -35,7 +35,7 @@
     },
     "helpSessions": {
       "title": "Lance ou rejoins une session en direct et partage une seule file",
-      "description": "Lance une session depuis l'onglet Enregistrer, invite ta crew par QR code ou par lien, et partage une file et une board sans allumer les blocs des autres."
+      "description": "Lance une session depuis l'onglet Session, invite ta crew par QR code ou par lien, et partage une file et une board sans allumer les blocs des autres."
     },
     "helpFindingClimbs": {
       "title": "Filtre les blocs par prise, zone du mur et ouvreur",
@@ -486,8 +486,8 @@
       },
       "start": {
         "title": "Lancer une session",
-        "intro": "Chaque session part de l'onglet Enregistrer.",
-        "step1": "Ouvre l'onglet Enregistrer. Vérifie la board en haut.",
+        "intro": "Chaque session part de l'onglet Session.",
+        "step1": "Ouvre l'onglet Session. Vérifie la board en haut.",
         "step2": "Afficher cette session en direct laisse ta crew la voir et la rejoindre. Désactivé, seul ton lien d'invitation marche.",
         "step3": "Touche Démarrer, puis Inviter des grimpeurs pour un QR code, Copier le lien et Partager.",
         "shotAlt": "Une session en direct",

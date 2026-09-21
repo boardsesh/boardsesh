@@ -385,6 +385,10 @@
       "offlineCatalogQueued": {
         "title": "Steht in der Warteschlange",
         "subtitle": "{{name}} lädt, sobald du wieder online bist, danach tauchen die Boulder in der Suche auf."
+      },
+      "boardRestoreFailed": {
+        "title": "Dein Board konnte nicht wiederhergestellt werden",
+        "description": "Versuch es erneut, um zu deinen Bouldern zurückzukehren."
       }
     },
     "detail": {

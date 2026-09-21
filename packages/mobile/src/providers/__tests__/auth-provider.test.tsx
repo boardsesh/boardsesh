@@ -2442,7 +2442,7 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
 
     renderGate();
 
-    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(redirectMock).not.toHaveBeenCalledWith(next);
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
   });

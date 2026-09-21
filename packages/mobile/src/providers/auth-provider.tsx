@@ -35,6 +35,7 @@ import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
+import { getAppEntryHref } from '../lib/app-entry-route';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
@@ -1081,7 +1082,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href="/auth/session-unavailable" />;
   }
   if (!isSessionUnavailable && inSessionUnavailableRoute) {
-    return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/auth/login'} />;
+    return <Redirect href={isAuthenticated ? getAppEntryHref() : '/auth/login'} />;
   }
 
   // Web only: the canonical board URLs the Next front door links into render for
@@ -1096,7 +1097,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {
-    return <Redirect href={readPostLoginReturnHref() ?? '/(tabs)/home'} />;
+    return <Redirect href={readPostLoginReturnHref() ?? getAppEntryHref()} />;
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

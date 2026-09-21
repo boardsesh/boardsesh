@@ -108,6 +108,9 @@ export function useActiveBoard() {
   return useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
     queryFn: () => getStoredActiveBoard(),
+    // This read and its bounded retries only touch local storage. A transient
+    // disk failure must still recover when the phone has no connection.
+    networkMode: 'always',
     // The stored board is authoritative until the user explicitly switches
     // (which calls setActiveBoard and updates the cache directly), so there's
     // no value in background refetching here.

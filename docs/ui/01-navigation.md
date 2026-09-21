@@ -45,34 +45,48 @@ There are **5 tabs** (the web has a 6th "Create" tab but it is between Discover 
 - **Create tab**: Same fallback logic as Climbs tab but navigates to the `/create` variant of the URL. Opens Board Selector Drawer with `isCreateClimbFlow=true` when no board context.
 - **You tab**: If `sessionStatus !== 'loading'` and user is not authenticated, prevents navigation and opens auth modal with title `bottomTabBar.youSignInTitle` and description `bottomTabBar.youSignInDescription`. On auth success, navigates to `/you`.
 
-#### Mobile: dual tab bar variants
+#### Mobile: library entry and tab variants
 
-The mobile tab bar has two distinct implementations chosen by the active UI variant (set in the More tab under "UI Style"):
+The mobile tabs remain **Home, Climbs, Session, Discover, You**, in that order.
+Session keeps the `/record` route; only its visible navigation label changes.
+An ordinary launch and untargeted post-login entry select **Climbs**, using the
+stored active board. Selecting the initial tab does not reorder the bar. Explicit
+deep links, session joins and warm resumes retain their own destinations.
+Screenshot mode intentionally starts on Home to preserve the capture readiness contract.
 
-**Liquid Glass variant** (default on iOS 26+):
+- **Native iPhone:** Liquid Glass on iOS 26 uses `NativeTabs`. Climbs retains
+  `role="search"` and its native bottom search field. The queue accessory,
+  session/connection badge and scroll minimization retain their current behavior.
+- **Other phones:** Material and older-iOS Liquid Glass use JS `Tabs` with
+  `MaterialTabBar`. Tablet sidebars retain their existing order and panes.
+- **Session setup:** Browse climbs opens the selected board's library
+  directly, without rewriting the board selection.
+  Change board is a separate action; its picker returns to Session. First-time
+  board selection still finishes on Climbs. Start opens Climbs after creating the
+  session and appending any generated workout; a failed start stays on Session.
+  The board card uses separate full-width Browse climbs and Change board rows;
+  a small selected-board thumbnail leads Browse climbs and board details wrap
+  beneath its label. Both rows disappear once the session is running; the Climbs
+  tab remains available. During Start, the setup form remains
+  visible and Start stays disabled until the native tab leaves Session, so live
+  settings never flash during the handoff. Switching tabs manually while creation
+  is pending cancels the automatic redirect, while session and queue creation finish.
+- **Restoring a board:** local disk reads and bounded retries run independently
+  of internet connectivity. Pending reads show loading; failed reads offer Retry.
+  Only a successful read returning no board permits setup or a Choose board prompt.
+  Existing saved-board and account-isolation rules remain in force. Filters keep
+  their existing persistence; scroll position is retained within the running app,
+  not restored across process restarts.
 
-- Uses `expo-router/unstable-native-tabs` `NativeTabs` — a native UIKit tab bar.
-- 5 tabs: Boards, Climbs, Record, Discover, Profile.
-- Tab icons: SF Symbols (`sf=`) on iOS, Material Design strings (`md=`) on Android.
-- Record tab shows a `NativeTabs.Trigger.Badge` with `brandColors.success` background when a board is Bluetooth-connected or a session is live.
-- `QueueBottomAccessory` mounts as a `NativeTabs.BottomAccessory` platter (current climb + tick) — this native accessory is Liquid Glass–only.
-- `minimizeBehavior="onScrollDown"` hides the bar while scrolling the climbs list (requires the `react-native-screens` patch at `patches/react-native-screens@4.25.2.patch`).
-
-**Material variant**:
-
-- Uses Expo Router `<Tabs>` with a custom JS tab bar (`MaterialTabBar`, `packages/mobile/src/components/navigation/MaterialTabBar.tsx`).
-- Same 5 tabs as the Liquid Glass variant.
-- Tab icons: `MaterialCommunityIcons` (active/inactive glyph pairs, e.g. `view-dashboard` / `view-dashboard-outline`).
-- Record tab shows a badge dot (`tabBarBadge`) styled with `brandColors.success` when the same conditions apply.
-- The climb/tick chrome uses `PersistentQueueBar` as a docked opaque active-context bar above the tab bar instead of the native `BottomAccessory`.
-- Opaque elevated surface with an M3 tonal active-indicator pill behind the focused icon.
-
-`_layout.tsx` reads `variant` directly from `useTheme()` (the stored UI-variant preference) and renders the appropriate navigator. `useEffectiveSurfaceMode()` is a separate hook used by surface-rendering components such as `GlassSurface` to apply the a11y (`reduceTransparency`) overlay on top of the stored preference.
-
-**Mobile tab set differs from the web table above:** The 5 mobile tabs are Boards, Climbs, Record, Discover, Profile. Climbs is the default route (`unstable_settings.initialRouteName = 'climbs'`); there is no separate "Create" or "Feed" tab.
-
-- **Board selection is a full-screen modal** (`app/boards/`), not the web's `BoardSelectorDrawer`. The board pill in the Climbs / Discover top chrome opens it (`/boards`).
-- **No board context shows a CTA, not a selector.** On a cold start with no active board the Climbs list renders a "select a board" prompt rather than auto-opening a drawer; tapping it routes to the `/boards` modal.
+The picker emits `Board Picker Opened` once after the active-board read settles
+and `Board Picker Selection Completed` after an existing-board selection is
+persisted. `sameBoard` compares UUIDs; `sameConfig` compares board type, layout,
+size and hold sets. A failed restoration records unknown (`null`) rather than
+claiming there was no board. `source` distinguishes onboarding, explicit Session
+returns, and other picker entries; `returnTo` records the destination. Creation
+flows retain their existing creation/activation events. Screen-event deduplication
+is unchanged, so these events diagnose reselection without restoring a per-screen
+navigation stream. They do not establish a retrospective before/after baseline.
 
 ### Header Patterns
 
