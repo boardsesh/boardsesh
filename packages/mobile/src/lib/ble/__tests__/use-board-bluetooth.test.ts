@@ -4461,17 +4461,24 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     mockAppState.currentState = 'inactive';
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
     await act(async () => {
-      void result.current.connect();
+      connectPromise = result.current.connect();
       await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
     });
 
     expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: false });
     expect(result.current.loading).toBe(true);
 
+    // The climber can still close the sheet from `inactive`, and that ends the
+    // connect the same quiet way.
     await act(async () => {
       result.current.pickerState?.handleCancel();
       await vi.advanceTimersByTimeAsync(0);
     });
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+    await expect(connectPromise).resolves.toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 });
