@@ -6,15 +6,17 @@
 // a home-wall owner's first board depended on finding the one chip that
 // unlocks it. A preset gives them a board on screen and a working Save from the
 // first frame; every chip still changes it.
+//
+// Only a setup other climbers actually use is preset. A guess (the catalogue's
+// first layout at its default size) is worse than no preset: it is MoonBoard
+// 2010 for a MoonBoard owner, a commercial-size Kilter for a home wall, and one
+// Save away from a board with the wrong climbs and the wrong holds lit. With
+// no popular setup for the type, the builder opens as before and the climber
+// picks their layout and size.
 
 import type { BoardName, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
-import {
-  getBoardLayouts,
-  getBoardSetsForLayoutAndSize,
-  getBoardSizesForLayoutId,
-  getDefaultBoardSizeForLayout,
-} from '../custom-board-options';
+import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '../custom-board-options';
 
 export type BoardConfigPreset = {
   layoutId: number;
@@ -23,19 +25,17 @@ export type BoardConfigPreset = {
 };
 
 /**
- * The setup to preselect for `boardName`.
+ * The setup to preselect for `boardName`: the most common setup of that board
+ * type across Boardsesh, from the popular list the picker already loaded, which
+ * the server orders by how many boards use each setup. Its entries are checked
+ * against this build's own catalogue, because the builder can only show a
+ * selection its chips know.
  *
- * First choice is the most common setup of that board type across Boardsesh:
- * the popular list the picker already loaded, which the server orders by how
- * many boards use each setup. Its entries are checked against this build's own
- * catalogue, because the builder can only show a selection its chips know.
- *
- * With no usable popular entry (the list is the top twelve across every type,
- * so a rarer board type is often missing, and it may not have loaded at all)
- * it falls back to the type's first layout, that layout's default size and all
- * of its sets, the same choice `selectLayout` makes when a layout is tapped.
- *
- * `null` for a type with nothing to cascade (a spray wall).
+ * `null` when the list has no usable entry for the type, so the builder opens
+ * with nothing chosen. That is every MoonBoard today (the live list carries
+ * only Kilter and Tension setups), any rarer board type, a spray wall, and
+ * every type while the list has not loaded. The builder asks again when the
+ * list lands.
  */
 export function presetBoardConfig(
   boardName: BoardName,
@@ -45,13 +45,6 @@ export function presetBoardConfig(
     if (toBoardName(config.boardType) !== boardName) continue;
     const popularPreset = catalogueBackedPreset(boardName, config);
     if (popularPreset) return popularPreset;
-  }
-
-  for (const layout of getBoardLayouts(boardName)) {
-    const sizeId = getDefaultBoardSizeForLayout(boardName, layout.id);
-    if (sizeId == null) continue;
-    const setIds = getBoardSetsForLayoutAndSize(boardName, layout.id, sizeId).map((set) => set.id);
-    if (setIds.length > 0) return { layoutId: layout.id, sizeId, setIds };
   }
   return null;
 }

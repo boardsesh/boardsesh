@@ -246,8 +246,12 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       );
     };
 
+    // Scrollable: the footnote sits above every state, and the Android empty
+    // scan (hint title, body and a grant button under "No boards in range")
+    // runs past a 55% sheet on a 667 pt phone at large text. Without a scroll
+    // the recovery buttons at the bottom were the part that got cut off.
     return (
-      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose}>
+      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose} scrollable contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}
@@ -267,6 +271,11 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 );
 
 const styles = StyleSheet.create({
+  // At least the sheet's height, so a short state still centres in it; taller
+  // content grows past it and scrolls.
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
     padding: spacing[4],

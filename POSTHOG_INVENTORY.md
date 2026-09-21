@@ -641,10 +641,12 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
+| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry with the spray-walls flag on) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
 | `First Board Picker Skipped` (changed) | adds `entry`; `close_button` now also covers the plain Close X on the `no_board` entry | `use-first-board-picker-tracking.ts` | Adds the Climbs showings |
 | `Board Picker Opened` / `Board Picker Selection Completed` (changed) | `source` gains `no_board`, a gym-map pick made from that picker included | `use-board-picker-analytics.ts` (the picker and `/gyms`) | Unchanged (those rows used to read `board_picker`) |
-| `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board" with a layout and size already chosen), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
+| `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board", which preselects the board type's most used setup when the popular list carries that type), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
+| `Board Created` (changed) | adds `preset` (as on `Board Builder Abandoned`) and `presetKept` (the saved layout, size and sets are exactly the preselection: no chip below the board type changed) | `app/boards/create.tsx` | Unchanged |
+| `Board Create Reused Existing` (changed) | adds `preset`, `presetKept` (as on `Board Created`) | `app/boards/create.tsx` | Unchanged |
 | `Climbs Tab Tip Shown` | `fromTab` (the tab segment it showed on: `home` / `record` / `discover` / `profile`) | `ClimbsTabReturnTip.tsx` (root overlay) | At most once per device; iOS 26 Liquid Glass iPhones, accounts at most 7 days old |
 
 - **Read the launch gate's skip rate on `entry = 'launch_gate'` only.** Rows without `entry` came
@@ -652,8 +654,13 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 - **Builder funnel**: mobile builder visits ≈ `Board Created` (`source` `popular_seed` / `scratch`) +
   `Board Create Reused Existing` + `Board Builder Abandoned`. The one path with no event of its own is
   "use that wall" on the serial-reuse prompt, which follows an existing board. Split `Board Builder Abandoned` on `preset` before reading
-  `hadLayout` / `hadSize`: a preset visit starts with both true. `submitAttempted = true` means the
+  `hadLayout` / `hadSize`: a preset visit usually starts with both true. `submitAttempted = true` means the
   climber tapped Save and a server refusal or a duplicate prompt came first.
+- **Did the preset help?** Completion = (`Board Created` + `Board Create Reused Existing`) ÷ that plus
+  `Board Builder Abandoned`, split on `preset`. Within `preset = true`, the `presetKept` share of
+  `Board Created` is the wrong-board watch: those boards were saved with a setup nobody changed.
+  Split on `boardType` too. Only setups on the popular list are preselected, so a MoonBoard (absent
+  from that list today) opens with nothing chosen and never reads `presetKept = true`.
 - **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.

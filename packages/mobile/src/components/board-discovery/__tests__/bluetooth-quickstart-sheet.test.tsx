@@ -89,8 +89,12 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { lg: 12 },
 }));
 
+const sheetProps = vi.hoisted(() => ({ scrollable: undefined as boolean | undefined }));
 vi.mock('../../Sheet', () => ({
-  Sheet: forwardRef(({ children }: ChildrenProps, _ref: Ref<unknown>) => createElement('div', {}, children)),
+  Sheet: forwardRef(({ children, scrollable }: ChildrenProps & { scrollable?: boolean }, _ref: Ref<unknown>) => {
+    sheetProps.scrollable = scrollable;
+    return createElement('div', {}, children);
+  }),
 }));
 
 vi.mock('../../Text', () => ({
@@ -156,6 +160,14 @@ describe('BluetoothQuickstartSheet', () => {
     const { container } = renderSheet();
 
     expect(hasText(container, 'mobile.firstBoard.scanFootnote')).toBe(true);
+  });
+
+  // #5654: the footnote above every state pushes the Android empty scan's
+  // recovery buttons past a 55% sheet on a small phone at large text.
+  it('scrolls, so the recovery buttons are never cut off', () => {
+    locationHint.shouldOfferLocationGrant = true;
+    renderSheet();
+    expect(sheetProps.scrollable).toBe(true);
   });
 
   it('shows the location hint instead of the hardware tips when Android is suppressing results', () => {

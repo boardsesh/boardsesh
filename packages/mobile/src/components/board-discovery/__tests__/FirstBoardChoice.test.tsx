@@ -107,6 +107,19 @@ describe('FirstBoardChoice', () => {
     expect(screen.getByRole('button', { name: 'Scan for the board in front of me' })).toBeTruthy();
   });
 
+  // Climbs' no-board entry with the spray-walls flag on: the builder behind My
+  // own board cannot make a spray wall.
+  it('offers a spray wall only when the screen passes the path', () => {
+    renderChoice();
+    expect(screen.queryByRole('button', { name: 'Add my spray wall' })).toBeNull();
+    cleanup();
+
+    const onAddSprayWall = vi.fn();
+    render(<FirstBoardChoice gymState="idle" nearbyResults={null} {...callbacks} onAddSprayWall={onAddSprayWall} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add my spray wall' }));
+    expect(onAddSprayWall).toHaveBeenCalledTimes(1);
+  });
+
   it('says up front what the scan cannot see', () => {
     renderChoice();
     expect(screen.getByText("MoonBoards and some Kilter boxes don't show up here yet.")).toBeTruthy();

@@ -133,6 +133,7 @@ vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfi
 // with are kept so the preset wiring can be checked.
 const builderState = vi.hoisted(() => ({
   boardName: 'moonboard',
+  presetKept: false,
   layoutId: 3,
   sizes: [],
   sizeId: 1,
@@ -218,6 +219,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.params = {};
   builderCalls.options = [];
+  builderState.presetKept = false;
   createBoardMock.mockResolvedValue({ uuid: 'new-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
   fetchBoardByUuidMock.mockResolvedValue(existingBoard);
   fetchBoardsBySerialNumbersMock.mockResolvedValue([]);
@@ -400,6 +402,50 @@ describe('CreateBoard from "My own board"', () => {
     };
     render(createElement(CreateBoard));
     expect(builderCalls.options.at(-1)).toBeUndefined();
+  });
+});
+
+// Whether the preset raised completion, and whether preset boards were saved
+// with a setup nobody checked.
+describe('Board Created from "My own board"', () => {
+  function eventProps(name: string) {
+    return trackMock.mock.calls.filter(([eventName]) => eventName === name).map(([, props]) => props);
+  }
+
+  it('says the builder was preset and the setup was saved untouched', async () => {
+    state.params = { preset: '1', source: 'no_board' };
+    builderState.presetKept = true;
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(eventProps('Board Created')).toHaveLength(1));
+    expect(eventProps('Board Created')[0]).toMatchObject({ preset: true, presetKept: true });
+  });
+
+  it('says neither for a builder opened without a preset', async () => {
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(eventProps('Board Created')).toHaveLength(1));
+    expect(eventProps('Board Created')[0]).toMatchObject({ preset: false, presetKept: false });
+  });
+
+  it('carries both onto a switch to the board the climber already has', async () => {
+    state.params = { preset: '1', source: 'onboarding' };
+    builderState.presetKept = true;
+    createBoardMock.mockRejectedValueOnce(duplicateError());
+    render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('duplicate-prompt')).toBeTruthy());
+    fireEvent.click(screen.getByText('use existing'));
+
+    await waitFor(() => expect(eventProps('Board Create Reused Existing')).toHaveLength(1));
+    expect(eventProps('Board Create Reused Existing')[0]).toEqual({
+      boardType: 'moonboard',
+      source: 'scratch',
+      preset: true,
+      presetKept: true,
+    });
   });
 });
 

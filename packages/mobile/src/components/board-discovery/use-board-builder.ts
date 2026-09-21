@@ -54,11 +54,21 @@ export type BoardBuilderOptions = {
    * The setup to preselect for a board type, when the builder should open with
    * one chosen instead of waiting for a layout tap (#5654, "My own board"). It
    * seeds the first board type when there is no `seed`, and every board type
-   * the climber switches to afterwards. Read at call time, so it may change
-   * identity between renders without re-seeding anything.
+   * the climber switches to afterwards.
+   *
+   * A new identity is how late data reaches the builder: while nothing is
+   * preselected for the current type and the climber has not tapped a layout,
+   * size or set, it is asked again, so a popular list that lands after the
+   * first frame still preselects the setup. Once a preset is on screen or the
+   * climber has picked something, a new identity changes nothing.
    */
   preset?: (boardName: BoardName) => BoardConfigPreset | null;
 };
+
+function sameSetup(preset: BoardConfigPreset, layoutId: number | null, sizeId: number | null, setIds: number[]) {
+  if (preset.layoutId !== layoutId || preset.sizeId !== sizeId) return false;
+  return normaliseSetIds(preset.setIds.join(',')) === normaliseSetIds(setIds.join(','));
+}
 
 /**
  * The cascading board-config state machine behind the create-board builder
@@ -75,6 +85,14 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [initialPreset] = useState(() => (seed ? null : (options?.preset?.(initialBoard) ?? null)));
   const presetRef = useRef(options?.preset);
   presetRef.current = options?.preset;
+  // The preset on screen for the current board type, or null when that type
+  // opened with nothing chosen. Compared against the selection to say whether
+  // a board was saved exactly as preset (`presetKept`).
+  const [appliedPreset, setAppliedPreset] = useState<BoardConfigPreset | null>(initialPreset);
+  // True once the climber taps a layout, size or set chip. A board-type tap
+  // clears it, because that resets everything below it. While false, late
+  // preset data may still fill an empty cascade.
+  const setupTouchedRef = useRef(false);
   const [boardName, setBoardName] = useState<BoardName>(initialBoard);
   const [layoutId, setLayoutId] = useState<number | null>(seed?.layoutId ?? initialPreset?.layoutId ?? null);
   const [sizeId, setSizeId] = useState<number | null>(seed?.sizeId ?? initialPreset?.sizeId ?? null);
@@ -124,6 +142,26 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     setAngle(current.angle ?? defaultAngle(current.boardName));
   }, [seedKey]);
 
+  // Late preset data (#5654). The popular list the preset reads is usually
+  // cached from the picker, but not always, and a first frame without it opens
+  // on an empty cascade. When it lands, fill that cascade, but only while it is
+  // still empty and untouched: never move a setup the climber is looking at or
+  // has picked. Read through refs so the only trigger is the preset changing.
+  const boardNameRef = useRef(boardName);
+  boardNameRef.current = boardName;
+  const appliedPresetRef = useRef(appliedPreset);
+  appliedPresetRef.current = appliedPreset;
+  const presetOption = options?.preset;
+  useEffect(() => {
+    if (seedRef.current || setupTouchedRef.current || appliedPresetRef.current) return;
+    const latePreset = presetOption?.(boardNameRef.current) ?? null;
+    if (!latePreset) return;
+    setLayoutId(latePreset.layoutId);
+    setSizeId(latePreset.sizeId);
+    setSetIds(latePreset.setIds);
+    setAppliedPreset(latePreset);
+  }, [presetOption]);
+
   const layouts = useMemo(() => getBoardLayouts(boardName), [boardName]);
   const sizes = useMemo(
     () => (layoutId != null ? getBoardSizesForLayoutId(boardName, layoutId) : []),
@@ -143,14 +181,17 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // climber switching from Kilter to Tension still has a working Save.
   const selectBoard = useCallback((next: BoardName) => {
     const preset = presetRef.current?.(next) ?? null;
+    setupTouchedRef.current = false;
     setBoardName(next);
     setLayoutId(preset?.layoutId ?? null);
     setSizeId(preset?.sizeId ?? null);
     setSetIds(preset?.setIds ?? []);
+    setAppliedPreset(preset);
     setAngle(defaultAngle(next));
   }, []);
   const selectLayout = useCallback(
     (next: number) => {
+      setupTouchedRef.current = true;
       setLayoutId(next);
       const defaultSize = getDefaultBoardSizeForLayout(boardName, next);
       setSizeId(defaultSize);
@@ -164,17 +205,21 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     (next: number) => {
       // Pre-select every set for the size — the common case (a "Full Ride" owner
       // has them all), and why the set toggles live behind Advanced.
+      setupTouchedRef.current = true;
       setSizeId(next);
       setSetIds(layoutId != null ? getBoardSetsForLayoutAndSize(boardName, layoutId, next).map((set) => set.id) : []);
     },
     [boardName, layoutId],
   );
-  const toggleSet = useCallback(
-    (id: number) => setSetIds((prev) => (prev.includes(id) ? prev.filter((set) => set !== id) : [...prev, id])),
-    [],
-  );
+  const toggleSet = useCallback((id: number) => {
+    setupTouchedRef.current = true;
+    setSetIds((prev) => (prev.includes(id) ? prev.filter((set) => set !== id) : [...prev, id]));
+  }, []);
 
   const canCreate = layoutId != null && sizeId != null && setIds.length > 0;
+  // The selection is exactly the preset the builder chose for this board type:
+  // a board saved like this was never changed below the board-type chips.
+  const presetKept = appliedPreset != null && sameSetup(appliedPreset, layoutId, sizeId, setIds);
 
   /**
    * Pick (or clear) the board's gym. Stamping the gym's own coordinates onto the
@@ -323,6 +368,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     angles,
     rawLayoutName,
     canCreate,
+    presetKept,
     // actions
     selectBoard,
     selectLayout,

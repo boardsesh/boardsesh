@@ -222,4 +222,34 @@ describe('ClimbsTabReturnTip', () => {
     await waitFor(() => expect(screen.getByText(TIP_TEXT)).toBeTruthy());
     expect(trackMock).toHaveBeenCalledWith('Climbs Tab Tip Shown', { fromTab: 'discover' });
   });
+
+  // The other order: the tip is up, then a climb becomes current (opened from
+  // Home, /play closed back onto the tab) and the accessory tip arms in the
+  // same slot. Two banners must never stack.
+  it('steps aside for good when the accessory tip comes due while it is up', async () => {
+    const view = renderThenOpen('home');
+    await waitFor(() => expect(screen.getByText(TIP_TEXT)).toBeTruthy());
+
+    env.hasCurrentClimb = true;
+    view.rerender(createElement(ClimbsTabReturnTip));
+    await waitFor(() => expect(screen.queryByText(TIP_TEXT)).toBeNull());
+
+    env.seenKeys.add(ONBOARDING_TIP_ACCESSORY_KEY);
+    env.segments = ['(tabs)', 'discover'];
+    view.rerender(createElement(ClimbsTabReturnTip));
+    await settle();
+    expect(screen.queryByText(TIP_TEXT)).toBeNull();
+    expect(trackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays up when a climb becomes current and the accessory tip was already seen', async () => {
+    env.seenKeys.add(ONBOARDING_TIP_ACCESSORY_KEY);
+    const view = renderThenOpen('home');
+    await waitFor(() => expect(screen.getByText(TIP_TEXT)).toBeTruthy());
+
+    env.hasCurrentClimb = true;
+    view.rerender(createElement(ClimbsTabReturnTip));
+    await settle();
+    expect(screen.getByText(TIP_TEXT)).toBeTruthy();
+  });
 });

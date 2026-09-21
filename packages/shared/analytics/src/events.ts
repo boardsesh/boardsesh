@@ -499,8 +499,10 @@ export const SHARED_EVENTS = {
   // skip rate on `entry = 'launch_gate'` only.
   //
   // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
-  // 'own' | 'scan' | 'gym_map', entry }. 'gym_map' is "Find your gym on the
-  // map", offered under At a gym. A climber can try several; each tap fires.
+  // 'own' | 'scan' | 'gym_map' | 'spray_wall', entry }. 'gym_map' is "Find your
+  // gym on the map", offered under At a gym. 'spray_wall' is "Add my spray
+  // wall", offered only on the 'no_board' entry with the spray-walls flag on. A
+  // climber can try several; each tap fires.
   //
   // FirstBoardPickerSkipped: the picker closed with no board bound, which is
   // the skip rate the launch reads against. Props: { method: 'close_button' |
@@ -565,7 +567,14 @@ export const SHARED_EVENTS = {
   // for weeks was invisible in both PostHog and error tracking.
   // Props: { boardType, layoutId, sizeId, setCount, angle, isOwned, isPublic,
   //          hasLocationName, hasCoords, hasGym, gymUuid, source,
-  //          allowedDuplicate }.
+  //          allowedDuplicate, preset, presetKept }.
+  // `preset` and `presetKept` are mobile builder only (#5654). `preset` is true
+  // when "My own board" opened the builder, asking for the board type's most
+  // used setup to be preselected. `presetKept` is true when the saved layout,
+  // size and sets are exactly that preselection, so nobody changed a chip below
+  // the board type: the watch on boards saved with a preselected setup nobody
+  // checked. A type the popular list does not carry (every MoonBoard today)
+  // gets no preselection, so its `presetKept` is always false.
   // `gymUuid` is the gym being ATTACHED, and is deliberately NOT the same thing
   // as the `gym_uuid` super property (mobile, packages/mobile/src/lib/analytics-gym.ts)
   // — that one carries the ACTIVE board's gym, and a board being created has not
@@ -587,7 +596,8 @@ export const SHARED_EVENTS = {
   //          keeping out of the 'exception' bucket.
   BoardCreateFailed: 'Board Create Failed',
   // The user already owned this board, so nothing was created and we activated
-  // the existing one instead. Props: { boardType, source }.
+  // the existing one instead. Props: { boardType, source, preset, presetKept }
+  // (the last two mobile builder only, as on Board Created).
   BoardCreateReusedExisting: 'Board Create Reused Existing',
   // The duplicate choice prompt was shown. The watchdog for #4166 is that
   // Prompted >= ReusedExisting + Created{allowedDuplicate}: if prompts stop
@@ -605,8 +615,9 @@ export const SHARED_EVENTS = {
   // the way out.
   // Props: { boardType, hadLayout, hadSize (what was selected when they left),
   //          source: 'popular_seed' | 'scratch' (as on Board Created),
-  //          preset (opened from "My own board" with a setup already chosen,
-  //          so hadLayout/hadSize start true: split on it),
+  //          preset (opened from "My own board", which preselects the board
+  //          type's most used setup when the popular list carries the type, so
+  //          hadLayout/hadSize usually start true: split on it and boardType),
   //          openedFrom: 'onboarding' | 'no_board' | 'board_picker' (the
   //          picker path that opened it), submitAttempted (Save was tapped at
   //          least once, so a server refusal or a duplicate prompt came first),

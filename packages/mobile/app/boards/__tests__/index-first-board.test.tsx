@@ -29,11 +29,14 @@ type ChoiceProps = {
   onFindGymOnMap: () => void;
   onOpenSettings: () => void;
   onRetryNearby: () => void;
+  onAddSprayWall?: () => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn());
 const requestLocationMock = vi.hoisted(() => vi.fn());
+const refreshLocationMock = vi.hoisted(() => vi.fn());
+const flags = vi.hoisted(() => ({ sprayWalls: false }));
 const chooseFirstBoardPathMock = vi.hoisted(() => vi.fn());
 const openAppSettingsMock = vi.hoisted(() => vi.fn());
 const refetchNearbyMock = vi.hoisted(() => vi.fn());
@@ -141,6 +144,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
       status: state.locationStatus,
       coords: state.locationStatus === 'granted' ? { latitude: 1, longitude: 2 } : null,
       request: requestLocationMock,
+      refresh: refreshLocationMock,
     };
   },
 }));
@@ -187,7 +191,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
-  useSprayWallsEnabled: () => false,
+  useSprayWallsEnabled: () => flags.sprayWalls,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -251,6 +255,8 @@ beforeEach(() => {
   state.nearbyLoading = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
+  flags.sprayWalls = false;
+  refreshLocationMock.mockResolvedValue(false);
 });
 
 function choice(): ChoiceProps {
@@ -395,6 +401,16 @@ describe('the picker in first-board mode', () => {
   });
 });
 
+// The wall wizard binds without the onboarding source, so it would leave
+// first-run open; the launch gate's showing keeps its three answers.
+describe('the launch gate showing and spray walls', () => {
+  it('offers no spray wall even with the flag on', () => {
+    flags.sprayWalls = true;
+    render(createElement(BoardSelection));
+    expect(choice().onAddSprayWall).toBeUndefined();
+  });
+});
+
 describe('the ordinary onboarding picker', () => {
   it('keeps the discovery tiles and pre-resolves location', () => {
     state.params = { source: 'onboarding' };
@@ -490,6 +506,27 @@ describe('the picker opened from Climbs with no board', () => {
     });
   });
 
+  // The tile row this block replaced carried the spray wall tile, and My own
+  // board's builder cannot make a spray wall.
+  it('offers a spray wall when the flag is on', () => {
+    flags.sprayWalls = true;
+    render(createElement(BoardSelection));
+    const onAddSprayWall = choice().onAddSprayWall;
+    if (!onAddSprayWall) throw new Error('no spray wall path');
+
+    onAddSprayWall();
+    expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('spray_wall');
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/new',
+      params: { returnTo: '/(tabs)/climbs' },
+    });
+  });
+
+  it('offers no spray wall with the flag off', () => {
+    render(createElement(BoardSelection));
+    expect(choice().onAddSprayWall).toBeUndefined();
+  });
+
   // The empty state shows for anyone with no board bound, at any account age,
   // so a bind from it is an ordinary switch: no activation event, no first-run
   // close-out, and its own source on the picker events.
@@ -562,7 +599,7 @@ describe("the ordinary picker's Find nearby tile", () => {
   });
 
   // It used to fall back to idle with no word, and a second tap did nothing.
-  it('says when nothing is within 20 km and points to the gym map', () => {
+  it('says when nothing is within 20 km and points to the gym map', async () => {
     state.locationStatus = 'granted';
     render(createElement(BoardSelection));
 
@@ -573,9 +610,26 @@ describe("the ordinary picker's Find nearby tile", () => {
       params: { returnTo: '/(tabs)/climbs', source: undefined },
     });
 
-    nearbyTile().onPress();
+    // Same spot: a fresh fix, then the same search again.
+    await act(async () => {
+      nearbyTile().onPress();
+    });
+    expect(refreshLocationMock).toHaveBeenCalledTimes(1);
     expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
     expect(requestLocationMock).not.toHaveBeenCalled();
+  });
+
+  // A climber who moved gets new coordinates, which is a new search by itself.
+  it('searches from where the climber is now after they move', async () => {
+    state.locationStatus = 'granted';
+    refreshLocationMock.mockResolvedValue(true);
+    render(createElement(BoardSelection));
+
+    await act(async () => {
+      nearbyTile().onPress();
+    });
+    expect(refreshLocationMock).toHaveBeenCalledTimes(1);
+    expect(refetchNearbyMock).not.toHaveBeenCalled();
   });
 
   it('says the lookup failed and retries it', () => {

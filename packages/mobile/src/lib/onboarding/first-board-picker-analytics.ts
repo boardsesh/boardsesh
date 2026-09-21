@@ -9,7 +9,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import type { FirstBoardEntry } from '../boards/first-board-mode';
 
-export type FirstBoardPath = 'gym' | 'own' | 'scan' | 'gym_map';
+export type FirstBoardPath = 'gym' | 'own' | 'scan' | 'gym_map' | 'spray_wall';
 
 export type FirstBoardSkipMethod = 'close_button' | 'dismissed';
 
