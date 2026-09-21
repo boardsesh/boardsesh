@@ -91,7 +91,7 @@ jobs:
           repo="$(mktemp -d)"
           mkdir -p "$repo/spool/archive_status" "$repo/store"
           head -c 16777216 /dev/zero | tr '\0' 'A' > "$repo/spool/000000010000000000000001"
-          chmod -R 777 "$repo"
+          chmod -R o+rwX "$repo"
           walg() {
             docker run --rm --platform "$PLATFORM" \
               --network none --read-only --user 999:999 \
@@ -100,7 +100,6 @@ jobs:
               -v "$repo:/repo" \
               -e WALG_FILE_PREFIX=/repo/store \
               -e WALG_COMPRESSION_METHOD=zstd \
-              -e PGDATA=/repo/pgdata \
               --entrypoint /wal-g "$IMAGE" "$@"
           }
           walg wal-push /repo/spool/000000010000000000000001

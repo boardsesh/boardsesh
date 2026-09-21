@@ -19,16 +19,24 @@
 # loosening any of that; the binary itself needs none of it.
 
 ARG WALG_VERSION=v3.0.9
+# The commit v3.0.9 pointed at. A tag is a mutable reference, so pinning the tag
+# alone would let a rebuild pick up different source; the checkout below is by
+# SHA and asserts it landed on this one.
+ARG WALG_COMMIT=3e493188db28335fb93a45bd680c6ff8fc3028c1
 
 # --platform=$BUILDPLATFORM keeps this stage on the runner's own architecture and
 # cross-compiles with GOARCH instead, so building arm64 costs no emulation.
 FROM --platform=$BUILDPLATFORM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS build
 
 ARG WALG_VERSION
+ARG WALG_COMMIT
 ARG TARGETARCH
 
-RUN git clone --quiet --depth 1 --branch "${WALG_VERSION}" \
-      https://github.com/wal-g/wal-g /src
+RUN git init --quiet /src \
+ && git -C /src remote add origin https://github.com/wal-g/wal-g \
+ && git -C /src fetch --quiet --depth 1 origin "${WALG_COMMIT}" \
+ && git -C /src checkout --quiet FETCH_HEAD \
+ && test "$(git -C /src rev-parse HEAD)" = "${WALG_COMMIT}"
 
 WORKDIR /src/main/pg
 
@@ -68,6 +76,8 @@ ENV USER=walg \
     HOME=/tmp
 
 COPY --from=build /wal-g /wal-g
+
+USER 999:999
 
 ENTRYPOINT ["/wal-g"]
 
