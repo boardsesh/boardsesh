@@ -8,10 +8,6 @@ export type FeatureFlags = Record<string, boolean | undefined>;
 
 export const EMPTY_FEATURE_FLAGS: FeatureFlags = {};
 
-// Gates the "Boardsesh grade" section in the climb detail / play drawer. OFF
-// until the nightly data-science grading job has enough coverage to surface.
-export const BOARDSESH_GRADE_FLAG = 'boardsesh-grade';
-
 // Gates the gym-kiosk MANAGE entry points (gym manage tab, kiosk editor —
 // landing in a later PR). The public `/kiosk/{gym-slug}` TV pages themselves
 // ship flagless: a 24/7 TV can't be expected to resolve PostHog flags, and the
@@ -30,7 +26,7 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
-export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
+export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
 // route renders at all. Empty since `/gyms` launched unconditionally; the
