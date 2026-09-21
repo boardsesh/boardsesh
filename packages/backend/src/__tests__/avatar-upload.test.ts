@@ -218,6 +218,7 @@ describe('avatar upload routes', () => {
 
       expect(staticResponse.status).toBe(404);
       expect(staticResponse.headers.get('cache-control')).toBe('no-store');
+      expect(staticResponse.headers.get('x-content-type-options')).toBe('nosniff');
     } finally {
       await closeServer(server);
     }
