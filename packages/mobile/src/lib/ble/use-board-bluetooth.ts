@@ -1806,7 +1806,8 @@ export function useBoardBluetooth({
         // Known fidelity gap: the unmount cleanup also rejects the picker with
         // 'Device selection cancelled' (to keep the alert suppressed), so a
         // provider teardown mid-picker lands here too. That's app teardown, not
-        // a dismissal, and it's rare enough not to warrant a source prop.
+        // a dismissal. #3088 tracks distinguishing these sources before using
+        // this event as a metric of deliberate user dismissals.
         if (failureCategory === 'user_cancelled') {
           track(SHARED_EVENTS.BluetoothConnectionCancelled, {
             boardName,

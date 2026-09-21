@@ -174,7 +174,7 @@ disappears for the rest of the launch after a sign-out.
 | ------------------------------- | -------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------- |
 | Bluetooth Connection Success    | use-board-bluetooth.ts:390             | `boardLayout`                                                     | Device paired and connected                         |
 | Bluetooth Connection Failed     | use-board-bluetooth.ts:415             | `boardLayout`                                                     | BLE connection attempt failed                       |
-| Bluetooth Connection Cancelled  | use-board-bluetooth.ts:1406            | `boardName`, `layoutId`, `sizeId`                                 | Climber dismissed the device picker (not a failure) |
+| Bluetooth Connection Cancelled  | packages/mobile/src/lib/ble/use-board-bluetooth.ts | `boardName`, `layoutId`, `sizeId`                       | Picker dismissal or provider teardown during selection; neither is a connection failure |
 | Bluetooth Disconnected          | use-board-bluetooth.ts:181,371,455,480 | `boardLayout`, `reason`                                           | Device lost connection                              |
 | Climb Sent to Board Success     | bluetooth-context.tsx:106              | `climbUuid`, `boardLayout`                                        | LED frames transmitted                              |
 | Climb Sent to Board Failure     | bluetooth-context.tsx:111,119          | `climbUuid`, `boardLayout`, `error_reason`                        | Frame transmission failed                           |
