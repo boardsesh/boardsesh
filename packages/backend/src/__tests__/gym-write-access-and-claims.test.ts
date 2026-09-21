@@ -1881,6 +1881,47 @@ describe('requestGymClaim — auto-approval', () => {
     ]);
   });
 
+  it('keeps an old auto-approval queued after ownership moves away and back to the system', async () => {
+    resetAllRateLimits();
+    await insertUser(SYSTEM_OWNER);
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Reviewed Catalog Listing' });
+    await socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: claimGym.uuid } }, authCtx(CLAIMANT));
+    const [pending] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.gymId, claimGym.id));
+
+    for (const [currentOwnerId, newOwnerId] of [
+      [SYSTEM_OWNER, PRIOR_OWNER],
+      [PRIOR_OWNER, SYSTEM_OWNER],
+    ]) {
+      await socialGymOwnerReassignMutations.reassignGymOwner(
+        null,
+        {
+          input: {
+            gymUuid: claimGym.uuid,
+            expectedCurrentOwnerId: currentOwnerId,
+            newOwnerId,
+            reason: 'Restore the catalog listing after ownership review.',
+          },
+        },
+        authCtx(GLOBAL_ADMIN),
+      );
+    }
+    await setAutoApprove(true);
+    vi.clearAllMocks();
+
+    // The system-owner guard passes again, but the newer handovers still make
+    // this older claim superseded. Re-requesting must not silently approve it.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: claimGym.uuid } }, authCtx(CLAIMANT)),
+    ).resolves.toEqual({ status: 'admin_review' });
+    const [retained] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, pending.id));
+    expect(retained).toMatchObject({ status: 'pending', createdAt: pending.createdAt, updatedAt: pending.updatedAt });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+    expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
+  });
+
   it('survives two users racing for the same unclaimed gym — one wins, neither errors', async () => {
     await setAutoApprove(true);
     const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Contested Listing' });

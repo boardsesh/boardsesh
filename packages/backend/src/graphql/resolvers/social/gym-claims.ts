@@ -113,7 +113,7 @@ async function ownershipMovedSinceClaim(
 ): Promise<boolean> {
   // Compare in Postgres, retaining microseconds that the JS Date mapper drops.
   const filedAt = tx
-    .select({ createdAt: dbSchema.gymClaims.createdAt })
+    .select({ filedAt: dbSchema.gymClaims.createdAt })
     .from(dbSchema.gymClaims)
     .where(eq(dbSchema.gymClaims.id, claim.id));
   const [reassignment] = await tx
@@ -218,7 +218,7 @@ export async function applyGymClaim(
         .update(dbSchema.gyms)
         // Taking ownership is a strong human-curation signal — freeze the gym so
         // the location sync stops reshaping the listing the new owner now controls.
-        .set({ ownerId: claimantId, syncFrozenAt: new Date(), updatedAt: new Date() })
+        .set({ ownerId: claimantId, syncFrozenAt: sql`clock_timestamp()`, updatedAt: sql`clock_timestamp()` })
         // Re-assert the owner even with the row lock. If a future caller changes
         // ownership inside this transaction, explicitly throw on zero rows to
         // roll back the claim flip rather than overwrite that change.
