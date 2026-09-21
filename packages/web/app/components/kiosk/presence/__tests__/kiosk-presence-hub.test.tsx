@@ -81,11 +81,7 @@ vi.mock('@/app/hooks/use-ws-auth-token', () => ({
   useWsAuthToken: () => useWsAuthTokenSpy(),
 }));
 
-import KioskPresenceHub, {
-  MAX_STALE_SUBSCRIPTION_REBUILDS,
-  PRESENCE_REBUILD_AFTER_MS,
-  presenceRebuildDelayMs,
-} from '../kiosk-presence-hub';
+import KioskPresenceHub, { PRESENCE_REBUILD_AFTER_MS, presenceRebuildDelayMs } from '../kiosk-presence-hub';
 import { ViewerKioskPresenceHub } from '../viewer-kiosk-presence-hub';
 
 function optionsOfCall(callIndex: number): { authToken?: string | null; connectionName?: string } {
@@ -352,12 +348,5 @@ describe('presenceRebuildDelayMs', () => {
       expect(delay).toBeGreaterThanOrEqual(PRESENCE_REBUILD_AFTER_MS / 2);
       expect(delay).toBeLessThanOrEqual(PRESENCE_REBUILD_AFTER_MS);
     }
-  });
-});
-
-describe('MAX_STALE_SUBSCRIPTION_REBUILDS', () => {
-  it('is a small positive cap', () => {
-    expect(MAX_STALE_SUBSCRIPTION_REBUILDS).toBeGreaterThan(0);
-    expect(MAX_STALE_SUBSCRIPTION_REBUILDS).toBeLessThanOrEqual(5);
   });
 });

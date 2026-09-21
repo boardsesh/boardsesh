@@ -92,8 +92,8 @@ export const PRESENCE_REBUILD_AFTER_MS = 5 * 60_000;
  * `ip:` rate bucket every TV in the gym shares) clears in one; a board flipped
  * private mid-session never will, and without this cap that slot would rebuild
  * the whole client — blanking every OTHER board for a round trip — every five
- * minutes until the 04:00 reload. The counter resets the moment every board is
- * live again.
+ * minutes until the 04:00 reload. A new incident gets a fresh budget only after
+ * every board has stayed live for a full rebuild window.
  */
 export const MAX_STALE_SUBSCRIPTION_REBUILDS = 3;
 
@@ -342,7 +342,9 @@ export function KioskPresenceHubInner({
       socketOpenRef.current = false;
       // The next generation's providers re-report from scratch. Stamp the
       // healthy-since clock too, so the budget reset above measures a real
-      // healthy stretch rather than treating this bookkeeping as one.
+      // healthy stretch rather than treating this bookkeeping as one. Preserve
+      // the spent subscription budget across socket outages: rebuilding the
+      // transport does not make a permanently rejected board recoverable.
       deadBoardsRef.current.clear();
       allBoardsLiveSinceRef.current = Date.now();
       void client.dispose();
