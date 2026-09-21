@@ -15,8 +15,8 @@ GET/HEAD on the exact `/api/health` route used by Railway health probes.
 The guard covers API routes, dotted paths, Next assets and image optimization,
 well-known files, and monitoring routes. Locale/session/CORS handling retains its
 previous narrower scope. The verification header is removed before forwarding,
-including Next external rewrites. Existing user authorization and POST bodies
-remain intact. Server and edge Sentry hooks also strip the incoming header from
+including Next external rewrites and the grades/angles API passthroughs. Existing
+user authorization and POST bodies remain intact. Server and edge Sentry hooks also strip the incoming header from
 errors, transactions, span attributes and structured-log attributes, because
 Sentry can capture headers before middleware runs. A rejected request gets an empty, non-cacheable 403.
 
@@ -68,5 +68,5 @@ retains stripping on the new image. Never publish the secret to help diagnose a
 ## Current rollout state
 
 This PR prepares protection; enforcement is not active until the deployment order
-above is completed. The crawler-policy PR is independent and reduces identified
-AI traffic while origin protection closes the direct-host bypass for other UAs.
+above is completed. The existing crawler policy independently reduces identified
+AI traffic while origin protection closes the direct-host bypass for other user agents.
