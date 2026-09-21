@@ -38,6 +38,8 @@
     "canonical-outlines.test.ts",
     "railway-apply.ts",
     "railway-apply.test.ts",
+    "check-primary-tls.ts",
+    "check-primary-tls.test.ts",
     "screenshot-backend.ts",
     "screenshot-fixtures-merge.ts",
     "screenshot-fixtures-fetch.ts",

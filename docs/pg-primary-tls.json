@@ -1,0 +1,24 @@
+{
+  "$comment": [
+    "The certificate the production PostgreSQL primary is expected to serve.",
+    "scripts/check-primary-tls.ts probes the live endpoint against this and runs nightly",
+    "from .github/workflows/railway-drift.yml, so the certificate is declared state rather",
+    "than something a deploy can quietly change.",
+    "`pendingRollout` is how the check tells the truth before the rollout has happened:",
+    "the certificate served today IS on the rejected list, so the run warns loudly until",
+    "warnUntil and fails hard after it. Clear both it and `expected` together when the",
+    "private CA is minted -- see docs/pg-primary-tls-rollout.md."
+  ],
+  "host": "pgdr.boardsesh.com",
+  "port": 17963,
+  "connectTimeoutMs": 15000,
+  "rejectedFingerprints": {
+    "D9:F6:91:05:8E:A7:95:D3:23:FC:33:5F:E4:22:94:DC:73:44:6A:D4:0A:2F:2B:2D:7D:85:34:C4:53:4A:BF:50": "The Debian snakeoil certificate from postgres:18.6-bookworm. Its private key is published in that public image layer, so anyone can impersonate the primary to a client that does not verify. If the primary serves this again, a deploy has reverted the TLS material."
+  },
+  "pendingRollout": {
+    "fingerprint256": "D9:F6:91:05:8E:A7:95:D3:23:FC:33:5F:E4:22:94:DC:73:44:6A:D4:0A:2F:2B:2D:7D:85:34:C4:53:4A:BF:50",
+    "reason": "The private CA has not been minted and the primary still serves the base image certificate. Tracked in docs/pg-primary-tls-rollout.md.",
+    "warnUntil": "2026-12-31"
+  },
+  "expected": null
+}
