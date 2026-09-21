@@ -54,7 +54,26 @@ vi.mock('@boardsesh/board-react', async () => {
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
+  View: ({
+    children,
+    accessibilityLabel,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'div',
+      {
+        'aria-label': accessibilityLabel,
+        'data-a11y-hidden': accessibilityElementsHidden ? 'true' : undefined,
+        'data-a11y-importance': importantForAccessibility,
+      },
+      children,
+    ),
   useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: fontScale.current }),
 }));
 
@@ -198,6 +217,32 @@ describe('rich-tier progress line', () => {
   it('carries the matching status glyph', () => {
     const { container } = renderRow('rich', [entry({ status: 'flash' })]);
     expect(container.querySelectorAll('[data-icon="flash"]').length).toBeGreaterThan(0);
+  });
+
+  it.each(['flash', 'send', 'attempt'] as const)(
+    'announces a rich %s once while retaining the visual glyph',
+    (status) => {
+      const { container } = renderRow('rich', [entry({ status, is_ascent: status !== 'attempt', tries: 3 })]);
+      const statusLabel = `mobile.climbRow.ascentStatus.${status}`;
+      expect(container.querySelector(`[aria-label="${statusLabel}"]`)).toBeNull();
+      const hiddenGlyph = container.querySelector('[data-a11y-hidden="true"]');
+      expect(hiddenGlyph?.getAttribute('data-a11y-importance')).toBe('no-hide-descendants');
+      expect(hiddenGlyph?.querySelector('i')).not.toBeNull();
+      const spokenProgress = container.querySelectorAll('[aria-label^="mobile.climbRow.progress."]');
+      expect(spokenProgress).toHaveLength(1);
+      if (status === 'attempt') {
+        expect(spokenProgress[0].getAttribute('aria-label')).toBe(
+          'mobile.climbRow.progress.tries:3 · mobile.climbRow.progress.today',
+        );
+        expect(spokenProgress[0].querySelector('[data-icon="ascent.attempt"]')).not.toBeNull();
+      }
+    },
+  );
+
+  it.each(['compact', 'default'] as const)('keeps the %s glyph status accessible', (density) => {
+    const { container } = renderRow(density, [entry()]);
+    expect(container.querySelectorAll('[aria-label="mobile.climbRow.ascentStatus.send"]')).toHaveLength(1);
+    expect(container.querySelector('[data-a11y-hidden="true"]')).toBeNull();
   });
 
   it('drops tokens from the right as Dynamic Type grows', () => {

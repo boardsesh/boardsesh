@@ -58,7 +58,7 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
   const progress = useClimbProgress(climbUuid, angle);
 
   const label = useMemo(() => {
-    if (!progress) return null;
+    if (!progress) return '';
 
     const outcome =
       progress.outcome.kind === 'flash'
@@ -98,10 +98,7 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
     return tokens.slice(0, climbProgressTokenBudget(fontScale)).join(' · ');
   }, [progress, fontScale, t, i18n.language]);
 
-  // `label` is non-null whenever `progress` is, so the second half is unreachable
-  // at runtime — but it is what narrows `label` to `string` for the
-  // `accessibilityLabel` below, which takes no null.
-  if (!progress || label === null) return null;
+  if (!progress) return null;
 
   return (
     // One grouped utterance, so screen readers speak "Flashed · mirror · today"

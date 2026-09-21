@@ -248,9 +248,11 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
   angle,
+  hideFromAccessibility = false,
 }: {
   climbUuid: string;
   angle: number;
+  hideFromAccessibility?: boolean;
 }) {
   const { t } = useTranslation('climbs');
   const theme = useTheme();
@@ -269,7 +271,12 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
 
   if (!ascentStatus) return null;
   return (
-    <View accessibilityRole="image" accessibilityLabel={ascentStatusLabel}>
+    <View
+      accessibilityRole="image"
+      accessibilityLabel={hideFromAccessibility ? undefined : ascentStatusLabel}
+      accessibilityElementsHidden={hideFromAccessibility}
+      importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}
+    >
       <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={theme.systemColors.secondaryLabel} />
     </View>
   );
@@ -524,7 +531,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       {/* Right: favourite heart + ascent-status glyph + colorized grade */}
       <View style={styles.rightSection}>
         {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
-        {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
+        {showAscentStatus ? (
+          <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} hideFromAccessibility={isRich} />
+        ) : null}
         <LiveClimbGrade
           climb={climb}
           boardName={boardName}
