@@ -518,8 +518,9 @@ after `migrate`:
 
 The automated ALTER and generated remediation accept simple ASCII database
 identifiers (`[A-Za-z_][A-Za-z0-9_]*`), including the production name `railway`.
-Names containing hyphens, spaces or non-ASCII characters are refused; an operator
-must handle those names with properly quoted SQL in a separately authorized
+Names containing hyphens, spaces or non-ASCII characters receive a readable owner
+handoff without generated SQL or an administrator connection. An operator must
+handle those names with properly quoted SQL in a separately authorized owning
 session. Connection-cleanup failures emit a warning while preserving the
 verification result or original query error.
 

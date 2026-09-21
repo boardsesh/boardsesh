@@ -226,6 +226,15 @@ export function isSerialPlanFailure(
  * one.
  */
 export function serialPlanRemediation(databaseName: string): string[] {
+  if (!SIMPLE_POSTGRES_IDENTIFIER.test(databaseName)) {
+    return [
+      `${SERIAL_PLAN_SETTING} is not 0 for application sessions on database ${JSON.stringify(databaseName)}.`,
+      'This helper only generates SQL for simple ASCII PostgreSQL identifiers.',
+      'Ask the database owner to configure max_parallel_workers_per_gather = 0',
+      'using their SQL client with correctly quoted database identifiers.',
+      'Then confirm GET /health/db → database.maxParallelWorkersPerGather reads "0".',
+    ];
+  }
   return [
     `${SERIAL_PLAN_SETTING} is not 0 for application sessions on database ${databaseName}.`,
     'Parallel-query DSM exhaustion (SQLSTATE 53100) can recur until it is. Migration 0225',
@@ -292,7 +301,7 @@ export async function runSerialPlanVerification(ports: SerialPlanVerificationPor
     return 0;
   }
 
-  if (!ports.openAdminClient) {
+  if (!SIMPLE_POSTGRES_IDENTIFIER.test(reading.databaseName) || !ports.openAdminClient) {
     return reportSerialPlanFailure(ports, reading.databaseName);
   }
 

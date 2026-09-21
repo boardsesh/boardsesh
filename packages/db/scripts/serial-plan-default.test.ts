@@ -200,6 +200,45 @@ void test('a run with no owner-capable credential fails instead of recording suc
   );
 });
 
+for (const databaseName of ['railway-test', 'râilway', 'railway"; DROP DATABASE x; --']) {
+  void test(`unsupported database name ${JSON.stringify(databaseName)} reports a failure without opening admin`, async () => {
+    for (const hasAdminCredential of [false, true]) {
+      const application = fakeClient({ ...OFF, databaseName });
+      const warnings: string[] = [];
+      let adminOpened = false;
+      const exitCode = await runSerialPlanVerification({
+        openApplicationClient: connectionTo(application),
+        openAdminClient: hasAdminCredential
+          ? () => {
+              adminOpened = true;
+              return connectionTo(fakeClient({ ...OFF, databaseName }))();
+            }
+          : null,
+        log: () => {},
+        warn: (message) => warnings.push(message),
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(adminOpened, false);
+      assert.ok(warnings.some((line) => line.includes('simple ASCII PostgreSQL identifiers')));
+      assert.ok(warnings.some((line) => line.includes('database owner')));
+      assert.ok(warnings.some((line) => line.includes('/health/db')));
+      assert.equal(
+        application.statements.some((statement) => statement.startsWith('ALTER DATABASE')),
+        false,
+      );
+      assert.equal(
+        warnings.some((line) => line.includes('ALTER DATABASE')),
+        false,
+      );
+      assert.equal(
+        warnings.some((line) => line.includes('Or set ADMIN_DATABASE_URL')),
+        false,
+      );
+    }
+  });
+}
+
 void test('an admin credential that does not own the database still fails the run', async () => {
   const exitCode = await runSerialPlanVerification({
     openApplicationClient: connectionTo(fakeClient(OFF)),
