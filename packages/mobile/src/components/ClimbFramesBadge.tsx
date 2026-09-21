@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { borderRadius } from '../theme/tokens';
+import { isMultiFrameClimb } from '../lib/is-multi-frame-climb';
+
+export { isMultiFrameClimb } from '../lib/is-multi-frame-climb';
 
 /**
  * Fixed white ink on a dark translucent scrim stays distinct from board art in
@@ -17,23 +20,6 @@ const BADGE_EDGE = 'rgba(255, 255, 255, 0.45)';
 /** Stack-glyph point size per density tier. The compact cell is 56×72, not 76×96. */
 const GLYPH_SIZE = 11;
 const COMPACT_GLYPH_SIZE = 9;
-
-/**
- * Whether a climb is a multi-frame route rather than a single-frame boulder.
- *
- * Exported so the row can gate MOUNTING the badge on it: `ClimbFramesBadge` calls
- * `useTranslation`, and a hook can't be skipped from inside the component, so a
- * badge mounted on every row would add an i18n listener to every row in the list
- * for the sake of the handful that are routes (docs/react-native-performance.md —
- * no per-row subscriptions). The badge keeps its own guard as well, so mounting it
- * unconditionally is merely wasteful, never wrong.
- *
- * Boards whose `multiFrameClimbs` capability is false (Woods) can never produce a
- * count above 1, so this is false for every climb on such a board.
- */
-export function isMultiFrameClimb(framesCount: number | null | undefined): framesCount is number {
-  return typeof framesCount === 'number' && framesCount > 1;
-}
 
 type ClimbFramesBadgeProps = {
   /** Number of frames on the climb. Below 2 the badge renders nothing. */

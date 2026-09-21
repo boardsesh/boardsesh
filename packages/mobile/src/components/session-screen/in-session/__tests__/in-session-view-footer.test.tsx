@@ -103,7 +103,12 @@ vi.mock('@shopify/flash-list', () => ({
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-uuid' }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) =>
+      key === 'mobile.climbRow.frameCount' ? `${options?.count} frames` : key,
+  }),
+}));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('@boardsesh/play-view', () => ({ formatGrade: (grade: string) => grade, getGradeTextColor: () => '#fff' }));
 vi.mock('../../../Button', () => ({ Button: () => createElement('button') }));
@@ -113,8 +118,20 @@ vi.mock('../../../Card', () => ({
 vi.mock('../../../GlassSurface', () => ({ GlassSurface: () => null }));
 vi.mock('../../../ListRow', () => ({ ListRow: () => null }));
 vi.mock('../../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('div', { onClick: onPress, 'data-testid': onPress ? 'pressable' : undefined }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) =>
+    createElement(
+      'div',
+      { onClick: onPress, 'aria-label': accessibilityLabel, 'data-testid': onPress ? 'pressable' : undefined },
+      children,
+    ),
 }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../RecordTopChrome', () => ({ RecordTopChrome: () => null }));
@@ -359,6 +376,29 @@ describe('InSessionView footer', () => {
       params: { sessionId: 'session-1' },
     });
   });
+  it.each(['p1r15', 'p1r15,"p2r15,"'])('announces route frame counts on the history action: %s', (frames) => {
+    detail.ticks = [
+      {
+        uuid: 'tick-1',
+        climbUuid: 'climb-1',
+        climbName: 'Long Route',
+        frames,
+        angle: 40,
+        status: 'send',
+        userId: 'user-1',
+        climbedAt: '2026-01-01T00:10:00.000Z',
+        boardType: 'kilter',
+        layoutId: 1,
+        isMirror: false,
+        isNoMatch: false,
+      },
+    ];
+    const { getAllByTestId } = render(createElement(InSessionView));
+    expect(getAllByTestId('pressable')[0].getAttribute('aria-label')).toBe(
+      frames.includes(',') ? 'mobile.session.historyRowAria, 3 frames' : 'mobile.session.historyRowAria',
+    );
+  });
+
   it('drops the list source when a history tick is tapped so swipes walk the queue (#4829)', () => {
     detail.ticks = [
       {

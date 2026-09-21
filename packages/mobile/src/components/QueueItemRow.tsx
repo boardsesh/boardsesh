@@ -16,6 +16,7 @@ import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { BoardDriverAvatar } from './board-presence/BoardDriverAvatar';
+import { isMultiFrameClimb } from '../lib/is-multi-frame-climb';
 import { resolveQueueRowAttribution } from '../lib/queue-attribution';
 import { resolveClimbRenderBoard } from '../lib/boards/climb-render-board';
 import { iosSystemColors } from '../theme/ios-colors';
@@ -134,7 +135,7 @@ function QueueItemRowComponent({
   viewerUserId = null,
 }: QueueItemRowProps) {
   const { systemColors, brandColors } = useTheme();
-  const { t } = useTranslation('session');
+  const { t } = useTranslation(['session', 'climbs']);
   const translateX = useSharedValue(0);
   const rowOpacity = useSharedValue(1);
   const rowHeight = useSharedValue<number | undefined>(undefined);
@@ -445,9 +446,16 @@ function QueueItemRowComponent({
   // memoized because a test asserts its identity across re-renders, but a string
   // has no such contract and memoizing it would only add a deps array to keep true.
   const positionLabel = t('mobile.queue.positionLabel', { position });
-  const rowAccessibilityLabel = addedBy
-    ? `${climbName}, ${positionLabel}, ${t('mobile.queue.addedByAria', { name: addedBy.name })}`
-    : `${climbName}, ${positionLabel}`;
+  const rowAccessibilityLabel = [
+    climbName,
+    positionLabel,
+    isMultiFrameClimb(item.climb?.framesCount)
+      ? t('mobile.climbRow.frameCount', { ns: 'climbs', count: item.climb.framesCount })
+      : null,
+    addedBy ? t('mobile.queue.addedByAria', { name: addedBy.name }) : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   const rowContent = (
     // touchAction="pan-y" (web only): RNGH otherwise defaults the row's DOM node
