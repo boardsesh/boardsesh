@@ -11,6 +11,55 @@ const ALLOWED_DATABASE_ROLES = new Set([
   'boardsesh_recommendations_refresh',
 ]);
 
+// PostgreSQL splits options on ASCII whitespace, with backslash escaping the
+// next character (not shell quoting). Restrict this route to -c/-- setting
+// assignments so compact or escaped role changes cannot bypass the login gate.
+// https://www.postgresql.org/docs/17/libpq-connect.html#LIBPQ-CONNECT-OPTIONS
+function validateStartupOptions(rawOptions) {
+  const unsupported = () => new Error('direct database URL contains unsupported startup options');
+  if (rawOptions.includes('\0')) throw unsupported();
+  const optionArguments = [];
+  let argument = '';
+  for (let index = 0; index < rawOptions.length; index += 1) {
+    const character = rawOptions[index];
+    if (character === '\\') {
+      index += 1;
+      if (index >= rawOptions.length) throw unsupported();
+      argument += rawOptions[index];
+    } else if (/[ \t\n\r\f\v]/.test(character)) {
+      if (argument) optionArguments.push(argument);
+      argument = '';
+    } else {
+      argument += character;
+    }
+  }
+  if (argument) optionArguments.push(argument);
+
+  for (let index = 0; index < optionArguments.length; index += 1) {
+    const option = optionArguments[index];
+    let assignment;
+    if (option === '-c') {
+      index += 1;
+      assignment = optionArguments[index];
+    } else if (option.startsWith('-c')) {
+      assignment = option.slice(2);
+    } else if (option.startsWith('--')) {
+      assignment = option.slice(2);
+    } else {
+      throw unsupported();
+    }
+    const equalsAt = assignment?.indexOf('=') ?? -1;
+    if (equalsAt <= 0) throw unsupported();
+    // PostgreSQL's ParseLongOption folds hyphens to underscores; GUC names
+    // are case-insensitive. Values may contain '=' or escaped spaces.
+    const settingName = assignment.slice(0, equalsAt).replaceAll('-', '_').toLowerCase();
+    if (!/^[a-z_][a-z0-9_.]*$/.test(settingName)) throw unsupported();
+    if (settingName === 'role' || settingName === 'session_authorization') {
+      throw new Error('direct database URL must not set a startup role');
+    }
+  }
+}
+
 export function validateProductionDatabaseRoute(rawDatabaseUrl, expectedHost, expectedRole) {
   if (!expectedHost || !FORWARDER_HOST_PATTERN.test(expectedHost)) {
     throw new Error('POSTGRES_FORWARDER_HOST must be the full boardsesh-db-forwarder MagicDNS name');
@@ -61,9 +110,7 @@ export function validateProductionDatabaseRoute(rawDatabaseUrl, expectedHost, ex
     }
     if (normalizedQueryName === 'options') startupOptions.push(queryValue);
   }
-  if (/\b(role|session_authorization)\s*=/i.test(startupOptions.join(' '))) {
-    throw new Error('direct database URL must not set a startup role');
-  }
+  for (const options of startupOptions) validateStartupOptions(options);
 
   let username;
   try {

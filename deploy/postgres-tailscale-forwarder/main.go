@@ -78,11 +78,7 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 			return fmt.Errorf("listen on tailnet route %s: %w", route.Name, err)
 		}
 		listeners = append(listeners, listener)
-		go func(route routeConfig, listener net.Listener) {
-			if err := proxy.serve(runContext, route, listener); err != nil {
-				serveErrors <- err
-			}
-		}(route, listener)
+		proxy.startServing(runContext, route, listener, serveErrors)
 		logger.Printf("event=route_listening route=%s tailnet_port=%d", route.Name, route.ListenPort)
 	}
 

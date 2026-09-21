@@ -21,11 +21,12 @@ type copyResult struct {
 }
 
 type forwarder struct {
-	dial       dialContextFunc
-	logger     *log.Logger
-	metrics    *forwarderMetrics
-	sessionCap chan struct{}
-	sessions   sync.WaitGroup
+	dial        dialContextFunc
+	logger      *log.Logger
+	metrics     *forwarderMetrics
+	sessionCap  chan struct{}
+	acceptLoops sync.WaitGroup
+	sessions    sync.WaitGroup
 }
 
 func newForwarder(config config, metrics *forwarderMetrics, logger *log.Logger) *forwarder {
@@ -36,6 +37,19 @@ func newForwarder(config config, metrics *forwarderMetrics, logger *log.Logger) 
 		metrics:    metrics,
 		sessionCap: make(chan struct{}, config.MaxSessions),
 	}
+}
+
+// Register the accept loop before spawning it. Shutdown may only wait after
+// every route is started; a late Accept can still register a session until the
+// accept loop returns, even after its listener has been closed.
+func (forwarder *forwarder) startServing(ctx context.Context, route routeConfig, listener net.Listener, serveErrors chan<- error) {
+	forwarder.acceptLoops.Add(1)
+	go func() {
+		defer forwarder.acceptLoops.Done()
+		if err := forwarder.serve(ctx, route, listener); err != nil {
+			serveErrors <- err
+		}
+	}()
 }
 
 func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listener net.Listener) error {
@@ -155,12 +169,14 @@ func networkErrorClass(err error) string {
 }
 
 func (forwarder *forwarder) wait(timeout time.Duration) bool {
-	// run cancels the proxy context before waiting: dial cancellation and socket
-	// closure release active sessions, so this waiter ends when their I/O drains.
+	// run cancels the proxy context and closes listeners before waiting. Join
+	// accept loops first so no session Add can race with a zero-count Wait.
+	// Both phases share the same deadline; cancellation releases real sockets.
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	completed := make(chan struct{})
 	go func() {
+		forwarder.acceptLoops.Wait()
 		forwarder.sessions.Wait()
 		close(completed)
 	}()
