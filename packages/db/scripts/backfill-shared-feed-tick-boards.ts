@@ -47,6 +47,10 @@
  *
  * A tick already moved off the feed stops matching. Use a new --out path on
  * every run: existing plan/recovery files are never overwritten.
+ *
+ * Forward applies re-read and re-plan their still-source rows in a SERIALIZABLE
+ * transaction. If a resolved wall changed, take a fresh dry-run and review its
+ * new snapshot; this tool never retries an old plan or picks a replacement.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
@@ -55,9 +59,12 @@ import { resolve } from 'path';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
 import {
+  boardConfigKey,
   planSharedFeedTickMoves,
   type FeedTick,
+  type OwnedBoard,
   type PlannedMove,
+  type SharedFeedBoard,
 } from './backfill-shared-feed-tick-boards-helpers.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { userBoards } from '../src/schema/app/boards.js';
@@ -102,6 +109,12 @@ const HELP = `Re-file shared-feed ticks. Dry-run is the default; database writes
 
 const BATCH_SIZE = 500;
 type ScriptDb = ReturnType<typeof createScriptDb>['db'];
+type ScriptTransaction = Parameters<Parameters<ScriptDb['transaction']>[0]>[0];
+
+export type ForwardMovePlan = {
+  feeds: SharedFeedBoard[];
+  entries: PlannedMove[];
+};
 
 /** Match saveTick's session rung: another user's session is valid, deleted walls are not. */
 export async function loadSharedFeedTicks(db: Pick<ScriptDb, 'select'>, feedIds: number[]): Promise<FeedTick[]> {
@@ -125,9 +138,148 @@ export async function loadSharedFeedTicks(db: Pick<ScriptDb, 'select'>, feedIds:
   return ticks.map((tick) => ({ ...tick, boardId: Number(tick.boardId) }));
 }
 
-/** Both directions use one atomic transaction and guard every tick's current board. */
-export async function applyMoveBatches(
-  db: Pick<ScriptDb, 'transaction'>,
+async function loadTicksByUuid(db: Pick<ScriptDb, 'select'>, uuids: string[]): Promise<FeedTick[]> {
+  const ticks: FeedTick[] = [];
+  for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
+    const rows = await db
+      .select({
+        uuid: boardseshTicks.uuid,
+        userId: boardseshTicks.userId,
+        boardId: boardseshTicks.boardId,
+        sessionBoard: {
+          id: userBoards.id,
+          boardType: userBoards.boardType,
+          layoutId: userBoards.layoutId,
+          sizeId: userBoards.sizeId,
+          setIds: userBoards.setIds,
+        },
+      })
+      .from(boardseshTicks)
+      .leftJoin(boardSessions, eq(boardSessions.id, boardseshTicks.sessionId))
+      .leftJoin(userBoards, and(eq(userBoards.id, boardSessions.boardId), isNull(userBoards.deletedAt)))
+      .where(inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)));
+    ticks.push(...rows.map((tick) => ({ ...tick, boardId: Number(tick.boardId) })));
+  }
+  return ticks;
+}
+
+async function loadCurrentSharedFeeds(db: Pick<ScriptDb, 'select'>, feedIds: number[]): Promise<SharedFeedBoard[]> {
+  const feeds: SharedFeedBoard[] = [];
+  for (let offset = 0; offset < feedIds.length; offset += BATCH_SIZE) {
+    const rows = await db
+      .select({
+        id: userBoards.id,
+        boardType: userBoards.boardType,
+        layoutId: userBoards.layoutId,
+        sizeId: userBoards.sizeId,
+        setIds: userBoards.setIds,
+      })
+      .from(userBoards)
+      .where(
+        and(
+          inArray(userBoards.id, feedIds.slice(offset, offset + BATCH_SIZE)),
+          eq(userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+          like(userBoards.slug, `${PRESENCE_SLUG_PREFIX}%`),
+        ),
+      );
+    feeds.push(
+      ...rows.map((feed) => ({
+        id: Number(feed.id),
+        boardType: feed.boardType,
+        layoutId: Number(feed.layoutId),
+        sizeId: Number(feed.sizeId),
+        setIds: feed.setIds,
+      })),
+    );
+  }
+  return feeds;
+}
+
+async function loadOwnedBoards(db: Pick<ScriptDb, 'select'>, ownerIds: string[]): Promise<OwnedBoard[]> {
+  const boards: OwnedBoard[] = [];
+  for (let offset = 0; offset < ownerIds.length; offset += BATCH_SIZE) {
+    const rows = await db
+      .select({
+        id: userBoards.id,
+        ownerId: userBoards.ownerId,
+        boardType: userBoards.boardType,
+        layoutId: userBoards.layoutId,
+        sizeId: userBoards.sizeId,
+        setIds: userBoards.setIds,
+      })
+      .from(userBoards)
+      .where(
+        and(inArray(userBoards.ownerId, ownerIds.slice(offset, offset + BATCH_SIZE)), isNull(userBoards.deletedAt)),
+      );
+    boards.push(
+      ...rows.map((board) => ({
+        id: Number(board.id),
+        ownerId: board.ownerId,
+        boardType: board.boardType,
+        layoutId: Number(board.layoutId),
+        sizeId: Number(board.sizeId),
+        setIds: board.setIds,
+      })),
+    );
+  }
+  return boards;
+}
+
+function staleForwardPlan(message: string): Error {
+  return new Error(`Forward plan is stale: ${message}. Run a fresh dry-run and review its new snapshot.`);
+}
+
+async function revalidateForwardPlan(
+  transaction: Pick<ScriptTransaction, 'select'>,
+  plan: ForwardMovePlan,
+): Promise<PlannedMove[]> {
+  const plannedByUuid = new Map(plan.entries.map((entry) => [entry.uuid, entry]));
+  const originalFeedById = new Map(plan.feeds.map((feed) => [feed.id, feed]));
+  const ticks = await loadTicksByUuid(
+    transaction,
+    plan.entries.map((entry) => entry.uuid),
+  );
+  const stillOnSource = ticks.filter((tick) => plannedByUuid.get(tick.uuid)?.oldBoardId === tick.boardId);
+  if (stillOnSource.length === 0) return [];
+
+  const sourceFeedIds = [...new Set(stillOnSource.map((tick) => tick.boardId))];
+  const currentFeeds = await loadCurrentSharedFeeds(transaction, sourceFeedIds);
+  const currentFeedById = new Map(currentFeeds.map((feed) => [feed.id, feed]));
+  for (const feedId of sourceFeedIds) {
+    const originalFeed = originalFeedById.get(feedId);
+    const currentFeed = currentFeedById.get(feedId);
+    if (!originalFeed || !currentFeed || boardConfigKey(originalFeed) !== boardConfigKey(currentFeed)) {
+      throw staleForwardPlan(`shared feed ${feedId} changed`);
+    }
+  }
+
+  const ownerIds = [...new Set(stillOnSource.map((tick) => tick.userId))].filter(
+    (ownerId) => ownerId !== SYSTEM_BOARD_OWNER_ID,
+  );
+  const currentPlan = planSharedFeedTickMoves({
+    feeds: currentFeeds,
+    ticks: stillOnSource,
+    ownedBoards: await loadOwnedBoards(transaction, ownerIds),
+  });
+  const currentMoveByUuid = new Map(currentPlan.moves.map((entry) => [entry.uuid, entry]));
+  for (const tick of stillOnSource) {
+    const original = plannedByUuid.get(tick.uuid);
+    const current = currentMoveByUuid.get(tick.uuid);
+    if (
+      !original ||
+      !current ||
+      current.oldBoardId !== original.oldBoardId ||
+      current.newBoardId !== original.newBoardId
+    ) {
+      throw staleForwardPlan(`destination for tick ${tick.uuid} changed`);
+    }
+  }
+  const stillOnSourceUuids = new Set(stillOnSource.map((tick) => tick.uuid));
+  return plan.entries.filter((entry) => stillOnSourceUuids.has(entry.uuid));
+}
+
+async function applyMoveBatchesInTransaction(
+  transaction: Pick<ScriptTransaction, 'update'>,
   entries: PlannedMove[],
   direction: 'forward' | 'revert',
 ): Promise<number> {
@@ -141,25 +293,49 @@ export async function applyMoveBatches(
     else groups.set(key, { fromBoardId, toBoardId, uuids: [entry.uuid] });
   }
   const updatedAt = new Date().toISOString();
-  return db.transaction(async (transaction) => {
-    let applied = 0;
-    for (const { fromBoardId, toBoardId, uuids } of groups.values()) {
-      for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
-        const rows = await transaction
-          .update(boardseshTicks)
-          .set({ boardId: toBoardId, updatedAt })
-          .where(
-            and(
-              inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)),
-              eq(boardseshTicks.boardId, fromBoardId),
-            ),
-          )
-          .returning({ uuid: boardseshTicks.uuid });
-        applied += rows.length;
-      }
+  let applied = 0;
+  for (const { fromBoardId, toBoardId, uuids } of groups.values()) {
+    for (let offset = 0; offset < uuids.length; offset += BATCH_SIZE) {
+      const rows = await transaction
+        .update(boardseshTicks)
+        .set({ boardId: toBoardId, updatedAt })
+        .where(
+          and(
+            inArray(boardseshTicks.uuid, uuids.slice(offset, offset + BATCH_SIZE)),
+            eq(boardseshTicks.boardId, fromBoardId),
+          ),
+        )
+        .returning({ uuid: boardseshTicks.uuid });
+      applied += rows.length;
     }
-    return applied;
-  });
+  }
+  return applied;
+}
+
+/** Revert restores a reviewed snapshot atomically and retains its current-board guard. */
+export async function applyRevertMoveBatches(
+  db: Pick<ScriptDb, 'transaction'>,
+  entries: PlannedMove[],
+): Promise<number> {
+  return db.transaction((transaction) => applyMoveBatchesInTransaction(transaction, entries, 'revert'));
+}
+
+/**
+ * Forward writes re-check the plan under SERIALIZABLE isolation. A serialization
+ * failure or changed destination requires a newly reviewed dry-run; retrying an
+ * old snapshot could apply a destination the climber no longer selected.
+ */
+export async function applyForwardMoveBatches(
+  db: Pick<ScriptDb, 'transaction'>,
+  plan: ForwardMovePlan,
+): Promise<number> {
+  return db.transaction(
+    async (transaction) => {
+      const entries = await revalidateForwardPlan(transaction, plan);
+      return applyMoveBatchesInTransaction(transaction, entries, 'forward');
+    },
+    { isolationLevel: 'serializable' },
+  );
 }
 
 type SnapshotEntry = { uuid: string; oldBoardId: number; newBoardId: number };
@@ -238,7 +414,7 @@ async function revert(snapshotPath: string, apply: boolean) {
       console.log('Dry run — nothing written.');
       return;
     }
-    const restored = await applyMoveBatches(db, snapshot.entries, 'revert');
+    const restored = await applyRevertMoveBatches(db, snapshot.entries);
     console.log(`Reverted ${restored}/${snapshot.entries.length} rows (skipped rows changed since).`);
   } finally {
     await close();
@@ -309,14 +485,15 @@ async function main() {
       );
     }
 
+    const plannedFeeds = feeds.map((feed) => ({
+      id: Number(feed.id),
+      boardType: feed.boardType,
+      layoutId: Number(feed.layoutId),
+      sizeId: Number(feed.sizeId),
+      setIds: feed.setIds,
+    }));
     const plan = planSharedFeedTickMoves({
-      feeds: feeds.map((feed) => ({
-        id: Number(feed.id),
-        boardType: feed.boardType,
-        layoutId: Number(feed.layoutId),
-        sizeId: Number(feed.sizeId),
-        setIds: feed.setIds,
-      })),
+      feeds: plannedFeeds,
       ticks,
       ownedBoards: ownedBoards.map((board) => ({
         id: Number(board.id),
@@ -360,7 +537,7 @@ async function main() {
     writeSnapshot(outPath, snapshot);
     console.log(`Snapshot written to ${outPath} — revert with --revert ${outPath} --apply`);
 
-    const updated = await applyMoveBatches(db, entries, 'forward');
+    const updated = await applyForwardMoveBatches(db, { feeds: plannedFeeds, entries });
 
     console.log('');
     console.log(`Re-filed ${updated} ticks onto their resolved walls.`);
