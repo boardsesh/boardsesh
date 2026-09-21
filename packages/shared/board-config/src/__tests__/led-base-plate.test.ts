@@ -30,3 +30,7 @@ describe('hasLedBasePlate', () => {
     expect(hasLedBasePlate(undefined, 8)).toBe(false);
   });
 });
+
+it.each(['constructor', '__proto__', 'toString'])('rejects inherited object key %s as a board name', (boardName) => {
+  expect(hasLedBasePlate(boardName, 8)).toBe(false);
+});
