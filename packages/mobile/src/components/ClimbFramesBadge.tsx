@@ -6,26 +6,9 @@ import { Icon } from './Icon';
 import { borderRadius } from '../theme/tokens';
 
 /**
- * Ink, scrim and edge of the frames chip. Fixed values, NOT theme colours: the
- * chip sits on board art, not on an app surface, so it has to be legible against
- * a photo rather than against `systemColors.background` — and the photo doesn't
- * change with the colour scheme.
- *
- * Why a scrim AND an edge, rather than one or the other:
- *
- * - White ink on the 72%-black scrim clears WCAG AA on both extremes of our board
- *   art. Over a near-black Kilter wall (~#101010, relative luminance ≈ 0.006) the
- *   composited chip lands at L ≈ 0.28·0.006 ≈ 0.002, so white reads at
- *   (1.0 + 0.05) / (0.002 + 0.05) ≈ 20:1. Over a bright Tension plywood wall
- *   (~#C8B48C, L ≈ 0.47) it lands at L ≈ 0.28·0.47 ≈ 0.13, so white still reads
- *   at (1.05) / (0.18) ≈ 5.8:1. Both are above the 4.5:1 floor.
- * - The scrim alone disappears INTO the near-black Kilter art — 20:1 on the text
- *   is useless if you can't see where the chip is. The 45%-white hairline is what
- *   separates the chip from a dark wall; against the bright wall the scrim itself
- *   already does that job.
- *
- * Contrast figures above are computed, not measured on a device — see the PR's
- * test plan for the device pass that still owes us the visual confirmation.
+ * Fixed white ink on a dark translucent scrim stays distinct from board art in
+ * either colour scheme. The pale hairline separates the badge from dark images.
+ * Device QA must still confirm legibility over the actual thumbnails.
  */
 const BADGE_INK = '#FFFFFF';
 const BADGE_SCRIM = 'rgba(0, 0, 0, 0.72)';
@@ -48,7 +31,7 @@ const COMPACT_GLYPH_SIZE = 9;
  * Boards whose `multiFrameClimbs` capability is false (Woods) can never produce a
  * count above 1, so this is false for every climb on such a board.
  */
-export function isMultiFrameClimb(framesCount: number | null | undefined): boolean {
+export function isMultiFrameClimb(framesCount: number | null | undefined): framesCount is number {
   return typeof framesCount === 'number' && framesCount > 1;
 }
 
@@ -85,7 +68,7 @@ export const ClimbFramesBadge = memo(function ClimbFramesBadge({
 
   return (
     <View
-      accessibilityRole="image"
+      accessibilityRole="text"
       accessibilityLabel={t('mobile.climbRow.frameCount', { count: framesCount })}
       style={[styles.badge, compact ? styles.badgeCompact : null]}
     >
