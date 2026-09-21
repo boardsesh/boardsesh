@@ -330,7 +330,7 @@
         "tiles",
         "nmsIou"
       ],
-      "description": "How to drive the model over a whole photo. `input` describes ONE tensor; this describes the pass. Without it a consumer cannot tell a tiled config from an untiled one and would run a single full-frame pass, which scores differently - so it is required for any config whose `tiles` are not 1x1.",
+      "description": "How to drive the model over a whole photo. input describes one tensor; this describes the pass. publish_model.py requires this field for every new export, including an untiled full-frame pass. The shared schema leaves it optional for legacy schema-v1 manifests; its absence cannot prove that an older model was trained or evaluated without tiling.",
       "properties": {
         "longSide": {
           "type": "integer",

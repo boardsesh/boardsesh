@@ -310,6 +310,9 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     import jsonschema
 
     schema = json.loads(SCHEMA_PATH.read_text())
+    # Keep schema-v1 readers compatible with legacy manifests. New exports
+    # always need an explicit plan, including an untiled full-frame pass.
+    schema["required"] = [*schema["required"], "inference"]
     jsonschema.validate(instance=manifest, schema=schema)
 
 

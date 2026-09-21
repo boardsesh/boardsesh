@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image
@@ -26,23 +28,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from common import TileGrid, tile_boxes  # noqa: E402
 
 
-def clip_polygon_to_tile(segmentation, scale: float, x0: float, y0: float, x1: float, y1: float):
-    """Clip a COCO polygon to one tile, returned in tile-local coordinates.
+Point = tuple[float, float]
 
-    Sutherland-Hodgman against the four tile edges. The clip region is a
-    rectangle — convex — so the algorithm is exact here, and it keeps this file
-    dependency-free rather than pulling shapely in for one crop.
 
-    Without this a tiled config silently trains its mask head on empty
-    polygons: the boxes survive the crop and the outlines do not.
+def clip_polygon_to_tile(
+    segmentation: object, scale: float, x0: float, y0: float, x1: float, y1: float
+) -> list[list[float]]:
+    """Clip COCO polygon rings to a tile and return tile-local coordinates.
+
+    Rectangle clipping uses Sutherland-Hodgman. Missing polygons remain empty
+    for box-only annotations. RLE masks are unsupported and fail explicitly so
+    a segmentation dataset cannot silently lose its training masks.
     """
-    if not segmentation:
+    if segmentation is None:
         return []
+    if not isinstance(segmentation, list):
+        raise ValueError("Expected COCO polygon lists; RLE segmentation is not supported")
 
-    def clip_edge(points, inside, intersect):
+    def clip_edge(
+        points: list[Point],
+        inside: Callable[[Point], bool],
+        intersect: Callable[[Point, Point], Point],
+    ) -> list[Point]:
         if not points:
             return []
-        output = []
+        output: list[Point] = []
         previous = points[-1]
         for current in points:
             if inside(current):
@@ -54,24 +64,33 @@ def clip_polygon_to_tile(segmentation, scale: float, x0: float, y0: float, x1: f
             previous = current
         return output
 
-    def cut(points, axis, bound, keep_greater):
-        def inside(point):
+    def cut(points: list[Point], axis: int, bound: float, keep_greater: bool) -> list[Point]:
+        def inside(point: Point) -> bool:
             return point[axis] >= bound if keep_greater else point[axis] <= bound
 
-        def intersect(a, b):
-            span = b[axis] - a[axis]
-            t = 0.0 if span == 0 else (bound - a[axis]) / span
-            other = 1 - axis
+        def intersect(previous: Point, current: Point) -> Point:
+            span = current[axis] - previous[axis]
+            fraction = 0.0 if span == 0 else (bound - previous[axis]) / span
+            other_axis = 1 - axis
             crossed = [0.0, 0.0]
             crossed[axis] = bound
-            crossed[other] = a[other] + t * (b[other] - a[other])
+            crossed[other_axis] = previous[other_axis] + fraction * (current[other_axis] - previous[other_axis])
             return (crossed[0], crossed[1])
 
         return clip_edge(points, inside, intersect)
 
-    clipped_rings = []
+    clipped_rings: list[list[float]] = []
     for ring in segmentation:
-        points = [(ring[i] * scale, ring[i + 1] * scale) for i in range(0, len(ring) - 1, 2)]
+        if not isinstance(ring, list) or len(ring) % 2:
+            raise ValueError("Each COCO polygon must contain complete coordinate pairs")
+        if not all(
+            isinstance(coordinate, (int, float))
+            and not isinstance(coordinate, bool)
+            and math.isfinite(coordinate)
+            for coordinate in ring
+        ):
+            raise ValueError("COCO polygon coordinates must be finite numbers")
+        points = [(ring[index] * scale, ring[index + 1] * scale) for index in range(0, len(ring), 2)]
         if len(points) < 3:
             continue
         for axis, bound, keep_greater in ((0, x0, True), (0, x1, False), (1, y0, True), (1, y1, False)):
@@ -80,7 +99,14 @@ def clip_polygon_to_tile(segmentation, scale: float, x0: float, y0: float, x1: f
                 break
         if len(points) < 3:
             continue
-        clipped_rings.append([round(value, 2) for point in points for value in (point[0] - x0, point[1] - y0)])
+        local_points = [(round(point[0] - x0, 2), round(point[1] - y0, 2)) for point in points]
+        twice_area = sum(
+            previous[0] * current[1] - current[0] * previous[1]
+            for previous, current in zip(local_points, local_points[1:] + local_points[:1])
+        )
+        if twice_area == 0:
+            continue
+        clipped_rings.append([coordinate for point in local_points for coordinate in point])
     return clipped_rings
 
 

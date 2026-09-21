@@ -164,6 +164,12 @@ def test_manifest_contents_match_the_contract(tmp_path: Path, sample_model: Path
     assert manifest["outputs"]["logits"]["activation"] == "sigmoid"
     assert manifest["outputs"]["logits"]["classes"] == 1
 
+    assert manifest["inference"] == {
+        "longSide": 1024,
+        "tiles": {"rows": 2, "cols": 2, "overlap": 0.15},
+        "nmsIou": 0.5,
+    }
+
     assert manifest["thresholds"]["default"] == 0.2
     assert manifest["thresholds"]["sweep"] == [0.05, 0.08, 0.12, 0.2]
 
@@ -740,3 +746,28 @@ def test_the_schema_pins_the_mask_decode_order(tmp_path: Path, sample_model: Pat
     manifest["outputs"]["masks"]["decode"] = "threshold-then-interpolate"
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(instance=manifest, schema=schema)
+
+
+def test_an_untiled_export_documents_its_full_frame_pass(tmp_path: Path, sample_model: Path) -> None:
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--config", "seg-nano-untiled-1024"])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert manifest["inference"] == {
+        "longSide": 1024,
+        "tiles": {"rows": 1, "cols": 1, "overlap": 0.0},
+        "nmsIou": 0.5,
+    }
+
+
+@pytest.mark.parametrize("config_name", [CONFIG_NAME, "seg-nano-untiled-1024"])
+def test_new_publications_require_an_inference_plan(
+    tmp_path: Path, sample_model: Path, config_name: str
+) -> None:
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--config", config_name])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    del manifest["inference"]
+    with pytest.raises(jsonschema.ValidationError, match="inference"):
+        publish_model.validate_manifest(manifest)
+
+    # Existing consumers may still read a schema-v1 export from before plans
+    # were published. Tightening the publisher must not invalidate that schema.
+    jsonschema.validate(instance=manifest, schema=json.loads(publish_model.SCHEMA_PATH.read_text()))
