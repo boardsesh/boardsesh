@@ -166,6 +166,7 @@ describe('api/og/session route', () => {
 
   it.each([
     ['moonboard', 21, '5a', '4a'],
+    ['tension', 21, '4a', null],
     ['kilter', 99, null, '4a'],
   ])('uses the supported floor for %s and difficulty %s', async (boardType, difficulty, expected, absent) => {
     sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
@@ -187,7 +188,34 @@ describe('api/og/session route', () => {
     expect(response.status).toBe(200);
     const textContent = collectText(sessionRouteState.capturedElement);
     if (expected) expect(textContent).toContain(expected);
-    expect(textContent).not.toContain(absent);
+    if (absent) expect(textContent).not.toContain(absent);
+  });
+
+  it('keeps the grade floor when a session also contains an unknown difficulty', async () => {
+    sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Mixed grades',
+      leaderName: null,
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 5,
+      gradeRows: [
+        { difficulty: -1, count: 2 },
+        { difficulty: 21, count: 3 },
+      ],
+      boardType: 'kilter',
+      boardLabel: 'Kilter',
+      boardAngle: 40,
+      boardPreviewPath: null,
+      version: 'mixed',
+      found: true,
+    });
+    const response = await GET(makeRequest({ sessionId: 'mixed-grades', variant: 'join' }));
+    expect(response.status).toBe(200);
+    const textContent = collectText(sessionRouteState.capturedElement);
+    expect(textContent).toContain('4a');
+    expect(textContent).toContain('6c');
+    expect(textContent).toContain('5 sends so far');
   });
 
   it('returns 404 when the session summary is not found', async () => {
