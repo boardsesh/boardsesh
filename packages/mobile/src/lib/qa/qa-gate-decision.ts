@@ -3,9 +3,17 @@ import { DEEP_LINK_SEGMENTS } from '../deep-link-segments';
 /**
  * Top-level route groups the QA prompt must not cover. The onboarding /
  * deep-link set, plus `qa` itself so a re-render while the pick list or the
- * brief is already up can never push a second copy of it.
+ * brief is already up can never push a second copy of it, plus
+ * `send-recovery`: that gate runs beside this one on a launch and reads SQLite
+ * while this one waits on the network, so its notice can be up first. Stacking
+ * a second modal on it would bury the one the climber is reading.
  */
-export const QA_BLOCKED_TOP_SEGMENTS: ReadonlySet<string> = new Set([...DEEP_LINK_SEGMENTS, 'onboarding', 'qa']);
+export const QA_BLOCKED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
+  ...DEEP_LINK_SEGMENTS,
+  'onboarding',
+  'qa',
+  'send-recovery',
+]);
 
 export type QaGateInput = {
   /** Auth + fonts resolved and the splash hidden. */

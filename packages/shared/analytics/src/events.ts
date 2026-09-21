@@ -461,14 +461,19 @@ export const SHARED_EVENTS = {
   // 'segment_after_reads' | 'not_ready' | 'board_unresolved' | 'reads_pending',
   // step: 'intro' | 'board' | null, had_board and seen_flag (boolean, or null
   // when not read yet), account_age_hours (whole hours since the account was
-  // created, null until the profile loads), ota_is_embedded, trigger:
-  // 'cold_start' | 'remount' | 'account_switch', top_segment, ms_since_mount }.
+  // created; the gate waits up to 5 s for the profile, so null means that read
+  // failed or ran out of time), ota_is_embedded, trigger: 'cold_start' |
+  // 'remount' | 'account_switch', top_segment, ms_since_mount, after_stall
+  // (true on a decision that landed after this mount already reported
+  // `stalled`, so one mount can send two events) }.
   //
   // `would_present` is deliberate: the gate evaluates and logs, and presents
   // nothing until the first-run redesign turns presenting on for new accounts.
   // A returning climber's steady state (a board bound, seen flag not known to
   // be false) is NOT sent, and neither is a signed-out launch on the login
-  // screen, so the volume is newcomers, climbers without a board and anomalies.
+  // screen, so the decisions are newcomers, climbers without a board and
+  // anomalies. Stalls are sent for everyone, so read a stall rate against
+  // launches (`OTA Update Status`), not against this event's own count.
   OnboardingGateEvaluated: 'Onboarding Gate Evaluated',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the

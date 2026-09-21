@@ -44,11 +44,21 @@ export type OnboardingGateEvaluation = {
   hadBoard: boolean | null;
   /** null when the gate stopped before reading the seen flag. */
   seenFlag: boolean | null;
-  /** The profile's ISO `createdAt`, when the profile has loaded. */
+  /**
+   * The profile's ISO `createdAt`. The gate waits up to 5 s for the profile
+   * before it decides, so this is only missing when that read failed or ran out
+   * of time, and on a stall.
+   */
   accountCreatedAt: string | null | undefined;
   trigger: OnboardingGateTrigger;
   topSegment: string | undefined;
   msSinceMount: number;
+  /**
+   * The watchdog had already reported this mount as `stalled` when the decision
+   * landed. One mount can then send two events, and this is how a count of
+   * decisions leaves the late one out, or a stall count finds its resolution.
+   */
+  afterStall: boolean;
 };
 
 const MS_PER_HOUR = 3_600_000;
@@ -74,6 +84,12 @@ export function accountAgeHours(createdAt: string | null | undefined, atMs: numb
  *
  * Everything else reports: every `would_present`, every stall, and every skip of
  * a climber without a board.
+ *
+ * Stalls are NOT filtered like decisions: the watchdog is the canary for #5654,
+ * and that freeze hit every climber, returning ones included. So a stall rate
+ * has to be read against launches (`OTA Update Status`, one per launch), never
+ * against this event's own count, whose decisions leave the returning majority
+ * out.
  */
 export function shouldReportOnboardingGate(
   evaluation: Pick<OnboardingGateEvaluation, 'outcome' | 'hadBoard' | 'seenFlag' | 'topSegment'>,
@@ -99,5 +115,6 @@ export function trackOnboardingGateEvaluated(evaluation: OnboardingGateEvaluatio
     trigger: evaluation.trigger,
     top_segment: evaluation.topSegment ?? null,
     ms_since_mount: Math.round(evaluation.msSinceMount),
+    after_stall: evaluation.afterStall,
   });
 }

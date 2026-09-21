@@ -533,14 +533,22 @@ said whether it had decided anything. Mobile only; names live in `SHARED_EVENTS`
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Skips a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so roughly newcomers, climbers without a board, and stalls |
+| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount`, `after_stall` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Decisions skip a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so they are roughly newcomers and climbers without a board. Stalls are sent for every climber |
 | `Board Look Step Evaluated` | `outcome` (`would_present` / `skipped`), `reason` (`never_asked` / `look_chosen` / `step_seen`) | `packages/mobile/src/lib/board-render/board-look-step-evaluation-log.ts`, from `BoardLookStepGate.tsx` in log-only mode | Once per device (AsyncStorage marker `boardLookStepEvaluationLogged`) |
 
 ### Reading them
 
 - `outcome: 'would_present'` is not a presentation. In #5654's first PR both gates evaluate and log
   only; nothing is pushed. A later change turns presenting on for new accounts and adds `presented`.
-- `stalled` should stay under 1% of evaluations. A spike means the gate's inputs stopped arriving
-  again; `reason` names which one.
-- Compare `Onboarding Gate Evaluated` (`trigger = remount`) with `Login Succeeded` for the "does the
-  gate run after sign-in" check. `ota_is_embedded` splits first launches (binary JS) from OTA JS.
+- `stalled` should stay under 1% of launches. Divide by `OTA Update Status` (one per launch), not by
+  this event's own count: stalls report for every climber while decisions leave out the returning
+  majority, so the event's own count would overstate the rate several times over. A spike means the
+  gate's inputs stopped arriving again; `reason` names which one.
+- A mount that stalls and then decides sends two events. The late decision carries
+  `after_stall = true`; leave it out when counting decisions, and use it to see how many stalls
+  resolved on their own.
+- `account_age_hours` splits new accounts from existing ones. The gate waits up to 5 s for the
+  profile before it decides, so a null age means that read failed or timed out.
+- Compare `Onboarding Gate Evaluated` (`trigger = remount`, `after_stall = false`) with
+  `Login Succeeded` for the "does the gate run after sign-in" check. `ota_is_embedded` splits first
+  launches (binary JS) from OTA JS.

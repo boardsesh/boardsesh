@@ -28,7 +28,7 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
 import { useAuth } from '../../providers/auth-provider';
-import { useConnectivityBannerEnabled } from '../../providers/feature-flags-provider';
+import { useConnectivityBannerEnabled, useFeatureFlagsResolved } from '../../providers/feature-flags-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
@@ -79,10 +79,20 @@ type BannerPresentation = {
  * has its own kill switch, `connectivity-banner-kill`, separate from
  * `backend-outage-detection`: killing the banner leaves the outage detection and
  * its fail-fast path running, and the reverse.
+ *
+ * It also waits for the feature flags to resolve (at most 2 s), like the two
+ * launch gates that push a route. Without that wait a killed banner would still
+ * paint for up to 2 s of every cold start, and in Offline mode it paints from
+ * the first frame. The banner stays up for as long as its condition lasts, so
+ * starting it that much later costs nothing anyone can see.
  */
 export function ConnectivityBanner() {
-  const ready = useLaunchReady();
+  // Both hooks run on every render: `&&` between two hook calls would skip the
+  // second one whenever the first is false.
+  const launchReady = useLaunchReady();
+  const flagsResolved = useFeatureFlagsResolved();
   const enabled = useConnectivityBannerEnabled();
+  const ready = launchReady && flagsResolved;
   // Screenshot builds never show it: a store screenshot must not carry a "server
   // trouble" card, and the capture rig has no backend to reach anyway.
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return null;

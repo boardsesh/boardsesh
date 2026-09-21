@@ -3,12 +3,16 @@ import { DEEP_LINK_SEGMENTS } from '../deep-link-segments';
 /**
  * Top-level route groups the recovery notice must not cover. The onboarding /
  * deep-link set, plus `send-recovery` itself so a re-render while the notice is
- * already up can never push a second copy of it.
+ * already up can never push a second copy of it, plus `qa`: the tester prompt
+ * outranks this notice, and the two gates run side by side on a launch. The
+ * note is durable in the database, so yielding costs nothing; the climber is
+ * told on the next launch instead.
  */
 export const SEND_RECOVERY_BLOCKED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
   ...DEEP_LINK_SEGMENTS,
   'onboarding',
   'send-recovery',
+  'qa',
 ]);
 
 export type SendRecoveryInput = {

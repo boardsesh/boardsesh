@@ -18,9 +18,14 @@ const activeBoardCtrl = vi.hoisted(() => ({
 }));
 // Controllable signed-in profile: the gate keys its first-run decision on the
 // profile id, so tests drive sign-out/sign-in by swapping this id.
+//
+// `status` stands in for the query's lifecycle: `settled` is a finished read
+// with nothing in flight (with no id, that is the signed-out `profile: null`),
+// `fetching` a read in flight, `error` a read that failed.
 const profileCtrl = vi.hoisted(() => ({
   id: undefined as string | undefined,
   createdAt: '2026-09-20T12:00:00.000Z' as string | undefined,
+  status: 'settled' as 'settled' | 'fetching' | 'error',
 }));
 const launchCtrl = vi.hoisted(() => ({ ready: true }));
 const boardLookGateCtrl = vi.hoisted(() => ({
@@ -68,6 +73,9 @@ vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({
     data: profileCtrl.id ? { id: profileCtrl.id, createdAt: profileCtrl.createdAt } : undefined,
+    isFetching: profileCtrl.status === 'fetching',
+    isSuccess: profileCtrl.status === 'settled',
+    isError: profileCtrl.status === 'error',
   }),
 }));
 vi.mock('../../../providers/launch-ready-context', () => ({ useLaunchReady: () => launchCtrl.ready }));
@@ -86,7 +94,12 @@ vi.mock('../../board-look/BoardLookStepGate', () => ({
   },
 }));
 
-import { OnboardingGate, ONBOARDING_GATE_STALL_MS, resetOnboardingGateProcessForTests } from '../OnboardingGate';
+import {
+  OnboardingGate,
+  ONBOARDING_GATE_PROFILE_WAIT_MS,
+  ONBOARDING_GATE_STALL_MS,
+  resetOnboardingGateProcessForTests,
+} from '../OnboardingGate';
 
 function evaluations(): OnboardingGateEvaluation[] {
   return trackGateMock.mock.calls.map(([evaluation]) => evaluation as OnboardingGateEvaluation);
@@ -113,6 +126,7 @@ describe('OnboardingGate', () => {
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
     profileCtrl.id = undefined;
     profileCtrl.createdAt = '2026-09-20T12:00:00.000Z';
+    profileCtrl.status = 'settled';
     launchCtrl.ready = true;
     appStateCtrl.currentState = 'active';
     appStateCtrl.listeners.clear();
@@ -370,7 +384,7 @@ describe('OnboardingGate', () => {
     expect(decisions()).toHaveLength(1);
   });
 
-  // The profile query answers after mount on most launches. That is the same
+  // A profile id appearing after a settled read that said "nobody" is the same
   // account finishing loading, not a new one, so it must not buy a second
   // decision (and a second event) once the first has landed.
   it('does not re-decide when the profile lands after the decision', async () => {
@@ -386,6 +400,111 @@ describe('OnboardingGate', () => {
 
     expect(decisions()).toHaveLength(1);
     expect(hasSeenMock).toHaveBeenCalledTimes(1);
+  });
+
+  // The account age is what splits new accounts from existing ones, and the
+  // profile read is the only place it comes from. On a cold start and after a
+  // sign-in, that read is still on the network when the local reads answer.
+  describe('waiting for the profile', () => {
+    it('holds the decision until the profile lands, then carries the account age', async () => {
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.status = 'fetching';
+      const { rerender } = render(<OnboardingGate />);
+      // Every local read would have answered by now.
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(decisions()).toEqual([]);
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
+
+      profileCtrl.id = 'user-a';
+      profileCtrl.status = 'settled';
+      rerender(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({
+        outcome: 'would_present',
+        accountCreatedAt: '2026-09-20T12:00:00.000Z',
+        afterStall: false,
+      });
+      expect(hasSeenMock).toHaveBeenCalledTimes(1);
+    });
+
+    // A sign-in keeps the login screen's cached `profile: null` while the
+    // refetch that replaces it runs. That null is not an answer yet.
+    it('does not take a cached empty profile for an answer while its refetch runs', async () => {
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.id = undefined;
+      profileCtrl.status = 'fetching';
+      const { rerender } = render(<OnboardingGate />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(decisions()).toEqual([]);
+
+      profileCtrl.id = 'user-new';
+      profileCtrl.createdAt = '2026-09-21T11:00:00.000Z';
+      profileCtrl.status = 'settled';
+      rerender(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0].accountCreatedAt).toBe('2026-09-21T11:00:00.000Z');
+    });
+
+    it('decides without the age when the profile read fails', async () => {
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.status = 'error';
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', accountCreatedAt: undefined });
+    });
+
+    it('stops waiting after the bound, well before the stall watchdog', async () => {
+      vi.useFakeTimers();
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.status = 'fetching';
+      render(<OnboardingGate />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_PROFILE_WAIT_MS - 1);
+      });
+      expect(evaluations()).toEqual([]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(evaluations()).toEqual([
+        expect.objectContaining({ outcome: 'would_present', accountCreatedAt: undefined, afterStall: false }),
+      ]);
+
+      // The watchdog was stopped by that decision.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_STALL_MS * 2);
+      });
+      expect(evaluations()).toHaveLength(1);
+    });
+
+    it('does not re-open the wait when the profile refetches after it settled', async () => {
+      let resolveSeen: (seen: boolean) => void = () => {};
+      hasSeenMock.mockReturnValue(
+        new Promise<boolean>((resolve) => {
+          resolveSeen = resolve;
+        }),
+      );
+      const { rerender } = render(<OnboardingGate />);
+      await waitFor(() => expect(hasSeenMock).toHaveBeenCalled());
+
+      // A refetch starts while the decision's reads are in flight. Re-opening
+      // the wait would cancel the run and read everything again.
+      profileCtrl.status = 'fetching';
+      rerender(<OnboardingGate />);
+      await act(async () => resolveSeen(false));
+
+      expect(decisions()).toHaveLength(1);
+      expect(hasSeenMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('handing off to the board-look step', () => {
@@ -438,6 +557,40 @@ describe('OnboardingGate', () => {
 
       await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
       await waitFor(() => expect(decisions()).toHaveLength(1));
+    });
+
+    it('keeps the board-look branch held while a cancelled run is re-reading', async () => {
+      // The first run is cancelled mid-read by the profile landing. It decided
+      // nothing, so it must not release the board-look branch: only the re-run,
+      // once it has decided, does.
+      let resolveFirstSeen: (seen: boolean) => void = () => {};
+      let resolveSecondSeen: (seen: boolean) => void = () => {};
+      hasSeenMock
+        .mockReturnValueOnce(
+          new Promise<boolean>((resolve) => {
+            resolveFirstSeen = resolve;
+          }),
+        )
+        .mockReturnValueOnce(
+          new Promise<boolean>((resolve) => {
+            resolveSecondSeen = resolve;
+          }),
+        );
+      activeBoardCtrl.board = { uuid: 'board-1' };
+      const { rerender } = render(<OnboardingGate />);
+      await waitFor(() => expect(hasSeenMock).toHaveBeenCalledTimes(1));
+
+      profileCtrl.id = 'user-a';
+      rerender(<OnboardingGate />);
+      await waitFor(() => expect(hasSeenMock).toHaveBeenCalledTimes(2));
+
+      await act(async () => resolveFirstSeen(true));
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
+      expect(decisions()).toEqual([]);
+
+      await act(async () => resolveSecondSeen(true));
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true);
+      expect(decisions()).toHaveLength(1);
     });
 
     it('still decides when the profile flickers back to undefined mid-read', async () => {
@@ -525,6 +678,27 @@ describe('OnboardingGate', () => {
         await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_STALL_MS - 10_000);
       });
       expect(evaluations()).toEqual([expect.objectContaining({ outcome: 'stalled' })]);
+    });
+
+    it('marks a decision that lands after the stall report', async () => {
+      vi.useFakeTimers();
+      hasSeenMock.mockResolvedValue(false);
+      launchCtrl.ready = false;
+      const { rerender } = render(<OnboardingGate />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_STALL_MS);
+      });
+      launchCtrl.ready = true;
+      rerender(<OnboardingGate />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(evaluations()).toEqual([
+        expect.objectContaining({ outcome: 'stalled', reason: 'not_ready', afterStall: false }),
+        expect.objectContaining({ outcome: 'would_present', afterStall: true }),
+      ]);
     });
 
     it('stays quiet once the gate has decided', async () => {

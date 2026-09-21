@@ -22,6 +22,14 @@ import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
  */
 export const ONBOARDING_GATE_STALL_MS = 15_000;
 
+/**
+ * The longest the decision waits for the profile read, counted from mount. The
+ * profile only supplies the account age, and a slow or offline read must not
+ * hold the decision to the stall watchdog: after this it goes out with a null
+ * age. Well inside the watchdog, so the profile is never what a stall names.
+ */
+export const ONBOARDING_GATE_PROFILE_WAIT_MS = 5_000;
+
 // The first gate mount in this JS process is the cold start; any later one is a
 // remount (signing in swaps AuthProvider's children, which remounts the gate).
 let mountedThisProcess = false;
@@ -33,6 +41,23 @@ export function resetOnboardingGateProcessForTests(): void {
 
 /** The parts of an evaluation a decision supplies; the gate fills in the rest. */
 type GateDecision = Pick<OnboardingGateEvaluation, 'outcome' | 'reason' | 'step' | 'hadBoard' | 'seenFlag'>;
+
+/**
+ * Whether the profile read has anything more to say. A loaded profile is final.
+ * Otherwise the read has to have finished, success or error, with nothing in
+ * flight: a sign-in keeps the login screen's cached `profile: null` while the
+ * refetch that replaces it is running, and deciding on that would send a null
+ * account age for every climber who just signed up.
+ */
+function isProfileSettled(profileQuery: {
+  data: unknown;
+  isFetching: boolean;
+  isSuccess: boolean;
+  isError: boolean;
+}): boolean {
+  if (profileQuery.data != null) return true;
+  return !profileQuery.isFetching && (profileQuery.isSuccess || profileQuery.isError);
+}
 
 /**
  * First-run gate. Once the app is ready (auth + fonts loaded, splash hidden) it
@@ -48,7 +73,9 @@ type GateDecision = Pick<OnboardingGateEvaluation, 'outcome' | 'reason' | 'step'
  * fleet-wide OTA. So it reports `would_present` through `Onboarding Gate
  * Evaluated` instead of pushing, and the first-run redesign decides who actually
  * gets a flow. The event also carries a 15 s stall watchdog, so a gate that
- * never decides can no longer go unnoticed.
+ * never decides can no longer go unnoticed. The decision waits up to 5 s for
+ * the profile, because the account age it carries is what tells a new account
+ * from an existing one.
  *
  * **The gate is "has a board", not "has seen the tour"** (issue #4961). The flow's
  * whole job is to leave the climber with a bound board, so the absence of one is
@@ -75,11 +102,15 @@ export function OnboardingGate() {
   const triggerRef = useRef<OnboardingGateTrigger>('cold_start');
   const mountedAtRef = useRef(0);
   const stopWatchdogRef = useRef<(() => void) | null>(null);
+  // Set when the watchdog has already reported this mount as stalled, so a
+  // decision that lands later says so and the two events can be told apart.
+  const stalledRef = useRef(false);
 
   // The gate decides once per signed-in account. `undefined` while the profile
   // loads, and the profile landing for the account already on screen is not a
   // new account: only a transition between two concrete ids re-decides.
-  const { data: profile } = useProfile();
+  const profileQuery = useProfile();
+  const profile = profileQuery.data;
   const userId = profile?.id;
   const accountCreatedAtRef = useRef(profile?.createdAt);
   accountCreatedAtRef.current = profile?.createdAt;
@@ -99,6 +130,15 @@ export function OnboardingGate() {
       triggerRef.current = 'account_switch';
     }
   }
+
+  // The decision waits for the profile so the event can carry the account age,
+  // which is what splits new accounts from existing ones. Latched: once the wait
+  // is over, a later refetch (an avatar change, a focus refresh) must not
+  // re-open it and cancel a run that is already reading.
+  const [profileWaitExpired, setProfileWaitExpired] = useState(false);
+  const profileReadyRef = useRef(false);
+  if (profileWaitExpired || isProfileSettled(profileQuery)) profileReadyRef.current = true;
+  const profileReady = profileReadyRef.current;
 
   // Only a successful storage read can confirm that no board is bound.
   // `isFetched` also turns true after a failed read; treating that failure as
@@ -131,6 +171,7 @@ export function OnboardingGate() {
         let reason: OnboardingGateEvaluation['reason'] = 'reads_pending';
         if (!readyRef.current) reason = 'not_ready';
         else if (!boardResolvedRef.current) reason = 'board_unresolved';
+        stalledRef.current = true;
         trackOnboardingGateEvaluated({
           outcome: 'stalled',
           reason,
@@ -141,6 +182,7 @@ export function OnboardingGate() {
           trigger: triggerRef.current,
           topSegment: topSegmentRef.current,
           msSinceMount: Date.now() - mountedAtRef.current,
+          afterStall: false,
         });
       },
     });
@@ -151,8 +193,15 @@ export function OnboardingGate() {
     };
   }, []);
 
+  // The bound on the profile wait. A plain timer, not the foreground watchdog:
+  // it only ever shortens a wait, and it expires long before the watchdog can.
   useEffect(() => {
-    if (!ready || !boardResolved || decidedRef.current) return;
+    const timer = setTimeout(() => setProfileWaitExpired(true), ONBOARDING_GATE_PROFILE_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !boardResolved || !profileReady || decidedRef.current) return;
     // Screenshot builds never auto-present the tour: the app-store flow needs to
     // reach the tabs, and the onboarding-capture flow opens /onboarding itself.
     // Nothing else auto-presents in a capture run either, so this stays `pending`.
@@ -170,18 +219,18 @@ export function OnboardingGate() {
         trigger: triggerRef.current,
         topSegment: topSegmentRef.current,
         msSinceMount: Date.now() - mountedAtRef.current,
+        afterStall: stalledRef.current,
       });
     };
 
     void (async () => {
-      // `tourEvaluated` is published in a `finally`, so EVERY exit — including a
-      // cancellation — reports that the tour has had its turn.
-      //
-      // It used to be set at each `return` instead, and that wedged the
-      // board-look step permanently: a cancelled run bailed without publishing,
-      // and the re-run then hit the `decidedRef.current` guard and returned
-      // immediately. Nothing ever set the flag again, so the step below waited
-      // on it forever.
+      // `tourEvaluated` is published in a `finally` by every run that was not
+      // cancelled, so no exit path can forget it. A cancelled run publishes
+      // nothing: it decided nothing, the cleanup below has cleared
+      // `decidedRef` so the re-run goes through, and that re-run publishes once
+      // it decides. Publishing from the cancelled run would let the board-look
+      // step evaluate before the tour has actually decided. An unmount needs
+      // nothing at all.
       try {
         // Don't interrupt a deep-link / auth / share landing on a non-tab group.
         if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
@@ -262,7 +311,7 @@ export function OnboardingGate() {
           seenFlag: seen,
         });
       } finally {
-        setTourEvaluated(true);
+        if (!cancelled) setTourEvaluated(true);
       }
     })();
 
@@ -276,7 +325,7 @@ export function OnboardingGate() {
     };
     // `userId` is here so the effect re-runs after an account switch resets
     // `decidedRef` above — the new account gets its own first-run evaluation.
-  }, [ready, boardResolved, userId]);
+  }, [ready, boardResolved, profileReady, userId]);
 
   // The board-look step is evaluated and logged too, never presented (#5654).
   return <BoardLookStepGate ready={ready} tourDecided={tourEvaluated} present={false} />;

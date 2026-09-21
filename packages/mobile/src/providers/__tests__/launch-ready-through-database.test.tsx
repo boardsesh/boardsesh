@@ -24,6 +24,20 @@ const connectivityBannerHookMock = vi.hoisted(() => vi.fn());
 const trackGateMock = vi.hoisted(() => vi.fn());
 const decideQaGateMock = vi.hoisted(() => vi.fn());
 const decideSendRecoveryMock = vi.hoisted(() => vi.fn());
+// Flag resolution as a tiny external store, so flipping it re-renders the
+// consumers the way the real context does, from inside the memo'd subtree.
+const flagsCtrl = vi.hoisted(() => ({
+  resolved: true,
+  listeners: new Set<() => void>(),
+  setResolved(resolved: boolean) {
+    flagsCtrl.resolved = resolved;
+    for (const listener of flagsCtrl.listeners) listener();
+  },
+  subscribe(listener: () => void) {
+    flagsCtrl.listeners.add(listener);
+    return () => flagsCtrl.listeners.delete(listener);
+  },
+}));
 
 // A faithful SQLiteProvider: `SQLiteProviderNonSuspense`'s open → onInit →
 // render-children shape, wrapped in the same memo comparator expo-sqlite ships
@@ -157,12 +171,15 @@ vi.mock('../theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {}, colorScheme: 'light' }),
 }));
 vi.mock('../auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../feature-flags-provider', () => ({
-  useConnectivityBannerEnabled: () => true,
-  useQaTesterGateEnabled: () => true,
-  useSendRecoveryGateEnabled: () => true,
-  useFeatureFlagsResolved: () => true,
-}));
+vi.mock('../feature-flags-provider', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useConnectivityBannerEnabled: () => true,
+    useQaTesterGateEnabled: () => true,
+    useSendRecoveryGateEnabled: () => true,
+    useFeatureFlagsResolved: () => useSyncExternalStore(flagsCtrl.subscribe, () => flagsCtrl.resolved),
+  };
+});
 vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ connectivityBannerBottom: 0 }),
 }));
@@ -178,7 +195,10 @@ vi.mock('../../lib/onboarding/onboarding-storage', () => ({
   markOnboardingSeen: vi.fn(async () => {}),
 }));
 vi.mock('../../lib/onboarding/onboarding-gate-analytics', () => ({ trackOnboardingGateEvaluated: trackGateMock }));
-vi.mock('../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: undefined }) }));
+// A finished read with no one in it, so the onboarding gate's profile wait is over.
+vi.mock('../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: null, isFetching: false, isSuccess: true, isError: false }),
+}));
 vi.mock('../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null, isSuccess: true }) }));
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
@@ -227,6 +247,8 @@ beforeEach(() => {
     openSyncIssues: () => {},
   });
   trackGateMock.mockReset();
+  flagsCtrl.resolved = true;
+  flagsCtrl.listeners.clear();
   decideQaGateMock.mockReset().mockImplementation((input: { ready: boolean }) => (input.ready ? 'none' : 'wait'));
   decideSendRecoveryMock.mockReset().mockImplementation((input: { ready: boolean }) => (input.ready ? 'none' : 'wait'));
 });
@@ -332,5 +354,21 @@ describe('the launch gates, mounted inside DatabaseProvider as in app/_layout.ts
     await waitFor(() => expect(decideSendRecoveryMock).toHaveBeenCalledWith(expect.objectContaining({ ready: true })));
     // Without reopening the database: nothing under the provider remounted.
     expect(sqliteCtrl.opened).toBe(1);
+  });
+
+  // `connectivity-banner-kill` has to land before the banner's first paint, or a
+  // killed fleet still sees it for up to 2 s of every launch.
+  it('keeps the banner down until the feature flags have resolved', async () => {
+    flagsCtrl.resolved = false;
+    renderRootTree();
+    await waitFor(() => expect(decideQaGateMock).toHaveBeenCalled());
+    await flipReady();
+    // The app is ready, but PostHog has not answered yet.
+    expect(connectivityBannerHookMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      flagsCtrl.setResolved(true);
+    });
+    await waitFor(() => expect(connectivityBannerHookMock).toHaveBeenCalled());
   });
 });

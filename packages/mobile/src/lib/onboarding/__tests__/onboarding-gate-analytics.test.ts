@@ -28,6 +28,7 @@ function evaluation(overrides: Partial<OnboardingGateEvaluation> = {}): Onboardi
     trigger: 'remount',
     topSegment: '(tabs)',
     msSinceMount: 412.6,
+    afterStall: false,
     ...overrides,
   };
 }
@@ -134,7 +135,13 @@ describe('trackOnboardingGateEvaluated', () => {
       trigger: 'remount',
       top_segment: '(tabs)',
       ms_since_mount: 413,
+      after_stall: false,
     });
+  });
+
+  it('marks a decision that landed after the watchdog had already reported a stall', () => {
+    trackOnboardingGateEvaluated(evaluation({ afterStall: true }));
+    expect(trackMock.mock.calls[0][1]).toMatchObject({ outcome: 'would_present', after_stall: true });
   });
 
   it('says whether this launch ran the JS embedded in the binary', () => {

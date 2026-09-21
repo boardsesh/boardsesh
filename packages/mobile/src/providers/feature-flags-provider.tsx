@@ -402,10 +402,10 @@ export function useActiveBoardFollowHealEnabled(): boolean {
  * one misbehaving surface can go without the others.
  *
  * KILL switches, for the usual reason (see `useAnonymousClimbViewEnabled`):
- * missing/undefined reads as "not killed". The two that push a route
- * (`QaTesterGate`, `SendRecoveryGate`) also wait for `useFeatureFlagsResolved()`
- * before deciding, so a switch flipped in PostHog lands before the push it is
- * meant to stop, not after. The banner only shows and hides, so it does not wait.
+ * missing/undefined reads as "not killed". All three surfaces also wait for
+ * `useFeatureFlagsResolved()` before they act, so a switch flipped in PostHog
+ * lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the first paint
+ * (`ConnectivityBanner`) it is meant to stop, not after.
  */
 export function useConnectivityBannerEnabled(): boolean {
   return useFeatureFlag('connectivity-banner-kill') !== true;

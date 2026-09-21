@@ -142,10 +142,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   tester-only launch prompt (`useQaTesterGateEnabled`). `send-recovery-gate-kill`
   stops the one-time recovered-sends notice (`useSendRecoveryGateEnabled`); the
   note stays owed in the database and the sends are requeued either way. All
-  three read unresolved as enabled. The two that push a route, `QaTesterGate`
-  and `SendRecoveryGate`, also wait for `useFeatureFlagsResolved()` before they
-  decide, so a switch flipped in PostHog lands before the push it exists to
-  stop. The onboarding and board-look gates woke up in the same change but only
+  three read unresolved as enabled, and all three surfaces wait for
+  `useFeatureFlagsResolved()` (at most 2 s) before they act, so a switch flipped
+  in PostHog lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the
+  first paint (`ConnectivityBanner`) it exists to stop. The onboarding and board-look gates woke up in the same change but only
   evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`),
   so they have nothing to kill yet.
   `spray-walls` is a POSITIVE rollout flag (read through

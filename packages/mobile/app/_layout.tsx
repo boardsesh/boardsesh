@@ -900,7 +900,9 @@ function RootLayout() {
                                                             everyone else, which is almost everyone. Mounted last
                                                             of the launch gates: a first run and a PR brief both
                                                             outrank it, and its note is durable, so a launch it
-                                                            sits out costs nothing. */}
+                                                            sits out costs nothing. It and QaTesterGate each stand
+                                                            down on the other's route, so their two modals never
+                                                            stack on one launch. */}
                                                                     <SendRecoveryGate />
                                                                     {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
