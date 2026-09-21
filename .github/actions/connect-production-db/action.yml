@@ -34,7 +34,7 @@ runs:
         EXPECTED_DATABASE_ROLE_INPUT: ${{ inputs.expected-role }}
       run: |
         set -euo pipefail
-        test -n "$TS_CLIENT_ID_INPUT" || { echo '::error::TS_OAUTH_CLIENT_ID is unset'; exit 1; }
+        test -n "$TS_CLIENT_ID_INPUT" || { echo '::error::TS_CLIENT_ID_INPUT is unset'; exit 1; }
         test -n "$TS_AUDIENCE_INPUT" || { echo '::error::TS_AUDIENCE is unset'; exit 1; }
         # The shared validator checks the host, credential URL, and exact role.
         node "$GITHUB_WORKSPACE/scripts/validate-production-db-network-url.mjs"
