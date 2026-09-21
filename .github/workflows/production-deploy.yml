@@ -623,7 +623,7 @@ jobs:
           # applies the default itself and stays green from then on. When unset
           # the step reports and fails until an operator runs the statement.
           ADMIN_DATABASE_URL: ${{ secrets.ADMIN_DATABASE_URL }}
-        run: vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan
+        run: vp run db:verify-serial-plan
 
   deploy-production-backend:
     needs: [detect-changes, build-backend, migrate]

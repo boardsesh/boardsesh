@@ -60,7 +60,7 @@ describe('production-deploy verify-serial-plan (#5352)', () => {
   it('runs the verification after migrations, in the Production environment', () => {
     expect(verifyJob).toContain('needs: [migrate]');
     expect(verifyJob).toContain('environment: Production');
-    expect(verifyJob).toContain('vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan');
+    expect(verifyJob).toContain('vp run db:verify-serial-plan');
   });
 
   it('checks through the RUNTIME credential, not the migration one', () => {
