@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { distanceMeters, isGenericGymName, normalizeGymName } from '@boardsesh/db/queries';
-import { isClaimableDomain } from '@boardsesh/gym-claim';
+import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -585,9 +585,7 @@ export const socialGymMatchQueries = {
       distanceMeters: candidate.distanceMeters,
       ownerType: candidate.ownerId === SYSTEM_BOARD_OWNER_ID ? 'SYSTEM' : 'USER',
       isClaimable: claimableByGym.get(candidate.id) ?? false,
-      // Same expression enrichGym uses, from the same helper requestGymClaim
-      // uses, so the three can't drift apart (#4018).
-      canClaimByDomain: isClaimableDomain(candidate.website) && candidate.websiteVouchedByOwner,
+      canClaimByDomain: computeCanClaimByDomain(candidate),
       providerOrigins: originsByGym.get(candidate.id) ?? [],
     }));
   },

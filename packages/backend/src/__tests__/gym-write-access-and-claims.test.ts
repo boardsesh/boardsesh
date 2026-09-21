@@ -1352,7 +1352,7 @@ describe('canClaimByDomain advertises the requestGymClaim domain gate without be
     });
   }
 
-  it('stays false for someone who can already edit the gym, without ever claiming otherwise', async () => {
+  it('keeps viewer claim permission separate from website capability for editors', async () => {
     // canClaim and canClaimByDomain answer different questions: one is about the
     // viewer, one about the listing. An editor gets canClaim=false (the UI hides
     // the call-out entirely) while canClaimByDomain still describes the website.
