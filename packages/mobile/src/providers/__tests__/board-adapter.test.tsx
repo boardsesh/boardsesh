@@ -11,6 +11,25 @@ const wsMocks = vi.hoisted(() => ({
 }));
 wsMocks.getClient.mockReturnValue({ on: wsMocks.on, subscribe: wsMocks.subscribe });
 
+const appState = vi.hoisted(() => {
+  let listener: ((state: string) => void) | undefined;
+  const remove = vi.fn(() => {
+    listener = undefined;
+  });
+  return {
+    addEventListener: vi.fn((_event: string, nextListener: (state: string) => void) => {
+      listener = nextListener;
+      return { remove };
+    }),
+    emit: (state: string) => listener?.(state),
+    remove,
+    reset: () => {
+      listener = undefined;
+      remove.mockClear();
+    },
+  };
+});
+
 // Controllable connectivity store (#4862). `effectiveOffline` is read
 // synchronously by the stats-subscription gate; `emit` changes the snapshot AND
 // notifies subscribers, like a real snapshot change.
@@ -55,6 +74,8 @@ const connectivity = vi.hoisted(() => {
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+vi.mock('react-native', () => ({ AppState: { addEventListener: appState.addEventListener } }));
 
 // Capture the adapter at the provider boundary instead of consuming the real
 // context: the workspace's @boardsesh/board-react resolves its own React copy
@@ -193,12 +214,20 @@ const liveSyncMocks = vi.hoisted(() => {
   const instances: Array<{
     options: Record<string, unknown>;
     handleEvent: ReturnType<typeof vi.fn>;
+    persistReconciliationChunk: ReturnType<typeof vi.fn>;
+    onForeground: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
   }> = [];
   return {
     instances,
     create: vi.fn((options: Record<string, unknown>) => {
-      const instance = { options, handleEvent: vi.fn(), dispose: vi.fn() };
+      const instance = {
+        options,
+        handleEvent: vi.fn(),
+        persistReconciliationChunk: vi.fn(async () => {}),
+        onForeground: vi.fn(),
+        dispose: vi.fn(),
+      };
       instances.push(instance);
       return instance;
     }),
@@ -241,6 +270,7 @@ function renderWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  appState.reset();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   liveSyncMocks.instances.length = 0;
   snapshotSourceMock.current = { tag: 'snapshot-source' };
@@ -699,6 +729,15 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     expect(liveSyncMocks.instances[0].handleEvent).toHaveBeenCalledWith(event);
   });
 
+  it('wakes the same consumer after the app returns foreground', async () => {
+    renderWrapper();
+
+    appState.emit('active');
+    await Promise.resolve();
+
+    expect(liveSyncMocks.instances[0].onForeground).toHaveBeenCalledTimes(1);
+  });
+
   it('omits the capability when the offline flag is off', () => {
     offlineEnabled = false;
     renderWrapper();
@@ -747,5 +786,6 @@ describe('BoardAdapterWrapper live climb-stat write-through', () => {
     view.unmount();
 
     expect(liveSyncMocks.instances[0].dispose).toHaveBeenCalledTimes(1);
+    expect(appState.remove).toHaveBeenCalledTimes(1);
   });
 });
