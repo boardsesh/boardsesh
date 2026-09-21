@@ -10,9 +10,9 @@ import { deriveClimbProgress, type ClimbProgress } from '../lib/climb-progress';
  *
  * Reads the same pre-grouped `logbookByClimbAngle` index `useAscentStatus` does:
  * ONE `Map.get` over that climb's handful of ticks, never a scan or filter over
- * the whole logbook (docs/react-native-performance.md §4). The `useMemo` keys on
- * the bucket identity, which only changes when a merge actually touches this
- * climb's ticks.
+ * the whole logbook (docs/react-native-performance.md §4). The memo uses the
+ * bucket identity; the provider rebuilds buckets when its logbook array changes,
+ * so any logbook merge can recompute this climb's progress.
  */
 export function useClimbProgress(climbUuid: string, angle: number): ClimbProgress | null {
   const logbook = useOptionalBoardLogbook();

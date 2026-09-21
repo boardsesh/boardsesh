@@ -150,10 +150,10 @@ function startOfLocalDay(ms: number): number {
 }
 
 /**
- * The progress line stops growing before the rest of the row does — same cap and
- * same reason as the playlist chips below it: the row's height is pinned by the
- * 96pt thumbnail, and a fourth text line scaling all the way to 1.5 would push
- * the centre column past it. See `climb-row-vertical-budget.test.ts`.
+ * Keep the progress line compact with the same text-size cap as playlist chips.
+ * The rich thumbnail provides a 96pt baseline, not a fixed row height: rows with
+ * both progress and playlist chips can grow beyond it at larger text sizes.
+ * See `climb-row-vertical-budget.test.ts` for the stacked text measurements.
  */
 export const PROGRESS_MAX_FONT_SCALE = 1.3;
 
