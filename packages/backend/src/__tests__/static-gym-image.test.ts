@@ -92,6 +92,7 @@ describe('serving gym images from S3', () => {
       // Gym image keys are overwritten in place on re-upload, so a cached 404
       // would pin the broken state past the repair.
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     } finally {
       await closeServer(server);
     }
@@ -110,6 +111,7 @@ describe('serving gym images from S3', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     } finally {
       await closeServer(server);
     }
@@ -128,6 +130,7 @@ describe('serving gym images from S3', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     } finally {
       await closeServer(server);
     }
@@ -184,6 +187,7 @@ describe('serving gym images from local storage (no S3 configured)', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
       expect(getFromS3Mock).not.toHaveBeenCalled();
     } finally {
       await closeServer(server);
