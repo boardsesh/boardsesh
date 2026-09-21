@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T13:17:41.728Z",
+  "generatedAt": "2026-09-21T13:27:57.510Z",
   "entries": [
+    {
+      "prNumber": 5632,
+      "category": "fixed",
+      "title": "Get a clear explanation when your board cannot open the climb creator.",
+      "mergedAt": "2026-09-21T12:55:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5632"
+    },
     {
       "prNumber": 4712,
       "category": "new",
