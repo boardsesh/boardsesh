@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Favorites and follows now stick. A single unlucky moment of database contention used to strand one for good — the heart stayed filled while the server never heard about it. ([#4567](https://github.com/boardsesh/boardsesh/pull/4567))
+  Anything already stuck from that bug is sent on the next launch.
 - Sessions you log on your own board now show up under that board on Home, instead of vanishing into a feed shared with every other wall like it. ([#5239](https://github.com/boardsesh/boardsesh/pull/5239))
 - See the latest climb displayed through Kilter in Now on the Wall. ([#5669](https://github.com/boardsesh/boardsesh/pull/5669))
 - Return to your board’s climbs without choosing it again. ([#5644](https://github.com/boardsesh/boardsesh/pull/5644))

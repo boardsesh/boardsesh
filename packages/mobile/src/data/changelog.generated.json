@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T12:59:55.291Z",
+  "generatedAt": "2026-09-21T13:08:16.201Z",
   "entries": [
+    {
+      "prNumber": 4567,
+      "category": "fixed",
+      "title": "Favorites and follows now stick. A single unlucky moment of database contention used to strand one for good — the heart stayed filled while the server never heard about it.",
+      "mergedAt": "2026-09-21T12:52:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4567",
+      "body": "Anything already stuck from that bug is sent on the next launch."
+    },
     {
       "prNumber": 5239,
       "category": "fixed",
