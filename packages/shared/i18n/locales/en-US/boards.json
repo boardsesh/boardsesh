@@ -83,6 +83,23 @@
     "errorRetry": "Try again",
     "boardSwitchError": "Couldn't save that board. Try again.",
     "onboardingPrompt": "Follow the wall you climb on — that's what turns its history on.",
+    "firstBoard": {
+      "title": "Where do you climb?",
+      "body": "Pick your board to load its climbs. When you're connected, tapping a climb lights it on the wall.",
+      "gym": "At a gym",
+      "gymHint": "Pick your gym's board",
+      "own": "My own board",
+      "ownHint": "Set up the board you have at home",
+      "scan": "Scan for the board in front of me",
+      "scanFootnote": "MoonBoards and some Kilter boxes don't show up here yet.",
+      "searching": "Looking for boards near you…",
+      "nearbyEmpty": "Nothing within 20 km",
+      "nearbyError": "Couldn't load boards near you",
+      "findGymOnMap": "Find your gym on the map",
+      "locationOff": "Location is off",
+      "openSettings": "Open Settings",
+      "notNow": "Not now"
+    },
     "discovery": {
       "findNearby": "Find nearby",
       "bluetooth": "Bluetooth",

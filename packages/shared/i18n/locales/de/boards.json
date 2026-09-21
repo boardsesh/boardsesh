@@ -83,6 +83,23 @@
     "errorRetry": "Nochmal versuchen",
     "boardSwitchError": "Dieses Board ließ sich nicht speichern. Versuch es nochmal.",
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
+    "firstBoard": {
+      "title": "Wo kletterst du?",
+      "body": "Wähl dein Board, um seine Boulder zu laden. Sobald du verbunden bist, tippst du einen Boulder an und er wird am Board beleuchtet.",
+      "gym": "In der Halle",
+      "gymHint": "Wähl das Board deiner Halle",
+      "own": "Mein eigenes Board",
+      "ownHint": "Richte das Board ein, das du zu Hause hast",
+      "scan": "Nach dem Board vor mir suchen",
+      "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
+      "searching": "Suche Boards in deiner Nähe…",
+      "nearbyEmpty": "Nichts im Umkreis von 20 km",
+      "nearbyError": "Boards in deiner Nähe konnten nicht geladen werden",
+      "findGymOnMap": "Finde deine Halle auf der Karte",
+      "locationOff": "Standort ist aus",
+      "openSettings": "Einstellungen öffnen",
+      "notNow": "Nicht jetzt"
+    },
     "discovery": {
       "findNearby": "In der Nähe suchen",
       "bluetooth": "Bluetooth",

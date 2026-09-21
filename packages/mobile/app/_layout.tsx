@@ -775,14 +775,19 @@ function RootLayout() {
                                                                             headerShown: true,
                                                                           }}
                                                                         />
-                                                                        {/* First-run walkthrough. Full-screen cover over the
-                                                      Climbs tab; gesture disabled because the flow is
-                                                      mandatory (#4961) — every step's only way on is its
-                                                      own CTA, and each swallows Android back too. */}
+                                                                        {/* The walkthrough, now reached only from the More tab's
+                                                      replay rows (OnboardingGate opens the first-board
+                                                      picker at /boards instead, #5654). A full-screen cover
+                                                      over the live tabs: transparentModal with the opaque
+                                                      backing app/onboarding.tsx paints, NOT fullScreenModal,
+                                                      which snapshots the iOS 26 NativeTabs (hard rule 2,
+                                                      docs/mobile-sheets-vs-routes.md). Gesture disabled
+                                                      because each step's only way on is its own CTA, and
+                                                      each swallows Android back too. */}
                                                                         <Stack.Screen
                                                                           name="onboarding"
                                                                           options={{
-                                                                            presentation: 'fullScreenModal',
+                                                                            presentation: 'transparentModal',
                                                                             headerShown: false,
                                                                             gestureEnabled: false,
                                                                             animation: 'fade',

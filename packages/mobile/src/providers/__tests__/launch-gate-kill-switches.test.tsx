@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 //
-// The three kill switches for the launch surfaces #5654 woke up. What is pinned
-// here is their DIRECTION: each surface is shipped behaviour the moment the OTA
-// lands, so an unresolved flag must read as "not killed", and only an explicit
-// `true` in PostHog takes a surface down.
+// The kill switches for the launch surfaces #5654 woke up, and for the
+// first-board picker the onboarding gate now opens for new accounts. What is
+// pinned here is their DIRECTION: each surface is shipped behaviour the moment
+// the OTA lands, so an unresolved flag must read as "not killed", and only an
+// explicit `true` in PostHog takes a surface down.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -12,6 +13,7 @@ import {
   FEATURE_FLAG_DEFINITIONS,
   FeatureFlagsProvider,
   useConnectivityBannerEnabled,
+  useFirstBoardPickerEnabled,
   useQaTesterGateEnabled,
   useSendRecoveryGateEnabled,
 } from '../feature-flags-provider';
@@ -28,6 +30,7 @@ const KILL_SWITCHES = [
   { key: 'connectivity-banner-kill', useEnabled: useConnectivityBannerEnabled },
   { key: 'qa-tester-gate-kill', useEnabled: useQaTesterGateEnabled },
   { key: 'send-recovery-gate-kill', useEnabled: useSendRecoveryGateEnabled },
+  { key: 'first-board-picker-kill', useEnabled: useFirstBoardPickerEnabled },
 ] as const;
 
 function readEnabled(useEnabled: () => boolean, flags?: Record<string, boolean | string | undefined>): boolean {

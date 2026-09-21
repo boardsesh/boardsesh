@@ -83,6 +83,23 @@
     "errorRetry": "Reintentar",
     "boardSwitchError": "No se pudo guardar ese plafón. Inténtalo de nuevo.",
     "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
+    "firstBoard": {
+      "title": "¿Dónde escalas?",
+      "body": "Elige tu plafón para cargar sus bloques. Cuando te conectes, tocar un bloque lo ilumina en el muro.",
+      "gym": "En un rocódromo",
+      "gymHint": "Elige el plafón de tu rocódromo",
+      "own": "Mi propio plafón",
+      "ownHint": "Configura el plafón que tienes en casa",
+      "scan": "Buscar el plafón que tengo delante",
+      "scanFootnote": "Los MoonBoard y algunas cajas de Kilter aún no aparecen aquí.",
+      "searching": "Buscando plafones cerca de ti…",
+      "nearbyEmpty": "Nada a menos de 20 km",
+      "nearbyError": "No se pudieron cargar los plafones cerca de ti",
+      "findGymOnMap": "Busca tu rocódromo en el mapa",
+      "locationOff": "La ubicación está desactivada",
+      "openSettings": "Abrir Ajustes",
+      "notNow": "Ahora no"
+    },
     "discovery": {
       "findNearby": "Buscar cerca",
       "bluetooth": "Bluetooth",

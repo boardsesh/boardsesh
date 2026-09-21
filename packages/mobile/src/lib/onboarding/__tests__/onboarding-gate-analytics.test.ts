@@ -36,6 +36,8 @@ function evaluation(overrides: Partial<OnboardingGateEvaluation> = {}): Onboardi
     topSegment: '(tabs)',
     msSinceMount: 412.6,
     afterStall: false,
+    pickerVerdict: 'not_new_account',
+    pickerTimesShown: null,
     ...overrides,
   };
 }
@@ -66,7 +68,12 @@ describe('accountAgeHours', () => {
 });
 
 describe('shouldReportOnboardingGate', () => {
-  it('reports every would_present and every stall', () => {
+  it('reports every presentation, every would_present and every stall', () => {
+    expect(
+      shouldReportOnboardingGate(
+        evaluation({ outcome: 'presented', reason: 'new_account', step: 'first_board', pickerVerdict: 'presented' }),
+      ),
+    ).toBe(true);
     expect(shouldReportOnboardingGate(evaluation())).toBe(true);
     expect(
       shouldReportOnboardingGate(
@@ -144,6 +151,27 @@ describe('trackOnboardingGateEvaluated', () => {
       top_segment: '(tabs)',
       ms_since_mount: 413,
       after_stall: false,
+      picker_verdict: 'not_new_account',
+      picker_times_shown: null,
+    });
+  });
+
+  it('says the picker opened, and how many times it had opened before', () => {
+    trackOnboardingGateEvaluated(
+      evaluation({
+        outcome: 'presented',
+        reason: 'new_account',
+        step: 'first_board',
+        pickerVerdict: 'presented',
+        pickerTimesShown: 1,
+      }),
+    );
+    expect(trackMock.mock.calls[0][1]).toMatchObject({
+      outcome: 'presented',
+      reason: 'new_account',
+      step: 'first_board',
+      picker_verdict: 'presented',
+      picker_times_shown: 1,
     });
   });
 

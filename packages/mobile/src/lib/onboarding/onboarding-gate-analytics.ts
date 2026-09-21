@@ -9,20 +9,28 @@ import * as Updates from 'expo-updates';
 import { track } from '../analytics';
 import { nowMs } from '../clock';
 import { REPORTS_LAUNCH_GATE_EVALUATIONS } from '../launch-gate-reporting';
+import type { FirstBoardPickerVerdict } from './first-board-picker-decision';
 
 /**
- * `would_present` rather than `presented`: in #5654's first PR the gate decides
- * and logs, and shows nothing. `stalled` comes from the watchdog, not a decision.
+ * `presented` is the one decision that opens something: the board picker, for a
+ * new account with no board (#5654). Every other climber without a board gets
+ * `would_present`, the log-only answer the gate gave everyone in #5654's first
+ * PR, and `picker_verdict` says why the picker stayed shut. `stalled` comes from
+ * the watchdog, not a decision.
  */
-export type OnboardingGateOutcome = 'would_present' | 'skipped' | 'stalled';
+export type OnboardingGateOutcome = 'presented' | 'would_present' | 'skipped' | 'stalled';
 
 export type OnboardingGateReason =
+  // presented: an account at most 7 days old with no board
+  | 'new_account'
   // would_present
   | 'no_board'
   // skipped
   | 'has_board'
   | 'deep_link_segment'
   | 'launched_by_url'
+  // a tapped push opened the app (it routes into a tab and leaves no launch URL)
+  | 'launched_by_notification'
   | 'segment_after_reads'
   // stalled: which input was still missing when the watchdog fired
   | 'not_ready'
@@ -39,8 +47,11 @@ export type OnboardingGateTrigger = 'cold_start' | 'remount' | 'account_switch';
 export type OnboardingGateEvaluation = {
   outcome: OnboardingGateOutcome;
   reason: OnboardingGateReason;
-  /** Which walkthrough step the gate would open; null unless `would_present`. */
-  step: 'intro' | 'board' | null;
+  /**
+   * What the gate opened (`first_board`, the board picker) or which walkthrough
+   * step it would open (`intro`, `board`). Null on a skip or a stall.
+   */
+  step: 'intro' | 'board' | 'first_board' | null;
   /** null when the active-board read had not succeeded yet. */
   hadBoard: boolean | null;
   /** null when the gate stopped before reading the seen flag. */
@@ -65,6 +76,17 @@ export type OnboardingGateEvaluation = {
    * decisions leaves the late one out, or a stall count finds its resolution.
    */
   afterStall: boolean;
+  /**
+   * For a climber with no board: whether the board picker opened (`presented`)
+   * or why it stayed shut. Null on every other decision and on a stall.
+   */
+  pickerVerdict: FirstBoardPickerVerdict | null;
+  /**
+   * How many times the picker had already opened for this account on this
+   * device, read before this decision. Null when the counter was not read (the
+   * account was ruled out before it mattered) or could not be.
+   */
+  pickerTimesShown: number | null;
 };
 
 const MS_PER_HOUR = 3_600_000;
@@ -88,8 +110,8 @@ export function accountAgeHours(createdAt: string | null | undefined, atMs: numb
  *   too and stands down on the `auth` segment, but that is not a first-run
  *   decision; the one that counts comes after sign-in, when the tree remounts.
  *
- * Everything else reports: every `would_present`, every stall, and every skip of
- * a climber without a board.
+ * Everything else reports: every `presented` and `would_present`, every stall,
+ * and every skip of a climber without a board.
  *
  * Stalls are NOT filtered like decisions: the watchdog is the canary for #5654,
  * and that freeze hit every climber, returning ones included. So a stall rate
@@ -124,5 +146,7 @@ export function trackOnboardingGateEvaluated(evaluation: OnboardingGateEvaluatio
     top_segment: evaluation.topSegment ?? null,
     ms_since_mount: Math.round(evaluation.msSinceMount),
     after_stall: evaluation.afterStall,
+    picker_verdict: evaluation.pickerVerdict,
+    picker_times_shown: evaluation.pickerTimesShown,
   });
 }

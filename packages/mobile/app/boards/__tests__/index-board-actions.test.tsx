@@ -260,6 +260,8 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () =
     return null;
   },
 }));
+// First-board mode (#5654) has its own suite, index-first-board.test.tsx.
+vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the
 // resolved per-card action are both assertable.
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({

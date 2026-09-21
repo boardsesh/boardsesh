@@ -275,6 +275,8 @@ vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
   BluetoothQuickstartSheet: () => createElement('div', { 'data-testid': 'ble-sheet' }),
 }));
+// First-board mode (#5654) has its own suite, index-first-board.test.tsx.
+vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 
 const { default: BoardSelection } = await import('../index');
 

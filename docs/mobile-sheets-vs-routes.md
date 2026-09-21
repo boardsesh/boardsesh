@@ -184,8 +184,8 @@ tracks the resting detent instead of leaving dead space under the footer at the 
 | ---------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
 | **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`                                                                                 |
-| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** (with an opaque backing to read as full-screen) |
-| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | `onboarding`                                                                                                   |
+| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
+| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | none today (`onboarding` moved to `transparentModal` in #5654)                                                                        |
 
 ## The decision tree
 
@@ -428,7 +428,15 @@ climb changes reuse the carousel without restarting the opening placeholder.
 - **Setters / hold / zone filters** — opened from the climb filter sheet, which suspends and
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
-- **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
+- **Onboarding** (the walkthrough, replayed from the More tab) — an immersive cover presented
+  over the live tabs, so `transparentModal` + an opaque backing, like the player (rule 2). It was a
+  `fullScreenModal` until #5654. Like the player it counts as a tabs-chrome route
+  (`isTabsChromeRoute`), so the bottom accessory stays mounted under it rather than detaching
+  while the bar is still up.
+- **First-board picker** (#5654) — what the launch gate opens for a new account with no board. Not
+  a new surface: the existing `boards` `modal` card with `?source=onboarding&firstBoard=1`, which
+  swaps the discovery tiles for "Where do you climb?". A card over the tabs, so rule 2 is not in
+  play.
 - **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
   follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,
   **never** inside the `user-drawer` transparentModal route, and presented only through the route's

@@ -182,6 +182,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch for the one-time "sends we lost are on their way" notice (#5335), dormant from 2.2.0 until #5654. The sends themselves are requeued by the schema migration either way, and the notice stays owed in the database while this is on. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
   },
+  {
+    key: 'first-board-picker-kill',
+    label: 'Disable the first-board picker',
+    description:
+      'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -427,6 +433,17 @@ export function useQaTesterGateEnabled(): boolean {
 
 export function useSendRecoveryGateEnabled(): boolean {
   return useFeatureFlag('send-recovery-gate-kill') !== true;
+}
+
+/**
+ * Kill switch for the picker `OnboardingGate` opens by itself for a new account
+ * with no board (#5654). It ships to every new account with no experiment, so
+ * this is the only way to take it back without a release. Unresolved reads as
+ * "not killed", and the gate waits for `useFeatureFlagsResolved()` before it
+ * pushes, so a switch flipped in PostHog lands before the push.
+ */
+export function useFirstBoardPickerEnabled(): boolean {
+  return useFeatureFlag('first-board-picker-kill') !== true;
 }
 
 /**

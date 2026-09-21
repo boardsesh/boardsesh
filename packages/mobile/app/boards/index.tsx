@@ -52,6 +52,11 @@ import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { isFirstBoardMode } from '../../src/lib/boards/first-board-mode';
+import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
+import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-board-picker-tracking';
+import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
+import { openAppSettings } from '../../src/lib/open-app-settings';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
@@ -64,11 +69,21 @@ export default function BoardSelection() {
   const { isAuthenticated, refreshAuthState } = useAuth();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { returnTo, source } = useLocalSearchParams<{ returnTo?: string; source?: string }>();
+  const { returnTo, source, firstBoard } = useLocalSearchParams<{
+    returnTo?: string;
+    source?: string;
+    firstBoard?: string;
+  }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Arriving from the first-run framing screen: this is the activation flow, so
   // pre-resolve location, show the framing header, and tag the board-bind.
   const fromOnboarding = source === 'onboarding';
+  // Opened by the launch gate for a new account with no board (#5654): "Where do
+  // you climb?" and three ways to a board instead of the row of discovery tiles.
+  // Still an onboarding pick (`fromOnboarding`), so the bind closes out first-run
+  // and lands on Climbs exactly as the old board step did.
+  const firstBoardMode = isFirstBoardMode({ source, firstBoard });
+  const chooseFirstBoardPath = useFirstBoardPickerTracking(firstBoardMode);
   const { t } = useTranslation('boards');
   // The drill-in reuses the manage screen's own title, so the two can never drift.
   const { t: tCommon } = useTranslation('common');
@@ -179,10 +194,18 @@ export default function BoardSelection() {
 
   const { data: popular } = usePopularBoardConfigs({ limit: 12 });
 
-  const location = useDeviceLocation();
+  // First-board mode offers Open Settings after a denial, so a second tap on
+  // "At a gym" has to be able to ask again.
+  const location = useDeviceLocation({ retryAfterDenial: firstBoardMode });
   // 20 km, not the hook's 1 km default — "nearby" should reach across town
   // (a gym a couple of streets away must still surface).
-  const { data: nearby, isLoading: isNearbyLoading } = useNearbyBoards(location.coords, 20);
+  const {
+    data: nearby,
+    isLoading: isNearbyLoading,
+    isFetching: isNearbyFetching,
+    isError: isNearbyError,
+    refetch: refetchNearby,
+  } = useNearbyBoards(location.coords, 20);
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
@@ -531,9 +554,11 @@ export default function BoardSelection() {
   const requestLocation = location.request;
   // Onboarding handoff: pre-resolve location on mount so the Find Nearby card is
   // already loading instead of waiting for a tap the user might not discover.
+  // Not in first-board mode: there the question comes with its reason, on the
+  // "At a gym" tap, instead of as the first thing a newcomer sees.
   useEffect(() => {
-    if (fromOnboarding) void requestLocation();
-  }, [fromOnboarding, requestLocation]);
+    if (fromOnboarding && !firstBoardMode) void requestLocation();
+  }, [fromOnboarding, firstBoardMode, requestLocation]);
   const onModeFindNearby = useCallback(() => {
     void requestLocation();
   }, [requestLocation]);
@@ -561,7 +586,8 @@ export default function BoardSelection() {
   }, [router, boardReturnTo]);
 
   // `source` rides along for the same reason as the builder's: a board picked on
-  // the gym map during onboarding has to close out first-run too. `from=picker`
+  // the gym map during onboarding has to close out first-run too. It is the only
+  // way forward from "Location is off" and "Nothing within 20 km". `from=picker`
   // tells the gym finder this picker already counted the opening.
   const onModeFindGym = useCallback(() => {
     router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source, from: 'picker' } });
@@ -586,6 +612,42 @@ export default function BoardSelection() {
     },
     [router, boardReturnTo, source],
   );
+
+  // First-board mode's three answers. Each one is the existing flow behind it,
+  // plus the choice event; see FirstBoardChoice.
+  const [gymChosen, setGymChosen] = useState(false);
+  const onFirstBoardGym = useCallback(() => {
+    chooseFirstBoardPath('gym');
+    setGymChosen(true);
+    void requestLocation();
+  }, [chooseFirstBoardPath, requestLocation]);
+  const onFirstBoardOwn = useCallback(() => {
+    chooseFirstBoardPath('own');
+    onModeCreate();
+  }, [chooseFirstBoardPath, onModeCreate]);
+  const onFirstBoardScan = useCallback(() => {
+    chooseFirstBoardPath('scan');
+    onModeBluetooth();
+  }, [chooseFirstBoardPath, onModeBluetooth]);
+  const onFirstBoardGymMap = useCallback(() => {
+    chooseFirstBoardPath('gym_map');
+    onModeFindGym();
+  }, [chooseFirstBoardPath, onModeFindGym]);
+  const onOpenLocationSettings = useCallback(() => {
+    void openAppSettings();
+  }, []);
+  const onRetryNearby = useCallback(() => {
+    void refetchNearby();
+  }, [refetchNearby]);
+  const gymState = firstBoardGymState({
+    chosen: gymChosen,
+    locationStatus: location.status,
+    // Any request in flight, not only the first load: a retry after an error
+    // keeps the query in `error` while it runs, and should read as searching.
+    nearbyLoading: isNearbyFetching,
+    nearbyFailed: isNearbyError,
+    nearbyCount: nearbyItems.length,
+  });
 
   // Drive the Find Nearby card off both the location permission and the nearby
   // query: loading while resolving the fix or fetching, 'done' once results are
@@ -719,61 +781,84 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {fromOnboarding ? (
-          <Text variant="subheadline" style={styles.onboardingHeader}>
-            {t('mobile.onboardingPrompt')}
-          </Text>
-        ) : null}
+        {firstBoardMode ? (
+          <>
+            <FirstBoardChoice
+              gymState={gymState}
+              nearbyResults={nearbySection}
+              onGym={onFirstBoardGym}
+              onOwn={onFirstBoardOwn}
+              onScan={onFirstBoardScan}
+              onFindGymOnMap={onFirstBoardGymMap}
+              onOpenSettings={onOpenLocationSettings}
+              onRetryNearby={onRetryNearby}
+            />
+            {/* A new account can already have boards: one it built on the web,
+                or one it followed before a sign-out cleared the active board.
+                No Popular setups here: each of those cards builds a NEW public
+                board, which is how a gym climber ends up with a duplicate of
+                their gym's wall. My own board covers the home-wall case. */}
+            {myBoardsSection}
+          </>
+        ) : (
+          <>
+            {fromOnboarding ? (
+              <Text variant="subheadline" style={styles.onboardingHeader}>
+                {t('mobile.onboardingPrompt')}
+              </Text>
+            ) : null}
 
-        {/* Mode cards */}
-        <View style={styles.modeRow}>
-          <BoardModeCard
-            icon="location"
-            label={t('mobile.discovery.findNearby')}
-            sublabel={
-              nearbyState === 'denied'
-                ? t('mobile.discovery.locationDenied')
-                : nearbyState === 'done'
-                  ? t('mobile.discovery.nearbyShowing')
-                  : undefined
-            }
-            state={nearbyState}
-            onPress={onModeFindNearby}
-          />
-          <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
-          <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
-          {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
-              en-US and in all three other locales. The `+` glyph and the row's
-              context carry the noun here; the full-width CTAs keep it. */}
-          <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
-          {/* Next to "Create board", because that is the question it answers: the
-              other tile is for a catalogue board you pick a layout for, this one
-              is for a wall you photograph. */}
-          {sprayWallsEnabled ? (
-            <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
-          ) : null}
-        </View>
+            {/* Mode cards */}
+            <View style={styles.modeRow}>
+              <BoardModeCard
+                icon="location"
+                label={t('mobile.discovery.findNearby')}
+                sublabel={
+                  nearbyState === 'denied'
+                    ? t('mobile.discovery.locationDenied')
+                    : nearbyState === 'done'
+                      ? t('mobile.discovery.nearbyShowing')
+                      : undefined
+                }
+                state={nearbyState}
+                onPress={onModeFindNearby}
+              />
+              <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
+              <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
+              {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
+                  en-US and in all three other locales. The `+` glyph and the row's
+                  context carry the noun here; the full-width CTAs keep it. */}
+              <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
+              {/* Next to "Create board", because that is the question it answers: the
+                  other tile is for a catalogue board you pick a layout for, this one
+                  is for a wall you photograph. */}
+              {sprayWallsEnabled ? (
+                <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
+              ) : null}
+            </View>
 
-        {nearbySection}
-        {myBoardsSection}
+            {nearbySection}
+            {myBoardsSection}
 
-        {popularItems.length > 0 ? (
-          <Section title={t('mobile.discovery.popularTitle')}>
-            <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
-          </Section>
-        ) : null}
+            {popularItems.length > 0 ? (
+              <Section title={t('mobile.discovery.popularTitle')}>
+                <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
+              </Section>
+            ) : null}
 
-        {myBoardItems.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('mobile.emptyTitle')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('mobile.emptySubtitle')}
-            </Text>
-            <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
-          </View>
-        ) : null}
+            {myBoardItems.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {t('mobile.emptyTitle')}
+                </Text>
+                <Text variant="subheadline" style={styles.emptySubtitle}>
+                  {t('mobile.emptySubtitle')}
+                </Text>
+                <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
+              </View>
+            ) : null}
+          </>
+        )}
       </ScrollView>
 
       <BluetoothQuickstartSheet
