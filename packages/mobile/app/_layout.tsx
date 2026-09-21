@@ -99,6 +99,7 @@ import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceM
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { FirstConnectHost } from '../src/components/onboarding/FirstConnectHost';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { ClimbsTabReturnTip } from '../src/components/onboarding/ClimbsTabReturnTip';
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
@@ -881,6 +882,11 @@ function RootLayout() {
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
                                                                     <AccessoryOnboardingTip />
+                                                                    {/* iOS 26 only: the one-time "tap the magnifier to get
+                                                            back to your climbs" tip for new accounts (#5654). A
+                                                            root sibling of the tip above, which it waits behind
+                                                            because both float in the same place. */}
+                                                                    <ClimbsTabReturnTip />
                                                                     {/* The rest-timer pill (#5378): a root overlay pinned at
                                                             bottomChrome.restTimerBottom, the anchor the bottom-chrome
                                                             reserve is computed against. A sibling of the tip above for

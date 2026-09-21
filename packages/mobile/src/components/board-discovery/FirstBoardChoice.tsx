@@ -8,8 +8,8 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
-import { canOpenAppSettings } from '../../lib/open-app-settings';
 import type { FirstBoardGymState } from '../../lib/boards/first-board-gym-state';
+import { NearbySearchStatus } from './NearbySearchStatus';
 import { spacing } from '../../theme/tokens';
 
 type FirstBoardChoiceProps = {
@@ -28,7 +28,8 @@ type FirstBoardChoiceProps = {
 
 /**
  * The first-board picker's body (#5654): "Where do you climb?" and the three
- * ways to a board, for a newcomer the launch gate brought here.
+ * ways to a board, for a newcomer the launch gate brought here, or a climber
+ * with no boards who tapped "Find my board" on Climbs.
  *
  * Two cards and a text button rather than the picker's row of five equal tiles,
  * because the question a newcomer can answer is where they climb, not which
@@ -72,13 +73,6 @@ export function FirstBoardChoice({
         onPress={onGym}
         busy={gymState === 'searching'}
       />
-      {gymState === 'searching' ? (
-        <View style={styles.gymPanel} accessibilityLiveRegion="polite">
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.firstBoard.searching')}
-          </Text>
-        </View>
-      ) : null}
       {gymState === 'found' ? (
         <View style={styles.gymResults}>
           {nearbyResults}
@@ -86,38 +80,14 @@ export function FirstBoardChoice({
             <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
           </View>
         </View>
-      ) : null}
-      {gymState === 'none_nearby' ? (
-        <View style={styles.gymPanel} accessibilityLiveRegion="polite">
-          <Text variant="subheadline">{t('mobile.firstBoard.nearbyEmpty')}</Text>
-          <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
-        </View>
-      ) : null}
-      {gymState === 'nearby_error' ? (
-        <View style={styles.gymPanel} accessibilityLiveRegion="polite">
-          <Text variant="subheadline">{t('mobile.firstBoard.nearbyError')}</Text>
-          <View style={styles.gymActions}>
-            <Button title={t('mobile.errorRetry')} variant="tonal" size="small" onPress={onRetryNearby} />
-            <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
-          </View>
-        </View>
-      ) : null}
-      {gymState === 'location_off' ? (
-        <View style={styles.gymPanel} accessibilityLiveRegion="polite">
-          <Text variant="subheadline">{t('mobile.firstBoard.locationOff')}</Text>
-          <View style={styles.gymActions}>
-            {canOpenAppSettings() ? (
-              <Button
-                title={t('mobile.firstBoard.openSettings')}
-                variant="tonal"
-                size="small"
-                onPress={onOpenSettings}
-              />
-            ) : null}
-            <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
-          </View>
-        </View>
-      ) : null}
+      ) : (
+        <NearbySearchStatus
+          state={gymState}
+          onFindGymOnMap={onFindGymOnMap}
+          onOpenSettings={onOpenSettings}
+          onRetryNearby={onRetryNearby}
+        />
+      )}
 
       <ChoiceCard
         icon="home"
@@ -201,14 +171,7 @@ const styles = StyleSheet.create({
   },
   gymPanel: {
     paddingHorizontal: spacing[4],
-    gap: spacing[2],
     alignItems: 'flex-start',
-  },
-  gymActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: spacing[2],
   },
   scan: {
     paddingHorizontal: spacing[4],

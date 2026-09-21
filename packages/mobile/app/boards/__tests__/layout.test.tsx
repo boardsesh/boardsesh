@@ -116,6 +116,20 @@ describe('the board picker header X', () => {
     expect(noteCloseTappedMock).not.toHaveBeenCalled();
   });
 
+  // Climbs' "Find my board" opened it: an ordinary Close back to Climbs, but
+  // noted, because a climber with no boards sees the "Where do you climb?"
+  // block there and its skip names the X.
+  it('is a noted plain close when Climbs opened it', () => {
+    renderIndexHeaderLeft({ source: 'no_board' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+    expect(noteCloseTappedMock).toHaveBeenCalledTimes(1);
+    expect(noteCloseTappedMock.mock.invocationCallOrder[0]).toBeLessThan(routerMock.back.mock.invocationCallOrder[0]);
+  });
+
   it('falls back to the plain close when the params are missing or malformed', () => {
     renderIndexHeaderLeft(undefined);
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();

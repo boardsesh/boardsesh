@@ -8,6 +8,7 @@ import {
   getDefaultBoardSizeForLayout,
 } from '../../lib/custom-board-options';
 import { defaultAngle } from '../../lib/boards/default-angle';
+import type { BoardConfigPreset } from '../../lib/boards/board-config-preset';
 import { cleanLayoutName } from './board-builder-labels';
 
 /**
@@ -48,6 +49,17 @@ function parseSetIds(setIds: string): number[] {
   return setIds.split(',').map(Number).filter(Number.isFinite);
 }
 
+export type BoardBuilderOptions = {
+  /**
+   * The setup to preselect for a board type, when the builder should open with
+   * one chosen instead of waiting for a layout tap (#5654, "My own board"). It
+   * seeds the first board type when there is no `seed`, and every board type
+   * the climber switches to afterwards. Read at call time, so it may change
+   * identity between renders without re-seeding anything.
+   */
+  preset?: (boardName: BoardName) => BoardConfigPreset | null;
+};
+
 /**
  * The cascading board-config state machine behind the create-board builder
  * (board → layout → size → sets → angle), plus the optional "more options" meta
@@ -56,12 +68,17 @@ function parseSetIds(setIds: string): number[] {
  * auto-selects all of that size's sets, which is why the per-set toggles can
  * stay hidden behind Advanced for the 99% case.
  */
-export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
+export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardBuilderOptions) {
   const initialBoard = seed?.boardName ?? SUPPORTED_BOARDS[0];
+  // A seed is the climber's own choice (a Popular card, the board being
+  // edited), so it always wins over a preset.
+  const [initialPreset] = useState(() => (seed ? null : (options?.preset?.(initialBoard) ?? null)));
+  const presetRef = useRef(options?.preset);
+  presetRef.current = options?.preset;
   const [boardName, setBoardName] = useState<BoardName>(initialBoard);
-  const [layoutId, setLayoutId] = useState<number | null>(seed?.layoutId ?? null);
-  const [sizeId, setSizeId] = useState<number | null>(seed?.sizeId ?? null);
-  const [setIds, setSetIds] = useState<number[]>(seed ? parseSetIds(seed.setIds) : []);
+  const [layoutId, setLayoutId] = useState<number | null>(seed?.layoutId ?? initialPreset?.layoutId ?? null);
+  const [sizeId, setSizeId] = useState<number | null>(seed?.sizeId ?? initialPreset?.sizeId ?? null);
+  const [setIds, setSetIds] = useState<number[]>(seed ? parseSetIds(seed.setIds) : (initialPreset?.setIds ?? []));
   const [angle, setAngle] = useState<number>(seed?.angle ?? defaultAngle(initialBoard));
   // Meta seeds (edit) run once here — NOT in the re-seed effect — so re-renders
   // can't clobber edits. Create / Popular omit them, so the home-board defaults apply.
@@ -122,12 +139,14 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
   // Each level resets everything below it so the cascade stays consistent.
   // Stable across renders (deps are only the levels above) so memoised chip
   // rows don't re-render when an unrelated field — e.g. the dragged angle —
-  // changes.
+  // changes. With a preset, "resets" means "moves to that type's preset", so a
+  // climber switching from Kilter to Tension still has a working Save.
   const selectBoard = useCallback((next: BoardName) => {
+    const preset = presetRef.current?.(next) ?? null;
     setBoardName(next);
-    setLayoutId(null);
-    setSizeId(null);
-    setSetIds([]);
+    setLayoutId(preset?.layoutId ?? null);
+    setSizeId(preset?.sizeId ?? null);
+    setSetIds(preset?.setIds ?? []);
     setAngle(defaultAngle(next));
   }, []);
   const selectLayout = useCallback(

@@ -56,6 +56,57 @@ describe('useBoardBuilder', () => {
     expect(result.current.canCreate).toBe(false);
   });
 
+  // #5654, "My own board": the builder opens with a setup chosen, so the
+  // preview renders and Save works from the first frame.
+  describe('with a preset', () => {
+    // Woods only, so a switch to Kilter shows the no-preset path.
+    const presetFor = (boardName: string) => (boardName === 'woods' ? { layoutId: 1, sizeId: 1, setIds: [1] } : null);
+
+    it('opens on the first board type with its preset chosen', () => {
+      const kilterPreset = { layoutId: 1, sizeId: 10, setIds: [1, 20] };
+      const { result } = renderHook(() =>
+        useBoardBuilder(null, { preset: (boardName) => (boardName === 'kilter' ? kilterPreset : null) }),
+      );
+
+      expect(result.current.boardName).toBe('kilter');
+      expect(result.current.layoutId).toBe(1);
+      expect(result.current.sizeId).toBe(10);
+      expect(result.current.setIds).toEqual([1, 20]);
+      expect(result.current.canCreate).toBe(true);
+    });
+
+    it('moves to the next board type preset instead of clearing the cascade', () => {
+      const { result } = renderHook(() => useBoardBuilder(null, { preset: presetFor }));
+      act(() => result.current.selectBoard('woods'));
+
+      expect(result.current.layoutId).toBe(1);
+      expect(result.current.sizeId).toBe(1);
+      expect(result.current.setIds).toEqual([1]);
+      expect(result.current.canCreate).toBe(true);
+    });
+
+    it('clears the cascade for a board type with no preset', () => {
+      const { result } = renderHook(() => useBoardBuilder(null, { preset: presetFor }));
+      act(() => result.current.selectBoard('woods'));
+      act(() => result.current.selectBoard('kilter'));
+
+      expect(result.current.layoutId).toBeNull();
+      expect(result.current.canCreate).toBe(false);
+    });
+
+    // A seed is the climber's own choice (a Popular card, a board being edited).
+    it('never overrides a seed', () => {
+      const { result } = renderHook(() =>
+        useBoardBuilder(
+          { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1' },
+          { preset: () => ({ layoutId: 1, sizeId: 1, setIds: [1] }) },
+        ),
+      );
+
+      expect(result.current.sizeId).toBe(2);
+    });
+  });
+
   it('builds a create input carrying serial + visibility from More options', () => {
     const { result } = renderHook(() => useBoardBuilder());
     act(() => result.current.selectBoard('kilter'));

@@ -31,6 +31,10 @@ const trackMock = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
 }));
+const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
+const presetBoardConfigMock = vi.hoisted(() => vi.fn());
+type BuilderOptions = { preset?: (boardName: string) => unknown } | undefined;
+const builderCalls = vi.hoisted(() => ({ options: [] as BuilderOptions[] }));
 
 const existingBoard = {
   uuid: 'existing-uuid',
@@ -89,6 +93,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useCreateBoard: () => ({ mutateAsync: createBoardMock }),
   useFollowBoard: () => ({ mutateAsync: followBoardMock }),
   useProfile: () => ({ data: { displayName: 'Marco' } }),
+  usePopularBoardConfigs: () => ({ data: popularConfigs }),
   fetchBoardByUuid: fetchBoardByUuidMock,
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
 }));
@@ -120,26 +125,36 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
+vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: presetBoardConfigMock }));
+
 // The builder is exercised in its own suite; here it just has to produce a valid
-// input so the screen's control flow is what's under test.
-vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
-  useBoardBuilder: () => ({
-    boardName: 'moonboard',
-    sizes: [],
+// input so the screen's control flow is what's under test. One object for every
+// render, like the real hook's stable callbacks, and the options it was called
+// with are kept so the preset wiring can be checked.
+const builderState = vi.hoisted(() => ({
+  boardName: 'moonboard',
+  layoutId: 3,
+  sizes: [],
+  sizeId: 1,
+  rawLayoutName: 'Standard',
+  coords: null,
+  selectedGym: null,
+  buildCreateInput: () => ({
+    boardType: 'moonboard',
+    layoutId: 3,
     sizeId: 1,
-    rawLayoutName: 'Standard',
-    coords: null,
-    selectedGym: null,
-    buildCreateInput: () => ({
-      boardType: 'moonboard',
-      layoutId: 3,
-      sizeId: 1,
-      setIds: '5,6,7,8,9,10',
-      name: 'Klimmuur MoonBoard',
-      angle: 25,
-      locationName: 'Klimmuur',
-    }),
+    setIds: '5,6,7,8,9,10',
+    name: 'Klimmuur MoonBoard',
+    angle: 25,
+    locationName: 'Klimmuur',
   }),
+}));
+
+vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
+  useBoardBuilder: (_seed: unknown, options?: BuilderOptions) => {
+    builderCalls.options.push(options);
+    return builderState;
+  },
 }));
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
@@ -202,6 +217,7 @@ const { default: CreateBoard } = await import('../create');
 beforeEach(() => {
   vi.clearAllMocks();
   state.params = {};
+  builderCalls.options = [];
   createBoardMock.mockResolvedValue({ uuid: 'new-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
   fetchBoardByUuidMock.mockResolvedValue(existingBoard);
   fetchBoardsBySerialNumbersMock.mockResolvedValue([]);
@@ -351,5 +367,93 @@ describe('CreateBoard', () => {
 
     await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
     expect(dismissToMock).not.toHaveBeenCalled();
+  });
+});
+
+// #5654. "My own board" opens the builder with a setup chosen; and a builder
+// that closes without a board says so, because most newcomers who opened it
+// left without one.
+describe('CreateBoard from "My own board"', () => {
+  it('asks the builder for a preset, from the popular setups the picker loaded', () => {
+    state.params = { preset: '1', source: 'onboarding' };
+    render(createElement(CreateBoard));
+
+    const preset = builderCalls.options.at(-1)?.preset;
+    expect(preset).toBeTypeOf('function');
+    preset?.('kilter');
+    expect(presetBoardConfigMock).toHaveBeenCalledWith('kilter', popularConfigs.configs);
+  });
+
+  it('opens the builder empty without the param', () => {
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)).toBeUndefined();
+  });
+
+  // A Popular card is the climber's own pick; a preset must not replace it.
+  it('lets a seed win over the preset', () => {
+    state.params = {
+      preset: '1',
+      seedBoardName: 'moonboard',
+      seedLayoutId: '3',
+      seedSizeId: '1',
+      seedSetIds: '5,6',
+    };
+    render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)).toBeUndefined();
+  });
+});
+
+describe('Board Builder Abandoned', () => {
+  function abandonedEvents() {
+    return trackMock.mock.calls.filter(([name]) => name === 'Board Builder Abandoned');
+  }
+
+  it('fires when the builder closes without a board', () => {
+    state.params = { preset: '1', source: 'no_board' };
+    const { unmount } = render(createElement(CreateBoard));
+    unmount();
+
+    expect(abandonedEvents()).toHaveLength(1);
+    expect(abandonedEvents()[0][1]).toEqual({
+      boardType: 'moonboard',
+      hadLayout: true,
+      hadSize: true,
+      source: 'scratch',
+      preset: true,
+      openedFrom: 'no_board',
+      submitAttempted: false,
+      secondsOpen: 0,
+    });
+  });
+
+  it('says a Save was tried when the server refused it', async () => {
+    createBoardMock.mockRejectedValueOnce(new Error('boom'));
+    const { unmount } = render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    unmount();
+
+    expect(abandonedEvents()[0][1]).toMatchObject({ submitAttempted: true, openedFrom: 'board_picker', preset: false });
+  });
+
+  it('stays quiet once a board is created', async () => {
+    const { unmount } = render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+    unmount();
+
+    expect(abandonedEvents()).toEqual([]);
+  });
+
+  it('stays quiet when the climber switches to the board they already have', async () => {
+    createBoardMock.mockRejectedValueOnce(duplicateError());
+    const { unmount } = render(createElement(CreateBoard));
+    fireEvent.click(screen.getByText('submit'));
+    await waitFor(() => expect(screen.getByTestId('duplicate-prompt')).toBeTruthy());
+    fireEvent.click(screen.getByText('use existing'));
+    await waitFor(() => expect(dismissToMock).toHaveBeenCalled());
+    unmount();
+
+    expect(abandonedEvents()).toEqual([]);
   });
 });

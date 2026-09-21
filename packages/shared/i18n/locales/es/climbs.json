@@ -360,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Sigue tu muro",
-        "subtitle": "Elige el plafón donde escalas para explorar sus bloques y ver lo que está encendido ahora mismo.",
+        "title": "Elige tu plafón",
+        "subtitle": "Escoge el plafón donde escalas para explorar sus bloques e iluminarlos.",
         "cta": "Buscar mi plafón"
       },
       "noClimbs": {

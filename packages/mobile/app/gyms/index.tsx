@@ -14,6 +14,7 @@ import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
@@ -86,6 +87,9 @@ export default function GymDiscovery() {
     returnTo: boardReturnTo,
     fromOnboarding,
     surface: from === 'picker' ? 'gym_finder_from_picker' : 'gym_finder',
+    // Climbs' "Pick your board" picker forwards `source=no_board`; its gym picks
+    // count under that source, as the picker's own picks do.
+    fromNoBoard: isNoBoardEntry({ source }),
   });
   // The same bind as every other picker: write first, then the pick event, then
   // leave, then follow the board so it lands in Your boards (and offer it

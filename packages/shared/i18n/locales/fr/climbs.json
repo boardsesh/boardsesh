@@ -360,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Suis ton mur",
-        "subtitle": "Choisis la board où tu grimpes pour parcourir ses blocs et voir ce qui est allumé en ce moment.",
+        "title": "Choisis ta board",
+        "subtitle": "Sélectionne la board où tu grimpes pour parcourir ses blocs et les allumer.",
         "cta": "Trouver ma board"
       },
       "noClimbs": {

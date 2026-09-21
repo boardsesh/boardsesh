@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { getStoredActiveBoard } from '../active-board-store';
+import type { FirstBoardEntry } from '../boards/first-board-mode';
 import {
   consumeFirstBoardCloseTapped,
   trackFirstBoardPathChosen,
@@ -10,7 +11,8 @@ import {
 /**
  * The first-board picker's own analytics (#5654): every choice tapped, and a
  * skip when the picker goes away with no board bound. Returns the callback the
- * choices report through.
+ * choices report through. `entry` is how the climber got here; `null` is the
+ * ordinary picker, which reports nothing.
  *
  * Lives on the picker SCREEN rather than on the choice block, because the
  * screen swaps whole branches (the loading spinner, the offline list, the error
@@ -23,11 +25,11 @@ import {
  * Bluetooth scan all read as bound, and only a real skip reports. A read that
  * fails says nothing rather than guess.
  */
-export function useFirstBoardPickerTracking(enabled: boolean): (path: FirstBoardPath) => void {
+export function useFirstBoardPickerTracking(entry: FirstBoardEntry | null): (path: FirstBoardPath) => void {
   const lastPathRef = useRef<FirstBoardPath | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!entry) return;
     const openedAtMs = Date.now();
     // Drop a note a previous picker's X left behind, if its unmount never ran.
     consumeFirstBoardCloseTapped();
@@ -38,14 +40,19 @@ export function useFirstBoardPickerTracking(enabled: boolean): (path: FirstBoard
       void getStoredActiveBoard()
         .then((board) => {
           if (board) return;
-          trackFirstBoardPickerSkipped({ method, secondsOpen, lastPath });
+          trackFirstBoardPickerSkipped({ method, secondsOpen, lastPath, entry });
         })
         .catch(() => undefined);
     };
-  }, [enabled]);
+  }, [entry]);
 
-  return useCallback((path: FirstBoardPath) => {
-    lastPathRef.current = path;
-    trackFirstBoardPathChosen(path);
-  }, []);
+  return useCallback(
+    (path: FirstBoardPath) => {
+      lastPathRef.current = path;
+      // The choices only render while an entry is set; the guard keeps a stray
+      // call from the ordinary picker from reporting a showing that never was.
+      if (entry) trackFirstBoardPathChosen(path, entry);
+    },
+    [entry],
+  );
 }

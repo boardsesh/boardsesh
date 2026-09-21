@@ -360,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Follow your wall",
-        "subtitle": "Pick the board you climb on to browse its problems and see what's lit on it right now.",
+        "title": "Pick your board",
+        "subtitle": "Choose the wall you climb on to browse its climbs and light them up.",
         "cta": "Find my board"
       },
       "noClimbs": {

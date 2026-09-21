@@ -103,6 +103,7 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
@@ -1748,11 +1749,13 @@ function ClimbListInner() {
               the climb list with no extra wiring here. */}
           <Button
             title={t('mobile.emptyState.noBoard.cta')}
-            // Plain board picker — this empty state is reachable any time the user
-            // has no active board, not just first-run, so it must NOT tag the bind
-            // as onboarding (which would fire the activation event + arm the
-            // reveal banner outside the first-run hand-off).
-            onPress={() => router.push('/boards')}
+            // The picker's no-board entry (#5654): a climber with no boards at all
+            // gets "Where do you climb?" there, with the gym search, the builder
+            // and the Bluetooth scan; one whose active board was only cleared gets
+            // their list. Deliberately NOT tagged as onboarding: this empty state
+            // shows any time no board is bound, not just first-run, so a bind from
+            // it must not fire the activation event or arm the reveal banner.
+            onPress={() => router.push(NO_BOARD_PICKER_HREF)}
             variant="filled"
             size="large"
             style={styles.emptyCta}

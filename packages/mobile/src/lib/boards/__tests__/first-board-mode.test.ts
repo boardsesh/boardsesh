@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIRST_BOARD_PICKER_HREF, isFirstBoardMode } from '../first-board-mode';
+import { FIRST_BOARD_PICKER_HREF, NO_BOARD_PICKER_HREF, isFirstBoardMode, isNoBoardEntry } from '../first-board-mode';
 import { firstBoardGymState } from '../first-board-gym-state';
 
 describe('isFirstBoardMode', () => {
@@ -18,6 +18,20 @@ describe('isFirstBoardMode', () => {
   it('stays off for any other source or value', () => {
     expect(isFirstBoardMode({ source: 'board_picker', firstBoard: '1' })).toBe(false);
     expect(isFirstBoardMode({ source: 'onboarding', firstBoard: 'true' })).toBe(false);
+  });
+});
+
+describe('isNoBoardEntry', () => {
+  it("is on for the href Climbs' Find my board pushes", () => {
+    expect(isNoBoardEntry(NO_BOARD_PICKER_HREF.params)).toBe(true);
+  });
+
+  // The no-board entry is an ordinary pick, never onboarding: it must not turn
+  // on first-board mode, which closes out first-run on the bind.
+  it('is not first-board mode', () => {
+    expect(isFirstBoardMode(NO_BOARD_PICKER_HREF.params)).toBe(false);
+    expect(isNoBoardEntry(FIRST_BOARD_PICKER_HREF.params)).toBe(false);
+    expect(isNoBoardEntry({})).toBe(false);
   });
 });
 

@@ -149,6 +149,15 @@ describe('BluetoothQuickstartSheet', () => {
     expect(hasText(container, 'settings:ble.troubleshootTips')).toBe(true);
   });
 
+  // #5654: the scan only sees Aurora boxes that put a serial in their name, so a
+  // climber at a MoonBoard is told before the scan runs out, not after.
+  it.each(['scanning', 'done'] as const)('says what the scan cannot see while %s', (status) => {
+    scan.status = status;
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.firstBoard.scanFootnote')).toBe(true);
+  });
+
   it('shows the location hint instead of the hardware tips when Android is suppressing results', () => {
     locationHint.shouldOfferLocationGrant = true;
     const { container } = renderSheet();

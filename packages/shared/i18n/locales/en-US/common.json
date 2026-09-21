@@ -471,7 +471,8 @@
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
+        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there.",
+        "climbsTab": "To get back to your climbs, tap the magnifier in the tab bar."
       }
     },
     "nav": {
