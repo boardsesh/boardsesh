@@ -49,25 +49,18 @@ export function vGradeNumber(gradeLabel: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-// One representative grade per V-step (the lowest font grade for each V-grade,
-// e.g. 4a for V0, 6a for V3), easy→hard. Used to synthesize the empty floor of a
-// grade-spread axis so it starts at the boulder floor (V0) instead of the
-// session's lowest send.
-const V_AXIS_STEPS: readonly BoulderGrade[] = BOULDER_GRADES.filter(
-  (grade, index) => BOULDER_GRADES.findIndex((other) => other.v_grade === grade.v_grade) === index,
-);
-
-/**
- * The V-steps below a floor grade, so a grade-spread chart can anchor its axis
- * at V0 instead of the lowest send. Returns one representative grade per V-step
- * from V0 up to (but excluding) `minVExclusive`, easy→hard. A V11→V17 session
- * gets V0…V10 back, which render as empty bars to the left of the real sends.
- * Empty (minVExclusive ≤ 0) when the sends already reach the floor.
- */
-export function gradeAxisFloorSteps(minVExclusive: number): readonly BoulderGrade[] {
+/** Return supported empty V-steps below the session's lowest send, easy to hard. */
+export function gradeAxisFloorSteps(
+  minVExclusive: number,
+  supportedGrades: readonly BoulderGrade[] = BOULDER_GRADES,
+): readonly BoulderGrade[] {
   if (!Number.isFinite(minVExclusive) || minVExclusive <= 0) return [];
-  return V_AXIS_STEPS.filter((grade) => {
+  const representatives = new Map<string, BoulderGrade>();
+  for (const grade of supportedGrades) {
     const step = vGradeNumber(grade.v_grade);
-    return step != null && step < minVExclusive;
-  });
+    if (step != null && step < minVExclusive && !representatives.has(grade.v_grade)) {
+      representatives.set(grade.v_grade, grade);
+    }
+  }
+  return [...representatives.values()];
 }
