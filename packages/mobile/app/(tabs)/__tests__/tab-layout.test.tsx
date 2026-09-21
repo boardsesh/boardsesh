@@ -38,7 +38,10 @@ const cfg = vi.hoisted(() => ({
   // Focused route segments — drives the wall-tab redundancy rule (the ambient
   // column is hidden while the "On the Wall" tab is the focused destination).
   segments: ['(tabs)', 'home'] as readonly string[],
-  materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; href?: string | null } }>,
+  materialScreens: [] as Array<{
+    name: string;
+    options?: { lazy?: boolean; href?: string | null; popToTopOnBlur?: boolean };
+  }>,
 }));
 
 vi.mock('react-native', () => ({
@@ -168,7 +171,13 @@ vi.mock('expo-router', () => {
         children,
       ),
     {
-      Screen: ({ name, options }: { name: string; options?: { lazy?: boolean } }) => {
+      Screen: ({
+        name,
+        options,
+      }: {
+        name: string;
+        options?: { lazy?: boolean; href?: string | null; popToTopOnBlur?: boolean };
+      }) => {
         const screen = { name, options };
         const existingIndex = cfg.materialScreens.findIndex((entry) => entry.name === name);
         if (existingIndex === -1) cfg.materialScreens.push(screen);
@@ -299,6 +308,20 @@ describe('TabLayout', () => {
 
     expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe('search');
     expect(container.querySelectorAll('[data-tab-role="search"]')).toHaveLength(1);
+  });
+
+  it('pops the Profile tab back to its root when it loses focus', () => {
+    // Settings/Edit Profile are opened from the global user-drawer via an
+    // absolute router.push into this tab's nested stack, from whatever tab is
+    // currently focused. Without popToTopOnBlur, switching away and back left
+    // the Profile tab stranded on that pushed screen instead of the You root
+    // (logbook/sessions/progress) — see the option's own comment in _layout.tsx.
+    cfg.variant = 'material';
+
+    render(<TabLayout />);
+
+    const profileScreen = cfg.materialScreens.find((screen) => screen.name === 'profile');
+    expect(profileScreen?.options).toMatchObject({ popToTopOnBlur: true });
   });
 
   it('registers Home as the leftmost material tab', () => {
