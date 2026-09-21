@@ -283,6 +283,14 @@ download a corpus or publish objects. COCO polygon masks are clipped into every
 retained tile. RLE masks are rejected explicitly and must be converted to polygon
 annotations before using this preprocessing path.
 
+RF-DETR `seg-*` training requires a usable polygon for every annotated hold in
+train, validation and test splits. The default Way Up corpus is box-only and
+cannot train a mask model; choose a fully polygon-labelled corpus with
+`--dataset`. Mixed box/polygon labels, empty masks and stale tiled caches are
+rejected before model construction. Source labels and prepared/cached tiles
+are both checked, including the capped training subset. Ordinary box models
+and box models with classical postprocessing can still use box-only labels.
+
 ## Reproducing every number in the report
 
 ```bash
