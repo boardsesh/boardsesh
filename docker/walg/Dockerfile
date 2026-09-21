@@ -53,7 +53,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" GOEXPERIMENT=jsonv2 \
     go build -mod=mod -trimpath \
       -ldflags "-s -w \
         -X github.com/wal-g/wal-g/cmd/pg.walgVersion=${WALG_VERSION} \
-        -X github.com/wal-g/wal-g/cmd/pg.gitRevision=${WALG_VERSION}" \
+        -X github.com/wal-g/wal-g/cmd/pg.gitRevision=${WALG_COMMIT}" \
       -o /wal-g .
 
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a

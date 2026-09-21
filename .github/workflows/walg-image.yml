@@ -16,7 +16,9 @@ on:
 
 concurrency:
   group: walg-image-${{ github.ref }}
-  cancel-in-progress: false
+  # A superseded PR run is wasted work, but a publish must never be cancelled
+  # half-way through pushing a manifest.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   contract:
@@ -26,7 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -43,14 +49,14 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: false
           load: true
-          tags: walg-contract:${{ strategy.job-index }}
+          tags: walg-contract:${{ matrix.arch }}
 
       # Every check below mirrors a gate the ansible role applies, so a failure
       # here is a failure the DR host would have hit instead.
       - name: Prove the WAL-G contract
         env:
           PLATFORM: ${{ matrix.platform }}
-          IMAGE: walg-contract:${{ strategy.job-index }}
+          IMAGE: walg-contract:${{ matrix.arch }}
         run: |
           set -euo pipefail
           postgres_image="$(jq -r '.images.portable.name + "@" + .images.portable.digest' \
