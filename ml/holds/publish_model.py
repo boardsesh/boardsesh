@@ -312,8 +312,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     schema = json.loads(SCHEMA_PATH.read_text())
     # Keep schema-v1 readers compatible with legacy manifests. New exports
     # always need an explicit plan, including an untiled full-frame pass.
-    schema["required"] = [*schema["required"], "inference"]
-    jsonschema.validate(instance=manifest, schema=schema)
+    publication_schema = {**schema, "required": sorted({*schema["required"], "inference"})}
+    jsonschema.validate(instance=manifest, schema=publication_schema)
 
 
 def resolve_training(args: argparse.Namespace) -> dict[str, Any]:
