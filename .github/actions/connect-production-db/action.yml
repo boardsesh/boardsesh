@@ -1,6 +1,9 @@
 name: Connect to the production database network
 description: Join the tailnet as an ephemeral, least-privilege production database client.
 
+# Repository-local action: callers must check out this repository before use.
+# The checkout supplies both this action and its shared URL validator.
+
 inputs:
   oauth-client-id:
     description: Tailscale federated identity client ID.

@@ -39,7 +39,7 @@ func loadConfig(getenv getenvFunc) (config, error) {
 	if clientSecret == "" {
 		return config{}, fmt.Errorf("TS_CLIENT_SECRET is required")
 	}
-	if !strings.HasPrefix(clientSecret, "tskey-client-") || strings.ContainsAny(clientSecret, "?&#") {
+	if !strings.HasPrefix(clientSecret, "tskey-client-") || len(clientSecret) == len("tskey-client-") || strings.ContainsAny(clientSecret, "?&#") {
 		return config{}, fmt.Errorf("TS_CLIENT_SECRET must be an unmodified Tailscale OAuth client secret")
 	}
 	if strings.TrimSpace(getenv("TS_AUTHKEY")) != "" || strings.TrimSpace(getenv("TS_AUTH_KEY")) != "" {

@@ -118,19 +118,25 @@ func run(ctx context.Context, getenv getenvFunc, logger *log.Logger) error {
 	case runError = <-serveErrors:
 	}
 
+	shutdownForwarder(cancelRun, listeners, healthServer, proxy, config.ShutdownGrace, logger)
+	return runError
+}
+
+// Keep run's cancellation, listener closure and drain ordering in one place.
+func shutdownForwarder(cancelRun context.CancelFunc, listeners []net.Listener, healthServer *http.Server, proxy *forwarder, grace time.Duration, logger *log.Logger) {
+	shutdownDeadline := time.Now().Add(grace)
 	cancelRun()
-	metrics.ready.Store(false)
+	proxy.metrics.ready.Store(false)
 	closeListeners(listeners)
-	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), config.ShutdownGrace)
+	shutdownContext, cancelShutdown := context.WithDeadline(context.Background(), shutdownDeadline)
 	defer cancelShutdown()
 	if err := healthServer.Shutdown(shutdownContext); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		logger.Printf("event=health_shutdown_failed error=%q", err)
 	}
-	if !proxy.wait(config.ShutdownGrace) {
-		logger.Printf("event=session_drain_timed_out grace=%s", config.ShutdownGrace)
+	if !proxy.wait(time.Until(shutdownDeadline)) {
+		logger.Printf("event=session_drain_timed_out grace=%s", grace)
 	}
 	logger.Printf("event=forwarder_shutdown")
-	return runError
 }
 
 func closeListeners(listeners []net.Listener) {

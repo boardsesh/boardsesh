@@ -45,7 +45,7 @@ Runtime environment:
 | `FORWARD_MAX_SESSIONS` | `32` | Global cap across all routes (maximum 128) |
 | `FORWARD_DIAL_TIMEOUT` | `5s` | Private target TCP dial timeout |
 | `TS_STARTUP_TIMEOUT` | `30s` | Tailnet join deadline |
-| `FORWARD_SHUTDOWN_GRACE` | `20s` | Accept-loop and session drain deadline |
+| `FORWARD_SHUTDOWN_GRACE` | `20s` | Shared health-server, accept-loop and session drain deadline |
 | `PORT` | `8080` | Railway-private health/metrics listener |
 
 The session cap deliberately bounds total PostGIS connection pressure across all
@@ -66,7 +66,10 @@ operators cannot override those options or the control-plane URL.
 The HTTP listener provides `/livez`, `/readyz`, and Prometheus `/metrics`.
 Metrics and operational logs expose route names, counters, and bounded error
 classes only, never private target addresses, credentials, client identities,
-or query text.
+or query text. Readiness checks query current tailnet status with a one-second
+timeout; they do not cache successful status after a disconnection. Shutdown
+withdraws readiness, cancels sessions and closes route listeners before draining
+HTTP requests and proxy work under one shared grace deadline.
 
 ## Provision without replacing live policy
 
@@ -153,7 +156,9 @@ stored credential before enabling its workflow.
 
 The local `connect-production-db` action uses workload identity federation, an
 ephemeral CI node, and immutable pins for both the official action and the
-Tailscale client. Its dependency-free Node validator receives the URL only
+Tailscale client. Callers must check out this repository before invoking the
+local action; that checkout supplies both the action and its shared validator.
+Its dependency-free Node validator receives the URL only
 through its environment and rejects any hostname, port, database, query
 override, or login role outside the exact workflow contract. Startup options
 accept only PostgreSQL setting assignments (`-c name=value`, `-cname=value`, or
