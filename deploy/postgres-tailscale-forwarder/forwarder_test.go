@@ -13,6 +13,61 @@ import (
 	"time"
 )
 
+func TestForwarderRejectsUnregisteredRouteBeforeAccept(t *testing.T) {
+	listener := newChannelListener()
+	defer listener.Close()
+	proxy := newForwarder(config{MaxSessions: 1}, newForwarderMetrics(nil), log.New(io.Discard, "", 0))
+	completed := make(chan error, 1)
+	go func() {
+		completed <- proxy.serve(context.Background(), routeConfig{Name: "missing"}, listener)
+	}()
+	select {
+	case err := <-completed:
+		if err == nil || !strings.Contains(err.Error(), `metrics are not registered for route "missing"`) {
+			t.Fatalf("expected a registration error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unregistered route waited for a connection")
+	}
+}
+
+func TestForwarderCancellationDrainsAnOpenSessionAfterWaitTimeout(t *testing.T) {
+	listener := newChannelListener()
+	defer listener.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	route := routeConfig{Name: "primary", TargetAddr: "unused"}
+	metrics := newForwarderMetrics([]routeConfig{route})
+	proxy := newForwarder(config{MaxSessions: 1}, metrics, log.New(io.Discard, "", 0))
+	upstreamConnection, upstreamPeer := net.Pipe()
+	defer upstreamPeer.Close()
+	dialed := make(chan struct{})
+	proxy.dial = func(context.Context, string, string) (net.Conn, error) {
+		close(dialed)
+		return upstreamConnection, nil
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- proxy.serve(ctx, route, listener) }()
+	client, server := net.Pipe()
+	defer client.Close()
+	listener.connections <- server
+	<-dialed
+	if proxy.wait(time.Millisecond) {
+		t.Fatal("open session unexpectedly drained")
+	}
+	cancel()
+	_ = listener.Close()
+	if err := <-serveDone; err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	if !proxy.wait(time.Second) {
+		t.Fatal("cancelled session did not drain")
+	}
+	if metrics.route("primary").activeSessions.Load() != 0 {
+		t.Fatal("cancelled session retained its capacity")
+	}
+}
+
 func TestForwarderCopiesBothDirections(t *testing.T) {
 	listener := newChannelListener()
 	upstreamDone := make(chan error, 1)
@@ -82,21 +137,24 @@ func TestForwarderCopiesBothDirections(t *testing.T) {
 
 func TestForwarderRejectsSessionsOverGlobalCap(t *testing.T) {
 	listener := newChannelListener()
+	forensicListener := newChannelListener()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	upstreamClients := make(chan net.Conn, 2)
 	route := routeConfig{Name: "primary", ListenPort: 5432, TargetAddr: "unused"}
 	configuration := config{MaxSessions: 1, DialTimeout: time.Second}
-	metrics := newForwarderMetrics([]routeConfig{route})
+	forensicRoute := routeConfig{Name: "forensic", ListenPort: 5434, TargetAddr: "unused"}
+	metrics := newForwarderMetrics([]routeConfig{route, forensicRoute})
 	proxy := newForwarder(configuration, metrics, log.New(io.Discard, "", 0))
 	proxy.dial = func(_ context.Context, _, _ string) (net.Conn, error) {
 		client, server := net.Pipe()
 		upstreamClients <- server
 		return client, nil
 	}
-	serveDone := make(chan error, 1)
+	serveDone := make(chan error, 2)
 	go func() { serveDone <- proxy.serve(ctx, route, listener) }()
+	go func() { serveDone <- proxy.serve(ctx, forensicRoute, forensicListener) }()
 
 	first, firstServer := net.Pipe()
 	listener.connections <- firstServer
@@ -104,21 +162,24 @@ func TestForwarderRejectsSessionsOverGlobalCap(t *testing.T) {
 	waitForMetric(t, time.Second, func() bool { return metrics.route("primary").activeSessions.Load() == 1 })
 
 	second, secondServer := net.Pipe()
-	listener.connections <- secondServer
+	forensicListener.connections <- secondServer
 	_ = second.SetReadDeadline(time.Now().Add(time.Second))
 	buffer := make([]byte, 1)
 	if _, err := second.Read(buffer); err == nil {
 		t.Fatal("second session was not closed")
 	}
-	waitForMetric(t, time.Second, func() bool { return metrics.route("primary").rejectionsTotal.Load() == 1 })
+	waitForMetric(t, time.Second, func() bool { return metrics.route("forensic").rejectionsTotal.Load() == 1 })
 
 	_ = second.Close()
 	_ = first.Close()
 	_ = upstream.Close()
 	cancel()
 	_ = listener.Close()
-	if err := <-serveDone; err != nil {
-		t.Fatalf("serve: %v", err)
+	_ = forensicListener.Close()
+	for range 2 {
+		if err := <-serveDone; err != nil {
+			t.Fatalf("serve: %v", err)
+		}
 	}
 }
 

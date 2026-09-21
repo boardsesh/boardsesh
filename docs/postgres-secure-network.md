@@ -1,11 +1,10 @@
 # PostgreSQL secure network
 
-This is the network contract for direct production database access. It is
-separate from the public PgBouncer path used by the Boardsesh application.
+This stages the network contract for direct production database operations.
+The web application and backend run on Railway; this foundation changes neither
+their database connections nor the routes used by existing production jobs.
 
 ```text
-Vercel application -> public PgBouncer (mTLS + SCRAM) -> Railway-private Postgres
-
 GitHub CI --Tailscale/WireGuard-->
 homelab DR --Tailscale/WireGuard--> boardsesh-db-forwarder -> Railway-private Postgres
 operator   --Tailscale/WireGuard-->
@@ -48,6 +47,14 @@ Runtime environment:
 | `TS_STARTUP_TIMEOUT` | `30s` | Tailnet join deadline |
 | `FORWARD_SHUTDOWN_GRACE` | `20s` | Session drain deadline |
 | `PORT` | `8080` | Railway-private health/metrics listener |
+
+The session cap deliberately bounds total PostGIS connection pressure across all
+three routes. It does not reserve forensic capacity: a migration using all slots
+will also reject new forensic sessions. Before a maintenance window, size task
+concurrency below this shared budget if operators need concurrent access; the
+per-route rejection counters identify the refused route, while active-session
+counters show which routes occupy the shared capacity. Separate route
+reservations would require a separately reviewed capacity policy.
 
 `TS_AUTHKEY` and legacy `TS_AUTH_KEY` are rejected so they cannot silently take
 precedence over the tag-scoped OAuth identity. The hostname and advertised tag
@@ -150,7 +157,8 @@ Tailscale client. Its dependency-free Node validator receives the URL only
 through its environment and rejects any hostname, port, database, query
 override, or login role outside the exact workflow contract. The URL remains
 scoped to the validator and the command that needs it, where it is mapped to the
-command's existing `DATABASE_URL` variable. Do not put any direct URL in Vercel.
+command's existing `DATABASE_URL` variable. Keep these task credentials out of
+application runtime environments.
 
 OIDC permission is job-wide, not step-wide. Before a consumer job gains
 `id-token: write`, pin every external action to a reviewed commit. Do not run an
