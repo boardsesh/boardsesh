@@ -108,7 +108,7 @@ export function BoardSummaryCard({
             style={styles.navigationRow}
           >
             <View style={styles.iconColumn}>
-              <Icon name="boards" size={22} color={systemColors.secondaryLabel} />
+              <Icon name="transfer" size={20} color={systemColors.secondaryLabel} />
             </View>
             <Text variant="body" color={systemColors.label} style={styles.actionLabel}>
               {t('mobile.session.changeBoard')}
