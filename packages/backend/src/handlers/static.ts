@@ -7,10 +7,9 @@ import { failUpstreamRead, pipeStreamToResponse } from './http-utils';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
-import { isS3Configured, getFromS3, getMediaPublicBaseUrl, uploadToS3 } from '../storage/s3';
+import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
-import { buildMediaObjectUrl } from '../lib/media-url';
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -20,12 +19,7 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-/**
- * Write a 404. `noStore` is used by the avatar / gym-logo handlers: a stored
- * object can be replaced by a re-upload at the same key, so an edge cache
- * holding onto the 404 would pin the broken state for a day. Missing images
- * are rare enough that the extra origin hits don't matter.
- */
+/** Avoid caching proxy misses; replacement objects can use the same storage key. */
 function sendNotFound(res: ServerResponse, options: { noStore?: boolean } = {}): void {
   res.writeHead(404, {
     'Content-Type': 'application/json',
@@ -405,10 +399,9 @@ const BETA_THUMBNAIL_FILENAME = /^[A-Za-z0-9_-]+\.jpg$/;
  * Static beta-link thumbnail serving handler
  * GET /static/beta-link-thumbnails/:platform/:filename
  *
- * Streams cached Instagram / TikTok beta-video thumbnails out of S3. Mirrors
- * the avatar pattern: clients receive a backend-relative URL and we proxy
- * the bytes from S3 ourselves, because Tigris on Railway doesn't honor the
- * `ACL: 'public-read'` we set on the upload.
+ * Proxies the media bucket when no public media base URL is configured.
+ * The server routes configured public media URLs directly to the CDN before
+ * reaching this handler; proxy guards do not repair existing CDN objects.
  */
 export async function handleStaticBetaThumbnail(
   req: IncomingMessage,
@@ -444,12 +437,9 @@ export async function handleStaticBetaThumbnail(
       route: req.url ?? '/static/beta-link-thumbnails',
     });
     if (!served) {
-      // `?size=280` is the URL both clients actually request, so this is the
-      // branch a corrupt thumbnail reaches — `serveResizedImageFromS3` returns
-      // false for a zero-byte original just as it does for a missing one. A
-      // cached 404 here would hide the repair: `cacheRemoteThumbnail` now
-      // refuses to store an empty body, so the key stays absent until a later
-      // fetch fills in the same immutable URL.
+      // Empty and absent originals are both misses. Keep a separately repaired
+      // object visible without waiting for a negatively cached proxy response.
+      // Existing stored URLs do not automatically trigger a thumbnail re-fetch.
       sendNotFound(res, { noStore: true });
     }
     return;
@@ -458,7 +448,7 @@ export async function handleStaticBetaThumbnail(
   const s3Object = await getFromS3('media', s3Key);
 
   if (!s3Object) {
-    // Same reasoning as the resized branch: the key can still be filled in.
+    // A separately repaired object must not remain hidden by a cached miss.
     sendNotFound(res, { noStore: true });
     return;
   }
