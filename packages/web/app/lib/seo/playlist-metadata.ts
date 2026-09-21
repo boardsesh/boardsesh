@@ -1,9 +1,19 @@
 import type { Metadata } from 'next';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { Locale } from '@/app/lib/i18n/config';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata, createPageMetadata } from './metadata';
 import { buildVersionedOgImagePath } from './og';
 import { getPlaylistOgSummary } from './dynamic-og-data';
+
+/**
+ * Shortest owner-written description we will hand a search engine as the
+ * snippet. Playlist descriptions are free text and the short ones are not
+ * descriptions at all — a live page ships `"one day"` — which renders as a
+ * snippet that says nothing about the playlist. Below this length the
+ * generated line, which at least names the board and the climb count, wins.
+ */
+const MIN_OWNER_DESCRIPTION_CHARS = 30;
 
 /**
  * Every branch goes through `createPageMetadata` / `createNoIndexMetadata` so a
@@ -20,6 +30,13 @@ export async function generatePlaylistMetadata(playlistUuid: string, locale: Loc
   try {
     const playlist = await getPlaylistOgSummary(playlistUuid);
 
+    // Kept even though the page body now calls `notFound()` on a missing
+    // playlist, and the asymmetry is deliberate: the two branches read two
+    // different queries. This one reads `getPlaylistOgSummary` (unauthenticated,
+    // direct SQL); the body reads `serverPlaylist` (authenticated GraphQL). A
+    // 404 from the body discards this metadata entirely, so a crawler still
+    // sees one signal either way — and when the two disagree, the cost is a
+    // noindexed 200 rather than a 404 on a playlist that exists. Not dead code.
     if (!playlist) {
       return createNoIndexMetadata({
         title: t('metadata.detail.fallbackTitle'),
@@ -40,9 +57,18 @@ export async function generatePlaylistMetadata(playlistUuid: string, locale: Loc
       });
     }
 
+    const ownerDescription = playlist.description?.trim() ?? '';
+
     return createPageMetadata({
       title: playlist.name,
-      description: playlist.description || t('metadata.detail.climbCountDescription', { count: playlist.climbCount }),
+      description:
+        ownerDescription.length >= MIN_OWNER_DESCRIPTION_CHARS
+          ? ownerDescription
+          : t('metadata.detail.generatedDescription', {
+              count: playlist.climbCount,
+              name: playlist.name,
+              board: boardTypeLabel(playlist.boardType),
+            }),
       path,
       locale,
       imagePath: buildVersionedOgImagePath('/api/og/playlist', { uuid: playlistUuid }, playlist.version),

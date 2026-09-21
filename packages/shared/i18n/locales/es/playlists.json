@@ -9,8 +9,8 @@
       "fallbackDescription": "Mira los bloques de esta playlist en Boardsesh.",
       "privateTitle": "Playlist privada",
       "privateDescription": "Esta playlist es privada.",
-      "climbCountDescription_one": "Una playlist de escalada en Boardsesh con {{count}} bloque.",
-      "climbCountDescription_other": "Una playlist de escalada en Boardsesh con {{count}} bloques.",
+      "generatedDescription_one": "{{count}} bloque de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalo.",
+      "generatedDescription_other": "{{count}} bloques de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalos.",
       "ogAlt": "La playlist {{name}} en Boardsesh"
     }
   },

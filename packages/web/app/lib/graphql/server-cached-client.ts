@@ -15,6 +15,7 @@ import type {
 // Re-export uncached authenticated server functions so existing imports
 // from this file continue to work without changes.
 export { serverMyBoards, serverUserPlaylists, serverPlaylist, serverPlaylistClimbs } from './server-graphql';
+export type { ServerPlaylistResult } from './server-graphql';
 
 export const USER_CLIMB_PERCENTILE_CACHE_TAG = 'user-climb-percentile';
 
