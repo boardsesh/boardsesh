@@ -207,6 +207,21 @@ describe('ClimbsTabReturnTip', () => {
     expect(screen.queryByText(TIP_TEXT)).toBeNull();
   });
 
+  // A newcomer who leaves Climbs before the profile query answers: the tip
+  // shows once it does, on the tab they are already on.
+  it('shows on the current tab once the profile arrives', async () => {
+    env.createdAt = undefined;
+    const view = renderThenOpen('profile');
+    await settle();
+    expect(screen.queryByText(TIP_TEXT)).toBeNull();
+
+    env.createdAt = new Date(NOW_MS - HOUR_MS).toISOString();
+    view.rerender(createElement(ClimbsTabReturnTip));
+
+    await waitFor(() => expect(screen.getByText(TIP_TEXT)).toBeTruthy());
+    expect(trackMock).toHaveBeenCalledWith('Climbs Tab Tip Shown', { fromTab: 'profile' });
+  });
+
   // Both tips float just above the tab bar; the accessory tip goes first.
   it('waits behind the accessory tip, then shows on the next tab change', async () => {
     env.hasCurrentClimb = true;

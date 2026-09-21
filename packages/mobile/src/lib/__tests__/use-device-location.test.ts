@@ -158,6 +158,69 @@ describe('useDeviceLocation', () => {
       expect(result.current.status).toBe('idle');
       expect(expoLocation.getCurrentPositionAsync).not.toHaveBeenCalled();
     });
+
+    it('does nothing while the first request is still in flight', async () => {
+      let resolvePermission: ((value: { status: string }) => void) | undefined;
+      expoLocation.requestForegroundPermissionsAsync.mockReturnValue(
+        new Promise((resolve) => {
+          resolvePermission = resolve;
+        }),
+      );
+      const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
+
+      let first: Promise<void> = Promise.resolve();
+      act(() => {
+        first = result.current.request();
+      });
+      await waitFor(() => expect(result.current.status).toBe('loading'));
+
+      let moved = true;
+      await act(async () => {
+        moved = await result.current.refresh();
+      });
+      expect(moved).toBe(false);
+      expect(expoLocation.getCurrentPositionAsync).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolvePermission?.({ status: 'granted' });
+        await first;
+      });
+      expect(result.current.status).toBe('granted');
+      expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledTimes(1);
+    });
+
+    // A second tap on Find nearby while the first fix is still coming in.
+    it('takes one fix for two taps in a row', async () => {
+      const { result } = await granted();
+      let resolvePosition: ((value: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+      expoLocation.getCurrentPositionAsync.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolvePosition = resolve;
+        }),
+      );
+
+      let first: Promise<boolean> = Promise.resolve(false);
+      act(() => {
+        first = result.current.refresh();
+      });
+      await waitFor(() => expect(result.current.status).toBe('loading'));
+
+      let secondMoved = true;
+      await act(async () => {
+        secondMoved = await result.current.refresh();
+      });
+      expect(secondMoved).toBe(false);
+
+      let firstMoved = false;
+      await act(async () => {
+        resolvePosition?.({ coords: { latitude: 5, longitude: 6 } });
+        firstMoved = await first;
+      });
+      expect(firstMoved).toBe(true);
+      expect(result.current.status).toBe('granted');
+      // One call for the grant, one for the first refresh; none for the second.
+      expect(expoLocation.getCurrentPositionAsync).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('does not start a second request while one is in flight', async () => {
