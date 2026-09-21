@@ -66,6 +66,7 @@ function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPrompt
   const boardType = activeBoard?.boardType;
   const isMoonBoard = boardType === 'moonboard';
   const linkable = isLinkableBoard(boardType);
+  if (boardType && !isMoonBoard && !linkable) return null;
   const boardName = linkable ? boardTypeLabel(boardType) : '';
 
   // Static `t()` literals only — the linter hard-fails on `t(variable)` and the

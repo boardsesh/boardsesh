@@ -129,6 +129,14 @@ describe('BoardLinkPrompt', () => {
     expect(button(container, 'mobile.boardLink.cta:MoonBoard')).toBeNull();
   });
 
+  it.each(['woods', 'spray'])('hides linking advice for a known unsupported %s board', async (boardType) => {
+    mocks.activeBoard = { boardType };
+    const { container } = render(<BoardLinkPrompt viewerIsOwner hasNoSends />);
+    await act(async () => {});
+    expect(container.textContent).toBe('');
+    expect(button(container, 'mobile.boardLink.ctaGeneric')).toBeNull();
+  });
+
   it('falls back to generic copy when no board is bound yet', async () => {
     mocks.activeBoard = undefined;
     const { container } = render(<BoardLinkPrompt viewerIsOwner hasNoSends />);
