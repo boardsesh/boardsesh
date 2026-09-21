@@ -201,7 +201,7 @@
       "connected": "Connecté",
       "notConnected": "Non connecté",
       "kilterNotAllowed": "La synchronisation Kilter n'est pas encore activée pour ce compte.",
-      "linkSuccess": "Compte {{boardName}} lié. Vos croix apparaîtront après la synchronisation.",
+      "linkSuccess": "Compte {{boardName}} lié. Tes croix apparaîtront après la synchronisation.",
       "unlinkSuccess": "{{boardName}} délié",
       "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
       "invalidCredentials": "Cet identifiant ou ce mot de passe n'a pas fonctionné.",
