@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
-import type { AuroraCredentialStatus, AuroraCredentialsResponse } from '../../../lib/aurora-credentials';
+import {
+  BoardAccountError,
+  type AuroraCredentialStatus,
+  type AuroraCredentialsResponse,
+} from '../../../lib/aurora-credentials';
 
 // --- Hoisted mock state, mutated per-test before render ---
 const mocks = vi.hoisted(() => ({
@@ -35,16 +39,23 @@ vi.mock('../../../lib/integrations/board-link-analytics', () => ({
   trackLinkFailed: mocks.linkFailed,
 }));
 
-vi.mock('../../../lib/aurora-credentials', () => ({
-  BoardAccountError: class BoardAccountError extends Error {},
-  getAuroraCredentials: () => Promise.resolve({ credentials: [] }),
-  getAuroraUnsyncedCounts: () => Promise.resolve({}),
-  saveAuroraCredential: mocks.saveAurora,
-  saveKilterCredentialViaPassword: mocks.saveKilterViaPassword,
-  deleteAuroraCredential: mocks.deleteAurora,
-  streamAuroraImport: mocks.streamImport,
-  streamMoonBoardImport: mocks.streamMoonBoardImport,
-}));
+vi.mock('expo-web-browser', () => ({ openAuthSessionAsync: vi.fn() }));
+vi.mock('../../../lib/auth-interceptor', () => ({ authenticatedFetch: vi.fn() }));
+vi.mock('../../../lib/env', () => ({ BACKEND_URL: 'https://backend.test' }));
+
+vi.mock('../../../lib/aurora-credentials', async (importOriginal) => {
+  const { BoardAccountError } = await importOriginal<typeof import('../../../lib/aurora-credentials')>();
+  return {
+    BoardAccountError,
+    getAuroraCredentials: () => Promise.resolve({ credentials: [] }),
+    getAuroraUnsyncedCounts: () => Promise.resolve({}),
+    saveAuroraCredential: mocks.saveAurora,
+    saveKilterCredentialViaPassword: mocks.saveKilterViaPassword,
+    deleteAuroraCredential: mocks.deleteAurora,
+    streamAuroraImport: mocks.streamImport,
+    streamMoonBoardImport: mocks.streamMoonBoardImport,
+  };
+});
 
 vi.mock('@boardsesh/shared-schema', () => ({
   AURORA_BOARDS: mocks.auroraBoards,
@@ -78,9 +89,6 @@ vi.mock('@tanstack/react-query', () => ({
     mutate: (vars: unknown) => {
       void Promise.resolve(opts.mutationFn(vars))
         .then((result) => opts.onSuccess?.(result, vars))
-        // Real React Query passes `(error, variables)` — verified against the
-        // installed @tanstack/query-core 5.101.4 type. The stub used to drop the
-        // second argument, which hid whether a caller could read it.
         .catch((error) => opts.onError?.(error, vars));
     },
     isPending: false,
@@ -261,10 +269,6 @@ describe('BoardAccountsSection — board cards', () => {
   });
 });
 
-// The funnel these guard did not exist before: nothing emitted an event, a person
-// property or a log line when a climber linked a board account. The invariant worth
-// protecting is that every Started resolves to exactly one Linked or Failed, and
-// that both carry the board the attempt was actually for.
 describe('BoardAccountsSection — link funnel', () => {
   beforeEach(() => {
     mocks.saveAurora.mockReset().mockResolvedValue(null);
@@ -299,8 +303,6 @@ describe('BoardAccountsSection — link funnel', () => {
   });
 
   it('reports a failure with its reason, on the board the attempt was for', async () => {
-    // A plain Error, not a BoardAccountError: a thrown network/parse failure is the
-    // case that would otherwise report no reason at all.
     mocks.saveAurora.mockRejectedValue(new Error('offline'));
     const { container } = render(<BoardAccountsSection />);
     submitTensionLink(container);
@@ -310,6 +312,20 @@ describe('BoardAccountsSection — link funnel', () => {
     expect(mocks.linkStarted).toHaveBeenCalledTimes(1);
     expect(mocks.linkSucceeded).not.toHaveBeenCalled();
   });
+
+  it.each(['invalid_credentials', 'account_already_linked'] as const)(
+    'reports the server %s error code once without a success',
+    async (code) => {
+      mocks.saveAurora.mockRejectedValue(new BoardAccountError(code));
+      const { container } = render(<BoardAccountsSection />);
+      submitTensionLink(container);
+
+      await waitFor(() => expect(mocks.linkFailed).toHaveBeenCalledTimes(1));
+      expect(mocks.linkFailed).toHaveBeenCalledWith({ boardType: 'tension', source: 'integrations' }, code);
+      expect(mocks.linkStarted).toHaveBeenCalledTimes(1);
+      expect(mocks.linkSucceeded).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not report a start when the dialog is opened but never submitted', () => {
     const { container } = render(<BoardAccountsSection />);

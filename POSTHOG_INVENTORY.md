@@ -500,3 +500,17 @@ Six events added or enriched to unblock the new dashboard at `/dashboard/1597030
 ### Follow-up enrichment (recommended, not implemented)
 
 The Boardsesh user base skews **solo-BLE**: most users connect a board over Bluetooth and never start a party session ([[project-sessions-are-optional]]). To make session-mode a one-click breakdown on every BLE tile in the future, enrich `Bluetooth Connection Success` and `Climb Sent to Board Success` / `Failure` with `inActiveSession: bool` derived from `persistentSession.users.length > 0`. Today the same insight needs a HogQL join. Low effort, high analytical leverage.
+
+## Board account linking
+
+Mobile Connected apps emits `Board Account Link Started` on credential submission,
+then `Board Account Linked` or `Board Account Link Failed` when that request settles.
+All three carry `boardType` and `source` (`integrations` for this screen). Failed
+adds the existing `BoardAccountError` code, with `request_failed` for an untyped
+network or parse error. Opening or dismissing an unsubmitted form emits no event.
+Usernames, passwords and other credentials are never event properties.
+
+These events are separate from external `Integration*` events and do not change
+`integrations_connected_count`. Later linking surfaces can report `onboarding`,
+`progress_empty` or `logbook_empty`; this change does not configure production
+PostHog dashboards or person properties.

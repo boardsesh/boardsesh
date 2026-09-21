@@ -248,9 +248,6 @@ async function saveBoardCredential(input: { boardType: AuroraBoardName; username
   return saveAuroraCredential(input);
 }
 
-// The funnel's `reason`. A non-`BoardAccountError` is a thrown network/parse
-// failure rather than a code the server sent, so it reports as `request_failed` —
-// the same bucket its user-facing copy falls into below.
 function failureReasonFor(error: unknown): BoardLinkFailureReason {
   return error instanceof BoardAccountError ? error.code : 'request_failed';
 }
@@ -318,8 +315,6 @@ export function BoardAccountsSection() {
         queryClient.invalidateQueries({ queryKey: AURORA_UNSYNCED_QUERY_KEY }),
       ]);
     },
-    // `variables` is taken here, not just `error`, so the failure lands on the same
-    // board as its Started — a funnel split by boardType is useless otherwise.
     onError: (error, variables) => {
       trackLinkFailed({ boardType: variables.boardType, source: LINK_SOURCE }, failureReasonFor(error));
       showToast(errorMessageFor(error, t), 'error');
@@ -374,9 +369,6 @@ export function BoardAccountsSection() {
 
   const handleSubmitLink = useCallback(() => {
     if (!linkBoard) return;
-    // Started fires on the attempt, not on opening the dialog: a climber who opens
-    // it and closes it never tried, and counting that as a start would understate
-    // the success rate of the people who did.
     trackLinkStarted({ boardType: linkBoard, source: LINK_SOURCE });
     saveCredentialMutation.mutate({
       boardType: linkBoard,
