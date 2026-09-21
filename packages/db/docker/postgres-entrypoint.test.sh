@@ -224,4 +224,34 @@ expect_failure 'a pair whose public keys could not be read' env \
 [[ ! -e "$TEST_ROOT/case-openssl-fails/server.key" ]] ||
   fail 'a pair that could not be validated was installed anyway'
 
+# 11. `docker-entrypoint.sh postgres` is a common start-command idiom. This script
+#     execs that entrypoint anyway, so the redundant leading copy must not hide the
+#     server invocation behind it.
+tls_dir="$TEST_ROOT/case-redundant-entrypoint"
+PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  run_entrypoint "$tls_dir" docker-entrypoint.sh postgres >/dev/null
+grep -Fqx -- 'ssl=on' "$ARGS_LOG" ||
+  fail 'a redundant docker-entrypoint.sh must still get the TLS settings'
+[[ "$(head -n 1 "$ARGS_LOG")" == 'postgres' ]] ||
+  fail "the redundant entrypoint must be dropped, got: $(tr '\n' ' ' <"$ARGS_LOG")"
+
+# 12. Starting the server through a shell hides it from the injection check, so
+#     PostgreSQL would come up on whatever auto.conf says -- the snakeoil
+#     certificate, before the first rollout. Silence there is the one outcome this
+#     file exists to prevent, so it must refuse.
+expect_failure 'a shell-wrapped server start with TLS material set' env \
+  PG_TLS_DIR="$TEST_ROOT/case-shell-start" \
+  PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  bash "$ENTRYPOINT" sh -c 'postgres -c shared_buffers=128MB'
+
+# ...but a shell that is not starting PostgreSQL is still a legitimate one-off.
+tls_dir="$TEST_ROOT/case-shell-not-server"
+PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  run_entrypoint "$tls_dir" sh -c 'echo hello' >/dev/null
+[[ "$(head -n 1 "$ARGS_LOG")" == 'sh' ]] ||
+  fail 'a shell that does not start the server must pass through'
+
 printf 'postgres-entrypoint TLS contract passed\n'

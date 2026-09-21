@@ -128,12 +128,35 @@ if [[ "${1:-}" == -* ]]; then
   set -- postgres "$@"
 fi
 
+# A start command of `docker-entrypoint.sh postgres` is a common idiom, and this
+# script execs that entrypoint anyway, so drop the redundant leading copy rather
+# than let it hide the server invocation behind it.
+if [[ "${1:-}" == 'docker-entrypoint.sh' || "${1:-}" == '/usr/local/bin/docker-entrypoint.sh' ]]; then
+  shift
+  if [[ "${1:-}" == -* ]]; then
+    set -- postgres "$@"
+  fi
+fi
+
 if tls_material_requested; then
   # Called outside condition context on purpose: errexit is live here, so a
   # failed mkdir, chmod, mv or chown stops the boot instead of being ignored.
   install_tls_material
 else
   log 'PG_TLS_SERVER_CERT/KEY unset; leaving TLS configuration untouched'
+fi
+
+# Starting the server through a shell hides it from the check below, so the TLS
+# settings would not be applied and PostgreSQL would come up on whatever
+# postgresql.auto.conf still says -- which, before the first rollout, is the base
+# image's snakeoil certificate. That is a silent downgrade of the one property this
+# file exists to provide, so it stops rather than warns.
+if tls_material_requested && [[ "${1:-}" == 'sh' || "${1:-}" == 'bash' || "${1:-}" == '/bin/sh' || "${1:-}" == '/bin/bash' ]]; then
+  for argument in "$@"; do
+    if [[ "$argument" == *postgres* ]]; then
+      fail "refusing to start PostgreSQL through a shell with TLS material set, because the TLS settings cannot be applied to it; use a start command of 'postgres …' directly"
+    fi
+  done
 fi
 
 if tls_material_requested && [[ "${1:-}" == 'postgres' ]]; then
@@ -151,6 +174,10 @@ if tls_material_requested && [[ "${1:-}" == 'postgres' ]]; then
     -c "ssl_key_file=$TLS_KEY" \
     -c ssl_min_protocol_version=TLSv1.2 \
     "$@"
+fi
+
+if tls_material_requested && [[ "${1:-}" != 'postgres' ]]; then
+  log "note: TLS material is installed but ${1:-<no command>} is not the server, so no TLS settings were applied"
 fi
 
 exec docker-entrypoint.sh "$@"
