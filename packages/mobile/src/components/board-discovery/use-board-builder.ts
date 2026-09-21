@@ -146,7 +146,10 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // cached from the picker, but not always, and a first frame without it opens
   // on an empty cascade. When it lands, fill that cascade, but only while it is
   // still empty and untouched: never move a setup the climber is looking at or
-  // has picked. Read through refs so the only trigger is the preset changing.
+  // has picked. The board type and the applied preset are read through refs so
+  // the only trigger is the preset (the popular list) changing: a type switch
+  // already applies that type's preset in `selectBoard`, so the effect has
+  // nothing to add when the type changes.
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
   const appliedPresetRef = useRef(appliedPreset);
