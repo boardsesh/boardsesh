@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   holdShape: 'outline' as 'outline' | 'circle',
   rejectNextFinish: false,
+  rendererAvailable: true as boolean | null,
 }));
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
@@ -46,7 +47,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../hooks/use-native-climb-render', () => ({
   useEffectiveBoardRenderSettings: () => ({
     effectiveRenderSettings: { mode: 'aura', boardsesh: { holdShape: state.holdShape } },
-    boardseshRendererAvailable: true,
+    boardseshRendererAvailable: state.rendererAvailable,
   }),
 }));
 vi.mock('../../../lib/create-board-holds', () => ({
@@ -95,7 +96,7 @@ vi.mock('../DrawStrokeOverlay', async () => {
 });
 vi.mock('../EditToolbar', async () => {
   const { createElement } = await import('react');
-  const { Pressable, View: MockView } = await import('react-native');
+  const { Pressable, Text: MockText, View: MockView } = await import('react-native');
   return {
     EditToolbar: (props: {
       onNextPlacement: () => void;
@@ -103,6 +104,7 @@ vi.mock('../EditToolbar', async () => {
       onSave: () => void;
       canBrush: boolean;
       previewAvailable: boolean;
+      previewUnavailableNote?: string;
     }) =>
       createElement(
         MockView,
@@ -115,6 +117,7 @@ vi.mock('../EditToolbar', async () => {
         }),
         createElement(Pressable, { testID: 'save', onPress: props.onSave }),
         createElement(Pressable, { testID: 'preview', disabled: !props.previewAvailable }),
+        createElement(MockText, null, props.previewUnavailableNote),
       ),
   };
 });
@@ -125,6 +128,7 @@ beforeEach(() => {
   state.save.mockClear();
   state.holdShape = 'outline';
   state.rejectNextFinish = false;
+  state.rendererAvailable = true;
   state.stroke = [80, 80, 120, 80, 120, 120, 80, 120, 80, 80];
 });
 
@@ -178,4 +182,15 @@ it.each(['circle', 'outline'] as const)('only previews geometry for traced shape
   const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
   fireEvent.click(screen.getByTestId('next'));
   expect((screen.getByTestId('preview') as HTMLButtonElement).disabled).toBe(holdShape === 'circle');
+});
+
+it.each([
+  [null, 'Checking whether this build can draw traced outlines…'],
+  [false, 'This build cannot preview traced outlines. Install a newer app build to preview them.'],
+] as const)('explains preview availability before suggesting settings: %s', (rendererAvailable, message) => {
+  state.rendererAvailable = rendererAvailable;
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={1} sizeId={28} setIds="1" />);
+  fireEvent.click(screen.getByTestId('next'));
+  expect((screen.getByTestId('preview') as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText(message)).toBeTruthy();
 });
