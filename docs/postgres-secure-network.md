@@ -349,6 +349,12 @@ node scripts/production-db-task-roles.mjs rollback
 unset ROLLBACK_TASK_ROLES ADMIN_DATABASE_URL POSTGRES_FORWARDER_HOST
 ```
 
+Apply and rollback both refuse immediately if another task-role mutation holds
+the advisory lock. They leave roles unchanged and report that the operator must
+retry after that run finishes; they do not wait indefinitely for the lock. A
+rollback unlock failure prints a credential-free warning before the administrator
+connection closes.
+
 Rollback holds the task-role advisory lock across two committed phases. Its
 first transaction changes all six roles to `NOLOGIN` and commits that durable
 fence. Only then does it inspect `pg_stat_activity.usesysid`, which remains the
@@ -434,7 +440,7 @@ longer needed.
 ```sh
 vp run test:postgres-forwarder
 vp test run --project scripts scripts/postgres-secure-network-contract.test.ts scripts/production-db-task-roles-contract.test.ts --reporter=agent
-bash scripts/production-db-task-roles-smoke.sh
+vp exec bash scripts/production-db-task-roles-smoke.sh
 docker build -f deploy/postgres-tailscale-forwarder/Dockerfile deploy/postgres-tailscale-forwarder
 ```
 
@@ -442,6 +448,8 @@ The unit suite never joins a tailnet or opens a database connection. The task
 role smoke starts only the digest-pinned official PostgreSQL 18.6 base selected
 by the upgrade project. PostGIS is unnecessary because the fixture exercises
 core role, ACL, RLS, SCRAM, and catalog behavior only. It provisions
-all six roles, proves allowed and denied operations, injects an unexpected
-grant, proves audit and rollback refusal, repairs it, and verifies idempotent
-rollback without losing the owner role or fixture data.
+all six roles, proves allowed and denied operations, and checks that managed
+ACLs carry no grant options. A competing administrator session proves apply and
+rollback refuse advisory-lock contention without changing roles. The smoke also
+injects an unexpected grant, proves audit and rollback refusal, repairs it, and
+verifies idempotent rollback without losing the owner role or fixture data.

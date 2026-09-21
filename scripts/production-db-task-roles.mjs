@@ -1147,9 +1147,12 @@ async function applyContract(sqlClient, protectedCredentials) {
   }
 
   await sqlClient.begin(async (transaction) => {
-    await transaction.unsafe(
-      `SELECT pg_catalog.pg_advisory_xact_lock(hashtextextended('boardsesh:production-task-roles:v1', 0))`,
+    const [lockResult] = await transaction.unsafe(
+      `SELECT pg_catalog.pg_try_advisory_xact_lock(hashtextextended('boardsesh:production-task-roles:v1', 0)) AS acquired`,
     );
+    if (!lockResult?.acquired) {
+      fail('another task-role apply or rollback holds the advisory lock; retry after it finishes');
+    }
     await assertAdminBoundary(transaction);
     if ((await collectClusterWideBoundaryDifferences(transaction)).length > 0) {
       fail('cluster-wide PUBLIC/default ACL prerequisites changed after preflight; refusing apply');
@@ -1253,9 +1256,12 @@ function failForManagedSessions(activeSessions) {
 }
 
 async function rollbackContract(sqlClient) {
-  await sqlClient.unsafe(
-    `SELECT pg_catalog.pg_advisory_lock(hashtextextended('boardsesh:production-task-roles:v1', 0))`,
+  const [lockResult] = await sqlClient.unsafe(
+    `SELECT pg_catalog.pg_try_advisory_lock(hashtextextended('boardsesh:production-task-roles:v1', 0)) AS acquired`,
   );
+  if (!lockResult?.acquired) {
+    fail('another task-role apply or rollback holds the advisory lock; retry after it finishes');
+  }
   try {
     if (await allManagedRolesAbsent(sqlClient)) {
       console.info('All six managed task roles are already absent; rollback is idempotently complete.');
@@ -1309,9 +1315,16 @@ async function rollbackContract(sqlClient) {
     }
     console.info('Rolled back exactly six ownership-free task roles; application data and owner roles were untouched.');
   } finally {
-    await sqlClient
-      .unsafe(`SELECT pg_catalog.pg_advisory_unlock(hashtextextended('boardsesh:production-task-roles:v1', 0))`)
-      .catch(() => {});
+    // Preserve the operation's result/error, but make cleanup failure visible.
+    // withAdminClient always closes this sole connection after rollback returns.
+    try {
+      const [unlockResult] = await sqlClient.unsafe(
+        `SELECT pg_catalog.pg_advisory_unlock(hashtextextended('boardsesh:production-task-roles:v1', 0)) AS released`,
+      );
+      if (!unlockResult?.released) throw new Error('advisory lock was not held');
+    } catch {
+      console.warn('Could not confirm task-role advisory lock release; closing the administrator connection.');
+    }
   }
 }
 

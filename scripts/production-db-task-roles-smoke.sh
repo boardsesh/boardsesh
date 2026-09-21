@@ -156,6 +156,65 @@ ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
 ADMIN_DATABASE_URL="$admin_url" \
   node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >/dev/null
 
+# Inspect real ACL entries, including sequence grants, independently of the audit.
+grantable_count="$(docker exec "$CONTAINER_NAME" \
+  psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d railway -c "
+    WITH managed AS (
+      SELECT oid FROM pg_catalog.pg_roles WHERE rolname IN (
+        'boardsesh_migrator', 'boardsesh_snapshot_exporter', 'boardsesh_climb_grades_refresh',
+        'boardsesh_content_model_refresh', 'boardsesh_hold_features_refresh',
+        'boardsesh_recommendations_refresh')
+    ), grants AS (
+      SELECT privilege.grantee, privilege.is_grantable FROM pg_catalog.pg_database AS database
+        CROSS JOIN LATERAL pg_catalog.aclexplode(database.datacl) AS privilege
+      UNION ALL
+      SELECT privilege.grantee, privilege.is_grantable FROM pg_catalog.pg_namespace AS namespace
+        CROSS JOIN LATERAL pg_catalog.aclexplode(namespace.nspacl) AS privilege
+      UNION ALL
+      SELECT privilege.grantee, privilege.is_grantable FROM pg_catalog.pg_class AS relation
+        CROSS JOIN LATERAL pg_catalog.aclexplode(relation.relacl) AS privilege
+    )
+    SELECT count(*) FROM grants JOIN managed ON managed.oid = grants.grantee
+    WHERE grants.is_grantable;")"
+[[ "$grantable_count" == '0' ]] || fail 'managed task-role ACLs unexpectedly carry grant options'
+
+# A different administrator holding the shared advisory key must make either
+# mutation refuse promptly, before apply changes roles or rollback fences logins.
+coproc TASK_ROLE_LOCK_SESSION {
+  docker exec --interactive "$CONTAINER_NAME" \
+    psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d railway
+}
+task_role_lock_input_fd="${TASK_ROLE_LOCK_SESSION[1]}"
+task_role_lock_output_fd="${TASK_ROLE_LOCK_SESSION[0]}"
+task_role_lock_pid="$TASK_ROLE_LOCK_SESSION_PID"
+printf '%s\n' \
+  '\o /dev/null' \
+  "SELECT pg_catalog.pg_advisory_lock(hashtextextended('boardsesh:production-task-roles:v1', 0));" \
+  '\o' \
+  '\echo task-role-lock-ready' \
+  >&"$task_role_lock_input_fd"
+IFS= read -r -t 10 lock_ready <&"$task_role_lock_output_fd" || fail 'advisory lock fixture did not become ready'
+[[ "$lock_ready" == 'task-role-lock-ready' ]] || fail 'unexpected advisory lock fixture response'
+
+for locked_command in apply rollback; do
+  locked_status=0
+  ADMIN_DATABASE_URL="$admin_url" \
+  APPLY_TASK_ROLE_CHANGES='APPLY_EXACT_SIX_TASK_ROLES' \
+  ROLLBACK_TASK_ROLES='DROP_EXACT_SIX_TASK_ROLES' \
+  ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
+    timeout 10s node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" "$locked_command" \
+    >"$REPORT_FILE" 2>&1 || locked_status=$?
+  [[ "$locked_status" == '1' ]] || fail "$locked_command did not refuse advisory lock contention promptly (status $locked_status)"
+  grep -Fq 'another task-role apply or rollback holds the advisory lock; retry after it finishes' "$REPORT_FILE" || {
+    cat "$REPORT_FILE" >&2
+    fail "$locked_command did not identify advisory lock contention"
+  }
+  ADMIN_DATABASE_URL="$admin_url" \
+    node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >/dev/null
+done
+printf '%s\n' '\q' >&"$task_role_lock_input_fd"
+wait "$task_role_lock_pid"
+
 ROLE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
 PGPASS_TARGET="$PGPASS_FILE" \
 PGPASS_HOST=127.0.0.1 \
