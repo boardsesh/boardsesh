@@ -38,6 +38,30 @@ describe('metadata distinctions exposed by the old-catalog comparison', () => {
     expect(result.setterGrade).toBe('6C+/V5');
   });
 
+  it.each(['User 7A/V6 - Setter 6C+/V5', '7A/V6 6C+/V5'])(
+    'reads grade metadata merged onto the setter line: %s',
+    (metadata) => {
+      const result = parseHeaderText(['SYNTHETIC', `Set by Setter @ 40° ${metadata}`]);
+      expect(result.setter).toBe('Setter');
+      expect(result.angle).toBe(40);
+      expect(result.userGrade).toBe('7A/V6');
+      expect(result.setterGrade).toBe('6C+/V5');
+    },
+  );
+
+  it('does not treat grade-like title or author text as grade metadata', () => {
+    const result = parseHeaderText(['8A/V11 PROJECT', 'Set by Setter 6C/V5 @ 40°']);
+    expect(result.setter).toBe('Setter 6C/V5');
+    expect(result.userGrade).toBe('Unknown');
+    expect(result.setterGrade).toBe('Unknown');
+  });
+
+  it('keeps the unlabelled grade fallback when the author is named Setter', () => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', '7A/V6 6C+/V5']);
+    expect(result.userGrade).toBe('7A/V6');
+    expect(result.setterGrade).toBe('6C+/V5');
+  });
+
   it('preserves the legacy iOS grade line', () => {
     const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'Grade: User 8A/V11/ Setter 8A/V11']);
     expect(result.userGrade).toBe('8A/V11');

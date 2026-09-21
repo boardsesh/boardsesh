@@ -165,11 +165,13 @@ export function parseHeaderText(lines: string[]): OcrResult {
   }
 
   // Find setter and angle
+  let mergedGradeMetadata = '';
   for (const line of lines) {
-    const setterMatch = line.match(/set\s+by\s+(.+?)\s*@\s*(\d+)/i);
+    const setterMatch = line.match(/set\s+by\s+(.+?)\s*@\s*(\d+)(.*)/i);
     if (setterMatch) {
       setter = setterMatch[1].trim();
       angle = parseInt(setterMatch[2], 10);
+      mergedGradeMetadata = setterMatch[3];
       break;
     }
     // Alternative format without @
@@ -181,7 +183,9 @@ export function parseHeaderText(lines: string[]): OcrResult {
 
   // Explicit labels take precedence. A setter-only grade is not a community
   // grade, and a missing setter grade must not be filled from the community.
-  const gradeLines = setterLineIndex >= 0 ? lines.slice(setterLineIndex + 1) : lines;
+  // OCR can merge grades onto the setter line. Scan only its suffix so author
+  // names such as 'Setter' or 'User 7A/V6' cannot become grade labels.
+  const gradeLines = setterLineIndex >= 0 ? [mergedGradeMetadata, ...lines.slice(setterLineIndex + 1)] : lines;
   const hasGradeLabels = gradeLines.some((line) => /\b(?:user|setter)\b/i.test(line));
   for (const line of gradeLines) {
     // Compressed Android plus signs can acquire a preceding dash. Only repair
