@@ -30,8 +30,8 @@ type Options = {
  * so the two can't drift (telemetry, error classification, Sentry tags, and the
  * double-tap guard all live here once). Apple/Google "sign up" is the same
  * find-or-create flow as sign-in, so the only difference between the two callers
- * is the `is_registration` analytics tag. `setError` is injected because login
- * shares one error region with credentials sign-in while register has its own.
+ * is the `is_registration` analytics tag. `setError` is injected because each
+ * screen shows Apple/Google failures in its own region under those buttons.
  */
 export function useNativeOAuthSignIn({ isRegistration = false, setError }: Options) {
   const { signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb } = useAuth();

@@ -23,6 +23,10 @@ export const SHARED_EVENTS = {
   // timestamp: session props such as `$screen_name` are read at capture, after
   // the wait, so they usually name the first signed-in screen. Split by
   // `screen`, not `$screen_name`. See packages/mobile/src/lib/login-analytics.ts.
+  // Two paths skip the wait and send the event without the age props: the Expo
+  // web Apple/Google cookie return (AuthProvider, `flow: 'web'`) carries only
+  // `screen`, and www's own Login Succeeded carries none of the three. So a
+  // missing prop means one of those paths; a failed profile read sends null.
   LoginSucceeded: 'Login Succeeded',
   LoginFailed: 'Login Failed',
   // A user dismissing the provider sheet or the browser is intent, not a failure.

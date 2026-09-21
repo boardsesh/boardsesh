@@ -7,7 +7,10 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 const analytics = vi.hoisted(() => ({ track: vi.fn(), setPersonProperties: vi.fn() }));
 const auth = vi.hoisted(() => ({ register: vi.fn() }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
-const oauth = vi.hoisted(() => ({ signIn: vi.fn(async () => ({ success: true }) as unknown) }));
+const oauth = vi.hoisted(() => ({
+  signIn: vi.fn(async () => ({ success: true }) as unknown),
+  setError: null as ((message: string | null) => void) | null,
+}));
 const platform = vi.hoisted(() => ({ os: 'android' as 'android' | 'web' }));
 const fetchMock = vi.hoisted(() => vi.fn());
 
@@ -33,7 +36,10 @@ vi.mock('../../../src/lib/login-analytics', () => ({
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ register: auth.register }) }));
 vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
-  useNativeOAuthSignIn: () => ({ signIn: oauth.signIn, inProgress: false }),
+  useNativeOAuthSignIn: ({ setError }: { setError: (message: string | null) => void }) => {
+    oauth.setError = setError;
+    return { signIn: oauth.signIn, inProgress: false };
+  },
 }));
 // true (not the earlier false) so the Google button renders — needed to drive
 // the OAuth-path negative test below via a real press, not just a stubbed hook.
@@ -85,7 +91,7 @@ vi.mock('../../../src/components/AuthFieldset', () => ({
       form.setters[field.key] = field.onChangeText;
     });
     form.submit = onSubmit ?? null;
-    return createElement('div');
+    return createElement('div', { 'data-testid': 'email-form' });
   },
 }));
 vi.mock('../../../src/components/Button', () => ({
@@ -104,12 +110,17 @@ beforeEach(() => {
   auth.register.mockReset();
   router.replace.mockClear();
   oauth.signIn.mockClear();
+  oauth.setError = null;
   fetchMock.mockReset();
   platform.os = 'android';
   form.fieldKeys = [];
   form.setters = {};
   form.submit = null;
 });
+
+function isBefore(first: Element, second: Element): boolean {
+  return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
 
 async function fillAndSubmit() {
   render(createElement(RegisterScreen));
@@ -292,5 +303,41 @@ describe('RegisterScreen fields', () => {
     await fillAndSubmit();
 
     await waitFor(() => expect(auth.register).toHaveBeenCalledWith('new@example.com', 'supersecure1', undefined));
+  });
+});
+
+describe('RegisterScreen errors', () => {
+  it('shows an Apple or Google failure under those buttons, above the email form', async () => {
+    render(createElement(RegisterScreen));
+
+    await act(async () => {
+      oauth.setError?.('nativeStart.oauthError');
+    });
+
+    const oauthError = screen.getByText('nativeStart.oauthError');
+    expect(isBefore(screen.getByText('login.providers.google'), oauthError)).toBe(true);
+    expect(isBefore(oauthError, screen.getByTestId('email-form'))).toBe(true);
+  });
+
+  it('clears a form error when Google is tapped, and a Google error when the form is sent', async () => {
+    auth.register.mockResolvedValue({ success: false, status: 400, error: 'Email already registered' });
+
+    await fillAndSubmit();
+    await waitFor(() => expect(screen.getByText('Email already registered')).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('login.providers.google'));
+    });
+    expect(screen.queryByText('Email already registered')).toBeNull();
+
+    await act(async () => {
+      oauth.setError?.('nativeStart.oauthError');
+    });
+    expect(screen.getByText('nativeStart.oauthError')).toBeTruthy();
+
+    await act(async () => {
+      form.submit?.();
+    });
+    expect(screen.queryByText('nativeStart.oauthError')).toBeNull();
   });
 });
