@@ -429,10 +429,28 @@ export type ArtifactSink = {
   writeCanonicalRecord(record: Record<string, unknown>): Promise<void>;
 };
 
+async function syncArtifactDirectory(directoryPath: string): Promise<void> {
+  const directory = await open(
+    directoryPath,
+    fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | requireNoFollowFlag(fsConstants.O_NOFOLLOW),
+  );
+  try {
+    await directory.sync();
+  } catch (error: unknown) {
+    await directory.close().catch(() => undefined);
+    throw error;
+  }
+  await directory.close();
+}
+
 export async function writeAuditArtifact(
   rawOutputPath: string,
   producer: (sink: ArtifactSink) => Promise<Record<string, unknown>>,
-  options: { cwd?: string; completedAt?: () => string } = {},
+  options: {
+    cwd?: string;
+    completedAt?: () => string;
+    syncDirectory?: (directoryPath: string) => Promise<void>;
+  } = {},
 ): Promise<{ outputPath: string; digest: string }> {
   const noFollowFlag = requireNoFollowFlag(fsConstants.O_NOFOLLOW);
   const outputPath = await validateOutputPath(rawOutputPath, options.cwd);
@@ -471,9 +489,11 @@ export async function writeAuditArtifact(
     // created after validation. The partial inode is never visible at the
     // requested output name until every byte has been synced.
     await link(partialPath, outputPath);
-    // The requested output is now a complete, durable artifact. A failure to
-    // remove the private staging link must not delete or fail that publication.
+    // The output is complete. Cleanup must not delete that published artifact,
+    // even when a private staging link cannot be removed. Sync the directory
+    // after both operations before reporting the publication as durable.
     await unlink(partialPath).catch(() => undefined);
+    await (options.syncDirectory ?? syncArtifactDirectory)(dirname(outputPath));
     return { outputPath, digest };
   } catch (error: unknown) {
     await file.close().catch(() => undefined);
