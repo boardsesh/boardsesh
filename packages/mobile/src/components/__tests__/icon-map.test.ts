@@ -37,7 +37,7 @@ describe('iconMap', () => {
     expect(uniqueKeys.size).toBe(keys.length);
   });
 
-  it.each(['boards', 'search', 'queue', 'profile', 'more', 'favorite', 'bluetooth', 'tick'] as const)(
+  it.each(['boards', 'search', 'queue', 'profile', 'more', 'favorite', 'bluetooth', 'tick', 'frames'] as const)(
     'contains critical icon "%s"',
     (iconName) => {
       expect(iconMap[iconName]).toBeDefined();
@@ -65,6 +65,16 @@ describe('iconMap', () => {
     expect(iconMap.share).toBeDefined();
     expect(iconMap.delete).toBeDefined();
     expect(iconMap.edit).toBeDefined();
+  });
+
+  // `Icon` renders `SymbolView` with no fallback, so an SF Symbol that does not
+  // exist on the running iOS version draws NOTHING — no error, no exception, no
+  // Sentry event. The frames pip is a bare glyph plus a number over board art, so a
+  // silent blank there is indistinguishable from a rendering bug; pinning the name
+  // keeps the choice on an SF Symbols 1.0 (iOS 13.0+) glyph.
+  it('marks multi-frame routes with a long-available stack glyph on both platforms', () => {
+    expect(iconMap.frames.ios).toBe('rectangle.stack');
+    expect(iconMap.frames.android).toBe('card-multiple-outline');
   });
 
   it('contains status icons', () => {

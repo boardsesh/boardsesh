@@ -12,6 +12,7 @@ import { useTheme } from '../../../providers/theme-provider';
 import { iosSystemColors } from '../../../theme/ios-colors';
 import { spacing } from '../../../theme/tokens';
 import { hapticSelection } from '../../../lib/haptics';
+import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
 import { formatQuality, formatSends } from '../../../lib/format-climb-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 
@@ -77,6 +78,9 @@ function WorkoutPreviewRowComponent({
     ? [
         climbName,
         formattedGrade,
+        isMultiFrameClimb(climb.framesCount)
+          ? climbsT('mobile.climbRow.frameCount', { count: climb.framesCount })
+          : null,
         climb.ascensionist_count > 0 ? formatSends(climb.ascensionist_count, climbsT) : null,
         qualityStarCount > 0 ? sessionT('playView.tickBar.starRating', { count: qualityStarCount }) : null,
         climb.setter_username,
@@ -150,6 +154,7 @@ export const WorkoutPreviewRow = memo(WorkoutPreviewRowComponent, (prev, next) =
   return (
     prev.item.uuid === next.item.uuid &&
     prev.item.climb?.uuid === next.item.climb?.uuid &&
+    prev.item.climb?.framesCount === next.item.climb?.framesCount &&
     prev.isActive === next.isActive &&
     prev.isRefreshing === next.isRefreshing &&
     prev.refreshDisabled === next.refreshDisabled &&

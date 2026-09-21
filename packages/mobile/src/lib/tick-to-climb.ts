@@ -1,3 +1,4 @@
+import { parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import type { Climb, RenderBoardConfig } from '@boardsesh/shared-schema';
 
 /**
@@ -40,6 +41,8 @@ export function tickToClimb(tick: TickLike): Climb | null {
     uuid: tick.climbUuid,
     name: tick.climbName ?? tick.climbUuid,
     frames: tick.frames,
+    // Session tick payloads carry the frames string but no count metadata.
+    framesCount: parseFramesSegments(tick.frames).length,
     angle: tick.angle,
     ascensionist_count: 0,
     difficulty: tick.difficultyName ?? '',
