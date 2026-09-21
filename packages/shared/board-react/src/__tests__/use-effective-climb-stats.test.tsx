@@ -1353,6 +1353,37 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
     view.unmount();
   });
 
+  it('stops a deferred reconciliation when its coordinator generation changes', async () => {
+    let releaseFirstChunk: (() => void) | undefined;
+    const persistClimbStatsReconciliationChunk = vi.fn<(events: readonly ClimbStatsEvent[]) => Promise<void>>(
+      async () => {
+        if (!releaseFirstChunk) await new Promise<void>((resolve) => (releaseFirstChunk = resolve));
+      },
+    );
+    const rows = Array.from({ length: 1_500 }, (_value, index) => batchRow('climb-read', index, `${index + 1}`));
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue(rows);
+    const { wrapper: Wrapper } = createWrapper({ fetchClimbStatsForClimbs, persistClimbStatsReconciliationChunk });
+
+    function StatsRow() {
+      useEffectiveClimbStats('kilter', 1, 'climb-read', 40, { ascensionistCount: 0 });
+      return null;
+    }
+
+    const view = render(
+      <Wrapper>
+        <StatsRow />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1));
+    resetClimbStatsReadCoordinatorForTests();
+    releaseFirstChunk?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
   it('keeps applying the rest of the batch when one row’s persist throws', async () => {
     // The batch `.then()` has a `.catch`, so an escape here is never reported.
     // What it actually costs is the REST of the batch: the

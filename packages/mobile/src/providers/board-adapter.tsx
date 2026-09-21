@@ -298,7 +298,14 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
           },
       persistClimbStatsReconciliationChunk: !offlineEnabled
         ? undefined
-        : (events) => climbStatsLiveSyncRef.current?.persistReconciliationChunk(events) ?? Promise.resolve(),
+        : (events) => {
+            const authGeneration = captureAuthCredentialGeneration();
+            return (
+              climbStatsLiveSyncRef.current?.persistReconciliationChunk(events, () =>
+                isAuthCredentialGenerationCurrent(authGeneration),
+              ) ?? Promise.resolve()
+            );
+          },
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
       readLocalTickRevisions,
       scheduleTask: (callback, delayMs) => {
