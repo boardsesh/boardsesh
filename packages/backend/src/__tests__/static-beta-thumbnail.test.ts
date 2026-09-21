@@ -132,7 +132,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
   it('replaces an empty cached variant with resized bytes from a healthy original', async () => {
     const baseKey = 'beta-link-thumbnails/instagram/ABC123.jpg';
     const variantKey = resizedVariantKey(baseKey, 280);
-    const originalBytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#ffffff' } })
+    const originalBytes = await sharp({ create: { width: 320, height: 320, channels: 3, background: '#ffffff' } })
       .jpeg()
       .toBuffer();
     const cachedStream = Readable.from([]);

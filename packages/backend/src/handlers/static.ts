@@ -20,10 +20,10 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /** Avoid caching proxy misses; replacement objects can use the same storage key. */
-function sendNotFound(res: ServerResponse, options: { noStore?: boolean } = {}): void {
+function sendNotFound(res: ServerResponse): void {
   res.writeHead(404, {
     'Content-Type': 'application/json',
-    ...(options.noStore && { 'Cache-Control': 'no-store' }),
+    'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify({ error: 'Not found' }));
 }
@@ -152,7 +152,7 @@ export async function handleStaticAvatar(
         route: req.url ?? '/static/avatars',
       });
       if (!served) {
-        sendNotFound(res, { noStore: true });
+        sendNotFound(res);
       }
       return;
     }
@@ -160,7 +160,7 @@ export async function handleStaticAvatar(
     const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
 
@@ -170,7 +170,7 @@ export async function handleStaticAvatar(
     // 0: an unknown (undefined) length must keep streaming as before.
     if (s3Object.contentLength === 0) {
       s3Object.stream.destroy();
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
 
@@ -199,7 +199,7 @@ export async function handleStaticAvatar(
     if (fileStat.size === 0) {
       // Same reasoning as the S3 branch: an empty file is a broken avatar, and
       // serving it as 200 hides that from the client.
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
     const ext = extname(filePath).toLowerCase();
@@ -238,7 +238,7 @@ export async function handleStaticAvatar(
       source: filePath,
     });
   } catch {
-    sendNotFound(res, { noStore: true });
+    sendNotFound(res);
   }
 }
 
@@ -285,7 +285,7 @@ async function serveStaticGymImage(
         route: req.url ?? `/static/${s3Prefix}`,
       });
       if (!served) {
-        sendNotFound(res, { noStore: true });
+        sendNotFound(res);
       }
       return;
     }
@@ -293,7 +293,7 @@ async function serveStaticGymImage(
     const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
 
@@ -301,7 +301,7 @@ async function serveStaticGymImage(
     // serving it as a 200 makes the client believe the image loaded.
     if (s3Object.contentLength === 0) {
       s3Object.stream.destroy();
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
 
@@ -325,7 +325,7 @@ async function serveStaticGymImage(
   try {
     const fileStat = await stat(filePath);
     if (fileStat.size === 0) {
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
       return;
     }
     const ext = extname(filePath).toLowerCase();
@@ -362,7 +362,7 @@ async function serveStaticGymImage(
       source: filePath,
     });
   } catch {
-    sendNotFound(res, { noStore: true });
+    sendNotFound(res);
   }
 }
 
@@ -440,7 +440,7 @@ export async function handleStaticBetaThumbnail(
       // Empty and absent originals are both misses. Keep a separately repaired
       // object visible without waiting for a negatively cached proxy response.
       // Existing stored URLs do not automatically trigger a thumbnail re-fetch.
-      sendNotFound(res, { noStore: true });
+      sendNotFound(res);
     }
     return;
   }
@@ -449,7 +449,7 @@ export async function handleStaticBetaThumbnail(
 
   if (!s3Object) {
     // A separately repaired object must not remain hidden by a cached miss.
-    sendNotFound(res, { noStore: true });
+    sendNotFound(res);
     return;
   }
 
@@ -460,7 +460,7 @@ export async function handleStaticBetaThumbnail(
   // 404 keeps a re-cache at the same key able to repair it.
   if (s3Object.contentLength === 0) {
     s3Object.stream.destroy();
-    sendNotFound(res, { noStore: true });
+    sendNotFound(res);
     return;
   }
 
