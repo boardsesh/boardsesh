@@ -45,9 +45,18 @@ staged_material_is_valid() {
   # A mismatched pair is the failure worth catching here. PostgreSQL reveals it
   # only by refusing to start, and on a service with no shell that is a much
   # worse place to discover it than in this log line.
+  # This function runs in condition context, so errexit is suspended inside it and
+  # a failing command substitution would leave both variables empty -- which
+  # compares equal and would validate a broken pair. Check each one explicitly.
   local cert_pubkey key_pubkey
-  cert_pubkey="$(openssl x509 -noout -pubkey -in "$cert_path")"
-  key_pubkey="$(openssl pkey -pubout -in "$key_path")"
+  if ! cert_pubkey="$(openssl x509 -noout -pubkey -in "$cert_path")" || [[ -z "$cert_pubkey" ]]; then
+    printf 'boardsesh-postgres: could not read a public key from PG_TLS_SERVER_CERT\n' >&2
+    return 1
+  fi
+  if ! key_pubkey="$(openssl pkey -pubout -in "$key_path")" || [[ -z "$key_pubkey" ]]; then
+    printf 'boardsesh-postgres: could not derive a public key from PG_TLS_SERVER_KEY\n' >&2
+    return 1
+  fi
   if [[ "$cert_pubkey" != "$key_pubkey" ]]; then
     printf 'boardsesh-postgres: PG_TLS_SERVER_CERT and PG_TLS_SERVER_KEY are not a matching pair\n' >&2
     return 1

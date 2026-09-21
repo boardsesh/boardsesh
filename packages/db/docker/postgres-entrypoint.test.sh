@@ -153,14 +153,50 @@ grep -Fqx -- 'shared_buffers=128MB' "$ARGS_LOG" || fail 'the caller option must 
 # 9. Bash suspends errexit inside a function called in condition context, which
 #    previously let a failed mkdir/chmod/mv/chown continue into PostgreSQL with
 #    unusable TLS files. An unwritable target must stop the boot.
-readonly LOCKED="$TEST_ROOT/locked"
-mkdir -p "$LOCKED"
-chmod 0500 "$LOCKED"
-expect_failure 'an unwritable TLS directory' env \
-  PG_TLS_DIR="$LOCKED/tls" \
+# Directory permissions do not constrain root, so as root this would assert that a
+# write which legitimately succeeds must fail. Skip rather than mislead.
+if [[ "$(id -u)" == '0' ]]; then
+  printf 'postgres-entrypoint test: running as root; skipping the unwritable-directory case\n'
+else
+  readonly LOCKED="$TEST_ROOT/locked"
+  mkdir -p "$LOCKED"
+  chmod 0500 "$LOCKED"
+  expect_failure 'an unwritable TLS directory' env \
+    PG_TLS_DIR="$LOCKED/tls" \
+    PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+    PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+    bash "$ENTRYPOINT" postgres
+  chmod 0700 "$LOCKED"
+fi
+
+# 10. A failing openssl must not read as a matching pair. The validator runs in
+#     condition context, where errexit is suspended, so an unchecked command
+#     substitution would leave both public keys empty -- and two empty strings
+#     compare equal, validating a completely broken pair.
+REAL_OPENSSL="$(command -v openssl)"
+readonly REAL_OPENSSL
+readonly STUB_BIN="$TEST_ROOT/stub-bin"
+mkdir -p "$STUB_BIN"
+cat >"$STUB_BIN/openssl" <<STUB
+#!/usr/bin/env bash
+# Fail only the public-key extraction; everything the validator checks first still
+# behaves, so this isolates the substitution path rather than the whole validator.
+for argument in "\$@"; do
+  if [[ "\$argument" == '-pubkey' || "\$argument" == '-pubout' ]]; then
+    echo 'stub openssl: simulated failure' >&2
+    exit 1
+  fi
+done
+exec "$REAL_OPENSSL" "\$@"
+STUB
+chmod +x "$STUB_BIN/openssl"
+expect_failure 'a pair whose public keys could not be read' env \
+  PATH="$STUB_BIN:$PATH" \
+  PG_TLS_DIR="$TEST_ROOT/case-openssl-fails" \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" postgres
-chmod 0700 "$LOCKED"
+[[ ! -e "$TEST_ROOT/case-openssl-fails/server.key" ]] ||
+  fail 'a pair that could not be validated was installed anyway'
 
 printf 'postgres-entrypoint TLS contract passed\n'

@@ -35,8 +35,8 @@ it. A second `--apply` with nothing to do is a no-op.
   primary serves, which the image's entrypoint writes to the volume at boot. A
   missing one is drift here rather than a surprise at deploy time, and an absent
   pair means the primary falls back to its base image's snakeoil certificate,
-  whose private key is published in a public Docker Hub layer. See
-  [pg-primary-tls-rollout.md](./pg-primary-tls-rollout.md).
+  whose private key is published in a public Docker Hub layer. The rollout and
+  rollback path for that certificate is `docs/pg-primary-tls-rollout.md`.
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 
