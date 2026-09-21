@@ -1,0 +1,177 @@
+name: WAL-G Image
+
+# Upstream ghcr.io/wal-g/wal-g does not exist, so the homelab DR role
+# (blackheathdc-ansible, roles/boardsesh_dr) pins a digest of this image.
+#
+# Publishing is dispatch-only and deliberately not wired to pushes: the digest
+# is pinned by hand in the Homelab vault, and an image that moved on its own
+# would leave that pin describing an artifact nobody chose.
+on:
+  pull_request:
+    paths:
+      - 'docker/walg/**'
+      - 'docs/postgres-image-digests.json'
+      - '.github/workflows/walg-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: walg-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Prove the DR role's contract (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build for ${{ matrix.platform }}
+        uses: docker/build-push-action@v7
+        with:
+          context: docker/walg
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: true
+          tags: walg-contract:${{ strategy.job-index }}
+
+      # Every check below mirrors a gate the ansible role applies, so a failure
+      # here is a failure the DR host would have hit instead.
+      - name: Prove the WAL-G contract
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: walg-contract:${{ strategy.job-index }}
+        run: |
+          set -euo pipefail
+          postgres_image="$(jq -r '.images.portable.name + "@" + .images.portable.digest' \
+            docs/postgres-image-digests.json)"
+          echo "postgres image: $postgres_image"
+
+          echo '--- the binary lives at /wal-g and answers --version ---'
+          docker run --rm --platform "$PLATFORM" --entrypoint /wal-g "$IMAGE" --version
+
+          echo '--- it is extractable with docker create + docker cp ---'
+          extracted="$(mktemp -d)/wal-g"
+          container="$(docker create --platform "$PLATFORM" "$IMAGE")"
+          docker cp "$container:/wal-g" "$extracted"
+          docker rm "$container" >/dev/null
+
+          echo '--- it is statically linked ---'
+          docker run --rm --platform "$PLATFORM" -v "$extracted:/w:ro" \
+            debian:trixie-slim sh -c 'ldd /w 2>&1 | grep -q "not a dynamic executable"'
+
+          echo '--- and therefore runs inside the pinned PostgreSQL image ---'
+          docker run --rm --platform "$PLATFORM" \
+            --entrypoint /usr/local/bin/wal-g \
+            -v "$extracted:/usr/local/bin/wal-g:ro" \
+            "$postgres_image" --version
+
+          echo '--- every subcommand the role invokes exists ---'
+          for subcommand in wal-push wal-fetch backup-push backup-list wal-verify delete; do
+            docker run --rm --platform "$PLATFORM" --entrypoint /wal-g "$IMAGE" \
+              "$subcommand" --help >/dev/null
+            echo "    $subcommand"
+          done
+
+          # A --version check would not have caught this. wal-g calls
+          # user.Current(), which a CGO-free build answers only from /etc/passwd
+          # or $USER, so running as the role's uid 999 used to fail at backup
+          # time with every gate above still green. Push and fetch for real.
+          echo '--- a real WAL round-trip, in the security posture the role uses ---'
+          repo="$(mktemp -d)"
+          mkdir -p "$repo/spool/archive_status" "$repo/store"
+          head -c 16777216 /dev/zero | tr '\0' 'A' > "$repo/spool/000000010000000000000001"
+          chmod -R 777 "$repo"
+          walg() {
+            docker run --rm --platform "$PLATFORM" \
+              --network none --read-only --user 999:999 \
+              --cap-drop ALL --security-opt no-new-privileges:true \
+              --tmpfs /tmp:size=256m,mode=1777 \
+              -v "$repo:/repo" \
+              -e WALG_FILE_PREFIX=/repo/store \
+              -e WALG_COMPRESSION_METHOD=zstd \
+              -e PGDATA=/repo/pgdata \
+              --entrypoint /wal-g "$IMAGE" "$@"
+          }
+          walg wal-push /repo/spool/000000010000000000000001
+          test -s "$repo/store/wal_005/000000010000000000000001.zst"
+          walg wal-fetch 000000010000000000000001 /repo/spool/fetched
+          cmp "$repo/spool/000000010000000000000001" "$repo/spool/fetched"
+          echo '    pushed, compressed, fetched back byte-identical'
+
+          # The role's verify script pipes this through
+          # `jq 'type == "array" and length > 0'`, so an empty store has to be a
+          # well-formed empty array rather than an error.
+          echo '--- backup-list --json answers with JSON on an empty store ---'
+          walg backup-list --json | jq --exit-status 'type == "array"' >/dev/null
+          echo '    []'
+
+  publish:
+    name: Publish and attest
+    if: github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Both platforms, matching the PostgreSQL image this binary has to run
+      # inside. The build stage cross-compiles, so arm64 costs no emulation.
+      - uses: docker/build-push-action@v7
+        id: image
+        with:
+          context: docker/walg
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ghcr.io/boardsesh/wal-g:sha-${{ github.sha }}
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/boardsesh/wal-g
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Report the digest to pin
+        run: |
+          {
+            echo '## WAL-G image published'
+            echo
+            echo 'Pin this digest in the `Homelab` vault item **Boardsesh DR artifacts**,'
+            echo 'field `walg_image_digest`:'
+            echo
+            echo '```'
+            echo '${{ steps.image.outputs.digest }}'
+            echo '```'
+            echo
+            echo 'The tag `sha-${{ github.sha }}` is a lookup alias only; the role'
+            echo 'deploys by digest.'
+          } >> "$GITHUB_STEP_SUMMARY"
