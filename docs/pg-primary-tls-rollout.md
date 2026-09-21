@@ -236,10 +236,22 @@ variables, redeploy, verify, update `expected` in the manifest. The standby need
 no change — it trusts the CA, not the leaf. Rehearse this once during the DR
 drills while the certificate is fresh, not in three years.
 
-**CA** (rare — rotation or compromise): mint a new CA, PR its PEM and SHA-256 into
-the ansible role, converge the standby with
-`RECREATE_VERIFIED_STANDBY_FOR_PINNED_CONFIG_DRIFT`, then issue and install a new
-leaf.
+**CA** (rare — rotation or compromise). **The anchor is replaced last, not first.**
+`sslrootcert` accepts a file holding more than one certificate, so:
+
+1. Mint the new CA. PR a **bundle** of the old and new certificates into the
+   ansible role with the digest updated to the bundle's, and converge with
+   `RECREATE_VERIFIED_STANDBY_FOR_PINNED_CONFIG_DRIFT`. The standby now trusts
+   either.
+2. Issue the new leaf and install it on the primary.
+3. Confirm replication is streaming on the new leaf.
+4. PR the new CA alone, update the digest again, converge.
+
+Replacing the anchor first is the tempting order and it is an outage: the standby
+would trust only the new CA while the primary still served a leaf signed by the old
+one, so every replication connection fails until the primary-side step lands — and
+with WAL accruing against a 16 GiB slot, a delay there costs the slot and a full
+re-bootstrap.
 
 Impact of a leaked CA key, stated honestly: it lets an attacker impersonate the
 primary to the standby. SCRAM does not hand over the password, so the exposure is
