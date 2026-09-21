@@ -275,7 +275,7 @@ export default defineConfig({
         cache: false,
       },
       'db:repair-cross-linked-playlists': {
-        command: 'bun run --filter=@boardsesh/db db:repair-cross-linked-playlists',
+        command: 'pnpm --filter @boardsesh/db run db:repair-cross-linked-playlists',
         // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
         // runs this by hand against DB_URL, usually a remote database. Audit-only
         // by default; --apply is the sole write path and deletes nothing beyond

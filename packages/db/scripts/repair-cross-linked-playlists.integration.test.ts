@@ -162,6 +162,55 @@ void describe('repair-cross-linked-playlists apply path', () => {
           [String(jsonImportPlaylistId)],
         );
 
+        // A changed grant is not the historical cross-link we planned to revoke,
+        // even when the same two users remain and the adopter is still latest.
+        for (const changedGrant of [
+          { role: 'editor', createdAt: ADOPTER_OWNED_AT },
+          { role: 'owner', createdAt: new Date('2026-03-29T15:00:00Z') },
+        ]) {
+          await transaction
+            .update(playlistOwnership)
+            .set(changedGrant)
+            .where(
+              and(eq(playlistOwnership.playlistId, jsonImportPlaylistId), eq(playlistOwnership.userId, adopterUserId)),
+            );
+          const driftCounts = await applyRepairPlans(transaction, applyablePlans);
+          assert.deepEqual(driftCounts, {
+            ownershipRowsDeleted: 0,
+            pinsDeleted: 0,
+            followsDeleted: 0,
+            tombstonesWritten: 0,
+            skippedByDrift: [String(jsonImportPlaylistId)],
+          });
+          assert.equal(await countOwnershipRows(), 7, 'changed grants must remain intact');
+        }
+        await transaction
+          .update(playlistOwnership)
+          .set({ role: 'owner', createdAt: ADOPTER_OWNED_AT })
+          .where(
+            and(eq(playlistOwnership.playlistId, jsonImportPlaylistId), eq(playlistOwnership.userId, adopterUserId)),
+          );
+
+        // A malformed later plan aborts the transaction, including earlier
+        // revocations and their offline tombstones, instead of partial success.
+        const validPlan = applyablePlans[0];
+        assert.ok(validPlan);
+        await assert.rejects(
+          transaction.transaction(async (savepoint) =>
+            applyRepairPlans(savepoint, [validPlan, { ...validPlan, adopter: null }]),
+          ),
+          /repair plan has no adopter/,
+        );
+        assert.equal(await countOwnershipRows(), 7, 'a malformed plan rolls back earlier revocations');
+        const rolledBackAttachments = await loadAdopterAttachments(transaction, applyablePlans);
+        assert.equal(rolledBackAttachments.pinnedPlaylistIds.has(String(jsonImportPlaylistId)), true);
+        assert.equal(rolledBackAttachments.followedPlaylistUuids.has(`${tag}-json-import`), true);
+        const rolledBackTombstones = await transaction
+          .select({ id: syncDeletions.id })
+          .from(syncDeletions)
+          .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.recordId, `${tag}-json-import`)));
+        assert.equal(rolledBackTombstones.length, 0, 'rolled-back grants must not disappear from offline clients');
+
         const counts = await applyRepairPlans(transaction, applyablePlans);
         assert.deepEqual(counts, {
           ownershipRowsDeleted: 1,
@@ -302,4 +351,104 @@ void describe('repair-cross-linked-playlists apply path', () => {
       await close();
     }
   });
+});
+
+void it('preserves public viewer attachments and refuses visibility drift', async (testContext) => {
+  const databaseUrl = repairTestDatabaseUrl();
+  if (!databaseUrl) {
+    testContext.skip('set REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL to a local migrated database');
+    return;
+  }
+  const { db, close } = createScriptDb(databaseUrl);
+  const rollbackMarker = new Error('rollback public attachment fixture');
+  try {
+    await db.transaction(async (transaction) => {
+      const tag = `repair-public-${Date.now()}`;
+      const creatorUserId = `${tag}-creator`;
+      const adopterUserId = `${tag}-adopter`;
+      await transaction.insert(users).values([
+        { id: creatorUserId, email: `${creatorUserId}@example.test` },
+        { id: adopterUserId, email: `${adopterUserId}@example.test` },
+      ]);
+      const [playlist] = await transaction
+        .insert(playlists)
+        .values({
+          uuid: tag,
+          boardType: 'kilter',
+          name: 'Public cross-linked fixture',
+          auroraType: 'circuits',
+          auroraId: `json-import-circuit-${tag}`,
+          isPublic: true,
+        })
+        .returning({ id: playlists.id });
+      assert.ok(playlist);
+      await transaction.insert(playlistOwnership).values([
+        { playlistId: playlist.id, userId: creatorUserId, role: 'owner', createdAt: CREATOR_OWNED_AT },
+        { playlistId: playlist.id, userId: adopterUserId, role: 'owner', createdAt: ADOPTER_OWNED_AT },
+      ]);
+      await transaction.insert(userPlaylistPins).values([
+        { playlistId: playlist.id, userId: creatorUserId },
+        { playlistId: playlist.id, userId: adopterUserId },
+      ]);
+      await transaction.insert(playlistFollows).values([
+        { playlistUuid: tag, followerId: creatorUserId },
+        { playlistUuid: tag, followerId: adopterUserId },
+      ]);
+      const plans = selectApplyablePlans(
+        planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
+        { includeMergeCandidates: false },
+      );
+      assert.equal(plans.length, 1);
+      await transaction.update(playlists).set({ isPublic: false }).where(eq(playlists.id, playlist.id));
+      const staleCounts = await applyRepairPlans(transaction, plans);
+      assert.deepEqual(staleCounts, {
+        ownershipRowsDeleted: 0,
+        pinsDeleted: 0,
+        followsDeleted: 0,
+        tombstonesWritten: 0,
+        skippedByDrift: [String(playlist.id)],
+      });
+      // Also cover private-to-public drift: a stale private plan must never
+      // delete attachments that became valid viewer relationships meanwhile.
+      const privatePlans = selectApplyablePlans(
+        planCrossLinkedPlaylistRepairs(await loadCrossLinkedPlaylists(transaction, [String(playlist.id)])),
+        { includeMergeCandidates: false },
+      );
+      await transaction.update(playlists).set({ isPublic: true }).where(eq(playlists.id, playlist.id));
+      assert.deepEqual(await applyRepairPlans(transaction, privatePlans), staleCounts);
+      const applied = await applyRepairPlans(transaction, plans);
+      assert.deepEqual(applied, {
+        ownershipRowsDeleted: 1,
+        pinsDeleted: 0,
+        followsDeleted: 0,
+        tombstonesWritten: 1,
+        skippedByDrift: [],
+      });
+      const owners = await transaction
+        .select({ userId: playlistOwnership.userId })
+        .from(playlistOwnership)
+        .where(eq(playlistOwnership.playlistId, playlist.id));
+      assert.deepEqual(owners, [{ userId: creatorUserId }]);
+      const pins = await transaction
+        .select({ userId: userPlaylistPins.userId })
+        .from(userPlaylistPins)
+        .where(eq(userPlaylistPins.playlistId, playlist.id));
+      assert.deepEqual(pins.map((pin) => pin.userId).sort(), [creatorUserId, adopterUserId].sort());
+      const follows = await transaction
+        .select({ userId: playlistFollows.followerId })
+        .from(playlistFollows)
+        .where(eq(playlistFollows.playlistUuid, tag));
+      assert.deepEqual(follows.map((follow) => follow.userId).sort(), [creatorUserId, adopterUserId].sort());
+      const tombstones = await transaction
+        .select({ userId: syncDeletions.userId })
+        .from(syncDeletions)
+        .where(and(eq(syncDeletions.tableName, 'playlists'), eq(syncDeletions.recordId, tag)));
+      assert.deepEqual(tombstones, [{ userId: adopterUserId }], 'only the old owned offline copy is revoked');
+      throw rollbackMarker;
+    });
+  } catch (error: unknown) {
+    if (error !== rollbackMarker) throw error;
+  } finally {
+    await close();
+  }
 });
