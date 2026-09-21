@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import type { BoardName, HoldOutlineKind } from '@boardsesh/shared-schema';
 import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
 import { hasLedBasePlate } from '@boardsesh/board-config';
+import { boardArtGeometryPending, loadBoardArtGeometry, prefetchBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import {
   DEFAULT_BRUSH_RADIUS_BOARD_PX,
   MIN_BRUSH_RADIUS_BOARD_PX,
@@ -213,10 +214,50 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const upsertOverride = useUpsertHoldOutlineOverride();
   const deleteOverride = useDeleteHoldOutlineOverride();
 
+  const [shippedGeometry, setShippedGeometry] = useState(() => ({
+    boardName,
+    layoutId,
+    sizeId,
+    geometry: loadBoardArtGeometry({ boardName, layoutId, sizeId }),
+  }));
+  useEffect(() => {
+    const config = { boardName, layoutId, sizeId };
+    if (!boardArtGeometryPending(config)) {
+      const geometry = loadBoardArtGeometry(config);
+      setShippedGeometry((current) =>
+        current.boardName === boardName &&
+        current.layoutId === layoutId &&
+        current.sizeId === sizeId &&
+        current.geometry === geometry
+          ? current
+          : { ...config, geometry },
+      );
+      return;
+    }
+    let cancelled = false;
+    // Native shards are cached synchronously; web downloads the same per-board
+    // chunk the renderer uses. A late result must never seed another board.
+    void prefetchBoardArtGeometry({ boardName, layoutId, sizeId }).then((geometry) => {
+      if (!cancelled) setShippedGeometry({ boardName, layoutId, sizeId, geometry });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [boardName, layoutId, sizeId]);
+
   const layerData = useMemo<OutlineLayerData>(() => {
     const shardByPlacement = new Map<number, number[]>();
     const silhouetteByPlacement = new Map<number, number[]>();
     const ledInnerByPlacement = new Map<number, number[]>();
+    if (
+      shippedGeometry.boardName === boardName &&
+      shippedGeometry.layoutId === layoutId &&
+      shippedGeometry.sizeId === sizeId
+    ) {
+      for (const [placementId, outline] of Object.entries(shippedGeometry.geometry?.ledInner ?? {})) {
+        ledInnerByPlacement.set(Number(placementId), outline);
+      }
+    }
     const outlines = outlinesQuery.data;
     if (outlines) {
       for (const shard of outlines.shardOutlines) shardByPlacement.set(shard.placementId, shard.outline);
@@ -226,7 +267,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       }
     }
     return { shardByPlacement, silhouetteByPlacement, ledInnerByPlacement };
-  }, [outlinesQuery.data]);
+  }, [outlinesQuery.data, shippedGeometry, boardName, layoutId, sizeId]);
 
   // Per-placement override metadata, indexed once so the status line is an O(1)
   // lookup rather than a scan of the override list on every render.
@@ -693,11 +734,15 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       const author = meta.authorDisplayName ?? 'someone';
       return `#${selectedPlacementId} · overridden by ${author} on ${formatUpdatedAt(meta.updatedAt)}`;
     }
-    if (effectiveEditKind === 'LED_INNER') return `#${selectedPlacementId} · no inner edge traced yet`;
+    if (effectiveEditKind === 'LED_INNER') {
+      return layerData.ledInnerByPlacement.has(selectedPlacementId)
+        ? `#${selectedPlacementId} · shipped inner edge`
+        : `#${selectedPlacementId} · no inner edge traced yet`;
+    }
     return layerData.shardByPlacement.has(selectedPlacementId)
       ? `#${selectedPlacementId} · traced`
       : `#${selectedPlacementId} · missing — the renderer falls back to a plain ring`;
-  }, [selectedPlacementId, effectiveEditKind, overrideMetaByKey, layerData.shardByPlacement, placementOrder.length]);
+  }, [selectedPlacementId, effectiveEditKind, overrideMetaByKey, layerData, placementOrder.length]);
 
   // ── The lit preview ────────────────────────────────────────────────────
   // The renderer only draws traced outlines in Aura mode with traced hold shapes, behind a native
@@ -986,7 +1031,7 @@ function brushRejectionMessage(reason: BrushRejection, mode: DrawMode): string {
   }
   if (reason === 'self-intersecting') return 'That left the outline crossing itself. Try a wider brush.';
   if (reason === 'too-complex') return 'That left too much detail to store. Try a wider brush.';
-  return 'That left too little outline to store. Try a wider brush.';
+  return 'That left too little outline to store. Redraw a larger closed outline.';
 }
 
 const styles = StyleSheet.create({

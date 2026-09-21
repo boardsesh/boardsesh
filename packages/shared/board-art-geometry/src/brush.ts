@@ -449,11 +449,16 @@ function dedupeConsecutive(points: ReadonlyArray<RingPoint>): RingPoint[] {
  * and the polygon would claim it anyway. (The eraser-in-the-middle case is
  * already handled a step earlier, in `keepAnchoredComponent`.)
  *
+ * Successful traces also return the trimmed, filled bitmap for the next stroke.
+ *
  * Decimation mirrors `buildOutlineRing`: the tracer's own epsilon first, then
  * doubling while the ring is longer than a stored one may be, so a fiddly
  * boundary degrades into a coarser ring instead of a dead end.
  */
-export function maskToRing(cells: Uint8Array, mask: BrushMask): BrushResult {
+export function maskToRing(
+  cells: Uint8Array,
+  mask: BrushMask,
+): { ok: true; outlineBoardPx: number[]; cells: Uint8Array } | { ok: false; reason: BrushRejection } {
   const anchor = anchorIndexOf(mask, cells);
   const trimmed = anchor >= 0 ? trimNecks(cells, mask.width, mask.height, anchor, NECK_TRIM_CELLS) : cells;
   const filled = fillHoles(trimmed, mask.width, mask.height);
@@ -484,7 +489,7 @@ export function maskToRing(cells: Uint8Array, mask: BrushMask): BrushResult {
   // meets. Refusing is better than storing one.
   if (!isSimpleRing(deduped)) return { ok: false, reason: 'self-intersecting' };
 
-  return { ok: true, outlineBoardPx: flatten(deduped), droppedPieces: 0 };
+  return { ok: true, outlineBoardPx: flatten(deduped), cells: filled };
 }
 
 /**
@@ -530,5 +535,7 @@ export function brushEditOutline(params: {
   if (!anchored.ok) return { ok: false, reason: anchored.reason };
 
   const traced = maskToRing(anchored.cells, mask);
-  return traced.ok ? { ...traced, droppedPieces: anchored.droppedPieces } : traced;
+  return traced.ok
+    ? { ok: true, outlineBoardPx: traced.outlineBoardPx, droppedPieces: anchored.droppedPieces }
+    : traced;
 }
