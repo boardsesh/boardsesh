@@ -560,6 +560,26 @@ export const SHARED_EVENTS = {
   // Props: { fromTab: 'home' | 'record' | 'discover' | 'profile' | other tab
   //          segment (where the climber was when it showed) }.
   ClimbsTabTipShown: 'Climbs Tab Tip Shown',
+  // Just-in-time tips (the one-line dismissible banners on Climbs / Record /
+  // the accessory bar), as opposed to the first-run tour above. All three carry
+  // a `tip` prop naming which one fired, so a single funnel covers every tip.
+  //
+  // Shown → Dismissed → Pressed answers the three questions a tip has: does it
+  // reach anybody, does it annoy them, and does it lead anywhere. Until this
+  // existed the quick-actions tip was completely dark — it fired on the first
+  // Climbs visit, marked itself seen, and left no trace of whether it was read,
+  // swatted away, or acted on.
+  //
+  // Props: { tip: string } plus whatever the host adds. The quick-actions tip
+  // adds `visitCount` (which Climbs visit armed it) so the "wait for the third
+  // visit" rule can be checked against reality rather than assumed.
+  OnboardingTipShown: 'Onboarding Tip Shown',
+  // The close button. A high Dismissed/Shown ratio means the copy isn't earning
+  // its row — that's the kill signal for a tip.
+  OnboardingTipDismissed: 'Onboarding Tip Dismissed',
+  // The banner body was tapped, taking the climber wherever the tip points (the
+  // quick-actions tip opens More, where the ⋮ setting lives).
+  OnboardingTipPressed: 'Onboarding Tip Pressed',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
