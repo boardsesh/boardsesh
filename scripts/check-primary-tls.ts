@@ -210,6 +210,19 @@ export function evaluateCertificate(
   return { failures, warnings };
 }
 
+/**
+ * True when the host simply does not resolve yet.
+ *
+ * While a rollout is pending this is expected rather than alarming -- the DNS
+ * record and this check can land in either order. Once `pendingRollout` is
+ * cleared, an unresolvable primary is a hard failure like any other.
+ */
+export function isUnresolvedHost(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOTFOUND'
+  );
+}
+
 export function readManifest(path: string): TlsManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as TlsManifest;
 }
@@ -221,7 +234,19 @@ async function main(): Promise<number> {
   if (!manifestPath) throw new Error('--manifest needs a path');
 
   const manifest = readManifest(manifestPath);
-  const observed = await probePostgresCertificate(manifest);
+
+  let observed: ObservedCertificate;
+  try {
+    observed = await probePostgresCertificate(manifest);
+  } catch (error) {
+    if (manifest.pendingRollout !== null && isUnresolvedHost(error)) {
+      console.log(`[primary-tls] WARNING: ${manifest.host} does not resolve yet.`);
+      console.log(`[primary-tls]   ${manifest.pendingRollout.reason}`);
+      console.log(`[primary-tls]   This is a failure once the rollout is complete and pendingRollout is cleared.`);
+      return 0;
+    }
+    throw error;
+  }
 
   console.log(`[primary-tls] ${manifest.host}:${manifest.port}`);
   console.log(`[primary-tls]   subject       ${observed.subject}`);

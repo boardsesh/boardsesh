@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   evaluateCertificate,
+  isUnresolvedHost,
   probePostgresCertificate,
   type ObservedCertificate,
   type TlsManifest,
@@ -254,6 +255,20 @@ describe('the pending rollout escape', () => {
     );
     expect(verdict.warnings).toEqual([]);
     expect(verdict.failures.join(' ')).toContain('also compromised');
+  });
+});
+
+describe('isUnresolvedHost', () => {
+  it('recognises a DNS miss', () => {
+    expect(isUnresolvedHost(Object.assign(new Error('getaddrinfo ENOTFOUND x'), { code: 'ENOTFOUND' }))).toBe(true);
+  });
+
+  // Anything else must stay a failure: a refused connection or a timeout is not
+  // "the record does not exist yet", it is the primary being unreachable.
+  it('does not excuse any other failure', () => {
+    expect(isUnresolvedHost(Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }))).toBe(false);
+    expect(isUnresolvedHost(new Error('timed out'))).toBe(false);
+    expect(isUnresolvedHost(null)).toBe(false);
   });
 });
 
