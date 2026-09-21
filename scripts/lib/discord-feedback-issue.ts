@@ -150,6 +150,7 @@ export function validateTriageResult(
     };
   }
 
+  const decisionIndexes: number[] = [];
   for (const entry of rawDecisions) {
     const decision = asRecord(entry);
     const rawIndex = decision?.issueIndex;
@@ -158,6 +159,7 @@ export function validateTriageResult(
       rejected.push({ issueIndex, reason: 'decision is not an object with an integer issueIndex' });
       continue;
     }
+    decisionIndexes.push(issueIndex);
     const unexpectedKey = Object.keys(decision).find((key) => !DECISION_KEYS.has(key));
     if (unexpectedKey) {
       rejected.push({ issueIndex, reason: `unexpected field "${unexpectedKey}"` });
@@ -217,11 +219,13 @@ export function validateTriageResult(
     });
   }
 
-  const indexes = accepted.map((decision) => decision.issueIndex).sort((left, right) => left - right);
-  const indexesAreSequential =
-    indexes.length === rawDecisions.length && indexes.every((issueIndex, offset) => issueIndex === offset + 1);
-  if (!indexesAreSequential) {
-    rejected.push({ issueIndex: null, reason: 'issueIndex values must be unique and sequential from 1' });
+  // Validate indexes independently of other fields, so a rejected label or
+  // command does not create a second, fictitious gap in an otherwise valid set.
+  if (decisionIndexes.length === rawDecisions.length) {
+    decisionIndexes.sort((left, right) => left - right);
+    if (!decisionIndexes.every((issueIndex, offset) => issueIndex === offset + 1)) {
+      rejected.push({ issueIndex: null, reason: 'issueIndex values must be unique and sequential from 1' });
+    }
   }
 
   return { accepted: rejected.length === 0 ? accepted.sort((a, b) => a.issueIndex - b.issueIndex) : [], rejected };

@@ -264,7 +264,21 @@ describe('triage validation and shaping', () => {
       bundle(),
     );
     expect(result.accepted).toEqual([]);
-    expect(result.rejected).not.toHaveLength(0);
+    expect(result.rejected).toEqual([
+      { issueIndex: 2, reason: 'commandMessageId does not match the collected command' },
+    ]);
+  });
+
+  it('still reports a real index gap alongside an unrelated invalid field', () => {
+    const result = validateTriageResult(
+      { decisions: [decision(1), { ...decision(3), commandMessageId: 'forged' }] },
+      bundle(),
+    );
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([
+      { issueIndex: 3, reason: 'commandMessageId does not match the collected command' },
+      { issueIndex: null, reason: 'issueIndex values must be unique and sequential from 1' },
+    ]);
   });
 
   it('rejects an out-of-allowlist label instead of silently dropping it', () => {
@@ -570,6 +584,27 @@ it.each([
   expect(deps.addReaction).not.toHaveBeenCalled();
   expect(deps.postReply).not.toHaveBeenCalled();
 });
+
+it.each([undefined, '', '   '])(
+  'fails closed without network access for an empty notifier allowlist (%j)',
+  async (allowlist) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    try {
+      const exitCode = await runCli(
+        ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
+        { DISCORD_BOT_TOKEN: 'unused', DISCORD_GUILD_ID: GUILD_ID, DISCORD_ISSUE_TRIGGER_USER_IDS: allowlist },
+        logger,
+      );
+      expect(exitCode).toBe(1);
+      expect(logger.error).toHaveBeenCalledWith('[discord-feedback] DISCORD_ISSUE_TRIGGER_USER_IDS is empty.');
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it('notifies Discord through the live failure-handler CLI path', async () => {
   const requests: Array<{ method: string; url: string; body: string | null }> = [];
