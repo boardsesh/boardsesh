@@ -8,6 +8,7 @@ const GUILD_ID = '200000000000000001';
 const MAINTAINER_ID = '300000000000000001';
 const MESSAGE_ID = '400000000000000001';
 const CHANNEL_ID = '500000000000000001';
+const RESUME_URL = 'wss://gateway-us-east1-b.discord.gg/';
 
 type SocketListener = (...arguments_: unknown[]) => void;
 
@@ -46,12 +47,18 @@ class FakeSocket {
 
 function gatewayHarness() {
   const socket = new FakeSocket();
+  const sockets = [socket];
+  const createSocket = vi.fn((_url: string) => {
+    const nextSocket = createSocket.mock.calls.length === 1 ? socket : new FakeSocket();
+    if (nextSocket !== socket) sockets.push(nextSocket);
+    return nextSocket as unknown as WebSocket;
+  });
   const fetchImplementation = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const client = createDiscordGatewayClient({
     fetchImplementation,
-    createSocket: () => socket as unknown as WebSocket,
+    createSocket,
   });
-  return { client, fetchImplementation, socket };
+  return { client, fetchImplementation, socket, sockets, createSocket };
 }
 
 async function connectGateway(
@@ -60,7 +67,12 @@ async function connectGateway(
 ): Promise<void> {
   const connection = client.connect('discord-token');
   socket.emitGateway({ op: 10, d: { heartbeat_interval: 30_000 } });
-  socket.emitGateway({ op: 0, t: 'READY', s: 1, d: { user: { id: BOT_ID } } });
+  socket.emitGateway({
+    op: 0,
+    t: 'READY',
+    s: 1,
+    d: { user: { id: BOT_ID }, session_id: 'session-1', resume_gateway_url: RESUME_URL },
+  });
   await connection;
 }
 
@@ -184,5 +196,136 @@ describe('Discord Gateway client', () => {
     expect(disconnectListener).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('restart') }),
     );
+  });
+});
+
+describe('Discord Gateway session recovery', () => {
+  it('resumes with the last dispatch sequence and delivers missed messages before RESUMED', async () => {
+    const { client, socket, sockets, createSocket } = gatewayHarness();
+    const received = vi.fn();
+    client.onMessage(received);
+    await connectGateway(client, socket);
+    socket.emitGateway({ op: 0, t: 'GUILD_CREATE', s: 7, d: {} });
+    socket.emitGateway({ op: 7, d: null });
+
+    const connection = client.connect('discord-token');
+    const resumedSocket = sockets.at(-1)!;
+    expect(createSocket).toHaveBeenLastCalledWith(`${RESUME_URL}?v=10&encoding=json`);
+    resumedSocket.emitGateway({ op: 10, d: { heartbeat_interval: 30_000 } });
+    expect(JSON.parse(resumedSocket.sentPayloads[0]!)).toEqual({
+      op: 6,
+      d: {
+        token: 'discord-token',
+        session_id: 'session-1',
+        seq: 7,
+      },
+    });
+    resumedSocket.emitGateway({
+      op: 0,
+      t: 'MESSAGE_CREATE',
+      s: 8,
+      d: {
+        id: MESSAGE_ID,
+        channel_id: CHANNEL_ID,
+        guild_id: GUILD_ID,
+        author: { id: MAINTAINER_ID },
+        content: `<@${BOT_ID}> file this`,
+        mentions: [{ id: BOT_ID }],
+      },
+    });
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ id: MESSAGE_ID, botIsMentioned: true }));
+    resumedSocket.emitGateway({ op: 0, t: 'RESUMED', s: 9, d: {} });
+    await connection;
+    // Events arriving late from the previous socket cannot alter the session.
+    socket.emitGateway({ op: 0, t: 'GUILD_CREATE', s: 999, d: {} });
+    resumedSocket.emitGateway({ op: 1, d: null });
+    expect(JSON.parse(resumedSocket.sentPayloads.at(-1)!)).toEqual({ op: 1, d: 9 });
+    await client.destroy();
+  });
+
+  it.each([
+    ['resumable invalid session', null, true, 6],
+    ['non-resumable invalid session', null, false, 2],
+    ['invalid sequence', 4007, null, 2],
+    ['expired session', 4009, null, 2],
+    ['normal close', 1000, null, 2],
+    ['abnormal close', 1006, null, 6],
+  ] as const)('chooses Resume or Identify after %s', async (_reason, closeCode, resumable, opcode) => {
+    const { client, socket, sockets, createSocket } = gatewayHarness();
+    await connectGateway(client, socket);
+    if (closeCode === null) socket.emitGateway({ op: 9, d: resumable });
+    else socket.close(closeCode);
+    const connection = client.connect('discord-token');
+    const resumedSocket = sockets.at(-1)!;
+    resumedSocket.emitGateway({ op: 10, d: { heartbeat_interval: 30_000 } });
+    expect(JSON.parse(resumedSocket.sentPayloads[0]!).op).toBe(opcode);
+    expect(createSocket).toHaveBeenLastCalledWith(
+      opcode === 6 ? `${RESUME_URL}?v=10&encoding=json` : 'wss://gateway.discord.gg/?v=10&encoding=json',
+    );
+    if (opcode === 6) resumedSocket.emitGateway({ op: 0, t: 'RESUMED', s: 2, d: {} });
+    else
+      resumedSocket.emitGateway({
+        op: 0,
+        t: 'READY',
+        s: 1,
+        d: {
+          user: { id: BOT_ID },
+          session_id: 'session-2',
+          resume_gateway_url: RESUME_URL,
+        },
+      });
+    await connection;
+    await client.destroy();
+  });
+
+  it('preserves resume details after a reconnect handshake times out', async () => {
+    vi.useFakeTimers();
+    const { client, socket, sockets } = gatewayHarness();
+    await connectGateway(client, socket);
+    socket.terminate();
+    const failedConnection = client.connect('discord-token');
+    const rejection = expect(failedConnection).rejects.toThrow(/did not become ready/);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejection;
+    const retry = client.connect('discord-token');
+    const retrySocket = sockets.at(-1)!;
+    retrySocket.emitGateway({ op: 10, d: { heartbeat_interval: 30_000 } });
+    expect(JSON.parse(retrySocket.sentPayloads[0]!)).toEqual({
+      op: 6,
+      d: {
+        token: 'discord-token',
+        session_id: 'session-1',
+        seq: 1,
+      },
+    });
+    retrySocket.emitGateway({ op: 0, t: 'RESUMED', s: 2, d: {} });
+    await retry;
+    await client.destroy();
+  });
+
+  it('destroy rejects a pending handshake and clears cached session state', async () => {
+    const { client, socket, sockets } = gatewayHarness();
+    await connectGateway(client, socket);
+    socket.terminate();
+    const connecting = client.connect('discord-token');
+    const rejection = expect(connecting).rejects.toThrow(/backend stopping/);
+    await client.destroy();
+    await rejection;
+    const freshConnection = client.connect('discord-token');
+    const freshSocket = sockets.at(-1)!;
+    freshSocket.emitGateway({ op: 10, d: { heartbeat_interval: 30_000 } });
+    expect(JSON.parse(freshSocket.sentPayloads[0]!).op).toBe(2);
+    freshSocket.emitGateway({
+      op: 0,
+      t: 'READY',
+      s: 1,
+      d: {
+        user: { id: BOT_ID },
+        session_id: 'session-2',
+        resume_gateway_url: RESUME_URL,
+      },
+    });
+    await freshConnection;
+    await client.destroy();
   });
 });

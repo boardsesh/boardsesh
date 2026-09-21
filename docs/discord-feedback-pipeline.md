@@ -50,8 +50,12 @@ two backend instances from dispatching the same message; a 15-minute local claim
 is the fallback when Redis is unavailable.
 
 After GitHub accepts the dispatch, the bot adds 👀. A successful run replaces it
-with ✅ and replies once with every issue URL. A failed dispatch or workflow uses
-❌ and asks the maintainer to mention the bot again.
+with ✅ and replies once with every issue URL. A failed dispatch uses ❌ and asks
+for a new mention. A failed workflow asks a maintainer to rerun that workflow for
+the same message, so already-created issues can be recovered by their markers.
+A failed success reaction or link reply is logged separately and does not turn
+completed issue creation into a failed workflow; both acknowledgements are
+attempted independently.
 
 ## Job isolation
 
@@ -64,8 +68,11 @@ The workflow uses three data stages plus a failure notifier:
 | `apply` | `discord-feedback` | contents/issues write | Discord bot token, workflow token |
 | `notify-failure` | `discord-feedback` | contents read | Discord bot token |
 
-The collect job re-fetches the message and repeats the guild, mention, and
-maintainer checks. Workflow inputs are not authorization.
+The collect and failure-notification jobs each re-fetch the exact message and
+repeat the guild, coordinates, human author, mention, instruction, and maintainer
+allowlist checks before writing anything. A rejected collect cannot trigger a
+reply to an unauthorized target through the failure handler. Workflow inputs
+are not authorization.
 
 Only `bundle.command.instruction` is an authorized instruction. The selected
 feedback and surrounding conversation remain untrusted public text. The triage
@@ -77,7 +84,10 @@ validator immediately after the model writes its artifact, and apply repeats
 the same validation before any GitHub or Discord write. A missing or changed
 bundle, or one invalid field, rejects the whole result. Titles, bodies, labels,
 decision indexes, command ID, duplicate URLs, and the five-issue cap are all
-checked in TypeScript rather than trusted to the model.
+checked in TypeScript rather than trusted to the model. Apply also fetches every
+duplicate target from the configured GitHub repository before any writes. A
+missing issue, a pull request using the same number, or an inaccessible target
+rejects the run rather than dropping feedback as a supposed duplicate.
 
 ## Idempotency
 
@@ -136,7 +146,12 @@ Set these on the production `boardsesh-backend` Railway service:
 Startup failures are logged under `[discord-issue-bot]` and reach the backend's
 normal error/Sentry transport without taking the Boardsesh API offline. Initial
 Discord connection failures retry from five seconds up to a five-minute cap;
-the gateway client also reconnects after an established session drops.
+the gateway client also reconnects after an established session drops. It saves
+the READY session ID, resume URL, and latest dispatch sequence, then sends Resume
+to replay missed events. A failed reconnect preserves that state. Non-resumable
+invalid-session responses and invalid/expired sequence closes start a new
+Identify handshake; stopping the bot also clears the session. See the
+[Discord Gateway resumption contract](https://docs.discord.com/developers/events/gateway#resuming).
 
 ### GitHub configuration
 

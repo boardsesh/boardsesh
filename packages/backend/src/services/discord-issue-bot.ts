@@ -258,7 +258,8 @@ export function startDiscordIssueBotFromEnvironment(
       retryDelayMilliseconds = INITIAL_CONNECT_RETRY_MS;
       logger.info('[discord-issue-bot] Connected', { guildId, allowedUserCount: allowedUserIds.size });
     } catch (error) {
-      await client.destroy().catch(() => undefined);
+      // connect owns failed-socket cleanup. destroy would discard the session
+      // needed to replay missed mentions after a failed resume attempt.
       scheduleReconnect(error);
     }
   };
