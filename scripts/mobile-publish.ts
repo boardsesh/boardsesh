@@ -233,7 +233,6 @@ const PREVIEW_BRANCH_PATTERN = /^pr-[1-9]\d*$/;
 
 const sleep = (delayMs: number): Promise<void> => new Promise((done) => setTimeout(done, delayMs));
 
-/** Injection points for the probe, so the retry behaviour is testable without a server or a clock. */
 /**
  * What the server said about one branch on one platform.
  *
@@ -468,14 +467,14 @@ async function publishToSelfHostedBranch(
     return runtimeVersions.get(target) ?? null;
   };
 
-  // Answers the retry wrapper's "did that 524 actually land?" question. Same probe
+  // Checks branch availability after a finalize 524. Same probe
   // as the post-publish verification below, so the two can never disagree; null
   // (nothing to probe with) reads as "not confirmed" and the ordinary ladder runs.
   const confirmPublished: PublishConfirmation = async (confirmedPlatform) => {
     const result = await isPreviewBranchSurfable(branchName, confirmedPlatform, serverUrl, {
       runtimeVersion: runtimeVersionFor(confirmedPlatform),
-      // The short schedule: this only asks whether THIS attempt's upload is live,
-      // and the retry ladder is behind it, so a wrong "no" costs one more attempt
+      // The short schedule checks branch availability, not this attempt's bundle
+      // identity. The retry ladder is behind it, so a wrong "no" costs one more attempt
       // rather than a red X. The full propagation-tolerant schedule would spend a
       // large share of the ~2.5-minute re-export it exists to avoid.
       delaysMs: SURFABILITY_CONFIRM_DELAYS_MS,
@@ -527,9 +526,8 @@ async function publishToSelfHostedBranch(
  * The last word on a preview publish: does a device on this fingerprint get
  * offered the branch?
  *
- * Failing here rather than warning is deliberate. A preview nobody can load is
- * indistinguishable from no preview at all, and the workflow's sticky comment
- * would otherwise tell testers to go and select a branch that is not there.
+ * A confirmed absent branch fails a deduplicated publish. A reported new upload
+ * or an inconclusive probe retains the upload result with a diagnostic warning.
  */
 export async function verifyPreviewBranchIsSurfable(
   branchName: string,

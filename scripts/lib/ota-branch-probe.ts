@@ -93,12 +93,12 @@ export const PROBE_TIMEOUT_MS = 15_000;
 export const SURFABILITY_PROBE_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 
 /**
- * The schedule for the mid-publish "did that 524 actually land?" confirmation,
+ * The schedule for the mid-publish branch-availability check after a 524,
  * which is a different question and deserves a different budget.
  *
  * The verification above waits out propagation because its answer is final. This
- * one only asks whether THIS attempt's upload is live, and it has the retry ladder
- * behind it — a wrong "no" costs one more attempt, not a red X. Spending the full
+ * one only asks whether the branch is offered for this runtime. It does not verify
+ * this attempt's bundle identity, and it has the retry ladder behind it — a wrong "no" costs one more attempt, not a red X. Spending the full
  * 31s-plus-six-capped-requests here on every 524 would eat a large share of the
  * ~2.5-minute re-export the confirmation exists to avoid.
  */

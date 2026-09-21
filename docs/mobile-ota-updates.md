@@ -1281,13 +1281,14 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   runtimeVersion and platform and did not list the branch; an unreachable server or a
   channel with surfing switched off are facts about the server, not about this publish,
   and degrade to "cannot check" alongside the missing-fingerprint case.
-- **A finalize 524 is confirmed, not re-exported.** `markUpdateAsUploaded` regularly outlives
+- **Branch availability can avoid another export after a finalize 524.** `markUpdateAsUploaded` regularly outlives
   Cloudflare's 100 s origin cap on `updates.boardsesh.com`, and the proxy answers 524 after the assets
   are already uploaded — the update has usually landed. The retry wrapper recognises that one endpoint
-  and probes the branch before spending another attempt: if it is live, the publish is recorded as
-  published on that attempt. That probe runs a SHORT schedule (~3s of waits), not the verification's
-  propagation-tolerant one — it only asks whether this attempt's upload is live, and the ladder is
-  behind it, so a wrong "no" costs one more attempt rather than a red X.
+  and probes the branch before spending another attempt: if the branch is offered for this runtime,
+  the wrapper accepts the attempt and skips another export. This checks availability only: an older
+  update on the same branch can satisfy it, so it does not prove this attempt's bundle is live.
+  That probe runs a short schedule (~3s of waits), with the retry ladder behind it; a negative
+  answer costs another attempt rather than immediately failing the job.
   #5422 burned **2h09m over six attempts** re-bundling ~5300 modules to
   reach the same timeout, which the in-app picker showed as "building" for the whole time (the chip
   reads the `pr-preview` deployment, which the publish job holds open). Any other 5xx, and a 524 seen

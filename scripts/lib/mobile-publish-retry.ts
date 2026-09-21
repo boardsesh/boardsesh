@@ -378,7 +378,7 @@ export async function publishSelfHostedPlatformWithRetry(
     // the retryable check, so it also rescues the LAST attempt.
     if (confirmPublished && scanner.sawFinalizeTimeout()) {
       stderr.write(
-        `[mobile:publish] ${label} publish timed out finalizing (HTTP 524); asking the update server whether it landed.\n`,
+        `[mobile:publish] ${label} publish timed out finalizing (HTTP 524); checking whether the branch is offered.\n`,
       );
       let confirmed = false;
       try {
@@ -389,7 +389,7 @@ export async function publishSelfHostedPlatformWithRetry(
       }
       if (confirmed) {
         stdout.write(
-          `[mobile:publish] ${label} update is live on the branch despite the 524 — treating attempt ${attempt} as published.\n`,
+          `[mobile:publish] ${label} branch is offered after the 524; skipping retries after attempt ${attempt}. Bundle identity was not verified.\n`,
         );
         return {
           platform: invocation.platform,
