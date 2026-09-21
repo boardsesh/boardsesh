@@ -21,6 +21,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Find gyms around a town, including nearby suburbs, without sharing your location. ([#5629](https://github.com/boardsesh/boardsesh/pull/5629))
 - Lose signal or hit server trouble and a banner now tells you, with how many changes are waiting to go out ([#5675](https://github.com/boardsesh/boardsesh/pull/5675))
   If some of your sends got stuck in an earlier outage, you get one note saying they're on their way
 - Bluetooth blocked for Boardsesh? The app now says so and takes you straight to Settings. ([#5676](https://github.com/boardsesh/boardsesh/pull/5676))

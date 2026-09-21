@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T22:21:19.541Z",
+  "generatedAt": "2026-09-21T23:19:22.877Z",
   "entries": [
+    {
+      "prNumber": 5629,
+      "category": "fixed",
+      "title": "Find gyms around a town, including nearby suburbs, without sharing your location.",
+      "mergedAt": "2026-09-21T23:17:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5629"
+    },
     {
       "prNumber": 5678,
       "category": "new",
