@@ -1353,8 +1353,9 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
     view.unmount();
   });
 
-  it('stops a deferred reconciliation when its coordinator generation changes', async () => {
+  it('stops a deferred reconciliation when its auth epoch changes', async () => {
     let releaseFirstChunk: (() => void) | undefined;
+    let authEpoch = 1;
     const persistClimbStatsReconciliationChunk = vi.fn<(events: readonly ClimbStatsEvent[]) => Promise<void>>(
       async () => {
         if (!releaseFirstChunk) await new Promise<void>((resolve) => (releaseFirstChunk = resolve));
@@ -1362,7 +1363,12 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
     );
     const rows = Array.from({ length: 1_500 }, (_value, index) => batchRow('climb-read', index, `${index + 1}`));
     const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue(rows);
-    const { wrapper: Wrapper } = createWrapper({ fetchClimbStatsForClimbs, persistClimbStatsReconciliationChunk });
+    const { wrapper: Wrapper } = createWrapper({
+      fetchClimbStatsForClimbs,
+      persistClimbStatsReconciliationChunk,
+      captureAuthEpoch: () => authEpoch,
+      isAuthEpochCurrent: (capturedEpoch) => capturedEpoch === authEpoch,
+    });
 
     function StatsRow() {
       useEffectiveClimbStats('kilter', 1, 'climb-read', 40, { ascensionistCount: 0 });
@@ -1375,12 +1381,14 @@ describe('useClimbStatsLayoutSync — persisting events locally', () => {
       </Wrapper>,
     );
     await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1));
-    resetClimbStatsReadCoordinatorForTests();
+    authEpoch = 2;
     releaseFirstChunk?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1));
 
     expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledTimes(1);
+    expect(
+      getClimbStatsSnapshot({ boardType: 'kilter', layoutId: 1, climbUuid: 'climb-read', angle: 40 }).canonical,
+    ).toMatchObject({ ascensionistCount: 499 });
     view.unmount();
   });
 

@@ -417,7 +417,6 @@ function persistClimbStatsSafely(adapter: BoardAdapter, event: ClimbStatsEvent):
 async function applyBatchRows(
   batch: ActiveBatch,
   rows: Awaited<ReturnType<NonNullable<BoardAdapter['fetchClimbStatsForClimbs']>>>,
-  generation: number,
 ): Promise<void> {
   const rowsByClimbUuid = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -428,8 +427,8 @@ async function applyBatchRows(
 
   const now = Date.now();
   const persistenceChunk: ClimbStatsEvent[] = [];
-  const flushPersistenceChunk = async (): Promise<boolean> => {
-    if (persistenceChunk.length === 0) return generation === coordinatorGeneration;
+  const flushPersistenceChunk = async (): Promise<void> => {
+    if (persistenceChunk.length === 0) return;
     const chunk = persistenceChunk.splice(0, persistenceChunk.length);
     try {
       await batch.adapter.persistClimbStatsReconciliationChunk?.(chunk);
@@ -437,16 +436,11 @@ async function applyBatchRows(
       // Local persistence is optional. A failure must not prevent later rows
       // from updating the canonical store or retiring their optimistic tokens.
     }
-    return generation === coordinatorGeneration;
   };
   for (const [readIndex, read] of batch.reads.entries()) {
-    if (generation !== coordinatorGeneration) {
+    if (!readIsCurrent(read)) {
       for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
       return;
-    }
-    if (!readIsCurrent(read)) {
-      completeRead(read);
-      continue;
     }
     recordReadAt(readKey(batch.boardType, read.key.climbUuid), now);
     for (const row of rowsByClimbUuid.get(read.key.climbUuid) ?? []) {
@@ -466,9 +460,12 @@ async function applyBatchRows(
         // autocommit read and no write, so sending every row is cheap.
         if (batch.adapter.persistClimbStatsReconciliationChunk) {
           persistenceChunk.push(canonical);
-          if (persistenceChunk.length === 500 && !(await flushPersistenceChunk())) {
-            for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
-            return;
+          if (persistenceChunk.length === 500) {
+            await flushPersistenceChunk();
+            if (!readIsCurrent(read)) {
+              for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
+              return;
+            }
           }
         } else {
           // Legacy/native-less adapters retain the synchronous event seam.
@@ -476,7 +473,7 @@ async function applyBatchRows(
         }
       }
     }
-    if (generation !== coordinatorGeneration) {
+    if (!readIsCurrent(read)) {
       for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
       return;
     }
@@ -528,7 +525,7 @@ function drainReadQueue(): void {
     .then((rows) => {
       if (generation !== coordinatorGeneration) return;
       if (batch.isRateLimitRetry) clearRateLimitPause(batch.group);
-      return applyBatchRows(batch, rows, generation);
+      return applyBatchRows(batch, rows);
     })
     .catch((error: unknown) => {
       if (generation !== coordinatorGeneration) return;
