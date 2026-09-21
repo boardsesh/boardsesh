@@ -6,15 +6,21 @@ but crawlers have used it to bypass Cloudflare. The web middleware can require
 Cloudflare overwrites that request header for `www.boardsesh.com`. It does not
 add the secret to responses. Browser clients never need to know the secret.
 
-`WEB_ORIGIN_VERIFY_ENABLED=1` activates the guard. Missing or short secrets then
-fail closed. With the flag absent, the middleware only strips the header, so the
-preparation deployment does not interrupt existing traffic. Preview and local
+`WEB_ORIGIN_VERIFY_ENABLED=1` activates the guard. The middleware and Cloudflare
+helper both require exactly 64 lowercase hexadecimal characters, representing
+32 random bytes; missing or malformed configured secrets fail closed. Any other
+flag value, including unset, `0` and `false`, leaves enforcement disabled. The
+middleware still strips supplied verification headers. Requests outside page
+middleware with no such header pass through without copying request headers, so
+the preparation deployment does not interrupt existing traffic. Preview and local
 services leave the flag unset. The only unauthenticated production exception is
 GET/HEAD on the exact `/api/health` route used by Railway health probes.
 
 The guard covers API routes, dotted paths, Next assets and image optimization,
 well-known files, and monitoring routes. Locale/session/CORS handling retains its
-previous narrower scope. The verification header is removed before forwarding,
+previous narrower scope, including the existing exclusion of dots anywhere in a
+page path; a dotted path still receives origin verification. The verification
+header is removed before forwarding,
 including Next external rewrites and the grades/angles API passthroughs. Existing
 user authorization and POST bodies remain intact. Server and edge Sentry hooks also strip the incoming header from
 errors, transactions, span attributes and structured-log attributes, because

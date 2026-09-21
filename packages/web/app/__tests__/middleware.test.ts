@@ -388,6 +388,10 @@ describe('middleware matcher config', () => {
     expect(isMatchedByConfig(pathname)).toBe(true);
   });
 
+  it('preserves the existing page-middleware exclusion for mid-path dots', () => {
+    expect(needsPageMiddleware('/foo/v1.5/bar')).toBe(false);
+  });
+
   it.each(['/_next/static/chunk.js', '/logo.png'])(
     'skips page middleware on static asset %s after origin verification',
     (pathname) => {
