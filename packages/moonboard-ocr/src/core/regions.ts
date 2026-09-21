@@ -13,7 +13,9 @@ export type ImageRegions = {
  */
 export function calculateAndroidRegions(width: number, height: number, rows: GridRows): ImageRegions {
   if (width !== 1008 || height !== 2244) {
-    throw new Error('Unvalidated Android screenshot dimensions: expected 1008x2244');
+    throw new Error(
+      `Unvalidated Android screenshot dimensions: expected 1008x2244 for android-pixel8pro-1.3.68 (Moon Climbing 1.3.68), received ${width}x${height}. Other devices or changed layouts require a separately calibrated profile.`,
+    );
   }
   return {
     header: { x: 0, y: 247, width, height: 202 },
