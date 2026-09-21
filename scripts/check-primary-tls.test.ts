@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   evaluateCertificate,
   isUnresolvedHost,
+  validateManifest,
   probePostgresCertificate,
   type ObservedCertificate,
   type TlsManifest,
@@ -282,28 +283,49 @@ describe('the committed manifest', () => {
     expect(reason).toMatch(/private key/i);
   });
 
-  // The shipped config has to be self-consistent, or the check is either red on
-  // arrival or quietly excusing something it never names.
-  it('acknowledges that same certificate as the pending rollout', () => {
+  // Asserted as a state machine rather than as a snapshot of today, so completing
+  // the rollout does not turn this file red and invite deleting it.
+  it('is in exactly one of the two legal states', () => {
     const committed = JSON.parse(readFileSync('docs/pg-primary-tls.json', 'utf8')) as TlsManifest;
-    const rejected = Object.keys(committed.rejectedFingerprints)[0]!;
-    expect(committed.pendingRollout).not.toBeNull();
-    expect(committed.pendingRollout?.fingerprint256).toBe(rejected);
-    expect(Date.parse(`${committed.pendingRollout?.warnUntil}T00:00:00Z`)).not.toBeNaN();
+    expect(validateManifest(committed)).toEqual([]);
+
+    if (committed.pendingRollout !== null) {
+      // Pre-rollout: the acknowledgement must name a certificate the manifest also
+      // rejects, and must carry a real deadline.
+      const rejected = Object.keys(committed.rejectedFingerprints).map((f) => f.replace(/:/g, '').toUpperCase());
+      expect(rejected).toContain(committed.pendingRollout.fingerprint256.replace(/:/g, '').toUpperCase());
+      expect(Date.parse(`${committed.pendingRollout.warnUntil}T00:00:00Z`)).not.toBeNaN();
+    } else {
+      // Post-rollout: something must actually be pinned, with a real floor.
+      expect(committed.expected).not.toBeNull();
+      expect(committed.expected?.subjectAltNames.length ?? 0).toBeGreaterThan(0);
+      expect(committed.expected?.minDaysRemaining ?? 0).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('validateManifest', () => {
+  // The window the rollout passes through: nothing pinned and nothing
+  // acknowledged means any certificate off the rejected list is accepted.
+  it('refuses a manifest that pins nothing and acknowledges nothing', () => {
+    const failures = validateManifest(manifest());
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('pins no certificate');
   });
 
-  it('still warns rather than fails as shipped today', () => {
-    const committed = JSON.parse(readFileSync('docs/pg-primary-tls.json', 'utf8')) as TlsManifest;
-    const servedToday: ObservedCertificate = {
-      fingerprint256: Object.keys(committed.rejectedFingerprints)[0]!,
-      subject: 'localhost',
-      issuer: 'localhost',
-      subjectAltNames: ['DNS:localhost'],
-      validTo: 'Aug 22 00:41:42 2036 GMT',
-      daysRemaining: 3600,
-    };
-    const verdict = evaluateCertificate(committed, servedToday, Date.now());
-    expect(verdict.failures).toEqual([]);
-    expect(verdict.warnings).toHaveLength(1);
+  it('accepts a manifest that pins a certificate', () => {
+    expect(
+      validateManifest(
+        manifest({ expected: { fingerprint256: 'AA:BB', subjectAltNames: ['DNS:x'], minDaysRemaining: 30 } }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a manifest that acknowledges a dated pending rollout', () => {
+    expect(
+      validateManifest(
+        manifest({ pendingRollout: { fingerprint256: 'AA:BB', reason: 'not yet', warnUntil: '2026-12-31' } }),
+      ),
+    ).toEqual([]);
   });
 });

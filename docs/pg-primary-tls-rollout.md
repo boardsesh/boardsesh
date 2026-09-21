@@ -170,6 +170,39 @@ mistake is silent at reload and fatal at the next restart.
 - Clear `pendingRollout` in `docs/pg-primary-tls.json` and fill `expected` with
   the new fingerprint, SAN set and a `minDaysRemaining` floor.
 
+## Every client that verifies needs the CA, and one already does
+
+A private CA makes trust distribution our job. That is the real cost of this choice,
+and it is easy to miss because the clients that would break are the ones doing the
+right thing.
+
+`packages/db/src/client/postgres.ts` maps `sslmode=verify-full` to
+`{ rejectUnauthorized: true }` with **no `ca`**, so it verifies against Node's
+bundled roots — which will never contain our CA. And
+`packages/hold-detector/src/config.ts` *requires* `verify-full` for any remote host.
+So the moment the leaf is installed, a hold detector pointed at the primary fails
+with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Nothing else notices, because every other
+pool connects with `ssl: 'require'` and does not verify at all.
+
+`docs/db-connectivity.md` already prescribes the mechanism: **`NODE_EXTRA_CA_CERTS`
+at process startup**, not `sslrootcert`, because the data and queue drivers read
+that option differently. So for each verifying client:
+
+1. Mount or write the CA certificate — `ca_certificate` from the vault item, the
+   same bytes committed at `roles/boardsesh_dr/files/primary-ca.crt` in
+   `blackheathdc-ansible`. Public material; never the private key.
+2. Set `NODE_EXTRA_CA_CERTS` to that path **before Node starts**. It is read once at
+   startup, so setting it later in the process does nothing.
+3. Verify both drivers reach authentication against the primary, and still reject an
+   untrusted certificate and a wrong hostname. `packages/db/src/client/__tests__/postgres-tls.test.ts`
+   is the existing matrix for that.
+
+Do this **before** installing the leaf if any verifying client is already running,
+and treat it as part of the rollout rather than follow-up: the hold-detector release
+gate in `docs/spray-recognition-rollout.md` is one of the things this work is meant
+to unblock, and shipping the certificate without the trust step would block it
+differently instead of unblocking it.
+
 ## Rollback
 
 **Redeploy the previous image digest.** Not `ALTER SYSTEM RESET ssl_cert_file`.

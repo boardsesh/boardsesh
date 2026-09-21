@@ -17,7 +17,7 @@
   },
   "pendingRollout": {
     "fingerprint256": "D9:F6:91:05:8E:A7:95:D3:23:FC:33:5F:E4:22:94:DC:73:44:6A:D4:0A:2F:2B:2D:7D:85:34:C4:53:4A:BF:50",
-    "reason": "The private CA has not been minted and the primary still serves the base image certificate. Tracked in docs/pg-primary-tls-rollout.md.",
+    "reason": "The private CA is minted (Boardsesh DR Primary CA, fingerprint 10:A4:4C:0C:\u2026:1A:63:B3) but its certificate is not installed on the primary yet, so the primary still serves the base image certificate. Tracked in docs/pg-primary-tls-rollout.md.",
     "warnUntil": "2026-12-31"
   },
   "expected": null

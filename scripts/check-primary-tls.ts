@@ -223,8 +223,33 @@ export function isUnresolvedHost(error: unknown): boolean {
   );
 }
 
+/**
+ * The manifest states the two things are mutually exclusive, and it has to be one
+ * or the other. With `expected: null` nothing is pinned -- any certificate with a
+ * fingerprint that is not on the rejected list passes, whatever its issuer, SANs or
+ * expiry -- so `pendingRollout` is what makes that window deliberate and dated.
+ * Clearing pendingRollout without filling expected leaves the check accepting
+ * anything, silently and indefinitely.
+ */
+export function validateManifest(manifest: TlsManifest): string[] {
+  if (manifest.expected === null && manifest.pendingRollout === null) {
+    return [
+      'the manifest pins no certificate and acknowledges no pending rollout, so any ' +
+        'certificate not on the rejected list would pass: set `expected` now that the ' +
+        'rollout is done, or restore `pendingRollout` with a deadline',
+    ];
+  }
+  return [];
+}
+
 export function readManifest(path: string): TlsManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as TlsManifest;
+}
+
+/** GitHub renders these in the run summary; locally they are just a prefix. */
+function annotate(level: 'warning' | 'error', message: string): string {
+  const oneLine = message.replace(/\n\s*/g, ' ');
+  return process.env.GITHUB_ACTIONS === 'true' ? `::${level}::${oneLine}` : `${level.toUpperCase()}: ${oneLine}`;
 }
 
 async function main(): Promise<number> {
@@ -235,14 +260,24 @@ async function main(): Promise<number> {
 
   const manifest = readManifest(manifestPath);
 
+  const manifestFailures = validateManifest(manifest);
+  if (manifestFailures.length > 0) {
+    for (const failure of manifestFailures) console.error(annotate('error', failure));
+    return 1;
+  }
+
   let observed: ObservedCertificate;
   try {
     observed = await probePostgresCertificate(manifest);
   } catch (error) {
     if (manifest.pendingRollout !== null && isUnresolvedHost(error)) {
-      console.log(`[primary-tls] WARNING: ${manifest.host} does not resolve yet.`);
-      console.log(`[primary-tls]   ${manifest.pendingRollout.reason}`);
-      console.log(`[primary-tls]   This is a failure once the rollout is complete and pendingRollout is cleared.`);
+      console.log(
+        annotate(
+          'warning',
+          `${manifest.host} does not resolve yet. ${manifest.pendingRollout.reason} ` +
+            'This becomes a failure once the rollout is complete and pendingRollout is cleared.',
+        ),
+      );
       return 0;
     }
     throw error;
@@ -257,11 +292,11 @@ async function main(): Promise<number> {
 
   const { failures, warnings } = evaluateCertificate(manifest, observed);
 
-  for (const warning of warnings) console.log(`\n[primary-tls] WARNING: ${warning}`);
+  for (const warning of warnings) console.log(annotate('warning', warning));
 
   if (failures.length > 0) {
     console.error('\n[primary-tls] the primary is not serving the declared certificate:\n');
-    for (const failure of failures) console.error(`  - ${failure}`);
+    for (const failure of failures) console.error(annotate('error', failure));
     return 1;
   }
 
