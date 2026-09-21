@@ -8,6 +8,7 @@ const GATEWAY_HANDSHAKE_TIMEOUT_MS = 30_000;
 const GATEWAY_DISPATCH = 0;
 const GATEWAY_HEARTBEAT = 1;
 const GATEWAY_IDENTIFY = 2;
+const GATEWAY_RESUME = 6;
 const GATEWAY_RECONNECT = 7;
 const GATEWAY_INVALID_SESSION = 9;
 const GATEWAY_HELLO = 10;
@@ -33,6 +34,7 @@ export type DiscordGatewayClient = {
   onMessage: (listener: (message: DiscordGatewayMessage) => void) => void;
   onError: (listener: (error: unknown) => void) => void;
   onDisconnect: (listener: (error: Error) => void) => void;
+  /** Failed connects clean up their socket but retain resumable session state. */
   connect: (token: string) => Promise<void>;
   destroy: () => Promise<void>;
 };
@@ -123,6 +125,10 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let sequenceNumber: number | null = null;
   let botUserId: string | null = null;
+  let sessionId: string | null = null;
+  let resumeGatewayUrl: string | null = null;
+  let sessionToken: string | null = null;
+  let stopConnection: (() => void) | null = null;
   let intentionallyClosed = false;
   let messageListener: (message: DiscordGatewayMessage) => void = () => undefined;
   let errorListener: (error: unknown) => void = () => undefined;
@@ -132,6 +138,14 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
     if (heartbeatTimer === null) return;
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
+  };
+
+  const clearSession = (): void => {
+    sequenceNumber = null;
+    botUserId = null;
+    sessionId = null;
+    resumeGatewayUrl = null;
+    sessionToken = null;
   };
 
   const requestDiscord = async (path: string, init: RequestInit): Promise<void> => {
@@ -156,11 +170,15 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
     async connect(token): Promise<void> {
       if (socket !== null) throw new Error('Discord Gateway client is already connected');
       intentionallyClosed = false;
-      sequenceNumber = null;
-      botUserId = null;
+      if (sessionToken !== token) clearSession();
+      sessionToken = token;
+      // Discord replays missed dispatches when resuming the same session.
+      // https://docs.discord.com/developers/events/gateway#resuming
+      const canResume =
+        sessionId !== null && resumeGatewayUrl !== null && sequenceNumber !== null && botUserId !== null;
 
       await new Promise<void>((resolve, reject) => {
-        const currentSocket = createSocket(DISCORD_GATEWAY_URL);
+        const currentSocket = createSocket(canResume ? resumeGatewayUrl! : DISCORD_GATEWAY_URL);
         socket = currentSocket;
         let connectionResolved = false;
         let connectionRejected = false;
@@ -187,7 +205,10 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
           disconnectHandled = true;
           clearHeartbeat();
           clearHandshakeTimer();
-          if (socket === currentSocket) socket = null;
+          if (socket === currentSocket) {
+            socket = null;
+            stopConnection = null;
+          }
           if (intentionallyClosed) {
             if (!connectionResolved && !connectionRejected) {
               connectionRejected = true;
@@ -203,6 +224,14 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
           if (connectionResolved) disconnectListener(error);
         };
 
+        stopConnection = () => handleDisconnect(new Error('Boardsesh backend stopping'));
+        const markConnected = (): void => {
+          if (connectionResolved || connectionRejected) return;
+          connectionResolved = true;
+          clearHandshakeTimer();
+          resolve();
+        };
+
         handshakeTimer = setTimeout(() => {
           handleDisconnect(new Error(`Discord Gateway did not become ready within ${GATEWAY_HANDSHAKE_TIMEOUT_MS}ms`));
           currentSocket.terminate();
@@ -210,13 +239,26 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
         if (typeof handshakeTimer.unref === 'function') handshakeTimer.unref();
 
         currentSocket.on('message', (rawData: RawData) => {
+          if (socket !== currentSocket || disconnectHandled) return;
           try {
             const parsedPayload: unknown = JSON.parse(rawDataToText(rawData));
             if (!isJsonRecord(parsedPayload) || typeof parsedPayload.op !== 'number') return;
-            if (typeof parsedPayload.s === 'number') sequenceNumber = parsedPayload.s;
+            if (
+              parsedPayload.op === GATEWAY_DISPATCH &&
+              typeof parsedPayload.s === 'number' &&
+              Number.isSafeInteger(parsedPayload.s) &&
+              parsedPayload.s >= 0
+            ) {
+              sequenceNumber = parsedPayload.s;
+            }
 
             if (parsedPayload.op === GATEWAY_HELLO) {
-              if (!isJsonRecord(parsedPayload.d) || typeof parsedPayload.d.heartbeat_interval !== 'number') {
+              if (
+                !isJsonRecord(parsedPayload.d) ||
+                typeof parsedPayload.d.heartbeat_interval !== 'number' ||
+                !Number.isFinite(parsedPayload.d.heartbeat_interval) ||
+                parsedPayload.d.heartbeat_interval <= 0
+              ) {
                 throw new Error('Discord Gateway HELLO omitted heartbeat_interval');
               }
               clearHeartbeat();
@@ -229,6 +271,10 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
                 sendHeartbeat();
               }, parsedPayload.d.heartbeat_interval);
               if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+              if (canResume) {
+                sendGatewayPayload({ op: GATEWAY_RESUME, d: { token, session_id: sessionId, seq: sequenceNumber } });
+                return;
+              }
               sendGatewayPayload({
                 op: GATEWAY_IDENTIFY,
                 d: {
@@ -253,6 +299,7 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
               return;
             }
             if (parsedPayload.op === GATEWAY_RECONNECT || parsedPayload.op === GATEWAY_INVALID_SESSION) {
+              if (parsedPayload.op === GATEWAY_INVALID_SESSION && parsedPayload.d !== true) clearSession();
               currentSocket.close(4000, 'Discord requested reconnect');
               return;
             }
@@ -264,12 +311,27 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
               if (readyUser === null || typeof readyUser.id !== 'string') {
                 throw new Error('Discord Gateway READY omitted the bot user id');
               }
-              botUserId = readyUser.id;
-              if (!connectionResolved && !connectionRejected) {
-                connectionResolved = true;
-                clearHandshakeTimer();
-                resolve();
+              if (
+                typeof readyPayload?.session_id !== 'string' ||
+                !readyPayload.session_id ||
+                typeof readyPayload.resume_gateway_url !== 'string'
+              ) {
+                throw new Error('Discord Gateway READY omitted session resumption details');
               }
+              const resumeUrl = new URL(readyPayload.resume_gateway_url);
+              if (resumeUrl.protocol !== 'wss:' || !resumeUrl.hostname.endsWith('.discord.gg')) {
+                throw new Error('Discord Gateway READY returned an invalid resume URL');
+              }
+              resumeUrl.searchParams.set('v', '10');
+              resumeUrl.searchParams.set('encoding', 'json');
+              botUserId = readyUser.id;
+              sessionId = readyPayload.session_id;
+              resumeGatewayUrl = resumeUrl.toString();
+              markConnected();
+              return;
+            }
+            if (parsedPayload.t === 'RESUMED' && canResume) {
+              markConnected();
               return;
             }
 
@@ -284,11 +346,14 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
           }
         });
         currentSocket.on('error', (error) => {
+          if (socket !== currentSocket || disconnectHandled) return;
           errorListener(error);
           handleDisconnect(error);
           currentSocket.terminate();
         });
         currentSocket.on('close', (code, reason) => {
+          if (disconnectHandled) return;
+          if ([1000, 1001, 4007, 4009].includes(code)) clearSession();
           handleDisconnect(
             new Error(`Discord Gateway closed (${code}): ${reason.toString('utf8') || 'no reason provided'}`),
           );
@@ -297,9 +362,10 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
     },
     async destroy(): Promise<void> {
       intentionallyClosed = true;
-      clearHeartbeat();
+      clearSession();
       const currentSocket = socket;
-      socket = null;
+      stopConnection?.();
+      clearHeartbeat();
       if (currentSocket === null) return;
       if (currentSocket.readyState === WebSocket.OPEN || currentSocket.readyState === WebSocket.CONNECTING) {
         currentSocket.close(1000, 'Boardsesh backend stopping');

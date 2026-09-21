@@ -8,6 +8,7 @@ import {
   applyTriage,
   bundleDigest,
   collectMentionCommand,
+  GitHubIssueClient,
   notifyFailure,
   runCli,
   validateTriageArtifacts,
@@ -329,12 +330,13 @@ function applyDependencies(existingIssue: { number: number; htmlUrl: string } | 
       htmlUrl: `https://github.com/boardsesh/boardsesh/issues/${createdDrafts.length}`,
     };
   });
-  const issueSink: IssueSink = {
-    findIssueByMarker,
-    ensureLabels: vi.fn(async () => undefined),
-    createIssue,
-    uploadAttachment: vi.fn(async () => null),
-  };
+  const findIssueByUrl = vi.fn(async (): Promise<{ number: number; htmlUrl: string } | null> => ({
+    number: 88,
+    htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/88',
+  }));
+  const ensureLabels = vi.fn(async () => undefined);
+  const uploadAttachment = vi.fn(async () => null);
+  const issueSink: IssueSink = { findIssueByMarker, findIssueByUrl, ensureLabels, createIssue, uploadAttachment };
   const addReaction = vi.fn(async () => undefined);
   const removeReaction = vi.fn(async () => undefined);
   const postReply = vi.fn(async () => undefined);
@@ -343,7 +345,19 @@ function applyDependencies(existingIssue: { number: number; htmlUrl: string } | 
     removeReaction,
     postReply,
   };
-  return { issueSink, writer, createdDrafts, findIssueByMarker, createIssue, addReaction, removeReaction, postReply };
+  return {
+    issueSink,
+    writer,
+    createdDrafts,
+    findIssueByMarker,
+    findIssueByUrl,
+    ensureLabels,
+    uploadAttachment,
+    createIssue,
+    addReaction,
+    removeReaction,
+    postReply,
+  };
 }
 
 describe('applyTriage', () => {
@@ -403,6 +417,83 @@ describe('applyTriage', () => {
     expect(deps.postReply).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['addReaction', 'postReply'] as const)(
+    'keeps completed issues successful when %s fails',
+    async (failedWrite) => {
+      const deps = applyDependencies();
+      const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+      deps[failedWrite].mockRejectedValue(new Error('Discord unavailable'));
+      const result = await applyTriage(
+        bundle(),
+        { decisions: [decision()] },
+        { dryRun: false },
+        {
+          ...deps,
+          fetcher: fetch,
+          logger,
+        },
+      );
+      expect(result).toEqual({ filed: 1, recovered: 0, duplicates: 0 });
+      expect(deps.addReaction).toHaveBeenCalledOnce();
+      expect(deps.postReply).toHaveBeenCalledOnce();
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Issues processed successfully'));
+    },
+  );
+
+  it('verifies all duplicate targets before writing an earlier new issue', async () => {
+    const deps = applyDependencies();
+    deps.findIssueByUrl.mockResolvedValue(null);
+    await expect(
+      applyTriage(
+        bundle(),
+        {
+          decisions: [
+            decision(),
+            {
+              ...decision(2),
+              verdict: 'duplicate',
+              duplicateOf: 'https://github.com/boardsesh/boardsesh/issues/88',
+            },
+          ],
+        },
+        { dryRun: false },
+        { ...deps, fetcher: fetch, logger: console },
+      ),
+    ).rejects.toThrow(/not an existing repository issue/);
+    expect(deps.createIssue).not.toHaveBeenCalled();
+    expect(deps.ensureLabels).not.toHaveBeenCalled();
+    expect(deps.uploadAttachment).not.toHaveBeenCalled();
+    expect(deps.removeReaction).not.toHaveBeenCalled();
+    expect(deps.addReaction).not.toHaveBeenCalled();
+    expect(deps.postReply).not.toHaveBeenCalled();
+  });
+
+  it('links a verified duplicate without creating an issue', async () => {
+    const deps = applyDependencies();
+    const result = await applyTriage(
+      bundle(),
+      {
+        decisions: [
+          {
+            ...decision(),
+            verdict: 'duplicate',
+            duplicateOf: 'https://github.com/boardsesh/boardsesh/issues/88',
+          },
+        ],
+      },
+      { dryRun: false },
+      { ...deps, fetcher: fetch, logger: console },
+    );
+    expect(result).toEqual({ filed: 0, recovered: 0, duplicates: 1 });
+    expect(deps.createIssue).not.toHaveBeenCalled();
+    expect(deps.postReply).toHaveBeenCalledWith(
+      '500000000000000001',
+      COMMAND_ID,
+      GUILD_ID,
+      expect.stringContaining('/issues/88'),
+    );
+  });
+
   it('performs no writes when any decision is invalid', async () => {
     const deps = applyDependencies();
     await expect(
@@ -424,8 +515,13 @@ describe('applyTriage', () => {
   it('turns the pending reaction into a failure reply', async () => {
     const deps = applyDependencies();
     await notifyFailure(
-      { channelId: '500000000000000001', triggerMessageId: COMMAND_ID, guildId: GUILD_ID },
-      deps.writer,
+      {
+        channelId: '500000000000000001',
+        triggerMessageId: COMMAND_ID,
+        guildId: GUILD_ID,
+        allowedUserIds: new Set([MAINTAINER_ID]),
+      },
+      { source: source(), writer: deps.writer },
     );
     expect(deps.removeReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '👀');
     expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '❌');
@@ -448,6 +544,33 @@ it('does not notify Discord when a failure handler is a dry run', async () => {
   expect(logger.log).toHaveBeenCalledWith('[discord-feedback] (dry run) skipped Discord failure notification');
 });
 
+it.each([
+  ['wrong guild', { getChannel: vi.fn(async () => channel({ guild_id: '600000000000000001' })) }],
+  ['unlisted author', { getMessage: vi.fn(async () => message({ author: { id: USER_ID } })) }],
+  ['bot author', { getMessage: vi.fn(async () => message({ author: { id: MAINTAINER_ID, bot: true } })) }],
+  ['missing mention', { getMessage: vi.fn(async () => message({ mentions: [], content: 'unrelated' })) }],
+  ['wrong coordinates', { getMessage: vi.fn(async () => message({ id: '600000000000000001' })) }],
+] as const)('refuses all failure-notifier writes for %s', async (_reason, overrides) => {
+  const deps = applyDependencies();
+  await expect(
+    notifyFailure(
+      {
+        channelId: '500000000000000001',
+        triggerMessageId: COMMAND_ID,
+        guildId: GUILD_ID,
+        allowedUserIds: new Set([MAINTAINER_ID]),
+      },
+      {
+        source: source(overrides),
+        writer: deps.writer,
+      },
+    ),
+  ).rejects.toThrow();
+  expect(deps.removeReaction).not.toHaveBeenCalled();
+  expect(deps.addReaction).not.toHaveBeenCalled();
+  expect(deps.postReply).not.toHaveBeenCalled();
+});
+
 it('notifies Discord through the live failure-handler CLI path', async () => {
   const requests: Array<{ method: string; url: string; body: string | null }> = [];
   const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -456,6 +579,10 @@ it('notifies Discord through the live failure-handler CLI path', async () => {
       url: String(input),
       body: typeof init?.body === 'string' ? init.body : null,
     });
+    if (String(input).endsWith('/users/@me')) return Response.json({ id: BOT_ID });
+    if ((init?.method ?? 'GET') === 'GET') {
+      return Response.json(String(input).includes('/messages/') ? message() : channel());
+    }
     return new Response(null, { status: 204 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -464,14 +591,14 @@ it('notifies Discord through the live failure-handler CLI path', async () => {
     const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
     const exitCode = await runCli(
       ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
-      { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID },
+      { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID, DISCORD_ISSUE_TRIGGER_USER_IDS: MAINTAINER_ID },
       logger,
     );
 
     expect(exitCode).toBe(0);
-    expect(requests.map(({ method }) => method)).toEqual(['DELETE', 'DELETE', 'PUT', 'POST']);
-    expect(requests[2]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
-    expect(requests[3]?.body).toContain('Mention me again to retry.');
+    expect(requests.map(({ method }) => method)).toEqual(['GET', 'GET', 'GET', 'DELETE', 'DELETE', 'PUT', 'POST']);
+    expect(requests[5]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
+    expect(requests[6]?.body).toContain('rerun the workflow for this message');
   } finally {
     vi.unstubAllGlobals();
   }
@@ -535,4 +662,43 @@ it('runs artifact validation without Discord or GitHub credentials', async () =>
 
 it('pins bundles with a stable SHA-256 digest', () => {
   expect(bundleDigest('hello')).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
+});
+
+describe('GitHub duplicate verification', () => {
+  const issueUrl = 'https://github.com/boardsesh/boardsesh/issues/88';
+  it.each([
+    [200, { number: 88, html_url: issueUrl }, true],
+    [404, { message: 'Not Found' }, false],
+    [200, { number: 88, html_url: issueUrl, pull_request: { url: 'pull' } }, false],
+    [200, { number: 89, html_url: issueUrl }, false],
+    [200, { number: 88, html_url: 'https://github.com/other/repo/issues/88' }, false],
+  ] as const)('only accepts an existing matching issue: %s %j', async (status, payload, expected) => {
+    const fetcher = vi.fn(async () => Response.json(payload, { status }));
+    const client = new GitHubIssueClient({ repositoryFullName: 'boardsesh/boardsesh', token: 'test', fetcher });
+    expect(await client.findIssueByUrl(issueUrl)).toEqual(expected ? { number: 88, htmlUrl: issueUrl } : null);
+    expect(fetcher.mock.calls).toHaveLength(1);
+  });
+
+  it('rejects URLs outside the configured repository without fetching', async () => {
+    const fetcher = vi.fn(async () => Response.json({}));
+    const client = new GitHubIssueClient({ repositoryFullName: 'boardsesh/boardsesh', token: 'test', fetcher });
+    for (const invalidUrl of [
+      'https://github.com/other/repo/issues/88',
+      issueUrl + '?x=1',
+      issueUrl.replace('/issues/', '/pull/'),
+      issueUrl.replace('https:', 'http:'),
+    ]) {
+      expect(await client.findIssueByUrl(invalidUrl)).toBeNull();
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a GitHub permission failure', async () => {
+    const client = new GitHubIssueClient({
+      repositoryFullName: 'boardsesh/boardsesh',
+      token: 'test',
+      fetcher: vi.fn(async () => Response.json({}, { status: 403 })),
+    });
+    await expect(client.findIssueByUrl(issueUrl)).rejects.toThrow(/GitHub 403/);
+  });
 });

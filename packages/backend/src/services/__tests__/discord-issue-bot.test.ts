@@ -271,6 +271,7 @@ describe('startDiscordIssueBotFromEnvironment', () => {
     expect(connect).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(connect).toHaveBeenCalledTimes(2);
+    expect(fakeClient.destroy).not.toHaveBeenCalled();
 
     await handle?.stop();
     expect(fakeClient.destroy).toHaveBeenCalled();

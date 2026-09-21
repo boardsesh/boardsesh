@@ -68,6 +68,7 @@ export type DiscordWriter = {
 
 export type IssueSink = {
   findIssueByMarker(marker: string): Promise<{ number: number; htmlUrl: string } | null>;
+  findIssueByUrl(issueUrl: string): Promise<{ number: number; htmlUrl: string } | null>;
   ensureLabels(labels: string[]): Promise<void>;
   createIssue(issue: IssueDraft): Promise<{ number: number; htmlUrl: string }>;
   uploadAttachment(filename: string, bytes: Uint8Array, contentType: string | null): Promise<string | null>;
@@ -315,6 +316,22 @@ export class GitHubIssueClient implements IssueSink {
     return hit && (payload.total_count ?? 0) > 0 ? { number: hit.number, htmlUrl: hit.html_url } : null;
   }
 
+  async findIssueByUrl(issueUrl: string): Promise<{ number: number; htmlUrl: string } | null> {
+    const prefix = `https://github.com/${this.owner}/${this.repository}/issues/`;
+    if (!issueUrl.startsWith(prefix) || !/^[1-9]\d*$/.test(issueUrl.slice(prefix.length))) return null;
+    const issueNumber = Number(issueUrl.slice(prefix.length));
+    if (!Number.isSafeInteger(issueNumber)) return null;
+    try {
+      const response = await this.githubFetch(`/repos/${this.owner}/${this.repository}/issues/${issueNumber}`);
+      const issue = (await response.json()) as { number?: number; html_url?: string; pull_request?: unknown };
+      if (issue.pull_request || issue.number !== issueNumber || issue.html_url !== issueUrl) return null;
+      return { number: issueNumber, htmlUrl: issueUrl };
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   async ensureLabels(labels: string[]): Promise<void> {
     for (const label of labels) {
       if (this.ensuredLabels.has(label)) continue;
@@ -428,11 +445,8 @@ function collectedSource(args: {
 }
 
 /** Re-fetch and re-authorize the exact command; workflow inputs are never trusted. */
-export async function collectMentionCommand(
-  options: CollectOptions,
-  deps: { source: DiscordSource; now?: () => Date },
-): Promise<CollectBundle> {
-  const now = deps.now ?? (() => new Date());
+async function authorizeMentionCommand(options: CollectOptions, source: DiscordSource) {
+  if (options.allowedUserIds.size === 0) throw new Error('DISCORD_ISSUE_TRIGGER_USER_IDS is empty');
   for (const [label, discordId] of [
     ['guild', options.guildId],
     ['channel', options.channelId],
@@ -441,9 +455,9 @@ export async function collectMentionCommand(
     if (!/^\d{16,20}$/.test(discordId)) throw new Error(`Invalid Discord ${label} id`);
   }
   const [selfUserId, commandChannel, command] = await Promise.all([
-    deps.source.getSelfUserId(),
-    deps.source.getChannel(options.channelId),
-    deps.source.getMessage(options.channelId, options.triggerMessageId),
+    source.getSelfUserId(),
+    source.getChannel(options.channelId),
+    source.getMessage(options.channelId, options.triggerMessageId),
   ]);
 
   if (commandChannel.guild_id !== options.guildId) throw new Error('Command channel is outside the configured guild');
@@ -461,6 +475,19 @@ export async function collectMentionCommand(
   if (!mentionsUser(command, selfUserId)) throw new Error('Command does not mention this bot');
   const instruction = extractCommandInstruction(command.content ?? '', selfUserId);
   if (!instruction) throw new Error('Command has no instruction after the bot mention');
+
+  return { selfUserId, commandChannel, command, instruction, authorId: command.author.id };
+}
+
+export async function collectMentionCommand(
+  options: CollectOptions,
+  deps: { source: DiscordSource; now?: () => Date },
+): Promise<CollectBundle> {
+  const now = deps.now ?? (() => new Date());
+  const { selfUserId, commandChannel, command, instruction, authorId } = await authorizeMentionCommand(
+    options,
+    deps.source,
+  );
 
   let source: CollectedSource;
   let sourceKind: CollectBundle['command']['sourceKind'];
@@ -540,7 +567,7 @@ export async function collectMentionCommand(
       guildId: options.guildId,
       sourceKind,
       instruction,
-      authorRef: authorRef(options.guildId, command.author.id),
+      authorRef: authorRef(options.guildId, authorId),
       timestamp: command.timestamp ?? '',
       jumpUrl: messageJumpUrl(options.guildId, command.channel_id, command.id),
     },
@@ -588,6 +615,15 @@ export async function applyTriage(
     return { filed: 0, recovered: 0, duplicates: 0 };
   }
 
+  // Resolve every duplicate before any labels, attachments, issues, or Discord writes.
+  const duplicateIssues = new Map<number, { number: number; htmlUrl: string }>();
+  for (const decision of accepted) {
+    if (decision.verdict !== 'duplicate') continue;
+    const existing = await deps.issueSink.findIssueByUrl(decision.duplicateOf!);
+    if (!existing) throw new Error(`Duplicate target is not an existing repository issue: ${decision.duplicateOf}`);
+    duplicateIssues.set(decision.issueIndex, existing);
+  }
+
   const outcomes: AppliedIssue[] = [];
   const result: ApplyResult = { filed: 0, recovered: 0, duplicates: 0 };
   const existingIssueByIndex = new Map<number, { number: number; htmlUrl: string }>();
@@ -604,7 +640,11 @@ export async function applyTriage(
 
   for (const decision of accepted) {
     if (decision.verdict === 'duplicate') {
-      outcomes.push({ kind: 'duplicate', title: decision.title, issueUrl: decision.duplicateOf! });
+      outcomes.push({
+        kind: 'duplicate',
+        title: decision.title,
+        issueUrl: duplicateIssues.get(decision.issueIndex)!.htmlUrl,
+      });
       result.duplicates += 1;
       continue;
     }
@@ -623,20 +663,28 @@ export async function applyTriage(
 
   await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '👀').catch(() => undefined);
   await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '❌').catch(() => undefined);
-  await deps.writer.addReaction(bundle.command.channelId, bundle.command.messageId, '✅');
-  await deps.writer.postReply(
-    bundle.command.channelId,
-    bundle.command.messageId,
-    bundle.guildId,
-    buildReplyMessage(outcomes, attachmentUrls.length > 0),
-  );
+  await deps.writer.addReaction(bundle.command.channelId, bundle.command.messageId, '✅').catch((error: unknown) => {
+    deps.logger.warn(`[discord-feedback] Issues processed successfully; success reaction failed: ${String(error)}`);
+  });
+  await deps.writer
+    .postReply(
+      bundle.command.channelId,
+      bundle.command.messageId,
+      bundle.guildId,
+      buildReplyMessage(outcomes, attachmentUrls.length > 0),
+    )
+    .catch((error: unknown) => {
+      deps.logger.warn(`[discord-feedback] Issues processed successfully; issue-link reply failed: ${String(error)}`);
+    });
   return result;
 }
 
 export async function notifyFailure(
-  args: { channelId: string; triggerMessageId: string; guildId: string },
-  writer: DiscordWriter,
+  args: CollectOptions,
+  deps: { source: DiscordSource; writer: DiscordWriter },
 ): Promise<void> {
+  await authorizeMentionCommand(args, deps.source);
+  const { writer } = deps;
   await writer.removeReaction(args.channelId, args.triggerMessageId, '👀').catch(() => undefined);
   await writer.removeReaction(args.channelId, args.triggerMessageId, '✅').catch(() => undefined);
   await writer.addReaction(args.channelId, args.triggerMessageId, '❌');
@@ -644,7 +692,7 @@ export async function notifyFailure(
     args.channelId,
     args.triggerMessageId,
     args.guildId,
-    'I could not create the issue. Mention me again to retry.',
+    'Issue processing did not finish. A maintainer can rerun the workflow for this message to retry.',
   );
 }
 
@@ -726,8 +774,13 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
       return 0;
     }
     await notifyFailure(
-      { channelId: options.channelId, triggerMessageId: options.triggerMessageId, guildId: options.guildId },
-      discord,
+      {
+        channelId: options.channelId,
+        triggerMessageId: options.triggerMessageId,
+        guildId: options.guildId,
+        allowedUserIds: options.allowedUserIds,
+      },
+      { source: discord, writer: discord },
     );
     return 0;
   }
