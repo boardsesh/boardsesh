@@ -1,19 +1,30 @@
+import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
 import { Card } from '../../Card';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
 import { Button } from '../../Button';
 import { PressableSurface } from '../../PressableSurface';
+import { BoardImageNative } from '../../BoardImageNative';
 import { useTheme } from '../../../providers/theme-provider';
 import { hapticLight } from '../../../lib/haptics';
-import { spacing } from '../../../theme/tokens';
+import { getBoardRenderData } from '../../../lib/board-details';
+import { parseSetIds } from '../../../lib/board-presence/parse-set-ids';
+import { useSprayWallToken } from '../../../lib/spray/use-spray-wall-token';
+import { borderRadius, spacing } from '../../../theme/tokens';
+
+const BOARD_THUMB_WIDTH = 44;
+const BOARD_THUMB_HEIGHT = 56;
 
 /** The board fields shown at a glance — a structural subset of the active board. */
 type BoardSummary = {
   name: string;
   boardType: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
   sizeName?: string | null;
   angle?: number | null;
 };
@@ -72,7 +83,7 @@ export function BoardSummaryCard({
             style={styles.navigationRow}
           >
             <View style={styles.iconColumn}>
-              <Icon name="search" size={22} color={systemColors.label} />
+              <BoardThumbnail board={board} />
             </View>
             <View style={styles.textColumn}>
               <Text variant="headline" color={systemColors.label}>
@@ -142,6 +153,55 @@ export function BoardSummaryCard({
   );
 }
 
+const BoardThumbnail = memo(function BoardThumbnail({ board }: { board: BoardSummary }) {
+  const { systemColors } = useTheme();
+  const { boardType, layoutId, sizeId, setIds } = board;
+  const boardName = toBoardName(boardType);
+  // Spray walls can arrive or reset after the saved board has been restored.
+  const sprayToken = useSprayWallToken(boardName, layoutId);
+  const renderData = useMemo(() => {
+    if (!boardName) return null;
+    const setIdValues = parseSetIds(setIds);
+    if (setIdValues.length === 0) return null;
+    return getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdValues });
+  }, [boardName, layoutId, sizeId, setIds, sprayToken]);
+  const thumbFit = useMemo(() => {
+    if (!renderData) return null;
+    const scale = Math.min(BOARD_THUMB_WIDTH / renderData.boardWidth, BOARD_THUMB_HEIGHT / renderData.boardHeight);
+    return { width: renderData.boardWidth * scale, height: renderData.boardHeight * scale };
+  }, [renderData]);
+
+  return (
+    <View
+      pointerEvents="none"
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        styles.thumbnail,
+        { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator },
+      ]}
+    >
+      {renderData && boardName && thumbFit ? (
+        <BoardImageNative
+          frames=""
+          boardName={boardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          setIds={setIds}
+          boardWidth={renderData.boardWidth}
+          boardHeight={renderData.boardHeight}
+          // Share the bundled thumbnail and native raster cache with board discovery.
+          renderWidth={400}
+          style={thumbFit}
+        />
+      ) : (
+        <Icon name="boards" size={22} color={systemColors.secondaryLabel} />
+      )}
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
   groupedCard: {
     overflow: 'hidden',
@@ -160,13 +220,22 @@ const styles = StyleSheet.create({
     minHeight: spacing[12],
   },
   iconColumn: {
-    width: spacing[6],
+    width: BOARD_THUMB_WIDTH,
     flexShrink: 0,
     alignItems: 'center',
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4] + spacing[6] + spacing[3],
+    marginLeft: spacing[4] + BOARD_THUMB_WIDTH + spacing[3],
+  },
+  thumbnail: {
+    width: BOARD_THUMB_WIDTH,
+    height: BOARD_THUMB_HEIGHT,
+    borderRadius: borderRadius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   row: {
     flexDirection: 'row',

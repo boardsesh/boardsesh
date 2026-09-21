@@ -47,7 +47,6 @@ import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
 import { RecordTopChrome } from '../RecordTopChrome';
-import { BoardSummaryCard } from '../pre-session/BoardSummaryCard';
 import { useSessionBoardNavigation } from '../use-session-board-navigation';
 import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
@@ -264,7 +263,7 @@ export function InSessionView({
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } = useSessionBoardNavigation();
+  const { openBoardSwitcher } = useSessionBoardNavigation();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
@@ -609,15 +608,6 @@ export function InSessionView({
           {canEditTitle ? <Icon name="edit" size={20} color={systemColors.secondaryLabel} /> : null}
         </PressableSurface>
       ) : null}
-
-      <BoardSummaryCard
-        board={boardQuery.data}
-        hasNoBoard={hasNoBoard}
-        isRestoreError={!boardQuery.data && boardQuery.isError}
-        onBrowseClimbs={browseClimbs}
-        onChangeBoard={openBoardSwitcher}
-        onRetry={retryBoard}
-      />
 
       <SessionPresenceRow users={sessionUsers} />
 

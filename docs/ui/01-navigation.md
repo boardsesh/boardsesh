@@ -59,13 +59,15 @@ Screenshot mode intentionally starts on Home to preserve the capture readiness c
   session/connection badge and scroll minimization retain their current behavior.
 - **Other phones:** Material and older-iOS Liquid Glass use JS `Tabs` with
   `MaterialTabBar`. Tablet sidebars retain their existing order and panes.
-- **Returning from Session:** Browse climbs opens the selected board's library
-  directly, without rewriting the board selection or changing the live session.
+- **Session setup:** Browse climbs opens the selected board's library
+  directly, without rewriting the board selection.
   Change board is a separate action; its picker returns to Session. First-time
   board selection still finishes on Climbs. Start opens Climbs after creating the
   session and appending any generated workout; a failed start stays on Session.
   The board card uses separate full-width Browse climbs and Change board rows;
-  board details wrap beneath Browse climbs. During Start, the setup form remains
+  a small selected-board thumbnail leads Browse climbs and board details wrap
+  beneath its label. Both rows disappear once the session is running; the Climbs
+  tab remains available. During Start, the setup form remains
   visible and Start stays disabled until the native tab leaves Session, so live
   settings never flash during the handoff. Switching tabs manually while creation
   is pending cancels the automatic redirect, while session and queue creation finish.

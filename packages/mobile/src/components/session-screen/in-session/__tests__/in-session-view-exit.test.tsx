@@ -258,10 +258,11 @@ describe('InSessionView session exit (#3502)', () => {
     expect(chrome.exitVariant).toBe('end');
   });
 
-  it('returns to climbs while leaving the live session running', async () => {
+  it('hides setup board actions once the session is running', async () => {
     const view = await renderInSession();
-    fireEvent.click(view.getByRole('button', { name: /^mobile.session.browseClimbs/ }));
-    expect(router.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(view.queryByRole('button', { name: /^mobile.session.browseClimbs/ })).toBeNull();
+    expect(view.queryByRole('button', { name: 'mobile.session.changeBoard' })).toBeNull();
+    expect(router.navigate).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(queue.endSession).not.toHaveBeenCalled();
     expect(queue.clearSession).not.toHaveBeenCalled();

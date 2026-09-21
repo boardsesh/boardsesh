@@ -50,6 +50,11 @@ vi.mock('../../PressableSurface', () => ({
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
+vi.mock('../../../lib/board-details', () => ({
+  getBoardRenderData: () => ({ boardWidth: 100, boardHeight: 120 }),
+}));
+vi.mock('../../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
+vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 
 import { BoardSummaryCard } from '../pre-session/BoardSummaryCard';
@@ -70,7 +75,15 @@ function SessionBoardActions() {
 describe('Session board navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    boardState.data = { name: 'My board', boardType: 'kilter', sizeName: '12 × 12', angle: 40 } as UserBoard;
+    boardState.data = {
+      name: 'My board',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1,2',
+      sizeName: '12 × 12',
+      angle: 40,
+    } as UserBoard;
     boardState.isSuccess = true;
     boardState.isError = false;
   });
