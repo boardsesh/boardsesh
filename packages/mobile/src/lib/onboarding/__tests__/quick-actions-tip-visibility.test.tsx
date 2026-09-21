@@ -3,7 +3,11 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../preferences/secure-store-adapter', () => ({
-  secureStorePreferences: { get: vi.fn(), set: vi.fn().mockResolvedValue(undefined), remove: vi.fn() },
+  secureStorePreferences: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn(),
+  },
 }));
 
 let quickActionsTip: typeof import('../quick-actions-tip');
