@@ -22,6 +22,8 @@ import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provide
  */
 export function useFirstConnectPill(wouldConnect: boolean): boolean {
   const enabled = useFirstConnectCtaEnabled();
+  // Read on every render on purpose: it is one Date and two padStarts, and a
+  // memo would keep yesterday's day key once the drawer stays open past midnight.
   const today = localDayKey(nowMs());
   const visible = useFirstConnectSelector(({ device, enrolment }) =>
     shouldShowFirstConnectPill({

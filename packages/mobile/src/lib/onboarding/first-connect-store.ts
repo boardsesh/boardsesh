@@ -346,6 +346,10 @@ export function useFirstConnectSnapshot(): FirstConnectSnapshot {
 export function useFirstConnectSelector<Selected extends boolean | string | number | null>(
   select: (current: FirstConnectSnapshot) => Selected,
 ): Selected {
+  // A new closure each render is deliberate. Every caller passes an inline
+  // `select` that closes over render-time values (today's date, the kill
+  // switch), so a useCallback would change every render anyway. The primitive
+  // return keeps useSyncExternalStore from looping on a fresh getSnapshot.
   const selectFromStore = (): Selected => select(snapshot);
   return useSyncExternalStore(subscribe, selectFromStore, selectFromStore);
 }
