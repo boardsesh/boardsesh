@@ -664,3 +664,17 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 - **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.
+
+## Board account linking
+
+Mobile Connected apps emits `Board Account Link Started` on credential submission,
+then `Board Account Linked` or `Board Account Link Failed` when that request settles.
+All three carry `boardType` and `source` (`integrations` for this screen). Failed
+adds the existing `BoardAccountError` code, with `request_failed` for an untyped
+network or parse error. Opening or dismissing an unsubmitted form emits no event.
+Usernames, passwords and other credentials are never event properties.
+
+These events are separate from external `Integration*` events and do not change
+`integrations_connected_count`. Later linking surfaces can report `onboarding`,
+`progress_empty` or `logbook_empty`; this change does not configure production
+PostHog dashboards or person properties.
