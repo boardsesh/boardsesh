@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { useBrushSession } from '../use-brush-session';
+import { pointInRing } from '@boardsesh/board-art-geometry/ring';
 
 const HOLD = { id: 42, cx: 100, cy: 100, r: 28 };
 const OUTLINE = [80, 80, 120, 80, 120, 120, 80, 120];
@@ -47,4 +48,30 @@ describe('brush session undo', () => {
     const nextStroke = { ...STROKE, baseOutlineBoardPx: first.outlineBoardPx, strokeBoardPx: [100, 80, 100, 73] };
     expect(edited.result.current.applyStroke(nextStroke)).toEqual(fresh.result.current.applyStroke(nextStroke));
   });
+});
+
+it('does not resurrect a neck-trimmed lobe when the next stroke widens its former connection', () => {
+  const edited = renderHook(useBrushSession);
+  const lobedOutline = [
+    80, 80, 120, 80, 120, 99.75, 130, 99.75, 130, 90, 150, 90, 150, 110, 130, 110, 130, 100.25, 120, 100.25, 120, 120,
+    80, 120,
+  ];
+  expect(pointInRing(lobedOutline, 147, 100)).toBe(true);
+  const first = edited.result.current.applyStroke({
+    ...STROKE,
+    baseOutlineBoardPx: lobedOutline,
+    strokeBoardPx: [90, 80, 90, 76],
+  });
+  expect(first.ok).toBe(true);
+  if (!first.ok) return;
+  expect(pointInRing(first.outlineBoardPx, 147, 100)).toBe(false);
+  const second = edited.result.current.applyStroke({
+    ...STROKE,
+    baseOutlineBoardPx: first.outlineBoardPx,
+    strokeBoardPx: [118, 100, 136, 100],
+  });
+  expect(second.ok).toBe(true);
+  if (!second.ok) return;
+  expect(pointInRing(second.outlineBoardPx, 134, 100)).toBe(true);
+  expect(pointInRing(second.outlineBoardPx, 147, 100)).toBe(false);
 });

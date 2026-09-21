@@ -129,10 +129,9 @@ export function useBrushSession(): BrushSession {
         return traced;
       }
 
-      // Keep the pruned bitmap, not the painted one. Offcuts the anchor rule
-      // dropped are gone from the outline, so leaving them in the mask would
-      // resurrect them the moment a later stroke reconnected one.
-      mask.cells.set(anchored.cells);
+      // Keep every cleanup used by the visible ring, including neck trimming.
+      // Otherwise a later stroke could reconnect a lobe the editor discarded.
+      mask.cells.set(traced.cells);
       return { ok: true, outlineBoardPx: traced.outlineBoardPx, droppedPieces: anchored.droppedPieces };
     },
     [],

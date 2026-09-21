@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -10,7 +10,27 @@ const state = vi.hoisted(() => ({
   holdShape: 'outline' as 'outline' | 'circle',
   rejectNextFinish: false,
   rendererAvailable: true as boolean | null,
+  placementId: 42,
+  geometryPending: false,
+  prefetchGeometry: vi.fn(),
+  overrides: [] as {
+    placementId: number;
+    kind: 'LED_INNER';
+    outline: number[];
+    updatedAt: string;
+    authorDisplayName: null;
+  }[],
 }));
+vi.mock('@boardsesh/board-art-geometry', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@boardsesh/board-art-geometry')>();
+  return {
+    ...original,
+    boardArtGeometryPending: () => state.geometryPending,
+    loadBoardArtGeometry: (...args: Parameters<typeof original.loadBoardArtGeometry>) =>
+      state.geometryPending ? null : original.loadBoardArtGeometry(...args),
+    prefetchBoardArtGeometry: state.prefetchGeometry,
+  };
+});
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
   return { useSharedValue: (value: unknown) => useRef({ value }).current };
@@ -41,7 +61,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useHoldOutlines: () => ({ data: { shardOutlines: [], overrides: [] }, isLoading: false }),
+  useHoldOutlines: () => ({ data: { shardOutlines: [], overrides: state.overrides }, isLoading: false }),
   useUpsertHoldOutlineOverride: () => ({ mutate: state.save, isPending: false }),
   useDeleteHoldOutlineOverride: () => ({ mutate: vi.fn(), isPending: false }),
 }));
@@ -52,7 +72,7 @@ vi.mock('../../../hooks/use-native-climb-render', () => ({
   }),
 }));
 vi.mock('../../../lib/create-board-holds', () => ({
-  getCreateBoardHolds: () => ({ boardWidth: 200, boardHeight: 200, holdTargets: [HOLD] }),
+  getCreateBoardHolds: () => ({ boardWidth: 200, boardHeight: 200, holdTargets: [{ ...HOLD, id: state.placementId }] }),
   parseSetIdsParam: () => [1],
 }));
 vi.mock('../../Text', async () => ({ Text: (await import('react-native')).Text }));
@@ -112,6 +132,7 @@ vi.mock('../EditToolbar', async () => {
   return {
     EditToolbar: (props: {
       onNextPlacement: () => void;
+      onEditKindChange: (kind: 'LED_INNER') => void;
       onDrawModeChange: (mode: 'add') => void;
       onSave: () => void;
       onUndo: () => void;
@@ -127,6 +148,7 @@ vi.mock('../EditToolbar', async () => {
         MockView,
         null,
         createElement(Pressable, { testID: 'next', onPress: props.onNextPlacement }),
+        createElement(Pressable, { testID: 'inner', onPress: () => props.onEditKindChange('LED_INNER') }),
         createElement(Pressable, {
           testID: 'add',
           disabled: !props.canBrush,
@@ -143,6 +165,9 @@ vi.mock('../EditToolbar', async () => {
 });
 
 import { OutlineCanvasScreen } from '../OutlineCanvasScreen';
+import { loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
+import { brushEditOutline } from '@boardsesh/board-art-geometry/brush';
+import { finishOutlineRing, radiusRingToBoardPx } from '../stroke';
 
 beforeEach(() => {
   state.save.mockClear();
@@ -150,6 +175,10 @@ beforeEach(() => {
   state.holdShape = 'outline';
   state.rejectNextFinish = false;
   state.rendererAvailable = true;
+  state.placementId = 42;
+  state.geometryPending = false;
+  state.prefetchGeometry.mockReset();
+  state.overrides = [];
   state.stroke = [80, 80, 120, 80, 120, 120, 80, 120, 80, 80];
 });
 
@@ -256,4 +285,91 @@ it.each(['undo', 'discard'])('ignores a late stroke end after %s while allowing 
   expect((screen.getByTestId('save') as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByTestId('save'));
   expect(state.save.mock.calls.at(-1)?.[0].outline.length).toBeGreaterThanOrEqual(8);
+});
+
+it.each([false, true])(
+  'brushes the shipped inner edge with database override precedence: override=%s',
+  async (withOverride) => {
+    const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 8, sizeId: 17 });
+    const shippedInner = geometry?.ledInner?.[4117];
+    expect(shippedInner?.length).toBeGreaterThanOrEqual(8);
+    if (!shippedInner) throw new Error('Expected shipped Kilter Homewall inner edge');
+    state.placementId = 4117;
+    const override = [-0.7, -0.7, 0.7, -0.7, 0.7, 0.7, -0.7, 0.7];
+    if (withOverride) {
+      state.overrides = [
+        { placementId: 4117, kind: 'LED_INNER', outline: override, updatedAt: '2026-09-01', authorDisplayName: null },
+      ];
+    }
+    const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={8} sizeId={17} setIds="1" />);
+    fireEvent.click(screen.getByTestId('next'));
+    fireEvent.click(screen.getByTestId('inner'));
+    expect((screen.getByTestId('add') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('add'));
+    state.stroke = [110, 100, 124, 100];
+    fireEvent.click(screen.getByTestId('stroke'));
+    fireEvent.click(screen.getByTestId('save'));
+    expect(state.save).toHaveBeenCalledOnce();
+    const expected = brushEditOutline({
+      outlineBoardPx: radiusRingToBoardPx(withOverride ? override : shippedInner, HOLD),
+      strokeBoardPx: state.stroke,
+      brushRadiusBoardPx: 6,
+      mode: 'add',
+      anchorX: HOLD.cx,
+      anchorY: HOLD.cy,
+      holdRadius: HOLD.r,
+    });
+    expect(expected.ok).toBe(true);
+    if (!expected.ok) return;
+    const finished = finishOutlineRing(expected.outlineBoardPx, HOLD);
+    expect(finished.ok).toBe(true);
+    if (!finished.ok) return;
+    expect(state.save.mock.calls[0][0]).toMatchObject({
+      kind: 'LED_INNER',
+      placementId: 4117,
+      outline: finished.outline,
+    });
+    await act(async () => {});
+  },
+);
+
+it('enables brushing when the browser downloads the shipped inner-edge geometry', async () => {
+  const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 8, sizeId: 17 });
+  state.geometryPending = true;
+  state.placementId = 4117;
+  let finishDownload!: (result: typeof geometry) => void;
+  state.prefetchGeometry.mockReturnValue(
+    new Promise<typeof geometry>((resolve) => {
+      finishDownload = resolve;
+    }),
+  );
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={8} sizeId={17} setIds="1" />);
+  fireEvent.click(screen.getByTestId('next'));
+  fireEvent.click(screen.getByTestId('inner'));
+  expect((screen.getByTestId('add') as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => {
+    finishDownload(geometry);
+  });
+  expect((screen.getByTestId('add') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('ignores a late inner-edge download after switching board size', async () => {
+  const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 8, sizeId: 17 });
+  state.geometryPending = true;
+  state.placementId = 4117;
+  let finishOldDownload!: (result: typeof geometry) => void;
+  state.prefetchGeometry.mockReturnValueOnce(
+    new Promise<typeof geometry>((resolve) => {
+      finishOldDownload = resolve;
+    }),
+  );
+  state.prefetchGeometry.mockResolvedValueOnce(null);
+  const screen = render(<OutlineCanvasScreen boardName="kilter" layoutId={8} sizeId={17} setIds="1" />);
+  fireEvent.click(screen.getByTestId('next'));
+  fireEvent.click(screen.getByTestId('inner'));
+  screen.rerender(<OutlineCanvasScreen boardName="kilter" layoutId={8} sizeId={25} setIds="1" />);
+  await act(async () => {
+    finishOldDownload(geometry);
+  });
+  expect((screen.getByTestId('add') as HTMLButtonElement).disabled).toBe(true);
 });
