@@ -225,8 +225,9 @@ nothing to invert.
 ### Optional board-account linking during first-run
 
 `board-link-onboarding-step` is a positive mobile rollout flag: missing, unresolved,
-or false skips the extra step. The onboarding board picker checks for a supported
-board, connectivity, no previous answer and a known empty credential list. Once
+or false skips the extra step. Supported boards are Kilter, Tension, Decoy,
+Touchstone, Grasshopper and So iLL. The onboarding board picker also checks
+connectivity, no previous answer and a known empty credential list. Once
 binding and its optional download dialog finish, only a known eligible result
 opens the link card; unresolved eligibility continues to Climbs. Direct navigation
 to the link step also respects the flag and supported-board check.
@@ -238,7 +239,9 @@ write is reported without blocking exit. MoonBoard retains its separate file-imp
 flow. Linked accounts sync available history with variable timing; this step adds
 no complete-history or delivery-time guarantee.
 
-Testers can enable **Onboarding board-account link step** in More → Feature Flags.
+Testers can enable **Onboarding board-account link step** through the avatar →
+Settings → Feature Flags. Then use avatar → Settings → Replay walkthrough to
+reopen onboarding; replay does not clear an existing link-step answer.
 Production rollout is a separate action: compare board activations per tour start
 across cohorts and inspect prompt decline/abandonment before expanding exposure.
 This change does not enable the production flag.

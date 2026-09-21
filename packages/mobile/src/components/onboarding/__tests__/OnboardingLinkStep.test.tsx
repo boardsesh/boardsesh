@@ -85,17 +85,18 @@ import { OnboardingLinkRoute } from '../OnboardingLinkRoute';
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
 
-const renderStep = () =>
-  render(
-    <OnboardingLinkStep
-      boardType="tension"
-      accentColor="#6D28D9"
-      iconColor="#6D28D9"
-      bodyColor="#888"
-      backgroundColor="#000"
-      onResolved={mocks.onResolved}
-    />,
-  );
+const stepElement = (bodyColor = '#888') => (
+  <OnboardingLinkStep
+    boardType="tension"
+    accentColor="#6D28D9"
+    iconColor="#6D28D9"
+    bodyColor={bodyColor}
+    backgroundColor="#000"
+    onResolved={mocks.onResolved}
+  />
+);
+
+const renderStep = () => render(stepElement());
 
 describe('OnboardingLinkStep', () => {
   beforeEach(() => {
@@ -126,9 +127,18 @@ describe('OnboardingLinkStep', () => {
     expect(mocks.shown).toHaveBeenCalledWith('tension');
   });
 
-  // This is the one escapable step in an otherwise mandatory flow, so the exit has
-  // to be a real, visible button — the route disables the iOS swipe for the whole
-  // onboarding file.
+  it('keeps one impression and one outcome when the same presentation rerenders', () => {
+    const screen = renderStep();
+    screen.rerender(stepElement('#999'));
+    expect(mocks.shown).toHaveBeenCalledExactlyOnceWith('tension');
+    expect(mocks.resolved).not.toHaveBeenCalled();
+    fireEvent.click(button(screen.container, 'mobile.onboarding.link.skip')!);
+    screen.unmount();
+    expect(mocks.resolved).toHaveBeenCalledExactlyOnceWith('tension', 'declined');
+    expect(mocks.onResolved).toHaveBeenCalledTimes(1);
+  });
+
+  // Onboarding disables the swipe gesture, so this optional step needs a visible exit.
   it('offers a visible way out', () => {
     const { container } = renderStep();
     expect(button(container, 'mobile.onboarding.link.skip')).not.toBeNull();
