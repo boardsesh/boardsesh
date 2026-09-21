@@ -49,7 +49,7 @@ describe('preference-secure-keys imports', () => {
 });
 
 describe('PREFERENCE_SECURE_KEYS', () => {
-  it('is exactly the seventeen preference keys the migration covers', async () => {
+  it('is exactly the eighteen preference keys the migration covers', async () => {
     const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
 
     // Pinned as literals so a renamed or deleted constant lands as a diff on
@@ -67,6 +67,7 @@ describe('PREFERENCE_SECURE_KEYS', () => {
       'changelog_last_seen',
       'onboarding_seen',
       'onboarding_board_tip_pending',
+      'onboarding_link_empty_dismissed',
       'onboarding_tip_workout_seen',
       'onboarding_tip_crew_seen',
       'onboarding_tip_record_seen',

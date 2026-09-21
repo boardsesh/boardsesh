@@ -31,6 +31,11 @@ const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
+const linkEmptyDismissalMocks = vi.hoisted(() => ({
+  clear: vi.fn(async () => {}),
+  resume: vi.fn(),
+  suspend: vi.fn(),
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -69,6 +74,12 @@ vi.mock('../../components/AppLoadingSplash', () => ({
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
+}));
+
+vi.mock('../../lib/onboarding/onboarding-storage', () => ({
+  clearLinkEmptyPromptDismissal: linkEmptyDismissalMocks.clear,
+  resumeLinkEmptyDismissalWrites: linkEmptyDismissalMocks.resume,
+  suspendLinkEmptyDismissalWrites: linkEmptyDismissalMocks.suspend,
 }));
 
 vi.mock('../../lib/auth-token-events', () => ({
@@ -115,6 +126,9 @@ beforeEach(() => {
   routerState.segments = [];
   appStateState.listener = null;
   redirectMock.mockReset();
+  linkEmptyDismissalMocks.clear.mockReset().mockResolvedValue(undefined);
+  linkEmptyDismissalMocks.resume.mockReset();
+  linkEmptyDismissalMocks.suspend.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   authTokenEventsState.listener = null;
@@ -1666,6 +1680,8 @@ describe('AuthProvider forced sign-out registration', () => {
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    expect(linkEmptyDismissalMocks.suspend).toHaveBeenCalledOnce();
+    expect(linkEmptyDismissalMocks.clear).toHaveBeenCalledOnce();
     expect(clearStoredActiveBoardMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     expect(authSignOutMock).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@ import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { reportError } from '../../lib/error-reporting';
-import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage';
+import { dismissLinkEmptyPrompt, hasSeenTip } from '../../lib/onboarding/onboarding-storage';
 import { hasNoLinkedBoardAccount, isLinkableBoard } from '../../lib/integrations/board-link-eligibility';
 import { useBoardAccountCredentials } from '../../lib/integrations/use-board-account-credentials';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -47,7 +47,7 @@ function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPrompt
 
   const dismiss = useCallback(() => {
     setDismissed(true);
-    markTipSeen(ONBOARDING_LINK_EMPTY_DISMISSED_KEY).catch((error: unknown) => {
+    dismissLinkEmptyPrompt().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.warn('[board-link-prompt] Failed to persist dismissal', error);
       reportError(error);

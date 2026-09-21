@@ -19,6 +19,7 @@ import {
 } from '@boardsesh/key-value-storage';
 import {
   clearBoardRevealTipPending,
+  clearLinkEmptyPromptDismissal,
   clearOnboardingSeen,
   hasBoardRevealTipPending,
   hasSeenOnboarding,
@@ -26,7 +27,10 @@ import {
   markOnboardingSeen,
   markTipSeen,
   replayOnboarding,
+  resumeLinkEmptyDismissalWrites,
   setBoardRevealTipPending,
+  suspendLinkEmptyDismissalWrites,
+  dismissLinkEmptyPrompt,
 } from '../onboarding-storage';
 
 describe('onboarding storage', () => {
@@ -40,6 +44,23 @@ describe('onboarding storage', () => {
     getMock.mockResolvedValue(null);
     await expect(hasSeenOnboarding()).resolves.toBe(false);
     expect(getMock).toHaveBeenCalledWith(ONBOARDING_SEEN_KEY);
+  });
+
+  it('drains an old dismissal write before the account-boundary clear', async () => {
+    let finishOldWrite: (() => void) | undefined;
+    setMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOldWrite = resolve;
+        }),
+    );
+    const oldWrite = dismissLinkEmptyPrompt();
+    suspendLinkEmptyDismissalWrites();
+    const cleanup = clearLinkEmptyPromptDismissal();
+    finishOldWrite?.();
+    await Promise.all([oldWrite, cleanup]);
+    expect(removeMock).toHaveBeenCalledWith('onboarding_link_empty_dismissed');
+    resumeLinkEmptyDismissalWrites();
   });
 
   it('reports seen once the flag is true', async () => {

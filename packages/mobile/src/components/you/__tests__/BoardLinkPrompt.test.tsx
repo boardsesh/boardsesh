@@ -28,8 +28,8 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 }));
 
 vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
+  dismissLinkEmptyPrompt: mocks.markTipSeen,
   hasSeenTip: mocks.seenTip,
-  markTipSeen: mocks.markTipSeen,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -64,7 +64,6 @@ vi.mock('../../Button', () => ({
 }));
 
 import { BoardLinkPrompt } from '../BoardLinkPrompt';
-import { ONBOARDING_LINK_EMPTY_DISMISSED_KEY } from '@boardsesh/key-value-storage';
 
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
@@ -154,7 +153,7 @@ describe('BoardLinkPrompt', () => {
     const { container } = render(<BoardLinkPrompt viewerIsOwner hasNoSends />);
     await waitFor(() => expect(button(container, 'mobile.boardLink.dismiss')).not.toBeNull());
     fireEvent.click(button(container, 'mobile.boardLink.dismiss')!);
-    expect(mocks.markTipSeen).toHaveBeenCalledExactlyOnceWith(ONBOARDING_LINK_EMPTY_DISMISSED_KEY);
+    expect(mocks.markTipSeen).toHaveBeenCalledExactlyOnceWith();
     expect(container.textContent).toBe('');
   });
 
