@@ -123,7 +123,11 @@
       "footlessKickboard": "Footless + KB",
       "noKickboard": "No KB"
     },
-    "anyFeet": "Any feet"
+    "anyFeet": "Any feet",
+    "gradeError": {
+      "stiff": "Stiff",
+      "soft": "Soft"
+    }
   },
   "boardseshGrade": {
     "title": "Boardsesh grade",
@@ -479,6 +483,7 @@
         "ascents": "Ascents",
         "quality": "Quality",
         "difficulty": "Difficulty",
+        "userGrade": "User grade",
         "name": "Name",
         "popular": "Popular",
         "creation": "Newest",
@@ -594,7 +599,11 @@
         "noKickboard": "No KB"
       },
       "setAngleMarker": "{{angle}}°",
-      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees"
+      "setAngleMarkerAria": "Grade and sends are from {{angle}} degrees",
+      "gradeError": {
+        "stiff": "Stiff",
+        "soft": "Soft"
+      }
     },
     "climbRules": {
       "matchingAllowed": "Matching allowed",

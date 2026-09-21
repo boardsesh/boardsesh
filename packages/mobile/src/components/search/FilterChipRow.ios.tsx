@@ -95,7 +95,7 @@ function FilterChipRowComponent({
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
   // Built once per render (and only when Sort is actually pinned), reused for the
-  // resting label + all 7 menu items.
+  // resting label + every menu item.
   const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
 
   // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the

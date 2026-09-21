@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import { getMoonBoardMethod, isAnyFeet, isCampus, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
+import { resolveGradeErrorBadge } from '@boardsesh/logbook';
 
 /**
  * Resolve the translated short label for a climb's MoonBoard method
@@ -37,4 +38,20 @@ export function resolveAnyFeetLabel(
 ): string | null {
   if (isCampus(characteristics) || !isAnyFeet(characteristics)) return null;
   return t('card.anyFeet');
+}
+
+/**
+ * The short "stiff/soft" badge label for a climb whose crowd-average grade
+ * (difficulty_error) notably disagrees with its displayed grade — works on
+ * every board, including MoonBoard, unlike the Boardsesh-grade comparison
+ * shown elsewhere. See resolveGradeErrorBadge for the notability gate.
+ */
+export function resolveGradeErrorLabel(
+  difficultyError: string | number | null | undefined,
+  ascensionistCount: number | null | undefined,
+  t: TFunction<'climbs'>,
+): string | null {
+  const badge = resolveGradeErrorBadge(difficultyError, ascensionistCount);
+  if (!badge) return null;
+  return badge.direction === 'stiff' ? t('card.gradeError.stiff') : t('card.gradeError.soft');
 }
