@@ -164,7 +164,9 @@ export function useActivateBoard({
             pickSource: pick?.pickSource,
             // Asked before adoption runs (it waits for the navigation below), from
             // the same decision adoption uses, so the pick event can say whether
-            // this board landed in Your boards.
+            // this board landed in Your boards. Both callbacks come from the
+            // render that built this bind, so a viewer id that loads mid-bind
+            // reaches the next pick, never just one half of this one.
             followed: !isLocalOnly && willFollowFoundBoard(board),
           });
         } catch (error: unknown) {

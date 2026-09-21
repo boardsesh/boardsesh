@@ -297,6 +297,37 @@ describe('useActiveBoardFollowHeal', () => {
     expect(state.storage.has(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toBe(false);
   });
 
+  // A sign-out after the follow landed: the follow stands, but the device must
+  // not write the old account's heal after the boundary. The next launch as that
+  // climber costs one read, which finds the board followed and remembers it.
+  it('does not remember a follow that settles after an account boundary', async () => {
+    let resolveFollow: (followed: boolean) => void = () => {};
+    spies.followBoard.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveFollow = resolve;
+        }),
+    );
+    renderHook(() => useActiveBoardFollowHeal());
+    await waitFor(() => expect(spies.followBoard).toHaveBeenCalledTimes(1));
+
+    resetActiveBoardSelfHealValidationCache();
+    resolveFollow(true);
+    await settle();
+    expect(state.storage.has(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toBe(false);
+    cleanup();
+
+    // Next launch, same climber. The stored snapshot predates the follow.
+    resetActiveBoardFollowHealForTests();
+    vi.clearAllMocks();
+    spies.fetchBoardByUuid.mockImplementation(() => Promise.resolve(makeBoard({ isFollowedByMe: true })));
+    renderHook(() => useActiveBoardFollowHeal());
+
+    await waitFor(() => expect(state.storage.get(ACTIVE_BOARD_FOLLOW_HEAL_STORAGE_KEY)).toEqual(['viewer-1:board-a']));
+    expect(spies.fetchBoardByUuid).toHaveBeenCalledTimes(1);
+    expect(spies.followBoard).not.toHaveBeenCalled();
+  });
+
   // The tombstone self-heal swaps in the survivor; that board is the launch
   // board on the next start.
   it('leaves a merged-away board to the tombstone self-heal', async () => {
