@@ -41,6 +41,10 @@ enableGlobalVirtualStore: false
 virtualStoreDirMaxLength: 120
 
 overrides:
+  # Expo loads these browser datasets through its config plugins and hashes them.
+  # Keep main on the App Store 2.5.0 runtime; advance these only on release/next.
+  baseline-browser-mapping: 2.11.17
+  caniuse-lite: 1.0.30001809
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
   react-native-screens: 4.26.2
