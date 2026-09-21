@@ -13,6 +13,9 @@ import {
 const mockBleManager = vi.hoisted(() => ({
   state: vi.fn().mockResolvedValue('PoweredOn'),
   onStateChange: vi.fn(),
+  // For the tests that drive the real ble-plx adapter's scan (#5654).
+  startDeviceScan: vi.fn(),
+  stopDeviceScan: vi.fn(),
 }));
 
 // Mutable so a test can put the app in the background and assert what the hook
@@ -99,6 +102,20 @@ vi.mock('../adapter', () => ({
   RNBleAdapter: vi.fn(),
 }));
 
+// Lets a test stand in the web fork's answer (use-ble-permissions.web.ts), which
+// the native module this file resolves to never gives. Null = the real module.
+const permissionStatusOverride = vi.hoisted(() => ({ status: null as 'unsupported' | null }));
+vi.mock('../use-ble-permissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../use-ble-permissions')>();
+  return {
+    ...actual,
+    requestBleRuntimePermissionStatus: () =>
+      permissionStatusOverride.status !== null
+        ? Promise.resolve(permissionStatusOverride.status)
+        : actual.requestBleRuntimePermissionStatus(),
+  };
+});
+
 // The remembered-board persistence store pulls in AsyncStorage transitively;
 // mock it so the hook's persist/hydrate wiring can be asserted without a native
 // module, and so its behaviour is observable via these spies (#3609).
@@ -166,6 +183,7 @@ import { getBleEncodingSignature } from '../encoding-signature';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
+import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
 
 // The #3314 binary-capability probe defaults to "new binary" (drives every
 // board) for the whole file; old-binary tests flip it per test and this
@@ -4158,6 +4176,7 @@ describe('useBoardBluetooth multi-frame route collapse (#4634)', () => {
 // told to switch on a radio that was already on, with no way to the real fix.
 describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
   beforeEach(() => {
+    permissionStatusOverride.status = null;
     vi.clearAllMocks();
     resetReactNativePermissionHarness();
     mockBleManager.state.mockResolvedValue('PoweredOn');
@@ -4289,6 +4308,27 @@ describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
     );
   });
 
+  it('says Bluetooth is unavailable, not "allow permissions", in a browser with no Web Bluetooth', async () => {
+    permissionStatusOverride.status = 'unsupported';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected = true;
+    await act(async () => {
+      connected = await result.current.connect();
+    });
+
+    expect(connected).toBe(false);
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.unavailable');
+    expect(alertTitles()).not.toContain('ble.permissionRequired');
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Unavailable',
+      expect.objectContaining({ reason: 'unsupported', surface: 'connect', boardName: 'kilter' }),
+    );
+    // Nothing was refused, so it isn't counted as a denial.
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Permission Denied');
+  });
+
   it('asks for Android 13 notifications after the board connects, not in front of the scan', async () => {
     reactNativePermissionHarness.platform.Version = 33;
     const requestAndConnect = vi.fn().mockResolvedValue({ deviceId: 'device-1', deviceName: 'Kilter Board#123@3' });
@@ -4322,5 +4362,66 @@ describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
     });
 
     expect(reactNativePermissionHarness.permissionsAndroid.request).not.toHaveBeenCalled();
+  });
+});
+
+// #5654: a picker scan that found nothing used to fail the connect at the 30 s
+// scan timeout, which tore the sheet down and showed an OK-only "Couldn't find
+// your board" alert. The sheet's empty state (tips, Scan again, the location
+// hints and the no-lights offer) was built for that moment but never rendered.
+// Drives the real ble-plx adapter so the adapter-to-hook contract is covered.
+describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    const { RNBleAdapter: RealRNBleAdapter } = await vi.importActual<typeof import('../adapter')>('../adapter');
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      (devicePicker, scanFamily, options) => new RealRNBleAdapter(devicePicker, scanFamily, options),
+    );
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps the picker up in its empty state, where Scan again lives, instead of failing', async () => {
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.startDeviceScan).toHaveBeenCalledOnce();
+    expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: true });
+
+    // The scan window closes with nothing heard.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    // DevicePickerSheet renders "No boards found nearby", the tips and Scan
+    // again for exactly this state.
+    expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: false });
+    expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+    expect(result.current.loading).toBe(true);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
+
+    // Closing the empty sheet ends the connect quietly, like any picker cancel.
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ failureReason: 'user_cancelled' }),
+    );
   });
 });

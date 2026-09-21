@@ -256,9 +256,14 @@ export const SHARED_EVENTS = {
   //    has stopped showing its dialog ("never ask again"). The climber sees
   //    "Bluetooth is blocked for Boardsesh" with Open Settings. An Android "Don't
   //    allow" answered in the dialog is Bluetooth Permission Denied only, because
-  //    the next tap asks again.
+  //    the next tap asks again. Android's never_ask_again counts only when it
+  //    came back inside 500 ms, i.e. with no dialog drawn: React Native also
+  //    reports it for a first dialog closed with back, which Android shows again.
+  //    A slow phone can miss that window, so this undercounts rather than
+  //    overcounts.
   //  - 'powered_off': the radio is off.
-  //  - 'unsupported': the device has no Bluetooth LE.
+  //  - 'unsupported': the device has no Bluetooth LE, or (Expo web) the browser
+  //    has no Web Bluetooth.
   //  - 'unknown': the connect or scan said Bluetooth is unavailable but the radio
   //    state doesn't say why (still Unknown/Resetting, or it reads PoweredOn).
   // The 'unauthorized' share of newcomer connect taps is the #5654 guardrail for
@@ -269,7 +274,8 @@ export const SHARED_EVENTS = {
   // attempts that never reach Bluetooth Scan Started (denied, blocked, radio
   // off). Props: { surface, boardName, reconnect }. `surface`: 'play_drawer' |
   // 'toolbar' | 'app_bar' | 'board_control_indicator' | 'wall_empty_state' |
-  // 'wall_kiosk' | 'create_climb' | 'picker_scan_again'. `reconnect` is true when
+  // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
+  // Android session notification's bulb). `reconnect` is true when
   // a remembered board is targeted (silent auto-select), false when the tap
   // opens the device picker.
   BoardConnectTapped: 'Board Connect Tapped',

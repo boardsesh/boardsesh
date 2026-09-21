@@ -1,5 +1,6 @@
 import type { State } from 'react-native-ble-plx';
 import { isWebBluetoothAvailable } from './web-adapter';
+import type { BleRuntimePermissionStatus } from './use-ble-permissions';
 
 type BlePermissionsResult = {
   bleState: State;
@@ -20,13 +21,15 @@ export function requestBleRuntimePermissions(_options?: { requestNotificationPer
   return Promise.resolve(isWebBluetoothAvailable());
 }
 
-// Same contract as the native module. A browser without Web Bluetooth reads as
-// 'denied', which keeps the connect flow's existing permission copy there; web
-// has no "blocked in Settings" state to send anyone to.
+// Same contract as the native module. A browser without Web Bluetooth (Safari,
+// Firefox, every iOS browser) is 'unsupported', not 'denied': there is no grant
+// for the climber to give, so asking them to allow Bluetooth, or offering to
+// scan again, would be a dead end. Callers show the "Bluetooth unavailable" copy
+// that availability.web.ts describes as the intended web state.
 export function requestBleRuntimePermissionStatus(_options?: {
   requestNotificationPermission?: boolean;
-}): Promise<'granted' | 'denied' | 'blocked'> {
-  return Promise.resolve(isWebBluetoothAvailable() ? 'granted' : 'denied');
+}): Promise<BleRuntimePermissionStatus> {
+  return Promise.resolve(isWebBluetoothAvailable() ? 'granted' : 'unsupported');
 }
 
 // Browsers have no Android foreground-service notification to ask for.

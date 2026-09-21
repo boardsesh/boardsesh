@@ -30,10 +30,13 @@ const locationHint = vi.hoisted(() => ({
   lastActive: null as boolean | null,
 }));
 
+const platform = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' | 'web' }));
+
 type ChildrenProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: ChildrenProps) => createElement('div', {}, children),
   Pressable: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  Platform: platform,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -335,6 +338,7 @@ describe('BluetoothQuickstartSheet board rows', () => {
 // Bluetooth was on but blocked for Boardsesh, and nothing offered a retry.
 describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
   beforeEach(() => {
+    platform.OS = 'android';
     scan.status = 'unavailable';
     scan.unavailableReason = null;
     scan.serials = [];
@@ -385,8 +389,8 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
     expect(hasText(container, 'ble.blockedTitle')).toBe(false);
   });
 
-  it.each(['unauthorized', 'permission_denied', 'powered_off'] as const)(
-    'offers Scan again for %s, which restarts the scan',
+  it.each(['unauthorized', 'permission_denied', 'powered_off', 'unknown'] as const)(
+    'offers Scan again for %s on Android, which restarts the scan',
     (reason) => {
       scan.unavailableReason = reason;
       const { container } = renderSheet();
@@ -395,6 +399,34 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
       expect(scan.reset).toHaveBeenCalledOnce();
     },
   );
+
+  it('leaves blocked on iOS at Open Settings: nothing else can change it, and the switch relaunches the app', () => {
+    platform.OS = 'ios';
+    scan.unavailableReason = 'unauthorized';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'ble.blockedTitle')).toBe(true);
+    expect(button(container, 'ble.openSettings')).not.toBeNull();
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+
+  it('keeps Scan again on iOS where the radio can come back without a relaunch', () => {
+    platform.OS = 'ios';
+    scan.unavailableReason = 'powered_off';
+    const { container } = renderSheet();
+
+    expect(button(container, 'ble.scanAgain')).not.toBeNull();
+  });
+
+  it('offers no Scan again without Bluetooth LE, such as a browser with no Web Bluetooth', () => {
+    platform.OS = 'web';
+    scan.unavailableReason = 'unsupported';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(true);
+    expect(hasText(container, 'ble.errorPermissionDenied')).toBe(false);
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
 
   it('offers Scan again when the scan finished with no boards in range', () => {
     scan.status = 'done';

@@ -403,8 +403,9 @@ describe('DevicePickerSheet', () => {
   });
 });
 
-// #5654: an empty scan used to end at Cancel, with no way to try again short of
-// finding the bulb again.
+// #5654: an empty scan used to end in an OK-only alert, with no way to try again
+// short of finding the bulb again. The adapters now leave the picker up in this
+// state (see use-board-bluetooth.test.ts, "when the picker scan finds nothing").
 describe('DevicePickerSheet Scan again', () => {
   beforeEach(() => {
     stats.noneMatchedSelectedType = false;

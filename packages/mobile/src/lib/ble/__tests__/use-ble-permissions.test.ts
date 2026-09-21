@@ -30,6 +30,7 @@ vi.mock('../ble-manager', () => ({
 }));
 
 import {
+  ANDROID_NO_DIALOG_ANSWER_MAX_MS,
   requestBleRuntimePermissions,
   requestBleRuntimePermissionStatus,
   requestOptionalNotificationPermission,
@@ -148,6 +149,55 @@ describe('requestBleRuntimePermissionStatus', () => {
     });
 
     await expect(requestBleRuntimePermissionStatus()).resolves.toBe('blocked');
+  });
+
+  // RN reports never_ask_again whenever Android's rationale flag is false, which
+  // on Android 11+ includes closing the FIRST dialog with back or a tap outside.
+  // That dialog comes back next time, so it must not read as blocked.
+  it('is denied, not blocked, when never_ask_again comes back after a dialog was on screen', async () => {
+    vi.useFakeTimers();
+    try {
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            // The climber looks at the dialog for a moment, then presses back.
+            setTimeout(
+              () => resolve({ BLUETOOTH_SCAN: 'never_ask_again', BLUETOOTH_CONNECT: 'never_ask_again' }),
+              1_200,
+            );
+          }),
+      );
+
+      const statusPromise = requestBleRuntimePermissionStatus();
+      await vi.advanceTimersByTimeAsync(1_200);
+
+      await expect(statusPromise).resolves.toBe('denied');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('is blocked when never_ask_again comes back inside the no-dialog window', async () => {
+    vi.useFakeTimers();
+    try {
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            // One activity round trip on a slow phone, no dialog drawn.
+            setTimeout(
+              () => resolve({ BLUETOOTH_SCAN: 'never_ask_again', BLUETOOTH_CONNECT: 'never_ask_again' }),
+              ANDROID_NO_DIALOG_ANSWER_MAX_MS - 1,
+            );
+          }),
+      );
+
+      const statusPromise = requestBleRuntimePermissionStatus();
+      await vi.advanceTimersByTimeAsync(ANDROID_NO_DIALOG_ANSWER_MAX_MS - 1);
+
+      await expect(statusPromise).resolves.toBe('blocked');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('is denied, not blocked, when the request itself throws', async () => {

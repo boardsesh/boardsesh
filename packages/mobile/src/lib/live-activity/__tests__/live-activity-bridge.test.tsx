@@ -46,6 +46,7 @@ const widget = vi.hoisted(() => ({
 
 // Stand-in for the bluetooth context the lightbulb tap drives.
 const bt = vi.hoisted(() => ({
+  boardName: 'kilter' as string | undefined,
   isConnected: true,
   loading: false,
   connect: vi.fn(),
@@ -410,6 +411,30 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     expect(bt.reassertWall).not.toHaveBeenCalled();
   });
 
+  it('reconnect: counts the tap as Board Connect Tapped from the notification (#5654)', () => {
+    renderBridge();
+
+    act(() => {
+      widget.boardControlListener?.({ action: 'reconnect', correlationId: 'bulb-tracked' });
+    });
+
+    expect(analytics.track).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'notification',
+      boardName: 'kilter',
+      reconnect: true,
+    });
+  });
+
+  it('reassert: is not a connect, so no Board Connect Tapped', () => {
+    renderBridge();
+
+    act(() => {
+      widget.boardControlListener?.({ action: 'reassert', correlationId: 'bulb-untracked' });
+    });
+
+    expect(analytics.track).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+
   it('reconnect: falls back to undefined serial (board picker) when none is remembered', () => {
     bt.reconnectSerialForCurrentBoard = null;
     renderBridge();
@@ -419,6 +444,10 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     });
 
     expect(bt.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Connect Tapped',
+      expect.objectContaining({ surface: 'notification', reconnect: false }),
+    );
   });
 
   it('reconnect: forwards a remembered MoonBoard device id (no serial)', () => {

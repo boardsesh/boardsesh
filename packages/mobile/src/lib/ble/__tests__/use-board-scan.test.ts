@@ -54,6 +54,20 @@ vi.mock('@boardsesh/ble-protocol', () => ({
     ),
 }));
 
+// Lets a test stand in the web fork's answer (use-ble-permissions.web.ts), which
+// the native module this file resolves to never gives. Null = the real module.
+const permissionStatusOverride = vi.hoisted(() => ({ status: null as 'unsupported' | null }));
+vi.mock('../use-ble-permissions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../use-ble-permissions')>();
+  return {
+    ...actual,
+    requestBleRuntimePermissionStatus: () =>
+      permissionStatusOverride.status !== null
+        ? Promise.resolve(permissionStatusOverride.status)
+        : actual.requestBleRuntimePermissionStatus(),
+  };
+});
+
 import { useBoardScan } from '../use-board-scan';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../scan-options';
 
@@ -311,6 +325,7 @@ describe('useBoardScan', () => {
 // having scanned.
 describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
   beforeEach(() => {
+    permissionStatusOverride.status = null;
     vi.clearAllMocks();
     vi.useFakeTimers();
     resetReactNativePermissionHarness();
@@ -427,6 +442,84 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.unavailableReason).toBeNull();
+  });
+
+  it('goes straight to the blocked copy after a scan error, with no "Turn on Bluetooth" first', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    let resolveRadioState: (radioState: string) => void = () => {};
+    mockBleManager.state.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveRadioState = resolve;
+      }),
+    );
+
+    act(() => {
+      scanCallback()(new Error('Bluetooth permission revoked'), null);
+    });
+    // The reason is still being read: nothing is shown yet, least of all the
+    // "Turn on Bluetooth" copy that used to flash here first.
+    expect(result.current.status).toBe('scanning');
+    expect(result.current.unavailableReason).toBeNull();
+
+    await act(async () => {
+      resolveRadioState('Unauthorized');
+      await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('unauthorized');
+  });
+
+  it('still counts a scan error when the sheet closed before its reason was read', async () => {
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start();
+    });
+    let resolveRadioState: (radioState: string) => void = () => {};
+    mockBleManager.state.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveRadioState = resolve;
+      }),
+    );
+
+    act(() => {
+      scanCallback()(new Error('BluetoothLE is powered off'), null);
+      result.current.reset();
+    });
+    await act(async () => {
+      resolveRadioState('PoweredOff');
+      await Promise.resolve();
+    });
+
+    expect(analytics.track).toHaveBeenCalledWith('Bluetooth Unavailable', {
+      reason: 'powered_off',
+      surface: 'quickstart_scan',
+      platform: 'android',
+    });
+    // The closed sheet stays reset.
+    expect(result.current.status).toBe('idle');
+    expect(result.current.unavailableReason).toBeNull();
+  });
+
+  it('is unsupported, not a permission denial, in a browser with no Web Bluetooth', async () => {
+    permissionStatusOverride.status = 'unsupported';
+    const { result } = renderHook(() => useBoardScan());
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(result.current.status).toBe('unavailable');
+    expect(result.current.unavailableReason).toBe('unsupported');
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Bluetooth Unavailable',
+      expect.objectContaining({ reason: 'unsupported', surface: 'quickstart_scan' }),
+    );
+    expect(trackedEventNames()).not.toContain('Bluetooth Permission Denied');
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
   });
 
   it('reports a scan that ran its full window, with the serials it heard', async () => {

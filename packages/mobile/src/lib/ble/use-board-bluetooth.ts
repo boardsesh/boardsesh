@@ -1419,6 +1419,12 @@ export function useBoardBluetooth({
         // board is connected (below), so a first connect shows one system dialog
         // before the scan instead of two (#5654).
         const permissionStatus = await requestBleRuntimePermissionStatus();
+        if (permissionStatus === 'unsupported') {
+          // Expo web in a browser with no Web Bluetooth. Not a denial: there is
+          // nothing to allow, so no permission copy and no Permission Denied event.
+          await alertBluetoothUnavailable({ reason: 'unsupported', boardName, t, tCommon });
+          return false;
+        }
         if (permissionStatus !== 'granted') {
           // The Alert is the only trace this path used to leave — an entire
           // class of "Bluetooth doesn't work" was invisible in telemetry.
@@ -1773,13 +1779,14 @@ export function useBoardBluetooth({
         }
         setIsConnected(false);
 
-        // Dismiss the picker sheet if it's still showing. When a reconnect-by-
-        // serial grace window opens the picker but nothing ever advertises, the
-        // adapter rejects the selection promise on the scan timeout without
-        // settling the picker's own promise — so the sheet (and its spinner)
-        // would otherwise stay mounted until the user swipes it away. Settle the
-        // dangling picker promise before clearing it (matching the unmount
-        // cleanup) so it can't leak.
+        // Dismiss the picker sheet if it's still showing. When the scan fails
+        // while the picker is open (a scan error, Bluetooth switched off), the
+        // adapter rejects the selection promise without settling the picker's
+        // own promise — so the sheet (and its spinner) would otherwise stay
+        // mounted until the user swipes it away. A scan that simply ends empty
+        // doesn't come through here: the picker stays up with its empty state
+        // and Scan again (#5654). Settle the dangling picker promise before
+        // clearing it (matching the unmount cleanup) so it can't leak.
         pickerRejectRef.current?.(new Error('Connection failed'));
         pickerRejectRef.current = null;
         setPickerState(null);

@@ -185,9 +185,11 @@ export function DevicePickerSheet({
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('ble.noDevicesFound')}
           </Text>
-          {/* The only way on from an empty scan used to be Cancel, then finding
-              the bulb again. Shown next to the location hints too: their
-              "granted" copy asks for exactly this. */}
+          {/* An empty scan used to end in an OK-only "Couldn't find your board"
+              alert, then finding the bulb again. The adapters now leave the
+              picker up when the scan window closes empty (#5654), so this state
+              is where that climber lands. Shown next to the location hints too:
+              their "granted" copy asks for exactly this. */}
           {onScanAgain && (
             <Button title={t('ble.scanAgain')} onPress={onScanAgain} variant="tonal" size="medium" icon="refresh" />
           )}

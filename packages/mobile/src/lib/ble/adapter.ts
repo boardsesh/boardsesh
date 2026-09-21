@@ -221,15 +221,12 @@ export class RNBleAdapter implements BluetoothAdapter {
         // Belt-and-suspenders: make sure the picker is open even if the grace
         // window never fired.
         if (autoSelecting) openPicker();
-        // The picker is showing but nothing ever advertised — surface the empty
-        // result so the sheet doesn't spin forever.
-        if (pickerOpened && devices.size === 0) {
-          rejectSelection(new Error('No boards found within scan window'));
-        } else {
-          // Devices were found but none picked yet — tell the picker the scan
-          // stopped so it drops the spinner instead of implying a live scan.
-          scanStoppedListener?.();
-        }
+        // The picker stays open whatever the scan found: tell it the scan stopped
+        // so it drops the spinner. With boards listed the climber can still pick
+        // one. With none it shows its empty state (tips, Scan again, the location
+        // hints and the no-lights offer), which a reject here used to replace with
+        // a dead-end alert (#5654). The climber leaves it by cancelling.
+        scanStoppedListener?.();
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;

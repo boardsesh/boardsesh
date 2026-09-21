@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -104,7 +104,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         // on. Only the Settings app can fix it, so point there.
         if (unavailableReason === 'unauthorized') {
           return (
-            <View style={styles.state}>
+            <View style={[styles.state, styles.blockedState]}>
               <Icon name="bluetooth" size={40} color={systemColors.tertiaryLabel} />
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {tSettings('ble.blockedTitle')}
@@ -120,12 +120,18 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   size="medium"
                 />
               )}
-              {scanAgainButton}
+              {/* Android only. On iOS nothing but the Settings switch can change
+                  this state, and iOS relaunches the app when that switch moves,
+                  so the tap would only spin for 2.5 s and land back here. An
+                  Android grant in Settings leaves the app running, so this is how
+                  that climber starts the scan again. */}
+              {Platform.OS === 'android' && scanAgainButton}
             </View>
           );
         }
         // An Android "Don't allow" isn't a radio problem either, and scanning
-        // again brings the system dialog back.
+        // again brings the system dialog back. No Scan again for a phone or
+        // browser with no Bluetooth LE: the next scan can only end here again.
         return (
           <View style={styles.state}>
             <Icon name="warning" size={40} color={systemColors.tertiaryLabel} />
@@ -134,7 +140,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 ? tSettings('ble.errorPermissionDenied')
                 : t('mobile.bluetooth.unavailable')}
             </Text>
-            {scanAgainButton}
+            {unavailableReason !== 'unsupported' && scanAgainButton}
           </View>
         );
       }
@@ -264,6 +270,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing[3],
     paddingVertical: spacing[8],
+  },
+  // The blocked state stacks icon, title, a two or three line body and up to two
+  // buttons. The default 32 pt top and bottom padding would push the last button
+  // past a 55% sheet on a 667 pt phone, and further at large text sizes.
+  blockedState: {
+    paddingVertical: spacing[2],
   },
   stateText: {
     textAlign: 'center',

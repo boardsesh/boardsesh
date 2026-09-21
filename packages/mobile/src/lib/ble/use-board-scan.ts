@@ -102,6 +102,14 @@ export function useBoardScan(): BoardScan {
     const permissionStatus = await requestBleRuntimePermissionStatus();
     if (!isCurrentScanAttempt()) return;
 
+    if (permissionStatus === 'unsupported') {
+      // Expo web in a browser with no Web Bluetooth: not a denial, and nothing
+      // the climber can allow or retry.
+      trackBluetoothUnavailable('unsupported', 'quickstart_scan');
+      showUnavailable('unsupported');
+      return;
+    }
+
     if (permissionStatus !== 'granted') {
       // Previously silent: the sheet just flipped to 'unavailable' and nothing
       // told us a denial (rather than a dead radio) was behind it.
@@ -147,13 +155,15 @@ export function useBoardScan(): BoardScan {
       if (!isCurrentScanAttempt()) return;
       if (error) {
         stop('error');
-        showUnavailable('unknown');
-        // Radio switched off or permission pulled mid-scan: work out which. The
-        // read is async, so re-check the attempt before touching state.
+        // Radio switched off or permission pulled mid-scan: work out which before
+        // showing anything, so the sheet goes straight to the right copy instead
+        // of "Turn on Bluetooth" flipping to "blocked" a tick later. The read
+        // never rejects. It is tracked even if the sheet closed meanwhile, so
+        // every stop is counted; only the state write needs the attempt check.
         void readBluetoothUnavailableReason().then((reason) => {
-          if (!isCurrentScanAttempt()) return;
           trackBluetoothUnavailable(reason, 'quickstart_scan');
-          setUnavailableReason(reason);
+          if (!isCurrentScanAttempt()) return;
+          showUnavailable(reason);
         });
         return;
       }

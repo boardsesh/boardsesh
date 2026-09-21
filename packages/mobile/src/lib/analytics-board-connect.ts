@@ -14,7 +14,9 @@ export type BoardConnectSurface =
   | 'wall_empty_state'
   | 'wall_kiosk'
   | 'create_climb'
-  | 'picker_scan_again';
+  | 'picker_scan_again'
+  // Android's ongoing-session notification bulb, when the board was out.
+  | 'notification';
 
 type BoardConnectTappedProperties = {
   surface: BoardConnectSurface;

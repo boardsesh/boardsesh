@@ -982,13 +982,22 @@ describe('RNBleAdapter', () => {
         mockBleManager.startDeviceScan.mockImplementation(() => {});
 
         let pickerOpened = false;
-        // Picker stays open once shown.
-        const devicePicker: DevicePickerFn = () => {
+        const onScanStopped = vi.fn();
+        let cancelPicker: (error: Error) => void = () => {};
+        // Picker stays open once shown, until the climber cancels it.
+        const devicePicker: DevicePickerFn = (subscribe) => {
           pickerOpened = true;
-          return new Promise<string>(() => {});
+          subscribe(() => {}, onScanStopped);
+          return new Promise<string>((_resolve, reject) => {
+            cancelPicker = reject;
+          });
         };
         const adapter = new RNBleAdapter(devicePicker);
-        const settled = adapter.requestAndConnect('NEEDLE-SERIAL').catch((reason) => reason);
+        let settledWith: unknown = 'pending';
+        const settled = adapter.requestAndConnect('NEEDLE-SERIAL').then(
+          (connection) => (settledWith = connection),
+          (reason: unknown) => (settledWith = reason),
+        );
         await Promise.resolve();
 
         // Silent auto-select before the grace window — no picker yet.
@@ -999,11 +1008,18 @@ describe('RNBleAdapter', () => {
         await vi.advanceTimersByTimeAsync(1);
         expect(pickerOpened).toBe(true);
 
-        // Nothing ever advertises → scan timeout rejects so the sheet doesn't spin.
+        // Nothing ever advertises → the scan stops and the picker is told, so it
+        // drops the spinner for its empty state (#5654). The connect stays open
+        // instead of rejecting, so the sheet's Scan again stays reachable.
         await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
-        const error = await settled;
-        expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toMatch(/no boards found/i);
+        expect(onScanStopped).toHaveBeenCalledOnce();
+        expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+        expect(settledWith).toBe('pending');
+
+        // The climber closes the empty picker: that is what ends the connect.
+        cancelPicker(new Error('Device selection cancelled'));
+        await settled;
+        expect((settledWith as Error).message).toBe('Device selection cancelled');
       } finally {
         vi.useRealTimers();
       }
