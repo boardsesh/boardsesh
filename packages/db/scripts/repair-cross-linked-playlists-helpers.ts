@@ -178,7 +178,7 @@ export function classifyCrossLinkedPlaylist(
   // duplicate-account one: every action below either deletes the adopter's row
   // or can be opted into deleting it (--include-merge-candidates), so an
   // unorderable pair must be refused whatever caused it.
-  if (spreadMinutes < minSpreadMinutes) {
+  if (spreadMinutes <= 0 || spreadMinutes < minSpreadMinutes) {
     const duplicateAccountNote = isDuplicateAccounts
       ? '; the two owners are case-variant emails, so merge-accounts.ts (#3278) can still collapse this pair'
       : '';
