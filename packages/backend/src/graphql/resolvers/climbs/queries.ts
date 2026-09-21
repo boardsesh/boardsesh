@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
-import { eq, and, gt, asc, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, lte, gt, gte, desc, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
@@ -276,6 +276,14 @@ export const climbQueries = {
           and(
             eq(dbSchema.boardClimbHolds.boardType, dbSchema.boardClimbs.boardType),
             eq(dbSchema.boardClimbHolds.climbUuid, dbSchema.boardClimbs.uuid),
+            // An animation's nonempty frames text is authoritative; avoid
+            // transferring materialized rows that would immediately be discarded.
+            or(
+              isNull(dbSchema.boardClimbs.framesCount),
+              lte(dbSchema.boardClimbs.framesCount, 1),
+              isNull(dbSchema.boardClimbs.frames),
+              eq(dbSchema.boardClimbs.frames, ''),
+            ),
           ),
         )
         .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)));
