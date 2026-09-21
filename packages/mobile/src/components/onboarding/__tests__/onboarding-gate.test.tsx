@@ -15,7 +15,10 @@ const reportErrorMock = vi.hoisted(() => vi.fn());
 const readShowCountMock = vi.hoisted(() => vi.fn());
 const recordShownMock = vi.hoisted(() => vi.fn());
 const markLookStepSeenMock = vi.hoisted(() => vi.fn());
-const flagsCtrl = vi.hoisted(() => ({ resolved: true, pickerEnabled: true }));
+const flagsCtrl = vi.hoisted(() => ({ resolved: true, pickerEnabled: true, connectStepEnabled: true }));
+// The connect-step enrolment has its own suite; here what matters is when the
+// gate calls it and with what.
+const enrolMock = vi.hoisted(() => vi.fn());
 const connectivityCtrl = vi.hoisted(() => ({ offline: false }));
 const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 const hasSeenMock = vi.hoisted(() => vi.fn());
@@ -96,6 +99,13 @@ vi.mock('../../../lib/connectivity/connectivity-store', () => ({
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlagsResolved: () => flagsCtrl.resolved,
   useFirstBoardPickerEnabled: () => flagsCtrl.pickerEnabled,
+  useFirstConnectCtaEnabled: () => flagsCtrl.connectStepEnabled,
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => ({ variant: 'liquidGlass' }),
+}));
+vi.mock('../../../lib/onboarding/connect-step-enrolment', () => ({
+  enrolInConnectStep: enrolMock,
 }));
 vi.mock('../../../lib/onboarding/first-board-picker-store', () => ({
   readFirstBoardPickerShowCount: readShowCountMock,
@@ -165,6 +175,9 @@ describe('OnboardingGate', () => {
     launchCtrl.ready = true;
     flagsCtrl.resolved = true;
     flagsCtrl.pickerEnabled = true;
+    flagsCtrl.connectStepEnabled = true;
+    enrolMock.mockReset();
+    enrolMock.mockResolvedValue('not_new_account');
     connectivityCtrl.offline = false;
     reportErrorMock.mockClear();
     readShowCountMock.mockReset();
@@ -1109,6 +1122,69 @@ describe('OnboardingGate', () => {
 
       await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
       expect(reportErrorMock).toHaveBeenCalledWith(markError);
+    });
+  });
+
+  // #5654, PR 7: the connect-step test enrols at the gate's post-login decision,
+  // before any surface can differ between the arms.
+  describe('the connect-step enrolment', () => {
+    beforeEach(() => {
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.id = 'user-new';
+      profileCtrl.createdAt = NEW_ACCOUNT_CREATED_AT;
+    });
+
+    it('enrols before the decision is logged and before the picker opens', async () => {
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(enrolMock).toHaveBeenCalledTimes(1);
+      expect(enrolMock).toHaveBeenCalledWith({
+        userId: 'user-new',
+        accountCreatedAt: NEW_ACCOUNT_CREATED_AT,
+        enabled: true,
+        hadBoard: false,
+        uiVariant: 'liquidGlass',
+      });
+      expect(enrolMock.mock.invocationCallOrder[0]).toBeLessThan(trackGateMock.mock.invocationCallOrder[0]);
+      expect(enrolMock.mock.invocationCallOrder[0]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
+    });
+
+    it('enrols a new account that already has a board, since the card is for them', async () => {
+      activeBoardCtrl.board = { uuid: 'board-1' };
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(enrolMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-new', hadBoard: true }));
+    });
+
+    it('hands the kill switch over, so the enrolment can refuse', async () => {
+      flagsCtrl.connectStepEnabled = false;
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(enrolMock).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+    });
+
+    it('does not enrol over a launch that came in through a link', async () => {
+      getInitialURLMock.mockResolvedValue('com.boardsesh.app://climbs/abc');
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(enrolMock).not.toHaveBeenCalled();
+    });
+
+    it('waits for the feature flags before it enrols', async () => {
+      flagsCtrl.resolved = false;
+      const { rerender } = render(<OnboardingGate />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(enrolMock).not.toHaveBeenCalled();
+
+      flagsCtrl.resolved = true;
+      rerender(<OnboardingGate />);
+      await waitFor(() => expect(enrolMock).toHaveBeenCalledTimes(1));
     });
   });
 });

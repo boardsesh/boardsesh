@@ -72,6 +72,9 @@ type ClimbReactionMenuProps = {
    *  sheet stacks above the `/play` modal (#3505). Receives the climb/board
    *  snapshot the menu was opened for. */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When provided, adds "Open the queue" (the play drawer, while the
+   *  connect-step pill has the queue button's place; #5654). */
+  onOpenQueue?: () => void;
   /** Native sheet underneath this custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
@@ -156,6 +159,7 @@ export function ClimbReactionMenu({
   onAddBetaVideo,
   onTick,
   onReportClimb,
+  onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
   reduceMotion,
@@ -256,6 +260,7 @@ export function ClimbReactionMenu({
     onAddBetaVideo,
     onTick,
     onReportClimb,
+    onOpenQueue,
     dismissSourceSheet,
     dismissPlayerAndWait,
   });

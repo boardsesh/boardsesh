@@ -1,0 +1,272 @@
+// @vitest-environment jsdom
+//
+// The connect-step test's always-mounted half (#5654, PR 7), against the real
+// store over an in-memory AsyncStorage.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import boardsCatalog from '@boardsesh/i18n/locales/en-US/boards.json';
+
+const storage = vi.hoisted(() => ({ values: new Map<string, unknown>() }));
+const trackMock = vi.hoisted(() => vi.fn());
+const registerArmMock = vi.hoisted(() => vi.fn());
+const chooseMock = vi.hoisted(() => vi.fn(async () => 'got_it'));
+const profileCtrl = vi.hoisted(() => ({ id: 'user-1' as string | undefined }));
+const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
+const settingsCtrl = vi.hoisted(() => ({ lightOnClimbTap: true }));
+const bluetoothCtrl = vi.hoisted(() => ({ isConnected: false, virtualWallHeld: false, ledless: false }));
+const overridesCtrl = vi.hoisted(() => ({ overrides: {} as Record<string, boolean | string>, loaded: true }));
+const enrolMock = vi.hoisted(() => vi.fn(async () => 'enrolled'));
+
+vi.mock('../../../lib/preference-store', () => ({
+  getPreference: async (key: string) => (storage.values.has(key) ? structuredClone(storage.values.get(key)) : null),
+  setPreference: async (key: string, value: unknown) => {
+    storage.values.set(key, structuredClone(value));
+  },
+}));
+vi.mock('../../../lib/ble/last-connected-board-store', () => ({ getStoredLastConnectedBoard: async () => null }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string>) => {
+      const found = key
+        .split('.')
+        .reduce<unknown>(
+          (node, part) => (node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined),
+          boardsCatalog,
+        );
+      if (typeof found !== 'string') return key;
+      return found.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values?.[name] ?? '');
+    },
+  }),
+}));
+vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../lib/analytics-connect-step-arm', () => ({ registerConnectStepArm: registerArmMock }));
+vi.mock('../../../lib/clock', () => ({ nowMs: () => 1_000 }));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({
+    data: profileCtrl.id ? { id: profileCtrl.id, createdAt: '2026-09-20T12:00:00.000Z' } : undefined,
+  }),
+}));
+vi.mock('../../../lib/feature-flag-overrides', () => ({
+  useFeatureFlagOverrides: () => ({ overrides: overridesCtrl.overrides, loaded: overridesCtrl.loaded }),
+}));
+// The enrolment itself is covered by connect-step-enrolment.test.ts; here only
+// when the host asks for one, and with what.
+vi.mock('../../../lib/onboarding/connect-step-enrolment', () => ({
+  CONNECT_STEP_FORCE_ARM_FLAG: 'first-connect-cta-arm',
+  enrolInConnectStep: enrolMock,
+}));
+vi.mock('../../../providers/theme-provider', () => ({ useOptionalTheme: () => ({ variant: 'material' }) }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: { name: 'Kilter at Blocs' } }),
+}));
+vi.mock('../../../settings', () => ({ useSetting: () => [settingsCtrl.lightOnClimbTap, vi.fn()] }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+vi.mock('../../../providers/bluetooth-provider', () => ({
+  useOptionalBluetoothContext: () => ({ ...bluetoothCtrl }),
+}));
+vi.mock('../../../providers/dialog-provider', () => ({ useChoose: () => chooseMock }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
+}));
+vi.mock('../../../providers/sheet-presentation-provider', () => ({ SHEET_SETTLE_MS: 5 }));
+
+import { FirstConnectHost } from '../FirstConnectHost';
+import {
+  getFirstConnectSnapshot,
+  resetFirstConnectStoreForTests,
+  writeConnectStepEnrolment,
+} from '../../../lib/onboarding/first-connect-store';
+
+const ENROLMENT = { userId: 'user-1', arm: 'treatment' as const, forced: false, exposedAt: 1 };
+
+describe('FirstConnectHost', () => {
+  beforeEach(() => {
+    storage.values.clear();
+    resetFirstConnectStoreForTests();
+    trackMock.mockClear();
+    registerArmMock.mockClear();
+    chooseMock.mockClear();
+    profileCtrl.id = 'user-1';
+    flagsCtrl.enabled = true;
+    settingsCtrl.lightOnClimbTap = true;
+    bluetoothCtrl.isConnected = false;
+    bluetoothCtrl.virtualWallHeld = false;
+    bluetoothCtrl.ledless = false;
+    overridesCtrl.overrides = {};
+    overridesCtrl.loaded = true;
+    enrolMock.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('binds the signed-in account and puts its arm on every event', async () => {
+    await writeConnectStepEnrolment(ENROLMENT);
+
+    render(<FirstConnectHost />);
+
+    await waitFor(() => expect(registerArmMock).toHaveBeenCalledWith('treatment'));
+    expect(getFirstConnectSnapshot()).toMatchObject({ userId: 'user-1', enrolment: ENROLMENT });
+  });
+
+  it('waits for the signed-in profile before it binds anyone', async () => {
+    profileCtrl.id = undefined;
+    const { rerender } = render(<FirstConnectHost />);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(registerArmMock).not.toHaveBeenCalled();
+
+    await writeConnectStepEnrolment(ENROLMENT);
+    profileCtrl.id = 'user-1';
+    rerender(<FirstConnectHost />);
+
+    await waitFor(() => expect(registerArmMock).toHaveBeenCalledWith('treatment'));
+    expect(registerArmMock).not.toHaveBeenCalledWith(null);
+  });
+
+  it('clears the arm for an account that is not in the test', async () => {
+    render(<FirstConnectHost />);
+
+    await waitFor(() => expect(registerArmMock).toHaveBeenCalledWith(null));
+  });
+
+  it('confirms the first connect of an enrolled account, once', async () => {
+    await writeConnectStepEnrolment(ENROLMENT);
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().enrolment).toEqual(ENROLMENT));
+
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+
+    await waitFor(() => expect(chooseMock).toHaveBeenCalledTimes(1));
+    expect(chooseMock).toHaveBeenCalledWith({
+      title: 'Connected to Kilter at Blocs',
+      message: 'Tapping a climb in the list now lights it on the wall.',
+      options: [{ value: 'got_it', label: 'Got it' }],
+      cancelValue: 'got_it',
+    });
+    expect(getFirstConnectSnapshot().device).toMatchObject({ connectedAt: 1_000, confirmationShownAt: 1_000 });
+
+    // A later reconnect in the same launch says nothing.
+    bluetoothCtrl.isConnected = false;
+    rerender(<FirstConnectHost />);
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chooseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('records the first connect for everyone, but confirms only for enrolled accounts', async () => {
+    bluetoothCtrl.isConnected = true;
+    render(<FirstConnectHost />);
+
+    await waitFor(() => expect(getFirstConnectSnapshot().device?.connectedAt).toBe(1_000));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chooseMock).not.toHaveBeenCalled();
+  });
+
+  it('says nothing with the kill switch on', async () => {
+    flagsCtrl.enabled = false;
+    await writeConnectStepEnrolment(ENROLMENT);
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().enrolment).toEqual(ENROLMENT));
+
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+
+    await waitFor(() => expect(getFirstConnectSnapshot().device?.connectedAt).toBe(1_000));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chooseMock).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when tapping a climb would not light it', async () => {
+    settingsCtrl.lightOnClimbTap = false;
+    await writeConnectStepEnrolment(ENROLMENT);
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().enrolment).toEqual(ENROLMENT));
+
+    bluetoothCtrl.isConnected = true;
+    rerender(<FirstConnectHost />);
+
+    await waitFor(() => expect(getFirstConnectSnapshot().device?.connectedAt).toBe(1_000));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(chooseMock).not.toHaveBeenCalled();
+  });
+
+  it('never reads a virtual hold as "no lights", even one that moves with a board switch', async () => {
+    // The Bluetooth provider releases a virtual hold in the cleanup of its
+    // board effect, so switching from a ledless wall held virtually to a wall
+    // with lights renders one commit with the hold still up on the new board.
+    // Only the device picker's tap says "no lights" (device-picker-no-lights.ts).
+    await writeConnectStepEnrolment(ENROLMENT);
+    bluetoothCtrl.virtualWallHeld = true;
+    bluetoothCtrl.ledless = true;
+    const { rerender } = render(<FirstConnectHost />);
+    await waitFor(() => expect(getFirstConnectSnapshot().device).not.toBeNull());
+
+    bluetoothCtrl.ledless = false;
+    rerender(<FirstConnectHost />);
+    bluetoothCtrl.virtualWallHeld = false;
+    rerender(<FirstConnectHost />);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getFirstConnectSnapshot().device?.noLightsAt).toBeNull();
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  describe('the QA override', () => {
+    it('leaves the launch value to the gate', async () => {
+      overridesCtrl.overrides = { 'first-connect-cta-arm': 'treatment' };
+      render(<FirstConnectHost />);
+
+      await waitFor(() => expect(registerArmMock).toHaveBeenCalled());
+      expect(enrolMock).not.toHaveBeenCalled();
+    });
+
+    it('re-enrols the signed-in account as soon as a tester moves it, and again when cleared', async () => {
+      const { rerender } = render(<FirstConnectHost />);
+      await waitFor(() => expect(registerArmMock).toHaveBeenCalled());
+
+      overridesCtrl.overrides = { 'first-connect-cta-arm': 'treatment' };
+      rerender(<FirstConnectHost />);
+
+      await waitFor(() => expect(enrolMock).toHaveBeenCalledTimes(1));
+      expect(enrolMock).toHaveBeenCalledWith({
+        userId: 'user-1',
+        accountCreatedAt: '2026-09-20T12:00:00.000Z',
+        enabled: true,
+        hadBoard: true,
+        uiVariant: 'material',
+      });
+
+      rerender(<FirstConnectHost />);
+      overridesCtrl.overrides = {};
+      rerender(<FirstConnectHost />);
+      await waitFor(() => expect(enrolMock).toHaveBeenCalledTimes(2));
+    });
+
+    it('waits for the overrides to load before it treats anything as a change', async () => {
+      overridesCtrl.loaded = false;
+      const { rerender } = render(<FirstConnectHost />);
+
+      overridesCtrl.overrides = { 'first-connect-cta-arm': 'control' };
+      overridesCtrl.loaded = true;
+      rerender(<FirstConnectHost />);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(enrolMock).not.toHaveBeenCalled();
+    });
+
+    it('asks for nothing while the profile is still loading', async () => {
+      profileCtrl.id = undefined;
+      const { rerender } = render(<FirstConnectHost />);
+
+      overridesCtrl.overrides = { 'first-connect-cta-arm': 'control' };
+      rerender(<FirstConnectHost />);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(enrolMock).not.toHaveBeenCalled();
+    });
+  });
+});

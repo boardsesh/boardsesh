@@ -155,6 +155,12 @@ vi.mock('expo-router', () => ({
 vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
   OnboardingTipBanner: () => null,
 }));
+// The connect-step card has its own suite; it reaches the Bluetooth provider,
+// which this suite has no reason to load.
+vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
+  FirstConnectCard: () => null,
+  useFirstConnectCardExpected: () => false,
+}));
 vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
   clearBoardRevealTipPending: vi.fn(async () => {}),

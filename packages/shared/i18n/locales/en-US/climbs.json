@@ -668,7 +668,8 @@
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
-      "closeOverlay": "Close climb actions"
+      "closeOverlay": "Close climb actions",
+      "openQueue": "Open the queue"
     },
     "create": {
       "brush": {

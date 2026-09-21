@@ -49,6 +49,7 @@ disappears for the rest of the launch after a sign-out.
 | `offline_engine_state` | `baked-on` \| `web-off` (+ legacy flag values) | `analytics-offline-engine-state.ts`, once per launch | Offline-engine bake measurement (#4312) |
 | `render_mode`, `glow_falloff`, `glow_falloff_source` | see `docs/board-render-analytics.md` | `registerRenderSuperProperties`, on settings change | Board-render A/B (#2202) |
 | `gym_uuid`, `gym_name` | the active board's gym, or absent | `analytics-gym.ts` via `AnalyticsGymProperties`, on active-board change | Which venue a climber is at — the only gym dimension on climbing events. Cleared (not left stale) when the active board has no gym |
+| `arm_connect_step` | `treatment` \| `control`, or absent | `analytics-connect-step-arm.ts`, at the connect-step exposure and on each launch for an enrolled account | The connect-step test's arm (#5654, Appendix C). Cleared for a signed-in account that is not enrolled |
 
 ### Server-Side Analytics
 
@@ -507,7 +508,7 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 
 | Event                            | Properties                                                                                                                                          | Emit sites                                                                                                                                                                                                                                                    |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again` / `notification`), `boardName`, `reconnect` | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts`, the device picker's Scan again in `bluetooth-provider.tsx` and the Android session notification's bulb in `live-activity-bridge.tsx`. Fires on the tap, before permissions. |
+| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again` / `notification` / `first_connect_card` / `first_connect_pill`), `boardName`, `reconnect` | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts`, the device picker's Scan again in `bluetooth-provider.tsx` and the Android session notification's bulb in `live-activity-bridge.tsx`. Fires on the tap, before permissions. |
 | `Bluetooth Unavailable`          | `reason` (`unauthorized` / `powered_off` / `unsupported` / `unknown`), `surface` (`connect` / `quickstart_scan`), `platform`, `boardName` (connect only) | `packages/mobile/src/lib/ble/bluetooth-unavailable.ts`, called from `bluetooth-unavailable-alert.ts` (connect) and `use-board-scan.ts` (quickstart). Fires with the alert or sheet state.                                                                    |
 | `Board Quickstart Scan Finished` | `outcome` (`completed` / `stopped` / `error`), `found_count`                                                                                        | `packages/mobile/src/lib/ble/use-board-scan.ts`. Once per quickstart scan that started the radio.                                                                                                                                                             |
 
@@ -579,3 +580,54 @@ skip rate and `Board Created` per newcomer as guardrails.
   binds through the same `useActivateBoard` as the picker itself.
 - `picker_verdict` on the `would_present` rows says why a climber without a board did not get the
   picker; `not_new_account` is the existing fleet, which never gets it.
+
+### Connect-step test (#5654, PR 7)
+
+An A/B test on the largest drop-off: 18.6% of newcomers open a climb and never tap the unlabelled
+bulb. The treatment puts a "Light climbs on {{board}}" card at the top of Climbs (Connect · This
+wall has no lights · X "Not now", on at most two launches) and turns the play view's bulb into a
+labelled "Light it on the board" pill (share and queue move into ⋯) for at most three calendar
+days. Control keeps today's UI. Both arms get a one-time "Connected to {{board}}" confirmation
+after the phone's first successful connect. Kill switch: `first-connect-cta-kill`.
+
+**Assignment** is local and needs no flag: `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2`,
+1 = treatment (`packages/mobile/src/lib/onboarding/connect-step-arm.ts`). **Eligible**: the
+native app (the Expo browser build never enrols) on a production build (not a dev build, an EAS
+preview or a `pr-*` OTA preview) whose installed binary is 2.7.0 or later
+(`CONNECT_STEP_MIN_NATIVE_VERSION`; the code reaches 2.5 and 2.6 by OTA and stays inert there),
+signed in, account at most 7 days old (the first-board picker's line), kill switch off, and a
+phone that has never connected to a board (a board remembered for one-tap reconnect counts as
+connected, so returning climbers are never enrolled). Enrolment is stored per account on the
+phone, so the exposure fires once per account per phone.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `First Run Exposed` | `arm_connect_step` (`treatment` / `control`), `arm_forced` (QA override; leave these out), `assignment_salt`, `user_id`, `account_age_hours`, `ota_is_embedded`, `native_version` (the installed binary), `ui_variant` (`liquidGlass` / `material` / null), `had_board` | `packages/mobile/src/lib/onboarding/connect-step-enrolment.ts`, called by `OnboardingGate` at its post-login decision, before either arm differs | Once per account per phone, both arms |
+| `First Run Card Action` | `action` (`connect` / `no_lights` / `dismiss` / `retry`) | `FirstConnectCard.tsx` (treatment only) | One per tap |
+| `Board Lights Declined` | `surface` (`climbs_card` / `device_picker`) | `FirstConnectCard.tsx`; `device-picker-no-lights.ts`, from the tap on the device picker's own "This wall has no lights" (never inferred from a virtual hold, which also moves when a climber switches boards) | Once per phone that has never connected, enrolled accounts only (both arms) |
+
+New super property:
+
+| Property | Values | Registered from | Why |
+| --- | --- | --- | --- |
+| `arm_connect_step` | `treatment` \| `control`, or absent | `analytics-connect-step-arm.ts`: at exposure, and on each launch by `FirstConnectHost` for the signed-in account (cleared for anyone not enrolled); re-registered in `reset()` | Splits every funnel by arm without joining to `First Run Exposed` |
+
+Reading it:
+
+- **Primary**: `Climb Sent to Board Success` within 7 days of `First Run Exposed`, by
+  `arm_connect_step`, analysed per `user_id` (about 8% of newcomers are split across two persons),
+  with `arm_forced = true` removed. Only 2.7.0+ binaries enrol, but TestFlight testers on 2.7.0
+  can enrol before release day, so also keep exposures on or after the release day (iOS) or the
+  100% rollout day (Android). `ota_is_embedded` still splits a first launch on the binary's own JS
+  from a later OTA launch.
+- **Leading**: `Board Connect Tapped` with `surface` `first_connect_card` (the card's Connect and
+  Try again) and `first_connect_pill` (the play-view pill), next to the bare bulb's `play_drawer`,
+  plus `First Run Card Action` with `action = 'connect'`. The card, the pill and every bulb run
+  one connect (`useLightbulbControl().connect`), so each tap is logged once.
+- **"a"**: `Board Lights Declined` ÷ `First Run Exposed` bounds how many newcomers had no LED board
+  to connect to. Over 40% of card views in week 2 means the Bluetooth-first work should wait.
+  "No lights" is recorded per phone, not per board: one `noLightsAt` in the phone's
+  connect-step state, never the board's `hasLeds`. A climber who marks a dark board A as having no
+  lights never sees the card or the pill for a lit board B on the same phone, so read a decline
+  as "this phone left the treatment", not "this board is dark".
+- **SRM**: exposures per arm should sit near 50/50 every week.

@@ -125,6 +125,30 @@ describe('useClimbActions gating', () => {
     ]);
   });
 
+  // #5654: the play drawer passes this while the connect-step pill has the
+  // queue button's place; everywhere else the queue has its own button.
+  it('adds "Open the queue" right after "Add to queue" only when onOpenQueue is provided', () => {
+    expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('openQueue');
+
+    const withQueue = ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, onOpenQueue: () => {} });
+    expect(withQueue.indexOf('openQueue')).toBe(withQueue.indexOf('queue') + 1);
+  });
+
+  it('closes the menu before it opens the queue', () => {
+    const order: string[] = [];
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onAfterAction: () => order.push('closed'),
+      onOpenQueue: () => order.push('queue opened'),
+    });
+
+    act(() => result.current.find((action) => action.id === 'openQueue')?.run());
+
+    expect(order).toEqual(['closed', 'queue opened']);
+  });
+
   it('adds "Edit entry" only when onEditEntry is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, onEditEntry: () => {} })).toContain(
       'editEntry',

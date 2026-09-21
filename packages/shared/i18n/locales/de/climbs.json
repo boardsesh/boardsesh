@@ -668,7 +668,8 @@
       "edit": "Boulder bearbeiten",
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
-      "closeOverlay": "Boulder-Aktionen schließen"
+      "closeOverlay": "Boulder-Aktionen schließen",
+      "openQueue": "Warteschlange öffnen"
     },
     "create": {
       "brush": {

@@ -668,7 +668,8 @@
       "edit": "Modifier la voie",
       "editEntry": "Modifier l'entrée du carnet",
       "report": "Signaler le bloc",
-      "closeOverlay": "Fermer les actions de la voie"
+      "closeOverlay": "Fermer les actions de la voie",
+      "openQueue": "Ouvrir la file"
     },
     "create": {
       "brush": {

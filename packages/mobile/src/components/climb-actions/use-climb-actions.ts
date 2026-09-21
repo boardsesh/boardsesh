@@ -33,6 +33,7 @@ import { track } from '../../lib/analytics';
 export type ClimbActionId =
   | 'preview'
   | 'queue'
+  | 'openQueue'
   | 'playNext'
   | 'playlist'
   | 'favorite'
@@ -116,6 +117,13 @@ type UseClimbActionsArgs = {
    * the menu is open can't retarget it. Omit it and reporting opens the root sheet.
    */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /**
+   * When provided, adds "Open the queue", which runs this once the menu has
+   * started closing. The play drawer passes its own queue opener while the
+   * connect-step pill (#5654) has taken the queue button's place in its second
+   * row; everywhere else the queue has its own button and this is omitted.
+   */
+  onOpenQueue?: () => void;
   /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** `/play`-owned native-stack close waiter; absent for every inline surface. */
@@ -144,6 +152,7 @@ export function useClimbActions({
   onAddBetaVideo,
   onTick,
   onReportClimb,
+  onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
 }: UseClimbActionsArgs): ClimbActionItem[] {
@@ -255,6 +264,21 @@ export function useClimbActions({
         after();
       },
     });
+
+    if (onOpenQueue) {
+      items.push({
+        id: 'openQueue',
+        title: t('mobile.climbActions.openQueue'),
+        icon: 'queue',
+        color: accentColor,
+        run: () => {
+          // Close the menu first, like share: the queue sheet opens from the
+          // play route, under an overlay that is already on its way out.
+          after();
+          onOpenQueue();
+        },
+      });
+    }
 
     // "Play next" is meaningless on the climb already on the wall, so it is hidden
     // there rather than shown as a no-op.
@@ -472,6 +496,7 @@ export function useClimbActions({
     onAddBetaVideo,
     onTick,
     onReportClimb,
+    onOpenQueue,
     moderationEnabled,
     dismissSourceSheet,
     dismissPlayerAndWait,

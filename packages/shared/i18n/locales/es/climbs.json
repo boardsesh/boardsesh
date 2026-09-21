@@ -668,7 +668,8 @@
       "edit": "Editar vía",
       "editEntry": "Editar registro",
       "report": "Reportar bloque",
-      "closeOverlay": "Cerrar acciones de la vía"
+      "closeOverlay": "Cerrar acciones de la vía",
+      "openQueue": "Abrir la cola"
     },
     "create": {
       "brush": {

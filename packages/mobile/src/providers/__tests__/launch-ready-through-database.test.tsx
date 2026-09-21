@@ -170,6 +170,11 @@ vi.mock('../../components/connectivity/use-connectivity-banner', () => ({
 }));
 vi.mock('../theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {}, colorScheme: 'light' }),
+  useOptionalTheme: () => null,
+}));
+// The connect-step enrolment the gate runs has its own suite.
+vi.mock('../../lib/onboarding/connect-step-enrolment', () => ({
+  enrolInConnectStep: vi.fn(async () => 'not_new_account'),
 }));
 vi.mock('../auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../feature-flags-provider', async () => {
@@ -179,6 +184,7 @@ vi.mock('../feature-flags-provider', async () => {
     useQaTesterGateEnabled: () => true,
     useSendRecoveryGateEnabled: () => true,
     useFirstBoardPickerEnabled: () => true,
+    useFirstConnectCtaEnabled: () => true,
     useFeatureFlagsResolved: () => useSyncExternalStore(flagsCtrl.subscribe, () => flagsCtrl.resolved),
   };
 });

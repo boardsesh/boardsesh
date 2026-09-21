@@ -100,6 +100,28 @@
       "openSettings": "Open Settings",
       "notNow": "Not now"
     },
+    "firstConnect": {
+      "card": {
+        "title": "Light climbs on {{board}}",
+        "titleNoName": "Light climbs on your board",
+        "body": "Connect this phone to the board, then tap any climb to light it.",
+        "connect": "Connect",
+        "tryAgain": "Try again",
+        "noLights": "This wall has no lights",
+        "notNow": "Not now",
+        "connecting": "Connecting to {{board}}…",
+        "connectingNoName": "Connecting to your board…",
+        "failed": "Not connected to {{board}} yet. Try again when you're ready.",
+        "failedNoName": "Not connected to your board yet. Try again when you're ready."
+      },
+      "pill": "Light it on the board",
+      "confirm": {
+        "title": "Connected to {{board}}",
+        "titleNoName": "Connected to your board",
+        "body": "Tapping a climb in the list now lights it on the wall.",
+        "gotIt": "Got it"
+      }
+    },
     "discovery": {
       "findNearby": "Find nearby",
       "bluetooth": "Bluetooth",

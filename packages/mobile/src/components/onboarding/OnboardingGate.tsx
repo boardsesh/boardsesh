@@ -23,8 +23,14 @@ import {
 import { FIRST_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { markBoardLookStepSeen } from '../../lib/board-render/board-look-step-seen';
 import { wasOpenedFromNotification } from '../../lib/onboarding/launch-notification';
-import { useFeatureFlagsResolved, useFirstBoardPickerEnabled } from '../../providers/feature-flags-provider';
+import { enrolInConnectStep } from '../../lib/onboarding/connect-step-enrolment';
+import {
+  useFeatureFlagsResolved,
+  useFirstBoardPickerEnabled,
+  useFirstConnectCtaEnabled,
+} from '../../providers/feature-flags-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
+import { useOptionalTheme } from '../../providers/theme-provider';
 import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
 
 /**
@@ -149,6 +155,14 @@ export function OnboardingGate() {
   const pickerEnabled = useFirstBoardPickerEnabled();
   const pickerEnabledRef = useRef(pickerEnabled);
   pickerEnabledRef.current = pickerEnabled;
+  const connectStepEnabled = useFirstConnectCtaEnabled();
+  const connectStepEnabledRef = useRef(connectStepEnabled);
+  connectStepEnabledRef.current = connectStepEnabled;
+  // Which look the exposure happened under: the treatment's card and pill are
+  // drawn per variant, so the analysis can split on it.
+  const uiVariant = useOptionalTheme()?.variant ?? null;
+  const uiVariantRef = useRef(uiVariant);
+  uiVariantRef.current = uiVariant;
   const segments = useSegments();
   // Latest top-level segment for the async check, without re-running the effect
   // on every navigation — the gate decides once per app launch.
@@ -363,6 +377,21 @@ export function OnboardingGate() {
         }
 
         const seen = await hasSeenOnboarding();
+        if (cancelled) return;
+
+        // The connect-step test (#5654, PR 7) enrols here, at the post-login
+        // decision and before anything the arms do differently can show: the
+        // card and the pill only read an enrolment this writes. Board or not,
+        // since the card is for a climber who has one. Once per account per
+        // phone, so a relaunch or a re-run of this effect finds it enrolled.
+        // Local reads only, and it never throws.
+        await enrolInConnectStep({
+          userId: userIdRef.current,
+          accountCreatedAt: accountCreatedAtRef.current,
+          enabled: connectStepEnabledRef.current,
+          hadBoard: hasBoardRef.current,
+          uiVariant: uiVariantRef.current,
+        });
         if (cancelled) return;
 
         // A bound board means the flow has already done its job, however the

@@ -163,6 +163,26 @@ diagnostic) applies on native. The whole surface lives in three files:
   got before the picker. Find my board and every other way into the picker keep
   working. The gate waits for
   `useFeatureFlagsResolved()` before it decides, like the others.
+  `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
+  unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
+  no new account is enrolled, and every enrolled one gets the plain bulb back
+  (no Climbs card, no "Light it on the board" pill, no first-connect
+  confirmation). The test deliberately assigns arms WITHOUT a PostHog flag: a
+  first launch has no cached flags, so a flag-driven arm could change under a
+  climber the moment it resolved. The arm is
+  `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
+  treatment), computed on the phone, and only dealt on a production build
+  (not a dev build, an EAS preview or a `pr-*` OTA preview) whose installed
+  binary is 2.7.0 or later (`CONNECT_STEP_MIN_NATIVE_VERSION`): the code
+  reaches older binaries by OTA and stays inert there. Its QA override,
+  `first-connect-cta-arm` (variants `treatment` / `control`), is the one
+  catalog entry whose PostHog value is IGNORED: the enrolment reads the
+  on-device override store directly, so a flag of that name created in
+  PostHog cannot move real climbers between arms. Forcing an arm skips the
+  build, binary, age and never-connected checks, wipes the phone's
+  connect-step state, takes effect right away for the signed-in account
+  (`FirstConnectHost` re-enrols when the override changes), and tags the
+  exposure `arm_forced: true`.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

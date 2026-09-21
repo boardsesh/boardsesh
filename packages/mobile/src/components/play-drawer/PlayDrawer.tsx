@@ -111,6 +111,8 @@ import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget, swipeStaysViewOnly } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { useFirstConnectPill } from './use-first-connect-pill';
+import { deriveFirstConnectPillWouldConnect } from '../../lib/onboarding/first-connect-decision';
 import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -690,6 +692,7 @@ export function PlayDrawer({
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
+    connect: connectLightbulb,
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     wallHeldLocally,
@@ -1049,6 +1052,33 @@ export function PlayDrawer({
     confirmArmed: busyWallConfirmArmed,
     wallDriven: lightbulbActive,
   });
+  // The connect-step test's pill (#5654, PR 7, treatment only): the bulb with a
+  // label, while this phone has never connected, and only where a tap on the
+  // bulb would CONNECT this phone (see `deriveFirstConnectPillWouldConnect`).
+  const firstConnectPillWouldConnect = deriveFirstConnectPillWouldConnect({
+    isAnonymous,
+    hasBluetooth: bluetooth !== null,
+    boardMismatch: showBoardMismatch,
+    commitMode: commitBarModel.mode === 'commit',
+    sharedSession: isSharedSession,
+    wallHeldByOtherUser: bluetooth?.wallHeldByOtherUser ?? false,
+    tapConnects: lightbulbPressAction === 'connect',
+    pending: lightbulbPending,
+    localConnected: bluetoothConnected,
+    wallHeldLocally,
+  });
+  const showConnectPill = useFirstConnectPill(firstConnectPillWouldConnect);
+  // The pill runs the bulb's own tap, but a connect from it is logged as the
+  // pill's, so the treatment's new entry point reads apart from the bare bulb.
+  const handleConnectPillPress = useCallback(() => {
+    if (lightbulbPressAction === 'connect') {
+      void connectLightbulb('first_connect_pill');
+      return;
+    }
+    handleLightbulb();
+  }, [lightbulbPressAction, connectLightbulb, handleLightbulb]);
+  // With the pill up, the queue moves into ⋯ (share is already there).
+  const openQueueFromActions = showConnectPill ? onOpenQueue : undefined;
   // The latch as the board overlay sees it. It follows the latch itself, NOT the
   // commit row: on the wrong board the row stands down (its controls would be
   // dead under the switch-board scrim) while the climber is still very much
@@ -1597,6 +1627,7 @@ export function PlayDrawer({
         onAddBetaVideo: handleOpenAddBetaVideoForClimb,
         onTick: handleOpenTickForClimb,
         onReportClimb: handleOpenReportClimbForClimb,
+        onOpenQueue: openQueueFromActions,
       });
       return;
     }
@@ -1607,6 +1638,7 @@ export function PlayDrawer({
     handleOpenAddBetaVideoForClimb,
     handleOpenTickForClimb,
     handleOpenReportClimbForClimb,
+    openQueueFromActions,
   ]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the Logbook peek.
@@ -1975,6 +2007,8 @@ export function PlayDrawer({
                             // open with a pairing prompt. Anonymous wall lighting is
                             // its own feature (#4606), not a v1 side effect.
                             showLightbulb={bluetooth !== null}
+                            connectPill={showConnectPill}
+                            onConnectPill={handleConnectPillPress}
                             // The pill owns the driver's face whenever it renders the
                             // avatar; suppress the lightbulb pip so the same face never
                             // shows twice in the drawer.
@@ -2110,6 +2144,8 @@ export function PlayDrawer({
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
           onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
+          onOpenQueue={openQueueFromActions}
+          onShare={showConnectPill ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />

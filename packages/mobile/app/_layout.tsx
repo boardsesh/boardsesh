@@ -97,6 +97,7 @@ import { LowPowerModeTracker } from '../src/components/analytics/LowPowerModeTra
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
+import { FirstConnectHost } from '../src/components/onboarding/FirstConnectHost';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
@@ -897,6 +898,12 @@ function RootLayout() {
                                                             OnboardingGate, so it never paints over the splash. */}
                                                                     <ConnectivityBanner />
                                                                     <OnboardingGate />
+                                                                    {/* The connect-step test's (#5654) always-mounted half:
+                                                            binds its store to the signed-in account, records this
+                                                            phone's first connect and shows the one-time
+                                                            confirmation. Renders nothing. Inside the Bluetooth
+                                                            and dialog providers, which it reads. */}
+                                                                    <FirstConnectHost />
                                                                     {/* Asks a tester to try a PR preview (or shows what to
                                                             test on the one already running). No-op for everyone
                                                             else. A first run outranks it through the seen flag
