@@ -463,11 +463,11 @@ export default defineConfig({
       // into any dependsOn or CI workflow: the correction run is a deliberate
       // human action, never a deploy side effect.
       'db:report-tick-timezones': {
-        command: 'bun run --filter=@boardsesh/db db:report-tick-timezones',
+        command: 'pnpm --filter @boardsesh/db run db:report-tick-timezones',
         cache: false,
       },
       'db:backfill-tick-timezones': {
-        command: 'bun run --filter=@boardsesh/db db:backfill-tick-timezones',
+        command: 'pnpm --filter @boardsesh/db run db:backfill-tick-timezones',
         cache: false,
       },
 
