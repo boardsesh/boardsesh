@@ -1,9 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
-// The type scales are plain data, but `theme/typography` imports react-native for
-// its `TextStyle` type and the runtime import survives transform. Nothing here
-// touches a host component, so an empty module is enough.
-vi.mock('react-native', () => ({}));
+// Shared thumbnail metrics import theme tokens, which inspect Platform.OS.
+// These arithmetic checks do not render native host components.
+vi.mock('react-native', () => ({ Platform: { OS: 'android' } }));
 
 import { textStyles, materialTextStyles } from '../../theme/typography';
 import { THUMBNAIL_HEIGHT } from '../climb-list-thumbnail-metrics';
@@ -12,14 +11,13 @@ import { PROGRESS_MAX_FONT_SCALE } from '../../lib/climb-progress';
 /**
  * The rich row's vertical budget, done as arithmetic rather than eyeballed.
  *
- * The 76×96 thumbnail pins the row: as long as the centre column's stacked lines
- * come in under `THUMBNAIL_HEIGHT`, adding a line costs zero row height. Past it
- * the row grows and the list's rhythm breaks. Gaps and paddings do NOT scale with
- * Dynamic Type; line heights do (React Native scales `lineHeight` with `fontSize`
- * whenever `allowFontScaling` is on), which is what makes this worth computing.
+ * The 76×96 thumbnail supplies the baseline: stacked text under its height adds
+ * no row height. Taller text makes the row grow because its containers have no
+ * fixed height. Gaps and paddings do not scale with Dynamic Type; line heights
+ * do when allowFontScaling is enabled.
  *
- * Line heights come from the REAL type scales, so a change to either variant's
- * scale fails here instead of silently overflowing on a device.
+ * These measurements use the real type scales. They describe when extra row
+ * height is needed; they do not replace device checks for wrapping or clipping.
  */
 
 /** `styles.centerColumn.gap` in ClimbListItemContent. */
@@ -75,7 +73,7 @@ const VARIANTS: Variant[] = ['liquidGlass', 'material'];
 const TIERS = [1, 1.15, 1.3, 1.5];
 
 describe('rich row vertical budget', () => {
-  it('pins the budget to the thumbnail', () => {
+  it('uses the thumbnail height as the baseline', () => {
     expect(THUMBNAIL_HEIGHT).toBe(96);
   });
 
@@ -113,13 +111,10 @@ describe('rich row vertical budget', () => {
     }
   });
 
-  it('records that FOUR lines cannot fit above ~1.08×, tags included', () => {
-    // Documented, not hidden: a climb that is BOTH in a playlist AND has personal
-    // history stacks four lines, and four lines exceed the thumbnail once text
-    // scales past ~1.08× (Liquid Glass) / ~1.11× (Material). Shedding the tag strip there would have to live in
-    // ClimbPlaylistChips (the row cannot know whether the progress line rendered
-    // without subscribing to the logbook itself, which is the whole point of the
-    // memo boundary), so it is deliberately out of scope for this PR.
+  it('records the extra row height needed for four lines at larger text sizes', () => {
+    // A climb with playlist chips and personal history stacks four lines.
+    // At larger text sizes the content exceeds the thumbnail's baseline, so the
+    // row must grow. This measurement alone does not imply clipping.
     const height = centreColumnHeight({
       variant: 'liquidGlass',
       fontScale: 1.15,

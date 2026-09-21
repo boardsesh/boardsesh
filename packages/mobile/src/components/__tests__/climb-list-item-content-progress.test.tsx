@@ -25,6 +25,10 @@ const logbookContextRef = vi.hoisted(() => ({
 
 const thumbnailRenders = vi.hoisted(() => ({ count: 0 }));
 const fontScale = vi.hoisted(() => ({ current: 1 }));
+const frozenNowMs = vi.hoisted(() => Date.UTC(2026, 6, 15, 12));
+
+// Recency must use the app clock even when the fixture date differs from today.
+vi.mock('../../lib/clock', () => ({ nowMs: () => frozenNowMs }));
 
 vi.mock('@boardsesh/board-react', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
@@ -48,6 +52,7 @@ vi.mock('@boardsesh/board-react', async () => {
 });
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: fontScale.current }),
@@ -115,7 +120,7 @@ const entry = (overrides: Partial<LogbookEntry> = {}): LogbookEntry =>
     quality: null,
     difficulty: null,
     comment: '',
-    climbed_at: new Date().toISOString().replace('Z', ''),
+    climbed_at: new Date(frozenNowMs).toISOString().replace('Z', ''),
     is_ascent: true,
     status: 'send',
     upvotes: 0,

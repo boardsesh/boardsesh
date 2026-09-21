@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { ASCENT_STATUS_ICON } from './ascent-status-icon';
 import { useTheme } from '../providers/theme-provider';
 import { useClimbProgress } from '../hooks/use-climb-progress';
+import { nowMs } from '../lib/clock';
 import { climbProgressTokenBudget, describeClimbProgressRecency, PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 
 /**
@@ -81,11 +82,10 @@ export const ClimbProgressLine = React.memo(function ClimbProgressLine({
     if (progress.latestClimbedAtMs !== null) {
       // The clock is read inside the memo and is deliberately NOT a dependency:
       // a row left mounted across midnight keeps yesterday's wording until it
-      // next re-renders (a scroll, a recycle, or a tick merge). The alternative
-      // is a per-row clock, and `LogbookDayDivider` already spells out why that
-      // is the wrong trade — it owns its own `useFocusEffect` clock precisely so
-      // the climb rows beside it do not pay for one.
-      const bucket = describeClimbProgressRecency(progress.latestClimbedAtMs, Date.now());
+      // remounts or progress, text size, or translation dependencies change.
+      // A re-render with unchanged dependencies does not refresh this memo.
+      // This keeps climb rows free of individual clock subscriptions.
+      const bucket = describeClimbProgressRecency(progress.latestClimbedAtMs, nowMs());
       recency =
         bucket.kind === 'today'
           ? t('mobile.climbRow.progress.today')
