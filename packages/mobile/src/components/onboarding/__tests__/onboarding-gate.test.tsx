@@ -837,6 +837,22 @@ describe('OnboardingGate', () => {
       expect(recordShownMock.mock.invocationCallOrder[0]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
     });
 
+    // The decision is what stops the watchdog, so it goes out before the push:
+    // a push that throws is an error report, not a false stall 15 s later.
+    it('reports the decision before it opens the picker, and reports a push that throws', async () => {
+      const pushError = new Error('navigator not ready');
+      pushMock.mockImplementationOnce(() => {
+        throw pushError;
+      });
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+      expect(trackGateMock.mock.invocationCallOrder[0]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
+      expect(decisions()).toEqual([expect.objectContaining({ outcome: 'presented', step: 'first_board' })]);
+      expect(reportErrorMock).toHaveBeenCalledWith(pushError);
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+    });
+
     it('opens it a second time for an account that has seen it once', async () => {
       readShowCountMock.mockResolvedValue(1);
       render(<OnboardingGate />);
@@ -1043,6 +1059,39 @@ describe('OnboardingGate', () => {
 
       await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
       expect(markLookStepSeenMock).toHaveBeenCalledTimes(1);
+    });
+
+    // The mark is about the account, not the launch: a newcomer who opened the
+    // app from a link or a notification still has Aura as the default and still
+    // binds a board later, from a path the picker never saw.
+    it.each([
+      {
+        launch: 'a link',
+        reason: 'launched_by_url',
+        arrange: () => getInitialURLMock.mockResolvedValue('com.boardsesh.app://climbs/abc'),
+      },
+      {
+        launch: 'a tapped notification',
+        reason: 'launched_by_notification',
+        arrange: () => {
+          notificationCtrl.openedFromNotification = true;
+        },
+      },
+      {
+        launch: 'a deep-link landing',
+        reason: 'deep_link_segment',
+        arrange: () => {
+          segmentsCtrl.segments = ['join', 'abc'];
+        },
+      },
+    ])('marks it for a new account whose launch came from $launch', async ({ reason, arrange }) => {
+      arrange();
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(decisions()).toEqual([expect.objectContaining({ outcome: 'skipped', reason })]);
+      expect(markLookStepSeenMock).toHaveBeenCalledTimes(1);
+      expect(pushMock).not.toHaveBeenCalled();
     });
 
     it('leaves the board-look step alone for an existing account', async () => {

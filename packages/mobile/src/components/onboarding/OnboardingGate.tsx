@@ -275,7 +275,10 @@ export function OnboardingGate() {
     let decided = false;
     // Read once for the whole run, so every branch below agrees on it. The
     // board-look mark follows the kill switch: with it on, a new account gets
-    // exactly what it got before the picker existed.
+    // exactly what it got before the picker existed. It is about the account,
+    // not the launch, so it also runs on the early skips (a link, a tapped
+    // notification, a deep-link landing): that account still has Aura as its
+    // default and still binds a board later, from a path the picker never saw.
     const markLookStepForNewAccount = isNewAccount(accountCreatedAtRef.current, nowMs()) && pickerEnabledRef.current;
     const decide = (decision: GateDecision) => {
       decided = true;
@@ -435,7 +438,9 @@ export function OnboardingGate() {
         }
 
         if (pickerVerdict === 'presented') {
-          router.push(FIRST_BOARD_PICKER_HREF);
+          // Decided before the push, like every other branch: the decision is
+          // what stops the watchdog, so a push that throws is reported as the
+          // error it is rather than as a stall 15 s later.
           decide({
             outcome: 'presented',
             reason: 'new_account',
@@ -445,6 +450,11 @@ export function OnboardingGate() {
             pickerVerdict,
             pickerTimesShown,
           });
+          try {
+            router.push(FIRST_BOARD_PICKER_HREF);
+          } catch (error: unknown) {
+            reportError(error);
+          }
           return;
         }
 
