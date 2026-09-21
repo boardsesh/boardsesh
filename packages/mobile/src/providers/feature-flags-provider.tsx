@@ -188,6 +188,19 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
   },
+  {
+    key: 'first-connect-cta-kill',
+    label: 'Disable the connect step',
+    description:
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+  },
+  {
+    key: 'first-connect-cta-arm',
+    label: 'Force the connect-step arm (QA)',
+    description:
+      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, and starts this phone from a clean slate as if it had never connected. Takes effect on the next launch. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+    variants: ['treatment', 'control'],
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -444,6 +457,17 @@ export function useSendRecoveryGateEnabled(): boolean {
  */
 export function useFirstBoardPickerEnabled(): boolean {
   return useFeatureFlag('first-board-picker-kill') !== true;
+}
+
+/**
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
+ * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Unresolved reads as "not killed". The gate waits for
+ * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
+ * the value lands, so flipping it in PostHog takes the whole test down.
+ */
+export function useFirstConnectCtaEnabled(): boolean {
+  return useFeatureFlag('first-connect-cta-kill') !== true;
 }
 
 /**

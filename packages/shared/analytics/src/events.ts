@@ -506,6 +506,40 @@ export const SHARED_EVENTS = {
   // the gym map, the Bluetooth scan) counts as not skipped.
   FirstBoardPathChosen: 'First Board Path Chosen',
   FirstBoardPickerSkipped: 'First Board Picker Skipped',
+  // Mobile-only: the connect-step test (#5654, PR 7). The treatment puts a
+  // "Light climbs on {{board}}" card at the top of Climbs and turns the play
+  // view's bare bulb into a labelled "Light it on the board" pill; control
+  // keeps today's UI. Both arms get a one-time "Connected to {{board}}"
+  // confirmation after this phone's first successful connect.
+  //
+  // FirstRunExposed: the account joined the test. Fired ONCE per account per
+  // phone, in both arms, at the launch gate's post-login decision and before
+  // either arm shows anything different. Eligible: signed in, account at most
+  // 7 days old, `first-connect-cta-kill` off, and a phone that has never
+  // connected to a board (nor remembers one). Props: { arm_connect_step:
+  // 'treatment' | 'control', arm_forced (true when the QA override in More →
+  // Feature Flags chose the arm; leave these out of the analysis),
+  // assignment_salt, user_id, account_age_hours, ota_is_embedded, ui_variant:
+  // 'liquidGlass' | 'material' | null, had_board }. The arm is
+  // murmurHash3_32(user_id + ':' + assignment_salt) % 2, 1 = treatment, so it
+  // can be recomputed in HogQL. `arm_connect_step` is also a super property
+  // from exposure on.
+  //
+  // FirstRunCardAction: a tap on the treatment's Climbs card. Props: { action:
+  // 'connect' | 'no_lights' | 'dismiss' | 'retry' }. 'dismiss' is the X ("Not
+  // now"), which hides the card for that launch only; the card shows on at most
+  // two launches. 'retry' is "Try again" after a connect that failed or was
+  // cancelled.
+  //
+  // BoardLightsDeclined: an enrolled climber (either arm) said the wall has no
+  // lights. It measures how many newcomers had no LED board to connect to, which
+  // bounds what any connect step can win. Props: { surface: 'climbs_card' |
+  // 'device_picker' }. 'device_picker' is the picker's own "This wall has no
+  // lights", seen as the phone taking the wall without Bluetooth. Never writes
+  // the board's `hasLeds`.
+  FirstRunExposed: 'First Run Exposed',
+  FirstRunCardAction: 'First Run Card Action',
+  BoardLightsDeclined: 'Board Lights Declined',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
