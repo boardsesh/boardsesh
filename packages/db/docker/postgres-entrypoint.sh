@@ -115,6 +115,13 @@ install_tls_material() {
 
   chmod 0644 "$cert_staged"
   chmod 0600 "$key_staged"
+  # Two renames, not one atomic swap, so a kill between them leaves the new
+  # certificate beside the old key. That window is real on disk and unobservable in
+  # practice: this script installs the pair on every boot from the variables, which
+  # are the source of truth, and it is the same script that execs into PostgreSQL --
+  # so a half-swapped pair is overwritten before anything could serve it. Verified
+  # by staging a deliberately mismatched pair on a volume and restarting: the next
+  # boot comes up ssl=on rather than refusing.
   mv -f "$cert_staged" "$TLS_CERT"
   mv -f "$key_staged" "$TLS_KEY"
   trap - EXIT
@@ -159,7 +166,7 @@ fi
 # postgresql.auto.conf still says -- which, before the first rollout, is the base
 # image's snakeoil certificate. That is a silent downgrade of the one property this
 # file exists to provide, so it stops rather than warns.
-if tls_material_requested && [[ "${1:-}" == 'sh' || "${1:-}" == 'bash' || "${1:-}" == '/bin/sh' || "${1:-}" == '/bin/bash' ]]; then
+if tls_material_requested && [[ "$(basename -- "${1:-}")" == *sh ]]; then
   for argument in "$@"; do
     if [[ "$argument" == *postgres* ]]; then
       fail "refusing to start PostgreSQL through a shell with TLS material set, because the TLS settings cannot be applied to it; use a start command of 'postgres …' directly"

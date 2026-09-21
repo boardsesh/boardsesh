@@ -245,7 +245,7 @@ expect_failure 'a shell-wrapped server start with TLS material set' env \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" sh -c 'postgres -c shared_buffers=128MB'
-for shell_form in bash /bin/sh /bin/bash; do
+for shell_form in bash /bin/sh /bin/bash dash ksh zsh /usr/bin/ash; do
   expect_failure "a ${shell_form}-wrapped server start with TLS material set" env \
     PG_TLS_DIR="$TEST_ROOT/case-shell-start-${shell_form//\//_}" \
     PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
