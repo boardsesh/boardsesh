@@ -10,6 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { sql, type SQL } from 'drizzle-orm';
 
 const { mockDb, findSimilarClimbsMock, parseFramesToHoldEntriesMock } = vi.hoisted(() => ({
   mockDb: {
@@ -75,6 +76,41 @@ describe('climbQueries.similarClimbs', () => {
     parseFramesToHoldEntriesMock.mockReset();
     findSimilarClimbsMock.mockResolvedValue([]);
     mockDb.select.mockReset();
+  });
+
+  it('joins no unused animation holds while retaining null and empty-frame fallbacks', async () => {
+    const selectChain = mockSelectChain([{ frames: null, framesCount: 1, holdId: 100, holdState: 'STARTING' }]);
+    const leftJoin = vi.fn<(_table: unknown, condition: SQL) => unknown>(() => selectChain);
+    selectChain.leftJoin = leftJoin;
+    mockDb.select.mockReturnValueOnce(selectChain);
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'target' } },
+      makeCtx(),
+    );
+    const joinCondition = leftJoin.mock.calls[0][1];
+    const { db: realDb } = await vi.importActual<typeof import('../db/client')>('../db/client');
+    const rows = await realDb.execute(sql`
+      WITH board_climbs (uuid, board_type, frames_count, frames) AS (VALUES
+        ('animation', 'kilter', 2, 'p100r12,p200r13'),
+        ('empty-frames', 'kilter', 2, ''),
+        ('null-frames', 'kilter', 2, NULL),
+        ('single-frame', 'kilter', 1, 'p100r12'),
+        ('unknown-count', 'kilter', NULL, 'p100r12')
+      ), board_climb_holds AS (
+        SELECT uuid AS climb_uuid, board_type, 100 AS hold_id FROM board_climbs
+      )
+      SELECT uuid, COUNT(hold_id)::int AS joined_holds
+      FROM board_climbs LEFT JOIN board_climb_holds ON ${joinCondition}
+      GROUP BY uuid ORDER BY uuid
+    `);
+    expect(rows).toEqual([
+      { uuid: 'animation', joined_holds: 0 },
+      { uuid: 'empty-frames', joined_holds: 1 },
+      { uuid: 'null-frames', joined_holds: 1 },
+      { uuid: 'single-frame', joined_holds: 1 },
+      { uuid: 'unknown-count', joined_holds: 1 },
+    ]);
   });
 
   it('looks up Woods physical size from the target climb', async () => {
