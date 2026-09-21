@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T21:09:32.603Z",
+  "generatedAt": "2026-09-21T21:17:16.730Z",
   "entries": [
+    {
+      "prNumber": 5674,
+      "category": "new",
+      "title": "Sign in with Apple or Google right from the top of the screen",
+      "mergedAt": "2026-09-21T21:09:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5674",
+      "body": "Signing up asks for your password once"
+    },
     {
       "prNumber": 5218,
       "category": "fixed",

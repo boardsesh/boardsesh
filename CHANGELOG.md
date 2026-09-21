@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Sign in with Apple or Google right from the top of the screen ([#5674](https://github.com/boardsesh/boardsesh/pull/5674))
+  Signing up asks for your password once
 - Long-press any climb and hit "Play next" to slot it right behind the one on the wall — no more waiting out the whole queue while the crew rests. ([#4712](https://github.com/boardsesh/boardsesh/pull/4712))
 
 ### Fixed
