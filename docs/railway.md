@@ -35,11 +35,10 @@ it. A second `--apply` with nothing to do is a no-op.
   primary serves, which the image's entrypoint writes to the volume at boot. A
   missing one is drift here rather than a surprise at deploy time, and an absent
   pair means the primary falls back to its base image's snakeoil certificate,
-  whose private key is published in a public Docker Hub layer. Installing the
-  certificate itself, and rolling it back, is a separate reviewed procedure —
-  `docs/pg-primary-tls-rollout.md`, landing with the drift check that watches what
-  the primary actually serves. Setting these variables is what this tool asserts;
-  it never writes them without being handed their values.
+  whose private key is published in a public Docker Hub layer. This tool only
+  asserts that the two variables are set; it never writes them without being handed
+  their values, and installing or rolling back the certificate itself is a separate
+  reviewed operator procedure rather than anything a nightly job does.
 - **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
   `observe_logs` tables.
 

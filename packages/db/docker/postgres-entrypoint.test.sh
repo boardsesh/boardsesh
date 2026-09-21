@@ -74,13 +74,20 @@ cert_mode="$(stat -c '%a' "$tls_dir/server.crt" 2>/dev/null || stat -f '%Lp' "$t
 [[ "$key_mode" == '600' ]] || fail "server.key must be 0600, got $key_mode"
 [[ "$cert_mode" == '644' ]] || fail "server.crt must be 0644, got $cert_mode"
 
-# 3. A command that is not postgres must not be rewritten, even with material.
+# 3. A command that is not postgres must not be rewritten -- you cannot hand psql
+#    a -c ssl=on -- but the material IS still installed. That split is deliberate:
+#    installing is idempotent and leaves the volume correct however the container
+#    was invoked, while only the server invocation can be told to use it.
 tls_dir="$TEST_ROOT/case-other-command"
 PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   run_entrypoint "$tls_dir" psql --version >/dev/null
 [[ "$(cat "$ARGS_LOG")" == "$(printf 'psql\n--version')" ]] ||
   fail "a non-postgres command must pass through, got: $(tr '\n' ' ' <"$ARGS_LOG")"
+openssl x509 -noout -in "$tls_dir/server.crt" >/dev/null 2>&1 ||
+  fail 'material should still be installed for a non-postgres command'
+[[ ! -e "$tls_dir/server.crt.incoming" ]] ||
+  fail 'staged material was left behind by a non-postgres command'
 
 expect_failure() {
   local description="$1"

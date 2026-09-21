@@ -155,6 +155,58 @@ describe('diffServiceVars', () => {
     expect(change.blocked).toBe(false);
   });
 
+  // The primary's TLS variables get the same absent/placeholder coverage every
+  // other service's required vars have. Without it, dropping requiredVars from
+  // this service would silently stop the check that keeps the primary from
+  // falling back to a certificate whose private key is public.
+  it('reports each absent TLS variable on the primary', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({ variables: { [POSTGRES_PRIMARY_SERVICE_NAME]: {} } });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+
+    expect(changes.map((change) => change.summary).join(' ')).toContain('PG_TLS_SERVER_CERT');
+    expect(changes.map((change) => change.summary).join(' ')).toContain('PG_TLS_SERVER_KEY');
+    for (const change of changes) {
+      expect(change).toMatchObject({ resource: 'env-var', blocked: true });
+      expect(change.summary).toContain('absent');
+    }
+  });
+
+  it('flags a placeholder TLS certificate on the primary', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({
+      variables: {
+        [POSTGRES_PRIMARY_SERVICE_NAME]: {
+          PG_TLS_SERVER_CERT: '<-----BEGIN CERTIFICATE----- …>',
+          PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\nreal\n-----END PRIVATE KEY-----',
+        },
+      },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toContain('PG_TLS_SERVER_CERT');
+    expect(changes[0]?.summary).toContain('placeholder');
+  });
+
+  // A private key must never reach the plan output, which an operator pastes around.
+  it('never puts TLS key material in the plan output', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({
+      variables: { [POSTGRES_PRIMARY_SERVICE_NAME]: { PG_TLS_SERVER_KEY: '<SUPERSECRETKEYMATERIAL>' } },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(JSON.stringify(changes)).not.toContain('SUPERSECRETKEYMATERIAL');
+  });
+
   it('flags a placeholder that a naive is-it-set check would pass', () => {
     const live = liveState({
       variables: { [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: '<clickhouse://user:password@host:9000/xprem>' } },
