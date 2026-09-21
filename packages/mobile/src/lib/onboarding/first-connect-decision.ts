@@ -74,7 +74,12 @@ export type ConnectStepEnrolmentVerdict =
    */
   | 'connected_before'
   /** The enrolment could not be read or written. */
-  | 'storage_error';
+  | 'storage_error'
+  /**
+   * The Expo browser build. The test is about the store app, whose first
+   * launch is where newcomers stall; a browser exposure would only add noise.
+   */
+  | 'unsupported_platform';
 
 export type ConnectStepEnrolmentInput = {
   userId: string | undefined;

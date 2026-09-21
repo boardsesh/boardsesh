@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const storage = vi.hoisted(() => ({ values: new Map<string, unknown>(), failWrites: false }));
+const platformCtrl = vi.hoisted(() => ({ OS: 'ios' as string }));
 const rememberedCtrl = vi.hoisted(() => ({ board: null as { configKey: string; serial?: string } | null }));
 const overridesCtrl = vi.hoisted(() => ({ overrides: {} as Record<string, boolean | string> }));
 const clockCtrl = vi.hoisted(() => ({ nowMs: Date.parse('2026-09-21T12:00:00.000Z') }));
@@ -8,6 +9,13 @@ const trackMock = vi.hoisted(() => vi.fn());
 const registerArmMock = vi.hoisted(() => vi.fn());
 const reportErrorMock = vi.hoisted(() => vi.fn());
 
+vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return platformCtrl.OS;
+    },
+  },
+}));
 vi.mock('../../preference-store', () => ({
   getPreference: async (key: string) => (storage.values.has(key) ? structuredClone(storage.values.get(key)) : null),
   setPreference: async (key: string, value: unknown) => {
@@ -68,6 +76,7 @@ describe('enrolInConnectStep', () => {
   beforeEach(() => {
     storage.values.clear();
     storage.failWrites = false;
+    platformCtrl.OS = 'ios';
     rememberedCtrl.board = null;
     overridesCtrl.overrides = {};
     trackMock.mockClear();
@@ -128,6 +137,13 @@ describe('enrolInConnectStep', () => {
 
     expect(exposures()).toEqual([]);
     expect(registerArmMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves the Expo browser build out: the test is about the store app', async () => {
+    platformCtrl.OS = 'web';
+
+    await expect(enrolInConnectStep(request())).resolves.toBe('unsupported_platform');
+    expect(exposures()).toEqual([]);
   });
 
   it('leaves a phone that remembers a board out: a returning climber never sees the treatment', async () => {

@@ -3,6 +3,7 @@
 // before any surface can differ between the arms: nothing in the treatment
 // shows until the enrolment this writes exists.
 
+import { Platform } from 'react-native';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import * as Updates from 'expo-updates';
 import { track } from '../analytics';
@@ -52,6 +53,7 @@ async function readForcedArm(): Promise<ConnectStepArm | null> {
 
 async function enrol(request: ConnectStepEnrolmentRequest): Promise<ConnectStepEnrolmentVerdict> {
   const { userId } = request;
+  if (Platform.OS === 'web') return 'unsupported_platform';
   if (!userId) return 'profile_unavailable';
 
   let phoneHasConnected: boolean;

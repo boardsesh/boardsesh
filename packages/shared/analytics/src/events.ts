@@ -514,9 +514,10 @@ export const SHARED_EVENTS = {
   //
   // FirstRunExposed: the account joined the test. Fired ONCE per account per
   // phone, in both arms, at the launch gate's post-login decision and before
-  // either arm shows anything different. Eligible: signed in, account at most
-  // 7 days old, `first-connect-cta-kill` off, and a phone that has never
-  // connected to a board (nor remembers one). Props: { arm_connect_step:
+  // either arm shows anything different. Eligible: the native app (not the
+  // Expo browser build), signed in, account at most 7 days old,
+  // `first-connect-cta-kill` off, and a phone that has never connected to a
+  // board (nor remembers one). Props: { arm_connect_step:
   // 'treatment' | 'control', arm_forced (true when the QA override in More →
   // Feature Flags chose the arm; leave these out of the analysis),
   // assignment_salt, user_id, account_age_hours, ota_is_embedded, ui_variant:

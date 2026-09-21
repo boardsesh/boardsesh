@@ -591,8 +591,8 @@ days. Control keeps today's UI. Both arms get a one-time "Connected to {{board}}
 after the phone's first successful connect. Kill switch: `first-connect-cta-kill`.
 
 **Assignment** is local and needs no flag: `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2`,
-1 = treatment (`packages/mobile/src/lib/onboarding/connect-step-arm.ts`). **Eligible**: signed
-in, account at most 7 days old (the first-board picker's line), kill switch off, and a phone that
+1 = treatment (`packages/mobile/src/lib/onboarding/connect-step-arm.ts`). **Eligible**: the
+native app (the Expo browser build never enrols), signed in, account at most 7 days old (the first-board picker's line), kill switch off, and a phone that
 has never connected to a board (a board remembered for one-tap reconnect counts as connected, so
 returning climbers are never enrolled). Enrolment is stored per account on the phone, so the
 exposure fires once per account per phone.
