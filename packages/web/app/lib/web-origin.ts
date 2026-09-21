@@ -9,8 +9,10 @@ export function acceptsWebOrigin(request: Request, pathname: string): boolean {
   if (pathname === '/api/health' && (request.method === 'GET' || request.method === 'HEAD')) return true;
   const expectedSecret = process.env.WEB_ORIGIN_VERIFY_SECRET;
   const suppliedSecret = request.headers.get(WEB_ORIGIN_HEADER);
-  if (!expectedSecret || expectedSecret.length < 32 || !suppliedSecret) return false;
-  // Compare every expected character rather than exposing the matching prefix.
+  // Match the Cloudflare helper and deployment runbook: 32 bytes as lowercase hex.
+  if (!expectedSecret || !/^[a-f0-9]{64}$/.test(expectedSecret) || !suppliedSecret) return false;
+  // Fold the length and character differences without a matching-prefix return.
+  // JavaScript does not guarantee constant-time execution of this loop.
   let difference = expectedSecret.length ^ suppliedSecret.length;
   for (let index = 0; index < expectedSecret.length; index++) {
     difference |= expectedSecret.charCodeAt(index) ^ suppliedSecret.charCodeAt(index);

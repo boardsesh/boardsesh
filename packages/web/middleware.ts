@@ -52,17 +52,23 @@ export function middleware(incomingRequest: NextRequest) {
       headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' },
     });
   }
+  const runPageMiddleware = needsPageMiddleware(incomingRequest.nextUrl.pathname);
+  // A bare next() preserves the original request without cloning its headers.
+  // Authorization above still runs first, including for static and dotted paths.
+  if (!runPageMiddleware && !incomingRequest.headers.has(WEB_ORIGIN_HEADER)) {
+    return NextResponse.next();
+  }
   const sanitizedHeaders = new Headers(incomingRequest.headers);
   sanitizedHeaders.delete(WEB_ORIGIN_HEADER);
+  if (!runPageMiddleware) {
+    return NextResponse.next({ request: { headers: sanitizedHeaders } });
+  }
   // Routing only reads URL, method and headers. Do not transfer or read the
   // incoming body: Next must still forward it to the eventual POST handler.
   const request = new NextRequest(incomingRequest.url, {
     method: incomingRequest.method,
     headers: sanitizedHeaders,
   });
-  if (!needsPageMiddleware(request.nextUrl.pathname)) {
-    return NextResponse.next({ request: { headers: sanitizedHeaders } });
-  }
   return pageMiddleware(request);
 }
 

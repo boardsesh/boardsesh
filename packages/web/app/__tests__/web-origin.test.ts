@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { WEB_ORIGIN_HEADER } from '@/app/lib/web-origin';
 
-const secret = 'test-origin-secret-with-at-least-32-characters';
+const secret = 'a1'.repeat(32);
 afterEach(() => vi.unstubAllEnvs());
 
 function request(path: string, suppliedSecret?: string, method = 'GET') {
@@ -31,6 +31,7 @@ describe('web origin protection', () => {
     '/_next/image?url=x',
     '/_next/static/app.js',
     '/robots.txt',
+    '/foo/v1.5/bar',
     '/.well-known/assetlinks.json',
     '/monitoring',
     '/api/health/extra',
@@ -45,6 +46,28 @@ describe('web origin protection', () => {
   it.each(['incorrect', `${secret}extra`, secret.slice(0, -1)])('rejects a mismatching secret', (suppliedSecret) => {
     enableGuard();
     expect(middleware(request('/', suppliedSecret)).status).toBe(403);
+  });
+  it.each(['a'.repeat(32), 'a'.repeat(65), 'A'.repeat(64), 'g'.repeat(64)])(
+    'refuses a configured secret outside the shared lowercase-hex contract',
+    (configuredSecret) => {
+      enableGuard();
+      vi.stubEnv('WEB_ORIGIN_VERIFY_SECRET', configuredSecret);
+      expect(middleware(request('/', configuredSecret)).status).toBe(403);
+    },
+  );
+  describe.each(['', '0', 'false'])('disabled flag %j', (flag) => {
+    it.each(['/_next/static/app.js', '/_next/image?url=x', '/robots.txt'])(
+      'forwards %s without rewriting headers when no secret header is present',
+      (path) => {
+        vi.stubEnv('WEB_ORIGIN_VERIFY_ENABLED', flag);
+        const response = middleware(request(path));
+        expect(response.status).toBe(200);
+        expect(response.headers.get('x-middleware-next')).toBe('1');
+        expect(response.headers.has('x-middleware-override-headers')).toBe(false);
+        expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+        expect(response.headers.has('location')).toBe(false);
+      },
+    );
   });
   it('fails closed when enabled without a configured secret', () => {
     enableGuard();
@@ -67,6 +90,7 @@ describe('web origin protection', () => {
     '/api/internal/revalidate',
     '/_next/static/app.js',
     '/robots.txt',
+    '/foo/v1.5/bar',
     '/.well-known/assetlinks.json',
   ])('strips the secret before forwarding %s', (path) => {
     enableGuard();
@@ -90,8 +114,8 @@ describe('web origin protection', () => {
     expect(response.headers.get('x-middleware-request-authorization')).toBe('Bearer user-token');
     expect(await incoming.text()).toBe('payload');
   });
-  it('keeps staging disabled by default but still strips the secret', () => {
-    vi.stubEnv('WEB_ORIGIN_VERIFY_ENABLED', '');
+  it.each(['', '0', 'false'])('keeps staging disabled for %j but still strips the secret', (flag) => {
+    vi.stubEnv('WEB_ORIGIN_VERIFY_ENABLED', flag);
     const response = middleware(request('/robots.txt', secret));
     expect(response.status).toBe(200);
     expect(JSON.stringify([...response.headers])).not.toContain(secret);
