@@ -39,6 +39,10 @@ func newForwarder(config config, metrics *forwarderMetrics, logger *log.Logger) 
 }
 
 func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listener net.Listener) error {
+	routeMetrics := forwarder.metrics.route(route.Name)
+	if routeMetrics == nil {
+		return fmt.Errorf("metrics are not registered for route %q", route.Name)
+	}
 	for {
 		client, err := listener.Accept()
 		if err != nil {
@@ -48,7 +52,6 @@ func (forwarder *forwarder) serve(ctx context.Context, route routeConfig, listen
 			return fmt.Errorf("accept %s route: %w", route.Name, err)
 		}
 
-		routeMetrics := forwarder.metrics.route(route.Name)
 		select {
 		case forwarder.sessionCap <- struct{}{}:
 			routeMetrics.sessionsTotal.Add(1)
@@ -152,6 +155,10 @@ func networkErrorClass(err error) string {
 }
 
 func (forwarder *forwarder) wait(timeout time.Duration) bool {
+	// run cancels the proxy context before waiting: dial cancellation and socket
+	// closure release active sessions, so this waiter ends when their I/O drains.
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	completed := make(chan struct{})
 	go func() {
 		forwarder.sessions.Wait()
@@ -160,7 +167,7 @@ func (forwarder *forwarder) wait(timeout time.Duration) bool {
 	select {
 	case <-completed:
 		return true
-	case <-time.After(timeout):
+	case <-timer.C:
 		return false
 	}
 }
