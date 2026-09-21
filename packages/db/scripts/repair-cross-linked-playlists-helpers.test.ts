@@ -259,3 +259,40 @@ test('a duplicate ownership row for one user is refused, not treated as the adop
   assert.equal(plan.adopter, null);
   assert.match(plan.reason, /3 ownership rows for 2 users/);
 });
+
+void test('zero spread threshold still refuses timestamp ties in either order and for merge opt-in', () => {
+  for (const duplicateAccount of [false, true]) {
+    const first = owner();
+    const second = owner({
+      userId: 'user-adopter',
+      userEmail: duplicateAccount ? 'M.JONGH88@GMAIL.COM' : 'other@example.test',
+    });
+    for (const owners of [
+      [first, second],
+      [second, first],
+    ]) {
+      const plan = classifyCrossLinkedPlaylist(playlist({ owners }), { minSpreadMinutes: 0 });
+      assert.equal(plan.action, 'refuse');
+      assert.equal(plan.spreadMinutes, 0);
+      assert.deepEqual(selectApplyablePlans([plan], { includeMergeCandidates: true }), []);
+    }
+  }
+});
+
+void test('zero spread threshold still permits strictly ordered ownership rows', () => {
+  const plan = classifyCrossLinkedPlaylist(
+    playlist({
+      owners: [
+        owner(),
+        owner({
+          userId: 'user-adopter',
+          userEmail: 'other@example.test',
+          createdAt: new Date(CREATOR_AT.getTime() + 1),
+        }),
+      ],
+    }),
+    { minSpreadMinutes: 0 },
+  );
+  assert.equal(plan.action, 'revoke-adopter');
+  assert.equal(plan.adopter?.userId, 'user-adopter');
+});

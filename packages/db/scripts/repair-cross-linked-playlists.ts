@@ -213,7 +213,7 @@ Options:
                                 case. Off by default — merge-accounts.ts (#3278) handles those
                                 better because it moves their ticks and credentials too.
   --min-spread-minutes <n>      Refuse a pair whose two ownership rows are closer together
-                                than this (default ${DEFAULT_MIN_OWNERSHIP_SPREAD_MINUTES}).
+                                than this (default ${DEFAULT_MIN_OWNERSHIP_SPREAD_MINUTES}). Equal timestamps are always refused.
   --help                        Show this help text.
 
 This script never deletes a playlist, a playlist_climbs row, a tick, a board
@@ -453,6 +453,12 @@ function printRepairReport(
       `${summary.refused} refused.`,
   );
 
+  if (scriptArgs.playlistIds && plans.length === 0) {
+    console.info(
+      `${LOG_TAG} No cross-linked playlists match the requested IDs. Check the IDs; playlists without multiple owners are excluded.`,
+    );
+  }
+
   for (const [planIndex, plan] of plans.entries()) {
     const { playlist } = plan;
     console.info('');
@@ -484,11 +490,11 @@ function printRepairReport(
 
   console.info('');
   console.info(
-    `${LOG_TAG} ${scriptArgs.apply ? 'Applying to' : 'A --apply run would touch'} ${applyablePlans.length} playlist(s): ` +
+    `${LOG_TAG} Planned maximum before locked drift checks: ${applyablePlans.length} playlist(s), ` +
       `${plannedDeletions.ownershipRows} ownership row(s), ${plannedDeletions.pins} pin(s), ` +
-      `${plannedDeletions.follows} follow(s) deleted, plus ${applyablePlans.length} adopter-scoped ` +
+      `${plannedDeletions.follows} follow(s) to delete, plus up to ${applyablePlans.length} adopter-scoped ` +
       `sync_deletions tombstone(s) so their offline clients drop the playlist. ` +
-      `${summarizeRepairPlans(plans).refused} refused playlist(s) are reported only and never written.`,
+      `${summary.refused} refused playlist(s) are reported only and never written.`,
   );
   if (deferredButExcluded > 0) {
     console.info(
