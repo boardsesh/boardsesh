@@ -16,7 +16,7 @@
 //   Grade       → opens the GradeRangeRail overlay (Button, no menu)   [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
 //   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
-//   Tall / Wide → tap toggles, long-press Lock / Unlock (board-gated)
+//   Tall / Wide → tap toggles, long-press Lock / Unlock (iOS-only lock)
 //   Popularity ▾→ native Menu + Picker (min-ascents buckets)           [PRIMARY #4]
 //   Min rating ▾→ native Menu + Picker (star buckets)                  [PRIMARY #5]
 //
@@ -280,7 +280,8 @@ function FilterChipRowComponent({
               menu. (A Button + onLongPressGesture doesn't work: the button's own tap
               gesture swallows the long-press, especially inside the scroll row.)
               Locked = a lock glyph + the filter kept on through clears; a locked
-              chip ignores tap until unlocked. */}
+              chip ignores tap until unlocked. The lock is iOS-only: the Android and
+              web rows just toggle (rules in lib/dimension-chips.ts). */}
           {dimensionChips
             .filter((dimension) => pinnedChips.includes(dimension.key))
             .map((dimension) => (

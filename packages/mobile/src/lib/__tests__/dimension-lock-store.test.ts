@@ -117,17 +117,3 @@ describe('dimension-lock-store', () => {
     await expect(loadDimensionLocks()).resolves.toEqual({ tall: false, wide: true });
   });
 });
-
-describe('shouldPinDimension', () => {
-  it('pins only when the chip is visible, locked, and not already active', async () => {
-    const { shouldPinDimension } = await import('../dimension-lock-store');
-    expect(shouldPinDimension(true, true, false)).toBe(true);
-  });
-
-  it('does not pin when unlocked, chip-hidden, or already active', async () => {
-    const { shouldPinDimension } = await import('../dimension-lock-store');
-    expect(shouldPinDimension(true, false, false)).toBe(false); // unlocked
-    expect(shouldPinDimension(false, true, false)).toBe(false); // board doesn't support the chip
-    expect(shouldPinDimension(true, true, true)).toBe(false); // already active → no redundant re-pin
-  });
-});

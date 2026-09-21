@@ -2,8 +2,8 @@ import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
 import {
   DEFAULT_PINNED_CHIPS,
-  hasLegacyChipKinds,
   normalizePinnedChips,
+  toStoredPinnedChips,
   type PinnableChipKind,
 } from './pinnable-chips';
 
@@ -34,8 +34,10 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
+// Written in the rollback-safe form (see toStoredPinnedChips): an older bundle
+// reading this key still finds the Shape chip it knows when Tall + Wide are pinned.
 async function persist(kinds: readonly PinnableChipKind[]): Promise<void> {
-  await setPreference(STORAGE_KEY, kinds);
+  await setPreference(STORAGE_KEY, toStoredPinnedChips(kinds));
 }
 
 export async function loadPinnedChips(): Promise<readonly PinnableChipKind[]> {
@@ -49,13 +51,6 @@ export async function loadPinnedChips(): Promise<readonly PinnableChipKind[]> {
   current = normalized.length > 0 ? normalized : DEFAULT_PINNED_CHIPS;
   hasLoaded = true;
   notify();
-  // A set saved before a chip was split (e.g. 'shape' → 'tall' + 'wide') loads
-  // already migrated above; write the migrated set back once so storage stops
-  // carrying the retired kind. Best-effort: a failed write just means the same
-  // migration runs again on the next load.
-  if (Array.isArray(stored) && hasLegacyChipKinds(stored)) {
-    void persist(current).catch(() => {});
-  }
   return current;
 }
 

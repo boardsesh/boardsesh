@@ -55,11 +55,10 @@ describe('pinned-chips-store', () => {
     expect(await loadPinnedChips()).toEqual(['grade', 'collection']);
   });
 
-  it('migrates a stored "shape" pin to Tall + Wide and writes the migrated set back', async () => {
-    (await getMockStorage()).__setRaw(
-      STORAGE_KEY,
-      JSON.stringify(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']),
-    );
+  it('loads a stored "shape" pin as Tall + Wide without rewriting storage', async () => {
+    const storage = await getMockStorage();
+    const legacy = JSON.stringify(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']);
+    storage.__setRaw(STORAGE_KEY, legacy);
     const { loadPinnedChips } = await import('../pinned-chips-store');
     expect(await loadPinnedChips()).toEqual([
       'grade',
@@ -70,22 +69,27 @@ describe('pinned-chips-store', () => {
       'popularity',
       'rating',
     ]);
-    // The write-back is fire-and-forget; let it land before reading storage.
-    await vi.waitFor(async () => {
-      const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-      expect(JSON.parse(raw as string)).toEqual([
-        'grade',
-        'progress',
-        'collection',
-        'tall',
-        'wide',
-        'popularity',
-        'rating',
-      ]);
-    });
+    // Loading never writes: an older bundle can still read what it wrote.
+    expect(storage.__getRaw(STORAGE_KEY)).toBe(legacy);
   });
 
-  it('migrates a customised "shape" set, then Tall and Wide unpin independently', async () => {
+  it('persists "shape" next to Tall + Wide while both are pinned (older bundles keep the Shape chip)', async () => {
+    const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
+    await loadPinnedChips();
+    await togglePinnedChip('rating');
+    const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
+    expect(JSON.parse(raw as string)).toEqual([
+      'grade',
+      'progress',
+      'collection',
+      'tall',
+      'wide',
+      'shape',
+      'popularity',
+    ]);
+  });
+
+  it('drops "shape" from storage once Tall or Wide is unpinned, so the unpinned one stays off', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'shape']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     expect(await loadPinnedChips()).toEqual(['tall', 'wide', 'rating']);
@@ -95,13 +99,15 @@ describe('pinned-chips-store', () => {
     expect(JSON.parse(raw as string)).toEqual(['wide', 'rating']);
   });
 
-  it('does not rewrite a stored set that has nothing to migrate', async () => {
+  it('round-trips a persisted set with the "shape" alias without duplicating Tall or Wide', async () => {
     const storage = await getMockStorage();
-    storage.__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'grade']));
-    const { loadPinnedChips } = await import('../pinned-chips-store');
-    await loadPinnedChips();
-    // Still the raw, un-normalised payload: no write happened.
-    expect(storage.__getRaw(STORAGE_KEY)).toBe(JSON.stringify(['rating', 'grade']));
+    const first = await import('../pinned-chips-store');
+    await first.setPinnedChips(['grade', 'tall', 'wide']);
+    expect(JSON.parse(storage.__getRaw(STORAGE_KEY) as string)).toEqual(['grade', 'tall', 'wide', 'shape']);
+    // A fresh module (next launch) reads it back as the plain set.
+    vi.resetModules();
+    const second = await import('../pinned-chips-store');
+    expect(await second.loadPinnedChips()).toEqual(['grade', 'tall', 'wide']);
   });
 
   it('falls back to defaults for an empty stored array (never a blank row)', async () => {
@@ -115,7 +121,7 @@ describe('pinned-chips-store', () => {
     await loadPinnedChips();
     await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'tall', 'wide', 'popularity', 'rating']);
+    expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'tall', 'wide', 'shape', 'popularity', 'rating']);
   });
 
   it('togglePin re-adds an unpinned kind back into canonical order', async () => {

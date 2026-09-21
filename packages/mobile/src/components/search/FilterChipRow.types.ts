@@ -11,22 +11,14 @@ import type { PinnableChipKind } from '../../lib/pinnable-chips';
 import type { CollectionFilter } from '../../lib/collection-filter';
 import type { ClimbTypeFilter } from './FilterChipRow.logic';
 import type { ClimbFilters } from '../ClimbFilterSheet';
+import type { DimensionChip } from '../../lib/dimension-chips';
 
-/**
- * Board-shape toggle chips, present only on the sizes where they apply (a shorter
- * or narrower size exists in the same product family; the caller derives this via
- * @boardsesh/board-constants). Tall and Wide are separate chips, each pinnable on
- * its own. Tap toggles the filter; long-press offers Lock / Unlock, a persisted
- * lock that keeps the filter on through Reset and clears (shown with a lock
- * icon). A locked chip ignores tap; only a long-press unlock frees it.
- */
-export type DimensionChip = {
-  key: 'tall' | 'wide';
-  active: boolean;
-  locked: boolean;
-  onToggle: () => void;
-  onToggleLock: () => void;
-};
+// Board-shape toggle chips (Tall / Wide), present only on the sizes where they
+// apply (a shorter or narrower size exists in the same product family; the caller
+// derives this via @boardsesh/board-constants), each pinnable on its own. The
+// shape and its tap / lock rules live in lib/dimension-chips.ts. Every platform
+// taps to toggle; only the iOS row offers the long-press Lock / Unlock.
+export type { DimensionChip } from '../../lib/dimension-chips';
 
 export type FilterChipRowProps = {
   /**

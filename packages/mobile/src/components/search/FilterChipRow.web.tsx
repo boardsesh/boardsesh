@@ -29,7 +29,7 @@ import {
   climbTypeChipLabel,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
+import type { FilterChipRowProps } from './FilterChipRow.types';
 
 // A chip that anchors a controlled Paper Menu. The `children` render-prop receives
 // a `close` so single-choice items can dismiss (keep-open toggle items simply
@@ -57,50 +57,6 @@ function MenuChip({
       }
     >
       {children(() => setVisible(false))}
-    </Menu>
-  );
-}
-
-// Tall / Wide board-shape chip: tap toggles the filter, long-press opens a Lock /
-// Unlock menu anchored on the chip (the same gestures as the iOS and Android rows).
-// A locked chip shows a lock icon and ignores tap until unlocked.
-function DimensionChipView({
-  dimension,
-  label,
-  lockLabel,
-  unlockLabel,
-}: {
-  dimension: DimensionChip;
-  label: string;
-  lockLabel: string;
-  unlockLabel: string;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <Menu
-      visible={visible}
-      onDismiss={() => setVisible(false)}
-      anchor={
-        <Chip
-          mode="outlined"
-          selected={dimension.active}
-          icon={dimension.locked ? 'lock' : undefined}
-          onPress={dimension.onToggle}
-          onLongPress={() => setVisible(true)}
-          style={styles.chip}
-        >
-          {label}
-        </Chip>
-      }
-    >
-      <Menu.Item
-        title={dimension.locked ? unlockLabel : lockLabel}
-        leadingIcon={dimension.locked ? 'lock-open-variant' : 'lock'}
-        onPress={() => {
-          dimension.onToggleLock();
-          setVisible(false);
-        }}
-      />
     </Menu>
   );
 }
@@ -323,19 +279,21 @@ function FilterChipRowComponent({
           </MenuChip>
         ) : null}
 
-        {/* Tall / Wide — board-shape chips, each pinned on its own and present
-            only on sizes with a shorter/narrower sibling. Tap toggles, long-press
-            opens Lock / Unlock. */}
+        {/* Tall / Wide — board-shape toggle chips, each pinned on its own and
+            present only on sizes with a shorter/narrower sibling. Tap flips the
+            filter; the long-press lock is iOS-only. */}
         {dimensionChips
           .filter((dimension) => pinnedChips.includes(dimension.key))
           .map((dimension) => (
-            <DimensionChipView
+            <Chip
               key={dimension.key}
-              dimension={dimension}
-              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-              lockLabel={t('mobile.search.chips.lock')}
-              unlockLabel={t('mobile.search.chips.unlock')}
-            />
+              mode="outlined"
+              selected={dimension.active}
+              onPress={dimension.onToggle}
+              style={styles.chip}
+            >
+              {dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+            </Chip>
           ))}
 
         {/* Beta videos — a plain on/off toggle chip. Opt-in. */}

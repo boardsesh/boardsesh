@@ -92,6 +92,8 @@ vi.mock('react-native', () => ({
   RefreshControl: ({ refreshing }: { refreshing?: boolean }) =>
     createElement('div', { 'data-refresh-control': 'true', 'data-refreshing': String(!!refreshing) }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
+  // The screen reads Platform.OS at module load (the iOS-only Tall/Wide lock).
+  Platform: { OS: 'ios' },
   // No `Image.prefetch` should ever fire for board art (#3191 — the native
   // Android image loader gets a 403 from the CDN/WAF for direct board-art
   // fetches). Exposed here so the pre-warm test can assert it stays unused.
