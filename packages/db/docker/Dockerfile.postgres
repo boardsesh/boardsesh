@@ -22,7 +22,7 @@ RUN apt-get update && \
 COPY postgres-entrypoint.sh /usr/local/bin/boardsesh-postgres-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/boardsesh-postgres-entrypoint.sh
 
-ENTRYPOINT ["boardsesh-postgres-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/boardsesh-postgres-entrypoint.sh"]
 CMD ["postgres"]
 
 LABEL org.boardsesh.postgresql.version="18.6" \

@@ -28,6 +28,33 @@ fail() {
   exit 1
 }
 
+# Every way the staged pair can be wrong, reported specifically.
+staged_material_is_valid() {
+  local cert_path="$1"
+  local key_path="$2"
+
+  if ! openssl x509 -noout -in "$cert_path" 2>/dev/null; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_CERT is not a PEM certificate\n' >&2
+    return 1
+  fi
+  if ! openssl pkey -noout -in "$key_path" 2>/dev/null; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_KEY is not a PEM private key\n' >&2
+    return 1
+  fi
+
+  # A mismatched pair is the failure worth catching here. PostgreSQL reveals it
+  # only by refusing to start, and on a service with no shell that is a much
+  # worse place to discover it than in this log line.
+  local cert_pubkey key_pubkey
+  cert_pubkey="$(openssl x509 -noout -pubkey -in "$cert_path")"
+  key_pubkey="$(openssl pkey -pubout -in "$key_path")"
+  if [[ "$cert_pubkey" != "$key_pubkey" ]]; then
+    printf 'boardsesh-postgres: PG_TLS_SERVER_CERT and PG_TLS_SERVER_KEY are not a matching pair\n' >&2
+    return 1
+  fi
+  return 0
+}
+
 # 0 when TLS material was installed and the server should be told to use it.
 install_tls_material() {
   local cert="${PG_TLS_SERVER_CERT:-}"
@@ -47,36 +74,37 @@ install_tls_material() {
   mkdir -p "$TLS_DIR"
   chmod 0750 "$TLS_DIR"
 
+  # Staged beside the real paths and validated there, so material that does not
+  # validate is never installed -- and, more importantly, a bad variable update
+  # cannot replace a working pair with a broken one and then exit. The previous
+  # material stays exactly as it was.
+  local cert_staged="$TLS_CERT.incoming"
+  local key_staged="$TLS_KEY.incoming"
+
   # umask first, so both files are created 0600 and the key is never briefly
   # world-readable between the write and the chmod.
   local previous_umask
   previous_umask="$(umask)"
   umask 077
-  printf '%s\n' "$cert" >"$TLS_CERT"
-  printf '%s\n' "$key" >"$TLS_KEY"
+  printf '%s\n' "$cert" >"$cert_staged"
+  printf '%s\n' "$key" >"$key_staged"
   umask "$previous_umask"
-  chmod 0644 "$TLS_CERT"
-  chmod 0600 "$TLS_KEY"
+
+  if ! staged_material_is_valid "$cert_staged" "$key_staged"; then
+    rm -f "$cert_staged" "$key_staged"
+    fail 'refusing to install TLS material that does not validate'
+  fi
+
+  chmod 0644 "$cert_staged"
+  chmod 0600 "$key_staged"
+  mv -f "$cert_staged" "$TLS_CERT"
+  mv -f "$key_staged" "$TLS_KEY"
 
   # PostgreSQL refuses a key it does not own, and the upstream entrypoint drops
   # to postgres via gosu after this runs.
   if [[ "$(id -u)" == '0' ]]; then
     chown postgres:postgres "$TLS_DIR" "$TLS_CERT" "$TLS_KEY"
   fi
-
-  openssl x509 -noout -in "$TLS_CERT" 2>/dev/null ||
-    fail 'PG_TLS_SERVER_CERT is not a PEM certificate'
-  openssl pkey -noout -in "$TLS_KEY" 2>/dev/null ||
-    fail 'PG_TLS_SERVER_KEY is not a PEM private key'
-
-  # A mismatched pair is the failure mode worth catching here. PostgreSQL would
-  # refuse to start, and on a service with no shell that is a much worse place to
-  # discover it than in this log line.
-  local cert_pubkey key_pubkey
-  cert_pubkey="$(openssl x509 -noout -pubkey -in "$TLS_CERT")"
-  key_pubkey="$(openssl pkey -pubout -in "$TLS_KEY")"
-  [[ "$cert_pubkey" == "$key_pubkey" ]] ||
-    fail 'PG_TLS_SERVER_CERT and PG_TLS_SERVER_KEY are not a matching pair'
 
   log "installed TLS material at $TLS_DIR ($(openssl x509 -noout -subject -enddate -in "$TLS_CERT" | tr '\n' ' '))"
   return 0

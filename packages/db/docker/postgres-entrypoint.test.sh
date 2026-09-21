@@ -91,11 +91,11 @@ expect_failure() {
 }
 
 # 4. Half a pair is a mis-wiring, not a reason to fall back to no TLS.
-expect_failure 'a certificate with no key' env \
+expect_failure 'a certificate with no key' env -u PG_TLS_SERVER_KEY \
   PG_TLS_DIR="$TEST_ROOT/case-cert-only" \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   bash "$ENTRYPOINT" postgres
-expect_failure 'a key with no certificate' env \
+expect_failure 'a key with no certificate' env -u PG_TLS_SERVER_CERT \
   PG_TLS_DIR="$TEST_ROOT/case-key-only" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" postgres
@@ -118,5 +118,24 @@ expect_failure 'a certificate and key that are not a pair' env \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/other.key")" \
   bash "$ENTRYPOINT" postgres
+
+# 7. A broken update must leave a working pair intact. Overwriting first and
+#    validating afterwards would take a healthy primary down at its next boot.
+tls_dir="$TEST_ROOT/case-preserves-working-pair"
+PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  run_entrypoint "$tls_dir" postgres >/dev/null
+installed_fingerprint="$(openssl x509 -noout -fingerprint -sha256 -in "$tls_dir/server.crt")"
+expect_failure 'a mismatched update over a working pair' env \
+  PG_TLS_DIR="$tls_dir" \
+  PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/other.key")" \
+  bash "$ENTRYPOINT" postgres
+[[ "$(openssl x509 -noout -fingerprint -sha256 -in "$tls_dir/server.crt")" == "$installed_fingerprint" ]] ||
+  fail 'a rejected update replaced the working certificate'
+openssl pkey -noout -in "$tls_dir/server.key" ||
+  fail 'a rejected update damaged the working key'
+[[ ! -e "$tls_dir/server.crt.incoming" && ! -e "$tls_dir/server.key.incoming" ]] ||
+  fail 'a rejected update left staged material behind'
 
 printf 'postgres-entrypoint TLS contract passed\n'
