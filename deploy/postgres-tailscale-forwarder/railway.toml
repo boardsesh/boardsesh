@@ -1,8 +1,13 @@
 # The image is built and attested by postgres-secure-network.yml. Configure the
 # Railway service to pull the resulting GHCR digest. Never configure a public
-# domain or TCP proxy for this service.
+# domain or TCP proxy for this service. This legacy config only applies to
+# services already opted in before Config as Code deprecation. New services
+# require supported provisioning with equivalent health/draining settings;
+# see docs/postgres-secure-network.md before deployment.
 
 [deploy]
+# Give every supported shutdown grace (at most 60s) time to finish before SIGKILL.
+drainingSeconds = 65
 healthcheckPath = "/readyz"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
