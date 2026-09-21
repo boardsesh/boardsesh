@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
@@ -185,6 +185,7 @@ vi.mock('../../Button', () => ({
 }));
 
 import { BoardAccountsSection } from '../BoardAccountsSection';
+import { LinkBoardAccountModal } from '../LinkBoardAccountModal';
 
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
@@ -530,5 +531,74 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
 
     expect(container.textContent).not.toContain('aurora.status.error');
     expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
+  });
+});
+
+describe('LinkBoardAccountModal host lifecycle', () => {
+  beforeEach(() => {
+    mocks.saveAurora.mockReset().mockResolvedValue(undefined);
+    mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
+    mocks.invalidate.mockReset().mockResolvedValue(undefined);
+    mocks.showToast.mockClear();
+    mocks.linkStarted.mockClear();
+    mocks.linkSucceeded.mockClear();
+    mocks.linkFailed.mockClear();
+  });
+
+  it('clears credentials after closing and when changing the selected board', () => {
+    const onClose = vi.fn();
+    const { container, rerender } = render(
+      <LinkBoardAccountModal boardType="tension" source="integrations" onClose={onClose} />,
+    );
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: 'first-user' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, { target: { value: 'first-secret' } });
+    fireEvent.click(button(container, 'actions.cancel')!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(<LinkBoardAccountModal boardType={null} source="integrations" onClose={onClose} />);
+    rerender(<LinkBoardAccountModal boardType="tension" source="integrations" onClose={onClose} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
+
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: 'second-user' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'second-secret' },
+    });
+    rerender(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={onClose} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
+    expect(mocks.linkStarted).not.toHaveBeenCalled();
+    expect(mocks.saveAurora).not.toHaveBeenCalled();
+    expect(mocks.saveKilterViaPassword).not.toHaveBeenCalled();
+  });
+
+  it('notifies the host after both credential caches refresh with one linked outcome', async () => {
+    let releaseInvalidations: () => void = () => {
+      throw new Error('Invalidation promise not initialized');
+    };
+    const invalidations = new Promise<void>((resolve) => {
+      releaseInvalidations = resolve;
+    });
+    mocks.invalidate.mockReturnValue(invalidations);
+    const onClose = vi.fn();
+    const onLinked = vi.fn();
+    const { container } = render(
+      <LinkBoardAccountModal boardType="tension" source="onboarding" onClose={onClose} onLinked={onLinked} />,
+    );
+    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, { target: { value: '  user  ' } });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, { target: { value: 'secret' } });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(mocks.saveAurora).toHaveBeenCalledWith({ boardType: 'tension', username: 'user', password: 'secret' });
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['auroraCredentials'] });
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['auroraCredentials', 'unsynced'] });
+    expect(onLinked).not.toHaveBeenCalled();
+    await act(async () => {
+      releaseInvalidations();
+      await invalidations;
+    });
+    expect(onLinked).toHaveBeenCalledExactlyOnceWith('tension');
+    expect(mocks.linkStarted).toHaveBeenCalledExactlyOnceWith({ boardType: 'tension', source: 'onboarding' });
+    expect(mocks.linkSucceeded).toHaveBeenCalledExactlyOnceWith({ boardType: 'tension', source: 'onboarding' });
+    expect(mocks.linkFailed).not.toHaveBeenCalled();
   });
 });

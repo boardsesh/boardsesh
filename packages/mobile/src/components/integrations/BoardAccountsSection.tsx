@@ -1414,13 +1414,6 @@ const styles = StyleSheet.create({
   modalCopy: {
     lineHeight: 20,
   },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    minHeight: 48,
-    paddingHorizontal: spacing[3],
-    fontSize: 16,
-  },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
