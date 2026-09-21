@@ -1,4 +1,5 @@
 import 'server-only';
+import type { BoardName } from '@/app/lib/types';
 import { cache } from 'react';
 import { BOARD_TYPES } from '@boardsesh/profile-stats';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
@@ -116,6 +117,7 @@ export type SessionOgSummary = {
   participantCount: number;
   totalSends: number;
   gradeRows: SessionOgGradeRow[];
+  boardType: BoardName | null;
   boardLabel: string | null;
   boardAngle: number | null;
   boardPreviewPath: string | null;
@@ -132,6 +134,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     participantCount: 0,
     totalSends: 0,
     gradeRows: [],
+    boardType: null,
     boardLabel: null,
     boardAngle: null,
     boardPreviewPath: null,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gradeAxisFloorSteps, vGradeNumber } from '../boulder-grade-mapping';
+import { BOULDER_GRADES, gradeAxisFloorSteps, vGradeNumber } from '../boulder-grade-mapping';
 
 describe('vGradeNumber', () => {
   it('parses the plain V token', () => {
@@ -41,6 +41,11 @@ describe('gradeAxisFloorSteps', () => {
     // The representative is the lowest font grade for each V (e.g. 4a for V0).
     expect(steps[0].font_grade).toBe('4a');
     expect(steps[3].font_grade).toBe('6a');
+  });
+
+  it('uses only supported grades when a board starts above V0', () => {
+    const supportedGrades = BOULDER_GRADES.filter((grade) => grade.difficulty_id >= 13);
+    expect(gradeAxisFloorSteps(3, supportedGrades).map((grade) => grade.v_grade)).toEqual(['V1', 'V2']);
   });
 
   it('returns a single V0 step for a V1 floor', () => {
