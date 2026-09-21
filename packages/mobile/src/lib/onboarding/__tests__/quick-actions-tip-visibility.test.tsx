@@ -54,6 +54,19 @@ describe('quick-actions tip visibility', () => {
     expect(result.current).toBe(true);
   });
 
+  it('waits through the connect card and reveal banner before showing', () => {
+    const { result, rerender } = renderHook(
+      ({ connectCardVisible, revealVisible }) =>
+        useQuickActionsTipVisibility(true, connectCardVisible || revealVisible),
+      { initialProps: { connectCardVisible: true, revealVisible: false } },
+    );
+    expect(result.current).toBe(false);
+    rerender({ connectCardVisible: false, revealVisible: true });
+    expect(result.current).toBe(false);
+    rerender({ connectCardVisible: false, revealVisible: false });
+    expect(result.current).toBe(true);
+  });
+
   it('notifies subscribed screens once and leaves unsubscribed screens alone', async () => {
     const activeScreen = vi.fn();
     const unmountedScreen = vi.fn();

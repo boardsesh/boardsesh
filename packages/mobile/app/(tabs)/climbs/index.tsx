@@ -486,8 +486,8 @@ function ClimbListInner() {
   // reason to want a menu, and mark itself seen on render. `resolveQuickActionsTip`
   // moves that to the third landing here and drops it entirely for anyone who has
   // already opened the menu by any route. `visitCount` rides along so the event
-  // below can report which visit armed it. Still held back until the board-reveal
-  // banner is gone, so the two never stack, and still one-shot.
+  // below can report which visit armed it. Waits for both the connect card and
+  // board-reveal banner to clear, so only one onboarding prompt shows at once.
   const [quickActionsTipArmed, setQuickActionsTipArmed] = useState(false);
   const quickActionsTipVisitRef = useRef(0);
   const quickActionsTipShownRef = useRef(false);
