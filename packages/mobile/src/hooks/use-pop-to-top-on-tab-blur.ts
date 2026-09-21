@@ -2,22 +2,18 @@ import { useEffect } from 'react';
 import { useNavigation } from 'expo-router';
 
 /**
- * Pops THIS tab's own nested stack back to its first screen whenever the tab
- * itself loses focus (switching to a different bottom tab) — never while
- * staying on the tab and pushing deeper into it. Mount once from a tab's
- * `_layout.tsx`: that component IS the tab's own screen as far as the parent
- * tab navigator is concerned, so `useNavigation()` here is bound to the
- * PARENT (whichever tab bar renders it), not the nested `Stack` the layout
- * itself renders.
+ * Pops this tab's own nested stack to its first screen when the tab itself
+ * loses focus (switching to another bottom tab), never while navigating
+ * deeper within it. Mount from a tab's `_layout.tsx` — that component IS the
+ * tab's screen from the parent navigator's view, so `useNavigation()` here is
+ * bound to the parent (whichever tab bar renders it), not the nested `Stack`.
+ * `@react-navigation/bottom-tabs`'s `popToTopOnBlur` screen option does this
+ * for the JS tab bar only — `NativeTabs` (iOS 26) has no equivalent, so this
+ * dispatches the same targeted `POP_TO_TOP` by hand over the tab-bar-agnostic
+ * core APIs, covering Material, the iPad shell, and NativeTabs from one path.
  *
- * `@react-navigation/bottom-tabs` has a declarative `popToTopOnBlur` screen
- * option for exactly this, but it only exists for that JS tab bar — `NativeTabs`
- * (iOS 26 Liquid Glass) has no equivalent option, so this reimplements the same
- * targeted `POP_TO_TOP` dispatch over the tab-bar-agnostic core navigation APIs,
- * covering Material, the iPad shell, and NativeTabs from one code path.
- *
- * @param tabName the route name this tab is registered under in the parent tab
- * navigator (e.g. "profile"), matching its `Tabs.Screen` / `NativeTabs.Trigger` name.
+ * @param tabName the route name this tab is registered under in the parent
+ * tab navigator (e.g. "profile"), matching its `Tabs.Screen`/`NativeTabs.Trigger` name.
  */
 export function usePopToTopOnTabBlur(tabName: string): void {
   const navigation = useNavigation();

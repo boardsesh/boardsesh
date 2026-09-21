@@ -69,7 +69,7 @@ describe('usePopToTopOnTabBlur', () => {
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('does nothing for a different tab blurring', () => {
+  it('does nothing when the tab name is missing from the parent state routes', () => {
     cfg.navigation.getState.mockReturnValue({
       routes: [
         {
