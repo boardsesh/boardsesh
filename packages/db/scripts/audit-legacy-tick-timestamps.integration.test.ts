@@ -77,6 +77,7 @@ if (!DATABASE_URL || !isExplicitLocalDatabase(DATABASE_URL)) {
       const client = postgres(DATABASE_URL, { max: 1, prepare: false });
       try {
         const rows = await client.unsafe(`EXPLAIN (FORMAT JSON, COSTS true) ${AUDIT_SCAN_QUERY}`);
+        assert.ok(rows.length > 0, 'EXPLAIN must return a plan row');
         const planText = JSON.stringify(rows[0]?.['QUERY PLAN']);
         assert.match(planText, /boardsesh_ticks/);
         assert.doesNotMatch(planText, /ModifyTable|Insert|Update|Delete/);
