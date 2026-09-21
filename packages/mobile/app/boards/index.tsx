@@ -583,6 +583,7 @@ export default function BoardSelection() {
     ) : null;
 
   const requestLocation = location.request;
+  const refreshLocation = location.refresh;
   const locationGranted = location.status === 'granted';
   // Onboarding handoff: pre-resolve location on mount so the Find Nearby card is
   // already loading instead of waiting for a tap the user might not discover.
@@ -591,14 +592,21 @@ export default function BoardSelection() {
   useEffect(() => {
     if (fromOnboarding && !firstBoardMode) void requestLocation();
   }, [fromOnboarding, firstBoardMode, requestLocation]);
-  // Never a dead tap (#5654). With a fix in hand it looks again, which is the
-  // way out of "Nothing within 20 km" once the climber has moved; without one
-  // it asks for location again, which after a denial is how a climber back
-  // from Settings gets their gyms.
-  const onModeFindNearby = useCallback(() => {
-    if (locationGranted) void refetchNearby();
-    else void requestLocation();
-  }, [locationGranted, refetchNearby, requestLocation]);
+  // Never a dead tap (#5654). With location allowed it takes a fresh fix: a
+  // climber who has moved since "Nothing within 20 km" gets a search from where
+  // they are now (new coordinates, so a new query), and one who has not gets
+  // the same search run again. Without a fix it asks for location again, which
+  // after a denial is how a climber back from Settings gets their gyms.
+  const searchNearby = useCallback(() => {
+    if (!locationGranted) {
+      void requestLocation();
+      return;
+    }
+    void refreshLocation().then((moved) => {
+      if (!moved) void refetchNearby();
+    });
+  }, [locationGranted, refetchNearby, refreshLocation, requestLocation]);
+  const onModeFindNearby = searchNearby;
 
   const onModeBluetooth = useCallback(() => {
     setBluetoothActive(true);
@@ -656,8 +664,8 @@ export default function BoardSelection() {
   const onFirstBoardGym = useCallback(() => {
     chooseFirstBoardPath('gym');
     setGymChosen(true);
-    void requestLocation();
-  }, [chooseFirstBoardPath, requestLocation]);
+    searchNearby();
+  }, [chooseFirstBoardPath, searchNearby]);
   // The builder opens preset with a layout and size, so a home-wall owner's
   // Save works from the first frame instead of after finding the layout chip.
   const onFirstBoardOwn = useCallback(() => {
@@ -671,6 +679,15 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     onModeBluetooth();
   }, [chooseFirstBoardPath, onModeBluetooth]);
+  // Climbs' no-board entry only, with the spray-walls flag on: the tile row it
+  // replaced carried the spray wall tile, and My own board's builder cannot
+  // make one. Not on the launch gate's showing, because the wall wizard binds
+  // without the onboarding `source` and so would leave first-run open.
+  const onFirstBoardSprayWall = useCallback(() => {
+    chooseFirstBoardPath('spray_wall');
+    onModeAddWall();
+  }, [chooseFirstBoardPath, onModeAddWall]);
+  const offerSprayWall = sprayWallsEnabled && firstBoardChoiceEntry === 'no_board';
   const onFirstBoardGymMap = useCallback(() => {
     chooseFirstBoardPath('gym_map');
     onModeFindGym();
@@ -829,6 +846,7 @@ export default function BoardSelection() {
               onFindGymOnMap={onFirstBoardGymMap}
               onOpenSettings={onOpenLocationSettings}
               onRetryNearby={onRetryNearby}
+              onAddSprayWall={offerSprayWall ? onFirstBoardSprayWall : undefined}
             />
             {/* A new account can already have boards: one it built on the web,
                 or one it followed before a sign-out cleared the active board.

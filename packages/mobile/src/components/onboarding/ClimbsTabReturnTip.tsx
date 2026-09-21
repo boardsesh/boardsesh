@@ -39,7 +39,8 @@ type TipPhase = 'waiting' | 'showing' | 'done';
  * force-quit mid-tip cannot bring it back. It stays up while the climber moves
  * between other tabs, and goes when they dismiss it or tap back to Climbs,
  * which is what it asked them to do. It waits while the accessory tip is still
- * due, because both float in the same place.
+ * due, and steps aside if that tip comes due while this one is up, because
+ * both float in the same place.
  */
 export function ClimbsTabReturnTip() {
   const { t } = useTranslation('common');
@@ -81,6 +82,22 @@ export function ClimbsTabReturnTip() {
   useEffect(() => {
     if (phase === 'showing' && activeTab === CLIMBS_TAB) setPhase('done');
   }, [phase, activeTab]);
+
+  // The other order: a climb became current while this tip was up (a newcomer
+  // opened one from Home, Discover or a playlist, then closed /play back onto
+  // that tab). The accessory tip arms on that and floats in this same slot, so
+  // this one steps aside for good rather than render on top of it. It has
+  // already shown and been marked seen, so it does not come back.
+  useEffect(() => {
+    if (phase !== 'showing' || !hasCurrentClimb) return;
+    let cancelled = false;
+    void hasSeenTip(ONBOARDING_TIP_ACCESSORY_KEY).then((accessorySeen) => {
+      if (!cancelled && !accessorySeen) setPhase('done');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, hasCurrentClimb]);
 
   const dismissTip = useCallback(() => {
     setPhase('done');

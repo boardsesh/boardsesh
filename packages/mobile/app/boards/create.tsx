@@ -133,11 +133,12 @@ export default function CreateBoard() {
 
   const source = seed ? 'popular_seed' : 'scratch';
 
-  // "My own board" in the first-board picker (#5654): open with a layout and
-  // size already chosen, so the preview renders and Save works from the first
-  // frame. The popular list is the picker's own query (same key), so it is
-  // usually already cached; until it is, the preset falls back to the board
-  // type's first layout and default size.
+  // "My own board" in the first-board picker (#5654): open with the board
+  // type's most used setup already chosen, so the preview renders and Save
+  // works from the first frame. The popular list is the picker's own query
+  // (same key), so it is usually already cached; when it lands late the builder
+  // fills its still-empty cascade then. A type the list does not carry (every
+  // MoonBoard today) opens with nothing chosen rather than a guess.
   const presetRequested = params.preset === BUILDER_PRESET_PARAM_VALUE && seed === null;
   const { data: popularConfigs } = usePopularBoardConfigs({ limit: 12 }, { enabled: presetRequested });
   const popularConfigList = popularConfigs?.configs;
@@ -299,6 +300,8 @@ export default function CreateBoard() {
           ...describeInput(input, source),
           allowedDuplicate: !!granted.allowDuplicateConfig,
           allowedDuplicateSerial: !!granted.allowDuplicateSerial,
+          preset: presetRequested,
+          presetKept: builder.presetKept,
         });
         await finish(board);
         // Navigated away on success — no need to clear `submitting` (unmounting).
@@ -350,7 +353,7 @@ export default function CreateBoard() {
         setSubmitting(false);
       }
     },
-    [builder, defaultName, createBoard, finish, source, t],
+    [builder, defaultName, createBoard, finish, source, presetRequested, t],
   );
 
   const handleUseExistingDuplicate = useCallback(async () => {
@@ -360,7 +363,12 @@ export default function CreateBoard() {
     try {
       const board = await fetchBoardByUuid(duplicate.error.boardUuid);
       if (!board) throw new Error('Board not found');
-      track(SHARED_EVENTS.BoardCreateReusedExisting, { boardType: builder.boardName, source });
+      track(SHARED_EVENTS.BoardCreateReusedExisting, {
+        boardType: builder.boardName,
+        source,
+        preset: presetRequested,
+        presetKept: builder.presetKept,
+      });
       boardSecuredRef.current = true;
       setDuplicate(null);
       await finish(board);
@@ -370,7 +378,7 @@ export default function CreateBoard() {
       inFlightRef.current = false;
       setSubmitting(false);
     }
-  }, [duplicate, builder.boardName, source, finish, t]);
+  }, [duplicate, builder.boardName, builder.presetKept, source, presetRequested, finish, t]);
 
   const handleAddAnother = useCallback(() => {
     const granted = duplicate?.granted;

@@ -28,15 +28,15 @@ function popular(overrides: Partial<PopularBoardConfig>): PopularBoardConfig {
 
 /**
  * A real (layout, size, sets) setup from this build's catalogue that is NOT the
- * fallback (the first layout at its default size), so a test can tell which one
- * the preset chose.
+ * first layout at its default size, so a test can tell the popular entry from
+ * the catalogue's first choice.
  */
 function secondKilterSetup() {
   const firstLayoutId = getBoardLayouts('kilter')[0].id;
-  const fallbackSizeId = getDefaultBoardSizeForLayout('kilter', firstLayoutId);
+  const defaultSizeId = getDefaultBoardSizeForLayout('kilter', firstLayoutId);
   for (const layout of getBoardLayouts('kilter')) {
     for (const size of getBoardSizesForLayoutId('kilter', layout.id)) {
-      if (layout.id === firstLayoutId && size.id === fallbackSizeId) continue;
+      if (layout.id === firstLayoutId && size.id === defaultSizeId) continue;
       const setIds = getBoardSetsForLayoutAndSize('kilter', layout.id, size.id).map((set) => set.id);
       if (setIds.length > 0) return { layoutId: layout.id, sizeId: size.id, setIds };
     }
@@ -69,25 +69,39 @@ describe('presetBoardConfig', () => {
     expect(preset?.setIds).toEqual(setup.setIds);
   });
 
-  // The list is the top twelve across every board type, and may not have
-  // loaded at all; the preset must still give a working Save.
-  it("falls back to the type's first layout, its default size and every set", () => {
-    const layoutId = getBoardLayouts('tension')[0].id;
-    const sizeId = getDefaultBoardSizeForLayout('tension', layoutId);
-    if (sizeId == null) throw new Error('no default Tension size');
-    const setIds = getBoardSetsForLayoutAndSize('tension', layoutId, sizeId).map((set) => set.id);
-
-    expect(presetBoardConfig('tension', undefined)).toEqual({ layoutId, sizeId, setIds });
-    expect(presetBoardConfig('tension', [popular({ boardType: 'kilter', ...secondKilterSetup() })])).toEqual({
-      layoutId,
-      sizeId,
-      setIds,
-    });
+  // A guessed setup is worse than none: one Save makes a board with the wrong
+  // climbs and the wrong holds lit, and a duplicate once the climber fixes it.
+  it('presets nothing while the popular list has not loaded', () => {
+    expect(presetBoardConfig('kilter', undefined)).toBeNull();
+    expect(presetBoardConfig('tension', undefined)).toBeNull();
   });
 
-  it('works for the code-driven boards too', () => {
-    expect(presetBoardConfig('woods', undefined)).toEqual({ layoutId: 1, sizeId: 2, setIds: [1] });
-    expect(presetBoardConfig('moonboard', undefined)?.setIds.length).toBeGreaterThan(0);
+  it('presets nothing for a board type the popular list does not carry', () => {
+    expect(presetBoardConfig('tension', [popular({ boardType: 'kilter', ...secondKilterSetup() })])).toBeNull();
+  });
+
+  // The live list has only Kilter and Tension setups. The catalogue's first
+  // MoonBoard layout is the 2010 board, which almost no current owner has.
+  it('leaves a MoonBoard owner to pick their own year and size', () => {
+    const kilterAndTension = [
+      popular({ boardType: 'kilter', ...secondKilterSetup() }),
+      popular({ boardType: 'tension', layoutId: 9, sizeId: 1, setIds: [1] }),
+    ];
+    expect(presetBoardConfig('moonboard', kilterAndTension)).toBeNull();
+    expect(presetBoardConfig('moonboard', [])).toBeNull();
+  });
+
+  it('presets a MoonBoard setup once the popular list carries one', () => {
+    const layout = getBoardLayouts('moonboard').at(-1);
+    if (!layout) throw new Error('no MoonBoard layouts');
+    const size = getBoardSizesForLayoutId('moonboard', layout.id)[0];
+    const setIds = getBoardSetsForLayoutAndSize('moonboard', layout.id, size.id).map((set) => set.id);
+
+    expect(
+      presetBoardConfig('moonboard', [
+        popular({ boardType: 'moonboard', layoutId: layout.id, sizeId: size.id, setIds }),
+      ]),
+    ).toEqual({ layoutId: layout.id, sizeId: size.id, setIds });
   });
 
   it('has nothing to preset for a spray wall', () => {

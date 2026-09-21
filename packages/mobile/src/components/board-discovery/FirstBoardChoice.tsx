@@ -24,6 +24,12 @@ type FirstBoardChoiceProps = {
   onOpenSettings: () => void;
   /** Asks for the boards near the climber again, after `nearby_error`. */
   onRetryNearby: () => void;
+  /**
+   * "Add my spray wall", under My own board. Only passed when the spray-walls
+   * flag is on: the builder behind My own board cannot make a spray wall, so
+   * without it a home spray-wall owner with no boards has no way forward here.
+   */
+  onAddSprayWall?: () => void;
 };
 
 /**
@@ -51,6 +57,7 @@ export function FirstBoardChoice({
   onFindGymOnMap,
   onOpenSettings,
   onRetryNearby,
+  onAddSprayWall,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -95,6 +102,11 @@ export function FirstBoardChoice({
         hint={t('mobile.firstBoard.ownHint')}
         onPress={onOwn}
       />
+      {onAddSprayWall ? (
+        <View style={styles.textAction}>
+          <Button title={t('mobile.firstBoard.sprayWall')} variant="text" icon="camera" onPress={onAddSprayWall} />
+        </View>
+      ) : null}
 
       <View style={styles.scan}>
         <Button title={t('mobile.firstBoard.scan')} variant="text" icon="bluetooth" onPress={onScan} />
@@ -177,6 +189,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     alignItems: 'flex-start',
     gap: spacing[1],
+  },
+  textAction: {
+    paddingHorizontal: spacing[4],
+    alignItems: 'flex-start',
   },
   footnote: {
     paddingHorizontal: spacing[1],

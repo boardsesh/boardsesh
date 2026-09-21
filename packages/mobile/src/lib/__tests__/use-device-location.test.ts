@@ -93,6 +93,73 @@ describe('useDeviceLocation', () => {
     expect(result.current.coords).toEqual({ latitude: 1, longitude: 2 });
   });
 
+  // #5654: "Nothing within 20 km" and a tap on Find nearby. `request` is a
+  // no-op once granted, so without a fresh fix the tap searched the same spot.
+  describe('refresh', () => {
+    async function granted() {
+      const hook = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
+      await act(async () => {
+        await hook.result.current.request();
+      });
+      return hook;
+    }
+
+    it('takes a new fix and reports that the climber moved', async () => {
+      const { result } = await granted();
+      expoLocation.getCurrentPositionAsync.mockResolvedValueOnce({ coords: { latitude: 5, longitude: 6 } });
+
+      let moved = false;
+      await act(async () => {
+        moved = await result.current.refresh();
+      });
+
+      expect(moved).toBe(true);
+      expect(result.current.coords).toEqual({ latitude: 5, longitude: 6 });
+      expect(result.current.status).toBe('granted');
+      expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the same coordinates and says so when the climber has not moved', async () => {
+      const { result } = await granted();
+      const before = result.current.coords;
+
+      let moved = true;
+      await act(async () => {
+        moved = await result.current.refresh();
+      });
+
+      expect(moved).toBe(false);
+      expect(result.current.coords).toBe(before);
+    });
+
+    it('keeps the old fix when the new one fails', async () => {
+      const { result } = await granted();
+      expoLocation.getCurrentPositionAsync.mockRejectedValueOnce(new Error('gps error'));
+
+      let moved = true;
+      await act(async () => {
+        moved = await result.current.refresh();
+      });
+
+      expect(moved).toBe(false);
+      expect(result.current.status).toBe('granted');
+      expect(result.current.coords).toEqual({ latitude: 1, longitude: 2 });
+    });
+
+    it('does nothing before location is granted', async () => {
+      const { result } = renderHook(() => useDeviceLocation());
+
+      let moved = true;
+      await act(async () => {
+        moved = await result.current.refresh();
+      });
+
+      expect(moved).toBe(false);
+      expect(result.current.status).toBe('idle');
+      expect(expoLocation.getCurrentPositionAsync).not.toHaveBeenCalled();
+    });
+  });
+
   it('does not start a second request while one is in flight', async () => {
     let resolvePermission: ((value: { status: string }) => void) | undefined;
     expoLocation.requestForegroundPermissionsAsync.mockReturnValue(

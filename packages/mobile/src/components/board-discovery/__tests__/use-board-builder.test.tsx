@@ -105,6 +105,86 @@ describe('useBoardBuilder', () => {
 
       expect(result.current.sizeId).toBe(2);
     });
+
+    // The popular list is not always cached when the builder opens.
+    describe('when the preset data lands after the first frame', () => {
+      type PresetFn = (boardName: string) => { layoutId: number; sizeId: number; setIds: number[] } | null;
+      const noPreset: PresetFn = () => null;
+      const kilterPreset = { layoutId: 1, sizeId: 10, setIds: [1, 20] };
+      const withKilter: PresetFn = (boardName) => (boardName === 'kilter' ? kilterPreset : null);
+      const renderWithPreset = (preset: PresetFn) =>
+        renderHook(({ presetOption }) => useBoardBuilder(null, { preset: presetOption }), {
+          initialProps: { presetOption: preset },
+        });
+
+      it('fills the empty cascade', () => {
+        const { result, rerender } = renderWithPreset(noPreset);
+        expect(result.current.layoutId).toBeNull();
+
+        rerender({ presetOption: withKilter });
+
+        expect(result.current.layoutId).toBe(1);
+        expect(result.current.sizeId).toBe(10);
+        expect(result.current.setIds).toEqual([1, 20]);
+        expect(result.current.presetKept).toBe(true);
+      });
+
+      it('never replaces a layout the climber picked', () => {
+        const { result, rerender } = renderWithPreset(noPreset);
+        act(() => result.current.selectLayout(8));
+
+        rerender({ presetOption: withKilter });
+
+        expect(result.current.layoutId).toBe(8);
+        expect(result.current.presetKept).toBe(false);
+      });
+
+      it('never moves a preset already on screen', () => {
+        const { result, rerender } = renderWithPreset(withKilter);
+
+        rerender({ presetOption: () => ({ layoutId: 8, sizeId: 17, setIds: [26] }) });
+
+        expect(result.current.layoutId).toBe(1);
+        expect(result.current.sizeId).toBe(10);
+      });
+
+      it('fills the type the climber switched to while it loaded', () => {
+        const { result, rerender } = renderWithPreset(noPreset);
+        act(() => result.current.selectBoard('woods'));
+
+        rerender({
+          presetOption: (boardName) => (boardName === 'woods' ? { layoutId: 1, sizeId: 2, setIds: [1] } : null),
+        });
+
+        expect(result.current.boardName).toBe('woods');
+        expect(result.current.sizeId).toBe(2);
+      });
+    });
+
+    // `Board Created {presetKept}`: whether a board was saved exactly as preset.
+    describe('presetKept', () => {
+      it('is true for the untouched preset and false once a chip changes it', () => {
+        const { result } = renderHook(() => useBoardBuilder(null, { preset: presetFor }));
+        act(() => result.current.selectBoard('woods'));
+        expect(result.current.presetKept).toBe(true);
+
+        act(() => result.current.selectSize(2));
+        expect(result.current.presetKept).toBe(false);
+      });
+
+      it('is false without a preset', () => {
+        const { result } = renderHook(() => useBoardBuilder());
+        act(() => result.current.selectLayout(1));
+        expect(result.current.presetKept).toBe(false);
+      });
+
+      it('is false for a seed, which is never a preset', () => {
+        const { result } = renderHook(() =>
+          useBoardBuilder({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: '1' }, { preset: presetFor }),
+        );
+        expect(result.current.presetKept).toBe(false);
+      });
+    });
   });
 
   it('builds a create input carrying serial + visibility from More options', () => {
