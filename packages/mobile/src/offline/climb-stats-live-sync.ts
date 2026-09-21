@@ -445,6 +445,11 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     // eviction below stays a real FIFO.
     pendingEvents.delete(key);
     pendingEvents.set(key, kept);
+    trimPendingEvents();
+  }
+
+  /** Keep every path that puts events back under the same bounded-memory rule. */
+  function trimPendingEvents(): void {
     while (pendingEvents.size > CLIMB_STATS_MAX_PENDING_EVENTS) {
       const oldest = pendingEvents.keys().next();
       if (oldest.done) break;
@@ -681,6 +686,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
       pendingEvents.delete(key);
       pendingEvents.set(key, kept);
     }
+    trimPendingEvents();
   }
 
   return {
