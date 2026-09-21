@@ -500,3 +500,20 @@ Six events added or enriched to unblock the new dashboard at `/dashboard/1597030
 ### Follow-up enrichment (recommended, not implemented)
 
 The Boardsesh user base skews **solo-BLE**: most users connect a board over Bluetooth and never start a party session ([[project-sessions-are-optional]]). To make session-mode a one-click breakdown on every BLE tile in the future, enrich `Bluetooth Connection Success` and `Climb Sent to Board Success` / `Failure` with `inActiveSession: bool` derived from `persistentSession.users.length > 0`. Today the same insight needs a HogQL join. Low effort, high analytical leverage.
+
+## Appendix B — 2026-09-21 honest Bluetooth states (#5654)
+
+Three mobile events so the "opened a climb, never scanned" stage of the newcomer funnel can be measured. The definitions live in `packages/shared/analytics/src/events.ts`.
+
+| Event                            | Properties                                                                                                                                          | Emit sites                                                                                                                                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again`), `boardName`, `reconnect` | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts` and the device picker's Scan again in `bluetooth-provider.tsx`. Fires on the tap, before permissions. |
+| `Bluetooth Unavailable`          | `reason` (`unauthorized` / `powered_off` / `unsupported` / `unknown`), `surface` (`connect` / `quickstart_scan`), `platform`, `boardName` (connect only) | `packages/mobile/src/lib/ble/bluetooth-unavailable.ts`, called from `bluetooth-unavailable-alert.ts` (connect) and `use-board-scan.ts` (quickstart). Fires with the alert or sheet state.                                                                    |
+| `Board Quickstart Scan Finished` | `outcome` (`completed` / `stopped` / `error`), `found_count`                                                                                        | `packages/mobile/src/lib/ble/use-board-scan.ts`. Once per quickstart scan that started the radio.                                                                                                                                                             |
+
+### Decisions
+
+- `Bluetooth Permission Denied` is unchanged and still fires for every Android denial. `Bluetooth Unavailable` adds `unauthorized` only when only the Settings app can fix it (iOS denial, Android "never ask again").
+- `reason: 'unknown'` is outside the three reasons the plan named. It covers a stop the radio state can't explain, so those stops aren't counted as the radio being off.
+- `found_count` is snake_case because the #5654 experiment plan names it that way. The other properties follow the camelCase used by the Bluetooth events around them.
+- "Scanned" for the #5654 funnel is `Bluetooth Scan Started` (connect) or `Board Quickstart Scan Finished` (quickstart). The quickstart doesn't fire `Bluetooth Scan Started`, because that event's board config properties don't exist before a board is picked.

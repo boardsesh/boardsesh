@@ -30,6 +30,7 @@ import { GraphQLOperationError } from '@boardsesh/graphql-client';
 import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
+import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { useQueueActions } from '../../providers/queue-provider';
@@ -1444,8 +1445,12 @@ export function useCreateClimbScreen({
     // Ignore taps while a connect is already running — a second concurrent
     // connect tears down the first attempt's scan and strands the picker.
     if (bluetooth.loading) return;
-    if (bluetooth.isConnected) void bluetooth.disconnect();
-    else void bluetooth.connect(currentFrameBleString());
+    if (bluetooth.isConnected) {
+      void bluetooth.disconnect();
+      return;
+    }
+    trackBoardConnectTapped({ surface: 'create_climb', boardName: bluetooth.boardName, reconnect: false });
+    void bluetooth.connect(currentFrameBleString());
   }, [bluetooth, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);
 
   // ---- Save state machine. ----

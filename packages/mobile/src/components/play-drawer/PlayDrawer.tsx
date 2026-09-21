@@ -693,7 +693,11 @@ export function PlayDrawer({
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     wallHeldLocally,
-  } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder, canRelay: canRelayToHolder });
+  } = useLightbulbControl({
+    surface: 'play_drawer',
+    onRelayToHolder: handleRelayToHolder,
+    canRelay: canRelayToHolder,
+  });
   const lightbulbLabelKind = getBleLightbulbLabelKind(lightbulbPressAction, lightbulbHolderIsAuthoritative);
   // A suggestion source belongs to one lineage (issue #5403). The provider's
   // source describes the COMMITTED climb's track; a pinned preview navigates the
