@@ -701,7 +701,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
               </Text>
               {/* Unfiltered only: a logbook emptied by a filter says nothing about
                   whether a board account is linked. */}
-              <BoardLinkPrompt viewerIsOwner={viewerIsOwner} hasNoSends={activeFilterCount === 0 && !name} />
+              <BoardLinkPrompt
+                key={userId}
+                viewerIsOwner={viewerIsOwner}
+                hasNoSends={activeFilterCount === 0 && !name}
+              />
             </View>
           }
         />

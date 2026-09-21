@@ -199,7 +199,7 @@ export const ProgressTab = memo(function ProgressTab({
         case 'empty':
           return (
             <>
-              <BoardLinkPrompt viewerIsOwner={isOwnProfile} hasNoSends={!data.hasActiveFilters} />
+              <BoardLinkPrompt key={userId} viewerIsOwner={isOwnProfile} hasNoSends={!data.hasActiveFilters} />
               <Text variant="body" color={systemColors.secondaryLabel} style={styles.empty}>
                 {isOwnProfile ? t('stats.boardOverview.empty') : t('stats.boardOverview.publicEmpty')}
               </Text>

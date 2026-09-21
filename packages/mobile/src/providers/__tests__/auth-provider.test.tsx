@@ -1629,19 +1629,32 @@ describe('AuthProvider forced sign-out registration', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
 
+    let finishDismissalClear!: () => void;
+    linkEmptyDismissalMocks.clear.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDismissalClear = resolve;
+        }),
+    );
     webSessionIdentityState.userId = 'user-2';
     webSessionIdentityState.authSessionId = 'login-2';
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    // B must remain unpublished while A's shared dismissal clear is pending.
+    expect(userStorageOwnerState.current).toBeNull();
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishDismissalClear();
+    });
     const previousOwner = { userId: 'user-1', authSessionId: 'login-1' };
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
     expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
+    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
-    expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(2);
   });
 
   it('hides and cleans A when B is confirmed but the backend token bridge is unavailable', async () => {
