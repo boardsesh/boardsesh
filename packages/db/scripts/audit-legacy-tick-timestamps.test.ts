@@ -134,6 +134,7 @@ void describe('legacy timestamp audit CLI', () => {
     assert.throws(() => parseArgs(validArgs('-')), /not stdout/);
     assert.throws(() => parseArgs(validArgs('/dev/stdout')), /not stdout/);
     assert.throws(() => parseArgs(validArgs('/dev/fd/1')), /not stdout/);
+    assert.throws(() => parseArgs(validArgs('/proc/self/fd/1')), /not stdout/);
   });
 
   void it('requires explicit timezone offsets and a non-overlapping rollout window', () => {

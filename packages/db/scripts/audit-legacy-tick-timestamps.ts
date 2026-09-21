@@ -430,6 +430,8 @@ export type ArtifactSink = {
 };
 
 async function syncArtifactDirectory(directoryPath: string): Promise<void> {
+  // Publication targets POSIX ops hosts with directory fsync/O_DIRECTORY.
+  // O_NOFOLLOW is required before staging, so unsupported hosts fail closed.
   const directory = await open(
     directoryPath,
     fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | requireNoFollowFlag(fsConstants.O_NOFOLLOW),
@@ -685,7 +687,16 @@ function redactedCounters(counters: AuditCounters): Record<string, number | '<5'
   >;
 }
 
-export function buildAuditSummary(counters: AuditCounters): Record<string, unknown> {
+export type AuditSummary = {
+  counts: Record<string, number | '<5'>;
+  effective_correction_proposals: number | '<5';
+  evidence_only: true;
+  post_fix_control_invariant: 'failed' | 'passed';
+  proposals_suppressed: boolean;
+  type: 'audit_summary';
+};
+
+export function buildAuditSummary(counters: AuditCounters): AuditSummary {
   const proposalsSuppressed = counters.postFixInvariantViolations > 0;
   return {
     counts: redactedCounters(counters),
