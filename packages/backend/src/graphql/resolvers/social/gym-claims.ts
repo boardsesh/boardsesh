@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { eq, ne, gt, or, and, isNull, desc, count } from 'drizzle-orm';
+import { eq, ne, gt, or, and, isNull, desc, count, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
@@ -84,8 +84,8 @@ type ClaimApplied = {
  * Why an apply did not happen. `superseded` is its own outcome rather than a
  * flavour of "not applied" because the two need opposite handling: a not-applied
  * claim is already resolved or the gym is gone (nothing left to do), while a
- * superseded one is still `pending` and needs a human to deny it or move
- * ownership deliberately.
+ * superseded admin claim stays `pending` for a human to deny or resolve.
+ * Superseded domain claims expire so their claimant can request a fresh link.
  */
 export type ApplyGymClaimResult =
   | { outcome: 'applied'; applied: ClaimApplied }
@@ -98,9 +98,10 @@ export type ApplyGymClaimResult =
  * Exactly two code paths move `gyms.owner_id` — this function's own transfer and
  * `reassignGymOwner` — and both leave a dated record: an admin handover writes a
  * `gym_owner_reassignments` row, and a claim-driven transfer is dated by the
- * approved claim row itself (an approved claim's `updated_at` IS its approval
- * time). Reading both is therefore an exhaustive answer, with no new bookkeeping
- * and no lock held across the decision.
+ * approved claim row itself. Filing, approval and handover hold the same gym
+ * row lock and stamp the database clock AFTER acquiring it. Transaction-start
+ * timestamps cannot order these events: a transaction may wait behind a claim
+ * that was filed after that transaction began.
  *
  * Anything newer than the claim means applying it now would reverse a decision
  * somebody made with more information than the claim carries.
@@ -110,14 +111,16 @@ async function ownershipMovedSinceClaim(
   gymUuid: string,
   claim: typeof dbSchema.gymClaims.$inferSelect,
 ): Promise<boolean> {
+  // Compare in Postgres, retaining microseconds that the JS Date mapper drops.
+  const filedAt = tx
+    .select({ createdAt: dbSchema.gymClaims.createdAt })
+    .from(dbSchema.gymClaims)
+    .where(eq(dbSchema.gymClaims.id, claim.id));
   const [reassignment] = await tx
     .select({ id: dbSchema.gymOwnerReassignments.id })
     .from(dbSchema.gymOwnerReassignments)
     .where(
-      and(
-        eq(dbSchema.gymOwnerReassignments.gymUuid, gymUuid),
-        gt(dbSchema.gymOwnerReassignments.createdAt, claim.createdAt),
-      ),
+      and(eq(dbSchema.gymOwnerReassignments.gymUuid, gymUuid), gt(dbSchema.gymOwnerReassignments.createdAt, filedAt)),
     )
     .limit(1);
   if (reassignment) return true;
@@ -130,7 +133,7 @@ async function ownershipMovedSinceClaim(
         eq(dbSchema.gymClaims.gymId, claim.gymId),
         ne(dbSchema.gymClaims.id, claim.id),
         eq(dbSchema.gymClaims.status, 'approved'),
-        gt(dbSchema.gymClaims.updatedAt, claim.createdAt),
+        gt(dbSchema.gymClaims.updatedAt, filedAt),
       ),
     )
     .limit(1);
@@ -146,13 +149,14 @@ async function ownershipMovedSinceClaim(
  * gym admin and reported back so they can be notified. Also `not_applied` if
  * the gym vanished.
  *
- * A claim older than the gym's current ownership returns `superseded` having
- * written NOTHING — not even the status flip. Approving it would move ownership
+ * A claim older than the gym's current ownership returns `superseded` without
+ * changing the gym or its memberships. Approving it would move ownership
  * back to the claimant, demote whoever an admin chose to a membership row, mail
  * them "someone verified they manage this gym" (false for a handover), and
  * re-stamp `syncFrozenAt`, which `reassignGymOwner` goes out of its way to leave
- * alone. The row stays `pending` so the claimant still gets a real outcome from
- * the existing Deny path instead of being closed out silently.
+ * alone. Admin claims stay `pending` for the existing Deny path. Domain claims
+ * expire because that queue cannot review them; the verification page explains
+ * the ownership change and the claimant can immediately request a fresh link.
  *
  * `requireCurrentOwnerId` narrows the apply to a gym still owned by that user —
  * the auto-approval path passes the system import user so it can only ever hand
@@ -170,7 +174,8 @@ export async function applyGymClaim(
       .select()
       .from(dbSchema.gyms)
       .where(and(eq(dbSchema.gyms.id, claim.gymId), isNull(dbSchema.gyms.deletedAt)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     if (!gym) return { outcome: 'not_applied' };
     if (requireCurrentOwnerId !== undefined && gym.ownerId !== requireCurrentOwnerId) {
       return { outcome: 'not_applied' };
@@ -183,17 +188,23 @@ export async function applyGymClaim(
     // would strand the row with Deny (and its "sorry, no" email) as the only way
     // out, for the person who was in fact given the gym.
     //
-    // No `FOR UPDATE`: a handover committing between this read and the transfer
-    // makes the owner-guarded UPDATE below match 0 rows and roll the whole
-    // transaction back, which is the behaviour the concurrency tests pin.
+    // The gym lock serializes this decision with handovers and claim filing.
+    // Keep the owner-guarded UPDATE and explicit throw below as a final guard:
+    // it is that throw, not a zero-row UPDATE itself, that rolls back the claim.
     if (gym.ownerId !== claim.claimantUserId && (await ownershipMovedSinceClaim(tx, gym.uuid, claim))) {
+      if (claim.method === 'domain') {
+        await tx
+          .update(dbSchema.gymClaims)
+          .set({ status: 'expired', updatedAt: sql`clock_timestamp()` })
+          .where(and(eq(dbSchema.gymClaims.id, claim.id), eq(dbSchema.gymClaims.status, 'pending')));
+      }
       return { outcome: 'superseded' };
     }
 
     // Claim the pending row atomically; 0 rows means someone else already resolved it.
     const flipped = await tx
       .update(dbSchema.gymClaims)
-      .set({ status: 'approved', reviewedBy: reviewerId ?? null, updatedAt: new Date() })
+      .set({ status: 'approved', reviewedBy: reviewerId ?? null, updatedAt: sql`clock_timestamp()` })
       .where(and(eq(dbSchema.gymClaims.id, claim.id), eq(dbSchema.gymClaims.status, 'pending')))
       .returning({ id: dbSchema.gymClaims.id });
     if (flipped.length === 0) return { outcome: 'not_applied' };
@@ -208,10 +219,9 @@ export async function applyGymClaim(
         // Taking ownership is a strong human-curation signal — freeze the gym so
         // the location sync stops reshaping the listing the new owner now controls.
         .set({ ownerId: claimantId, syncFrozenAt: new Date(), updatedAt: new Date() })
-        // The gym was read above without a row lock, so re-assert the owner we
-        // based this decision on. A concurrent transfer means our read is stale:
-        // throw to roll the whole transaction back (claim flip included) rather
-        // than overwrite the winner.
+        // Re-assert the owner even with the row lock. If a future caller changes
+        // ownership inside this transaction, explicitly throw on zero rows to
+        // roll back the claim flip rather than overwrite that change.
         .where(and(eq(dbSchema.gyms.id, gym.id), eq(dbSchema.gyms.ownerId, priorOwnerId)))
         .returning({ id: dbSchema.gyms.id });
       if (transferred.length === 0) {
@@ -329,10 +339,10 @@ export async function verifyGymClaimByToken(
   }
 
   const result = await applyGymClaim(claim);
-  // Not 'used': the link still works, the gym just isn't this claimant's to take
-  // any more. The claim stays pending so an admin can resolve it deliberately.
+  // Domain claims cannot enter the admin queue. applyGymClaim expired this one
+  // atomically, so the page's instruction to request a new link works now.
   if (result.outcome === 'superseded') {
-    logger.warn(`[GymClaim] Domain claim ${claim.id} on gym ${claim.gymId} was superseded; leaving it pending`);
+    logger.warn(`[GymClaim] Domain claim ${claim.id} on gym ${claim.gymId} was superseded and expired`);
     return { ok: false, reason: 'superseded' };
   }
   if (result.outcome !== 'applied') return { ok: false, reason: 'used' };
@@ -429,6 +439,16 @@ async function replacePendingClaim(
   values: typeof dbSchema.gymClaims.$inferInsert,
 ): Promise<typeof dbSchema.gymClaims.$inferSelect> {
   return db.transaction(async (tx) => {
+    // A claim filed during a handover must see that handover commit before it
+    // establishes its own place in the ownership timeline. Always lock gym
+    // before claim rows, matching applyGymClaim and reassignGymOwner.
+    const [gym] = await tx
+      .select({ id: dbSchema.gyms.id })
+      .from(dbSchema.gyms)
+      .where(and(eq(dbSchema.gyms.id, values.gymId), isNull(dbSchema.gyms.deletedAt)))
+      .limit(1)
+      .for('update');
+    if (!gym) throw new Error('Gym not found.');
     await tx
       .delete(dbSchema.gymClaims)
       .where(
@@ -438,7 +458,10 @@ async function replacePendingClaim(
           eq(dbSchema.gymClaims.status, 'pending'),
         ),
       );
-    const [inserted] = await tx.insert(dbSchema.gymClaims).values(values).returning();
+    const [inserted] = await tx
+      .insert(dbSchema.gymClaims)
+      .values({ ...values, createdAt: sql`clock_timestamp()` })
+      .returning();
     // A successful INSERT ... RETURNING always yields a row, but the destructure
     // is typed as possibly-undefined and the caller feeds this straight into
     // applyGymClaim. Fail here rather than forward an undefined claim.

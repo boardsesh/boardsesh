@@ -2493,6 +2493,47 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
   const approveAsAdmin = (claimId: number) =>
     socialGymClaimMutations.reviewGymClaim(null, { input: { claimId, decision: 'approve' } }, authCtx(GLOBAL_ADMIN));
 
+  const fileAdminClaim = async (gymUuid: string, claimantUserId: string): Promise<number> => {
+    await socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid } }, authCtx(claimantUserId));
+    const pending = await gymClaimFieldResolvers.myPendingClaim({ uuid: gymUuid }, {}, authCtx(claimantUserId));
+    expect(pending?.method).toBe('admin');
+    return Number(pending!.id);
+  };
+
+  // Pause the real transaction, not its SQL results. Reading the backend PID
+  // also fixes PostgreSQL's transaction-start clock before the interleaved
+  // request, reproducing the reviewed now()-versus-commit ordering bug.
+  const pauseNextTransaction = (phase: 'before-work' | 'before-commit') => {
+    let signalReached: (pid: number) => void = () => {};
+    let resume: () => void = () => {};
+    const reached = new Promise<number>((resolve) => {
+      signalReached = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const realTransaction = db.transaction.bind(db);
+    const spy = vi.spyOn(db, 'transaction');
+    spy.mockImplementationOnce(async (callback, config) =>
+      realTransaction(async (tx) => {
+        const [connection] = Array.from(
+          (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as Iterable<{ pid: number }>,
+        );
+        if (phase === 'before-work') {
+          signalReached(connection.pid);
+          await released;
+        }
+        const result = await callback(tx);
+        if (phase === 'before-commit') {
+          signalReached(connection.pid);
+          await released;
+        }
+        return result;
+      }, config),
+    );
+    return { reached, resume, restore: () => spy.mockRestore() };
+  };
+
   const allMembers = async (gymId: number): Promise<Array<{ user_id: string; role: string }>> => {
     const result = await db.execute(sql`
       SELECT user_id, role FROM gym_members WHERE gym_id = ${gymId} ORDER BY user_id
@@ -2571,6 +2612,99 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     expect(await claimStatus(secondClaim)).toBe('pending');
   });
 
+  it('refuses a claim filed after the handover transaction began but before ownership moved', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Handover Transaction Started First' });
+    const paused = pauseNextTransaction('before-work');
+    const handover = reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    try {
+      await paused.reached;
+      const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+      paused.resume();
+      await handover;
+
+      await expect(approveAsAdmin(claimId)).rejects.toMatchObject({
+        extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+      });
+      expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+      expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+      expect(await claimStatus(claimId)).toBe('pending');
+    } finally {
+      paused.resume();
+      await handover;
+      paused.restore();
+    }
+  });
+
+  it('refuses a claim filed after another approval began but before its transfer', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Approval Transaction Started First' });
+    const firstClaim = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+    const paused = pauseNextTransaction('before-work');
+    const firstApproval = approveAsAdmin(firstClaim);
+    try {
+      await paused.reached;
+      const secondClaim = await fileAdminClaim(claimGym.uuid, PLAIN_USER);
+      paused.resume();
+      await firstApproval;
+
+      await expect(approveAsAdmin(secondClaim)).rejects.toMatchObject({
+        extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+      });
+      expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+      expect(await claimStatus(secondClaim)).toBe('pending');
+    } finally {
+      paused.resume();
+      await firstApproval;
+      paused.restore();
+    }
+  });
+
+  it.each(['handover', 'approval'] as const)(
+    'files a new claim only after an in-flight %s commits',
+    async (transfer) => {
+      const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Claim Waits For Handover' });
+      const ownerClaim = transfer === 'approval' ? await fileAdminClaim(claimGym.uuid, SECOND_TARGET) : null;
+      const handoverPause = pauseNextTransaction('before-commit');
+      const handover =
+        ownerClaim === null ? reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET) : approveAsAdmin(ownerClaim);
+      let filing: Promise<number> | undefined;
+      try {
+        const handoverPid = await handoverPause.reached;
+        handoverPause.restore();
+        const filingPause = pauseNextTransaction('before-work');
+        try {
+          filing = fileAdminClaim(claimGym.uuid, CLAIMANT);
+          const filingPid = await filingPause.reached;
+          filingPause.resume();
+
+          // Observe the actual PostgreSQL wait rather than assuming a particular
+          // request speed. An unlocked INSERT would finish before the handover.
+          await vi.waitFor(async () => {
+            const [waitState] = Array.from(
+              (await db.execute(
+                sql`SELECT ${handoverPid} = ANY(pg_blocking_pids(${filingPid})) AS blocked`,
+              )) as Iterable<{ blocked: boolean }>,
+            );
+            expect(waitState.blocked).toBe(true);
+          });
+
+          handoverPause.resume();
+          await handover;
+          const claimId = await filing;
+          await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+          expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+        } finally {
+          filingPause.resume();
+          filingPause.restore();
+        }
+      } finally {
+        handoverPause.resume();
+        await handover;
+        await filing;
+        handoverPause.restore();
+      }
+    },
+  );
+
   it('still approves a claim filed AFTER the handover', async () => {
     // The control. Without it the guard could refuse every approval and every
     // assertion above would still pass.
@@ -2586,6 +2720,23 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     // The handover's owner is displaced by a decision made after it, which is
     // the normal claim path — so he keeps gym-admin access, as always.
     expect(await gymMemberRole(claimGym.id, SECOND_TARGET)).toBe('admin');
+  });
+
+  it('retains database timestamp precision when a claim follows a handover within the same millisecond', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Submillisecond Ownership Order' });
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+    await db
+      .update(dbSchema.gymOwnerReassignments)
+      .set({ createdAt: sql`timestamp '2026-09-20 01:00:00.123100'` })
+      .where(eq(dbSchema.gymOwnerReassignments.gymUuid, claimGym.uuid));
+    await db
+      .update(dbSchema.gymClaims)
+      .set({ createdAt: sql`timestamp '2026-09-20 01:00:00.123900'` })
+      .where(eq(dbSchema.gymClaims.id, claimId));
+
+    await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
   });
 
   it('still approves when the handover gave the gym to the claimant themselves', async () => {
@@ -2606,7 +2757,7 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
     expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
   });
 
-  it('refuses the domain verification link too, and keeps the claim usable', async () => {
+  it('expires a superseded domain link and lets the claimant request and verify a fresh one', async () => {
     // The emailed link is a second, unattended way into the same transfer. It
     // reports `superseded` rather than `used` — the link was never spent.
     const claimGym = await insertGym({
@@ -2630,8 +2781,24 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
 
     expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
     expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
-    expect(await claimStatus(claimId)).toBe('pending');
+    expect(await claimStatus(claimId)).toBe('expired');
     expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
     expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+    await expect(
+      gymClaimFieldResolvers.myPendingClaim({ uuid: claimGym.uuid }, {}, authCtx(CLAIMANT)),
+    ).resolves.toBeNull();
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@domain-superseded.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toMatchObject({ status: 'email_sent' });
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+    const freshToken = vi.mocked(sendGymClaimVerificationEmail).mock.calls[0][1];
+    expect(freshToken).not.toBe('superseded-token');
+    await expect(verifyGymClaimByToken(freshToken)).resolves.toMatchObject({ ok: true });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
   });
 });
