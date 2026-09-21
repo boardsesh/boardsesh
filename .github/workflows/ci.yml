@@ -410,6 +410,8 @@ jobs:
               # `Run the legacy-timestamp audit unit suites` step below.
               - 'packages/db/scripts/audit-legacy-tick-timestamps*'
               - 'packages/db/scripts/legacy-timestamp-audit-core*'
+              # Owns the Vite task commands executed by this job.
+              - 'vite.config.ts'
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'

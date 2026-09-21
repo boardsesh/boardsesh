@@ -130,11 +130,18 @@ edge requires all of the following:
 The offset allowlist spans `-12:00` through `+14:00` and includes real half- and
 quarter-hour zones such as `+05:45`, `+08:45`, and `+12:45`. It also preserves
 historical offsets used during recent climbing history: `-04:30` in
-[America/Caracas](https://data.iana.org/time-zones/tzdb/southamerica) from 2007 to
-2016 and `+08:30` in [Asia/Pyongyang](https://data.iana.org/time-zones/tzdb/asia)
-from 2015 to 2018. It is not “every 15 minutes.” A candidate is correction
-evidence only when both endpoint degrees are
-exactly one. Multiple candidates for one anchor, multiple anchors for one
+[America/Caracas](https://data.iana.org/time-zones/tzdb/southamerica) from
+`2007-12-09T07:00:00Z` inclusive to `2016-05-01T07:00:00Z` exclusive and `+08:30`
+in [Asia/Pyongyang](https://data.iana.org/time-zones/tzdb/asia) from
+`2015-08-14T15:00:00Z` inclusive to `2018-05-04T15:00:00Z` exclusive. Those two
+historical-only offsets are rejected outside these periods. The corrected event
+instant (candidate timestamp minus offset, preserving its seconds) determines
+validity, even when the anchor is up to 60 seconds across a boundary. Import and
+sync dates do not establish when the climb happened. Earlier historical periods
+are outside this audit's supported recent history.
+
+It is not “every 15 minutes.” A candidate is correction evidence only when both
+endpoint degrees are exactly one. Multiple candidates for one anchor, multiple anchors for one
 candidate, semantic disagreement, missing anchors, or an uncertain writer rollout
 all abstain. An offset observed for one climb is never extrapolated to another
 climb, another date, or an entire user, so DST and travel do not need guessed

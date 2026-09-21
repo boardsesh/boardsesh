@@ -98,20 +98,99 @@ void describe('allowed IANA UTC offsets', () => {
     }
   });
 
+  for (const { zone, offsetSeconds, start, end } of [
+    {
+      zone: 'Caracas',
+      offsetSeconds: -(4 * HOUR + 30 * 60),
+      start: '2007-12-09T07:00:00Z',
+      end: '2016-05-01T07:00:00Z',
+    },
+    {
+      zone: 'Pyongyang',
+      offsetSeconds: 8 * HOUR + 30 * 60,
+      start: '2015-08-14T15:00:00Z',
+      end: '2018-05-04T15:00:00Z',
+    },
+  ]) {
+    const startEpochSeconds = Date.parse(start) / 1000;
+    const endEpochSeconds = Date.parse(end) / 1000;
+    for (const [boundary, targetEpochSeconds, allowed] of [
+      ['before start', startEpochSeconds - 1, false],
+      ['at start', startEpochSeconds, true],
+      ['before end', endEpochSeconds - 1, true],
+      ['at end', endEpochSeconds, false],
+    ] as const) {
+      void it(`${zone} historical offset is ${allowed ? 'accepted' : 'refused'} ${boundary}`, () => {
+        const analysis = analyzeTickGroup(
+          [
+            tick({ climbedAtEpochSeconds: targetEpochSeconds + offsetSeconds }),
+            anchor({ climbedAtEpochSeconds: targetEpochSeconds }),
+          ],
+          policy,
+        );
+        assert.equal(analysis.edgeCount, allowed ? 1 : 0);
+        assert.equal(analysis.candidates[0].classification, allowed ? 'correction_evidence' : 'no_anchor_abstention');
+      });
+    }
+
+    for (const [role, importedAt] of [
+      ['suspect', 1],
+      ['post-fix control', 250],
+    ] as const) {
+      void it(`refuses a 2026 ${zone} historical-offset pair for a ${role}`, () => {
+        const targetEpochSeconds = Date.parse('2026-01-02T12:00:00Z') / 1000;
+        const analysis = analyzeTickGroup(
+          [
+            tick({
+              climbedAtEpochSeconds: targetEpochSeconds + offsetSeconds,
+              updatedAtEpochSeconds: importedAt,
+              auroraSyncedAtEpochSeconds: importedAt,
+            }),
+            anchor({ climbedAtEpochSeconds: targetEpochSeconds }),
+          ],
+          policy,
+        );
+        assert.equal(analysis.edgeCount, 0);
+        assert.equal(analysis.candidates[0].classification, 'no_anchor_abstention');
+      });
+    }
+
+    for (const [boundary, targetEpochSeconds, allowed] of [
+      ['start', startEpochSeconds, true],
+      ['end', endEpochSeconds, false],
+    ] as const) {
+      void it(`uses the corrected event date when a residual crosses the ${zone} ${boundary}`, () => {
+        const analysis = analyzeTickGroup(
+          [
+            tick({ climbedAtEpochSeconds: targetEpochSeconds + offsetSeconds }),
+            anchor({ climbedAtEpochSeconds: targetEpochSeconds - 30 }),
+          ],
+          policy,
+        );
+        assert.equal(analysis.edgeCount, allowed ? 1 : 0);
+        assert.equal(analysis.candidates[0].classification, allowed ? 'correction_evidence' : 'no_anchor_abstention');
+        if (allowed) {
+          assert.equal(analysis.candidates[0].edge?.targetEpochSeconds, targetEpochSeconds);
+          assert.equal(analysis.candidates[0].edge?.residualSeconds, 30);
+        }
+      });
+    }
+  }
+
   void it('does not treat arbitrary quarter-hour values as a real timezone', () => {
-    assert.equal(inferAllowedOffset(7 * HOUR + 15 * 60), null);
+    assert.equal(inferAllowedOffset(7 * HOUR + 15 * 60, 20 * HOUR), null);
   });
 
   void it('accepts up to sixty seconds of residual and rejects the next second', () => {
-    assert.deepEqual(inferAllowedOffset(10 * HOUR + 60), {
+    assert.deepEqual(inferAllowedOffset(10 * HOUR + 60, 20 * HOUR), {
       offsetSeconds: 10 * HOUR,
       residualSeconds: 60,
     });
-    assert.equal(inferAllowedOffset(10 * HOUR + 61), null);
+    assert.equal(inferAllowedOffset(10 * HOUR + 61, 20 * HOUR), null);
   });
 
   void it('handles negative offsets without changing their sign', () => {
-    assert.deepEqual(inferAllowedOffset(-3 * HOUR - 30 * 60 - 7), {
+    assert.deepEqual(inferAllowedOffset(-3 * HOUR - 30 * 60 - 7, 20 * HOUR), {
       offsetSeconds: -(3 * HOUR + 30 * 60),
       residualSeconds: -7,
     });
