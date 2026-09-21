@@ -45,7 +45,7 @@ Runtime environment:
 | `FORWARD_MAX_SESSIONS` | `32` | Global cap across all routes (maximum 128) |
 | `FORWARD_DIAL_TIMEOUT` | `5s` | Private target TCP dial timeout |
 | `TS_STARTUP_TIMEOUT` | `30s` | Tailnet join deadline |
-| `FORWARD_SHUTDOWN_GRACE` | `20s` | Shared health-server, accept-loop and session drain deadline |
+| `FORWARD_SHUTDOWN_GRACE` | `20s` | Shared drain deadline; supported range 1s–60s |
 | `PORT` | `8080` | Railway-private health/metrics listener |
 
 The session cap deliberately bounds total PostGIS connection pressure across all
@@ -69,7 +69,22 @@ classes only, never private target addresses, credentials, client identities,
 or query text. Readiness checks query current tailnet status with a one-second
 timeout; they do not cache successful status after a disconnection. Shutdown
 withdraws readiness, cancels sessions and closes route listeners before draining
-HTTP requests and proxy work under one shared grace deadline.
+HTTP requests and proxy work under one shared grace deadline. The service's
+checked-in `deploy/postgres-tailscale-forwarder/railway.toml` sets an unquoted
+`drainingSeconds = 65`, exceeding every supported grace value. Railway's
+[SIGTERM-to-SIGKILL window](https://docs.railway.com/deployments/deployment-teardown#draining-time)
+must not expire before the process can finish that drain.
+
+Railway [deprecated Config as Code](https://docs.railway.com/config-as-code):
+TOML remains supported only for services already configured to use it, until
+December 1, 2026. New services cannot opt in. This runbook proposes a staged
+forwarder; it does not establish that an existing service has legacy-config
+eligibility. The TOML records the reviewed health/draining values, not a working
+new-service provisioning path. Before creating or activating a new service,
+operators must supply a reviewed supported configuration (Railway recommends
+`.railway/railway.ts`) and verify `/readyz` plus the 65-second teardown window
+are applied. That provisioning prerequisite remains open under #5041; no live
+service settings were inspected or changed in this refresh.
 
 ## Provision without replacing live policy
 
@@ -93,7 +108,10 @@ HTTP requests and proxy work under one shared grace deadline.
    mutable tag.
 7. Create a persistent Railway volume at `/var/lib/boardsesh-tsnet`, attach the
    service to the same private network as `PostGIS - PROD`, set the runtime
-   variables above, and use its checked-in `railway.toml` health check.
+   variables above, and satisfy the supported-configuration prerequisite above.
+   Use the TOML only for an existing legacy-enabled service before its cutoff;
+   a new service needs the reviewed replacement configuration. Confirm `/readyz`
+   and the 65-second teardown window are applied before database traffic.
 8. Do **not** create a Railway public domain or TCP proxy for the forwarder.
    Confirm the Railway service has no public networking before continuing.
 9. Confirm the tsnet node is non-ephemeral, advertises only the forwarder tag,

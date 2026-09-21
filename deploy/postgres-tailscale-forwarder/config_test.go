@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +40,51 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if len(configuration.Routes) != 1 || configuration.Routes[0].Name != "primary" {
 		t.Fatalf("Routes = %#v", configuration.Routes)
+	}
+}
+
+func TestRailwayDrainExceedsSupportedShutdownGrace(t *testing.T) {
+	configFile, err := os.ReadFile("railway.toml")
+	if err != nil {
+		t.Fatalf("read railway.toml: %v", err)
+	}
+	deploySection := regexp.MustCompile(`(?ms)^\[deploy\]\s*\n(.*?)(?:^\[|\z)`).FindSubmatch(configFile)
+	if len(deploySection) != 2 {
+		t.Fatal("railway.toml must declare the deploy section")
+	}
+	match := regexp.MustCompile(`(?m)^drainingSeconds\s*=\s*([0-9]+)\s*$`).FindSubmatch(deploySection[1])
+	if len(match) != 2 {
+		t.Fatal("Railway drainingSeconds must be an unquoted integer")
+	}
+	drainingSeconds, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		t.Fatalf("parse drainingSeconds: %v", err)
+	}
+	configuration, err := loadConfig(testEnv(nil))
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	if time.Duration(drainingSeconds)*time.Second <= configuration.ShutdownGrace {
+		t.Fatal("Railway must wait beyond the default shutdown grace before SIGKILL")
+	}
+	maximum, err := loadConfig(testEnv(map[string]string{"FORWARD_SHUTDOWN_GRACE": "60s"}))
+	if err != nil || maximum.ShutdownGrace != time.Minute {
+		t.Fatalf("60s must remain the accepted shutdown-grace maximum: %v", err)
+	}
+	if time.Duration(drainingSeconds)*time.Second <= maximum.ShutdownGrace {
+		t.Fatal("Railway must wait beyond the largest supported shutdown grace")
+	}
+	_, err = loadConfig(testEnv(map[string]string{"FORWARD_SHUTDOWN_GRACE": "61s"}))
+	if err == nil || !strings.Contains(err.Error(), "FORWARD_SHUTDOWN_GRACE") {
+		t.Fatal("shutdown grace above 60s must be refused")
+	}
+	// loadConfig accepts a bounded interval. Its upper bound must remain below
+	// Railway's actual teardown window, including for operator overrides.
+	_, err = loadConfig(testEnv(map[string]string{
+		"FORWARD_SHUTDOWN_GRACE": strconv.Itoa(drainingSeconds) + "s",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "FORWARD_SHUTDOWN_GRACE") {
+		t.Fatal("forwarder must refuse a shutdown grace reaching Railway's SIGKILL deadline")
 	}
 }
 
