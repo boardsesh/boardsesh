@@ -186,7 +186,7 @@
       "submitting": "Liaison...",
       "linkError": "Liaison du compte impossible",
       "linkSuccess": "Compte {{boardName}} lié. Vos croix apparaîtront après la synchronisation.",
-      "accountAlreadyLinked": "Un autre membre de Boardsesh a déjà lié ce compte. S'il est à toi, délie-le d'abord de son compte, puis réessaie."
+      "accountAlreadyLinked": "Un autre membre de Boardsesh a déjà lié ce compte. S'il s'agit de votre compte, déliez-le d'abord de l'autre compte, puis réessayez."
     },
     "kilterLinkDialog": {
       "title": "Se connecter à Kilter",

@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
   credentials: [] as AuroraCredentialStatus[],
+  auroraBoards: ['kilter', 'tension'],
 }));
 
 vi.mock('../../../lib/aurora-credentials', () => ({
@@ -37,8 +38,7 @@ vi.mock('../../../lib/aurora-credentials', () => ({
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({
-  // Include the board whose brand name differs from its capitalised slug.
-  AURORA_BOARDS: ['kilter', 'tension', 'soill'],
+  AURORA_BOARDS: mocks.auroraBoards,
   parseAuroraExportJson: vi.fn(() => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
     preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
@@ -172,6 +172,10 @@ const button = (root: HTMLElement, title: string) =>
 const input = (root: HTMLElement, placeholder: string) =>
   root.querySelector(`[data-input="${placeholder}"]`) as HTMLInputElement | null;
 
+beforeEach(() => {
+  mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
+});
+
 describe('BoardAccountsSection — Kilter password card', () => {
   beforeEach(() => {
     mocks.saveAurora.mockReset();
@@ -183,6 +187,7 @@ describe('BoardAccountsSection — Kilter password card', () => {
   });
 
   it('renders the So iLL card heading with its canonical brand name', () => {
+    mocks.auroraBoards.push('soill');
     const { getByText } = render(<BoardAccountsSection />);
     expect(getByText('So iLL', { selector: '[data-text-variant="headline"]' })).toBeTruthy();
   });
