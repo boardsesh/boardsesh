@@ -79,6 +79,8 @@ export async function resolveQuickActionsTip(): Promise<{ armed: boolean; visitC
   if (alreadySeen || hasOpenedActions || quickActionsUsedThisLaunch || quickActionsTipSeenThisLaunch) {
     return { armed: false, visitCount: 0 };
   }
+  // Concurrent focus reads can share a counter increment and delay eligibility.
+  // The cap and launch-local seen/used guards still prevent repeats.
   const visitCount = await recordTipVisit(ONBOARDING_TIP_QUICKACTIONS_VISITS_KEY, QUICK_ACTIONS_TIP_MIN_VISITS);
   if (quickActionsUsedThisLaunch || quickActionsTipSeenThisLaunch) return { armed: false, visitCount: 0 };
   return { armed: shouldArmQuickActionsTip({ alreadySeen, hasOpenedActions, visitCount }), visitCount };

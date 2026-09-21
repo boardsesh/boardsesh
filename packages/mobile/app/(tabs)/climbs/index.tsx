@@ -506,6 +506,8 @@ function ClimbListInner() {
   );
   const showQuickActionsTip = useQuickActionsTipVisibility(quickActionsTipArmed, showRevealTip || connectCardVisible);
   const dismissQuickActionsTip = useCallback(() => {
+    // A tap can arrive before the shown effect; retire the tip in either path.
+    void markQuickActionsTipSeen();
     track(SHARED_EVENTS.OnboardingTipDismissed, { tip: QUICK_ACTIONS_TIP_NAME });
     setQuickActionsTipArmed(false);
   }, []);
@@ -513,6 +515,7 @@ function ClimbListInner() {
   // setting and the subtitle explaining it. The Display block is a section inside
   // that native form, not a route of its own, so More is as deep as a link can go.
   const openQuickActionsSettings = useCallback(() => {
+    void markQuickActionsTipSeen();
     track(SHARED_EVENTS.OnboardingTipPressed, { tip: QUICK_ACTIONS_TIP_NAME });
     setQuickActionsTipArmed(false);
     router.push('/(tabs)/profile/more');
