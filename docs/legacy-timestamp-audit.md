@@ -76,6 +76,11 @@ vp run db:audit-legacy-timestamps -- \
   --native-safe-generation-active-from <ISO-with-Z-or-offset>
 ```
 
+Policy timestamps must use a real ISO calendar date and an explicit `Z` or
+numeric UTC offset. Invalid dates such as February 30 are rejected instead of
+being normalized into a different rollout boundary. Valid leap dates and offsets
+that cross UTC midnight are accepted.
+
 The output must be a new untracked regular file under a real (not symlinked)
 directory. Stdout, an existing path, a symlink, or a Git-tracked path is refused.
 Tracking is checked in the repository containing the resolved output parent,
@@ -109,7 +114,7 @@ edge requires all of the following:
 
 - matching attempt-versus-ascent semantics;
 - the same attempt count and mirror flag;
-- a timestamp delta within 60 seconds of an explicit current IANA UTC offset;
+- a timestamp delta within 60 seconds of an explicit current or historical IANA UTC offset;
 - a non-detached `kilter_pull` graph anchor or any `native` graph anchor,
   including native rows from before origin writers were verified. A native
   graph anchor is usable evidence only when its origin is independently
@@ -119,8 +124,12 @@ edge requires all of the following:
   `updated_at` is not later than `kilter_synced_at`.
 
 The offset allowlist spans `-12:00` through `+14:00` and includes real half- and
-quarter-hour zones such as `+05:45`, `+08:45`, and `+12:45`. It is not “every 15
-minutes.” A candidate is correction evidence only when both endpoint degrees are
+quarter-hour zones such as `+05:45`, `+08:45`, and `+12:45`. It also preserves
+historical offsets used during recent climbing history: `-04:30` in
+[America/Caracas](https://data.iana.org/time-zones/tzdb/southamerica) from 2007 to
+2016 and `+08:30` in [Asia/Pyongyang](https://data.iana.org/time-zones/tzdb/asia)
+from 2015 to 2018. It is not “every 15 minutes.” A candidate is correction
+evidence only when both endpoint degrees are
 exactly one. Multiple candidates for one anchor, multiple anchors for one
 candidate, semantic disagreement, missing anchors, or an uncertain writer rollout
 all abstain. An offset observed for one climb is never extrapolated to another

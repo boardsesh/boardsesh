@@ -193,6 +193,23 @@ function parseInstant(option: string, rawValue: string): number {
   if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawValue)) {
     throw new CliUsageError(`${option} must include an explicit Z or numeric UTC offset`);
   }
+  // Date.parse normalizes some impossible dates (for example February 30).
+  // Validate the written calendar date before applying its numeric UTC offset,
+  // which can legitimately move a valid local date into another UTC day.
+  const calendarParts = /^(\d{4})-(\d{2})-(\d{2})(?:T| )/i.exec(rawValue);
+  if (!calendarParts) throw new CliUsageError(`${option} is not a valid timestamp`);
+  const year = Number(calendarParts[1]);
+  const month = Number(calendarParts[2]);
+  const day = Number(calendarParts[3]);
+  const calendarDate = new Date(0);
+  calendarDate.setUTCFullYear(year, month - 1, day);
+  if (
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day
+  ) {
+    throw new CliUsageError(`${option} is not a valid timestamp`);
+  }
   const epochMilliseconds = Date.parse(rawValue);
   if (!Number.isFinite(epochMilliseconds)) throw new CliUsageError(`${option} is not a valid timestamp`);
   return epochMilliseconds / 1000;
