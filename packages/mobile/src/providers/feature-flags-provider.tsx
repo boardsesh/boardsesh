@@ -73,7 +73,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'board-link-onboarding-step',
     label: 'Onboarding board-account link step',
     description:
-      'Offer to link a Kilter/Tension board account during first-run, after the board pick. Off (and unresolved, which reads off) means onboarding is unchanged — the empty-logbook prompt still catches climbers whose sends are missing.',
+      'Offer to link a supported board account after the first-run board pick. Off or unresolved skips the extra step.',
   },
   {
     key: 'kilter-oauth-linking',
