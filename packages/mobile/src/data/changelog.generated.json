@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T21:26:06.587Z",
+  "generatedAt": "2026-09-21T21:33:34.752Z",
   "entries": [
+    {
+      "prNumber": 5676,
+      "category": "fixed",
+      "title": "Bluetooth blocked for Boardsesh? The app now says so and takes you straight to Settings.",
+      "mergedAt": "2026-09-21T21:10:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5676",
+      "body": "No boards in the picker? Tap Scan again instead of starting over.\nAndroid now asks about notifications after your board connects, not before you scan."
+    },
     {
       "prNumber": 5673,
       "category": "fixed",
