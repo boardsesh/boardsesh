@@ -1328,6 +1328,26 @@ describe('createClimbStatsLiveSync — teardown and failures', () => {
     expect(harness.onError).toHaveBeenCalledWith(brokenDatabase);
   });
 
+  it('reports reconciliation write failures through the existing error callback once', async () => {
+    const writeFailure = new Error('reconciliation database write failed');
+    const writeEvents = vi.fn(async () => {
+      throw writeFailure;
+    });
+    const harness = createHarness({ writeEvents });
+
+    await expect(
+      harness.sync.persistReconciliationChunk([makeEvent({ climbUuid: 'climb-a' })], () => true),
+    ).resolves.toBeUndefined();
+    await expect(
+      harness.sync.persistReconciliationChunk([makeEvent({ climbUuid: 'climb-b' })], () => true),
+    ).resolves.toBeUndefined();
+
+    expect(writeEvents).toHaveBeenCalledTimes(2);
+    expect(harness.onError).toHaveBeenCalledOnce();
+    expect(harness.onError).toHaveBeenCalledWith(writeFailure);
+    harness.sync.dispose();
+  });
+
   it('never lets a failed downloaded probe escape as an unhandled rejection', async () => {
     const gradeFiltered = seedInfiniteList({ ...BASE_SEARCH, minGrade: 17 }, []);
     const unhandled = vi.fn();

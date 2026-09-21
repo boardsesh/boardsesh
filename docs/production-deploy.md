@@ -514,6 +514,21 @@ them, keep old columns until no deployed image still references them, and
 split destructive changes across releases. If a change can't be made
 backward-compatible, it can't be rolled back by image alone.
 
+## Database restores and offline stats revisions
+
+Image rollbacks leave the database alone. A separately authorized database restore
+must also preserve the offline stats revision contract: devices reject older
+`board_climb_stats.sync_seq` values even when the pull request itself succeeds.
+Before restoring, retain the previous sequence high-water mark and arrange an
+explicit recovery plan for any restored rows older than device copies. A sequence
+reset based only on the restored database's maximum does not establish that bound;
+advancing the sequence alone does not assign new revisions to restored rows.
+
+Follow the [sync-table manifest's restore constraint](./sync-table-manifest.md#board_climb_stats--syncclimbstatsboardtype-layoutid-sizeid-board-data-per-board)
+and verify a previously synced device receives newer stats before treating a
+restore as recovered. If the previous bound is unavailable, stop and establish a
+reviewed recovery plan rather than assuming an older dump is safe to serve.
+
 ## Required GitHub configuration
 
 Web-specific config lives in the **Production** GitHub environment alongside

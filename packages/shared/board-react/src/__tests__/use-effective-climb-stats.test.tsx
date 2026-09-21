@@ -1170,6 +1170,58 @@ describe('prefetchClimbStatsForClimbs', () => {
     expect(isClimbStatsReadRetained('kilter', 'climb-a')).toBe(false);
   });
 
+  it('releases every read when auth changes during an awaited persistence chunk', async () => {
+    let authEpoch = 1;
+    let releaseChunk!: () => void;
+    const chunkBlocked = new Promise<void>((resolve) => {
+      releaseChunk = resolve;
+    });
+    const persistClimbStatsReconciliationChunk = vi.fn(async () => chunkBlocked);
+    const rows = [
+      ...Array.from({ length: 501 }, (_unused, index) => batchRow('climb-a', index, `${index + 1}`)),
+      batchRow('climb-b', 70, '700'),
+      batchRow('climb-c', 80, '800'),
+    ];
+    const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue(rows);
+    const { adapter } = createWrapper({
+      fetchClimbStatsForClimbs,
+      persistClimbStatsReconciliationChunk,
+      captureAuthEpoch: () => authEpoch,
+      isAuthEpochCurrent: (capturedEpoch) => capturedEpoch === authEpoch,
+    });
+    const key = { boardType: 'kilter', layoutId: 1, angle: 40 };
+    // Observe canonical rows until assertions finish; the prefetch's own
+    // retention is released as soon as every waiter completes.
+    const releaseObservers = ['climb-a', 'climb-b', 'climb-c'].map((climbUuid) =>
+      subscribeClimbStats({ ...key, climbUuid }, () => {}),
+    );
+    let completed = false;
+    const prefetch = prefetchClimbStatsForClimbs(adapter, key, ['climb-a', 'climb-b', 'climb-c']).then(() => {
+      completed = true;
+    });
+    await waitFor(() => expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledOnce());
+    expect(fetchClimbStatsForClimbs).toHaveBeenCalledWith('kilter', ['climb-a', 'climb-b', 'climb-c']);
+    expect(completed).toBe(false);
+    for (const climbUuid of ['climb-a', 'climb-b', 'climb-c']) {
+      expect(isClimbStatsReadRetained('kilter', climbUuid)).toBe(true);
+    }
+
+    authEpoch = 2;
+    releaseChunk();
+    await prefetch;
+
+    expect(completed).toBe(true);
+    expect(persistClimbStatsReconciliationChunk).toHaveBeenCalledOnce();
+    expect(getClimbStatsSnapshot({ ...key, climbUuid: 'climb-a' }).canonical).toMatchObject({ ascensionistCount: 499 });
+    for (const climbUuid of ['climb-b', 'climb-c']) {
+      expect(getClimbStatsSnapshot({ ...key, climbUuid }).canonical).toBeNull();
+    }
+    for (const releaseObserver of releaseObservers) releaseObserver();
+    for (const climbUuid of ['climb-a', 'climb-b', 'climb-c']) {
+      expect(isClimbStatsReadRetained('kilter', climbUuid)).toBe(false);
+    }
+  });
+
   it('asks for nothing when the adapter cannot read stats', async () => {
     const fetchClimbStatsForClimbs = vi.fn().mockResolvedValue([]);
     const { adapter } = createWrapper({ fetchClimbStatsForClimbs, isAuthenticated: false });
