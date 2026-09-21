@@ -3,8 +3,8 @@ import {
   PINNABLE_CHIP_CATALOG,
   DEFAULT_PINNED_CHIPS,
   isValidChipKind,
-  hasLegacyChipKinds,
   normalizePinnedChips,
+  toStoredPinnedChips,
   chipKindToTokenKeys,
   type PinnableChipKind,
 } from '../pinnable-chips';
@@ -78,11 +78,24 @@ describe('normalizePinnedChips', () => {
   });
 });
 
-describe('hasLegacyChipKinds', () => {
-  it('flags a stored set that still holds the retired "shape" kind', () => {
-    expect(hasLegacyChipKinds(['grade', 'shape'])).toBe(true);
-    expect(hasLegacyChipKinds(['grade', 'tall', 'wide'])).toBe(false);
-    expect(hasLegacyChipKinds([])).toBe(false);
+describe('toStoredPinnedChips', () => {
+  it('adds the retired "shape" kind after Wide only when Tall AND Wide are pinned', () => {
+    expect(toStoredPinnedChips(['grade', 'tall', 'wide', 'rating'])).toEqual([
+      'grade',
+      'tall',
+      'wide',
+      'shape',
+      'rating',
+    ]);
+    expect(toStoredPinnedChips(['grade', 'tall', 'rating'])).toEqual(['grade', 'tall', 'rating']);
+    expect(toStoredPinnedChips(['wide'])).toEqual(['wide']);
+    expect(toStoredPinnedChips([])).toEqual([]);
+  });
+
+  it('normalizes back to the same set (the alias is folded into Tall + Wide)', () => {
+    for (const kinds of [[...DEFAULT_PINNED_CHIPS], ['tall', 'wide'], ['grade', 'wide'], ['sort']] as const) {
+      expect(normalizePinnedChips(toStoredPinnedChips(kinds))).toEqual([...kinds]);
+    }
   });
 });
 

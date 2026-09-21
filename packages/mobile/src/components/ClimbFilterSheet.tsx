@@ -1127,43 +1127,44 @@ export function ClimbFilterSheet({
                 trackColor={trackColor}
               />
 
-              {/* Shape — shown wherever a shorter/narrower sibling size exists (Kilter
-                  homewall, Tension Board 2, Decoy, Grasshopper); each toggle only where
-                  it applies. Matches the chip row so Tall/Wide stays reachable here even
-                  when its chip is unpinned. Tall and Wide are separate chips, so each
-                  switch carries its own pin. */}
-              {showTallControl || showWideControl ? (
+              {/* Tall / Wide — shown wherever a shorter/narrower sibling size exists
+                  (Kilter homewall, Tension Board 2, Decoy, Grasshopper); each only
+                  where it applies. Matches the chip row so the filter stays
+                  reachable here even when its chip is unpinned. They're separate
+                  chips, so each gets a header naming its chip with the pin (the
+                  Beta videos layout), keeping the switches aligned with the rest. */}
+              {showTallControl ? (
                 <>
                   <View style={styles.subsectionGap} />
-                  <Text variant="footnote" style={styles.subsectionLabel}>
-                    {t('mobile.filter.shape')}
-                  </Text>
-                  {showTallControl ? (
-                    <View style={styles.pinnableSwitchRow}>
-                      <View style={styles.pinnableSwitch}>
-                        <SwitchRow
-                          label={t('mobile.filter.tall')}
-                          description={t('mobile.filter.tallDescription')}
-                          value={!!localFilters.onlyTallClimbs}
-                          onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                        />
-                      </View>
-                      <PinToggle kind="tall" />
-                    </View>
-                  ) : null}
-                  {showWideControl ? (
-                    <View style={styles.pinnableSwitchRow}>
-                      <View style={styles.pinnableSwitch}>
-                        <SwitchRow
-                          label={t('mobile.filter.wide')}
-                          description={t('mobile.filter.wideDescription')}
-                          value={!!localFilters.onlyWideClimbs}
-                          onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                        />
-                      </View>
-                      <PinToggle kind="wide" />
-                    </View>
-                  ) : null}
+                  <View style={styles.pinnableLabelRow}>
+                    <Text variant="footnote" style={styles.subsectionLabel}>
+                      {t('mobile.search.chips.tall')}
+                    </Text>
+                    <PinToggle kind="tall" />
+                  </View>
+                  <SwitchRow
+                    label={t('mobile.filter.tall')}
+                    description={t('mobile.filter.tallDescription')}
+                    value={!!localFilters.onlyTallClimbs}
+                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                  />
+                </>
+              ) : null}
+              {showWideControl ? (
+                <>
+                  <View style={styles.subsectionGap} />
+                  <View style={styles.pinnableLabelRow}>
+                    <Text variant="footnote" style={styles.subsectionLabel}>
+                      {t('mobile.search.chips.wide')}
+                    </Text>
+                    <PinToggle kind="wide" />
+                  </View>
+                  <SwitchRow
+                    label={t('mobile.filter.wide')}
+                    description={t('mobile.filter.wideDescription')}
+                    value={!!localFilters.onlyWideClimbs}
+                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                  />
                 </>
               ) : null}
 
@@ -1416,15 +1417,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  // A switch row with its own pin beside it (Tall / Wide: one control, one chip).
-  pinnableSwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  pinnableSwitch: {
-    flex: 1,
   },
   // Breathing room between a footnote sub-label and a flush native SegmentedControl
   // (which, unlike the chip rows, has no intrinsic top padding).

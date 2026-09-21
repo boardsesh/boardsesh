@@ -58,16 +58,13 @@ export function isValidChipKind(value: unknown): value is PinnableChipKind {
 // Retired kinds a stored pin set may still hold, mapped to the kinds that
 // replaced them. 'shape' was one menu chip grouping Tall + Wide (#3802); they're
 // separate chips again (#5659), so a saved 'shape' pin becomes both — nobody who
-// had the Shape chip loses Tall or Wide after the update.
+// had the Shape chip loses Tall or Wide after the update. The mapping runs on
+// every load (storage is never rewritten just to migrate).
+const LEGACY_SHAPE_KIND = 'shape';
 const LEGACY_CHIP_KINDS: ReadonlyMap<unknown, readonly PinnableChipKind[]> = new Map<
   unknown,
   readonly PinnableChipKind[]
->([['shape', ['tall', 'wide']]]);
-
-/** Whether a stored pin set still holds a retired kind that {@link normalizePinnedChips} rewrites. */
-export function hasLegacyChipKinds(kinds: readonly unknown[]): boolean {
-  return kinds.some((kind) => LEGACY_CHIP_KINDS.has(kind));
-}
+>([[LEGACY_SHAPE_KIND, ['tall', 'wide']]]);
 
 /**
  * Returns pins re-sorted into {@link PINNABLE_CHIP_CATALOG} order and stripped of
@@ -80,6 +77,20 @@ export function normalizePinnedChips(kinds: readonly unknown[]): PinnableChipKin
   const expanded = kinds.flatMap<unknown>((kind) => LEGACY_CHIP_KINDS.get(kind) ?? [kind]);
   const set = new Set(expanded.filter(isValidChipKind));
   return PINNABLE_CHIP_CATALOG.filter((kind) => set.has(kind));
+}
+
+/**
+ * The payload to persist for a pinned set. When BOTH Tall and Wide are pinned it
+ * also carries the retired 'shape' kind right after 'wide', so an older bundle
+ * that only knows the Shape menu chip (a tester switching back from a PR
+ * preview, an OTA rollback, or the store binary's embedded fallback) still shows
+ * it. {@link normalizePinnedChips} folds that 'shape' back into Tall + Wide, so
+ * this bundle ignores the duplicate. With only one of them pinned there's no
+ * 'shape': writing it would make this bundle re-add the one the user unpinned.
+ */
+export function toStoredPinnedChips(kinds: readonly PinnableChipKind[]): string[] {
+  if (!kinds.includes('tall') || !kinds.includes('wide')) return [...kinds];
+  return kinds.flatMap((kind) => (kind === 'wide' ? [kind, LEGACY_SHAPE_KIND] : [kind]));
 }
 
 /**

@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
+import {
+  shouldClearDimensionLock,
+  shouldReapplyDimension,
+  type DimensionKey,
+  type DimensionLockState,
+} from './dimension-chips';
 
 // Persisted lock state for the Tall/Wide board-shape chips. Locking a dimension
 // PINS its filter active: the climbs screen re-applies it even after a Reset /
 // clear, until the user unlocks it from the chip's long-press menu. A homewall
-// climber whose wall is, say, 10x10 can lock "Wide" once and never lose it.
+// climber whose wall is, say, 10x10 can lock "Wide" once and never lose it. The
+// lock is iOS-only (only the SwiftUI chip has the long-press menu); on other
+// platforms a stored lock is ignored — see dimension-chips.ts.
 //
 // Mirrors feature-flag-overrides.ts: a module-level store read via
 // useSyncExternalStore with a referentially-stable cached snapshot (rebuilt only
@@ -23,7 +31,6 @@ import { getPreference, setPreference } from './preference-store';
 // storage with a partial in-memory bag.
 const STORAGE_KEY = 'dimensionFilterLocks';
 
-export type DimensionKey = 'tall' | 'wide';
 export type DimensionLocks = { tall: boolean; wide: boolean };
 
 type LockOverrides = Partial<Record<DimensionKey, boolean>>;
@@ -80,28 +87,27 @@ async function persist(): Promise<void> {
 }
 
 /**
- * Re-pin rule for a locked dimension: pin its filter active only when the chip is
- * visible (the board supports it AND the chip is pinned to the row), the
- * dimension is locked, and the filter isn't already active. An unpinned chip's
- * lock goes dormant: its filter then shows as a removable token, and re-applying
- * it there would make that token impossible to clear. Pure so the climbs screen's re-pin effects are unit-testable —
- * the effects call this so the rule lives in exactly one place.
+ * Upkeep for one dimension's lock, driven by the pure rules in dimension-chips.ts:
+ * re-apply the filter whenever it's been cleared while the lock is live
+ * (shouldReapplyDimension), and drop the lock once its chip is unpinned
+ * (shouldClearDimensionLock). Extracted from the climbs screen so both
+ * guarantees are testable without rendering the whole screen; `pin` should be a
+ * stable `useCallback`.
  */
-export function shouldPinDimension(chipVisible: boolean, locked: boolean, filterActive: boolean): boolean {
-  return chipVisible && locked && !filterActive;
-}
-
-/**
- * Re-pin effect for one locked dimension: whenever the lock state, chip
- * visibility, or filter-active state changes, re-apply the filter if
- * shouldPinDimension says so. Extracted from the climbs screen so the re-pin
- * guarantee (a locked filter survives any clear) is testable without rendering
- * the whole screen — `pin` should be a stable `useCallback`.
- */
-export function useDimensionRepin(chipVisible: boolean, locked: boolean, filterActive: boolean, pin: () => void): void {
+export function useDimensionLockUpkeep(
+  key: DimensionKey,
+  state: DimensionLockState,
+  filterActive: boolean,
+  pin: () => void,
+): void {
+  const reapply = shouldReapplyDimension(state, filterActive);
+  const clearLock = shouldClearDimensionLock(state);
   useEffect(() => {
-    if (shouldPinDimension(chipVisible, locked, filterActive)) pin();
-  }, [chipVisible, locked, filterActive, pin]);
+    if (reapply) pin();
+  }, [reapply, pin]);
+  useEffect(() => {
+    if (clearLock) setDimensionLock(key, false);
+  }, [clearLock, key]);
 }
 
 export function setDimensionLock(key: DimensionKey, locked: boolean): void {

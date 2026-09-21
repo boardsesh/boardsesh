@@ -457,7 +457,6 @@
         "sort": "Sort"
       },
       "popularity": "Popularity",
-      "shape": "Shape",
       "collection": {
         "label": "Collection",
         "any": "Any"
