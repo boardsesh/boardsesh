@@ -4,7 +4,7 @@ export const AUDIT_POLICY_VERSION = 'legacy-timestamp-audit/v1' as const;
 export const RESIDUAL_TOLERANCE_SECONDS = 60;
 export const SMALL_CELL_THRESHOLD = 5;
 
-// Current civil UTC offsets represented by the IANA timezone database. This is
+// Civil UTC offsets, including seasonal daylight-saving offsets, from IANA. This is
 // intentionally an explicit allowlist, not "any multiple of 15 minutes": most
 // quarter-hour values are not real zones. It includes the current quarter-hour
 // zones (Eucla, Nepal and the Chatham Islands) and the -12:00/+14:00 bounds.
@@ -21,7 +21,7 @@ export const ALLOWED_IANA_UTC_OFFSET_SECONDS = [
   -4 * 3600,
   -(3 * 3600 + 30 * 60),
   -3 * 3600,
-  -(2 * 3600 + 30 * 60),
+  -(2 * 3600 + 30 * 60), // Newfoundland Daylight Time
   -2 * 3600,
   -1 * 3600,
   0,
