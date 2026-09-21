@@ -108,6 +108,9 @@ describe('usePopToTopOnTabBlur', () => {
     triggerBlur();
 
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+    // `routes: undefined` also fails the tabName lookup, so this hits the same
+    // dev-warning path as the "missing from routes" case above.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile'));
     warn.mockRestore();
   });
 
