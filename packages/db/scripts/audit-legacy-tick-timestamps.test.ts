@@ -150,6 +150,34 @@ void describe('legacy timestamp audit CLI', () => {
     assert.throws(() => parseArgs(jsonOverlap), /json-old-code-active-through must precede/);
   });
 
+  void it('rejects invalid calendar dates instead of normalizing policy boundaries', () => {
+    for (const timestamp of [
+      '2026-02-30T00:00:00Z',
+      '2026-02-29T00:00:00+02:00',
+      '2024-02-30T00:00:00Z',
+      '2026-04-31T00:00:00-0430',
+      '2026-00-10T00:00:00Z',
+      '2026-01-00T00:00:00Z',
+      'Feb 30 2026 00:00:00 GMT+0000',
+    ]) {
+      const invalid = validArgs('/tmp/a.jsonl');
+      invalid[invalid.indexOf('--live-old-code-active-through') + 1] = timestamp;
+      assert.throws(() => parseArgs(invalid), /not a valid timestamp/, timestamp);
+    }
+  });
+
+  void it('preserves valid leap dates and numeric offsets across UTC midnight', () => {
+    for (const [timestamp, expectedUtc] of [
+      ['2024-02-29T23:45:00-0430', '2024-03-01T04:15:00Z'],
+      ['2024-03-01T00:15:30.125+05:45', '2024-02-29T18:30:30.125Z'],
+      ['2000-02-29T00:00:00Z', '2000-02-29T00:00:00Z'],
+    ]) {
+      const valid = validArgs('/tmp/a.jsonl');
+      valid[valid.indexOf('--live-old-code-active-through') + 1] = timestamp;
+      assert.equal(parseArgs(valid).policy.liveOldCodeActiveThroughEpochSeconds, Date.parse(expectedUtc) / 1000);
+    }
+  });
+
   void it('does not allow native proposal eligibility before origin writers were verified active', () => {
     const unsafe = validArgs('/tmp/a.jsonl');
     unsafe[unsafe.indexOf('--native-safe-generation-active-from') + 1] = '2026-07-08T00:30:00Z';
