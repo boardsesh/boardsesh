@@ -773,6 +773,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
       logger.log('[discord-feedback] (dry run) skipped Discord failure notification');
       return 0;
     }
+    if (options.allowedUserIds.size === 0) {
+      logger.error('[discord-feedback] DISCORD_ISSUE_TRIGGER_USER_IDS is empty.');
+      return 1;
+    }
     await notifyFailure(
       {
         channelId: options.channelId,
