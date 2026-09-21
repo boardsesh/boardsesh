@@ -203,6 +203,12 @@
     "namePlaceholder": "Boulder-Name",
     "descriptionPlaceholder": "Beta oder Notizen zu deinem Boulder…",
     "dismiss": "Ausblenden",
+    "cannotOpen": {
+      "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
+      "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
+      "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+    },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
