@@ -1316,6 +1316,7 @@ jobs:
         build-web,
         build-backend,
         migrate,
+        verify-serial-plan,
         deploy-web-railway,
         deploy-production-backend,
         deploy-cloudflare,

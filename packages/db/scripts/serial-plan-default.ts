@@ -1,7 +1,8 @@
 /**
  * Round 5b of the DSM saga (#5352). Migration `0225_dsm_serial_plan_default.sql`
- * tried to set `max_parallel_workers_per_gather = 0` as the database default and
- * **cannot ever have worked in production**.
+ * tried to set `max_parallel_workers_per_gather = 0` as the database default.
+ * Its first run under the production migration role could not apply that setting;
+ * the recorded migration is not retried on later deploys.
  *
  * `ALTER DATABASE ... SET` requires ownership of the database (or superuser).
  * The production migration session is deliberately the opposite of that: the
@@ -200,9 +201,7 @@ export async function applySerialPlanDatabaseDefault(
     throw error;
   }
 
-  // Read back from the catalog rather than trusting the ALTER: `current_setting`
-  // on this session still reports the OLD value (the default applies to new
-  // sessions), so a session-level read here would be a vacuous check.
+  // Verify the durable catalog default; this session keeps its old current_setting.
   const applied = await readSerialPlanState(client);
   if (applied.databaseDefault !== SERIAL_PLAN_TARGET_VALUE) {
     throw new Error(

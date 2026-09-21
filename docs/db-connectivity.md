@@ -467,12 +467,13 @@ migration session is deliberately the opposite of that: `production-deploy.yml`
 connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`, and
 `reserveMigrationOwnerSession` refuses to run a single statement unless
 `ownerDoesNotOwnDatabase` holds (`packages/db/scripts/migration-owner-role.ts`).
-The `railway` database is owned by the Railway-provisioned superuser; no
-credential in CI owns it or is superuser.
+The production investigation for #5372 found the `railway` database owned by
+the Railway-provisioned superuser, without an owner-capable credential in CI.
+That was the observed configuration, not a requirement on future credentials.
 
-So 0225 raised `insufficient_privilege` on every production deploy, its
-`EXCEPTION` handler turned that into a `RAISE WARNING`, drizzle recorded the
-migration as applied — and it will never retry. Reproduced against a stock
+On its initial run under that role, 0225 raised `insufficient_privilege`. Its
+`EXCEPTION` handler turned that into a `RAISE WARNING`, and drizzle recorded the
+migration as applied, so later deploys do not retry it. Reproduced against a stock
 `docker run postgres:17` wearing the same role shape:
 
 ```
@@ -524,7 +525,11 @@ The job is deliberately **not** in the `needs:` of the deploy jobs. The conditio
 it reports is a property of the database, not of the commit being shipped, and a
 deploy cannot fix it; gating the release train on it would trade a reported miss
 for a self-inflicted outage. It is loud instead — a red job on every run plus the
-Discord failure alert.
+Discord failure alert. The success notification also waits for this job and
+is suppressed when verification fails or is cancelled; deploy jobs can still
+complete while the workflow reports the database condition. See
+[production deploys](production-deploy.md#serial-plan-verification-after-migrations)
+for its environment and concurrency behavior.
 
 **Operator handoff.** When the deploy job goes red, either:
 

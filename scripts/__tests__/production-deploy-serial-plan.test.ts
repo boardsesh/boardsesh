@@ -54,6 +54,7 @@ function withoutComments(source: string): string {
 const verifyJob = withoutComments(mappingEntry(workflowSource, 'verify-serial-plan', 2));
 const migrateJob = withoutComments(mappingEntry(workflowSource, 'migrate', 2));
 const notifyFailureJob = withoutComments(mappingEntry(workflowSource, 'notify-failure', 2));
+const notifySuccessJob = withoutComments(mappingEntry(workflowSource, 'notify-success', 2));
 
 describe('production-deploy verify-serial-plan (#5352)', () => {
   it('runs the verification after migrations, in the Production environment', () => {
@@ -89,15 +90,26 @@ describe('production-deploy verify-serial-plan (#5352)', () => {
     expect(notifyFailureJob).toContain('verify-serial-plan: %s');
   });
 
+  it('waits for verification before reporting a successful deployment', () => {
+    expect(notifySuccessJob).toContain('verify-serial-plan,');
+    expect(notifySuccessJob).toContain("!contains(needs.*.result, 'failure')");
+    expect(notifySuccessJob).toContain("!contains(needs.*.result, 'cancelled')");
+  });
+
   it('does not gate the release train on a pre-existing database condition', () => {
     // Deliberate: the setting is a property of the database, not of the commit,
     // and a deploy cannot fix it. Blocking every future release on an ops
     // action would trade a reported miss for a self-inflicted outage. If that
     // trade is ever revisited, this assertion is the place it gets revisited.
-    for (const deployJob of ['deploy-production-backend', 'deploy-web-railway', 'deploy-cloudflare']) {
+    for (const deployJob of [
+      'deploy-production-backend',
+      'deploy-web-railway',
+      'deploy-cloudflare',
+      'deploy-app-web',
+    ]) {
       const jobSource = withoutComments(mappingEntry(workflowSource, deployJob, 2));
       expect(jobSource, deployJob).not.toContain('verify-serial-plan');
     }
-    expect(migrateJob).toContain('needs: [detect-changes, build-web, build-backend, sync-static-assets]');
+    expect(migrateJob).not.toContain('verify-serial-plan');
   });
 });

@@ -5,8 +5,8 @@
  * ownership, and the production migration role is deliberately NOT the database
  * owner — `reserveMigrationOwnerSession` asserts `ownerDoesNotOwnDatabase`
  * before it runs a single statement. Migration 0225 therefore raised
- * `insufficient_privilege` on every production deploy, swallowed it into a
- * `RAISE WARNING`, and was recorded as applied: a no-op that reports success.
+ * `insufficient_privilege` on its first run under that role, converted it into
+ * a `RAISE WARNING`, and was recorded as applied. Later deploys do not retry it.
  * The reproduction and the whole decision tree live in serial-plan-default.ts.
  *
  * Exit code 1 when application sessions can still plan a Gather. That is the

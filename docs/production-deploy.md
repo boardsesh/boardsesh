@@ -30,6 +30,33 @@ Instant Rollback probe — was deleted on 2026-09-02. See
 history and [Rollback runbook](#rollback-runbook-web-on-railway) for what
 replaced Instant Rollback.
 
+## Serial-plan verification after migrations
+
+After a successful `migrate`, `verify-serial-plan` checks whether application
+connections resolve `max_parallel_workers_per_gather` to `0` (#5352). It uses
+`DATABASE_URL` from the `Production` environment. When the value is already `0`,
+it issues no DDL. Otherwise, an optional `ADMIN_DATABASE_URL` may apply the
+database default, provided it owns the same database as the application
+connection. A maintenance-database URL is refused before any DDL. The job then
+checks again through a new application connection.
+
+Missing privileges or a still-nonzero runtime value make this job fail and
+print the operator remediation. Existing role overrides or pooled server
+connections can retain their prior value after the database default changes;
+confirm the application's `/health/db` reading after connections have cycled.
+The database ownership contract for the migration role stays unchanged. See
+[the database connectivity runbook](db-connectivity.md#why-the-migration-cannot-apply-in-production-5352-round-5b)
+for the local check-only command and the separately authorized operator action.
+
+The deploy jobs continue independently after migration. `notify-failure`
+includes verification failures, and `notify-success` waits for verification and
+suppresses the success announcement if it fails or is cancelled. The overall
+workflow remains active until this job finishes, so it still occupies the
+`production-deploy` concurrency group. Its `Production` environment gate can
+also park a run; the same [watchdog](#the-watchdog) rules apply. Configuring the
+optional administrator secret or manually changing production defaults remains
+an operator action; refreshing this PR does not perform either.
+
 ## Web deploy targets
 
 Railway is the only web deployer (image `ghcr.io/boardsesh/boardsesh-web`,
