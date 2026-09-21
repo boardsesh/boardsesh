@@ -31,16 +31,15 @@ const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9])
 
 async function startAvatarServer(): Promise<{ baseUrl: string; server: Server }> {
   const server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    if (url.pathname.startsWith('/static/avatars/') && req.method === 'GET') {
-      const fileName = url.pathname.slice('/static/avatars/'.length);
-      void handleStaticAvatar(req, res, fileName, parseSizeParam(url.searchParams.get('size'))).catch(() => {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unhandled' }));
-      });
-      return;
-    }
-    void handleAvatarUpload(req, res).catch(() => {
+    void (async () => {
+      const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      if (url.pathname.startsWith('/static/avatars/') && req.method === 'GET') {
+        const fileName = url.pathname.slice('/static/avatars/'.length);
+        await handleStaticAvatar(req, res, fileName, parseSizeParam(url.searchParams.get('size')));
+        return;
+      }
+      await handleAvatarUpload(req, res);
+    })().catch(() => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unhandled' }));
     });
