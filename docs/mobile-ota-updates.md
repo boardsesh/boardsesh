@@ -351,6 +351,21 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 
 ### Fingerprint parity — the one rule that matters
 
+**Browser-data updates can change the native fingerprint.** On 19 September 2026,
+the Next.js update in #4982 also refreshed `baseline-browser-mapping` from 2.11.17
+to 2.11.24 and `caniuse-lite` from 1.0.30001809 to 1.0.30001810. Expo loads these
+through its config plugins and includes their files as `expoConfigPlugins`
+fingerprint sources. Those were the only source differences between the approved
+iOS 2.5.0 runtime (`b71bdb600c5a`) and main (`b1058ef575fa`). No mobile native
+feature caused that drift.
+
+Main pins both datasets to the approved versions in `pnpm-workspace.yaml`, while
+keeping Next.js 16.3.5. Advance these dependencies on `release/next` alongside a
+new native build. Do not exclude their files from fingerprinting or override the
+runtime hash to force an OTA through. Compare actual fingerprint sources when a
+web dependency update unexpectedly changes mobile compatibility; a matching PR
+and main hash alone does not prove that either matches the App Store binary.
+
 The published runtimeVersion must equal the one the native build baked into the binary, or the OTA
 silently never lands — and the publish must run the **`fingerprint` policy** (resolve the _current_
 commit's hash), never a fixed value, so a native change moves the runtimeVersion and old binaries are
