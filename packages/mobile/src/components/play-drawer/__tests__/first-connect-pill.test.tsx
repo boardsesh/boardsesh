@@ -71,7 +71,8 @@ vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }
 vi.mock('../../../theme/layout', () => ({ glassSize: { inline: 44 } }));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => clockCtrl.nowMs }));
 vi.mock('../../../lib/onboarding/first-connect-store', () => ({
-  useFirstConnectSnapshot: () => storeCtrl.snapshot,
+  useFirstConnectSelector: <Selected,>(select: (current: typeof storeCtrl.snapshot) => Selected) =>
+    select(storeCtrl.snapshot),
   recordFirstConnectPillDay: recordDayMock,
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({

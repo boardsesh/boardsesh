@@ -15,6 +15,7 @@ import {
   dismissFirstConnectCardForLaunch,
   markFirstConnectNoLights,
   recordFirstConnectCardLaunch,
+  useFirstConnectSelector,
   useFirstConnectSnapshot,
 } from '../../lib/onboarding/first-connect-store';
 import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
@@ -46,21 +47,22 @@ function trackCardAction(action: FirstRunCardAction): void {
  * Shown while a board with lights is bound and this phone has never connected,
  * on at most two launches. The X hides it for this launch; "no lights" hides it
  * (and the play-view pill) for good on this phone, without touching the board's
- * `hasLeds`. Connect runs exactly what the play view's bulb runs for a connect
- * (`bluetooth.connect` with the remembered board, after arming the undo toast),
- * so a connect from here is the same connect with a label on it. A cancelled or
- * failed connect keeps the card up with "Try again".
+ * `hasLeds`. Connect runs the bulb's own connect (`useLightbulbControl().connect`:
+ * Board Connect Tapped with surface `first_connect_card`, the undo toast, the
+ * remembered board), so a connect from here is the same connect with a label on
+ * it. A cancelled or failed connect keeps the card up with "Try again".
  *
  * Self-gating: renders nothing outside the treatment. Opaque on Liquid Glass
  * (glass stays on the chrome) and tonal on Material.
  */
 function FirstConnectCardComponent({ boardName, boardHasLights, style }: FirstConnectCardProps) {
-  const { device, enrolment } = useFirstConnectSnapshot();
   const enabled = useFirstConnectCtaEnabled();
   // Only the treatment mounts the body, so every other climber pays for one
   // store read here and none of the Bluetooth and presence subscriptions.
-  const live = boardHasLights && isConnectStepTreatmentLive({ enrolment, enabled, device });
-  if (!live) return null;
+  const treatmentLive = useFirstConnectSelector(({ enrolment, device }) =>
+    isConnectStepTreatmentLive({ enrolment, enabled, device }),
+  );
+  if (!boardHasLights || !treatmentLive) return null;
   return <FirstConnectCardBody boardName={boardName} boardHasLights={boardHasLights} style={style} />;
 }
 
@@ -71,16 +73,19 @@ function FirstConnectCardComponent({ boardName, boardHasLights, style }: FirstCo
  * wall; the tips wait then too, which costs nothing.
  */
 export function useFirstConnectCardExpected(boardHasLights: boolean): boolean {
-  const { device, enrolment, cardDismissedThisLaunch } = useFirstConnectSnapshot();
   const enabled = useFirstConnectCtaEnabled();
-  return shouldShowFirstConnectCard({
-    treatmentLive: isConnectStepTreatmentLive({ enrolment, enabled, device }),
-    boardHasLights,
-    dismissedThisLaunch: cardDismissedThisLaunch,
-    launchId: FIRST_CONNECT_LAUNCH_ID,
-    cardLaunchIds: device?.cardLaunchIds ?? [],
-    wallFree: true,
-  });
+  // A boolean, not the snapshot: the Climbs list re-renders only when the
+  // answer flips, not when the play drawer records a pill day.
+  return useFirstConnectSelector(({ device, enrolment, cardDismissedThisLaunch }) =>
+    shouldShowFirstConnectCard({
+      treatmentLive: isConnectStepTreatmentLive({ enrolment, enabled, device }),
+      boardHasLights,
+      dismissedThisLaunch: cardDismissedThisLaunch,
+      launchId: FIRST_CONNECT_LAUNCH_ID,
+      cardLaunchIds: device?.cardLaunchIds ?? [],
+      wallFree: true,
+    }),
+  );
 }
 
 function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnectCardProps) {
@@ -88,7 +93,9 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
   const { variant, systemColors, brandColors, m3SurfaceContainers } = useTheme();
   const { device, enrolment, cardDismissedThisLaunch } = useFirstConnectSnapshot();
   const enabled = useFirstConnectCtaEnabled();
-  const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress } = useLightbulbControl();
+  const { bluetooth, pressAction, pending, holderIsAuthoritative, onPress, connect } = useLightbulbControl({
+    surface: 'first_connect_card',
+  });
   const [attempt, setAttempt] = useState<ConnectAttempt>('idle');
   const mountedRef = useRef(true);
   useEffect(
@@ -129,21 +136,18 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
         return;
       }
       setAttempt('connecting');
-      bluetooth.armUndoWallChangeToast();
       let connected = false;
       try {
-        connected = await bluetooth.connect(
-          undefined,
-          undefined,
-          bluetooth.reconnectSerialForCurrentBoard ?? undefined,
-          bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
-        );
+        // The bulb's own connect, awaited: it logs Board Connect Tapped with
+        // this card as the surface, arms the undo toast and relights the
+        // remembered board.
+        connected = await connect();
       } catch (error: unknown) {
         reportError(error);
       }
       if (mountedRef.current) setAttempt(connected ? 'idle' : 'failed');
     },
-    [bluetooth, pressAction, onPress, boardName, t],
+    [bluetooth, pressAction, onPress, connect, boardName, t],
   );
   const handleConnect = useCallback(() => {
     void runConnect(attempt === 'failed' ? 'retry' : 'connect');

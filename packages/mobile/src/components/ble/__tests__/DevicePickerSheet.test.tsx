@@ -35,6 +35,9 @@ const bluetooth = vi.hoisted(() => ({
 }));
 
 const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn() }));
+// The connect-step test's (#5654) ear on the no-lights tap. Its own rules are
+// covered by device-picker-no-lights.test.ts.
+const recordNoLightsMock = vi.hoisted(() => vi.fn());
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
@@ -92,6 +95,10 @@ vi.mock('../../../lib/ble/picker-resolution-stats', () => ({
 
 vi.mock('../../../lib/haptics', () => ({
   hapticSelection: haptics.hapticSelection,
+}));
+
+vi.mock('../../../lib/onboarding/device-picker-no-lights', () => ({
+  recordDevicePickerNoLights: recordNoLightsMock,
 }));
 
 vi.mock('../../../lib/ble/use-android-scan-location-hint', () => ({
@@ -366,9 +373,12 @@ describe('DevicePickerSheet', () => {
         const { container } = render(<PickerHost />);
         const cta = container.querySelector('[data-button="ble.noLedsCta"]') as HTMLButtonElement;
 
+        recordNoLightsMock.mockClear();
         act(() => cta.click());
         expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
         expect(calls).toEqual(['dismiss', 'schedule']);
+        // Heard from the tap itself, once, for the connect-step test.
+        expect(recordNoLightsMock).toHaveBeenCalledTimes(1);
         expect(container.querySelector('[data-sheet]')).toBeNull();
         expect(bluetooth.takeVirtualWall).not.toHaveBeenCalled();
 

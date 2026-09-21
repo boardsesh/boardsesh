@@ -31,6 +31,7 @@ import {
   loadFirstConnectDevice,
   markFirstConnectConfirmationShown,
   markFirstConnectNoLights,
+  markFirstConnectNoLightsBeforeFirstConnect,
   markFirstConnectPhoneConnected,
   readConnectStepEnrolment,
   recordFirstConnectCardLaunch,
@@ -116,6 +117,34 @@ describe('first-connect store', () => {
       await markFirstConnectConfirmationShown(40);
 
       expect(getFirstConnectSnapshot().device).toMatchObject({ noLightsAt: 10, confirmationShownAt: 30 });
+    });
+
+    it('keeps the device picker\'s "no lights" to a phone that has never connected', async () => {
+      await expect(markFirstConnectNoLightsBeforeFirstConnect(10)).resolves.toBe(true);
+      await expect(markFirstConnectNoLightsBeforeFirstConnect(20)).resolves.toBe(false);
+      expect(getFirstConnectSnapshot().device).toMatchObject({ noLightsAt: 10 });
+
+      resetFirstConnectStoreForTests();
+      storage.values.clear();
+      await markFirstConnectPhoneConnected(5);
+      await expect(markFirstConnectNoLightsBeforeFirstConnect(30)).resolves.toBe(false);
+      expect(getFirstConnectSnapshot().device).toMatchObject({ connectedAt: 5, noLightsAt: null });
+    });
+
+    it('publishes nothing for a change that changes nothing', async () => {
+      await bindFirstConnectAccount('user-1');
+      await recordFirstConnectCardLaunch('launch-1');
+      const before = getFirstConnectSnapshot();
+
+      // The same account with still no enrolment, and a launch already counted.
+      await bindFirstConnectAccount('user-1');
+      await recordFirstConnectCardLaunch('launch-1');
+
+      expect(getFirstConnectSnapshot()).toBe(before);
+      dismissFirstConnectCardForLaunch();
+      const dismissed = getFirstConnectSnapshot();
+      dismissFirstConnectCardForLaunch();
+      expect(getFirstConnectSnapshot()).toBe(dismissed);
     });
 
     it('counts each launch and each day once', async () => {

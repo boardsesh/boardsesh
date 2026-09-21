@@ -490,3 +490,42 @@ describe('useLightbulbControl Board Connect Tapped (#5654)', () => {
     expect(connectTaps()).toHaveLength(0);
   });
 });
+
+describe('useLightbulbControl connect (#5654 connect step)', () => {
+  it('is the connect onPress runs: logged, undo armed, remembered board targeted, outcome returned', async () => {
+    const bluetooth = makeBluetooth({ reconnectSerialForCurrentBoard: 'serial-1' });
+    bluetooth.connect.mockResolvedValue(false);
+    ctrl.bluetooth = bluetooth;
+    const { result } = renderControl({ surface: 'first_connect_card' });
+
+    await expect(result.current.connect()).resolves.toBe(false);
+
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'first_connect_card',
+      boardName: 'kilter',
+      reconnect: true,
+    });
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(1);
+    expect(bluetooth.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
+  });
+
+  it('tags a connect with the surface it was started from', async () => {
+    const { result } = renderControl({ surface: 'play_drawer' });
+
+    await result.current.connect('first_connect_pill');
+
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'first_connect_pill',
+      boardName: 'kilter',
+      reconnect: false,
+    });
+  });
+
+  it('resolves false and logs nothing with no board selected', async () => {
+    ctrl.bluetooth = null;
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(false);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+});

@@ -5,6 +5,7 @@ const platformCtrl = vi.hoisted(() => ({ OS: 'ios' as string }));
 const rememberedCtrl = vi.hoisted(() => ({ board: null as { configKey: string; serial?: string } | null }));
 const overridesCtrl = vi.hoisted(() => ({ overrides: {} as Record<string, boolean | string> }));
 const clockCtrl = vi.hoisted(() => ({ nowMs: Date.parse('2026-09-21T12:00:00.000Z') }));
+const buildCtrl = vi.hoisted(() => ({ nativeVersion: '2.7.0' as string | null, productionBuild: true }));
 const trackMock = vi.hoisted(() => vi.fn());
 const registerArmMock = vi.hoisted(() => vi.fn());
 const reportErrorMock = vi.hoisted(() => vi.fn());
@@ -34,6 +35,9 @@ vi.mock('../../analytics-connect-step-arm', () => ({ registerConnectStepArm: reg
 vi.mock('../../clock', () => ({ nowMs: () => clockCtrl.nowMs }));
 vi.mock('../../error-reporting', () => ({ reportError: reportErrorMock }));
 vi.mock('expo-updates', () => ({ isEmbeddedLaunch: true }));
+vi.mock('../connect-step-build', () => ({
+  readConnectStepBuild: () => ({ nativeVersion: buildCtrl.nativeVersion, productionBuild: buildCtrl.productionBuild }),
+}));
 
 import {
   CONNECT_STEP_FORCE_ARM_FLAG,
@@ -79,6 +83,8 @@ describe('enrolInConnectStep', () => {
     platformCtrl.OS = 'ios';
     rememberedCtrl.board = null;
     overridesCtrl.overrides = {};
+    buildCtrl.nativeVersion = '2.7.0';
+    buildCtrl.productionBuild = true;
     trackMock.mockClear();
     registerArmMock.mockClear();
     reportErrorMock.mockClear();
@@ -98,6 +104,7 @@ describe('enrolInConnectStep', () => {
         user_id: TREATMENT_USER,
         account_age_hours: 24,
         ota_is_embedded: true,
+        native_version: '2.7.0',
         ui_variant: 'liquidGlass',
         had_board: true,
       },
@@ -137,6 +144,21 @@ describe('enrolInConnectStep', () => {
 
     expect(exposures()).toEqual([]);
     expect(registerArmMock).not.toHaveBeenCalled();
+  });
+
+  it('stays inert on a binary older than 2.7.0, where a first launch runs older JS', async () => {
+    buildCtrl.nativeVersion = '2.6.0';
+
+    await expect(enrolInConnectStep(request())).resolves.toBe('below_native_floor');
+    expect(exposures()).toEqual([]);
+    expect(await readConnectStepEnrolment(TREATMENT_USER)).toBeNull();
+  });
+
+  it('leaves preview builds out: accounts made there are testers', async () => {
+    buildCtrl.productionBuild = false;
+
+    await expect(enrolInConnectStep(request())).resolves.toBe('not_production_build');
+    expect(exposures()).toEqual([]);
   });
 
   it('leaves the Expo browser build out: the test is about the store app', async () => {
@@ -181,6 +203,17 @@ describe('enrolInConnectStep', () => {
         expect.objectContaining({ arm_connect_step: 'treatment', arm_forced: true, user_id: CONTROL_USER }),
       ]);
       expect(getFirstConnectSnapshot().device).toMatchObject({ connectedAt: null, cardLaunchIds: [] });
+    });
+
+    it('reaches a tester on a preview of an older binary', async () => {
+      buildCtrl.nativeVersion = '2.5.0';
+      buildCtrl.productionBuild = false;
+      overridesCtrl.overrides = { [CONNECT_STEP_FORCE_ARM_FLAG]: 'control' };
+
+      await expect(enrolInConnectStep(request())).resolves.toBe('enrolled');
+      expect(exposures()).toEqual([
+        expect.objectContaining({ arm_connect_step: 'control', arm_forced: true, native_version: '2.5.0' }),
+      ]);
     });
 
     it('ignores anything but a declared arm', async () => {

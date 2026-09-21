@@ -13,6 +13,7 @@ import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
 import { hapticSelection } from '../../lib/haptics';
+import { recordDevicePickerNoLights } from '../../lib/onboarding/device-picker-no-lights';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
@@ -148,6 +149,9 @@ export function DevicePickerSheet({
     // The surviving provider owns the dismissal delay and cancellation. This
     // sheet unmounts on dismissal, so it cannot own the deferred action.
     onNoLeds?.();
+    // The connect-step test (#5654) hears it from the tap itself, so a virtual
+    // hold that moves with a board switch never reads as "no lights".
+    recordDevicePickerNoLights();
   }, [onDismiss, onNoLeds]);
 
   return (

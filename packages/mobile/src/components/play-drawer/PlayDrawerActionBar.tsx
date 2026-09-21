@@ -61,6 +61,12 @@ type PlayDrawerActionBarProps = {
    * viewer still win here, like every other row rule.
    */
   connectPill?: boolean;
+  /**
+   * The pill's tap. Separate from `onLightbulb` so a connect from the pill is
+   * logged as the pill's (Board Connect Tapped `first_connect_pill`), not the
+   * bare bulb's. Falls back to `onLightbulb`.
+   */
+  onConnectPill?: () => void;
   /** Show the holder avatar pip on the lightbulb. Suppressed when the wall-state
    *  pill already carries the driver's face in the header, so the same face never
    *  appears twice in the drawer (see `shouldShowHolderBadge` in wall-state.ts). */
@@ -137,6 +143,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbLongPressEnabled = lightbulbActive,
   showLightbulb = true,
   connectPill = false,
+  onConnectPill,
   showHolderBadge = true,
   secondaryMode = 'actions',
   showBackToLive = false,
@@ -387,7 +394,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
             {showConnectPill ? (
               // Share and queue live in ⋯ while the pill is up.
-              <FirstConnectPill pending={lightbulbPending} onPress={onLightbulb} />
+              <FirstConnectPill pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
             ) : (
               <>
                 {/* Share is a pure client action and the whole point of a read-only

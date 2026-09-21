@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { assignConnectStepArm } from '../connect-step-arm';
 import {
+  CONNECT_STEP_MIN_NATIVE_VERSION,
   EMPTY_FIRST_CONNECT_DEVICE_STATE,
   FIRST_CONNECT_CARD_MAX_LAUNCHES,
   FIRST_CONNECT_PILL_MAX_DAYS,
   decideConnectStepEnrolment,
+  deriveFirstConnectPillWouldConnect,
   isConnectStepTreatmentLive,
   localDayKey,
   shouldConfirmFirstConnect,
@@ -13,6 +15,7 @@ import {
   type ConnectStepEnrolment,
   type ConnectStepEnrolmentInput,
   type FirstConnectDeviceState,
+  type FirstConnectPillWouldConnectInput,
 } from '../first-connect-decision';
 
 const NOW_MS = Date.parse('2026-09-21T12:00:00.000Z');
@@ -26,6 +29,8 @@ function enrolmentInput(overrides: Partial<ConnectStepEnrolmentInput> = {}): Con
     accountCreatedAt: NEW_ACCOUNT_CREATED_AT,
     nowMs: NOW_MS,
     enabled: true,
+    nativeVersion: CONNECT_STEP_MIN_NATIVE_VERSION,
+    productionBuild: true,
     phoneHasConnected: false,
     forcedArm: null,
     existing: null,
@@ -87,8 +92,22 @@ describe('decideConnectStepEnrolment', () => {
     ['an account older than seven days', { accountCreatedAt: OLD_ACCOUNT_CREATED_AT }, 'not_new_account'],
     ['the kill switch on', { enabled: false }, 'kill_switch'],
     ['a phone that has connected before', { phoneHasConnected: true }, 'connected_before'],
+    ['a dev, EAS preview or pr-* preview build', { productionBuild: false }, 'not_production_build'],
+    ['the 2.6 binary', { nativeVersion: '2.6.9' }, 'below_native_floor'],
+    ['the 2.5 binary', { nativeVersion: '2.5.0' }, 'below_native_floor'],
+    ['an unreadable binary version', { nativeVersion: null }, 'below_native_floor'],
+    ['a pre-release binary version', { nativeVersion: '2.7.0-beta.1' }, 'below_native_floor'],
   ] as const)('does not enrol with %s', (_label, overrides, verdict) => {
     expect(decideConnectStepEnrolment(enrolmentInput(overrides))).toEqual({ verdict, dropForced: false });
+  });
+
+  it.each(['2.7.0', '2.7.1', '2.8.0', '3.0.0'])('enrols on the %s binary', (nativeVersion) => {
+    expect(decideConnectStepEnrolment(enrolmentInput({ nativeVersion })).verdict).toBe('enrolled');
+  });
+
+  it('settles the binary before the account, so an older binary never deals an arm', () => {
+    // Every other check would pass: only the floor keeps this account out.
+    expect(decideConnectStepEnrolment(enrolmentInput({ nativeVersion: '2.6.0' })).verdict).toBe('below_native_floor');
   });
 
   describe('the QA override', () => {
@@ -101,6 +120,22 @@ describe('decideConnectStepEnrolment', () => {
         verdict: 'enrolled',
         enrolment: { userId: TREATMENT_USER, arm: 'control', forced: true, exposedAt: NOW_MS },
         replacesExisting: false,
+      });
+    });
+
+    it("reaches testers on preview builds and today's binaries", () => {
+      expect(
+        decideConnectStepEnrolment(
+          enrolmentInput({ forcedArm: 'treatment', productionBuild: false, nativeVersion: '2.5.0' }),
+        ),
+      ).toMatchObject({ verdict: 'enrolled', enrolment: { arm: 'treatment', forced: true } });
+    });
+
+    it('drops a forced enrolment on a preview build once the override is cleared', () => {
+      const existing = enrolment({ forced: true, arm: 'treatment' });
+      expect(decideConnectStepEnrolment(enrolmentInput({ existing, productionBuild: false }))).toEqual({
+        verdict: 'not_production_build',
+        dropForced: true,
       });
     });
 
@@ -200,6 +235,50 @@ describe('shouldShowFirstConnectCard', () => {
     ['while someone else drives the wall', { wallFree: false }],
   ] as const)('hides %s', (_label, overrides) => {
     expect(shouldShowFirstConnectCard({ ...base, ...overrides })).toBe(false);
+  });
+});
+
+describe('deriveFirstConnectPillWouldConnect', () => {
+  // A signed-in climber alone with the wall, whose bulb tap would connect.
+  function wouldConnectInput(
+    overrides: Partial<FirstConnectPillWouldConnectInput> = {},
+  ): FirstConnectPillWouldConnectInput {
+    return {
+      isAnonymous: false,
+      hasBluetooth: true,
+      boardMismatch: false,
+      commitMode: false,
+      sharedSession: false,
+      wallHeldByOtherUser: false,
+      tapConnects: true,
+      pending: false,
+      localConnected: false,
+      wallHeldLocally: false,
+      ...overrides,
+    };
+  }
+
+  it('offers the pill where a bulb tap would connect this phone', () => {
+    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput())).toBe(true);
+  });
+
+  it.each([
+    ['a signed-out reader', { isAnonymous: true }],
+    ['no board selected', { hasBluetooth: false }],
+    ['the switch-board scrim up', { boardMismatch: true }],
+    ['commit mode', { commitMode: true }],
+    ['a party session with a crew', { sharedSession: true }],
+    ['another account holding the wall', { wallHeldByOtherUser: true }],
+    ['a bulb tap that would not connect', { tapConnects: false }],
+    ['a disconnect in flight', { tapConnects: false, pending: true, localConnected: true }],
+    ['a virtual hold being released', { tapConnects: false, pending: true, wallHeldLocally: true }],
+    ['a party session, even mid-connect', { tapConnects: false, pending: true, sharedSession: true }],
+  ] as const)('hides it for %s', (_label, overrides) => {
+    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput(overrides))).toBe(false);
+  });
+
+  it('keeps it while a connect is in flight, so it does not turn back into a bulb', () => {
+    expect(deriveFirstConnectPillWouldConnect(wouldConnectInput({ tapConnects: false, pending: true }))).toBe(true);
   });
 });
 

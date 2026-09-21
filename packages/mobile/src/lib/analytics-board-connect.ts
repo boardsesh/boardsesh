@@ -16,7 +16,13 @@ export type BoardConnectSurface =
   | 'create_climb'
   | 'picker_scan_again'
   // Android's ongoing-session notification bulb, when the board was out.
-  | 'notification';
+  | 'notification'
+  // The connect-step test's (#5654) Climbs card, and its labelled play-view
+  // pill. The pill is the play drawer's bulb with a label, so without its own
+  // surface its taps would read as 'play_drawer' and the treatment's new entry
+  // point could not be told apart from the bare bulb it replaces.
+  | 'first_connect_card'
+  | 'first_connect_pill';
 
 type BoardConnectTappedProperties = {
   surface: BoardConnectSurface;

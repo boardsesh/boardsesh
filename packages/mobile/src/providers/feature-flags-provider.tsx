@@ -198,7 +198,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'first-connect-cta-arm',
     label: 'Force the connect-step arm (QA)',
     description:
-      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, and starts this phone from a clean slate as if it had never connected. Takes effect on the next launch. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
 ] as const satisfies readonly FeatureFlagDefinition[];

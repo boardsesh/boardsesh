@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { track } from '../../lib/analytics';
 import { registerConnectStepArm } from '../../lib/analytics-connect-step-arm';
 import { nowMs } from '../../lib/clock';
 import { reportError } from '../../lib/error-reporting';
+import { useFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { isConnectStepArm, type ConnectStepArm } from '../../lib/onboarding/connect-step-arm';
+import {
+  CONNECT_STEP_FORCE_ARM_FLAG,
+  enrolInConnectStep,
+  type ConnectStepEnrolmentRequest,
+} from '../../lib/onboarding/connect-step-enrolment';
 import { shouldConfirmFirstConnect } from '../../lib/onboarding/first-connect-decision';
 import {
   bindFirstConnectAccount,
   getFirstConnectSnapshot,
   markFirstConnectConfirmationShown,
-  markFirstConnectNoLights,
   markFirstConnectPhoneConnected,
 } from '../../lib/onboarding/first-connect-store';
 import { useSetting } from '../../settings';
@@ -21,6 +25,7 @@ import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider'
 import { useChoose } from '../../providers/dialog-provider';
 import { useFirstConnectCtaEnabled } from '../../providers/feature-flags-provider';
 import { SHEET_SETTLE_MS } from '../../providers/sheet-presentation-provider';
+import { useOptionalTheme } from '../../providers/theme-provider';
 
 const CONFIRMATION_ACKNOWLEDGED = 'got_it';
 
@@ -35,9 +40,13 @@ const CONFIRMATION_ACKNOWLEDGED = 'got_it';
  *   whether or not this account is in the test. It only watches the Bluetooth
  *   context's public `isConnected`; nothing under `lib/ble/` changes.
  * - Shows the one-time "Connected to {{board}}" confirmation, in both arms.
- * - Treats the device picker's own "This wall has no lights" (the phone taking
- *   the wall without Bluetooth on a board that says it has lights) the same as
- *   the card's, so the pill stops offering a connect the wall cannot take.
+ * - Re-enrols the signed-in account when a tester changes the QA override
+ *   (More → Feature Flags), so a forced arm shows at once instead of on the
+ *   next launch. The gate enrols once per launch, which a test plan followed
+ *   word for word would otherwise trip over.
+ *
+ * The device picker's own "This wall has no lights" is heard at the picker's
+ * tap (`recordDevicePickerNoLights`), not here.
  *
  * Mount inside `BluetoothProviderWrapper` and `DialogProvider`.
  */
@@ -46,6 +55,7 @@ export function FirstConnectHost() {
   const { isAuthenticated } = useAuth();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const accountId = isAuthenticated ? (profile?.id ?? null) : null;
+  const accountCreatedAt = isAuthenticated ? profile?.createdAt : undefined;
   // While a signed-in profile is still loading there is nobody to bind yet, and
   // binding "nobody" would clear the arm for a launch's worth of early events.
   const accountKnown = !isAuthenticated || profile !== undefined;
@@ -56,7 +66,9 @@ export function FirstConnectHost() {
   const lightOnClimbTapRef = useRef(lightOnClimbTap);
   lightOnClimbTapRef.current = lightOnClimbTap;
   const { data: activeBoard } = useActiveBoard();
+  const hasBoard = activeBoard != null;
   const boardName = (activeBoard?.name ?? '').trim() || null;
+  const uiVariant = useOptionalTheme()?.variant ?? null;
   const boardNameRef = useRef(boardName);
   boardNameRef.current = boardName;
   const choose = useChoose();
@@ -78,8 +90,6 @@ export function FirstConnectHost() {
 
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
-  const virtualWallHeld = bluetooth?.virtualWallHeld ?? false;
-  const ledless = bluetooth?.ledless ?? false;
 
   useEffect(() => {
     if (!accountKnown) return;
@@ -127,18 +137,32 @@ export function FirstConnectHost() {
     })().catch(reportError);
   }, [isConnected]);
 
-  // The device picker's "This wall has no lights" takes the wall without
-  // Bluetooth. On a board that does not already say it has no lights, that is
-  // the climber telling us the same thing the card's button does.
+  // The QA override, live. Only a CHANGE re-enrols: the value this launch
+  // started with is the one the gate's own enrolment already read.
+  const { overrides, loaded: overridesLoaded } = useFeatureFlagOverrides();
+  const overrideValue = overrides[CONNECT_STEP_FORCE_ARM_FLAG];
+  const forcedArm: ConnectStepArm | null = isConnectStepArm(overrideValue) ? overrideValue : null;
+  const enrolRequest: ConnectStepEnrolmentRequest = {
+    userId: accountId ?? undefined,
+    accountCreatedAt,
+    enabled,
+    hadBoard: hasBoard,
+    uiVariant,
+  };
+  const enrolRequestRef = useRef(enrolRequest);
+  enrolRequestRef.current = enrolRequest;
+  const lastForcedArmRef = useRef<ConnectStepArm | null | undefined>(undefined);
   useEffect(() => {
-    if (!virtualWallHeld || ledless) return;
-    const device = getFirstConnectSnapshot().device;
-    if (device === null || device.connectedAt !== null || device.noLightsAt !== null) return;
-    void markFirstConnectNoLights(nowMs()).then(() => {
-      if (getFirstConnectSnapshot().enrolment === null) return;
-      track(SHARED_EVENTS.BoardLightsDeclined, { surface: 'device_picker' });
-    });
-  }, [virtualWallHeld, ledless]);
+    if (!overridesLoaded) return;
+    const previous = lastForcedArmRef.current;
+    lastForcedArmRef.current = forcedArm;
+    if (previous === undefined || previous === forcedArm) return;
+    const request = enrolRequestRef.current;
+    // Signed out, or the profile is still loading: the gate enrols this
+    // account once it is known, and reads the override then.
+    if (!request.userId) return;
+    void enrolInConnectStep(request);
+  }, [forcedArm, overridesLoaded]);
 
   return null;
 }

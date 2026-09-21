@@ -302,9 +302,10 @@ export const SHARED_EVENTS = {
   // off). Props: { surface, boardName, reconnect }. `surface`: 'play_drawer' |
   // 'toolbar' | 'app_bar' | 'board_control_indicator' | 'wall_empty_state' |
   // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
-  // Android session notification's bulb). `reconnect` is true when
-  // a remembered board is targeted (silent auto-select), false when the tap
-  // opens the device picker.
+  // Android session notification's bulb) | 'first_connect_card' |
+  // 'first_connect_pill' (the connect-step test's card and labelled pill, #5654
+  // PR 7). `reconnect` is true when a remembered board is targeted (silent
+  // auto-select), false when the tap opens the device picker.
   BoardConnectTapped: 'Board Connect Tapped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
@@ -515,13 +516,15 @@ export const SHARED_EVENTS = {
   // FirstRunExposed: the account joined the test. Fired ONCE per account per
   // phone, in both arms, at the launch gate's post-login decision and before
   // either arm shows anything different. Eligible: the native app (not the
-  // Expo browser build), signed in, account at most 7 days old,
-  // `first-connect-cta-kill` off, and a phone that has never connected to a
-  // board (nor remembers one). Props: { arm_connect_step:
-  // 'treatment' | 'control', arm_forced (true when the QA override in More →
-  // Feature Flags chose the arm; leave these out of the analysis),
-  // assignment_salt, user_id, account_age_hours, ota_is_embedded, ui_variant:
-  // 'liquidGlass' | 'material' | null, had_board }. The arm is
+  // Expo browser build) on a production build (not dev, an EAS preview or a
+  // pr-* OTA preview) whose installed binary is 2.7.0 or later, signed in,
+  // account at most 7 days old, `first-connect-cta-kill` off, and a phone that
+  // has never connected to a board (nor remembers one). Props: {
+  // arm_connect_step: 'treatment' | 'control', arm_forced (true when the QA
+  // override in More → Feature Flags chose the arm; leave these out of the
+  // analysis), assignment_salt, user_id, account_age_hours, ota_is_embedded,
+  // native_version (the installed binary's version), ui_variant: 'liquidGlass'
+  // | 'material' | null, had_board }. The arm is
   // murmurHash3_32(user_id + ':' + assignment_salt) % 2, 1 = treatment, so it
   // can be recomputed in HogQL. `arm_connect_step` is also a super property
   // from exposure on.
@@ -535,9 +538,9 @@ export const SHARED_EVENTS = {
   // BoardLightsDeclined: an enrolled climber (either arm) said the wall has no
   // lights. It measures how many newcomers had no LED board to connect to, which
   // bounds what any connect step can win. Props: { surface: 'climbs_card' |
-  // 'device_picker' }. 'device_picker' is the picker's own "This wall has no
-  // lights", seen as the phone taking the wall without Bluetooth. Never writes
-  // the board's `hasLeds`.
+  // 'device_picker' }. 'device_picker' is the tap on the Bluetooth picker's own
+  // "This wall has no lights", on a phone that has never connected. Never
+  // writes the board's `hasLeds`.
   FirstRunExposed: 'First Run Exposed',
   FirstRunCardAction: 'First Run Card Action',
   BoardLightsDeclined: 'Board Lights Declined',

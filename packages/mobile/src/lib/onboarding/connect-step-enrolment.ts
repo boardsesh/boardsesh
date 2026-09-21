@@ -13,6 +13,7 @@ import { reportError } from '../error-reporting';
 import { loadFeatureFlagOverrides } from '../feature-flag-overrides';
 import type { UiVariant } from '../../theme/resolve-ui-variant';
 import { CONNECT_STEP_SALT, isConnectStepArm, type ConnectStepArm } from './connect-step-arm';
+import { readConnectStepBuild } from './connect-step-build';
 import { decideConnectStepEnrolment, type ConnectStepEnrolmentVerdict } from './first-connect-decision';
 import {
   dropConnectStepEnrolment,
@@ -68,11 +69,14 @@ async function enrol(request: ConnectStepEnrolmentRequest): Promise<ConnectStepE
   }
   const forcedArm = await readForcedArm();
   const decidedAtMs = nowMs();
+  const build = readConnectStepBuild();
   const decision = decideConnectStepEnrolment({
     userId,
     accountCreatedAt: request.accountCreatedAt,
     nowMs: decidedAtMs,
     enabled: request.enabled,
+    nativeVersion: build.nativeVersion,
+    productionBuild: build.productionBuild,
     phoneHasConnected,
     forcedArm,
     existing,
@@ -119,6 +123,8 @@ async function enrol(request: ConnectStepEnrolmentRequest): Promise<ConnectStepE
     // First launches run the binary's embedded JS, so this splits the store
     // release that enrols from the OTAs after it.
     ota_is_embedded: Updates.isEmbeddedLaunch,
+    // The binary, at or past CONNECT_STEP_MIN_NATIVE_VERSION unless forced.
+    native_version: build.nativeVersion,
     ui_variant: request.uiVariant,
     had_board: request.hadBoard,
   });

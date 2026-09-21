@@ -171,13 +171,18 @@ diagnostic) applies on native. The whole surface lives in three files:
   first launch has no cached flags, so a flag-driven arm could change under a
   climber the moment it resolved. The arm is
   `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
-  treatment), computed on the phone. Its QA override,
+  treatment), computed on the phone, and only dealt on a production build
+  (not a dev build, an EAS preview or a `pr-*` OTA preview) whose installed
+  binary is 2.7.0 or later (`CONNECT_STEP_MIN_NATIVE_VERSION`): the code
+  reaches older binaries by OTA and stays inert there. Its QA override,
   `first-connect-cta-arm` (variants `treatment` / `control`), is the one
   catalog entry whose PostHog value is IGNORED: the enrolment reads the
   on-device override store directly, so a flag of that name created in
   PostHog cannot move real climbers between arms. Forcing an arm skips the
-  age and never-connected checks, wipes the phone's connect-step state, takes
-  effect on the next launch, and tags the exposure `arm_forced: true`.
+  build, binary, age and never-connected checks, wipes the phone's
+  connect-step state, takes effect right away for the signed-in account
+  (`FirstConnectHost` re-enrols when the override changes), and tags the
+  exposure `arm_forced: true`.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

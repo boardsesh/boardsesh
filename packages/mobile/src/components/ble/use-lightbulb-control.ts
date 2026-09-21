@@ -10,7 +10,7 @@ import { useBoardConnectionState } from './use-board-connection-state';
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
   BoardConnectSurface,
-  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator'
+  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'first_connect_pill'
 >;
 
 type UseLightbulbControlOptions = {
@@ -67,6 +67,17 @@ export type LightbulbControl = {
    * `onRelayToHolder`.
    */
   onPress: () => void;
+  /**
+   * The connect `onPress` runs for a `'connect'` press action, on its own and
+   * awaitable: logs Board Connect Tapped, arms the undo toast, and relights the
+   * remembered board (or opens the picker when none is remembered). Resolves
+   * with whether the link came up; false with no board selected. Pass `surface`
+   * when a connect starts from a different control than this hook's own (the
+   * play drawer's bulb shown as the connect-step pill). The connect-step card
+   * awaits it to know when to offer "Try again", so the card, the pill and
+   * every bulb share this one connect path.
+   */
+  connect: (surface?: LightbulbSurface) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -126,6 +137,28 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     [bluetooth, holderIsAuthoritative, canRelay, ledless, wallHeldLocally],
   );
 
+  // Bluetooth Connection Success / Failed record the outcome a few hundred ms
+  // later. The tap itself is tracked too (#5654): a tap that dies at a denied
+  // permission or a radio that's off never reaches either outcome event, so
+  // without it "tapped connect" couldn't be told apart from "never tried".
+  const connect = useCallback(
+    async (surfaceOverride?: LightbulbSurface): Promise<boolean> => {
+      if (!bluetooth) return false;
+      const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
+      const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
+      trackBoardConnectTapped({
+        surface: surfaceOverride ?? surface,
+        boardName: bluetooth.boardName,
+        reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+      });
+      bluetooth.armUndoWallChangeToast();
+      // Reconnect straight to the same board — by serial (Aurora) or device id
+      // (MoonBoard). With neither remembered, the adapter opens the picker.
+      return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
+    },
+    [bluetooth, surface],
+  );
+
   const onPress = useCallback(() => {
     if (!bluetooth) return;
     if (pressAction === 'noop') return;
@@ -164,22 +197,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // auto-pushes the displayed climb on connect, which reports to board presence
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
-    // Bluetooth Connection Success / Failed record the outcome a few hundred ms
-    // later. The tap itself is tracked too (#5654): a tap that dies at a denied
-    // permission or a radio that's off never reaches either outcome event, so
-    // without it "tapped connect" couldn't be told apart from "never tried".
-    const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
-    const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
-    trackBoardConnectTapped({
-      surface,
-      boardName: bluetooth.boardName,
-      reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
-    });
-    bluetooth.armUndoWallChangeToast();
-    // Reconnect straight to the same board — by serial (Aurora) or device id
-    // (MoonBoard). With neither remembered, the adapter opens the picker.
-    void bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
-  }, [bluetooth, pressAction, onRelayToHolder, surface]);
+    void connect();
+  }, [bluetooth, pressAction, onRelayToHolder, connect]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
@@ -195,6 +214,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     localConnected,
     pending,
     onPress,
+    connect,
     onLongPress,
     ledless,
     wallHeldLocally,

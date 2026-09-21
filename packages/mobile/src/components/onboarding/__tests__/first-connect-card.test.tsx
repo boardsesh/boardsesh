@@ -28,9 +28,12 @@ const storeCtrl = vi.hoisted(() => ({
 }));
 const flagsCtrl = vi.hoisted(() => ({ enabled: true }));
 const bluetoothMocks = vi.hoisted(() => ({
+  // The hook's own connect (`useLightbulbControl().connect`): it logs Board
+  // Connect Tapped, arms the undo toast and relights the remembered board; its
+  // own suite covers that. Here it only needs to resolve.
   connect: vi.fn(async () => true),
-  armUndoWallChangeToast: vi.fn(),
   onPress: vi.fn(),
+  hookOptions: vi.fn(),
 }));
 const lightbulbCtrl = vi.hoisted(() => ({
   pressAction: 'connect' as string,
@@ -77,19 +80,17 @@ vi.mock('../../Button', () => ({
     createElement('button', { type: 'button', onClick: onPress, 'data-loading': String(Boolean(loading)) }, title),
 }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({
-    bluetooth: {
+  useLightbulbControl: (options: unknown) => {
+    bluetoothMocks.hookOptions(options);
+    return {
+      bluetooth: { wallHeldByOtherUser: lightbulbCtrl.wallHeldByOtherUser },
+      pressAction: lightbulbCtrl.pressAction,
+      pending: lightbulbCtrl.pending,
+      holderIsAuthoritative: lightbulbCtrl.holderIsAuthoritative,
+      onPress: bluetoothMocks.onPress,
       connect: bluetoothMocks.connect,
-      armUndoWallChangeToast: bluetoothMocks.armUndoWallChangeToast,
-      reconnectSerialForCurrentBoard: 'serial-1',
-      reconnectDeviceIdForCurrentBoard: null,
-      wallHeldByOtherUser: lightbulbCtrl.wallHeldByOtherUser,
-    },
-    pressAction: lightbulbCtrl.pressAction,
-    pending: lightbulbCtrl.pending,
-    holderIsAuthoritative: lightbulbCtrl.holderIsAuthoritative,
-    onPress: bluetoothMocks.onPress,
-  }),
+    };
+  },
 }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => 42 }));
@@ -97,6 +98,8 @@ vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/onboarding/first-connect-store', () => ({
   FIRST_CONNECT_LAUNCH_ID: 'this-launch',
   useFirstConnectSnapshot: () => storeCtrl.snapshot,
+  useFirstConnectSelector: <Selected,>(select: (current: typeof storeCtrl.snapshot) => Selected) =>
+    select(storeCtrl.snapshot),
   recordFirstConnectCardLaunch: storeMocks.recordLaunch,
   markFirstConnectNoLights: storeMocks.markNoLights,
   dismissFirstConnectCardForLaunch: storeMocks.dismiss,
@@ -146,8 +149,8 @@ describe('FirstConnectCard', () => {
     lightbulbCtrl.wallHeldByOtherUser = false;
     bluetoothMocks.connect.mockReset();
     bluetoothMocks.connect.mockResolvedValue(true);
-    bluetoothMocks.armUndoWallChangeToast.mockClear();
     bluetoothMocks.onPress.mockClear();
+    bluetoothMocks.hookOptions.mockClear();
     announceMock.mockClear();
     trackMock.mockClear();
     storeMocks.recordLaunch.mockClear();
@@ -201,18 +204,30 @@ describe('FirstConnectCard', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('connects exactly like the bulb, and says so to a screen reader', async () => {
+  it('connects through the bulb’s own connect, as its own surface, and says so to a screen reader', async () => {
     renderCard();
 
     await act(async () => {
       fireEvent.click(screen.getByText('Connect'));
     });
 
+    expect(bluetoothMocks.hookOptions).toHaveBeenCalledWith({ surface: 'first_connect_card' });
     expect(trackMock).toHaveBeenCalledWith('First Run Card Action', { action: 'connect' });
     expect(announceMock).toHaveBeenCalledWith('Connecting to Kilter at Blocs…');
-    expect(bluetoothMocks.armUndoWallChangeToast).toHaveBeenCalledTimes(1);
-    expect(bluetoothMocks.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
+    expect(bluetoothMocks.connect).toHaveBeenCalledTimes(1);
+    expect(bluetoothMocks.connect).toHaveBeenCalledWith();
     expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+  });
+
+  it('treats a connect that throws as a failed one', async () => {
+    bluetoothMocks.connect.mockRejectedValue(new Error('adapter gone'));
+    renderCard();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Connect'));
+    });
+
+    expect(screen.getByText('Try again')).toBeTruthy();
   });
 
   it('keeps the card up after a failed or cancelled connect, with Try again', async () => {

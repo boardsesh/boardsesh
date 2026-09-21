@@ -391,6 +391,17 @@ describe('PlayDrawerActionBar (connect-step pill)', () => {
     expect(onLightbulb).toHaveBeenCalledTimes(1);
   });
 
+  it('gives the pill its own tap when the host passes one, so its connects log as the pill', () => {
+    const onLightbulb = vi.fn();
+    const onConnectPill = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...pillProps, onLightbulb, onConnectPill }));
+
+    (container.querySelector('[data-connect-pill="true"]') as HTMLElement).click();
+
+    expect(onConnectPill).toHaveBeenCalledTimes(1);
+    expect(onLightbulb).not.toHaveBeenCalled();
+  });
+
   it('keeps the tick, the heart, the angle and ⋯', () => {
     const { container } = render(createElement(PlayDrawerActionBar, pillProps));
     const rendered = actions(container);

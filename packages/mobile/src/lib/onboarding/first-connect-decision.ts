@@ -9,8 +9,19 @@
 // - both arms: a one-time "Connected to {{board}}" confirmation after this
 //   phone's first successful connect.
 
+import { isNativeVersionAtLeast } from '../native-version';
 import { isNewAccount } from './first-board-picker-decision';
 import { assignConnectStepArm, type ConnectStepArm } from './connect-step-arm';
+
+/**
+ * The first store binary that enrols (#5654: 2.7.0). This code reaches older
+ * binaries by OTA too, and there it stays inert: a newcomer's FIRST launch runs
+ * the JS embedded in the binary, so on an older binary the only accounts that
+ * could enrol are the ones that come back on a later OTA launch, a different
+ * group from the one the test is about, and before its clock starts. Compared
+ * against the installed binary's version, never the JS bundle's.
+ */
+export const CONNECT_STEP_MIN_NATIVE_VERSION = '2.7.0';
 
 /** How many app launches the Climbs card may appear on. */
 export const FIRST_CONNECT_CARD_MAX_LAUNCHES = 2;
@@ -76,6 +87,16 @@ export type ConnectStepEnrolmentVerdict =
   /** The enrolment could not be read or written. */
   | 'storage_error'
   /**
+   * The installed binary predates `CONNECT_STEP_MIN_NATIVE_VERSION`, so the
+   * code is inert here. Settled before assignment.
+   */
+  | 'below_native_floor'
+  /**
+   * A dev build, an EAS preview build or a `pr-*` OTA preview: the accounts
+   * made there are testers'. Settled before assignment.
+   */
+  | 'not_production_build'
+  /**
    * The Expo browser build. The test is about the store app, whose first
    * launch is where newcomers stall; a browser exposure would only add noise.
    */
@@ -87,6 +108,10 @@ export type ConnectStepEnrolmentInput = {
   nowMs: number;
   /** False when `first-connect-cta-kill` is on. */
   enabled: boolean;
+  /** The installed binary's version (`nativeApplicationVersion`). */
+  nativeVersion: string | null | undefined;
+  /** A store or TestFlight binary on production JS (`readConnectStepBuild`). */
+  productionBuild: boolean;
   /** `connectedAt` on this phone's state is set. */
   phoneHasConnected: boolean;
   /** The QA override's arm, or null when none is set. */
@@ -112,16 +137,18 @@ export type ConnectStepEnrolmentDecision =
 /**
  * Whether the account joins the test now.
  *
- * Eligibility is the first-board picker's new-account line (signed in, at most
- * 7 days old; `isNewAccount`), plus the kill switch and a phone that has never
- * connected. The arm is only dealt after all of that, so neither arm can lose
- * climbers the other keeps.
+ * Eligibility is a production build on a binary at or past
+ * `CONNECT_STEP_MIN_NATIVE_VERSION`, the first-board picker's new-account line
+ * (signed in, at most 7 days old; `isNewAccount`), the kill switch, and a phone
+ * that has never connected. The arm is only dealt after all of that, so neither
+ * arm can lose climbers the other keeps.
  *
  * An account is enrolled once. The QA override is the one thing that can change
  * an enrolment: forcing an arm re-enrols the account as `forced`, and clearing
  * the override drops the forced enrolment so the account is judged afresh.
- * Forcing skips the age and never-connected checks (a tester's phone has
- * usually connected before), but not the kill switch.
+ * Forcing skips the build, binary, age and never-connected checks (testers run
+ * previews on today's binaries, on phones that have usually connected before),
+ * but not the kill switch.
  */
 export function decideConnectStepEnrolment(input: ConnectStepEnrolmentInput): ConnectStepEnrolmentDecision {
   const { existing, forcedArm } = input;
@@ -143,6 +170,10 @@ export function decideConnectStepEnrolment(input: ConnectStepEnrolmentInput): Co
     };
   }
 
+  if (!input.productionBuild) return { verdict: 'not_production_build', dropForced: staleForced };
+  if (!isNativeVersionAtLeast(input.nativeVersion, CONNECT_STEP_MIN_NATIVE_VERSION)) {
+    return { verdict: 'below_native_floor', dropForced: staleForced };
+  }
   if (!input.accountCreatedAt || Number.isNaN(Date.parse(input.accountCreatedAt))) {
     return { verdict: 'profile_unavailable', dropForced: staleForced };
   }
@@ -203,17 +234,50 @@ export function shouldShowFirstConnectCard(input: FirstConnectCardInput): boolea
   return input.cardLaunchIds.length < FIRST_CONNECT_CARD_MAX_LAUNCHES;
 }
 
+export type FirstConnectPillWouldConnectInput = {
+  /** Signed out: a reader gets no bulb at all. */
+  isAnonymous: boolean;
+  /** A Bluetooth provider exists, i.e. a board is selected. */
+  hasBluetooth: boolean;
+  /** The switch-board scrim covers the row. */
+  boardMismatch: boolean;
+  /** The second row is the browse latch's commit row. */
+  commitMode: boolean;
+  /** A party session with a crew in it. */
+  sharedSession: boolean;
+  /** Another account holds the wall. */
+  wallHeldByOtherUser: boolean;
+  /** The bulb's press action is `'connect'`. */
+  tapConnects: boolean;
+  /** A connect or disconnect is in flight. */
+  pending: boolean;
+  /** This phone holds a Bluetooth link. */
+  localConnected: boolean;
+  /** This phone holds the wall with no Bluetooth link. */
+  wallHeldLocally: boolean;
+};
+
+/**
+ * Whether a tap on the play view's bulb right now would connect THIS phone,
+ * which is the only moment the pill may stand in for it. Never for a signed-out
+ * reader, under the switch-board scrim, in commit mode, with a crew in the
+ * session, or while someone else holds the wall. A connect already in flight
+ * keeps it (no link and no virtual hold yet, so the pending work is the
+ * connect), so the pill does not jump back to a bulb mid-connect; a pending
+ * disconnect does not.
+ */
+export function deriveFirstConnectPillWouldConnect(input: FirstConnectPillWouldConnectInput): boolean {
+  if (input.isAnonymous || !input.hasBluetooth || input.boardMismatch || input.commitMode) return false;
+  if (input.sharedSession || input.wallHeldByOtherUser) return false;
+  return input.tapConnects || (input.pending && !input.localConnected && !input.wallHeldLocally);
+}
+
 export type FirstConnectPillInput = {
   treatmentLive: boolean;
   /** Today on the phone's own calendar, `YYYY-MM-DD`. */
   today: string;
   pillDays: readonly string[];
-  /**
-   * The bulb's tap would connect this phone: a Bluetooth provider exists, the
-   * viewer is signed in, the row is not in commit mode, there is no party
-   * session, and nobody else holds the wall. A connect already in flight keeps
-   * the pill, so it does not jump back to a bulb mid-connect.
-   */
+  /** The bulb's tap would connect this phone (`deriveFirstConnectPillWouldConnect`). */
   wouldConnect: boolean;
 };
 

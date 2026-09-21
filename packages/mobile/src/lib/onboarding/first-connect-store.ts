@@ -13,9 +13,11 @@
 //
 // Neither holds anything sensitive: an arm, timestamps, launch ids and dates.
 //
-// Surfaces read one snapshot through `useFirstConnectSnapshot`
-// (useSyncExternalStore), so a write repaints only what reads it and never
-// re-renders a provider tree.
+// Surfaces read the store through `useFirstConnectSelector`
+// (useSyncExternalStore over a derived primitive), so a write repaints only the
+// surfaces whose answer it changed, and never re-renders a provider tree. The
+// Climbs list and the play drawer are heavy screens: they must not re-render
+// because the other one recorded a launch or a pill day.
 
 import { useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from '../preference-store';
@@ -64,7 +66,10 @@ const listeners = new Set<() => void>();
 let deviceLoad: Promise<FirstConnectDeviceState> | null = null;
 let writeChain: Promise<void> = Promise.resolve();
 
+/** A patch that changes nothing publishes nothing, so no subscriber re-renders for it. */
 function publish(next: Partial<FirstConnectSnapshot>): void {
+  const fields = Object.keys(next) as Array<keyof FirstConnectSnapshot>;
+  if (!fields.some((field) => snapshot[field] !== next[field])) return;
   snapshot = { ...snapshot, ...next };
   for (const listener of listeners) listener();
 }
@@ -196,6 +201,18 @@ export function markFirstConnectNoLights(atMs: number): Promise<FirstConnectDevi
   return updateDevice((device) => (device.noLightsAt === null ? { ...device, noLightsAt: atMs } : null));
 }
 
+/**
+ * "This wall has no lights" from the device picker, kept only on a phone that
+ * has never connected (a phone that has lit a wall has nothing left to learn
+ * from the connect step). Resolves true when this call recorded it.
+ */
+export async function markFirstConnectNoLightsBeforeFirstConnect(atMs: number): Promise<boolean> {
+  const before = await updateDevice((device) =>
+    device.connectedAt === null && device.noLightsAt === null ? { ...device, noLightsAt: atMs } : null,
+  );
+  return before !== null && before.connectedAt === null && before.noLightsAt === null;
+}
+
 export function markFirstConnectConfirmationShown(atMs: number): Promise<FirstConnectDeviceState | null> {
   return updateDevice((device) =>
     device.confirmationShownAt === null ? { ...device, confirmationShownAt: atMs } : null,
@@ -316,8 +333,21 @@ export function getFirstConnectSnapshot(): FirstConnectSnapshot {
   return snapshot;
 }
 
+/** The whole snapshot. Only for a surface that already knows it is live (the card's body). */
 export function useFirstConnectSnapshot(): FirstConnectSnapshot {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * One value derived from the snapshot. Return a primitive (a boolean, a
+ * string): the caller re-renders only when that value changes, not on every
+ * write to the store.
+ */
+export function useFirstConnectSelector<Selected extends boolean | string | number | null>(
+  select: (current: FirstConnectSnapshot) => Selected,
+): Selected {
+  const selectFromStore = (): Selected => select(snapshot);
+  return useSyncExternalStore(subscribe, selectFromStore, selectFromStore);
 }
 
 /** Test-only: back to a fresh process. */
