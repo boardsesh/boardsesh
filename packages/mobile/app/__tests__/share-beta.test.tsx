@@ -182,6 +182,14 @@ vi.mock('../../src/lib/graphql/hooks', () => ({
   useBetaLinkPreview: () => ({ data: { caption: state.caption, thumbnail: null }, isLoading: false }),
 }));
 
+// The screenshot-mode link resolver. It returns '' outside a capture build and
+// its request dead-strips there, but the module still has to resolve under the
+// test's module mocks, and stubbing it keeps the GraphQL client out of this
+// screen's tests entirely.
+vi.mock('../../src/hooks/use-screenshot-own-beta-link', () => ({
+  useScreenshotOwnBetaLink: () => '',
+}));
+
 vi.mock('../../src/lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: (error: unknown) => (error instanceof Error ? error.message : null),
 }));

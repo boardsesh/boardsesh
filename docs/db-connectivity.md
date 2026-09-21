@@ -3,6 +3,23 @@
 How Boardsesh survives a Postgres connect blip, what it deliberately does not
 retry, and where to point a monitor.
 
+## TLS verification
+
+The shared primary and replica pools honor explicit `sslmode=verify-full`:
+both certificate trust and hostname are checked, including for local hosts.
+An explicit verification request is never replaced by the legacy `require`
+default. Remote URLs without `verify-full` retain the existing
+encryption-only default; this change does not migrate other deployments' trust.
+Repeated `sslmode` parameters are rejected rather than choosing a driver-specific
+precedence.
+
+The hold detector requires `verify-full` for remote connections and accepts only
+`sslmode` and `application_name` URL query options, without duplicates. Use
+`NODE_EXTRA_CA_CERTS` at process startup for a privately issued trust certificate,
+not `sslrootcert` (the data and queue drivers interpret that option differently).
+Both drivers must reject an untrusted certificate and a hostname mismatch before
+the worker is deployed. Never set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
 ## The failure this fixes
 
 postgres.js attaches the first query of a fresh connection to the connect

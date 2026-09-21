@@ -54,7 +54,7 @@ describe('screenshot-mode', () => {
   it('pins Aura and the store boards by default, so CI needs no env to get them', async () => {
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
-    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Board", 'High Point Climbing Orlando']);
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(['Boardsesh HQ', 'High Point Climbing Orlando']);
   });
 
   it('takes a render mode and a board list from the run', async () => {
@@ -70,7 +70,7 @@ describe('screenshot-mode', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = ' | ';
     const screenshotMode = await import('../screenshot-mode');
     expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
-    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Board", 'High Point Climbing Orlando']);
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(['Boardsesh HQ', 'High Point Climbing Orlando']);
   });
 
   it('keeps the locale override null when screenshot mode is off, even with a locale set', async () => {

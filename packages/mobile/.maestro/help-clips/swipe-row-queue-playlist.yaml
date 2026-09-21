@@ -1,0 +1,54 @@
+appId: com.boardsesh.app
+name: help clip - swipe a climb row
+---
+# Clip: swipe-row-queue-playlist -> packages/web/public/videos/help/swipe-row-queue-playlist.mp4
+#
+# Records: on the Climbs tab, swiping a row LEFT-TO-RIGHT drops the climb into
+# the session queue (green queue panel + the queue bar updating), and swiping a
+# different row RIGHT-TO-LEFT opens the Add to Playlist sheet. The sheet is
+# dismissed from its backdrop without ticking anything, so nothing is written to
+# a playlist.
+#
+# Coordinates, not selectors: climb rows are gesture rows that this RN Fabric
+# build's accessibility tree does not expose. Row 1 sits at y=23%, row 2 at
+# y=35% (iPhone 16 Pro Max portrait). The commit threshold is 96pt of
+# translation, so each swipe crosses ~70% of the width to land well past it.
+#
+# The caller navigates to ://home then ://climbs BEFORE recording starts.
+
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 900
+    optional: true
+
+# Swipe right on the first row -> add to queue.
+- swipe:
+    start: '15%,23%'
+    end: '85%,23%'
+    duration: 700
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1400
+    optional: true
+
+# Swipe left on the second row -> the Add to Playlist sheet.
+- swipe:
+    start: '85%,35%'
+    end: '15%,35%'
+    duration: 700
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 2400
+    optional: true
+
+# Dismiss the sheet from its backdrop — nothing ticked, nothing saved.
+- tapOn:
+    point: '50%,12%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1200
+    optional: true

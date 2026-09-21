@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-20
+
+### New
+
+- The help guides on boardsesh.com now show short clips of the gestures they describe, and the copy was rewritten and fact-checked against the app. ([#5600](https://github.com/boardsesh/boardsesh/pull/5600))
+
 ## 2026-09-19
 
 ### App update
@@ -12,6 +18,13 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Help pages that actually show you the app — seven guides covering the long-press menu, playlists, sessions, filters, your logbook, beta videos and getting the board connected. ([#5599](https://github.com/boardsesh/boardsesh/pull/5599))
+  Find the things you have been asking for: previewing a climb without lighting the wall, taking a climb out of a playlist, editing a send you already logged, and following the setters you like.
+- The playlists page is now about what the community climbs. It opens with sets we rebuild every night from what people are sending, then the playlists climbers have saved most — instead of a sign-in prompt and whichever list happened to have the most climbs dumped in it. ([#5592](https://github.com/boardsesh/boardsesh/pull/5592))
+- Playlists are now sorted by how many climbers actually saved them, instead of which one has the most climbs in it. A 600-climb dump of everything someone ever liked no longer outranks a playlist people use. ([#5591](https://github.com/boardsesh/boardsesh/pull/5591))
+- About now tells you why Boardsesh exists, who builds it and where it's going — instead of repeating the front page back at you. ([#5596](https://github.com/boardsesh/boardsesh/pull/5596))
+- The Fresh beta row on the home page scrolls properly now, with a slim scrollbar so you can tell there is more to swipe through. ([#5593](https://github.com/boardsesh/boardsesh/pull/5593))
+  Board cards on the home page stopped carrying a blank third line, and a board named after its gym shows its location instead of saying the name twice.
 - The home page now tells you how many climbers are actually using Boardsesh — how many people lit a climb on a real board in the last month, and how many climbs that was. ([#5597](https://github.com/boardsesh/boardsesh/pull/5597))
 - Get hold suggestions for your spray wall without running the model on your phone. ([#5587](https://github.com/boardsesh/boardsesh/pull/5587))
   Leave a wall scan and return to its progress, or retry a failed scan.
@@ -33,6 +46,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Stuck on something? Help now points you straight at Discord, where people actually answer. And the section about what the app does now gives you the app — it used to hand you the browser version, which can't light up holds. ([#5595](https://github.com/boardsesh/boardsesh/pull/5595))
 - The gym directory stops shouting "Is this your gym?" at you on every single listing — it asks once, at the bottom, where it belongs. ([#5594](https://github.com/boardsesh/boardsesh/pull/5594))
   Gym rows line up: board chips sit on one baseline whether a gym listed its address or not.
   Page buttons are big enough to hit on a phone, and the pager fits on one row again.

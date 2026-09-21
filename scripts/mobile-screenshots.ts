@@ -21,7 +21,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  * Android PNGs land in app-stores/google/screenshots/<device>/.
  *
  * Usage:
- *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|onboarding]
+ *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|onboarding|help]
  *                                 [--backend local|prod] [--devices common|phones|ipads|<comma-list>]
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
@@ -68,7 +68,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fixtureSnapshotDirectory } from './lib/screenshot-fixture-snapshot';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { captionLocaleForStore } from './lib/screenshot-presentation';
 import { SUPPORTED_LOCALES, isSupportedLocale, type Locale } from '../packages/shared/i18n/src/config';
@@ -123,6 +123,25 @@ const MAESTRO_DIR = resolve(MOBILE_DIR, '.maestro');
 const BUILD_SIM_APP_SCRIPT = resolve(ROOT_DIR, 'scripts', 'mobile-build-sim-app.ts');
 const APP_CACHE_DIR = resolve(MOBILE_DIR, '.app-cache');
 const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
+/**
+ * Where a flow's captures land.
+ *
+ * `app-store` keeps `app-stores/` itself — that shard IS the store submission,
+ * the rolling `screenshots-baseline` prerelease and what `mobile-store-draft.yml`
+ * attaches to a version. Every other flow gets its own root underneath.
+ *
+ * This is not tidiness. `writeCapturedScreenshots` DELETES every PNG in the
+ * output directory before writing, and an unframed flow writes straight into
+ * `screenshots/<locale>/<device>/`. Sharing the root meant a bare
+ * `vp run mobile:screenshots --flow help` — which defaults to three devices and
+ * all four locales — wiped and replaced all twelve committed store shards with
+ * help screens, two thirds of them captured on iPads where deep links don't
+ * navigate at all. The next `vp run screenshot:compare` would then diff help
+ * pages against the store baseline.
+ */
+function outputRootForFlow(flow: ScreenshotFlow): string {
+  return flow === 'app-store' ? OUTPUT_ROOT : join(OUTPUT_ROOT, flow);
+}
 /**
  * Android's answer to the Metro tee: the device log, streamed to a file for the
  * whole capture.
@@ -179,7 +198,16 @@ export const DEFAULT_USER_PASSWORD = 'test';
 const MAESTRO_INSTALL_HINT = 'Install Maestro: curl -Ls "https://get.maestro.mobile.dev" | bash';
 
 export type ScreenshotPlatform = 'ios' | 'android' | 'all';
-export type ScreenshotFlow = 'app-store' | 'onboarding';
+/**
+ * Which committed Maestro flow a run drives.
+ *
+ * `app-store` is the only FRAMED flow — it is the one `collectScreenshots` runs
+ * through `screenshot:frame` (captions, device frames, the recipe table in
+ * `scripts/lib/screenshot-presentation.ts`) and the only one whose captures are
+ * required to carry a board-render log line. `onboarding` and `help` write raw,
+ * uncaptioned PNGs straight to the shard directory.
+ */
+export type ScreenshotFlow = 'app-store' | 'onboarding' | 'help';
 export type ScreenshotBackend = 'local' | 'prod';
 /**
  * Whether this capture talks to a real backend (`off`), proxies one while
@@ -363,7 +391,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         index++;
         break;
       case '--flow':
-        options.flow = expectEnum(flag, value, ['app-store', 'onboarding']) as ScreenshotFlow;
+        options.flow = expectEnum(flag, value, ['app-store', 'onboarding', 'help']) as ScreenshotFlow;
         index++;
         break;
       case '--backend':
@@ -1722,13 +1750,14 @@ function captureIosDevice(
       device.name,
       localeTarget.appStoreLocales,
       options.flow === 'app-store',
+      outputRootForFlow(options.flow),
     );
     if (saved.length === 0) {
       console.error(`${LOG} WARNING: flow completed but no PNGs were captured.`);
       return 1;
     }
     console.log(
-      `${LOG} Saved ${saved.length} screenshot(s) to app-stores/${STORE_BY_PLATFORM.ios}/screenshots/{${localeTarget.appStoreLocales.join(',')}}/${deviceSlug(device.name)}/`,
+      `${LOG} Saved ${saved.length} screenshot(s) to ${relative(ROOT_DIR, outputRootForFlow(options.flow))}/${STORE_BY_PLATFORM.ios}/screenshots/{${localeTarget.appStoreLocales.join(',')}}/${deviceSlug(device.name)}/`,
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
     captureSucceeded = true;
@@ -2031,13 +2060,20 @@ function runAndroid(options: ScreenshotOptions): number {
       return 1;
     }
 
-    const saved = collectScreenshots(captureDir, 'android', deviceName, null, options.flow === 'app-store');
+    const saved = collectScreenshots(
+      captureDir,
+      'android',
+      deviceName,
+      null,
+      options.flow === 'app-store',
+      outputRootForFlow(options.flow),
+    );
     if (saved.length === 0) {
       console.error(`${LOG} WARNING: flow completed but no PNGs were captured.`);
       return 1;
     }
     console.log(
-      `${LOG} Saved ${saved.length} screenshot(s) to app-stores/${STORE_BY_PLATFORM.android}/screenshots/${deviceSlug(deviceName)}/`,
+      `${LOG} Saved ${saved.length} screenshot(s) to ${relative(ROOT_DIR, outputRootForFlow(options.flow))}/${STORE_BY_PLATFORM.android}/screenshots/${deviceSlug(deviceName)}/`,
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
     captureSucceeded = true;

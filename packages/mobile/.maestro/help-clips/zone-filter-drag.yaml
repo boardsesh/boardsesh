@@ -1,0 +1,65 @@
+appId: com.boardsesh.app
+name: help clip - drag the board-region box
+---
+# Clip: zone-filter-drag -> packages/web/public/videos/help/zone-filter-drag.mp4
+#
+# Records: the Board region filter (://climbs/zone). Tap "Add a region" to drop
+# the default box on the wall, drag the whole box up and left, then drag its
+# bottom-right corner out to resize it. The clip finishes on "Clear all" so the
+# region filter is left off, exactly as it was found.
+#
+# Coordinates, not selectors: the wall and the region box are one rendered
+# surface with no accessibility nodes on this RN Fabric build.
+#   50%,85%   "Add a region"
+#   50%,43%   the middle of the freshly added box (drag the whole box)
+#   63%,51%   where the bottom-right corner handle ends up after that drag
+#             (the box starts with corners at 22%/78% x and 25%/61% y, and the
+#             drag moves it by -15% x, -10% y)
+#   88%,9%    "Clear all" in the native header
+#
+# Percentages must be WHOLE NUMBERS — Maestro fails to parse "50%,34.5%".
+#
+# The caller navigates to ://home then ://climbs/zone BEFORE recording starts,
+# with no region set.
+
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 400
+    optional: true
+
+# Drop the default region box on the wall.
+- tapOn:
+    point: '50%,85%'
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1100
+    optional: true
+
+# Drag the whole box up and to the left.
+- swipe:
+    start: '50%,43%'
+    end: '35%,33%'
+    duration: 900
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1200
+    optional: true
+
+# Drag the bottom-right corner handle out: the box grows.
+- swipe:
+    start: '63%,51%'
+    end: '78%,64%'
+    duration: 900
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 1800
+    optional: true
+
+# Clear all — the region filter goes back off.
+- tapOn:
+    point: '88%,9%'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'zzz-help-clip-pause'
+    timeout: 800
+    optional: true

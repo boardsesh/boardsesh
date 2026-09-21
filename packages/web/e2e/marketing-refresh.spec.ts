@@ -120,7 +120,22 @@ test('desktop preview switching persists when navigating to About', async ({ bro
 for (const width of [1440, 390]) {
   test(`marketing pages keep their dark layout and type scale at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
-    for (const route of ['/', '/support', '/gyms/kilter', '/about', '/help', '/legal', '/privacy']) {
+    for (const route of [
+      '/',
+      '/support',
+      '/gyms/kilter',
+      '/about',
+      '/help',
+      '/help/playlists',
+      '/help/sessions',
+      '/help/finding-climbs',
+      '/help/logbook',
+      '/help/climb-actions',
+      '/help/beta-videos',
+      '/help/board-and-bluetooth',
+      '/legal',
+      '/privacy',
+    ]) {
       await page.goto(route);
       await expect(page.locator('h1')).toHaveCount(1);
       await expect(page.locator('[data-testid="marketing-header"]')).toBeVisible();
