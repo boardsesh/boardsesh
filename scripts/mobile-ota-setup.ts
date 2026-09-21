@@ -278,15 +278,17 @@ function setupPreview(): void {
   log("job's secrets context is one PR diff away from a log. It therefore declares NO environment:");
   log('EOO_TOKEN is scoped to its two publish steps and the admin creds are unreachable. Required');
   log('reviewers there would not be a hard wall against an insider who already holds the repo secrets —');
-  log('it would just prompt on every PR, and add a second deployment row to every PR timeline.');
+  log('it would prompt on every PR; the publish job therefore remains environment-free.');
   log('');
   log('The pre-publish reset, the on-close cleanup and the daily sweep carry the dashboard admin creds');
   log('(OTA_ADMIN_*) and must never hang, so they declare `ota-preview-unattended`, which MUST stay');
   log('WITHOUT required reviewers: reviewers there would pause a PR close or the scheduled sweep');
   log('forever. It is safe unattended because none of those jobs runs PR-author code (reset is pure');
   log('github-script, cleanup checks out the trusted base) and each only mutates a ^pr-[1-9][0-9]*$');
-  log("branch. The workflow's `tidy` job deletes the deployment rows that environment materialises,");
-  log('so a PR carries exactly one: the pr-preview readiness marker.');
+  log('branch. The reset/cleanup jobs use deployment: false to retain environment secrets without');
+  log('creating cosmetic deployment records. The explicit pr-preview readiness marker stays intact.');
+  log('Verify the environment has no custom GitHub App deployment-protection rules; those are');
+  log('incompatible with deployment: false. Reviewer and wait-timer rules still apply.');
 }
 
 function printRunbook(): void {

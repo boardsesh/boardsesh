@@ -1314,14 +1314,14 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     why the admin creds must never be added to one it declares.
 - **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
-  cleanup marks it inactive on close. That is the **only** deployment row a PR should carry. GitHub
-  materialises one per job-level `environment:`, so `reset` / `cleanup` would each add a second row
-  reading "requested a deployment to `ota-preview-unattended` — In progress", which looks like a
-  pending approval when nothing here is gated. The `tidy` job retires and deletes those records; it
-  depends on `reset` + `cleanup` but **not** on `publish`, so the row clears in seconds rather than
-  after a 150-minute publish, and it declares no environment of its own or it would recreate the row
-  it deletes. It refuses to touch default-branch records, which belong to the daily sweep and the
-  fork companion.
+  cleanup marks it inactive on close. The secret-scoping `reset` / `cleanup` jobs use
+  `environment: { name: ota-preview-unattended, deployment: false }`, so GitHub does not create
+  cosmetic deployment rows for them. No tidy job or deployment-history deletion is needed.
+  Existing reviewer and wait-timer rules still apply; custom GitHub App deployment-protection
+  rules are incompatible with this setting. Verify the environment has no custom rules before
+  rollout. See [GitHub's environment-without-deployment contract](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments#using-environments-without-deployments).
+  The separate daily sweep and trusted fork companion retain their existing environment behavior;
+  this workflow neither deletes their records nor changes the full-SHA `pr-preview` state they use.
 - **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
   cannot recreate a branch after cleanup. `publish` keeps the `needs: [gate, reset]` edge even when
   the reset is skipped, so it still queues behind an in-flight reset. On PR close, or whenever the current diff no longer affects

@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 // Guards the env the three mobile workflows share, for two reasons:
 //
@@ -850,16 +851,6 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     return (body.match(/^ {4}environment: (\S+)$/m) ?? body.match(/^ {4}environment:\n {6}name: (\S+)$/m))?.[1] ?? null;
   }
 
-  // Same reasoning as jobEnvironmentName: YAML offers two spellings and an assertion
-  // that knows one of them turns a reformat into a baffling failure rather than a clear
-  // one. Inline `needs: [a, b]` and the block sequence both parse to the same set.
-  function jobNeeds(body: string): string[] {
-    const inline = body.match(/^ {4}needs: \[([^\]]*)\]$/m);
-    if (inline) return inline[1].split(',').map((entry) => entry.trim());
-    const block = body.match(/^ {4}needs:\n(?: {6}- \S+\n)+/m);
-    return [...(block?.[0].matchAll(/^ {6}- (\S+)$/gm) ?? [])].map(([, entry]) => entry);
-  }
-
   // Split a workflow into { name -> body }. Slicing between two hardcoded job names
   // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
   // to EOF, and a `not.toMatch` assertion keeps passing over the wrong text.
@@ -918,23 +909,21 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     }
   });
 
-  it('removes the unattended deployment rows without waiting on the publish', () => {
-    // The unattended environment is secret scoping, not a deployment — but GitHub
-    // renders one row per job in the PR timeline, which reads as a pending approval.
-    // The tidy job deletes them, and must NOT depend on publish (150-minute timeout) or
-    // declare an environment of its own, or it recreates the row it deletes.
-    const tidyJob = previewJobs().get('tidy');
-    expect(tidyJob, 'tidy job must exist').toBeTruthy();
-    // Compare as a SET: `needs: [cleanup, gate, reset]` is identical to GitHub and must
-    // stay identical here.
-    const needs = jobNeeds(tidyJob ?? '');
-    expect(needs.sort(), 'tidy runs once reset and cleanup have settled').toEqual(['cleanup', 'gate', 'reset']);
-    expect(needs, 'tidy must not wait on the 150-minute publish').not.toContain('publish');
-    expect(tidyJob, 'tidy must declare no environment').not.toMatch(JOB_ENVIRONMENT);
-    expect(tidyJob).toContain("environment: 'ota-preview-unattended'");
-    expect(tidyJob).toContain('deleteDeployment');
-    // Never reap the daily sweep's or the fork companion's default-branch records.
-    expect(tidyJob).toContain('headRef === repository.default_branch');
+  it('prevents secret-scoping deployment rows without deleting deployment history', () => {
+    const workflow = parse(readWorkflow(OTA_PREVIEW)) as {
+      jobs: Record<string, { environment?: string | { name: string; deployment?: boolean } }>;
+    };
+    // Native suppression retains the admin environment but never creates a row
+    // that needs a later cleanup job, even if the publish is slow or fails.
+    for (const name of ['reset', 'cleanup']) {
+      expect(workflow.jobs[name]?.environment, `${name} must suppress its cosmetic deployment`).toEqual({
+        name: 'ota-preview-unattended',
+        deployment: false,
+      });
+    }
+    expect(workflow.jobs.publish?.environment).toBeUndefined();
+    expect(workflow.jobs.tidy).toBeUndefined();
+    expect(readWorkflow(OTA_PREVIEW)).not.toContain('deleteDeployment');
   });
 
   it('sets GOOGLE_MAPS_API_KEY only on the Android preview publish', () => {
