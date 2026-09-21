@@ -272,12 +272,14 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   angle,
   supportsMirroring,
   holdsRevisionNumber,
+  hideFromAccessibility = false,
 }: {
   climbUuid: string;
   angle: number;
   supportsMirroring: boolean;
   /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
   holdsRevisionNumber: number | null;
+  hideFromAccessibility?: boolean;
 }) {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -298,7 +300,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   if (!supportsMirroring) {
     if (!ascentStatus) return null;
     return (
-      <View accessibilityRole="image" accessibilityLabel={statusLabels[ascentStatus]}>
+      <View accessibilityRole="image" accessibilityLabel={hideFromAccessibility ? undefined : statusLabels[ascentStatus]} accessibilityElementsHidden={hideFromAccessibility} importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}>
         <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={systemColors.secondaryLabel} />
       </View>
     );
@@ -310,7 +312,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
     { direction: 'mirror', status: mirrorStatus, label: tSession('mobile.logbook.mirroredTag') },
   ];
   return (
-    <View style={styles.directionStatuses}>
+    <View style={styles.directionStatuses} accessibilityElementsHidden={hideFromAccessibility} importantForAccessibility={hideFromAccessibility ? 'no-hide-descendants' : 'auto'}>
       {directions.map(({ direction, status, label }) =>
         status ? (
           <View
@@ -647,6 +649,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             angle={angle}
             supportsMirroring={supportsMirroring}
             holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+            hideFromAccessibility={isRich}
           />
         ) : null}
         {showChips ? <ClimbPlaylistChips climbUuid={climb.uuid} forceVisible={isRich} /> : null}
@@ -661,6 +664,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             angle={angle}
             supportsMirroring={supportsMirroring}
             holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+            hideFromAccessibility={isRich}
           />
         ) : null}
         <LiveClimbGrade
