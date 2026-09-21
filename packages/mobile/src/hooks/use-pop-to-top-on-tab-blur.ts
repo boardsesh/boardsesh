@@ -13,9 +13,9 @@ import { useNavigation } from 'expo-router';
  * core APIs, covering Material, the iPad shell, and NativeTabs from one path.
  *
  * @param tabName the route name this tab is registered under in the parent
- * tab navigator (e.g. "profile"), matching its `Tabs.Screen`/`NativeTabs.Trigger` name.
+ * tab navigator, matching its `Tabs.Screen`/`NativeTabs.Trigger` name.
  */
-export function usePopToTopOnTabBlur(tabName: string): void {
+export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover'): void {
   const navigation = useNavigation();
 
   useEffect(() => {
