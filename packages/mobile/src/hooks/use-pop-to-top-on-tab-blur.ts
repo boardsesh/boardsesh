@@ -15,13 +15,16 @@ import { useNavigation } from 'expo-router';
  * @param tabName the route name this tab is registered under in the parent
  * tab navigator, matching its `Tabs.Screen`/`NativeTabs.Trigger` name.
  */
-export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover'): void {
+export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover' | 'climbs'): void {
   const navigation = useNavigation();
 
   useEffect(() => {
     return navigation.addListener('blur', () => {
       const parentState = navigation.getState();
-      const ownRoute = parentState?.routes.find((route) => route.name === tabName);
+      const ownRoute = parentState?.routes?.find((route) => route.name === tabName);
+      if (parentState != null && ownRoute == null && __DEV__) {
+        console.warn(`usePopToTopOnTabBlur: no route named "${tabName}" found in the parent tab navigator.`);
+      }
       const nestedState = ownRoute?.state;
       if (nestedState == null || nestedState.type !== 'stack' || typeof nestedState.key !== 'string') return;
       const topIndex = nestedState.index ?? nestedState.routes.length - 1;

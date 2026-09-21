@@ -70,6 +70,7 @@ describe('usePopToTopOnTabBlur', () => {
   });
 
   it('does nothing when the tab name is missing from the parent state routes', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     cfg.navigation.getState.mockReturnValue({
       routes: [
         {
@@ -84,6 +85,30 @@ describe('usePopToTopOnTabBlur', () => {
     triggerBlur();
 
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+    // Own route missing from the parent state is a misconfiguration (e.g. a
+    // renamed tab folder), not a normal "not ready yet" state — worth a dev warning.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile'));
+    warn.mockRestore();
+  });
+
+  it('does nothing when getState() returns undefined (navigator not hydrated yet)', () => {
+    cfg.navigation.getState.mockReturnValue(undefined);
+
+    renderHook(() => usePopToTopOnTabBlur('profile'));
+    triggerBlur();
+
+    expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the parent state has no routes yet (partial hydration)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    cfg.navigation.getState.mockReturnValue({ routes: undefined });
+
+    renderHook(() => usePopToTopOnTabBlur('profile'));
+    triggerBlur();
+
+    expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('unsubscribes the blur listener on unmount', () => {

@@ -1,12 +1,17 @@
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
+import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-blur';
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
+  // PlayDrawer's setter link and the create/remix flow push into this stack
+  // from the floating play drawer, reachable from any tab — same cross-tab
+  // push pattern as Settings on the Profile tab (see its _layout.tsx).
+  usePopToTopOnTabBlur('climbs');
 
   return (
     <BoardArtVisibilityProvider tab="climbs">
