@@ -39,8 +39,10 @@ the board in the app's information panel.
 Other Android devices require a separately calibrated profile. Do not bypass the
 dimension check by selecting the legacy iOS profile for an Android screenshot.
 
-The original full-size/iOS behavior remains the default (`holdsetup: 21`,
-`screenshotProfile: 'legacy-ios'`). Other setups' iOS screenshots are **not calibrated**
+The full-size/iOS grid geometry remains the default (`holdsetup: 21`,
+`screenshotProfile: 'legacy-ios'`). Its combined color palette accepts both legacy
+iOS marker colors and saturated Android red/green; it is broader than the original
+iOS-only thresholds. The explicit Android profile uses its stricter saturated palette. Other setups' iOS screenshots are **not calibrated**
 and are rejected when explicitly selected. A declared profile is not automatic board recognition or evidence
 that an arbitrary screenshot is from that board.
 
@@ -65,9 +67,12 @@ Missing labelled grades stay `Unknown` with a warning; a setter-only grade is no
 copied into the community grade. Title extraction excludes rating text below a
 recognized setter line.
 
+Labelled grades may contain a Font grade alone (`User 7A`) or a Font/V pair.
 The grade parser explicitly supports the legacy iOS slash separator before the
-Setter field. Unrecognized grade suffixes remain `Unknown` with a warning rather
-than silently accepting a partial prefix; spacing/format changes need fixtures.
+Setter field, with or without a space. A hyphen separator needs whitespace before
+it; an attached suffix such as `7A/V6-Setter` leaves that grade `Unknown` with a
+warning. Unrecognized suffixes never silently accept a partial grade prefix;
+spacing/format changes need fixtures.
 
 Touching-ring recovery requires at least two plausible enclosed interiors. With
 only one (for example, a second ring damaged by a wide open gap), detection keeps

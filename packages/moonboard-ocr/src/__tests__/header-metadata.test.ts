@@ -71,6 +71,26 @@ describe('metadata distinctions exposed by the old-catalog comparison', () => {
     expect(result.setterGrade).toBe('6C+/V5');
   });
 
+  it('accepts explicitly labelled Font-only grades without inventing a V grade', () => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'User 7A - Setter 6C+']);
+    expect(result.userGrade).toBe('7A');
+    expect(result.setterGrade).toBe('6C+');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('accepts the legacy slash separator without a space before Setter', () => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'User 7A/V6/Setter 6C+/V5']);
+    expect(result.userGrade).toBe('7A/V6');
+    expect(result.setterGrade).toBe('6C+/V5');
+  });
+
+  it('refuses an attached hyphen suffix without backtracking to a partial grade', () => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'User 7A/V6-Setter 6C+/V5']);
+    expect(result.userGrade).toBe('Unknown');
+    expect(result.setterGrade).toBe('6C+/V5');
+    expect(result.warnings).toContain('Could not extract user grade');
+  });
+
   it('preserves the legacy iOS grade line', () => {
     const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'Grade: User 8A/V11/ Setter 8A/V11']);
     expect(result.userGrade).toBe('8A/V11');

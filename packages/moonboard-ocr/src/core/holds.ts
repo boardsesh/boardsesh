@@ -92,11 +92,11 @@ export function classifyPixelColor(
   // plastic holds on Masters 2017. A declared Android profile must not use
   // those legacy color tolerances to classify the underlying board artwork.
   if (palette === 'android') {
-    if (Math.hypot(r - 255, g, b) < 35) return 'finish';
-    if (Math.hypot(r, g - 255, b) < 35) return 'start';
+    if (Math.sqrt(Math.pow(r - 255, 2) + Math.pow(g, 2) + Math.pow(b, 2)) < 35) return 'finish';
+    if (Math.sqrt(Math.pow(r, 2) + Math.pow(g - 255, 2) + Math.pow(b, 2)) < 35) return 'start';
     // Blue spans #2961ff and #0066ff ring pixels (~41 RGB units apart).
     // Its wider tolerance deliberately retains both observed shades.
-    if (Math.hypot(r - 41, g - 97, b - 255) < 50) return 'hand';
+    if (Math.sqrt(Math.pow(r - 41, 2) + Math.pow(g - 97, 2) + Math.pow(b - 255, 2)) < 50) return 'hand';
     return null;
   }
   // Red circle (FINISH holds) - top of climb
@@ -243,12 +243,12 @@ function enclosedCircleCenters(
       if (barriers.has(index) || visited.has(index)) continue;
       const stack = [index];
       visited.add(index);
-      let touchesEdge = false,
-        count = 0,
-        sumX = 0,
-        sumY = 0,
-        boundaryEdges = 0,
-        ownBoundaryEdges = 0;
+      let touchesEdge = false;
+      let count = 0;
+      let sumX = 0;
+      let sumY = 0;
+      let boundaryEdges = 0;
+      let ownBoundaryEdges = 0;
       while (stack.length > 0) {
         const pixelIndex = stack.pop()!;
         const pixelX = pixelIndex % imageWidth;
