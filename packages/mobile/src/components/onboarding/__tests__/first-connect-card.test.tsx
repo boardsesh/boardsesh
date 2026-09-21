@@ -216,7 +216,7 @@ describe('FirstConnectCard', () => {
     expect(announceMock).toHaveBeenCalledWith('Connecting to Kilter at Blocs…');
     expect(bluetoothMocks.connect).toHaveBeenCalledTimes(1);
     expect(bluetoothMocks.connect).toHaveBeenCalledWith();
-    expect(screen.queryByText(/Couldn't reach/)).toBeNull();
+    expect(screen.queryByText(/Not connected to/)).toBeNull();
   });
 
   it('treats a connect that throws as a failed one', async () => {
@@ -238,7 +238,10 @@ describe('FirstConnectCard', () => {
       fireEvent.click(screen.getByText('Connect'));
     });
 
-    expect(screen.getByText("Couldn't reach Kilter at Blocs. Move closer and try again.")).toBeTruthy();
+    // Outcome-neutral: a false covers a dismissed picker and a denied
+    // permission as well as a board out of range, so no "move closer".
+    expect(screen.getByText("Not connected to Kilter at Blocs yet. Try again when you're ready.")).toBeTruthy();
+    expect(screen.queryByText(/closer/i)).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByText('Try again'));
     });

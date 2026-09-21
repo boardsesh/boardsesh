@@ -111,8 +111,8 @@
         "notNow": "Pas maintenant",
         "connecting": "Connexion à {{board}}…",
         "connectingNoName": "Connexion à ta board…",
-        "failed": "Impossible de joindre {{board}}. Rapproche-toi et réessaie.",
-        "failedNoName": "Impossible de joindre ta board. Rapproche-toi et réessaie."
+        "failed": "Pas encore de connexion à {{board}}. Réessaie quand tu veux.",
+        "failedNoName": "Pas encore de connexion à ta board. Réessaie quand tu veux."
       },
       "pill": "Allumer sur la board",
       "confirm": {

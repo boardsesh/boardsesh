@@ -111,8 +111,8 @@
         "notNow": "Not now",
         "connecting": "Connecting to {{board}}…",
         "connectingNoName": "Connecting to your board…",
-        "failed": "Couldn't reach {{board}}. Move closer and try again.",
-        "failedNoName": "Couldn't reach your board. Move closer and try again."
+        "failed": "Not connected to {{board}} yet. Try again when you're ready.",
+        "failedNoName": "Not connected to your board yet. Try again when you're ready."
       },
       "pill": "Light it on the board",
       "confirm": {

@@ -111,8 +111,8 @@
         "notNow": "Nicht jetzt",
         "connecting": "Verbinde mit {{board}}…",
         "connectingNoName": "Verbinde mit deinem Board…",
-        "failed": "{{board}} ist nicht erreichbar. Geh näher ran und versuch es nochmal.",
-        "failedNoName": "Dein Board ist nicht erreichbar. Geh näher ran und versuch es nochmal."
+        "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
+        "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
       },
       "pill": "Am Board beleuchten",
       "confirm": {

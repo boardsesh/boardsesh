@@ -626,4 +626,8 @@ Reading it:
   one connect (`useLightbulbControl().connect`), so each tap is logged once.
 - **"a"**: `Board Lights Declined` ÷ `First Run Exposed` bounds how many newcomers had no LED board
   to connect to. Over 40% of card views in week 2 means the Bluetooth-first work should wait.
+  "No lights" is recorded per phone, not per board: one `noLightsAt` in the phone's
+  connect-step state, never the board's `hasLeds`. A climber who marks a dark board A as having no
+  lights never sees the card or the pill for a lit board B on the same phone, so read a decline
+  as "this phone left the treatment", not "this board is dark".
 - **SRM**: exposures per arm should sit near 50/50 every week.

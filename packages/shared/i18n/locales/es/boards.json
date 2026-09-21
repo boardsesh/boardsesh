@@ -111,8 +111,8 @@
         "notNow": "Ahora no",
         "connecting": "Conectando con {{board}}…",
         "connectingNoName": "Conectando con tu plafón…",
-        "failed": "No se pudo conectar con {{board}}. Acércate e inténtalo de nuevo.",
-        "failedNoName": "No se pudo conectar con tu plafón. Acércate e inténtalo de nuevo."
+        "failed": "Todavía no hay conexión con {{board}}. Inténtalo de nuevo cuando quieras.",
+        "failedNoName": "Todavía no hay conexión con tu plafón. Inténtalo de nuevo cuando quieras."
       },
       "pill": "Iluminar en el plafón",
       "confirm": {

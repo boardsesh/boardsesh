@@ -528,4 +528,32 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
     await expect(result.current.connect()).resolves.toBe(false);
     expect(trackMock).not.toHaveBeenCalled();
   });
+
+  // Same gate as onPress: a caller that skips its own pressAction check must
+  // not start a second link or a doomed one.
+  it.each([
+    ['a connect is already in flight', 'noop', () => ({ bluetooth: makeBluetooth({ loading: true }) })],
+    ['the wall has no lights', 'takeWall', () => ({ bluetooth: makeBluetooth({ ledless: true }) })],
+    [
+      'a session peer holds the wall',
+      'relay',
+      () => {
+        ctrl.boardId = 42;
+        ctrl.sessionId = 'session-1';
+        ctrl.sessionMemberUserIds = new Set(['peer-user']);
+        ctrl.presence = holderPresenceFor('peer-user');
+        return { bluetooth: makeBluetooth() };
+      },
+    ],
+  ] as const)('resolves false without touching the radio when %s', async (_label, expectedAction, arrange) => {
+    const { bluetooth } = arrange();
+    ctrl.bluetooth = bluetooth;
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+
+    expect(result.current.pressAction).toBe(expectedAction);
+    await expect(result.current.connect('first_connect_card')).resolves.toBe(false);
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+    expect(bluetooth.armUndoWallChangeToast).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
 });

@@ -197,6 +197,9 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
           <Icon name="close" size={16} color={systemColors.secondaryLabel} />
         </Pressable>
       </View>
+      {/* Outcome-neutral on purpose: connect() resolves false for a dismissed
+          picker, a denied permission and a radio that's off as well as a board
+          out of range, so the line gives no distance advice. */}
       {attempt === 'failed' ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
           {boardName

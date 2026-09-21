@@ -71,7 +71,9 @@ export type LightbulbControl = {
    * The connect `onPress` runs for a `'connect'` press action, on its own and
    * awaitable: logs Board Connect Tapped, arms the undo toast, and relights the
    * remembered board (or opens the picker when none is remembered). Resolves
-   * with whether the link came up; false with no board selected. Pass `surface`
+   * with whether the link came up; false with no board selected, and false
+   * without starting anything unless `pressAction` is `'connect'` (a connect in
+   * flight, a peer holding the wall, a wall with no lights). Pass `surface`
    * when a connect starts from a different control than this hook's own (the
    * play drawer's bulb shown as the connect-step pill). The connect-step card
    * awaits it to know when to offer "Try again", so the card, the pill and
@@ -143,7 +145,9 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // without it "tapped connect" couldn't be told apart from "never tried".
   const connect = useCallback(
     async (surfaceOverride?: LightbulbSurface): Promise<boolean> => {
-      if (!bluetooth) return false;
+      // The same gate onPress applies, so a caller that skips its own check
+      // can't open a second link while one is pending or a peer holds the wall.
+      if (!bluetooth || pressAction !== 'connect') return false;
       const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
       const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
       trackBoardConnectTapped({
@@ -156,7 +160,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, surface],
+    [bluetooth, pressAction, surface],
   );
 
   const onPress = useCallback(() => {
