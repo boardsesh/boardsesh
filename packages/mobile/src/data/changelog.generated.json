@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T07:18:24.292Z",
+  "generatedAt": "2026-09-21T12:51:51.636Z",
   "entries": [
+    {
+      "prNumber": 5669,
+      "category": "fixed",
+      "title": "See the latest climb displayed through Kilter in Now on the Wall.",
+      "mergedAt": "2026-09-21T12:50:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5669"
+    },
     {
       "prNumber": 5644,
       "category": "fixed",
