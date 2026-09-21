@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { parseArgs, parseSnapshot, writeSnapshot } from './backfill-shared-feed-tick-boards.js';
+import { parseArgs, parseSnapshot, resolveSnapshotPath, writeSnapshot } from './backfill-shared-feed-tick-boards.js';
 
 void test('forward and revert are dry-run by default', () => {
   assert.equal(parseArgs([]).apply, false);
@@ -41,6 +41,7 @@ void test('snapshot writes never overwrite an existing recovery file', () => {
     const original = 'existing recovery bytes\n';
     writeFileSync(snapshotPath, original);
     const snapshot = { writtenAt: '2026-09-21T00:00:00Z', entries: [] };
+    assert.throws(() => resolveSnapshotPath({ apply: false, outPath: snapshotPath }), /Choose a new --out path/);
     assert.throws(() => writeSnapshot(snapshotPath, snapshot), /Choose a new --out path/);
     assert.equal(readFileSync(snapshotPath, 'utf8'), original);
     const freshPath = join(fixtureDirectory, 'fresh.json');
@@ -95,4 +96,15 @@ void test('snapshot parsing identifies malformed entries before a valid earlier 
       /Invalid snapshot entry 2/,
     );
   }
+});
+
+void test('default plan and apply paths differ even at the same instant and retain later runs', () => {
+  const now = new Date('2026-09-21T12:34:56.789Z');
+  const planPath = resolveSnapshotPath({ apply: false }, now);
+  const applyPath = resolveSnapshotPath({ apply: true }, now);
+  assert.notEqual(planPath, applyPath);
+  assert.notEqual(planPath, resolveSnapshotPath({ apply: false }, new Date(now.getTime() + 1)));
+  assert.match(planPath, /shared-feed-tick-boards-plan-/);
+  assert.match(applyPath, /shared-feed-tick-boards-apply-/);
+  assert.equal(planPath.includes(':'), false);
 });

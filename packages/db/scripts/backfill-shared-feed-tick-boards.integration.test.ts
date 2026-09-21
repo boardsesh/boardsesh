@@ -5,9 +5,13 @@ import { createScriptDb } from './db-connection.js';
 import { applyMoveBatches, loadSharedFeedTicks } from './backfill-shared-feed-tick-boards.js';
 import { planSharedFeedTickMoves } from './backfill-shared-feed-tick-boards-helpers.js';
 
-// Explicit opt-in only. Temporary tables shadow production names on this one
-// connection; all fixture writes roll back and no existing rows are touched.
+// Local runs opt in; CI runs these in test-backend against its disposable service.
+// Temporary tables shadow existing names on this one connection; all fixture
+// writes roll back and no existing rows are touched.
 const databaseUrl = process.env.SHARED_FEED_TICK_TEST_DB_URL;
+if (process.env.CI) {
+  assert.ok(databaseUrl, 'CI requires SHARED_FEED_TICK_TEST_DB_URL; integration coverage must not be skipped.');
+}
 const rollbackMarker = new Error('rollback temporary shared-feed fixture');
 
 async function withFixture(
