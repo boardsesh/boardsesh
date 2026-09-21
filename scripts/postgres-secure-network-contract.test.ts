@@ -73,6 +73,10 @@ describe('production database network workflow contract', () => {
     expect(actionSource).toContain('node "$GITHUB_WORKSPACE/scripts/validate-production-db-network-url.mjs"');
     expect(actionSource).not.toContain('tsx');
     expect(actionSource).toContain('EXPECTED_DATABASE_ROLE_INPUT: ${{ inputs.expected-role }}');
+    expect(actionSource).toContain(
+      'test -n "$TS_CLIENT_ID_INPUT" || { echo \'::error::TS_CLIENT_ID_INPUT is unset\'; exit 1; }',
+    );
+    expect(actionSource).not.toContain('TS_OAUTH_CLIENT_ID is unset');
     const validatorSource = readFileSync('scripts/validate-production-db-network-url.mjs', 'utf8');
     expect(validatorSource).toContain('POSTGRES_FORWARDER_HOST must be the full boardsesh-db-forwarder MagicDNS name');
     expect(validatorSource).toContain('direct database URL must target POSTGRES_FORWARDER_HOST on port 5432');
