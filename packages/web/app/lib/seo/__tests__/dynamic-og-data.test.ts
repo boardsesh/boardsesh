@@ -227,6 +227,101 @@ describe('getSessionOgSummary', () => {
     expect(summary.boardAngle).toBe(35);
   });
 
+  it.each([
+    ['kilter', 'moonboard', '/moonboard/1/7/1/25'],
+    ['moonboard', 'kilter', '/kilter/1/7/1/25'],
+    ['kilter', 'moonboard', '/b/current-wall/25'],
+    ['moonboard', 'kilter', '/b/current-wall'],
+  ])(
+    'uses the current %s → %s path despite stale joined metadata: %s',
+    async (previousBoard, currentBoard, boardPath) => {
+      executeMock
+        .mockResolvedValueOnce([
+          {
+            name: 'Switched board',
+            leader_name: null,
+            version_at: null,
+            board_path: boardPath,
+            board_slug: 'previous-wall',
+            board_angle: 40,
+            board_type: previousBoard,
+            layout_id: 1,
+            size_id: 7,
+            set_ids: '1',
+          },
+        ])
+        .mockResolvedValueOnce([{ participant_count: 1 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total_sends: 1 }])
+        .mockResolvedValueOnce([{ difficulty: 20, cnt: 1 }]);
+      const currentParams = { board_name: currentBoard, layout_id: 1, size_id: 7, set_ids: [1], angle: 25 };
+      parseBoardRouteParamsWithSlugsMock.mockResolvedValue(currentParams);
+      resolveBoardBySlugMock.mockResolvedValue({
+        boardType: currentBoard,
+        layoutId: 1,
+        sizeId: 7,
+        setIds: '1',
+        angle: 25,
+      });
+      boardToRouteParamsMock.mockReturnValue(currentParams);
+      getBoardDetailsForBoardMock.mockImplementation((params) => ({ ...params, layout_name: '', size_name: '' }));
+
+      const { getSessionOgSummary } = await import('../dynamic-og-data');
+      const summary = await getSessionOgSummary('switched-board');
+
+      expect(summary.boardType).toBe(currentBoard);
+      expect(summary.boardAngle).toBe(25);
+      expect(getBoardDetailsForBoardMock).toHaveBeenCalledWith(currentParams);
+      if (boardPath.startsWith('/b/')) {
+        expect(resolveBoardBySlugMock).toHaveBeenCalledWith('current-wall');
+        expect(boardToRouteParamsMock).toHaveBeenCalledWith(expect.objectContaining({ boardType: currentBoard }), 25);
+      } else {
+        expect(parseBoardRouteParamsWithSlugsMock).toHaveBeenCalledWith({
+          board_name: currentBoard,
+          layout_id: '1',
+          size_id: '7',
+          set_ids: '1',
+          angle: '25',
+        });
+      }
+    },
+  );
+
+  it('keeps matching joined metadata while taking the current path angle', async () => {
+    executeMock
+      .mockResolvedValueOnce([
+        {
+          name: 'Same board',
+          leader_name: null,
+          version_at: null,
+          board_path: '/b/same-wall/25',
+          board_slug: 'same-wall',
+          board_angle: 40,
+          board_type: 'kilter',
+          layout_id: 1,
+          size_id: 7,
+          set_ids: '1',
+        },
+      ])
+      .mockResolvedValueOnce([{ participant_count: 1 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ total_sends: 1 }])
+      .mockResolvedValueOnce([{ difficulty: 20, cnt: 1 }]);
+    const { getSessionOgSummary } = await import('../dynamic-og-data');
+    const summary = await getSessionOgSummary('same-board');
+
+    expect(summary.boardType).toBe('kilter');
+    expect(summary.boardAngle).toBe(25);
+    expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
+    expect(getBoardDetailsForBoardMock).toHaveBeenCalledWith({
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 25,
+    });
+  });
+
   it('counts sends even when tick difficulty is null and grades come from climb stats', async () => {
     executeMock
       .mockResolvedValueOnce([
