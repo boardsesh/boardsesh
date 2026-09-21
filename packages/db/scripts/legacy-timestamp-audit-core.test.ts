@@ -78,6 +78,26 @@ void describe('allowed IANA UTC offsets', () => {
     }
   });
 
+  void it('retains historical Caracas and Pyongyang offsets as reciprocal evidence', () => {
+    for (const [date, offsetSeconds] of [
+      ['2010-01-02T12:00:00Z', -(4 * HOUR + 30 * 60)],
+      ['2016-01-02T12:00:00Z', 8 * HOUR + 30 * 60],
+    ] as const) {
+      const anchorInstant = Date.parse(date) / 1000;
+      const analysis = analyzeTickGroup(
+        [
+          tick({ climbedAtEpochSeconds: anchorInstant + offsetSeconds }),
+          anchor({ climbedAtEpochSeconds: anchorInstant }),
+        ],
+        policy,
+      );
+      assert.equal(analysis.edgeCount, 1);
+      assert.equal(analysis.candidates[0].classification, 'correction_evidence');
+      assert.equal(analysis.candidates[0].edge?.offsetSeconds, offsetSeconds);
+      assert.equal(analysis.candidates[0].edge?.targetEpochSeconds, anchorInstant);
+    }
+  });
+
   void it('does not treat arbitrary quarter-hour values as a real timezone', () => {
     assert.equal(inferAllowedOffset(7 * HOUR + 15 * 60), null);
   });
