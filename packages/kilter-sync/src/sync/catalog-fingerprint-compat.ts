@@ -19,17 +19,6 @@ export type StoredFingerprintOwnerRow = {
   fingerprint: string | null;
 };
 
-/** Keep the first row for each stored fingerprint; callers define its stable order. */
-export function indexStoredFingerprintOwners(rows: ReadonlyArray<StoredFingerprintOwnerRow>): Map<string, string> {
-  const fingerprintOwners = new Map<string, string>();
-  for (const row of rows) {
-    if (row.fingerprint && !fingerprintOwners.has(row.fingerprint)) {
-      fingerprintOwners.set(row.fingerprint, row.uuid);
-    }
-  }
-  return fingerprintOwners;
-}
-
 /** Partition one catalog-wide preload into the rows needed by each layout group. */
 export function partitionLegacyFingerprintCompatibilityRows(
   rows: ReadonlyArray<LegacyFingerprintCompatibilityRow>,
@@ -43,35 +32,72 @@ export function partitionLegacyFingerprintCompatibilityRows(
   return rowsByLayout;
 }
 
+type ProvenFingerprintForms = {
+  storedFingerprint: string;
+  rawFingerprint: string;
+  hasStoredRows: boolean;
+};
+
+function provenFingerprintForms(row: LegacyFingerprintCompatibilityRow): ProvenFingerprintForms | null {
+  const rawEvents = legacyAuroraRawFrameHoldEvents(row.frames, KILTER);
+  if (rawEvents.length === 0) return null;
+  const projectedRows = projectAuroraFramesToStoredRows(row.frames, KILTER).rows;
+  const rawFingerprint = fingerprintFromHolds(rawEvents);
+  const projectedFingerprint = fingerprintFromHolds(projectedRows);
+  if (row.fingerprint !== rawFingerprint && row.fingerprint !== projectedFingerprint) return null;
+  return { storedFingerprint: row.fingerprint, rawFingerprint, hasStoredRows: projectedRows.length > 0 };
+}
+
 /**
- * Add temporary projected-hash lookup keys for rows whose stored fingerprint
- * is proven to be the pre-6e93 raw-event hash. The stored index remains the
- * authority: compatibility keys never replace an owner and never mutate the
- * caller's map.
+ * Build exact raw-event owners while accepting both historical raw hashes and
+ * repaired projected hashes already stored in the database.
+ *
+ * Compatibility rows are evidence about one UUID, never alias keys. A lossy
+ * projected hash is suppressed for that animated row and replaced by its proven
+ * raw hash. Iterating every stored row in database UUID order lets a later true
+ * single-frame owner reclaim the projected key instead of disappearing behind
+ * the animated row that sorted first.
  */
 export function enrichFingerprintOwnersWithLegacyCompatibility(
-  storedFingerprintOwners: ReadonlyMap<string, string>,
+  storedRows: ReadonlyArray<StoredFingerprintOwnerRow>,
   compatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>,
 ): Map<string, string> {
-  const enrichedFingerprintOwners = new Map(storedFingerprintOwners);
-
+  const formsByLowerUuid = new Map<string, ProvenFingerprintForms>();
   for (const row of compatibilityRows) {
-    const legacyEvents = legacyAuroraRawFrameHoldEvents(row.frames, KILTER);
-    if (legacyEvents.length === 0) continue;
-
-    const legacyFingerprint = fingerprintFromHolds(legacyEvents);
-    if (row.fingerprint !== legacyFingerprint) continue;
-    if (storedFingerprintOwners.get(row.fingerprint) !== row.uuid) continue;
-
-    const projectedRows = projectAuroraFramesToStoredRows(row.frames, KILTER).rows;
-    if (projectedRows.length === 0) continue;
-
-    const projectedFingerprint = fingerprintFromHolds(projectedRows);
-    if (enrichedFingerprintOwners.has(projectedFingerprint)) continue;
-    enrichedFingerprintOwners.set(projectedFingerprint, row.uuid);
+    const forms = provenFingerprintForms(row);
+    if (forms) formsByLowerUuid.set(row.uuid.toLowerCase(), forms);
   }
 
-  return enrichedFingerprintOwners;
+  const owners = new Map<string, string>();
+  for (const row of storedRows) {
+    if (!row.fingerprint) continue;
+    const candidateForms = formsByLowerUuid.get(row.uuid.toLowerCase());
+    const forms = candidateForms?.storedFingerprint === row.fingerprint ? candidateForms : undefined;
+    // Empty projections have no usable hold identity. The writer gives incoming
+    // climbs in this class NULL rather than letting SHA256('') alias them.
+    if (forms && !forms.hasStoredRows) continue;
+    const fingerprint = forms?.rawFingerprint ?? row.fingerprint;
+    if (!owners.has(fingerprint)) owners.set(fingerprint, row.uuid);
+  }
+  return owners;
+}
+
+/**
+ * Expand a reroute DB lookup with stored projected hashes only when that row's
+ * frames prove the candidate's exact raw-event fingerprint. Returned projected
+ * keys broaden the fetch; they are never used as dedup identities.
+ */
+export function storedFingerprintsForRawCandidates(
+  candidateFingerprints: ReadonlySet<string>,
+  compatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>,
+): string[] {
+  const lookup = new Set(candidateFingerprints);
+  for (const row of compatibilityRows) {
+    const forms = provenFingerprintForms(row);
+    if (!forms?.hasStoredRows || !candidateFingerprints.has(forms.rawFingerprint)) continue;
+    lookup.add(row.fingerprint);
+  }
+  return [...lookup];
 }
 
 export type CatalogFingerprintDecision = {
@@ -95,6 +121,7 @@ export type CatalogFingerprintDecision = {
 export function decideCatalogFingerprint(
   fingerprintOwners: ReadonlyMap<string, string>,
   incomingUuid: string,
+  fingerprintEvents: ReadonlyArray<HoldTuple>,
   projectedRows: ReadonlyArray<HoldTuple>,
 ): CatalogFingerprintDecision {
   const holdRowsToInsert = [...projectedRows];
@@ -106,7 +133,7 @@ export function decideCatalogFingerprint(
       holdRowsToInsert,
     };
   }
-  const fingerprint = fingerprintFromHolds(holdRowsToInsert);
+  const fingerprint = fingerprintFromHolds(fingerprintEvents);
   const existingCanonicalUuid = fingerprintOwners.get(fingerprint);
   if (existingCanonicalUuid) {
     return {
