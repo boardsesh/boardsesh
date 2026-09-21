@@ -12,6 +12,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Open a playlist link that was deleted or made private and you now get a proper "not found" page instead of an empty one. ([#5639](https://github.com/boardsesh/boardsesh/pull/5639))
+  Playlists you share now show their name and board in the link preview, rather than the same generic line every playlist had.
 - Get a clear explanation when your board cannot open the climb creator. ([#5632](https://github.com/boardsesh/boardsesh/pull/5632))
 - Favorites and follows now stick. A single unlucky moment of database contention used to strand one for good — the heart stayed filled while the server never heard about it. ([#4567](https://github.com/boardsesh/boardsesh/pull/4567))
   Anything already stuck from that bug is sent on the next launch.

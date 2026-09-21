@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T13:27:57.510Z",
+  "generatedAt": "2026-09-21T13:35:55.959Z",
   "entries": [
+    {
+      "prNumber": 5639,
+      "category": "fixed",
+      "title": "Open a playlist link that was deleted or made private and you now get a proper \"not found\" page instead of an empty one.",
+      "mergedAt": "2026-09-21T13:05:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5639",
+      "body": "Playlists you share now show their name and board in the link preview, rather than the same generic line every playlist had."
+    },
     {
       "prNumber": 5632,
       "category": "fixed",
