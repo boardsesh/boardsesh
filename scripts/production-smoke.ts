@@ -4,10 +4,10 @@
 /**
  * Post-deploy smoke for www.boardsesh.com, or a Railway origin via `--base`.
  *
- * Everything here is origin-agnostic on purpose: www is served by Vercel today
- * and by the Railway `web` service after the DNS flip, and during the overlap
- * both are smoked by the same run. Nothing may assume a Vercel-shaped response —
- * see the cache-control parsing below for the one place that used to.
+ * Everything here is origin-agnostic: www runs on the Railway `web` service,
+ * and the same checks cover its public hostname and direct deployment origin.
+ * The earlier Vercel-to-Railway transition used this same suite for both hosts;
+ * nothing assumes a Vercel-shaped response.
  *
  * `deploy-web` had no post-deploy verification at all: a deploy that built and
  * uploaded cleanly but 500s on every request reported success, and the first

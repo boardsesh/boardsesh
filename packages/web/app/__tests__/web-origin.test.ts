@@ -61,6 +61,8 @@ describe('web origin protection', () => {
   });
   it.each([
     '/fr/gyms',
+    '/api/v1/grades/kilter',
+    '/api/v1/angles/kilter/1',
     '/api/auth/session',
     '/api/internal/revalidate',
     '/_next/static/app.js',
@@ -71,6 +73,9 @@ describe('web origin protection', () => {
     const response = middleware(request(path, secret));
     expect(response.status).toBe(200);
     expect(JSON.stringify([...response.headers])).not.toContain(secret);
+    // Next needs an explicit header override: a bare next() forwards the
+    // original headers even though our routing Request was sanitized.
+    expect(response.headers.get('x-middleware-override-headers')).toContain('cookie');
     expect(response.headers.get('x-middleware-override-headers')).not.toContain(WEB_ORIGIN_HEADER);
     if (path.includes('.')) expect(response.headers.has('x-middleware-rewrite')).toBe(false);
   });

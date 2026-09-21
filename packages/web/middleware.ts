@@ -188,7 +188,7 @@ function pageMiddleware(request: NextRequest) {
 
       // Allow special routes to pass through
       if (SPECIAL_ROUTES.includes(routeIdentifier)) {
-        return NextResponse.next();
+        return NextResponse.next({ request: { headers: request.headers } });
       }
 
       // For all other routes, validate board name
