@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T05:12:33.901Z",
+  "generatedAt": "2026-09-21T07:18:24.292Z",
   "entries": [
+    {
+      "prNumber": 5644,
+      "category": "fixed",
+      "title": "Return to your board’s climbs without choosing it again.",
+      "mergedAt": "2026-09-21T07:16:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5644",
+      "body": "Open straight into your last board’s climbs, with Session controls a tap away.\nTap Start to begin your session and jump straight into climbs without a settings flash."
+    },
     {
       "prNumber": 5646,
       "category": "fixed",

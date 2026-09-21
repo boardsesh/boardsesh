@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Return to your board’s climbs without choosing it again. ([#5644](https://github.com/boardsesh/boardsesh/pull/5644))
+  Open straight into your last board’s climbs, with Session controls a tap away.
+  Tap Start to begin your session and jump straight into climbs without a settings flash.
 - App Store 2.5.0 can receive compatible previews and app updates again. ([#5646](https://github.com/boardsesh/boardsesh/pull/5646))
 
 ## 2026-09-20
