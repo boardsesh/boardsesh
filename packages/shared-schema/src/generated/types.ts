@@ -5812,7 +5812,7 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
-  /** Merged native and imported recent history; never represents current wall state. */
+  /** Merged native and imported recent displays, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
