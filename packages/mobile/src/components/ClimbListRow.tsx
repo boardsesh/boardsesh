@@ -284,13 +284,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
   climbRef.current = climb;
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
-  // Board metadata for analytics, read through a ref so the dep-free handlers below
-  // never capture a stale value when the list's board config changes.
   // One place that opens the reaction menu, whether it was reached by long press
   // or by the ⋮ button.
   const openActions = useCallback(() => {
     if (unsupportedRef.current) return;
-    onOpenActionsRef.current?.(climbRef.current);
+    const openActionsMenu = onOpenActionsRef.current;
+    if (!openActionsMenu) return;
+    hapticMedium();
+    openActionsMenu(climbRef.current);
   }, []);
 
   const handleRowPress = useCallback(() => {
@@ -302,14 +303,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
   }, []);
 
   const handleLongPress = useCallback(() => {
-    hapticMedium();
     openActions();
   }, [openActions]);
 
   // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
   // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
   const handleOpenActions = useCallback(() => {
-    hapticMedium();
     openActions();
   }, [openActions]);
 
@@ -331,7 +330,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleOpenActions],
   );
 
-  const canOpenActions = !!onOpenActions;
+  const canOpenActions = !!onOpenActions && !unsupported;
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.

@@ -16,6 +16,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 type AccessibilityCapture = {
   onAccessibilityTap?: () => void;
   accessibilityLabel?: string;
+  accessibilityElementsHidden?: boolean;
   accessibilityActions?: { name: string; label?: string }[];
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
@@ -34,6 +35,7 @@ vi.mock('react-native', () => {
   const capture = (props: AccessibilityCapture): AccessibilityCapture => ({
     onAccessibilityTap: props.onAccessibilityTap,
     accessibilityLabel: props.accessibilityLabel,
+    accessibilityElementsHidden: props.accessibilityElementsHidden,
     accessibilityActions: props.accessibilityActions,
     onAccessibilityAction: props.onAccessibilityAction,
   });
@@ -97,9 +99,10 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 
+const haptics = vi.hoisted(() => ({ medium: vi.fn() }));
 vi.mock('../../lib/haptics', () => ({
   hapticLight: vi.fn(),
-  hapticMedium: vi.fn(),
+  hapticMedium: haptics.medium,
   hapticSuccess: vi.fn(),
 }));
 
@@ -196,6 +199,7 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(a11y.moreButton?.onAccessibilityTap).toBeTypeOf('function');
     expect(a11y.moreButton?.onAccessibilityAction).toBeTypeOf('function');
     expect(a11y.moreButton?.accessibilityActions).toBeUndefined();
+    expect(a11y.moreButton?.accessibilityElementsHidden).toBe(true);
 
     a11y.moreButton?.onAccessibilityTap?.();
     expect(onOpenActions).toHaveBeenCalledTimes(1);
@@ -242,6 +246,7 @@ describe('ClimbListRow screen-reader activation', () => {
     a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
     expect(onOpenActions).toHaveBeenCalledTimes(1);
     expect(onOpenActions).toHaveBeenCalledWith(climb);
+    expect(haptics.medium).toHaveBeenCalledTimes(1);
   });
 
   // A row that cannot open the menu must not advertise it.
@@ -258,6 +263,31 @@ describe('ClimbListRow screen-reader activation', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} />);
 
     expect(a11y.row?.accessibilityLabel).toBeUndefined();
+  });
+
+  it('does not advertise or acknowledge a menu action on an unsupported row', () => {
+    const onOpenActions = vi.fn();
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={onOpenActions} unsupported />);
+
+    expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+    expect(a11y.row?.accessibilityActions).toBeUndefined();
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
+    expect(onOpenActions).not.toHaveBeenCalled();
+    expect(haptics.medium).not.toHaveBeenCalled();
+  });
+
+  it('does not acknowledge an action after its menu handler is removed', () => {
+    const onOpenActions = vi.fn();
+    const { rerender } = render(
+      <ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={onOpenActions} />,
+    );
+    const oldActionHandler = a11y.row?.onAccessibilityAction;
+    expect(oldActionHandler).toBeTypeOf('function');
+    rerender(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} />);
+
+    oldActionHandler?.({ nativeEvent: { actionName: 'moreActions' } });
+    expect(onOpenActions).not.toHaveBeenCalled();
+    expect(haptics.medium).not.toHaveBeenCalled();
   });
 
   it('keeps one accessibilityActions array across rerenders', () => {
@@ -295,6 +325,7 @@ describe('ClimbListRow screen-reader activation on Android', () => {
         { name: 'moreActions', label: 'mobile.climbRow.moreActions' },
       ]);
       expect(a11y.moreButton?.accessibilityActions).toEqual([{ name: 'activate' }]);
+      expect(a11y.moreButton?.accessibilityElementsHidden).toBeUndefined();
     } finally {
       platform.OS = 'ios';
       vi.resetModules();
