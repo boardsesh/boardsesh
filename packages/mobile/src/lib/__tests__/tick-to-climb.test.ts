@@ -52,6 +52,11 @@ describe('tickToClimb', () => {
     expect(climb?.stars).toBe(0);
   });
 
+  it('counts route frames using the renderer grammar, retaining quoted hold frames', () => {
+    expect(tickToClimb(makeTick({ frames: 'p1r15,"x1p2r15,",' }))?.framesCount).toBe(3);
+    expect(tickToClimb(makeTick({ frames: 'p1r15,,' }))?.framesCount).toBe(1);
+  });
+
   it('marks benchmark difficulty only when the tick is a benchmark', () => {
     expect(tickToClimb(makeTick({ isBenchmark: true, difficultyName: 'V5' }))?.benchmark_difficulty).toBe('V5');
     expect(tickToClimb(makeTick({ isBenchmark: false, difficultyName: 'V5' }))?.benchmark_difficulty).toBeNull();

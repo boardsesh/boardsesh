@@ -223,7 +223,11 @@ vi.mock('react-i18next', () => ({
   // key there would pass even if the name argument never reached the catalog.
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      key === 'mobile.queue.addedByAria' ? `Added by ${String(options?.name)}` : key,
+      key === 'mobile.queue.addedByAria'
+        ? `Added by ${String(options?.name)}`
+        : key === 'mobile.climbRow.frameCount'
+          ? `${String(options?.count)} frames`
+          : key,
   }),
 }));
 
@@ -354,6 +358,24 @@ describe('QueueItemRow React.memo', () => {
     rerender(<QueueItemRow item={makeItem('b', 'New Climb')} {...props} />);
     oldRelease({ translationX: -220 }, true);
     expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 1, 3])('announces frame counts only for routes: %s', (framesCount) => {
+    const item = makeItem('route', 'Long Route');
+    item.climb.framesCount = framesCount;
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={onPress}
+        onRemove={onRemove}
+      />,
+    );
+    expect(a11y.row?.accessibilityLabel).toBe(
+      framesCount === 3 ? 'Long Route, mobile.queue.positionLabel, 3 frames' : 'Long Route, mobile.queue.positionLabel',
+    );
   });
 
   it('skips re-render when given referentially-equal props', () => {

@@ -47,6 +47,7 @@ vi.mock('../../../PressableSurface', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { count?: number; formattedCount?: string }) => {
+      if (key === 'mobile.climbRow.frameCount') return `${options?.count} frames`;
       if (key === 'sends') return `${options?.formattedCount ?? options?.count} sends`;
       if (key === 'playView.tickBar.starRating') return `${options?.count} stars`;
       return key;
@@ -120,6 +121,19 @@ describe('WorkoutPreviewRow refresh button', () => {
   it('announces the visible climb details on the row action', () => {
     renderRow({ isRefreshing: false, refreshDisabled: false });
     expect(rowButton()?.label).toBe('Test Climb, V4, 12 sends, 4 stars, setter');
+  });
+
+  it('updates the row label when a route frame count arrives for the same climb', () => {
+    const onPress = vi.fn();
+    const onRefresh = vi.fn();
+    const props = { board, isActive: false, isRefreshing: false, refreshDisabled: false, onPress, onRefresh };
+    const { rerender } = render(createElement(WorkoutPreviewRow, { ...props, item }));
+    expect(rowButton()?.label).not.toContain('frames');
+    surfaces.entries = [];
+    rerender(
+      createElement(WorkoutPreviewRow, { ...props, item: { ...item, climb: { ...item.climb, framesCount: 4 } } }),
+    );
+    expect(rowButton()?.label).toBe('Test Climb, V4, 4 frames, 12 sends, 4 stars, setter');
   });
 
   it('falls back safely when the climb payload is missing', () => {
