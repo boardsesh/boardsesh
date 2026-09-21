@@ -578,10 +578,7 @@ export const SHARED_EVENTS = {
   // its row — that's the kill signal for a tip.
   OnboardingTipDismissed: 'Onboarding Tip Dismissed',
   // The banner body was tapped, taking the climber wherever the tip points (the
-  // quick-actions tip opens More, where the ⋮ setting lives). The outcome metric
-  // is separate and already exists: `Climb Actions Opened`'s `source` split
-  // within `surface = 'climbs_list'` says whether the long-press share actually
-  // moved after a tip was shown.
+  // quick-actions tip opens More, where the ⋮ setting lives).
   OnboardingTipPressed: 'Onboarding Tip Pressed',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the

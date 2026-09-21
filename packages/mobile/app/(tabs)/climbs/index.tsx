@@ -108,13 +108,13 @@ import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-autho
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
+import { clearBoardRevealTipPending, hasBoardRevealTipPending } from '../../../src/lib/onboarding/onboarding-storage';
 import {
-  clearBoardRevealTipPending,
-  hasBoardRevealTipPending,
-  markTipSeen,
-} from '../../../src/lib/onboarding/onboarding-storage';
-import { QUICK_ACTIONS_TIP_NAME, resolveQuickActionsTip } from '../../../src/lib/onboarding/quick-actions-tip';
-import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
+  QUICK_ACTIONS_TIP_NAME,
+  markQuickActionsTipSeen,
+  resolveQuickActionsTip,
+} from '../../../src/lib/onboarding/quick-actions-tip';
+import { useQuickActionsTipVisibility } from '../../../src/lib/onboarding/use-quick-actions-tip-visibility';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -490,11 +490,12 @@ function ClimbListInner() {
   // banner is gone, so the two never stack, and still one-shot.
   const [quickActionsTipArmed, setQuickActionsTipArmed] = useState(false);
   const quickActionsTipVisitRef = useRef(0);
+  const quickActionsTipShownRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       void resolveQuickActionsTip().then(({ armed, visitCount }) => {
-        if (cancelled || !armed) return;
+        if (cancelled || !armed || quickActionsTipShownRef.current) return;
         quickActionsTipVisitRef.current = visitCount;
         setQuickActionsTipArmed(true);
       });
@@ -503,7 +504,7 @@ function ClimbListInner() {
       };
     }, []),
   );
-  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip && !connectCardVisible;
+  const showQuickActionsTip = useQuickActionsTipVisibility(quickActionsTipArmed, showRevealTip || connectCardVisible);
   const dismissQuickActionsTip = useCallback(() => {
     track(SHARED_EVENTS.OnboardingTipDismissed, { tip: QUICK_ACTIONS_TIP_NAME });
     setQuickActionsTipArmed(false);
@@ -517,12 +518,15 @@ function ClimbListInner() {
     router.push('/(tabs)/profile/more');
   }, [router]);
   useEffect(() => {
-    if (!showQuickActionsTip) return;
+    if (!showQuickActionsTip || quickActionsTipShownRef.current) return;
+    // Refocus or a reveal-banner toggle must not repeat the shown event. The
+    // launch-local seen flag also covers refocus before SecureStore settles.
+    quickActionsTipShownRef.current = true;
+    void markQuickActionsTipSeen();
     track(SHARED_EVENTS.OnboardingTipShown, {
       tip: QUICK_ACTIONS_TIP_NAME,
       visitCount: quickActionsTipVisitRef.current,
     });
-    void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
 
   // Screenshot mode: a second board-view shot renders a different wall via
