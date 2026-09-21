@@ -222,6 +222,27 @@ above is the sharpest example of this rule; the two render-mode flags below are
 a plainer one — the shipped defaults ARE the unresolved reading, so there is
 nothing to invert.
 
+### Optional board-account linking during first-run
+
+`board-link-onboarding-step` is a positive mobile rollout flag: missing, unresolved,
+or false skips the extra step. The onboarding board picker checks for a supported
+board, connectivity, no previous answer and a known empty credential list. Once
+binding and its optional download dialog finish, only a known eligible result
+opens the link card; unresolved eligibility continues to Climbs. Direct navigation
+to the link step also respects the flag and supported-board check.
+
+The card is optional. Linking and Not now record an answered marker in app-sandbox
+preferences; Android Back declines the card, or closes its credential dialog first.
+Closing the dialog without linking does not answer the card. A failed preference
+write is reported without blocking exit. MoonBoard retains its separate file-import
+flow. Linked accounts sync available history with variable timing; this step adds
+no complete-history or delivery-time guarantee.
+
+Testers can enable **Onboarding board-account link step** in More → Feature Flags.
+Production rollout is a separate action: compare board activations per tour start
+across cohorts and inspect prompt decline/abandonment before expanding exposure.
+This change does not enable the production flag.
+
 ### Boolean vs multivariate
 
 Most flags are plain on/off: `FeatureFlags[key]` is `boolean | undefined`, read

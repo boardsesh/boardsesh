@@ -19,9 +19,7 @@ describe('shouldOfferLink', () => {
     expect(shouldOfferLink({ ...base, enabled: false })).toBe('none');
   });
 
-  // The important exclusion. MoonBoard has no credential flow at all — the only
-  // way in is a CSV obtained by emailing Moon Climbing a GDPR request, which takes
-  // days. A card promising sends "in a few minutes" would be a lie.
+  // MoonBoard uses the separate file-import flow.
   it('never offers a link for MoonBoard, which cannot be linked', () => {
     expect(shouldOfferLink({ ...base, boardType: 'moonboard' })).toBe('none');
   });
@@ -30,8 +28,7 @@ describe('shouldOfferLink', () => {
     expect(shouldOfferLink({ ...base, boardType: undefined })).toBe('none');
   });
 
-  // Offline the form cannot submit and the "already linked?" read cannot resolve.
-  // Skipping leaves the marker unwritten, so they are asked on a later launch.
+  // Offline skips the optional form without writing an answer.
   it('skips the step offline rather than burning the question on a screen that cannot work', () => {
     expect(shouldOfferLink({ ...base, isOffline: true })).toBe('none');
   });
@@ -48,9 +45,7 @@ describe('shouldOfferLink', () => {
     expect(shouldOfferLink({ ...base, hasLinkedAccount: true })).toBe('none');
   });
 
-  // The load-bearing one. The credentials query is `offlineFirst`, so it can stay
-  // pending; reading that as "not linked" would put a first-run card in front of
-  // someone whose account has been connected for months.
+  // Unresolved credentials never mean the account is unlinked.
   it('waits — never shows — while the credential read is unresolved', () => {
     expect(shouldOfferLink({ ...base, hasLinkedAccount: undefined })).toBe('wait');
   });

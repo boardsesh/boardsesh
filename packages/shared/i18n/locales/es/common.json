@@ -741,7 +741,7 @@
       },
       "link": {
         "title": "Trae contigo tus encadenamientos de {{boardName}}",
-        "body": "Tu cuenta de {{boardName}} es de quienes fabrican el plafón. Boardsesh va aparte: mismo correo, pero ninguna de las dos sabe de la otra. Vincúlalas y tus encadenamientos, intentos y valoraciones llegan aquí, así tu historial empieza lleno.",
+        "body": "Tu cuenta de {{boardName}} y Boardsesh son independientes, aunque uses el mismo correo. Vincula tu cuenta para sincronizar los encadenamientos disponibles con tu logbook. El tiempo de sincronización y el historial disponible varían.",
         "footnote": "Para vincular necesitas tu usuario de {{boardName}}, no tu correo.",
         "continue": "Vincular mi cuenta de {{boardName}}",
         "skip": "Ahora no",

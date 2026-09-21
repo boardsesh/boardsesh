@@ -115,6 +115,7 @@ async function runOnBound(board: UserBoard = BOARD) {
 describe('OnboardingBoardRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activateBoardMock.mockReset().mockResolvedValue(undefined);
     confirmAndDownloadMock.mockResolvedValue(true);
     boardsCtrl.boards = [BOARD];
     boardsCtrl.isLoading = false;
@@ -134,7 +135,7 @@ describe('OnboardingBoardRoute', () => {
     renderRoute();
 
     expect(activateOptionsCtrl.last?.source).toBe('onboarding');
-    (activateOptionsCtrl.last?.navigate as () => void)();
+    (activateOptionsCtrl.last!.navigate as () => void)();
     expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
   });
 
@@ -146,7 +147,7 @@ describe('OnboardingBoardRoute', () => {
     const bindAndLeave = async (board: UserBoard = BOARD) => {
       stepCtrl.props?.onSelect(board);
       await waitFor(() => expect(activateOptionsCtrl.last?.navigate).toBeTypeOf('function'));
-      (activateOptionsCtrl.last?.navigate as () => void)();
+      (activateOptionsCtrl.last!.navigate as () => void)();
     };
 
     it('goes straight to Climbs while the flag is off, exactly as before', async () => {
@@ -168,6 +169,36 @@ describe('OnboardingBoardRoute', () => {
       );
     });
 
+    it('keeps the pending selection when another board is tapped before binding finishes', async () => {
+      envCtrl.linkStepEnabled = true;
+      let finishBinding!: () => void;
+      activateBoardMock.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishBinding = resolve;
+          }),
+      );
+      renderRoute();
+      await waitFor(() => expect(stepCtrl.props).not.toBeNull());
+      stepCtrl.props?.onSelect(BOARD);
+      stepCtrl.props?.onSelect({ ...BOARD, uuid: 'board-2', boardType: 'tension' } as UserBoard);
+      expect(activateBoardMock).toHaveBeenCalledTimes(1);
+      (activateOptionsCtrl.last!.navigate as () => void)();
+      expect(replaceMock).toHaveBeenCalledWith({
+        pathname: '/onboarding',
+        params: { step: 'link', boardType: 'kilter' },
+      });
+      finishBinding();
+    });
+
+    it('allows a new selection after the previous activation settles', async () => {
+      renderRoute();
+      stepCtrl.props?.onSelect(BOARD);
+      await waitFor(() => expect(activateBoardMock).toHaveBeenCalledTimes(1));
+      stepCtrl.props?.onSelect(BOARD);
+      expect(activateBoardMock).toHaveBeenCalledTimes(2);
+    });
+
     it('skips the card for a climber who already linked an account', async () => {
       envCtrl.linkStepEnabled = true;
       envCtrl.credentials = [{ boardType: 'kilter' }];
@@ -177,8 +208,7 @@ describe('OnboardingBoardRoute', () => {
       expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
     });
 
-    // MoonBoard has no credential flow — its only route in is a CSV obtained by
-    // emailing Moon Climbing a GDPR request.
+    // MoonBoard uses the separate file-import flow.
     it('skips the card for MoonBoard, which cannot be linked', async () => {
       envCtrl.linkStepEnabled = true;
       renderRoute();
