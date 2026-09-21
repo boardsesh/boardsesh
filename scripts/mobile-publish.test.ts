@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   publishSelfHostedPlatformWithRetry,
+  PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES,
   type OtaPublishPlatform,
   type PlatformPublishOutcome,
 } from './lib/mobile-publish-retry';
@@ -270,6 +271,63 @@ describe('resolving the runtimeVersion a publish targeted', () => {
 
     expect(resolvePublishedRuntimeVersion('ios', env, runner)).toBeNull();
   });
+
+  it('confirms the fingerprint twice with the same platform environment and bounded calls', () => {
+    const fingerprint = 'b71bdb600c5a3e954d75c9ca673f056c62247ea9';
+    const platformEnv = processEnv({ NODE_ENV: 'test', GOOGLE_MAPS_API_KEY: 'test-only-key' });
+    const runner = vi.fn((_command: string, _args: string[], options: { timeout: number; env: NodeJS.ProcessEnv }) => {
+      expect(options.env).toBe(platformEnv);
+      return fingerprint;
+    });
+    expect(resolvePublishedRuntimeVersion('android', platformEnv, runner as unknown as typeof execFileSync)).toBe(
+      fingerprint,
+    );
+    expect(runner).toHaveBeenCalledTimes(2);
+    const maximumResolveMilliseconds = runner.mock.calls.reduce((total, [, , options]) => total + options.timeout, 0);
+    expect(PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES * 60_000).toBeGreaterThanOrEqual(maximumResolveMilliseconds);
+    for (const call of [1, 2]) {
+      expect(runner).toHaveBeenNthCalledWith(
+        call,
+        'vp',
+        ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', 'android'],
+        expect.objectContaining({ env: platformEnv, timeout: 60_000 }),
+      );
+    }
+  });
+
+  it.each(['different', 'missing', 'failed'] as const)(
+    'does not fail a deduplicated publish after a %s confirmation',
+    async (confirmation) => {
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const fingerprint = 'b71bdb600c5a3e954d75c9ca673f056c62247ea9';
+      const runner = vi
+        .fn()
+        .mockReturnValueOnce(fingerprint)
+        .mockImplementationOnce(() => {
+          if (confirmation === 'failed') throw new Error('resolver timed out');
+          return confirmation === 'missing' ? 'no result' : 'fbc79fa47dc82e393350702a3a3b0d7fe869b164';
+        });
+      const runtimeVersion = resolvePublishedRuntimeVersion('ios', env, runner as unknown as typeof execFileSync);
+      expect(runtimeVersion).toBeNull();
+      expect(warning).toHaveBeenCalledWith(expect.stringContaining('could not confirm a stable runtimeVersion'));
+      const fetchImpl = vi.fn<typeof fetch>();
+      await expect(
+        verifyPreviewBranchIsSurfable(
+          'pr-5417',
+          {
+            platform: 'ios',
+            success: true,
+            attempts: 1,
+            failureKind: null,
+            noChange: true,
+          },
+          'https://updates.boardsesh.com/manifest',
+          { runtimeVersion, fetchImpl },
+        ),
+      ).resolves.toBe(true);
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
 
   it('gates the check on GitHub Actions specifically, not a generic CI flag', () => {
     // `CI=1` in a local shell is not "resolved on the runner the binaries are built

@@ -269,7 +269,8 @@ export type SurfabilityProbeOptions = {
  * compat hash asked the server about a runtimeVersion nothing was ever published
  * under: run 34796068541 failed a healthy publish exactly that way.
  *
- * Null when the resolve fails, which is a skip, never a verdict.
+ * Two independent resolves must agree: the CLI can return a plausible but unstable
+ * fingerprint. Null on failure or disagreement means a skip, never an absence verdict.
  */
 /** Generous against a ~10s resolve, and short against a 165-minute job timeout. */
 const RUNTIME_VERSION_RESOLVE_TIMEOUT_MS = 60_000;
@@ -279,25 +280,30 @@ export function resolvePublishedRuntimeVersion(
   env: NodeJS.ProcessEnv,
   runner: typeof execFileSync = execFileSync,
 ): string | null {
-  try {
-    const stdout = runner('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
-      cwd: MOBILE_DIR,
-      env,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 32 * 1024 * 1024,
-      // A resolve takes ~10s. Without a cap, one that hangs parks the publish step
-      // until the job's own timeout — 165 minutes later, having already uploaded
-      // everything — and the only symptom would be a job that never finished. A
-      // timeout throws, which this catches and reports as "cannot check".
-      timeout: RUNTIME_VERSION_RESOLVE_TIMEOUT_MS,
-    });
-    // The CLI prints the hash on its own line, sometimes after other chatter.
-    const match = /\b[0-9a-f]{40}\b/.exec(String(stdout));
-    return match?.[0] ?? null;
-  } catch {
-    return null;
-  }
+  const resolveOnce = (): string | null => {
+    try {
+      const stdout = runner('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
+        cwd: MOBILE_DIR,
+        env,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 32 * 1024 * 1024,
+        timeout: RUNTIME_VERSION_RESOLVE_TIMEOUT_MS,
+      });
+      // The CLI can print progress before its standalone fingerprint.
+      const match = /\b[0-9a-f]{40}\b/.exec(String(stdout));
+      return match?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const firstFingerprint = resolveOnce();
+  const confirmedFingerprint = firstFingerprint === null ? null : resolveOnce();
+  if (firstFingerprint !== null && firstFingerprint === confirmedFingerprint) return firstFingerprint;
+  console.warn(
+    `[mobile:publish] ${platform}: could not confirm a stable runtimeVersion; skipping the branch-availability verdict.`,
+  );
+  return null;
 }
 
 /**
@@ -453,7 +459,7 @@ async function publishToSelfHostedBranch(
     return platformEnv;
   };
 
-  // Resolved lazily and once per platform: it costs a ~10s CLI call, and it is
+  // Resolved lazily as two agreeing reads per platform, then cached (~20s total). It is
   // only ever needed for a `pr-<n>` publish in CI. A local publish resolves a hash
   // no shipped binary runs (@expo/fingerprint is not deterministic across macOS and
   // Linux), so the check is skipped there rather than answered wrongly.

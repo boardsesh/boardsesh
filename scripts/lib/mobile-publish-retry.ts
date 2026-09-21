@@ -58,6 +58,9 @@ const SELF_HOSTED_PUBLISH_LADDER_MINUTES =
 export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
   SELF_HOSTED_PUBLISH_LADDER_MINUTES + SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_COST_MINUTES;
 
+/** Two bounded 60-second fingerprint resolves, cached once per preview platform. */
+export const PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES = 2;
+
 /**
  * The same, for a preview publish: every attempt may confirm a 524, and the whole
  * platform is verified once more at the end on the longer, propagation-tolerant
@@ -66,7 +69,8 @@ export const SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM =
 export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
   SELF_HOSTED_PUBLISH_LADDER_MINUTES +
   SELF_HOSTED_PUBLISH_MAX_ATTEMPTS * SELF_HOSTED_PUBLISH_ATTEMPT_BUDGET_MINUTES +
-  SURFABILITY_PROBE_BUDGET_MINUTES;
+  SURFABILITY_PROBE_BUDGET_MINUTES +
+  PREVIEW_RUNTIME_RESOLUTION_BUDGET_MINUTES;
 
 /**
  * Everything a publish job does around the publish steps themselves. Dominated

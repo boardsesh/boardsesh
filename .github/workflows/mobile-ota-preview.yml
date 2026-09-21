@@ -194,6 +194,7 @@ jobs:
               path === 'pnpm-workspace.yaml' ||
               path === 'scripts/mobile-publish.ts' ||
               path === 'scripts/lib/mobile-publish-retry.ts' ||
+              path === 'scripts/lib/ota-branch-probe.ts' ||
               path === 'scripts/lib/eoas.ts' ||
               path === '.github/workflows/mobile-ota-preview.yml';
 

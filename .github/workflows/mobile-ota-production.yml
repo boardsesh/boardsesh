@@ -52,6 +52,7 @@ on:
       - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'
+      - 'scripts/lib/ota-branch-probe.ts'
       - 'scripts/lib/eoas.ts'
       - '.github/workflows/mobile-ota-production.yml'
   workflow_dispatch:

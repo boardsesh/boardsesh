@@ -1271,7 +1271,10 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   check — which has no key, and whose header says its absolute hashes are meaningless for exactly this
   reason — resolves a *different* Android hash. Passing that one in failed a healthy publish in run
   34796068541. Skipped entirely outside CI, where a locally resolved fingerprint is not the one any
-  binary runs.
+  binary runs. Two independent, bounded resolves must agree before their result is cached for
+  the platform. A mismatch or failed confirmation reports that the runtime cannot be checked;
+  it cannot combine with `no-change` to fail the publish. The preview timeout budget includes
+  both 60-second resolver caps once per platform, even when a later probe reuses the cached result.
   Shared with `vp run mobile:ota-surf-doctor` through `scripts/lib/ota-branch-probe.ts`, so the
   diagnostic and the publisher can never disagree about what "surfable" means. The probe re-asks on a
   miss (~31 s across five waits) before failing: the branch list lags a finished publish by up to the
