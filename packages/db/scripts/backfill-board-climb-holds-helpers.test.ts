@@ -15,6 +15,17 @@ void test('backfill skips unknown roles until the same hold has a valid state', 
   ]);
 });
 
-void test('backfill rejects non-Aurora board types', () => {
-  assert.deepEqual(projectBackfillFrames('moonboard', 'p1r42'), []);
+void test('backfill preserves existing Woods and spray single-frame parsing', () => {
+  assert.deepEqual(projectBackfillFrames('woods', 'p0r4p1r3'), [
+    { holdId: 0, frameNumber: 0, holdState: 'STARTING' },
+    { holdId: 1, frameNumber: 0, holdState: 'FINISH' },
+  ]);
+  assert.deepEqual(projectBackfillFrames('spray', 'p1r1p2r3p3r999'), [
+    { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+    { holdId: 2, frameNumber: 0, holdState: 'FINISH' },
+  ]);
+});
+
+void test('backfill rejects unknown board types', () => {
+  assert.deepEqual(projectBackfillFrames('unknown', 'p1r42'), []);
 });

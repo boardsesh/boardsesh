@@ -29,7 +29,13 @@ test('duplicate SQL distinguishes rule sets and Woods physical sizes', async () 
   );
   await db.insert(boardClimbHolds).values(
     cases.flatMap((climb) => [
-      { boardType: climb.boardType, climbUuid: climb.uuid, frameNumber: 0, holdId: 0, holdState: 'STARTING' },
+      {
+        boardType: climb.boardType,
+        climbUuid: climb.uuid,
+        frameNumber: 0,
+        holdId: climb.boardType === 'woods' ? 0 : 2,
+        holdState: 'STARTING',
+      },
       { boardType: climb.boardType, climbUuid: climb.uuid, frameNumber: 0, holdId: 1, holdState: 'FINISH' },
     ]),
   );
@@ -41,7 +47,11 @@ test('duplicate SQL distinguishes rule sets and Woods physical sizes', async () 
     { boardType: 'kilter' as const, sizeId: undefined, ruleSignature: 'no_match', expected: 'aurora-legacy' },
     { boardType: 'kilter' as const, sizeId: undefined, ruleSignature: '', expected: 'aurora-explicit' },
   ]) {
-    const match = await findExactDuplicateMatch({ ...example, layoutId: 1, signature });
+    const match = await findExactDuplicateMatch({
+      ...example,
+      layoutId: 1,
+      signature: example.boardType === 'woods' ? signature : '1:FINISH,2:STARTING',
+    });
     expect(match?.uuid).toBe(example.expected);
   }
   expect(

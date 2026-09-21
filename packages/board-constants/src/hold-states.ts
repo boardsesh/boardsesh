@@ -408,6 +408,11 @@ export function legacyAuroraRawFrameHoldEvents(frames: string, board: AuroraBoar
 }
 
 /** True for boards whose climb frames use Aurora's p/r/x grammar. */
+/** Woods uses zero-based, code-driven hold IDs; other catalogs start above zero. */
+export function minimumStoredHoldId(boardType: string): 0 | 1 {
+  return boardType === 'woods' ? 0 : 1;
+}
+
 export function isAuroraBoardName(board: string): board is AuroraBoardName {
   return (AURORA_BOARDS as readonly string[]).includes(board);
 }
