@@ -14,14 +14,24 @@ vi.mock('react-native', () => ({
   View: ({
     children,
     style,
+    accessible,
     accessibilityLabel,
   }: {
     children?: ReactNode;
     style?: unknown;
+    accessible?: boolean;
     accessibilityLabel?: string;
   }) => {
     const flattened = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
-    return createElement('div', { 'data-style': JSON.stringify(flattened), 'data-a11y': accessibilityLabel }, children);
+    return createElement(
+      'div',
+      {
+        'data-style': JSON.stringify(flattened),
+        'data-accessible': String(accessible),
+        'data-a11y': accessibilityLabel,
+      },
+      children,
+    );
   },
 }));
 
@@ -75,6 +85,7 @@ describe('ClimbFramesBadge', () => {
 
   it('labels itself with the pluralised frame count for screen readers', () => {
     const { container } = render(<ClimbFramesBadge framesCount={3} />);
+    expect(chip(container)?.getAttribute('data-accessible')).toBe('true');
     expect(chip(container)?.getAttribute('data-a11y')).toBe('mobile.climbRow.frameCount:3');
   });
 

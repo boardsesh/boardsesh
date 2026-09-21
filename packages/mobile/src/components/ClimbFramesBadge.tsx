@@ -54,6 +54,10 @@ export const ClimbFramesBadge = memo(function ClimbFramesBadge({
 
   return (
     <View
+      // Group the decorative glyph and visible count into the one labelled
+      // screen-reader element. `accessibilityRole` does not establish that
+      // grouping by itself on every React Native platform.
+      accessible
       accessibilityRole="text"
       accessibilityLabel={t('mobile.climbRow.frameCount', { count: framesCount })}
       style={[styles.badge, compact ? styles.badgeCompact : null]}
