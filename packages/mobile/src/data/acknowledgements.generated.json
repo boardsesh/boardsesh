@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-09-14T13:47:06.844Z",
+  "generatedAt": "2026-09-21T13:48:53.860Z",
   "contributors": [
     {
       "login": "marcodejongh",
       "name": "Marco de Jongh",
       "avatarUrl": "https://avatars.githubusercontent.com/u/1107647?u=63993f18e3d652404c7a04ae91a5f7a505fdef5c&v=4",
       "htmlUrl": "https://github.com/marcodejongh",
-      "pullRequests": 3723,
-      "issues": 1191,
-      "contributions": 4914
+      "pullRequests": 3841,
+      "issues": 1268,
+      "contributions": 5109
     },
     {
       "login": "ES-Alexander",
@@ -29,22 +29,22 @@
       "contributions": 29
     },
     {
-      "login": "fallaciousreasoning",
-      "name": "Jay Harris",
-      "avatarUrl": "https://avatars.githubusercontent.com/u/7678024?v=4",
-      "htmlUrl": "https://github.com/fallaciousreasoning",
-      "pullRequests": 25,
-      "issues": 1,
-      "contributions": 26
-    },
-    {
       "login": "alejandrosanchezcabana",
       "name": "Alex Sánchez",
       "avatarUrl": "https://avatars.githubusercontent.com/u/10997544?u=41ac204494f58d9a5f32b3652af16a75c20869df&v=4",
       "htmlUrl": "https://github.com/alejandrosanchezcabana",
-      "pullRequests": 23,
+      "pullRequests": 26,
       "issues": 2,
-      "contributions": 25
+      "contributions": 28
+    },
+    {
+      "login": "fallaciousreasoning",
+      "name": "Jay Harris",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/7678024?v=4",
+      "htmlUrl": "https://github.com/fallaciousreasoning",
+      "pullRequests": 26,
+      "issues": 1,
+      "contributions": 27
     },
     {
       "login": "gardaholm",
@@ -377,7 +377,13 @@
       "name": "Alec Douglas",
       "avatarUrl": "https://avatars.githubusercontent.com/u/3189085?u=216caa536c024c8dda5a246d0e329c9f25482f98&v=4",
       "url": "https://github.com/alecgdouglas"
+    },
+    {
+      "login": "Emilio-Ramirez",
+      "name": "Emilio Ramírez Mascarúa",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/82593334?u=0308fc8b3af172a985c66c940727a22f94675e21&v=4",
+      "url": "https://github.com/Emilio-Ramirez"
     }
   ],
-  "privateSponsorCount": 2
+  "privateSponsorCount": 3
 }
