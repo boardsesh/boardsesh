@@ -428,6 +428,15 @@ describe('BluetoothQuickstartSheet when the scan cannot run (#5654)', () => {
     expect(button(container, 'ble.scanAgain')).toBeNull();
   });
 
+  it('offers no Scan again in a browser that has Web Bluetooth, whose radio always reads as off', () => {
+    platform.OS = 'web';
+    scan.unavailableReason = 'powered_off';
+    const { container } = renderSheet();
+
+    expect(hasText(container, 'mobile.bluetooth.unavailable')).toBe(true);
+    expect(button(container, 'ble.scanAgain')).toBeNull();
+  });
+
   it('offers Scan again when the scan finished with no boards in range', () => {
     scan.status = 'done';
     const { container } = renderSheet();

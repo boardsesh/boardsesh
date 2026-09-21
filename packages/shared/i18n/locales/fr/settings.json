@@ -438,7 +438,7 @@
     "sendFailedTitle": "Impossible d'allumer la board",
     "connectionFailedTitle": "Connexion impossible",
     "permissionRequired": "Autorisation Bluetooth requise",
-    "errorPermissionDenied": "Autorisez le Bluetooth pour connecter une board.",
+    "errorPermissionDenied": "Autorise le Bluetooth pour connecter une board.",
     "blockedTitle": "Le Bluetooth est bloqué pour Boardsesh",
     "blockedBody": "Autorise le Bluetooth pour Boardsesh dans Réglages pour allumer des blocs sur ta board.",
     "blockedBodyNearbyDevices": "Autorise « Appareils à proximité » pour Boardsesh dans les Paramètres pour allumer des blocs sur ta board.",

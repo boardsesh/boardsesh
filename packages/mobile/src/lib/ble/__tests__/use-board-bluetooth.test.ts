@@ -4379,10 +4379,12 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     vi.mocked(createBluetoothAdapter).mockImplementation(
       (devicePicker, scanFamily, options) => new RealRNBleAdapter(devicePicker, scanFamily, options),
     );
+    mockAppState.currentState = 'active';
     vi.useFakeTimers();
   });
 
   afterEach(() => {
+    mockAppState.currentState = 'active';
     vi.useRealTimers();
   });
 
@@ -4423,5 +4425,53 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
       'Bluetooth Connection Failed',
       expect.objectContaining({ failureReason: 'user_cancelled' }),
     );
+  });
+
+  // The Android session notification's bulb connects with the app in the
+  // background. With the board off, nobody is there to close the picker, and the
+  // in-flight connect would swallow every later bulb tap.
+  it('ends a connect nobody is looking at when its scan finds nothing', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(mockTrack).toHaveBeenCalledWith(
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ failureReason: 'user_cancelled' }),
+    );
+
+    // The next bulb tap scans again instead of being swallowed.
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.startDeviceScan).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the empty picker up behind an iOS call banner, where the climber can still see it', async () => {
+    mockAppState.currentState = 'inactive';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: false });
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      result.current.pickerState?.handleCancel();
+      await vi.advanceTimersByTimeAsync(0);
+    });
   });
 });

@@ -848,6 +848,15 @@ export function useBoardBluetooth({
           setPickerState((prev) => (prev ? { ...prev, devices } : null));
         },
         () => {
+          // Nobody is looking at this picker: the Android session notification's
+          // bulb connects without bringing the app forward. Since the adapters
+          // stopped failing an empty scan, nothing else would end this connect,
+          // and connectInFlightRef would swallow every later bulb tap until the
+          // app is opened. End it with the silent cancel, as unmount does (#5654).
+          if (!isAppActive()) {
+            handleCancel();
+            return;
+          }
           // Scan window closed — drop the spinner. The picker stays open (a
           // device was found but not yet picked, or it shows the empty state).
           setPickerState((prev) => (prev ? { ...prev, isScanning: false } : null));

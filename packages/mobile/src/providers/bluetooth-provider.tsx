@@ -1639,11 +1639,11 @@ export function BluetoothProvider({
 
   // One-shot request to silently reconnect to `serial` once the active board
   // config has actually switched to `configKey`. Set by the switch flow and by
-  // the picker's "Scan again" (same config, so it only waits for the cancelled
-  // connect to settle), cleared by the effect below the moment it fires the
-  // reconnect. A single slot is deliberate (last writer wins): each request
-  // cancels the picker that produced it, so a second request can only come from
-  // a newer flow whose intent supersedes the first.
+  // the picker's "Scan again" (same config, no serial, so it only waits for the
+  // cancelled connect to settle), cleared by the effect below the moment it
+  // fires the reconnect. A single slot is deliberate (last writer wins): each
+  // request cancels the picker that produced it, so a second request can only
+  // come from a newer flow whose intent supersedes the first.
   const [pendingAutoConnect, setPendingAutoConnect] = useState<{
     /**
      * Silent auto-select target. Absent for a deliberate hop to another board at
@@ -1651,8 +1651,6 @@ export function BluetoothProvider({
      * to before, so `connect` opens the picker as it would from a cold tap.
      */
     serial?: string;
-    /** MoonBoard's remembered target, which is a device id rather than a serial. */
-    deviceId?: string;
     configKey: string;
     armUndoToast: boolean;
   } | null>(null);
@@ -1687,43 +1685,38 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, deviceId, armUndoToast } = pendingAutoConnect;
+    const { serial, armUndoToast } = pendingAutoConnect;
     setPendingAutoConnect(null);
     if (armUndoToast) {
       armUndoWallChangeToast();
     }
-    // connect's third/fourth params do a silent auto-select (serial for Aurora,
-    // device id for MoonBoard), falling back to the picker only if that board
-    // never advertises.
-    void connect(undefined, undefined, serial, deviceId);
+    // connect's third param does a silent serial auto-select, falling back to the
+    // picker only if that serial never advertises.
+    void connect(undefined, undefined, serial);
   }, [pendingAutoConnect, boardName, layoutId, sizeId, loading, armUndoWallChangeToast, connect]);
 
   // "Scan again" in a picker whose scan found nothing (#5654). The adapter's
   // connect owns that scan, so instead of teaching both adapters to restart it
   // mid-picker, cancel this picker (the silent user-cancel signature, as the
   // mismatch switch below does) and queue a fresh connect through the one-shot
-  // slot above, which waits for the cancelled one to settle. It targets the
-  // remembered board again, like the bulb does. A first attempt's initialFrames
-  // are not carried over: the auto-sender lights the current climb once the new
-  // link is up, and the climb editor re-sends its frame when it sees the link.
+  // slot above, which waits for the cancelled one to settle. No remembered
+  // target, unlike the bulb: the climber was just looking at the list and asked
+  // for another scan, so the picker comes straight back with a live scan. A
+  // target would close the sheet for the silent 10 s auto-select window first,
+  // with only the bulb spinner to show anything is happening. The remembered
+  // board still lists when it advertises. A first attempt's initialFrames are
+  // not carried over: the auto-sender lights the current climb once the new link
+  // is up, and the climb editor re-sends its frame when it sees the link.
   const handlePickerScanAgain = useCallback(() => {
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
     const armUndoToastAfterRescan = undoWallChangeToastArmIdRef.current !== null;
-    const serial = reconnectSerialForCurrentBoard ?? undefined;
-    const deviceId = reconnectDeviceIdForCurrentBoard ?? undefined;
-    trackBoardConnectTapped({
-      surface: 'picker_scan_again',
-      boardName,
-      reconnect: serial !== undefined || deviceId !== undefined,
-    });
+    trackBoardConnectTapped({ surface: 'picker_scan_again', boardName, reconnect: false });
     pickerStateRef.current?.handleCancel();
     setPendingAutoConnect({
-      serial,
-      deviceId,
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
       armUndoToast: armUndoToastAfterRescan,
     });
-  }, [boardName, layoutId, sizeId, boardUuid, reconnectSerialForCurrentBoard, reconnectDeviceIdForCurrentBoard]);
+  }, [boardName, layoutId, sizeId, boardUuid]);
 
   const handleMismatchSwitch = useCallback(
     async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>) => {

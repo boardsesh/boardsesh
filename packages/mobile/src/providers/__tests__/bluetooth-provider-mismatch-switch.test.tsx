@@ -443,7 +443,7 @@ describe('BluetoothProvider mismatch switch', () => {
     );
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined);
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
 
@@ -485,7 +485,7 @@ describe('BluetoothProvider mismatch switch', () => {
       }),
     );
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2', undefined);
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2');
     });
 
     bluetooth.state.isConnected = true;
@@ -736,7 +736,6 @@ describe('BluetoothProvider picker Scan again', () => {
     const pickerState = makeEmptyPickerState();
     bluetooth.state.pickerState = pickerState;
     bluetooth.state.loading = true;
-    bluetooth.state.reconnectSerialForCurrentBoard = 'SN-1';
 
     const { rerender } = renderProvider(KILTER_PROPS);
     act(() => pickerSheet.props?.onScanAgain?.());
@@ -747,48 +746,49 @@ describe('BluetoothProvider picker Scan again', () => {
     expect(analytics.track).toHaveBeenCalledWith('Board Connect Tapped', {
       surface: 'picker_scan_again',
       boardName: 'kilter',
-      reconnect: true,
+      reconnect: false,
     });
 
     rerenderSettled(rerender, KILTER_PROPS);
 
     await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-1', undefined);
+      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
     });
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
 
-  it('targets a remembered MoonBoard by device id', async () => {
-    bluetooth.state.pickerState = makeEmptyPickerState();
-    bluetooth.state.loading = true;
-    bluetooth.state.reconnectDeviceIdForCurrentBoard = 'moon-1';
-    const moonboardProps: BoardProps = { boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: '1' };
+  // A remembered target would run the silent 10 s auto-select with the sheet
+  // closed before the picker came back. The climber asked for the list again.
+  const rememberedTargets: Array<
+    [string, { reconnectSerialForCurrentBoard?: string; reconnectDeviceIdForCurrentBoard?: string }, BoardProps]
+  > = [
+    ['an Aurora serial', { reconnectSerialForCurrentBoard: 'SN-1' }, KILTER_PROPS],
+    [
+      'a MoonBoard device id',
+      { reconnectDeviceIdForCurrentBoard: 'moon-1' },
+      { boardName: 'moonboard', layoutId: 2, sizeId: 1, setIds: '1' },
+    ],
+  ];
+  it.each(rememberedTargets)(
+    'reopens the picker straight away even with %s remembered',
+    async (_label, remembered, props) => {
+      bluetooth.state.pickerState = makeEmptyPickerState();
+      bluetooth.state.loading = true;
+      Object.assign(bluetooth.state, remembered);
 
-    const { rerender } = renderProvider(moonboardProps);
-    act(() => pickerSheet.props?.onScanAgain?.());
-    rerenderSettled(rerender, moonboardProps);
+      const { rerender } = renderProvider(props);
+      act(() => pickerSheet.props?.onScanAgain?.());
+      rerenderSettled(rerender, props);
 
-    await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-1');
-    });
-  });
-
-  it('opens the picker again when no board is remembered', async () => {
-    bluetooth.state.pickerState = makeEmptyPickerState();
-    bluetooth.state.loading = true;
-
-    const { rerender } = renderProvider(KILTER_PROPS);
-    act(() => pickerSheet.props?.onScanAgain?.());
-    rerenderSettled(rerender, KILTER_PROPS);
-
-    await waitFor(() => {
-      expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined, undefined);
-    });
-    expect(analytics.track).toHaveBeenCalledWith(
-      'Board Connect Tapped',
-      expect.objectContaining({ surface: 'picker_scan_again', reconnect: false }),
-    );
-  });
+      await waitFor(() => {
+        expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, undefined);
+      });
+      expect(analytics.track).toHaveBeenCalledWith(
+        'Board Connect Tapped',
+        expect.objectContaining({ surface: 'picker_scan_again', reconnect: false }),
+      );
+    },
+  );
 });
 
 describe('BluetoothProvider spill skip', () => {
