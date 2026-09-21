@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T22:06:32.262Z",
+  "generatedAt": "2026-09-21T22:21:19.541Z",
   "entries": [
+    {
+      "prNumber": 5678,
+      "category": "new",
+      "title": "No board yet? Climbs now takes you straight to yours with Find my board.",
+      "mergedAt": "2026-09-21T22:12:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5678",
+      "body": "Setting up your own Kilter or Tension board starts with the most-used layout and size picked.\nFinding boards near you says when location is off or nothing is within 20 km, and what to do next.\nThe Bluetooth scan tells you up front that MoonBoards don't show up there yet.\nNew on iOS 26? A one-time tip shows you how to get back to your climbs."
+    },
     {
       "prNumber": 5677,
       "category": "new",

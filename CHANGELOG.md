@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- No board yet? Climbs now takes you straight to yours with Find my board. ([#5678](https://github.com/boardsesh/boardsesh/pull/5678))
+  Setting up your own Kilter or Tension board starts with the most-used layout and size picked.
+  Finding boards near you says when location is off or nothing is within 20 km, and what to do next.
+  The Bluetooth scan tells you up front that MoonBoards don't show up there yet.
+  New on iOS 26? A one-time tip shows you how to get back to your climbs.
 - New here? Boardsesh now asks where you climb right after sign-up, then takes you to your board's climbs ([#5677](https://github.com/boardsesh/boardsesh/pull/5677))
   Pick your gym's board nearby or on the map, set up your home wall, or scan for the board in front of you
 - Sign in with Apple or Google right from the top of the screen ([#5674](https://github.com/boardsesh/boardsesh/pull/5674))
