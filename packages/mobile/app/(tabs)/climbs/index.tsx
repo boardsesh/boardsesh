@@ -1448,9 +1448,13 @@ function ClimbListInner() {
   });
   // The filter sheet holds an enforced lock's switch on (disabled) and keeps it
   // set through its Reset, so its "Show N" count matches what Apply will list.
+  // Built from the two flags, so its identity only changes when a lock does (a
+  // pin toggle rebuilds the lock states but rarely changes either flag).
+  const tallLockEnforced = isDimensionLockEnforced(tallLockState);
+  const wideLockEnforced = isDimensionLockEnforced(wideLockState);
   const lockedDimensions = useMemo<LockedDimensions>(
-    () => ({ tall: isDimensionLockEnforced(tallLockState), wide: isDimensionLockEnforced(wideLockState) }),
-    [tallLockState, wideLockState],
+    () => ({ tall: tallLockEnforced, wide: wideLockEnforced }),
+    [tallLockEnforced, wideLockEnforced],
   );
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it

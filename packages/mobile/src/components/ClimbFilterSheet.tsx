@@ -273,6 +273,13 @@ export function ClimbFilterSheet({
   // its native host each present; this just makes the code path uniform).
   const [presentEpoch, setPresentEpoch] = useState(0);
 
+  // Read through a ref, NOT listed as a dep of the sync below: after Reset clears
+  // hasLocalDraftEditsRef, any re-run of that sync re-seeds the draft from the
+  // committed filters and so undoes the Reset. A lock that changes while the
+  // sheet is open still shows, because each switch reads `lockedDimensions`.
+  const lockedDimensionsRef = useRef(lockedDimensions);
+  lockedDimensionsRef.current = lockedDimensions;
+
   // Sync committed parent filters only until the user starts editing. After that,
   // local edits are draft-only until Apply and must not be overwritten by parent
   // ref churn while the sheet is open.
@@ -281,10 +288,13 @@ export function ClimbFilterSheet({
     // These direct setters intentionally bypass the draft-guard wrappers:
     // parent prop sync should not mark committed state as an in-flight edit.
     setLocalFilters(
-      withLockedDimensions(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), lockedDimensions),
+      withLockedDimensions(
+        statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+        lockedDimensionsRef.current,
+      ),
     );
     setLocalBoardFilters(currentBoardFilters);
-  }, [currentFilters, currentBoardFilters, isAuthenticated, lockedDimensions]);
+  }, [currentFilters, currentBoardFilters, isAuthenticated]);
 
   // Safety net for an auth flip while the user is mid-edit. The parent-sync effect
   // also reacts to isAuthenticated, but it early-returns once there are local draft
@@ -1155,10 +1165,12 @@ export function ClimbFilterSheet({
                     <PinToggle kind="tall" />
                   </View>
                   {/* A locked Tall (iOS chip-row lock) reads on and can't be switched
-                      off here; unlock it from the chip. */}
+                      off here; its hint says how to unlock it from the chip. */}
                   <SwitchRow
                     label={t('mobile.filter.tall')}
-                    description={t('mobile.filter.tallDescription')}
+                    description={
+                      lockedDimensions.tall ? t('mobile.filter.tallLockedHint') : t('mobile.filter.tallDescription')
+                    }
                     value={lockedDimensions.tall || !!localFilters.onlyTallClimbs}
                     disabled={lockedDimensions.tall}
                     onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
@@ -1176,7 +1188,9 @@ export function ClimbFilterSheet({
                   </View>
                   <SwitchRow
                     label={t('mobile.filter.wide')}
-                    description={t('mobile.filter.wideDescription')}
+                    description={
+                      lockedDimensions.wide ? t('mobile.filter.wideLockedHint') : t('mobile.filter.wideDescription')
+                    }
                     value={lockedDimensions.wide || !!localFilters.onlyWideClimbs}
                     disabled={lockedDimensions.wide}
                     onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}

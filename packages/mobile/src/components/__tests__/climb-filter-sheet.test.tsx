@@ -358,11 +358,13 @@ vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
 vi.mock('../SwitchRow', () => ({
   SwitchRow: ({
     label,
+    description,
     value,
     onValueChange,
     disabled,
   }: {
     label: string;
+    description?: string;
     value?: boolean;
     onValueChange?: (next: boolean) => void;
     disabled?: boolean;
@@ -371,6 +373,7 @@ vi.mock('../SwitchRow', () => ({
       'button',
       {
         'data-testid': `switch-${label}`,
+        'data-description': description,
         'data-value': String(!!value),
         // Mirrors the real SwitchRow: a disabled row ignores taps.
         onClick: disabled ? undefined : () => onValueChange?.(!value),
@@ -1385,6 +1388,46 @@ describe('ClimbFilterSheet with a locked Tall/Wide', () => {
       expect.objectContaining({ onlyTallClimbs: true, onlyWideClimbs: true }),
       currentBoardFilters,
     );
+  });
+
+  it('explains a locked switch with an unlock hint, and keeps the usual line on an unlocked one', () => {
+    const { getByTestId } = renderFilterSheet({
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyTallClimbs: true },
+      lockedDimensions: { tall: true, wide: false },
+    });
+
+    expect(getByTestId('switch-mobile.filter.tall').getAttribute('data-description')).toBe(
+      'mobile.filter.tallLockedHint',
+    );
+    expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-description')).toBe(
+      'mobile.filter.wideDescription',
+    );
+  });
+
+  // Review of 8a0ac8b14: a pin toggle in the sheet rebuilt `lockedDimensions` on
+  // the screen, re-ran the parent sync and put back every filter Reset had cleared.
+  it('keeps a Reset draft reset when the screen re-renders with an equal but new lockedDimensions', () => {
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const onApply = vi.fn();
+    const rendered = renderFilterSheet({
+      onApply,
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyWideClimbs: true },
+      lockedDimensions: { tall: false, wide: false },
+    });
+
+    fireEvent.click(rendered.getByText('mobile.filter.reset'));
+    expect(rendered.getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
+
+    // e.g. the climber taps a pin: the parent re-renders with a fresh object.
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} lockedDimensions={{ tall: false, wide: false }} />);
+
+    expect(rendered.getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
+    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
+    const [appliedFilters] = onApply.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
+    expect(appliedFilters.onlyWideClimbs).toBeFalsy();
+    expect(appliedFilters.setter).toBeUndefined();
   });
 
   it('seeds a locked dimension into the draft even before the lock has re-applied it', () => {
