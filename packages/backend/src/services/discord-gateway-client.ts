@@ -197,6 +197,7 @@ export function createDiscordGatewayClient(options: DiscordGatewayClientOptions 
           currentSocket.send(JSON.stringify(payload));
         };
         const sendHeartbeat = (): void => {
+          if (currentSocket.readyState !== WebSocket.OPEN) return;
           heartbeatAcknowledged = false;
           sendGatewayPayload({ op: GATEWAY_HEARTBEAT, d: sequenceNumber });
         };
