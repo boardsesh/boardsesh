@@ -538,7 +538,12 @@ What the gate does send is `Board Look Step Evaluated`:
   account's stored mode is `default`, which already draws Aura, and the step's
   question is for climbers who knew the old look. So `would_present` counts
   existing climbers only, and a new account never gets the step on its first
-  bind, whichever way it binds.
+  bind, whichever way it binds. Two edges follow from the marker living on the
+  device, not the account: on a shared phone a new second account retires the
+  step for the older account too, and a device that already stores Classic
+  keeps Classic for the new account (the step never asks a stored mode other
+  than `default`, mark or no mark). With `first-board-picker-kill` on, the gate
+  does not write the mark.
 
 ### One cost worth knowing about
 

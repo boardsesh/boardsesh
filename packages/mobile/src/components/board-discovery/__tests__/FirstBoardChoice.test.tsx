@@ -67,6 +67,7 @@ const callbacks = {
   onScan: vi.fn(),
   onFindGymOnMap: vi.fn(),
   onOpenSettings: vi.fn(),
+  onRetryNearby: vi.fn(),
 };
 
 function renderChoice(gymState: FirstBoardGymState = 'idle') {
@@ -144,6 +145,18 @@ describe('FirstBoardChoice', () => {
     renderChoice('none_nearby');
     expect(screen.getByText('Nothing within 20 km')).toBeTruthy();
     expect(screen.queryByTestId('nearby')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Find your gym on the map' }));
+    expect(callbacks.onFindGymOnMap).toHaveBeenCalledTimes(1);
+  });
+
+  // A failed lookup is not an empty one: a climber standing in a gym must not
+  // be told there is nothing within 20 km because the gym wifi is dead.
+  it('says the lookup failed, with a retry and the map', () => {
+    renderChoice('nearby_error');
+    expect(screen.getByText("Couldn't load boards near you")).toBeTruthy();
+    expect(screen.queryByText('Nothing within 20 km')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(callbacks.onRetryNearby).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Find your gym on the map' }));
     expect(callbacks.onFindGymOnMap).toHaveBeenCalledTimes(1);
   });

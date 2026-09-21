@@ -22,7 +22,13 @@ describe('isFirstBoardMode', () => {
 });
 
 describe('firstBoardGymState', () => {
-  const tapped = { chosen: true, locationStatus: 'granted' as const, nearbyLoading: false, nearbyCount: 0 };
+  const tapped = {
+    chosen: true,
+    locationStatus: 'granted' as const,
+    nearbyLoading: false,
+    nearbyFailed: false,
+    nearbyCount: 0,
+  };
 
   it('shows nothing until "At a gym" is tapped', () => {
     expect(firstBoardGymState({ ...tapped, chosen: false, nearbyCount: 3 })).toBe('idle');
@@ -42,6 +48,24 @@ describe('firstBoardGymState', () => {
 
   it('says when nothing is within 20 km', () => {
     expect(firstBoardGymState(tapped)).toBe('none_nearby');
+  });
+
+  // Dead gym wifi or a backend error must not read as "Nothing within 20 km" to
+  // a climber standing in a gym.
+  it('says the lookup failed instead of claiming nothing is nearby', () => {
+    expect(firstBoardGymState({ ...tapped, nearbyFailed: true })).toBe('nearby_error');
+  });
+
+  it('searches again while a retry after a failure is in flight', () => {
+    expect(firstBoardGymState({ ...tapped, nearbyFailed: true, nearbyLoading: true })).toBe('searching');
+  });
+
+  it('keeps boards already on screen when a refetch fails', () => {
+    expect(firstBoardGymState({ ...tapped, nearbyFailed: true, nearbyCount: 2 })).toBe('found');
+  });
+
+  it('puts a location problem ahead of a failed lookup', () => {
+    expect(firstBoardGymState({ ...tapped, locationStatus: 'denied', nearbyFailed: true })).toBe('location_off');
   });
 
   // Location Services off for the whole phone answers the prompt "granted" and

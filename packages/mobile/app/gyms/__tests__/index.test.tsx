@@ -3,7 +3,9 @@
 // The gym finder binds a board through the same `useActivateBoard` path as every
 // other picker (#5654), so a pick here fires the pick event, follows the board
 // and, when the picker forwarded `source=onboarding`, closes out first-run. It
-// used to carry its own copy of the bind that did none of that.
+// used to carry its own copy of the bind that did none of that, and "Find your
+// gym on the map" is the first-board picker's only way forward from "Location is
+// off".
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -131,6 +133,7 @@ describe('picking a board on the gym finder', () => {
     expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder' });
     // The pick event rides the bind's onBound.
     expect(captured.activateOptions?.onBound).toBe(trackSelectionMock);
+    expect(captured.activateOptions?.returnTo).toBe('/(tabs)/climbs');
   });
 
   it('is an ordinary switch when the picker did not come from onboarding', () => {
@@ -147,6 +150,15 @@ describe('picking a board on the gym finder', () => {
 
     expect(captured.activateOptions?.source).toBe('onboarding');
     expect(captured.analyticsOptions?.fromOnboarding).toBe(true);
+  });
+
+  // A stray value must not turn an ordinary gym pick into a first-run close-out.
+  it('ignores any other source', () => {
+    captured.params = { source: 'board_picker' };
+    render(createElement(GymDiscovery));
+
+    expect(captured.activateOptions?.source).toBeUndefined();
+    expect(captured.analyticsOptions?.fromOnboarding).toBe(false);
   });
 });
 

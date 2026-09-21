@@ -29,6 +29,8 @@ export type OnboardingGateReason =
   | 'has_board'
   | 'deep_link_segment'
   | 'launched_by_url'
+  // a tapped push opened the app (it routes into a tab and leaves no launch URL)
+  | 'launched_by_notification'
   | 'segment_after_reads'
   // stalled: which input was still missing when the watchdog fired
   | 'not_ready'

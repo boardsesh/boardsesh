@@ -158,8 +158,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   at most 7 days old with no board, at most twice per account. It ships to
   every new account with no experiment, so this switch is the only way to take
   it back without a release. With it on the gate logs `would_present` with
-  `picker_verdict: 'kill_switch'` and opens nothing; Find my board and every
-  other way into the picker keep working. The gate waits for
+  `picker_verdict: 'kill_switch'` and opens nothing, and it stops marking the
+  board-look step seen for new accounts, so a new account gets exactly what it
+  got before the picker. Find my board and every other way into the picker keep
+  working. The gate waits for
   `useFeatureFlagsResolved()` before it decides, like the others.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall

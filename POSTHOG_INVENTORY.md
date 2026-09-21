@@ -559,13 +559,14 @@ live in `SHARED_EVENTS`
 
 The onboarding gate now opens something for one group: an account at most 7 days old with no
 board gets the board picker in first-board mode ("Where do you climb?"), at most twice per account,
-never offline, never over a link, and never with `first-board-picker-kill` on. It ships to every
+never offline, never over a link or a tapped notification, and never with
+`first-board-picker-kill` on. It ships to every
 new account with no control, so it is read descriptively (2.6.0 cohorts against 2.5.0), with the
 skip rate and `Board Created` per newcomer as guardrails.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `Onboarding Gate Evaluated` (changed) | adds `outcome: 'presented'` (reason `new_account`, step `first_board`), `picker_verdict` (`presented` / `profile_unavailable` / `not_new_account` / `kill_switch` / `offline` / `shown_twice` / `storage_error`, null off the no-board branch) and `picker_times_shown` (showings before this decision, null when not read) | `OnboardingGate.tsx` via `onboarding-gate-analytics.ts` | Unchanged |
+| `Onboarding Gate Evaluated` (changed) | adds `outcome: 'presented'` (reason `new_account`, step `first_board`), the skip reason `launched_by_notification` (a tapped push opened the app; it routes into a tab and leaves no launch URL, so `launched_by_url` misses it), `picker_verdict` (`presented` / `profile_unavailable` / `not_new_account` / `kill_switch` / `offline` / `shown_twice` / `storage_error`, null off the no-board branch) and `picker_times_shown` (showings before this decision, null when not read) | `OnboardingGate.tsx` via `onboarding-gate-analytics.ts` | Unchanged |
 | `First Board Path Chosen` | `path` (`gym` / `own` / `scan` / `gym_map`) | `use-first-board-picker-tracking.ts`, from the picker's choices | One per tap; a climber can try several |
 | `First Board Picker Skipped` | `method` (`close_button` = the header X "Not now" / `dismissed` = swipe or Android back), `secondsOpen`, `lastPath` | `use-first-board-picker-tracking.ts`, when the picker unmounts with no board stored | At most one per showing, so at most two per account |
 
@@ -574,5 +575,7 @@ skip rate and `Board Created` per newcomer as guardrails.
   map, the Bluetooth scan) is not a skip, because every bind writes the board before it navigates.
 - **Bound from the picker**: `Onboarding Board Activated` (source `onboarding`) after a `presented`
   decision. The picker also fires `Board Picker Opened` with source `onboarding` like any picker.
+  Every bind path counts, the gym map included: the picker forwards `source` to `/gyms`, which
+  binds through the same `useActivateBoard` as the picker itself.
 - `picker_verdict` on the `would_present` rows says why a climber without a board did not get the
   picker; `not_new_account` is the existing fleet, which never gets it.

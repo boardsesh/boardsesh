@@ -22,6 +22,8 @@ type FirstBoardChoiceProps = {
   onScan: () => void;
   onFindGymOnMap: () => void;
   onOpenSettings: () => void;
+  /** Asks for the boards near the climber again, after `nearby_error`. */
+  onRetryNearby: () => void;
 };
 
 /**
@@ -47,6 +49,7 @@ export function FirstBoardChoice({
   onScan,
   onFindGymOnMap,
   onOpenSettings,
+  onRetryNearby,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -88,6 +91,15 @@ export function FirstBoardChoice({
         <View style={styles.gymPanel} accessibilityLiveRegion="polite">
           <Text variant="subheadline">{t('mobile.firstBoard.nearbyEmpty')}</Text>
           <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
+        </View>
+      ) : null}
+      {gymState === 'nearby_error' ? (
+        <View style={styles.gymPanel} accessibilityLiveRegion="polite">
+          <Text variant="subheadline">{t('mobile.firstBoard.nearbyError')}</Text>
+          <View style={styles.gymActions}>
+            <Button title={t('mobile.errorRetry')} variant="tonal" size="small" onPress={onRetryNearby} />
+            <Button title={t('mobile.firstBoard.findGymOnMap')} variant="text" onPress={onFindGymOnMap} />
+          </View>
         </View>
       ) : null}
       {gymState === 'location_off' ? (

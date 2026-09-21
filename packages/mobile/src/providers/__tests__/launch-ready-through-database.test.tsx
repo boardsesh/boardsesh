@@ -154,6 +154,7 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({ router: { push: vi.fn() }, useSegments: () => ['(tabs)', 'climbs'] }));
 vi.mock('expo-linking', () => ({ getInitialURL: vi.fn(async () => null) }));
+vi.mock('../../lib/onboarding/launch-notification', () => ({ wasOpenedFromNotification: () => false }));
 vi.mock('expo-updates', () => ({ updateId: null }));
 vi.mock('@boardsesh/offline-sync', () => ({
   readDeadLetterRecoveryNotice: vi.fn(async () => null),

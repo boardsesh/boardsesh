@@ -14,6 +14,12 @@ export type FirstBoardGymState =
   | 'found'
   /** A fix, but nothing within 20 km: point to the map search. */
   | 'none_nearby'
+  /**
+   * A fix, but the lookup failed (dead gym wifi, a backend error after the
+   * retries): say so, offer a retry and the map. Never "Nothing within 20 km",
+   * which would tell a climber standing in a gym that it isn't there.
+   */
+  | 'nearby_error'
   /** Permission denied, or no fix at all: point to Settings and the map. */
   | 'location_off';
 
@@ -21,11 +27,15 @@ export function firstBoardGymState({
   chosen,
   locationStatus,
   nearbyLoading,
+  nearbyFailed,
   nearbyCount,
 }: {
   chosen: boolean;
   locationStatus: LocationStatus;
+  /** A nearby request is in flight: the first load, or a retry after an error. */
   nearbyLoading: boolean;
+  /** The last nearby request failed. */
+  nearbyFailed: boolean;
   nearbyCount: number;
 }): FirstBoardGymState {
   if (!chosen) return 'idle';
@@ -34,6 +44,8 @@ export function firstBoardGymState({
   // climber that is the same thing as a denial, so it reads the same.
   if (locationStatus === 'denied' || locationStatus === 'unavailable') return 'location_off';
   if (locationStatus !== 'granted') return 'searching';
+  // Boards already on screen stay there through a refetch, failed or not.
   if (nearbyCount > 0) return 'found';
-  return nearbyLoading ? 'searching' : 'none_nearby';
+  if (nearbyLoading) return 'searching';
+  return nearbyFailed ? 'nearby_error' : 'none_nearby';
 }

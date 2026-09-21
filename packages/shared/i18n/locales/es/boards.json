@@ -94,6 +94,7 @@
       "scanFootnote": "Los MoonBoard y algunas cajas de Kilter aún no aparecen aquí.",
       "searching": "Buscando plafones cerca de ti…",
       "nearbyEmpty": "Nada a menos de 20 km",
+      "nearbyError": "No se pudieron cargar los plafones cerca de ti",
       "findGymOnMap": "Busca tu rocódromo en el mapa",
       "locationOff": "La ubicación está desactivada",
       "openSettings": "Abrir Ajustes",

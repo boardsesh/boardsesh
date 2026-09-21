@@ -34,7 +34,7 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * Presented as a `transparentModal` over the live tabs (see app/_layout.tsx),
  * with the swipe-to-dismiss gesture disabled; each step swallows Android hardware
  * back as well. Transparent so UIKit never snapshots the iOS 26 tab bar (hard
- * rule 2 in docs/mobile-sheets-vs-routes.md), which is why `OnboardingBacking`
+ * rule 2 in docs/mobile-sheets-vs-routes.md), which is why one `OnboardingBacking`
  * paints an opaque page under every step: the live tabs must not show through.
  * The steps are variant-agnostic — this route resolves the palette from the
  * active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
@@ -70,24 +70,18 @@ export default function OnboardingScreen() {
     router.replace({ pathname: '/onboarding', params: { step: 'board' } });
   }, []);
 
+  // Every step goes inside the ONE backing below. A new step is a branch here,
+  // never an early `return`, which would put it on screen without the backing
+  // and let the live Climbs tabs show through whatever it leaves unpainted.
+  let stepContent: ReactNode;
   if (step === 'board-look') {
-    return (
-      <OnboardingBacking backgroundColor={backgroundColor}>
-        <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
-      </OnboardingBacking>
+    stepContent = <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+  } else if (step === 'board') {
+    stepContent = (
+      <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
     );
-  }
-
-  if (step === 'board') {
-    return (
-      <OnboardingBacking backgroundColor={backgroundColor}>
-        <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
-      </OnboardingBacking>
-    );
-  }
-
-  return (
-    <OnboardingBacking backgroundColor={backgroundColor}>
+  } else {
+    stepContent = (
       <OnboardingPrompt
         accentColor={accentColor}
         iconColor={iconColor}
@@ -95,8 +89,10 @@ export default function OnboardingScreen() {
         backgroundColor={backgroundColor}
         onContinue={goToBoardStep}
       />
-    </OnboardingBacking>
-  );
+    );
+  }
+
+  return <OnboardingBacking backgroundColor={backgroundColor}>{stepContent}</OnboardingBacking>;
 }
 
 /**

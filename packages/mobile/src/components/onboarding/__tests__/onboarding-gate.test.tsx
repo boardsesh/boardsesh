@@ -21,6 +21,9 @@ const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as strin
 const hasSeenMock = vi.hoisted(() => vi.fn());
 const markSeenMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
+// Whether a tapped notification opened the app. The real check reads
+// expo-notifications, whose native bindings do not load under Vitest.
+const notificationCtrl = vi.hoisted(() => ({ openedFromNotification: false }));
 const trackGateMock = vi.hoisted(() => vi.fn());
 // The gate's real input since issue #4961: onboarding is due whenever there is
 // no bound board. Only a successful read distinguishes a missing selection from
@@ -71,6 +74,9 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('expo-linking', () => ({
   getInitialURL: getInitialURLMock,
+}));
+vi.mock('../../../lib/onboarding/launch-notification', () => ({
+  wasOpenedFromNotification: () => notificationCtrl.openedFromNotification,
 }));
 vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
   hasSeenOnboarding: hasSeenMock,
@@ -149,8 +155,9 @@ describe('OnboardingGate', () => {
     // Default: no board bound, so the flow is due.
     activeBoardCtrl.board = null;
     activeBoardCtrl.isSuccess = true;
-    // Default: a plain launch (no cold-start deep link).
+    // Default: a plain launch (no cold-start deep link, no notification tap).
     getInitialURLMock.mockResolvedValue(null);
+    notificationCtrl.openedFromNotification = false;
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
     profileCtrl.id = undefined;
     profileCtrl.createdAt = OLD_ACCOUNT_CREATED_AT;
@@ -353,6 +360,17 @@ describe('OnboardingGate', () => {
     render(<OnboardingGate />);
     await waitFor(() => expect(decisions()).toHaveLength(1));
     expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'launched_by_url', seenFlag: null });
+    expect(hasSeenMock).not.toHaveBeenCalled();
+  });
+
+  // A session-invite push routes into the queue TAB and leaves no launch URL, so
+  // neither the segment guard nor the URL check sees it.
+  it('stands down when a tapped notification opened the app', async () => {
+    hasSeenMock.mockResolvedValue(false);
+    notificationCtrl.openedFromNotification = true;
+    render(<OnboardingGate />);
+    await waitFor(() => expect(decisions()).toHaveLength(1));
+    expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'launched_by_notification', seenFlag: null });
     expect(hasSeenMock).not.toHaveBeenCalled();
   });
 
@@ -872,6 +890,20 @@ describe('OnboardingGate', () => {
       expect(pushMock).not.toHaveBeenCalled();
     });
 
+    // A friend's session invite, tapped on a cold start: it opens the queue tab,
+    // and the picker must not cover it.
+    it('never opens over a launch that came in through a notification', async () => {
+      segmentsCtrl.segments = ['(tabs)', 'queue'];
+      notificationCtrl.openedFromNotification = true;
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'launched_by_notification' });
+      expect(readShowCountMock).not.toHaveBeenCalled();
+      expect(recordShownMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
     it('never opens over a deep-link landing', async () => {
       segmentsCtrl.segments = ['join', 'abc'];
       render(<OnboardingGate />);
@@ -970,11 +1002,39 @@ describe('OnboardingGate', () => {
     });
 
     // New accounts get the Aura default without being asked which look they want.
+    // The step's own read has to see the mark, so the gate holds the release
+    // until the write lands.
     it('marks the board-look step seen for a new account before releasing it', async () => {
+      let finishMark: () => void = () => undefined;
+      markLookStepSeenMock.mockReturnValue(
+        new Promise<void>((resolve) => {
+          finishMark = resolve;
+        }),
+      );
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(markLookStepSeenMock).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(decisions()).toHaveLength(1);
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
+
+      await act(async () => {
+        finishMark();
+      });
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+    });
+
+    // The kill switch takes back everything the gate does differently for a new
+    // account, not only the picker.
+    it('leaves the board-look step alone with first-board-picker-kill on', async () => {
+      flagsCtrl.pickerEnabled = false;
       render(<OnboardingGate />);
 
       await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
-      expect(markLookStepSeenMock).toHaveBeenCalledTimes(1);
+      expect(markLookStepSeenMock).not.toHaveBeenCalled();
     });
 
     it('marks it for a new account that already has a board too', async () => {

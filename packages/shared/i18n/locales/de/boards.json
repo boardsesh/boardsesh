@@ -94,6 +94,7 @@
       "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
       "searching": "Suche Boards in deiner Nähe…",
       "nearbyEmpty": "Nichts im Umkreis von 20 km",
+      "nearbyError": "Boards in deiner Nähe konnten nicht geladen werden",
       "findGymOnMap": "Finde deine Halle auf der Karte",
       "locationOff": "Standort ist aus",
       "openSettings": "Einstellungen öffnen",

@@ -23,6 +23,7 @@ type ChoiceProps = {
   onScan: () => void;
   onFindGymOnMap: () => void;
   onOpenSettings: () => void;
+  onRetryNearby: () => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
@@ -30,6 +31,7 @@ const setActiveBoardMock = vi.hoisted(() => vi.fn());
 const requestLocationMock = vi.hoisted(() => vi.fn());
 const chooseFirstBoardPathMock = vi.hoisted(() => vi.fn());
 const openAppSettingsMock = vi.hoisted(() => vi.fn());
+const refetchNearbyMock = vi.hoisted(() => vi.fn());
 const locationOptions = vi.hoisted(() => ({ last: undefined as { retryAfterDenial?: boolean } | undefined }));
 const trackingCtrl = vi.hoisted(() => ({ enabledArgs: [] as boolean[] }));
 const choiceProps = vi.hoisted(() => ({ last: null as ChoiceProps | null }));
@@ -42,6 +44,7 @@ const state = vi.hoisted(() => ({
   myBoards: [] as unknown[],
   nearbyBoards: [] as unknown[],
   nearbyLoading: false,
+  nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
 }));
 
@@ -97,7 +100,13 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
       configs: [{ boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: [1], displayName: 'Kilter Original 12x12' }],
     },
   }),
-  useNearbyBoards: () => ({ data: { boards: state.nearbyBoards }, isLoading: state.nearbyLoading }),
+  useNearbyBoards: () => ({
+    data: { boards: state.nearbyBoards },
+    isLoading: state.nearbyLoading,
+    isFetching: state.nearbyLoading,
+    isError: state.nearbyError,
+    refetch: refetchNearbyMock,
+  }),
   useProfile: () => ({ data: { id: 'user-new' } }),
   useDeleteBoard: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUnfollowBoard: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -222,6 +231,7 @@ beforeEach(() => {
   state.myBoards = [];
   state.nearbyBoards = [];
   state.nearbyLoading = false;
+  state.nearbyError = false;
   state.locationStatus = 'idle';
 });
 
@@ -301,12 +311,33 @@ describe('the picker in first-board mode', () => {
     });
   });
 
-  it('opens the gym map', () => {
+  // The only way forward from "Location is off" and "Nothing within 20 km". The
+  // gym map binds through useActivateBoard, and `source` is what makes that bind
+  // close out first-run (the activation event, the reveal banner, no download
+  // dialog on Climbs).
+  it('opens the gym map, still as an onboarding pick', () => {
     render(createElement(BoardSelection));
     choice().onFindGymOnMap();
 
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('gym_map');
-    expect(routerMock.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/gyms' }));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms',
+      params: expect.objectContaining({ source: 'onboarding', returnTo: '/(tabs)/climbs' }),
+    });
+  });
+
+  it('says the lookup failed rather than that nothing is nearby, and retries it', () => {
+    const { rerender } = render(createElement(BoardSelection));
+    act(() => {
+      choice().onGym();
+    });
+    state.locationStatus = 'granted';
+    state.nearbyError = true;
+    rerender(createElement(BoardSelection));
+
+    expect(choice().gymState).toBe('nearby_error');
+    choice().onRetryNearby();
+    expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
   });
 
   it('reports the Bluetooth scan choice', () => {

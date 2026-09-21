@@ -22,6 +22,7 @@ import {
 } from '../../lib/onboarding/first-board-picker-store';
 import { FIRST_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { markBoardLookStepSeen } from '../../lib/board-render/board-look-step-seen';
+import { wasOpenedFromNotification } from '../../lib/onboarding/launch-notification';
 import { useFeatureFlagsResolved, useFirstBoardPickerEnabled } from '../../providers/feature-flags-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
@@ -62,6 +63,13 @@ type GateDecision = Pick<
  * is what keeps it away if the step ever presents again. Awaited by the gate
  * before it releases `BoardLookStepGate`, so the step's own read sees the mark.
  * A failed write is reported and costs nothing else: the step only logs today.
+ *
+ * The marker is per device, not per account, so on a shared phone a new second
+ * account also retires the step for the older account there. And a device that
+ * already stores Classic keeps Classic for the new account: the step never asks
+ * anyone whose stored mode is not `default`, with or without this mark.
+ * `first-board-picker-kill` turns this off along with the picker, so the switch
+ * takes back everything the gate does differently for new accounts.
  */
 async function markBoardLookStepSeenForNewAccount(): Promise<void> {
   try {
@@ -105,8 +113,9 @@ function isProfileSettled(profileQuery: {
  *
  * - An account at most 7 days old with no board gets the board picker in
  *   first-board mode ("Where do you climb?"), at most twice per account, never
- *   offline, and never with `first-board-picker-kill` on. It is skippable, and a
- *   bind from it lands on Climbs. Logged as `presented`.
+ *   offline, never over a launch that came from a link or a tapped
+ *   notification, and never with `first-board-picker-kill` on. It is skippable,
+ *   and a bind from it lands on Climbs. Logged as `presented`.
  * - Every other climber without a board gets the log-only `would_present` the
  *   gate gave everyone before, with `picker_verdict` saying why the picker
  *   stayed shut.
@@ -264,8 +273,10 @@ export function OnboardingGate() {
 
     let cancelled = false;
     let decided = false;
-    // Read once for the whole run, so every branch below agrees on it.
-    const accountIsNew = isNewAccount(accountCreatedAtRef.current, nowMs());
+    // Read once for the whole run, so every branch below agrees on it. The
+    // board-look mark follows the kill switch: with it on, a new account gets
+    // exactly what it got before the picker existed.
+    const markLookStepForNewAccount = isNewAccount(accountCreatedAtRef.current, nowMs()) && pickerEnabledRef.current;
     const decide = (decision: GateDecision) => {
       decided = true;
       stopWatchdogRef.current?.();
@@ -287,7 +298,8 @@ export function OnboardingGate() {
       // it decides. Publishing from the cancelled run would let the board-look
       // step evaluate before the tour has actually decided. An unmount needs
       // nothing at all. For a new account the board-look step is marked seen
-      // first (see `markBoardLookStepSeenForNewAccount`).
+      // first, unless the kill switch is on (see
+      // `markBoardLookStepSeenForNewAccount`).
       try {
         // Don't interrupt a deep-link / auth / share landing on a non-tab group.
         if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
@@ -322,6 +334,22 @@ export function OnboardingGate() {
           decide({
             outcome: 'skipped',
             reason: 'launched_by_url',
+            step: null,
+            hadBoard: hasBoardRef.current,
+            seenFlag: null,
+            pickerVerdict: null,
+            pickerTimesShown: null,
+          });
+          return;
+        }
+
+        // A tapped push lands the same way (a session invite opens the queue tab)
+        // but leaves no launch URL, so it needs its own check. Same intent,
+        // same answer: don't cover where the notification sent them.
+        if (wasOpenedFromNotification()) {
+          decide({
+            outcome: 'skipped',
+            reason: 'launched_by_notification',
             step: null,
             hadBoard: hasBoardRef.current,
             seenFlag: null,
@@ -436,7 +464,7 @@ export function OnboardingGate() {
         });
       } finally {
         if (!cancelled) {
-          if (accountIsNew) await markBoardLookStepSeenForNewAccount();
+          if (markLookStepForNewAccount) await markBoardLookStepSeenForNewAccount();
           if (!cancelled) setTourEvaluated(true);
         }
       }

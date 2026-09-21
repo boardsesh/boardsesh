@@ -199,7 +199,13 @@ export default function BoardSelection() {
   const location = useDeviceLocation({ retryAfterDenial: firstBoardMode });
   // 20 km, not the hook's 1 km default — "nearby" should reach across town
   // (a gym a couple of streets away must still surface).
-  const { data: nearby, isLoading: isNearbyLoading } = useNearbyBoards(location.coords, 20);
+  const {
+    data: nearby,
+    isLoading: isNearbyLoading,
+    isFetching: isNearbyFetching,
+    isError: isNearbyError,
+    refetch: refetchNearby,
+  } = useNearbyBoards(location.coords, 20);
 
   const bluetoothSheetRef = useRef<BottomSheet>(null);
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
@@ -580,7 +586,8 @@ export default function BoardSelection() {
   }, [router, boardReturnTo]);
 
   // `source` rides along for the same reason as the builder's: a board picked on
-  // the gym map during onboarding has to close out first-run too. `from=picker`
+  // the gym map during onboarding has to close out first-run too. It is the only
+  // way forward from "Location is off" and "Nothing within 20 km". `from=picker`
   // tells the gym finder this picker already counted the opening.
   const onModeFindGym = useCallback(() => {
     router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source, from: 'picker' } });
@@ -629,10 +636,16 @@ export default function BoardSelection() {
   const onOpenLocationSettings = useCallback(() => {
     void openAppSettings();
   }, []);
+  const onRetryNearby = useCallback(() => {
+    void refetchNearby();
+  }, [refetchNearby]);
   const gymState = firstBoardGymState({
     chosen: gymChosen,
     locationStatus: location.status,
-    nearbyLoading: isNearbyLoading,
+    // Any request in flight, not only the first load: a retry after an error
+    // keeps the query in `error` while it runs, and should read as searching.
+    nearbyLoading: isNearbyFetching,
+    nearbyFailed: isNearbyError,
     nearbyCount: nearbyItems.length,
   });
 
@@ -778,6 +791,7 @@ export default function BoardSelection() {
               onScan={onFirstBoardScan}
               onFindGymOnMap={onFirstBoardGymMap}
               onOpenSettings={onOpenLocationSettings}
+              onRetryNearby={onRetryNearby}
             />
             {/* A new account can already have boards: one it built on the web,
                 or one it followed before a sign-out cleared the active board.

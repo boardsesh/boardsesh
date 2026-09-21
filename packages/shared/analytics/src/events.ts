@@ -458,9 +458,9 @@ export const SHARED_EVENTS = {
   //
   // Props: { outcome: 'presented' | 'would_present' | 'skipped' | 'stalled',
   // reason: 'new_account' | 'no_board' | 'has_board' | 'deep_link_segment' |
-  // 'launched_by_url' | 'segment_after_reads' | 'not_ready' |
-  // 'board_unresolved' | 'reads_pending', step: 'first_board' | 'intro' |
-  // 'board' | null, had_board and seen_flag (boolean, or null when not read
+  // 'launched_by_url' | 'launched_by_notification' | 'segment_after_reads' |
+  // 'not_ready' | 'board_unresolved' | 'reads_pending', step: 'first_board' |
+  // 'intro' | 'board' | null, had_board and seen_flag (boolean, or null when not read
   // yet), account_age_hours (whole hours since the account was created; the
   // gate waits up to 5 s for the profile, so null means that read failed or ran
   // out of time), ota_is_embedded, trigger: 'cold_start' | 'remount' |
