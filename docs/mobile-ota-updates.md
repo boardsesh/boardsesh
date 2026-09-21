@@ -1170,7 +1170,7 @@ EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
 Production/TestFlight builds use xprem's
 [Branch Surfing API](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
 through the `qa-surf.ts` adapter, which retains the config and surf modules from
-`@xprem/control-center@3.1.2`. The app does not mount the package's `ControlCenter` UI.
+`@xprem/control-center@3.1.3`. The app does not mount the package's `ControlCenter` UI.
 Its floating edge target and light-only sheet were removed for #5287 after reports of
 the sheet opening while closing climb search.
 
