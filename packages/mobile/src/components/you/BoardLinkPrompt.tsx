@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { reportError } from '../../lib/error-reporting';
 import { hasSeenTip, markTipSeen } from '../../lib/onboarding/onboarding-storage';
 import { hasNoLinkedBoardAccount, isLinkableBoard } from '../../lib/integrations/board-link-eligibility';
 import { useBoardAccountCredentials } from '../../lib/integrations/use-board-account-credentials';
@@ -21,33 +22,12 @@ type BoardLinkPromptProps = {
   hasNoSends: boolean;
 };
 
-/**
- * "Your logbook is empty because your board account isn't linked."
- *
- * This is the branch that never existed. A climber arriving from Kilter or Tension
- * with hundreds of logged sends lands on an empty Progress tab reading "Nothing
- * logged yet — your stats show up once you start ticking climbs", which is exactly
- * the wrong advice: their history is one link away, not one session away. The one
- * string in the app that mentioned importing lives on the `hasAscents` side of a
- * guard in `ProgressTab` — correctly, since its copy opens "Your sends chart out
- * here" — so nothing at all fired for the empty case.
- *
- * Deliberately routes to Connected apps rather than opening a credential form
- * inline. The reported failure was wayfinding: the climber could not find the
- * screen, and found it instantly once pointed at it. Landing them on it is the
- * whole fix, and it keeps a third-party password prompt out of a surface they did
- * not ask for.
- *
- * Shows only when we can prove all three: the viewer owns this profile, they have
- * no sends, and they have no linked board account. The third is a tri-state, not a
- * boolean — see `hasNoLinkedBoardAccount`.
- */
+/** Owner-only wayfinding; credentials and dismissal must be known before showing it. */
 function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPromptProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
 
-  // Nothing is fetched, read or rendered for a climber this card can't apply to —
-  // a stranger's profile must not pay for a query about the viewer's own accounts.
+  // Public profiles must not fetch the viewer's account credentials.
   const eligible = viewerIsOwner && hasNoSends;
 
   const { data: credentials } = useBoardAccountCredentials(eligible);
@@ -67,7 +47,11 @@ function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPrompt
 
   const dismiss = useCallback(() => {
     setDismissed(true);
-    void markTipSeen(ONBOARDING_LINK_EMPTY_DISMISSED_KEY);
+    markTipSeen(ONBOARDING_LINK_EMPTY_DISMISSED_KEY).catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[board-link-prompt] Failed to persist dismissal', error);
+      reportError(error);
+    });
   }, []);
 
   const openConnectedApps = useCallback(() => {
@@ -110,7 +94,7 @@ function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPrompt
           {title}
         </Text>
       </View>
-      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.body}>
+      <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {body}
       </Text>
       <View style={styles.actions}>
@@ -131,8 +115,7 @@ const styles = StyleSheet.create({
   },
   heading: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
   title: { flexShrink: 1 },
-  body: {},
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginTop: spacing[2] },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing[2], marginTop: spacing[2] },
 });
 
 export const BoardLinkPrompt = memo(BoardLinkPromptComponent);

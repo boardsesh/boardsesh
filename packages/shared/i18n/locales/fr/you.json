@@ -167,13 +167,13 @@
     },
     "boardLink": {
       "title": "Vos croix {{boardName}} manquent à l’appel ?",
-      "titleGeneric": "Déjà grimpé sur un board ?",
-      "body": "Vous connecter n'a pas lié votre compte {{boardName}} : ce sont deux identifiants distincts. Liez-le et toutes vos croix déjà enregistrées apparaîtront ici.",
-      "bodyGeneric": "Votre compte Kilter ou Tension est un identifiant distinct de Boardsesh. Liez-le et toutes vos croix déjà enregistrées apparaîtront ici.",
+      "titleGeneric": "Déjà grimpé sur une board ?",
+      "body": "Vous connecter n'a pas lié votre compte {{boardName}} : ce sont deux identifiants distincts. Liez-le pour commencer à synchroniser vos croix. Elles apparaîtront ici au fil de la synchronisation.",
+      "bodyGeneric": "Votre compte Kilter ou Tension est un identifiant distinct de Boardsesh. Liez-le pour commencer à synchroniser vos croix. Elles apparaîtront ici au fil de la synchronisation.",
       "cta": "Lier mon compte {{boardName}}",
       "ctaGeneric": "Lier un compte de board",
       "moonboardTitle": "Récupérez votre carnet MoonBoard",
-      "moonboardBody": "MoonBoard n'autorise pas les applis à se connecter à votre place, donc pas de lien en direct. Demandez-leur vos données, puis importez le fichier ici.",
+      "moonboardBody": "Demandez vos données à MoonBoard, puis importez le fichier ici pour récupérer votre carnet.",
       "moonboardCta": "Importer mon carnet MoonBoard",
       "dismiss": "Pas maintenant"
     }

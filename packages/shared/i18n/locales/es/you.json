@@ -166,14 +166,14 @@
       }
     },
     "boardLink": {
-      "title": "¿Te faltan tus encadenamientos de {{boardName}}?",
+      "title": "¿Te faltan tus encadenes de {{boardName}}?",
       "titleGeneric": "¿Ya has escalado en un plafón?",
-      "body": "Iniciar sesión no vinculó tu cuenta de {{boardName}}: son dos accesos distintos. Vincúlala y aparecerá aquí todo lo que ya has registrado.",
-      "bodyGeneric": "Tu cuenta de Kilter o Tension es un acceso distinto al de Boardsesh. Vincúlala y aparecerá aquí todo lo que ya has registrado.",
+      "body": "Iniciar sesión no vinculó tu cuenta de {{boardName}}: son dos accesos distintos. Vincúlala para empezar a sincronizar tus encadenes. Aparecerán aquí a medida que se sincronicen.",
+      "bodyGeneric": "Tu cuenta de Kilter o Tension es un acceso distinto al de Boardsesh. Vincúlala para empezar a sincronizar tus encadenes. Aparecerán aquí a medida que se sincronicen.",
       "cta": "Vincular mi cuenta de {{boardName}}",
       "ctaGeneric": "Vincular una cuenta de plafón",
       "moonboardTitle": "Trae tu historial de MoonBoard",
-      "moonboardBody": "MoonBoard no deja que otras apps inicien sesión por ti, así que no hay vínculo en vivo. Pídeles tus datos y luego importa el archivo aquí.",
+      "moonboardBody": "Pide tus datos a MoonBoard y luego importa el archivo aquí para traer tu historial.",
       "moonboardCta": "Importar mi historial de MoonBoard",
       "dismiss": "Ahora no"
     }

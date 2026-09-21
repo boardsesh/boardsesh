@@ -8,9 +8,7 @@ describe('isLinkableBoard', () => {
     }
   });
 
-  // MoonBoard's only route in is a CSV the climber obtains by emailing Moon
-  // Climbing a GDPR subject access request. Offering them a "link your account"
-  // button would be a promise we cannot keep.
+  // Connected apps offers MoonBoard file import, not a credential-linking form.
   it('rejects MoonBoard, which has no credential flow at all', () => {
     expect(isLinkableBoard('moonboard')).toBe(false);
   });
@@ -29,9 +27,7 @@ describe('hasNoLinkedBoardAccount', () => {
     expect(hasNoLinkedBoardAccount([{ boardType: 'tension' }])).toBe(false);
   });
 
-  // The load-bearing case. The credentials query is `offlineFirst`, so offline it
-  // stays pending forever and `data` stays undefined. Collapsing that to `true`
-  // would tell a climber who linked months ago that they never linked.
+  // Unknown credentials do not establish that the climber has no linked account.
   it('is undefined — not true — while the read is unresolved', () => {
     expect(hasNoLinkedBoardAccount(undefined)).toBeUndefined();
   });

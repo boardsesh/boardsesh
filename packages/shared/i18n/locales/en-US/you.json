@@ -168,12 +168,12 @@
     "boardLink": {
       "title": "Missing your {{boardName}} sends?",
       "titleGeneric": "Climbed on a board before?",
-      "body": "Signing in didn't connect your {{boardName}} account — they're two separate logins. Link it and every send you've already logged shows up here.",
-      "bodyGeneric": "Your Kilter or Tension account is a separate login from Boardsesh. Link it and every send you've already logged shows up here.",
+      "body": "Signing in didn't connect your {{boardName}} account — they're two separate logins. Link it to start syncing your sends. They appear here as syncing finishes.",
+      "bodyGeneric": "Your Kilter or Tension account is a separate login from Boardsesh. Link it to start syncing your sends. They appear here as syncing finishes.",
       "cta": "Link my {{boardName}} account",
       "ctaGeneric": "Link a board account",
       "moonboardTitle": "Bring your MoonBoard logbook over",
-      "moonboardBody": "MoonBoard doesn't let apps sign in for you, so there's no live link. Ask them for your data, then import the file here.",
+      "moonboardBody": "Bring your MoonBoard history over by requesting your data from MoonBoard, then importing the file here.",
       "moonboardCta": "Import my MoonBoard logbook",
       "dismiss": "Not now"
     }
