@@ -15,6 +15,7 @@ import {
   PERMANENT_GRAPHQL_ERROR_CODES,
   PERMANENT_REJECTION_STATUSES,
 } from '../error-classification';
+import { isDatabaseLockedError } from '../../db/lock-errors';
 
 describe('isGraphQLEmptyResponseError', () => {
   it('matches the platform error directly and through a cause wrapper', () => {
@@ -179,6 +180,46 @@ describe('isRetryable', () => {
   it('network TypeError is retryable even though it has no status', () => {
     // Guards against the I5 change regressing genuine network failures.
     expect(isRetryable(new TypeError('Network request failed'))).toBe(true);
+  });
+
+  // Issue #4331: a lost local write lock resolves no HTTP status, so the
+  // "no status ⇒ dead-letter" rule above used to give up on a write the server
+  // had already accepted. Contention is transient by definition.
+  describe('local SQLite write-lock contention', () => {
+    const lockShapes: [string, unknown][] = [
+      ['the iOS message', new Error('SQLiteErrorException: Error code 5: database is locked')],
+      [
+        'the Android message with a raw control byte for the code',
+        new Error(
+          `Call to function 'NativeStatement.finalizeAsync' has been rejected. → Caused by: Error code ${String.fromCharCode(5)}: database is locked`,
+        ),
+      ],
+      [
+        'a wrapped cause chain',
+        new Error('Calling the execAsync function has failed', { cause: new Error('SQLITE_BUSY') }),
+      ],
+      ['a driver code property', Object.assign(new Error('write failed'), { code: 'SQLITE_BUSY' })],
+    ];
+
+    it.each(lockShapes)('is retryable — %s', (_label, error) => {
+      expect(isRetryable(error)).toBe(true);
+    });
+
+    it('is not mistaken for a transport failure (it must not stop the drain cycle)', () => {
+      expect(isNetworkError(new Error('Error code 5: database is locked'))).toBe(false);
+    });
+
+    it('does not claim a genuinely broken database as lock contention', () => {
+      // The assertion this used to make — that a full disk is NON-retryable —
+      // no longer describes the classifier: #5295 flipped the default so that
+      // only a positively identified permanent server verdict blocks a replay,
+      // and a full disk carries no verdict at all (it reaches `dead_letter` as
+      // `retries_exhausted` instead). What still has to hold for #4331 is the
+      // narrower claim: the lock predicate the drainer branches on must not
+      // widen to cover it, or that branch would keep a broken database pending
+      // forever without ever burning the retry budget.
+      expect(isDatabaseLockedError(new Error('database or disk is full'))).toBe(false);
+    });
   });
 
   it('GraphQL error with 5xx extension is retryable', () => {
