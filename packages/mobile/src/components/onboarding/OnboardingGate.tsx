@@ -1,18 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { useSegments } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { hasSeenOnboarding, markOnboardingSeen } from '../../lib/onboarding/onboarding-storage';
 import { DEEP_LINK_SEGMENTS } from '../../lib/deep-link-segments';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { reportError } from '../../lib/error-reporting';
+import { nowMs } from '../../lib/clock';
+import { getConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
 import { startForegroundWatchdog } from '../../lib/onboarding/foreground-watchdog';
 import {
   trackOnboardingGateEvaluated,
   type OnboardingGateEvaluation,
   type OnboardingGateTrigger,
 } from '../../lib/onboarding/onboarding-gate-analytics';
+import { decideFirstBoardPicker, isNewAccount } from '../../lib/onboarding/first-board-picker-decision';
+import {
+  readFirstBoardPickerShowCount,
+  recordFirstBoardPickerShown,
+} from '../../lib/onboarding/first-board-picker-store';
+import { FIRST_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
+import { markBoardLookStepSeen } from '../../lib/board-render/board-look-step-seen';
+import { useFeatureFlagsResolved, useFirstBoardPickerEnabled } from '../../providers/feature-flags-provider';
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
 
@@ -40,7 +50,28 @@ export function resetOnboardingGateProcessForTests(): void {
 }
 
 /** The parts of an evaluation a decision supplies; the gate fills in the rest. */
-type GateDecision = Pick<OnboardingGateEvaluation, 'outcome' | 'reason' | 'step' | 'hadBoard' | 'seenFlag'>;
+type GateDecision = Pick<
+  OnboardingGateEvaluation,
+  'outcome' | 'reason' | 'step' | 'hadBoard' | 'seenFlag' | 'pickerVerdict' | 'pickerTimesShown'
+>;
+
+/**
+ * New accounts never get the board-look step (#5654). Their stored mode is
+ * `default`, which already draws Aura, and the step's question ("keep the look
+ * you know, or switch?") is for climbers who knew the old one. Marking it seen
+ * is what keeps it away if the step ever presents again. Awaited by the gate
+ * before it releases `BoardLookStepGate`, so the step's own read sees the mark.
+ * A failed write is reported and costs nothing else: the step only logs today.
+ */
+async function markBoardLookStepSeenForNewAccount(): Promise<void> {
+  try {
+    await markBoardLookStepSeen();
+  } catch (error: unknown) {
+    // eslint-disable-next-line no-console
+    console.warn('[onboarding] Failed to mark the board-look step seen for a new account', error);
+    reportError(error);
+  }
+}
 
 /**
  * Whether the profile read has anything more to say. A loaded profile is final.
@@ -61,21 +92,33 @@ function isProfileSettled(profileQuery: {
 
 /**
  * First-run gate. Once the app is ready (auth + fonts loaded, splash hidden) it
- * decides whether the climber needs the onboarding route: yes unless a board is
+ * decides whether the climber needs help finding a board: yes unless a board is
  * already bound. Renders nothing itself. Mounting it below AuthProvider means it
  * only decides for an authenticated session; an unauthenticated cold start is
  * redirected to login by the auth gate, and the gate decides after sign-in.
  *
- * **It decides and logs, and presents nothing (#5654).** From 2.2.0 this gate
- * never ran: its `ready` prop was frozen at false behind `DatabaseProvider` (see
- * `launch-ready-context.tsx`). Waking it back up would have dropped every
- * existing climber without a board into a mandatory flow they never saw, in one
- * fleet-wide OTA. So it reports `would_present` through `Onboarding Gate
- * Evaluated` instead of pushing, and the first-run redesign decides who actually
- * gets a flow. The event also carries a 15 s stall watchdog, so a gate that
- * never decides can no longer go unnoticed. The decision waits up to 5 s for
- * the profile, because the account age it carries is what tells a new account
- * from an existing one.
+ * **Only new accounts get anything (#5654).** From 2.2.0 this gate never ran:
+ * its `ready` prop was frozen at false behind `DatabaseProvider` (see
+ * `launch-ready-context.tsx`). Waking it for everyone would have dropped every
+ * existing climber without a board into a flow they never saw, in one
+ * fleet-wide OTA. So:
+ *
+ * - An account at most 7 days old with no board gets the board picker in
+ *   first-board mode ("Where do you climb?"), at most twice per account, never
+ *   offline, and never with `first-board-picker-kill` on. It is skippable, and a
+ *   bind from it lands on Climbs. Logged as `presented`.
+ * - Every other climber without a board gets the log-only `would_present` the
+ *   gate gave everyone before, with `picker_verdict` saying why the picker
+ *   stayed shut.
+ *
+ * The old walkthrough (`/onboarding`) is no longer opened from here. It stays
+ * reachable from the More tab's replay rows.
+ *
+ * Every decision goes out through `Onboarding Gate Evaluated`, which also
+ * carries a 15 s stall watchdog, so a gate that never decides can no longer go
+ * unnoticed. The decision waits up to 5 s for the profile, because the account
+ * age is what tells a new account from an existing one, and for the feature
+ * flags, so the kill switch lands before the push it exists to stop.
  *
  * **The gate is "has a board", not "has seen the tour"** (issue #4961). The flow's
  * whole job is to leave the climber with a bound board, so the absence of one is
@@ -93,6 +136,10 @@ function isProfileSettled(profileQuery: {
  */
 export function OnboardingGate() {
   const ready = useLaunchReady();
+  const flagsResolved = useFeatureFlagsResolved();
+  const pickerEnabled = useFirstBoardPickerEnabled();
+  const pickerEnabledRef = useRef(pickerEnabled);
+  pickerEnabledRef.current = pickerEnabled;
   const segments = useSegments();
   // Latest top-level segment for the async check, without re-running the effect
   // on every navigation — the gate decides once per app launch.
@@ -112,6 +159,8 @@ export function OnboardingGate() {
   const profileQuery = useProfile();
   const profile = profileQuery.data;
   const userId = profile?.id;
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
   const accountCreatedAtRef = useRef(profile?.createdAt);
   accountCreatedAtRef.current = profile?.createdAt;
   const decidedForUserRef = useRef<string | undefined>(userId);
@@ -186,6 +235,8 @@ export function OnboardingGate() {
           topSegment: topSegmentRef.current,
           msSinceMount: Date.now() - mountedAtRef.current,
           afterStall: false,
+          pickerVerdict: null,
+          pickerTimesShown: null,
         });
       },
     });
@@ -204,7 +255,7 @@ export function OnboardingGate() {
   }, []);
 
   useEffect(() => {
-    if (!ready || !boardResolved || !profileReady || decidedRef.current) return;
+    if (!ready || !boardResolved || !profileReady || !flagsResolved || decidedRef.current) return;
     // Screenshot builds never auto-present the tour: the app-store flow needs to
     // reach the tabs, and the onboarding-capture flow opens /onboarding itself.
     // Nothing else auto-presents in a capture run either, so this stays `pending`.
@@ -213,6 +264,8 @@ export function OnboardingGate() {
 
     let cancelled = false;
     let decided = false;
+    // Read once for the whole run, so every branch below agrees on it.
+    const accountIsNew = isNewAccount(accountCreatedAtRef.current, nowMs());
     const decide = (decision: GateDecision) => {
       decided = true;
       stopWatchdogRef.current?.();
@@ -233,7 +286,8 @@ export function OnboardingGate() {
       // `decidedRef` so the re-run goes through, and that re-run publishes once
       // it decides. Publishing from the cancelled run would let the board-look
       // step evaluate before the tour has actually decided. An unmount needs
-      // nothing at all.
+      // nothing at all. For a new account the board-look step is marked seen
+      // first (see `markBoardLookStepSeenForNewAccount`).
       try {
         // Don't interrupt a deep-link / auth / share landing on a non-tab group.
         if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
@@ -243,6 +297,8 @@ export function OnboardingGate() {
             step: null,
             hadBoard: hasBoardRef.current,
             seenFlag: null,
+            pickerVerdict: null,
+            pickerTimesShown: null,
           });
           return;
         }
@@ -269,6 +325,8 @@ export function OnboardingGate() {
             step: null,
             hadBoard: hasBoardRef.current,
             seenFlag: null,
+            pickerVerdict: null,
+            pickerTimesShown: null,
           });
           return;
         }
@@ -288,33 +346,99 @@ export function OnboardingGate() {
               reportError(error);
             });
           }
-          decide({ outcome: 'skipped', reason: 'has_board', step: null, hadBoard: true, seenFlag: seen });
+          decide({
+            outcome: 'skipped',
+            reason: 'has_board',
+            step: null,
+            hadBoard: true,
+            seenFlag: seen,
+            pickerVerdict: null,
+            pickerTimesShown: null,
+          });
           return;
+        }
+
+        // No board. Whether the picker opens is about the account (new, known,
+        // not asked twice already) and the moment (online, not killed). The
+        // counter is only read for an account the cheap checks let through: a
+        // preflight with a stand-in count of 0 rules everyone else out first.
+        const accountId = userIdRef.current;
+        const pickerInput = {
+          userId: accountId,
+          accountCreatedAt: accountCreatedAtRef.current,
+          nowMs: nowMs(),
+          enabled: pickerEnabledRef.current,
+          offline: getConnectivitySnapshot().effectiveOffline,
+        };
+        let pickerVerdict = decideFirstBoardPicker({ ...pickerInput, timesShown: 0 });
+        let pickerTimesShown: number | null = null;
+        if (pickerVerdict === 'presented' && accountId) {
+          pickerTimesShown = await readFirstBoardPickerShowCount(accountId);
+          if (cancelled) return;
+          pickerVerdict = decideFirstBoardPicker({ ...pickerInput, timesShown: pickerTimesShown });
         }
 
         // Re-check the route after the async reads — a deep link may have arrived
         // in the meantime — so we never cover an intentional destination.
         if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
-          decide({ outcome: 'skipped', reason: 'segment_after_reads', step: null, hadBoard: false, seenFlag: seen });
+          decide({
+            outcome: 'skipped',
+            reason: 'segment_after_reads',
+            step: null,
+            hadBoard: false,
+            seenFlag: seen,
+            pickerVerdict: null,
+            pickerTimesShown,
+          });
           return;
         }
 
-        // Someone who has already been through the framing card would start at
-        // the board step: a sign-out, a token expiry and a remote sign-out all
-        // clear the device-wide active board (`clearPersistedUserStores`), and a
-        // re-login should not re-teach why a named board matters.
-        //
-        // Logged, not presented (#5654). The push this replaced was
-        // `router.push(seen ? { pathname: '/onboarding', params: { step: 'board' } } : '/onboarding')`.
+        if (pickerVerdict === 'presented' && accountId && pickerTimesShown !== null) {
+          // Counted BEFORE it opens, so a crash inside the picker still spends
+          // one of the two showings. A counter that cannot be written cannot
+          // cap anything, so it does not open at all.
+          try {
+            await recordFirstBoardPickerShown(accountId, pickerTimesShown + 1);
+          } catch (error: unknown) {
+            reportError(error);
+            pickerVerdict = 'storage_error';
+          }
+          if (cancelled) return;
+        }
+
+        if (pickerVerdict === 'presented') {
+          router.push(FIRST_BOARD_PICKER_HREF);
+          decide({
+            outcome: 'presented',
+            reason: 'new_account',
+            step: 'first_board',
+            hadBoard: false,
+            seenFlag: seen,
+            pickerVerdict,
+            pickerTimesShown,
+          });
+          return;
+        }
+
+        // Everyone else keeps the log-only answer. Someone who has already been
+        // through the framing card would start at the board step: a sign-out, a
+        // token expiry and a remote sign-out all clear the device-wide active
+        // board (`clearPersistedUserStores`), and a re-login should not re-teach
+        // why a named board matters.
         decide({
           outcome: 'would_present',
           reason: 'no_board',
           step: seen ? 'board' : 'intro',
           hadBoard: false,
           seenFlag: seen,
+          pickerVerdict,
+          pickerTimesShown,
         });
       } finally {
-        if (!cancelled) setTourEvaluated(true);
+        if (!cancelled) {
+          if (accountIsNew) await markBoardLookStepSeenForNewAccount();
+          if (!cancelled) setTourEvaluated(true);
+        }
       }
     })();
 
@@ -328,7 +452,7 @@ export function OnboardingGate() {
     };
     // `userId` is here so the effect re-runs after an account switch resets
     // `decidedRef` above — the new account gets its own first-run evaluation.
-  }, [ready, boardResolved, profileReady, userId]);
+  }, [ready, boardResolved, profileReady, flagsResolved, userId]);
 
   // The board-look step is evaluated and logged too, never presented (#5654).
   return <BoardLookStepGate ready={ready} tourDecided={tourEvaluated} present={false} />;

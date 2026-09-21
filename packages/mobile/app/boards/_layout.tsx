@@ -3,6 +3,31 @@ import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../src/components/Icon';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
+import { isFirstBoardMode } from '../../src/lib/boards/first-board-mode';
+import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
+
+/**
+ * The picker's params, read defensively: `route.params` is untyped here, and a
+ * malformed value must fall back to the ordinary picker rather than throw.
+ */
+function readFirstBoardMode(params: object | undefined): boolean {
+  if (!params) return false;
+  const { source, firstBoard } = params as { source?: unknown; firstBoard?: unknown };
+  return isFirstBoardMode({
+    source: typeof source === 'string' ? source : undefined,
+    firstBoard: typeof firstBoard === 'string' ? firstBoard : undefined,
+  });
+}
+
+/**
+ * The X in first-board mode (#5654) is "Not now", and it lands on Climbs rather
+ * than on whatever was underneath: the launch gate opened this picker by itself,
+ * and Climbs is where a climber with no board is pointed to their wall.
+ */
+function closeFirstBoardPicker() {
+  noteFirstBoardCloseTapped();
+  router.dismissTo('/(tabs)/climbs');
+}
 
 export default function BoardsLayout() {
   const { t } = useTranslation('common');
@@ -13,20 +38,23 @@ export default function BoardsLayout() {
     <Stack screenOptions={screenOptions}>
       <Stack.Screen
         name="index"
-        options={{
-          title: t('mobile.nav.boards'),
-          // A modal now, not a tab: give it an explicit close button (iOS
-          // swipe-to-dismiss alone isn't discoverable for a primary entry point).
-          headerLeft: ({ tintColor }) => (
-            <Pressable
-              onPress={() => router.back()}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={t('ariaLabels.close')}
-            >
-              <Icon name="close" size={22} color={tintColor} />
-            </Pressable>
-          ),
+        options={({ route }) => {
+          const firstBoard = readFirstBoardMode(route.params);
+          return {
+            title: t('mobile.nav.boards'),
+            // A modal now, not a tab: give it an explicit close button (iOS
+            // swipe-to-dismiss alone isn't discoverable for a primary entry point).
+            headerLeft: ({ tintColor }) => (
+              <Pressable
+                onPress={firstBoard ? closeFirstBoardPicker : () => router.back()}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={firstBoard ? tBoards('mobile.firstBoard.notNow') : t('ariaLabels.close')}
+              >
+                <Icon name="close" size={22} color={tintColor} />
+              </Pressable>
+            ),
+          };
         }}
       />
       {/* The full-screen board builder, pushed onto the boards stack (not a

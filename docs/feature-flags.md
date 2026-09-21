@@ -151,8 +151,16 @@ diagnostic) applies on native. The whole surface lives in three files:
   because it pins only its own keys, so the resolved hook still waits for
   PostHog. Only a test's `flags` bag counts as final on the first frame. The
   onboarding and board-look gates woke up in the same change but only
-  evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`),
-  so they have nothing to kill yet.
+  evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`).
+  `first-board-picker-kill` (read through `useFirstBoardPickerEnabled`,
+  unresolved = enabled) covers the one thing the onboarding gate does present:
+  the board picker in first-board mode ("Where do you climb?") for an account
+  at most 7 days old with no board, at most twice per account. It ships to
+  every new account with no experiment, so this switch is the only way to take
+  it back without a release. With it on the gate logs `would_present` with
+  `picker_verdict: 'kill_switch'` and opens nothing; Find my board and every
+  other way into the picker keep working. The gate waits for
+  `useFeatureFlagsResolved()` before it decides, like the others.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

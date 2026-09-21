@@ -31,6 +31,7 @@ import { disposeWsClient } from '../lib/graphql/ws-client';
 import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
+import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-picker-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
@@ -194,6 +195,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       clearStoredSessionId(owner),
       clearStoredActiveBoardCoordinated(owner),
       clearStoredQueueSnapshot(owner),
+      // How many times the launch gate opened the first-board picker (#5654).
+      // Keyed by account already; cleared here too so a shared phone never
+      // carries one climber's first-run state into the next session.
+      clearFirstBoardPickerShowCount(),
       // Create-climb and session-recap drafts are wiped for account
       // isolation only on web (the new surface). Native sign-out keeps its
       // origin behavior and leaves these drafts intact, so shipping this via

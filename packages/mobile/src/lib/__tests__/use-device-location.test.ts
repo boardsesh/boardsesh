@@ -58,6 +58,24 @@ describe('useDeviceLocation', () => {
     expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
   });
 
+  // The first-board picker offers Open Settings, so a climber can come back with
+  // location allowed and tap "At a gym" again (#5654).
+  it('asks again after a denial when the caller opts in', async () => {
+    expoLocation.requestForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
+
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(result.current.status).toBe('denied');
+
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe('granted');
+  });
+
   it('reports unavailable when getting the position throws, and allows retry', async () => {
     expoLocation.getCurrentPositionAsync.mockRejectedValueOnce(new Error('gps error'));
     const { result } = renderHook(() => useDeviceLocation());

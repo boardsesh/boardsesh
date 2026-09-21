@@ -22,7 +22,18 @@ export type DeviceLocation = {
   request: () => Promise<void>;
 };
 
-export function useDeviceLocation(): DeviceLocation {
+export type DeviceLocationOptions = {
+  /**
+   * Let a request after a denial ask again instead of no-oping. Off by default,
+   * because a surface that cannot send the climber to Settings gains nothing from
+   * re-asking. The first-board picker (#5654) turns it on: it offers Open
+   * Settings, and a climber who comes back having allowed location should get
+   * their gyms from one more tap, not from reopening the screen.
+   */
+  retryAfterDenial?: boolean;
+};
+
+export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOptions = {}): DeviceLocation {
   const [status, setStatus] = useState<LocationStatus>('idle');
   const [coords, setCoords] = useState<Coords | null>(null);
   // Once a request reaches a terminal state (granted / denied / unavailable),
@@ -40,6 +51,7 @@ export function useDeviceLocation(): DeviceLocation {
       const Location = await import('expo-location');
       const { status: permission } = await Location.requestForegroundPermissionsAsync();
       if (permission !== 'granted') {
+        if (retryAfterDenial) settledRef.current = false;
         setStatus('denied');
         return;
       }
@@ -57,7 +69,7 @@ export function useDeviceLocation(): DeviceLocation {
       settledRef.current = false;
       setStatus('unavailable');
     }
-  }, []);
+  }, [retryAfterDenial]);
 
   return { status, coords, request };
 }

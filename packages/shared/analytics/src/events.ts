@@ -456,30 +456,56 @@ export const SHARED_EVENTS = {
   // The watchdog is the part that matters: it does not depend on the inputs
   // that froze, so a repeat of that bug shows up as a `stalled` spike in a day.
   //
-  // Props: { outcome: 'would_present' | 'skipped' | 'stalled', reason:
-  // 'no_board' | 'has_board' | 'deep_link_segment' | 'launched_by_url' |
-  // 'segment_after_reads' | 'not_ready' | 'board_unresolved' | 'reads_pending',
-  // step: 'intro' | 'board' | null, had_board and seen_flag (boolean, or null
-  // when not read yet), account_age_hours (whole hours since the account was
-  // created; the gate waits up to 5 s for the profile, so null means that read
-  // failed or ran out of time), ota_is_embedded, trigger: 'cold_start' |
-  // 'remount' | 'account_switch', top_segment, ms_since_mount (from the mount,
-  // or from the switch on an `account_switch` decision), after_stall
-  // (true on a decision that landed after this mount already reported
-  // `stalled`, so one mount can send two events) }.
+  // Props: { outcome: 'presented' | 'would_present' | 'skipped' | 'stalled',
+  // reason: 'new_account' | 'no_board' | 'has_board' | 'deep_link_segment' |
+  // 'launched_by_url' | 'segment_after_reads' | 'not_ready' |
+  // 'board_unresolved' | 'reads_pending', step: 'first_board' | 'intro' |
+  // 'board' | null, had_board and seen_flag (boolean, or null when not read
+  // yet), account_age_hours (whole hours since the account was created; the
+  // gate waits up to 5 s for the profile, so null means that read failed or ran
+  // out of time), ota_is_embedded, trigger: 'cold_start' | 'remount' |
+  // 'account_switch', top_segment, ms_since_mount (from the mount, or from the
+  // switch on an `account_switch` decision), after_stall (true on a decision
+  // that landed after this mount already reported `stalled`, so one mount can
+  // send two events), picker_verdict: 'presented' | 'profile_unavailable' |
+  // 'not_new_account' | 'kill_switch' | 'offline' | 'shown_twice' |
+  // 'storage_error' | null (set on every decision for a climber with no
+  // board), picker_times_shown (how many times the picker had already opened
+  // for this account on this device, or null when not read) }.
   //
   // Native builds only. The Expo browser build sends nothing: its launch URL is
   // always the page itself, so every launch would read as `launched_by_url`.
   // The same goes for `Board Look Step Evaluated` below.
   //
-  // `would_present` is deliberate: the gate evaluates and logs, and presents
-  // nothing until the first-run redesign turns presenting on for new accounts.
-  // A returning climber's steady state (a board bound, seen flag not known to
-  // be false) is NOT sent, and neither is a signed-out launch on the login
-  // screen, so the decisions are newcomers, climbers without a board and
-  // anomalies. Stalls are sent for everyone, so read a stall rate against
-  // launches (`OTA Update Status`), not against this event's own count.
+  // `presented` (reason `new_account`, step `first_board`) is the one outcome
+  // that opens something: the board picker in first-board mode, for an account
+  // at most 7 days old with no board, at most twice per account. Everyone else
+  // without a board gets the log-only `would_present`, and `picker_verdict`
+  // says why the picker stayed shut. A returning climber's steady state (a
+  // board bound, seen flag not known to be false) is NOT sent, and neither is a
+  // signed-out launch on the login screen, so the decisions are newcomers,
+  // climbers without a board and anomalies. Stalls are sent for everyone, so
+  // read a stall rate against launches (`OTA Update Status`), not against this
+  // event's own count.
   OnboardingGateEvaluated: 'Onboarding Gate Evaluated',
+  // Mobile-only: the board picker in first-board mode, the one the launch gate
+  // opens for a new account with no board (#5654), and that `Onboarding Gate
+  // Evaluated` logs as `presented`. It also fires `Board Picker Opened` with
+  // source 'onboarding' like any picker. These two answer what the newcomer did
+  // with it.
+  //
+  // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
+  // 'own' | 'scan' | 'gym_map' }. 'gym_map' is "Find your gym on the map",
+  // offered under At a gym. A climber can try several; each tap fires.
+  //
+  // FirstBoardPickerSkipped: the picker closed with no board bound, which is
+  // the skip rate the launch reads against. Props: { method: 'close_button' |
+  // 'dismissed' ('close_button' is the header X, "Not now"; 'dismissed' is a
+  // swipe down or Android back), secondsOpen, lastPath (the last choice tapped,
+  // or null) }. A bind from ANY path the picker leads to (the list, the builder,
+  // the gym map, the Bluetooth scan) counts as not skipped.
+  FirstBoardPathChosen: 'First Board Path Chosen',
+  FirstBoardPickerSkipped: 'First Board Picker Skipped',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with

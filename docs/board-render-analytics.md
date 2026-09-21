@@ -533,6 +533,12 @@ What the gate does send is `Board Look Step Evaluated`:
   (`packages/mobile/src/lib/launch-gate-reporting.web.ts`): its launch URL is
   always the page, so every launch reads as a deep link and only `look_chosen`
   could ever settle there.
+- **New accounts report `step_seen`.** `OnboardingGate` marks the step seen for
+  any account at most 7 days old before it releases this gate (#5654). A new
+  account's stored mode is `default`, which already draws Aura, and the step's
+  question is for climbers who knew the old look. So `would_present` counts
+  existing climbers only, and a new account never gets the step on its first
+  bind, whichever way it binds.
 
 ### One cost worth knowing about
 

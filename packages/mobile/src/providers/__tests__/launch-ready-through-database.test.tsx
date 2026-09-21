@@ -177,6 +177,7 @@ vi.mock('../feature-flags-provider', async () => {
     useConnectivityBannerEnabled: () => true,
     useQaTesterGateEnabled: () => true,
     useSendRecoveryGateEnabled: () => true,
+    useFirstBoardPickerEnabled: () => true,
     useFeatureFlagsResolved: () => useSyncExternalStore(flagsCtrl.subscribe, () => flagsCtrl.resolved),
   };
 });

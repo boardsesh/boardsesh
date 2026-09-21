@@ -3,7 +3,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import type { OnboardingGateEvaluation } from '../../../lib/onboarding/onboarding-gate-analytics';
 
+// The profile's creation times the suite uses, against a frozen "now". Most
+// cases describe an existing climber, which the first-board picker (#5654)
+// never reaches; the picker's own describe block uses the new one.
+const clockCtrl = vi.hoisted(() => ({ nowMs: Date.parse('2026-09-21T12:00:00.000Z') }));
+const OLD_ACCOUNT_CREATED_AT = '2024-03-01T12:00:00.000Z';
+const NEW_ACCOUNT_CREATED_AT = '2026-09-20T12:00:00.000Z';
+
 const pushMock = vi.hoisted(() => vi.fn());
+const reportErrorMock = vi.hoisted(() => vi.fn());
+const readShowCountMock = vi.hoisted(() => vi.fn());
+const recordShownMock = vi.hoisted(() => vi.fn());
+const markLookStepSeenMock = vi.hoisted(() => vi.fn());
+const flagsCtrl = vi.hoisted(() => ({ resolved: true, pickerEnabled: true }));
+const connectivityCtrl = vi.hoisted(() => ({ offline: false }));
 const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 const hasSeenMock = vi.hoisted(() => vi.fn());
 const markSeenMock = vi.hoisted(() => vi.fn());
@@ -24,7 +37,7 @@ const activeBoardCtrl = vi.hoisted(() => ({
 // `fetching` a read in flight, `error` a read that failed.
 const profileCtrl = vi.hoisted(() => ({
   id: undefined as string | undefined,
-  createdAt: '2026-09-20T12:00:00.000Z' as string | undefined,
+  createdAt: undefined as string | undefined,
   status: 'settled' as 'settled' | 'fetching' | 'error',
 }));
 const launchCtrl = vi.hoisted(() => ({ ready: true }));
@@ -69,7 +82,22 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
     isSuccess: activeBoardCtrl.isSuccess,
   }),
 }));
-vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../../lib/clock', () => ({ nowMs: () => clockCtrl.nowMs }));
+vi.mock('../../../lib/connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => ({ effectiveOffline: connectivityCtrl.offline }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlagsResolved: () => flagsCtrl.resolved,
+  useFirstBoardPickerEnabled: () => flagsCtrl.pickerEnabled,
+}));
+vi.mock('../../../lib/onboarding/first-board-picker-store', () => ({
+  readFirstBoardPickerShowCount: readShowCountMock,
+  recordFirstBoardPickerShown: recordShownMock,
+}));
+vi.mock('../../../lib/board-render/board-look-step-seen', () => ({
+  markBoardLookStepSeen: markLookStepSeenMock,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({
     data: profileCtrl.id ? { id: profileCtrl.id, createdAt: profileCtrl.createdAt } : undefined,
@@ -125,9 +153,19 @@ describe('OnboardingGate', () => {
     getInitialURLMock.mockResolvedValue(null);
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
     profileCtrl.id = undefined;
-    profileCtrl.createdAt = '2026-09-20T12:00:00.000Z';
+    profileCtrl.createdAt = OLD_ACCOUNT_CREATED_AT;
     profileCtrl.status = 'settled';
     launchCtrl.ready = true;
+    flagsCtrl.resolved = true;
+    flagsCtrl.pickerEnabled = true;
+    connectivityCtrl.offline = false;
+    reportErrorMock.mockClear();
+    readShowCountMock.mockReset();
+    readShowCountMock.mockResolvedValue(0);
+    recordShownMock.mockReset();
+    recordShownMock.mockResolvedValue(undefined);
+    markLookStepSeenMock.mockReset();
+    markLookStepSeenMock.mockResolvedValue(undefined);
     appStateCtrl.currentState = 'active';
     appStateCtrl.listeners.clear();
     boardLookGateCtrl.lastProps = null;
@@ -201,7 +239,7 @@ describe('OnboardingGate', () => {
       render(<OnboardingGate />);
 
       await waitFor(() => expect(decisions()).toHaveLength(1));
-      expect(decisions()[0].accountCreatedAt).toBe('2026-09-20T12:00:00.000Z');
+      expect(decisions()[0].accountCreatedAt).toBe(OLD_ACCOUNT_CREATED_AT);
     });
 
     it('mounts the board-look branch in log-only mode', () => {
@@ -447,7 +485,7 @@ describe('OnboardingGate', () => {
       await waitFor(() => expect(decisions()).toHaveLength(1));
       expect(decisions()[0]).toMatchObject({
         outcome: 'would_present',
-        accountCreatedAt: '2026-09-20T12:00:00.000Z',
+        accountCreatedAt: OLD_ACCOUNT_CREATED_AT,
         afterStall: false,
       });
       expect(hasSeenMock).toHaveBeenCalledTimes(1);
@@ -743,6 +781,225 @@ describe('OnboardingGate', () => {
         await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_STALL_MS * 2);
       });
       expect(evaluations()).toEqual([]);
+    });
+  });
+  // #5654, Marco's call: a brand-new account with no board gets the board picker
+  // in first-board mode, at most twice. Everyone else keeps the log-only answer.
+  describe('the first-board picker for new accounts', () => {
+    const FIRST_BOARD_HREF = { pathname: '/boards', params: { source: 'onboarding', firstBoard: '1' } };
+
+    beforeEach(() => {
+      hasSeenMock.mockResolvedValue(false);
+      profileCtrl.id = 'user-new';
+      profileCtrl.createdAt = NEW_ACCOUNT_CREATED_AT;
+    });
+
+    it('opens the picker for a new account with no board, and says so', async () => {
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({
+        outcome: 'presented',
+        reason: 'new_account',
+        step: 'first_board',
+        hadBoard: false,
+        pickerVerdict: 'presented',
+        pickerTimesShown: 0,
+      });
+      expect(pushMock).toHaveBeenCalledTimes(1);
+      expect(pushMock).toHaveBeenCalledWith(FIRST_BOARD_HREF);
+    });
+
+    it('counts the showing before it opens, so a crash in the picker still spends one', async () => {
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+      expect(readShowCountMock).toHaveBeenCalledWith('user-new');
+      expect(recordShownMock).toHaveBeenCalledWith('user-new', 1);
+      expect(recordShownMock.mock.invocationCallOrder[0]).toBeLessThan(pushMock.mock.invocationCallOrder[0]);
+    });
+
+    it('opens it a second time for an account that has seen it once', async () => {
+      readShowCountMock.mockResolvedValue(1);
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'presented', pickerTimesShown: 1 });
+      expect(recordShownMock).toHaveBeenCalledWith('user-new', 2);
+      expect(pushMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays shut after two showings', async () => {
+      readShowCountMock.mockResolvedValue(2);
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({
+        outcome: 'would_present',
+        reason: 'no_board',
+        pickerVerdict: 'shown_twice',
+        pickerTimesShown: 2,
+      });
+      expect(recordShownMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens for an account older than seven days', async () => {
+      profileCtrl.createdAt = '2026-09-14T11:59:00.000Z';
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'not_new_account' });
+      expect(readShowCountMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens for a new account that already has a board', async () => {
+      activeBoardCtrl.board = { uuid: 'board-1' };
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'has_board', pickerVerdict: null });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens over a launch that came in through a link', async () => {
+      getInitialURLMock.mockResolvedValue('com.boardsesh.app://climbs/abc');
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'launched_by_url' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens over a deep-link landing', async () => {
+      segmentsCtrl.segments = ['join', 'abc'];
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'deep_link_segment' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('stands down when a deep link lands while the counter is being read', async () => {
+      let resolveCount: (count: number) => void = () => undefined;
+      readShowCountMock.mockReturnValue(
+        new Promise<number>((resolve) => {
+          resolveCount = resolve;
+        }),
+      );
+      const { rerender } = render(<OnboardingGate />);
+      await waitFor(() => expect(readShowCountMock).toHaveBeenCalled());
+
+      segmentsCtrl.segments = ['join', 'abc'];
+      rerender(<OnboardingGate />);
+      await act(async () => {
+        resolveCount(0);
+      });
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'skipped', reason: 'segment_after_reads' });
+      expect(recordShownMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens when the profile did not load', async () => {
+      profileCtrl.id = undefined;
+      profileCtrl.status = 'error';
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'profile_unavailable' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens offline, where the picker has nothing to list', async () => {
+      connectivityCtrl.offline = true;
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'offline' });
+      expect(readShowCountMock).not.toHaveBeenCalled();
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('never opens with first-board-picker-kill on', async () => {
+      flagsCtrl.pickerEnabled = false;
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'kill_switch' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    // The kill switch has to land before the push it exists to stop.
+    it('waits for the feature flags before it decides', async () => {
+      flagsCtrl.resolved = false;
+      const { rerender } = render(<OnboardingGate />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(decisions()).toEqual([]);
+      expect(hasSeenMock).not.toHaveBeenCalled();
+
+      flagsCtrl.resolved = true;
+      rerender(<OnboardingGate />);
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'presented' });
+    });
+
+    it('does not open when the counter cannot be read, since nothing could cap it', async () => {
+      readShowCountMock.mockResolvedValue(null);
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'storage_error' });
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('does not open when the showing cannot be counted', async () => {
+      const writeError = new Error('storage full');
+      recordShownMock.mockRejectedValue(writeError);
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+      expect(decisions()[0]).toMatchObject({ outcome: 'would_present', pickerVerdict: 'storage_error' });
+      expect(reportErrorMock).toHaveBeenCalledWith(writeError);
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    // New accounts get the Aura default without being asked which look they want.
+    it('marks the board-look step seen for a new account before releasing it', async () => {
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(markLookStepSeenMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks it for a new account that already has a board too', async () => {
+      activeBoardCtrl.board = { uuid: 'board-1' };
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(markLookStepSeenMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the board-look step alone for an existing account', async () => {
+      profileCtrl.createdAt = OLD_ACCOUNT_CREATED_AT;
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(markLookStepSeenMock).not.toHaveBeenCalled();
+    });
+
+    it('still releases the board-look branch when marking it fails', async () => {
+      const markError = new Error('storage full');
+      markLookStepSeenMock.mockRejectedValue(markError);
+      render(<OnboardingGate />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(reportErrorMock).toHaveBeenCalledWith(markError);
     });
   });
 });
