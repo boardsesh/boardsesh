@@ -100,7 +100,7 @@ describe('usePopToTopOnTabBlur', () => {
     expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('does nothing when the parent state has no routes yet (partial hydration)', () => {
+  it('does nothing when the parent state itself has no routes list (partial hydration)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     cfg.navigation.getState.mockReturnValue({ routes: undefined });
 
@@ -112,6 +112,20 @@ describe('usePopToTopOnTabBlur', () => {
     // dev-warning path as the "missing from routes" case above.
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('profile'));
     warn.mockRestore();
+  });
+
+  it('does nothing when the nested stack state has no routes list (partial hydration)', () => {
+    // Distinct from the parent-level case above: here the tab's OWN route is
+    // found and is a 'stack', but that nested state hasn't finished hydrating
+    // its routes yet — exercises the nestedState.routes?.length fallback.
+    cfg.navigation.getState.mockReturnValue({
+      routes: [{ name: 'profile', key: 'profile-1', state: { type: 'stack', key: 'stack-1', routes: undefined } }],
+    });
+
+    renderHook(() => usePopToTopOnTabBlur('profile'));
+    triggerBlur();
+
+    expect(cfg.navigation.dispatch).not.toHaveBeenCalled();
   });
 
   it('unsubscribes the blur listener on unmount', () => {

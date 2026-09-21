@@ -27,7 +27,7 @@ export function usePopToTopOnTabBlur(tabName: 'profile' | 'discover' | 'climbs')
       }
       const nestedState = ownRoute?.state;
       if (nestedState == null || nestedState.type !== 'stack' || typeof nestedState.key !== 'string') return;
-      const topIndex = nestedState.index ?? nestedState.routes.length - 1;
+      const topIndex = nestedState.index ?? (nestedState.routes?.length ?? 0) - 1;
       if (topIndex <= 0) return;
       navigation.dispatch({ type: 'POP_TO_TOP', target: nestedState.key });
     });

@@ -8,9 +8,6 @@ import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-vis
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
-  // PlayDrawer's setter link and the create/remix flow push into this stack
-  // from the floating play drawer, reachable from any tab — same cross-tab
-  // push pattern as Settings on the Profile tab (see its _layout.tsx).
   usePopToTopOnTabBlur('climbs');
 
   return (

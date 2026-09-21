@@ -10,11 +10,6 @@ export default function ProfileLayout() {
   const { t: tSettings } = useTranslation('settings');
   const { t: tNotifications } = useTranslation('notifications');
   const screenOptions = useStackScreenOptions();
-  // Settings, Edit Profile, and other rows opened from the global user-drawer
-  // (reachable from any tab) push straight into this stack via an absolute
-  // `router.push`, so this tab isn't always left on its own index route.
-  // Without this, switching away and back showed whatever screen was pushed
-  // last (e.g. Settings) instead of the You root (logbook/sessions/progress).
   usePopToTopOnTabBlur('profile');
 
   return (
