@@ -8,16 +8,16 @@ const analytics = vi.hoisted(() => ({ track: vi.fn(), setPersonProperties: vi.fn
 const auth = vi.hoisted(() => ({ register: vi.fn() }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 const oauth = vi.hoisted(() => ({ signIn: vi.fn(async () => ({ success: true }) as unknown) }));
-const googleButton = vi.hoisted(() => ({ press: null as (() => void) | null }));
 const platform = vi.hoisted(() => ({ os: 'android' as 'android' | 'web' }));
 const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.stubGlobal('fetch', fetchMock);
 
 // Captures the fields + submit callback AuthFieldset receives, so the test can
-// drive the form like a real user (fill email/password/confirmPassword, then
-// submit) without mounting the platform-split native field/button trees.
+// drive the form like a real user (fill email/password, then submit) without
+// mounting the platform-split native field/button trees.
 const form = vi.hoisted(() => ({
+  fieldKeys: [] as string[],
   setters: {} as Record<string, (text: string) => void>,
   submit: null as (() => void) | null,
 }));
@@ -25,6 +25,11 @@ const form = vi.hoisted(() => ({
 vi.mock('../../../src/lib/analytics', () => ({
   track: analytics.track,
   setPersonProperties: analytics.setPersonProperties,
+}));
+// The real hook waits for the profile before tracking (login-analytics.test.tsx
+// covers that). Tracking straight away keeps these assertions on one stream.
+vi.mock('../../../src/lib/login-analytics', () => ({
+  useTrackLoginSucceeded: () => (properties: Record<string, unknown>) => analytics.track('Login Succeeded', properties),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ register: auth.register }) }));
 vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
@@ -36,7 +41,7 @@ vi.mock('../../../src/lib/auth', () => ({ isGoogleSignInConfigured: () => true }
 vi.mock('../../../src/lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../src/lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ colorScheme: 'light', systemColors: {} }),
+  useTheme: () => ({ colorScheme: 'light', systemColors: {}, radii: { button: 10 } }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
@@ -45,17 +50,12 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('expo-apple-authentication', () => ({
   AppleAuthenticationButton: () => null,
-  AppleAuthenticationButtonType: { SIGN_UP: 'sign_up' },
+  AppleAuthenticationButtonType: { CONTINUE: 'continue' },
   AppleAuthenticationButtonStyle: { WHITE: 'white', BLACK: 'black' },
 }));
-vi.mock('@react-native-google-signin/google-signin', () => ({
-  GoogleSigninButton: Object.assign(
-    ({ onPress }: { onPress?: () => void }) => {
-      googleButton.press = onPress ?? null;
-      return createElement('button');
-    },
-    { Size: { Wide: 'wide' }, Color: { Dark: 'dark', Light: 'light' } },
-  ),
+vi.mock('react-native-svg', () => ({
+  default: ({ children }: { children?: ReactNode }) => createElement('svg', null, children),
+  Path: () => null,
 }));
 vi.mock('react-native', () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -68,6 +68,7 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
@@ -79,6 +80,7 @@ vi.mock('../../../src/components/AuthFieldset', () => ({
     fields: Array<{ key: string; onChangeText: (text: string) => void }>;
     onSubmit?: () => void;
   }) => {
+    form.fieldKeys = fields.map((field) => field.key);
     fields.forEach((field) => {
       form.setters[field.key] = field.onChangeText;
     });
@@ -104,9 +106,9 @@ beforeEach(() => {
   oauth.signIn.mockClear();
   fetchMock.mockReset();
   platform.os = 'android';
+  form.fieldKeys = [];
   form.setters = {};
   form.submit = null;
-  googleButton.press = null;
 });
 
 async function fillAndSubmit() {
@@ -114,7 +116,6 @@ async function fillAndSubmit() {
   await act(async () => {
     form.setters.email?.('new@example.com');
     form.setters.password?.('supersecure1');
-    form.setters.confirmPassword?.('supersecure1');
   });
   await act(async () => {
     form.submit?.();
@@ -262,14 +263,33 @@ describe('RegisterScreen analytics', () => {
     // use-native-oauth-sign-in.test.tsx) and must not also fire SignupCompleted
     // — matching web, which has no OAuth-signup-distinct event either.
     render(createElement(RegisterScreen));
-    expect(googleButton.press).not.toBeNull();
 
     await act(async () => {
-      googleButton.press?.();
+      fireEvent.click(screen.getByText('login.providers.google'));
     });
 
     expect(oauth.signIn).toHaveBeenCalledWith('google');
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.AuthOptionTapped, {
+      option: 'google',
+      screen: 'register',
+    });
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, expect.any(Object));
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+});
+
+describe('RegisterScreen fields', () => {
+  it('asks for email, one password and an optional name, with no Confirm Password', () => {
+    render(createElement(RegisterScreen));
+
+    expect(form.fieldKeys).toEqual(['email', 'password', 'name']);
+  });
+
+  it('creates the account from email and a single password', async () => {
+    auth.register.mockResolvedValue({ success: true });
+
+    await fillAndSubmit();
+
+    await waitFor(() => expect(auth.register).toHaveBeenCalledWith('new@example.com', 'supersecure1', undefined));
   });
 });

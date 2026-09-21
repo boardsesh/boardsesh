@@ -21,6 +21,12 @@ vi.mock('../../providers/auth-provider', () => ({
 
 const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+// Login Succeeded goes through useTrackLoginSucceeded, which waits for the
+// profile before tracking (covered in login-analytics.test.tsx). Here it tracks
+// straight away so every assertion reads one event stream.
+vi.mock('../../lib/login-analytics', () => ({
+  useTrackLoginSucceeded: () => (properties: Record<string, unknown>) => trackMock('Login Succeeded', properties),
+}));
 
 const reportErrorMock = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({ reportError: (...args: unknown[]) => reportErrorMock(...args) }));

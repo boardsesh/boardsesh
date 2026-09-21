@@ -10,6 +10,12 @@
 export const SHARED_EVENTS = {
   // Auth
   LoginAttempted: 'Login Attempted',
+  // Mobile also stamps `is_new_account` (the account is at most 24 h old) and
+  // `account_age_hours` on it, read from the profile's `createdAt` because the
+  // native token responses carry no creation time. That read happens after the
+  // tokens land, so the event waits for it (up to 5 s, then fires without the
+  // two props) and is backdated to the moment sign-in succeeded. See
+  // packages/mobile/src/lib/login-analytics.ts.
   LoginSucceeded: 'Login Succeeded',
   LoginFailed: 'Login Failed',
   // A user dismissing the provider sheet or the browser is intent, not a failure.
@@ -17,13 +23,23 @@ export const SHARED_EVENTS = {
   LoginCancelled: 'Login Cancelled',
   Logout: 'Logout',
   // Fired once, immediately after a NEW account is created via credentials
-  // (both platforms). OAuth registration is indistinguishable from OAuth
-  // sign-in and stays tagged only via LoginSucceeded's `is_registration: true`
-  // — web has no separate OAuth-signup event either. Kept distinct from
+  // (both platforms). OAuth registration is the same call as OAuth sign-in, so
+  // it has no event of its own: LoginSucceeded's `is_registration: true` marks
+  // the register screen, and on mobile `is_new_account` marks an account the
+  // sign-in itself just created. Web has no OAuth-signup event either. Kept distinct from
   // LoginSucceeded so "created an account" and "successfully authenticated"
   // stay separately measurable — web's signup can require email verification
   // and never reach a LoginSucceeded in that same session.
   SignupCompleted: 'Signup Completed',
+  // Mobile-only: a tap on one of the ways in on the sign-in wall, fired before
+  // anything else happens, so a tap that goes nowhere still counts. Props:
+  // { option: 'apple' | 'google' | 'email_sign_in' | 'create_account' |
+  // 'forgot_password', screen: 'login' | 'register' }. `email_sign_in` fires
+  // when a filled-in form is submitted (button or keyboard). `register` only
+  // carries the Apple and Google taps; its email path is already covered by
+  // Login Attempted with `is_registration: true`. Built for the #5654 wall
+  // question: of the newcomers who never sign in, how many tapped anything.
+  AuthOptionTapped: 'Auth Option Tapped',
   // Queue / session
   AddToQueue: 'Add to Queue',
   ClimbAddedToQueue: 'Climb Added to Queue',

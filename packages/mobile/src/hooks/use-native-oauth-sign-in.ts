@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useAuth } from '../providers/auth-provider';
 import { track } from '../lib/analytics';
+import { useTrackLoginSucceeded } from '../lib/login-analytics';
 import { reportError } from '../lib/error-reporting';
 import {
   classifyNativeAuthFailureReason,
@@ -35,6 +36,7 @@ type Options = {
 export function useNativeOAuthSignIn({ isRegistration = false, setError }: Options) {
   const { signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb } = useAuth();
   const { t } = useTranslation('auth');
+  const trackLoginSucceeded = useTrackLoginSucceeded();
   const [inProgress, setInProgress] = useState(false);
   const inProgressRef = useRef(false);
 
@@ -118,7 +120,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (fallback.success) {
-          track(SHARED_EVENTS.LoginSucceeded, {
+          trackLoginSucceeded({
             auth_method: provider,
             flow: 'web_fallback',
             fallback_mechanism: 'browser_deeplink',
@@ -181,7 +183,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           return;
         }
         if (result.success) {
-          track(SHARED_EVENTS.LoginSucceeded, { auth_method: provider, flow: primaryFlow, ...registrationProps });
+          trackLoginSucceeded({ auth_method: provider, flow: primaryFlow, ...registrationProps });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }
@@ -271,7 +273,16 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         setInProgress(false);
       }
     },
-    [isRegistration, setError, signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb, t],
+    [
+      isRegistration,
+      setError,
+      signInWithApple,
+      signInWithGoogle,
+      signInWithGoogleWeb,
+      signInWithAppleWeb,
+      t,
+      trackLoginSucceeded,
+    ],
   );
 
   return { signIn, inProgress };

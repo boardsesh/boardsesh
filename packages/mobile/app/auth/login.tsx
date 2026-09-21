@@ -12,6 +12,7 @@ import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { track } from '../../src/lib/analytics';
+import { useTrackLoginSucceeded } from '../../src/lib/login-analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { openDiscordInvite } from '../../src/lib/discord';
@@ -36,14 +37,22 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // Shared Apple/Google flow; errors land in the same region as credentials sign-in.
-  const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({ setError });
+  // Apple and Google sit above the email form, so their errors get their own
+  // region under the buttons. One shared region below Sign in would put an
+  // Apple failure off screen on a small phone.
+  const [oauthError, setOAuthError] = useState<string | null>(null);
+  const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({
+    setError: setOAuthError,
+  });
+  const trackLoginSucceeded = useTrackLoginSucceeded();
 
   const trimmedEmail = email.trim();
   const canSubmit = !submitting && trimmedEmail.length > 0 && password.length > 0;
 
   async function onSubmit() {
     if (!canSubmit) return;
+    track(SHARED_EVENTS.AuthOptionTapped, { option: 'email_sign_in', screen: 'login' });
+    setOAuthError(null);
 
     if (!EMAIL_REGEX.test(trimmedEmail)) {
       setError(t('login.validation.emailInvalid'));
@@ -91,7 +100,7 @@ export default function LoginScreen() {
           setError(t('login.toasts.authFailed'));
         }
       } else {
-        track(SHARED_EVENTS.LoginSucceeded, { auth_method: 'credentials', flow: 'native' });
+        trackLoginSucceeded({ auth_method: 'credentials', flow: 'native' });
       }
       // On success, AuthProvider flips isAuthenticated and the redirect handles navigation.
     } catch (signInError) {
@@ -124,10 +133,43 @@ export default function LoginScreen() {
             accessible={false}
           />
           <Text style={[styles.title, { color: theme.brandColors.primary }]}>Boardsesh</Text>
-          <Text style={[styles.subtitle, { color: theme.systemColors.secondaryLabel }]}>
+          <Text style={[styles.tagline, { color: theme.systemColors.label }]} accessibilityRole="header">
             {t('nativeStart.tagline')}
           </Text>
+          <Text style={[styles.subtitle, { color: theme.systemColors.secondaryLabel }]}>
+            {t('nativeStart.taglineDetail')}
+          </Text>
         </View>
+
+        {/* Apple and Google first: they are about 80% of sign-ins, and one tap
+            covers new and returning climbers alike. Email stays open below. */}
+        {showSocialSignIn && (
+          <>
+            <OAuthProviderButtons
+              disabled={oauthInProgress}
+              providers={oauthProviders}
+              onSignIn={(provider) => {
+                hapticLight();
+                track(SHARED_EVENTS.AuthOptionTapped, { option: provider, screen: 'login' });
+                setError(null);
+                void handleOAuthSignIn(provider);
+              }}
+            />
+            {oauthError ? (
+              <Text style={[styles.errorText, styles.oauthErrorText]} accessibilityLiveRegion="polite">
+                {oauthError}
+              </Text>
+            ) : null}
+
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+              <Text style={[styles.dividerLabel, { color: theme.systemColors.secondaryLabel }]}>
+                {t('nativeStart.orUseEmail')}
+              </Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+            </View>
+          </>
+        )}
 
         <View style={styles.form}>
           <AuthFieldset
@@ -187,6 +229,7 @@ export default function LoginScreen() {
           <Pressable
             onPress={() => {
               hapticLight();
+              track(SHARED_EVENTS.AuthOptionTapped, { option: 'forgot_password', screen: 'login' });
               router.push('/auth/forgot-password');
             }}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
@@ -199,26 +242,6 @@ export default function LoginScreen() {
           </Pressable>
         </View>
 
-        {showSocialSignIn && (
-          <>
-            <View style={styles.dividerRow}>
-              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-              <Text style={styles.dividerLabel}>{t('nativeStart.orContinueWith')}</Text>
-              <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-            </View>
-
-            <OAuthProviderButtons
-              disabled={oauthInProgress}
-              isRegistration={false}
-              providers={oauthProviders}
-              onSignIn={(provider) => {
-                hapticLight();
-                void handleOAuthSignIn(provider);
-              }}
-            />
-          </>
-        )}
-
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
             {t('login.links.noAccount')}{' '}
@@ -226,6 +249,7 @@ export default function LoginScreen() {
           <Pressable
             onPress={() => {
               hapticLight();
+              track(SHARED_EVENTS.AuthOptionTapped, { option: 'create_account', screen: 'login' });
               router.push(returnHref ? { pathname: '/auth/register', params: { next: returnHref } } : '/auth/register');
             }}
             hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
@@ -264,7 +288,8 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', marginBottom: 32 },
   logo: { width: 96, height: 96, marginBottom: 16 },
   title: { fontSize: 34, fontWeight: '700', marginBottom: 8 },
-  subtitle: { fontSize: 17 },
+  tagline: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
+  subtitle: { fontSize: 15, lineHeight: 20, textAlign: 'center', marginTop: 6 },
   form: { gap: 12 },
   submitButton: { alignSelf: 'stretch', marginTop: 4 },
   errorText: {
@@ -272,6 +297,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 4,
   },
+  oauthErrorText: { marginTop: 12 },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',

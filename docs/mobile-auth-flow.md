@@ -9,6 +9,21 @@ cookie with `www.boardsesh.com`, keeps its backend JWE in memory, and returns
 from Google/Apple OAuth directly to the `/app` or `app.boardsesh.com` export.
 See [`expo-web-deployment.md`](./expo-web-deployment.md#browser-authentication).
 
+## Sign-in screen
+
+`app/auth/login.tsx` puts the two provider buttons first (#5654). Apple and Google are about 80% of successful sign-ins, and each finds or creates the account, so one button serves newcomers and returning climbers. From the top:
+
+1. **Continue with Apple** (iOS only). The system `AppleAuthenticationButton` with `AppleAuthenticationButtonType.CONTINUE`, so it labels and localises itself. Android never shows Apple.
+2. **Continue with Google.** A custom button in Google's published branding colours with the standard "G" (`src/components/auth/GoogleLogo.tsx`, shared with the web variant). The SDK's `GoogleSigninButton` can only say "Sign in", so it is no longer rendered. Sign-in still runs through the Google SDK and its browser fallback, unchanged.
+3. An "or use email" divider, then the email and password form. It stays open because about 19% of sign-ins use it.
+
+Apple and Google failures show under those buttons and credential failures under **Sign in**, so neither lands off screen on a small phone. Register uses the same two buttons and asks for the password once. Its Confirm Password check was client-only (`/auth/native/register` takes one password), and the password field keeps its show-password toggle. Web's register form still asks twice.
+
+### Sign-in telemetry
+
+- `Auth Option Tapped` `{ option, screen }` fires on every tap of a way in, before anything else runs. `option` is `apple`, `google`, `email_sign_in` (a filled-in form submitted), `create_account` or `forgot_password`. `screen` is `login`, or `register` for Apple and Google taps on the sign-up screen.
+- `Login Succeeded` carries `is_new_account` (the account is 24 h old or less) and `account_age_hours`. The token responses carry no creation time, so `src/lib/login-analytics.ts` reads `createdAt` from the `['profile']` query that `PartyProfileProvider` fetches on sign-in anyway. The event waits for it for up to 5 s, and PostHog's `timestamp` capture option backdates it to the moment sign-in succeeded, so funnels that start at it keep their order. If the profile can't be read in time, the event fires without the two props. The web export's cookie OAuth return still fires `Login Succeeded` from `AuthProvider` without them.
+
 ## Token exchange flow
 
 1. The mobile app first uses the native Google/Apple provider SDK. If that SDK hits a supported presentation/configuration failure, the browser fallback opens the web app's `/auth/native-start` flow with `expo-web-browser`'s `openBrowserAsync` (`packages/mobile/src/lib/auth.ts`).

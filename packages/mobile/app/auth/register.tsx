@@ -12,13 +12,14 @@ import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
 import { track, setPersonProperties } from '../../src/lib/analytics';
+import { useTrackLoginSucceeded } from '../../src/lib/login-analytics';
 import { webApiUrl } from '../../src/lib/env';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/auth/OAuthProviderButtons';
 import { readPostLoginReturnHref } from '../../src/lib/routing/anonymous-auth-gate';
 
-type FieldKey = 'name' | 'email' | 'password' | 'confirmPassword';
+type FieldKey = 'name' | 'email' | 'password';
 
 export default function RegisterScreen() {
   const { register } = useAuth();
@@ -36,7 +37,7 @@ export default function RegisterScreen() {
     ? ({ pathname: '/auth/login', params: { next: returnHref } } as const)
     : ('/auth/login' as const);
 
-  const [values, setValues] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [values, setValues] = useState({ name: '', email: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +51,7 @@ export default function RegisterScreen() {
     isRegistration: true,
     setError: setFormError,
   });
+  const trackLoginSucceeded = useTrackLoginSucceeded();
 
   // Editing a field clears its inline error so a fixed field stops shouting.
   const setField = (key: FieldKey) => (text: string) => {
@@ -58,8 +60,7 @@ export default function RegisterScreen() {
   };
 
   const trimmedEmail = values.email.trim();
-  const canSubmit =
-    !submitting && trimmedEmail.length > 0 && values.password.length > 0 && values.confirmPassword.length > 0;
+  const canSubmit = !submitting && trimmedEmail.length > 0 && values.password.length > 0;
 
   async function onSubmit() {
     if (!canSubmit) return;
@@ -87,10 +88,6 @@ export default function RegisterScreen() {
             return t('login.validation.passwordTooShort');
           case 'login.validation.passwordTooLong':
             return t('login.validation.passwordTooLong');
-          case 'login.validation.passwordsMismatch':
-            return t('login.validation.passwordsMismatch');
-          case 'login.validation.confirmPasswordRequired':
-            return t('login.validation.confirmPasswordRequired');
           default:
             return undefined;
         }
@@ -99,7 +96,6 @@ export default function RegisterScreen() {
         name: translateValidationKey(errorKeys.name),
         email: translateValidationKey(errorKeys.email),
         password: translateValidationKey(errorKeys.password),
-        confirmPassword: translateValidationKey(errorKeys.confirmPassword),
       });
       return;
     }
@@ -135,7 +131,7 @@ export default function RegisterScreen() {
           return;
         }
 
-        track(SHARED_EVENTS.LoginSucceeded, {
+        trackLoginSucceeded({
           auth_method: 'credentials',
           flow: authFlow,
           is_registration: true,
@@ -275,10 +271,10 @@ export default function RegisterScreen() {
                 <>
                   <OAuthProviderButtons
                     disabled={oauthInProgress}
-                    isRegistration
                     providers={oauthProviders}
                     onSignIn={(provider) => {
                       hapticLight();
+                      track(SHARED_EVENTS.AuthOptionTapped, { option: provider, screen: 'register' });
                       void handleOAuthSignIn(provider);
                     }}
                   />
@@ -323,22 +319,6 @@ export default function RegisterScreen() {
                       placeholder: t('login.placeholders.password'),
                       error: fieldErrors.password,
                       hint: t('login.signUp.passwordHint'),
-                      secureTextEntry: true,
-                      autoCapitalize: 'none',
-                      autoCorrect: false,
-                      textContentType: 'newPassword',
-                      autoComplete: 'new-password',
-                      editable: !submitting,
-                      showLabel: t('login.a11y.showPassword'),
-                      hideLabel: t('login.a11y.hidePassword'),
-                    },
-                    {
-                      key: 'confirmPassword',
-                      label: t('login.fields.confirmPassword'),
-                      value: values.confirmPassword,
-                      onChangeText: setField('confirmPassword'),
-                      placeholder: t('login.placeholders.confirmPassword'),
-                      error: fieldErrors.confirmPassword,
                       secureTextEntry: true,
                       autoCapitalize: 'none',
                       autoCorrect: false,
