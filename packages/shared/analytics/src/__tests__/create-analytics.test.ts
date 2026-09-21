@@ -22,6 +22,22 @@ describe('createAnalytics', () => {
     expect(fake.capture).toHaveBeenCalledWith('Tick Logged', { boardLayout: 'kilter', count: 0 });
   });
 
+  it('forwards a backdated timestamp, and keeps the two-argument capture without options', () => {
+    const fake = fakeClient();
+    const analytics = createAnalytics(() => fake.client);
+    const signedInAt = new Date('2026-09-21T08:00:00.000Z');
+
+    analytics.track('Login Succeeded', { auth_method: 'google' }, { timestamp: signedInAt });
+    analytics.track('Logout');
+
+    expect(fake.capture.mock.calls[0]).toEqual([
+      'Login Succeeded',
+      { auth_method: 'google' },
+      { timestamp: signedInAt },
+    ]);
+    expect(fake.capture.mock.calls[1]).toHaveLength(2);
+  });
+
   it('no-ops every method when the client is null', () => {
     const analytics = createAnalytics(() => null);
 

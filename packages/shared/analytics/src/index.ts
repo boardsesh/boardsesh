@@ -3,7 +3,7 @@
 // posthog-react-native) and platform I/O (alias-dedupe storage); everything that
 // would otherwise be duplicated — the wrapper surface, prop sanitization, the
 // identity state machine, and the cross-platform event names — lives here.
-export type { AnalyticsProperties, AnalyticsPropertyValue, PostHogClient } from './client';
+export type { AnalyticsCaptureOptions, AnalyticsProperties, AnalyticsPropertyValue, PostHogClient } from './client';
 export { sanitizeForPosthog } from './sanitize';
 export { sanitizeErrorForAnalytics } from './sanitize-error';
 export {
