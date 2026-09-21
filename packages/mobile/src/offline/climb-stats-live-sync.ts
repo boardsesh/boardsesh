@@ -325,6 +325,8 @@ export type ClimbStatsLiveSyncOptions = {
 
 export type ClimbStatsLiveSync = {
   handleEvent: (event: ClimbStatsWriteThroughInput) => void;
+  persistReconciliationChunk: (events: readonly ClimbStatsWriteThroughInput[]) => Promise<void>;
+  onForeground: () => void;
   dispose: () => void;
 };
 
@@ -359,6 +361,8 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
   let cancelTrailing: (() => void) | null = null;
   let cancelMaxWait: (() => void) | null = null;
   let cancelRetryDrain: (() => void) | null = null;
+  let cancelReconciliationRetry: (() => void) | null = null;
+  let resolveReconciliationRetry: (() => void) | null = null;
   let retryDrainNotBefore = 0;
 
   function reportFirstError(error: unknown): void {
@@ -632,35 +636,14 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         }
         if (disposed) break;
 
-        let lostLock = false;
-        for (const [index, result] of results.entries()) {
-          const event = events[index];
-          if (result.status === 'lock_lost') {
-            lostLock = true;
-            continue;
-          }
-          // Only what the PRE-READ settled. `applied` means the row is now at
-          // this revision; a `stale` from the pre-read means it already was. A
-          // `stale` from the WRITE means the upsert matched nothing, which
-          // happens when the climb vanished — there may be no row at all, so
-          // remembering it would suppress the republish that heals a
-          // re-download.
-          if (result.status === 'applied' || (result.status === 'stale' && result.settledBy === 'pre_read')) {
-            rememberSettledRevision(keys[index], event.syncSeq);
-          }
-          if (result.status !== 'applied') continue;
-          // The climb's OWN layout, never the event's: a reconciliation read
-          // labels its rows with the layout the user is browsing.
-          if (result.layoutId === null) continue;
-          armFlush(event, result.layoutId, result.compatibleSizeIds);
-        }
-        if (lostLock) {
+        const lockLost = recordWriteResults(keys, events, results);
+        if (lockLost.length > 0) {
           // Another writer holds the file (a VACUUM or a snapshot import can
           // hold it for 5-20 s). Keep the events, stand down, and let one timer
           // retry rather than every arriving event.
           requeue(
             keys.filter((_key, index) => results[index]?.status === 'lock_lost'),
-            events.filter((_event, index) => results[index]?.status === 'lock_lost'),
+            lockLost,
           );
           retryDrainNotBefore = Date.now() + CLIMB_STATS_LOCK_BACKOFF_MS;
           scheduleRetryDrain(CLIMB_STATS_LOCK_BACKOFF_MS);
@@ -689,6 +672,68 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     trimPendingEvents();
   }
 
+  function recordWriteResults(
+    keys: readonly string[],
+    events: readonly ClimbStatsWriteThroughInput[],
+    results: readonly ClimbStatsWriteThroughResult[],
+  ): ClimbStatsWriteThroughInput[] {
+    const lockLost: ClimbStatsWriteThroughInput[] = [];
+    for (const [index, result] of results.entries()) {
+      const event = events[index];
+      if (!event) continue;
+      if (result.status === 'lock_lost') {
+        lockLost.push(event);
+        continue;
+      }
+      if (result.status === 'applied' || (result.status === 'stale' && result.settledBy === 'pre_read')) {
+        rememberSettledRevision(keys[index] ?? pendingKey(event), event.syncSeq);
+      }
+      if (result.status !== 'applied' || result.layoutId === null) continue;
+      armFlush(event, result.layoutId, result.compatibleSizeIds);
+    }
+    return lockLost;
+  }
+
+  async function waitForReconciliationRetry(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      resolveReconciliationRetry = resolve;
+      cancelReconciliationRetry = scheduleTask(() => {
+        cancelReconciliationRetry = null;
+        resolveReconciliationRetry = null;
+        resolve();
+      }, CLIMB_STATS_LOCK_BACKOFF_MS);
+    });
+  }
+
+  async function persistReconciliationChunk(events: readonly ClimbStatsWriteThroughInput[]): Promise<void> {
+    // The producer keeps this bounded to 500. Do not enqueue it into the live
+    // backlog: an unavailable database may discard that bounded map, while the
+    // reconciliation producer must apply every healthy response row in order.
+    let remaining = events.filter((event) => {
+      if (!options.hasEnabledScopeForBoard(event.boardType)) return false;
+      const db = options.getDb();
+      if (db) resetMemoOnNewHandle(db);
+      return !alreadySettled(event);
+    });
+    while (remaining.length > 0 && !disposed && !options.shouldSkipWrites()) {
+      const db = options.getDb();
+      if (!db) return;
+      resetMemoOnNewHandle(db);
+      let results: ClimbStatsWriteThroughResult[];
+      try {
+        results = await writeEvents(db, remaining);
+      } catch (error) {
+        reportFirstError(error);
+        return;
+      }
+      if (disposed || options.shouldSkipWrites()) return;
+      const keys = remaining.map(pendingKey);
+      remaining = recordWriteResults(keys, remaining, results);
+      if (remaining.length === 0) return;
+      await waitForReconciliationRetry();
+    }
+  }
+
   return {
     handleEvent(event) {
       if (disposed) return;
@@ -715,11 +760,21 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         void drain();
       });
     },
+    persistReconciliationChunk,
+    onForeground() {
+      if (disposed || options.shouldSkipWrites()) return;
+      if (flushedStats.size > 0 && !cancelTrailing && !cancelMaxWait) armFlushTimers();
+      if (pendingEvents.size > 0) void drain();
+    },
     dispose() {
       disposed = true;
       cancelTimers();
       cancelRetryDrain?.();
       cancelRetryDrain = null;
+      cancelReconciliationRetry?.();
+      cancelReconciliationRetry = null;
+      resolveReconciliationRetry?.();
+      resolveReconciliationRetry = null;
       pendingEvents.clear();
       flushedStats.clear();
       settledRevisions.clear();
