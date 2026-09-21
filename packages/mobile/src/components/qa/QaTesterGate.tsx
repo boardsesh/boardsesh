@@ -14,11 +14,8 @@ import { listPrBranches, readRunningPrNumber } from '../../lib/qa/qa-surf';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { LAUNCH_ORIGIN, QA_BRIEF_SHOWN_EVENT, QA_PREVIEW_PROMPTED_EVENT } from '../../lib/qa/qa-analytics';
-
-type QaTesterGateProps = {
-  /** True once auth + fonts are resolved and the splash has hidden. */
-  ready: boolean;
-};
+import { useFeatureFlagsResolved, useQaTesterGateEnabled } from '../../providers/feature-flags-provider';
+import { useLaunchReady } from '../../providers/launch-ready-context';
 
 // Once per JS session, not once per mount. A cold start is a new session, and so
 // is the reload a surf performs — which is exactly right: the tester lands on the
@@ -45,8 +42,17 @@ export function resetQaGateSessionForTests(): void {
  * the synchronous signals, bails out early when they already say "no", and only
  * then pays for the async ones (the launch URL, the onboarding flag, and a
  * network round-trip for the branch list).
+ *
+ * It waits on the launch-ready context and on the feature flags having resolved,
+ * because `qa-tester-gate-kill` must be able to stop a push it has not made yet.
+ * The gate never ran from 2.2.0 until #5654 (its `ready` prop was frozen behind
+ * the database provider), which is why that switch exists at all.
  */
-export function QaTesterGate({ ready }: QaTesterGateProps) {
+export function QaTesterGate() {
+  const launchReady = useLaunchReady();
+  const flagsResolved = useFeatureFlagsResolved();
+  const enabled = useQaTesterGateEnabled();
+  const ready = launchReady && flagsResolved;
   const segments = useSegments();
   // Latest top-level segment for the async re-check, without re-running the
   // effect on every navigation — the gate decides once per launch.
@@ -68,7 +74,9 @@ export function QaTesterGate({ ready }: QaTesterGateProps) {
   }
 
   useEffect(() => {
-    if (promptedThisSession) return;
+    // Killed: stand down without spending the session guard, so nothing is
+    // decided for this session on the killed flag's behalf.
+    if (!enabled || promptedThisSession) return;
 
     const runningPrNumber = readRunningPrNumber();
     // Null until BOTH are known: the markers are account-scoped, so a key built
@@ -180,7 +188,7 @@ export function QaTesterGate({ ready }: QaTesterGateProps) {
     };
     // `userId` is here so the effect re-runs after a sign-out / sign-in resets
     // the session guard above — the new account gets its own evaluation.
-  }, [ready, surfingBuild, surfingReady, profile?.isTester, userId]);
+  }, [ready, enabled, surfingBuild, surfingReady, profile?.isTester, userId]);
 
   return null;
 }

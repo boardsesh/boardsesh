@@ -12,6 +12,7 @@ const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as strin
 const hasSeenTipMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
 const ensureProbedMock = vi.hoisted(() => vi.fn());
+const reportEvaluationMock = vi.hoisted(() => vi.fn());
 const settingsCtrl = vi.hoisted(() => ({ mode: 'default' as string, loaded: true }));
 const previewCtrl = vi.hoisted(() => ({ status: 'ready' as string, enabledCalls: [] as boolean[] }));
 // The real probe latch notifies its subscribers when the answer lands; the mock
@@ -41,6 +42,9 @@ vi.mock('../../../hooks/use-board-preview-climb', () => ({
   },
 }));
 vi.mock('../../../hooks/use-native-climb-render', () => ({ ensureBoardseshSupportProbed: ensureProbedMock }));
+vi.mock('../../../lib/board-render/board-look-step-evaluation-log', () => ({
+  reportBoardLookStepEvaluationOnce: reportEvaluationMock,
+}));
 vi.mock('../../../hooks/boardsesh-renderer-support', () => ({
   getBoardseshRendererSupport: () => supportCtrl.value,
   subscribeToBoardseshSupport: (listener: () => void) => {
@@ -70,7 +74,7 @@ afterEach(() => {
 
 describe('BoardLookStepGate', () => {
   it('pushes the step for a climber who has never chosen a mode', async () => {
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() =>
       expect(pushMock).toHaveBeenCalledWith({ pathname: '/onboarding', params: { step: 'board-look' } }),
@@ -78,18 +82,18 @@ describe('BoardLookStepGate', () => {
   });
 
   it('pushes at most once even as its inputs keep changing', async () => {
-    const { rerender } = render(<BoardLookStepGate ready tourDecided />);
+    const { rerender } = render(<BoardLookStepGate ready tourDecided present />);
     await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
 
-    rerender(<BoardLookStepGate ready tourDecided />);
+    rerender(<BoardLookStepGate ready tourDecided present />);
     segmentsCtrl.segments = ['(tabs)', 'profile'];
-    rerender(<BoardLookStepGate ready tourDecided />);
+    rerender(<BoardLookStepGate ready tourDecided present />);
 
     expect(pushMock).toHaveBeenCalledTimes(1);
   });
 
   it('waits for the tour to finish before doing anything at all', () => {
-    render(<BoardLookStepGate ready tourDecided={false} />);
+    render(<BoardLookStepGate ready tourDecided={false} present />);
 
     expect(pushMock).not.toHaveBeenCalled();
     expect(hasSeenTipMock).not.toHaveBeenCalled();
@@ -101,7 +105,7 @@ describe('BoardLookStepGate', () => {
   describe('costs nothing for a climber who will never see it', () => {
     it('skips the flag read, the climb query and the probe when a mode was already chosen', () => {
       settingsCtrl.mode = 'classic';
-      render(<BoardLookStepGate ready tourDecided />);
+      render(<BoardLookStepGate ready tourDecided present />);
 
       expect(hasSeenTipMock).not.toHaveBeenCalled();
       expect(previewCtrl.enabledCalls.every((enabled) => !enabled)).toBe(true);
@@ -111,7 +115,7 @@ describe('BoardLookStepGate', () => {
 
     it('skips them on a blocked route too', () => {
       segmentsCtrl.segments = ['boards'];
-      render(<BoardLookStepGate ready tourDecided />);
+      render(<BoardLookStepGate ready tourDecided present />);
 
       expect(previewCtrl.enabledCalls.every((enabled) => !enabled)).toBe(true);
       expect(ensureProbedMock).not.toHaveBeenCalled();
@@ -123,14 +127,14 @@ describe('BoardLookStepGate', () => {
     // cold start necessarily asks for the Boardsesh drawing first — so without
     // this the probe could still be unanswered and every preview would fall
     // back to a classic render under a Boardsesh label.
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() => expect(ensureProbedMock).toHaveBeenCalled());
   });
 
   it('holds while the probe has not answered, then pushes when it says yes', async () => {
     supportCtrl.value = null;
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
     await waitFor(() => expect(ensureProbedMock).toHaveBeenCalled());
     // `null` reads as unavailable, and a step offered on an unverified library
     // would preview four classic renders under Boardsesh labels.
@@ -143,7 +147,7 @@ describe('BoardLookStepGate', () => {
 
   it('never pushes when this build cannot draw the Boardsesh mode', async () => {
     supportCtrl.value = false;
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalled());
     expect(pushMock).not.toHaveBeenCalled();
@@ -151,7 +155,7 @@ describe('BoardLookStepGate', () => {
 
   it('does not cover a deep-link cold start', async () => {
     getInitialURLMock.mockResolvedValue('com.boardsesh.app://climbs/abc');
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalled());
     expect(pushMock).not.toHaveBeenCalled();
@@ -159,7 +163,7 @@ describe('BoardLookStepGate', () => {
 
   it('does not push again once the step has been seen', async () => {
     hasSeenTipMock.mockResolvedValue(true);
-    render(<BoardLookStepGate ready tourDecided />);
+    render(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalled());
     expect(pushMock).not.toHaveBeenCalled();
@@ -167,14 +171,78 @@ describe('BoardLookStepGate', () => {
 
   it('holds a fresh install at "no board yet" rather than ruling it out', async () => {
     previewCtrl.status = 'loading';
-    const { rerender } = render(<BoardLookStepGate ready tourDecided />);
+    const { rerender } = render(<BoardLookStepGate ready tourDecided present />);
     await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalled());
     expect(pushMock).not.toHaveBeenCalled();
 
     // They come back from the board picker with a board bound.
     previewCtrl.status = 'ready';
-    rerender(<BoardLookStepGate ready tourDecided />);
+    rerender(<BoardLookStepGate ready tourDecided present />);
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+// #5654: the gate woke up after sitting frozen since 2.2.0, and whether the step
+// should reach the climbers it would now fire for is still an open product call.
+// So OnboardingGate mounts it with `present={false}`: decide, report once per
+// device, and cost nothing a climber would notice.
+describe('BoardLookStepGate in log-only mode', () => {
+  it('never pushes, and reports the climber as would_present', async () => {
+    render(<BoardLookStepGate ready tourDecided present={false} />);
+
+    await waitFor(() => expect(reportEvaluationMock).toHaveBeenCalledWith('never_asked'));
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('pays for neither the example-climb query nor the renderer probe', async () => {
+    supportCtrl.value = null;
+    render(<BoardLookStepGate ready tourDecided present={false} />);
+
+    await waitFor(() => expect(reportEvaluationMock).toHaveBeenCalled());
+    expect(previewCtrl.enabledCalls.every((enabled) => !enabled)).toBe(true);
+    expect(ensureProbedMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a chosen look without reading anything', () => {
+    settingsCtrl.mode = 'classic';
+    render(<BoardLookStepGate ready tourDecided present={false} />);
+
+    expect(reportEvaluationMock).toHaveBeenCalledWith('look_chosen');
+    expect(hasSeenTipMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a climber who already answered', async () => {
+    hasSeenTipMock.mockResolvedValue(true);
+    render(<BoardLookStepGate ready tourDecided present={false} />);
+
+    await waitFor(() => expect(reportEvaluationMock).toHaveBeenCalledWith('step_seen'));
+  });
+
+  it('reports nothing for a launch it would only sit out, such as a deep link', async () => {
+    getInitialURLMock.mockResolvedValue('com.boardsesh.app://climbs/abc');
+    render(<BoardLookStepGate ready tourDecided present={false} />);
+
+    await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(reportEvaluationMock).not.toHaveBeenCalled();
+  });
+
+  it('reports once per mount however often it re-renders', async () => {
+    const { rerender } = render(<BoardLookStepGate ready tourDecided present={false} />);
+    await waitFor(() => expect(reportEvaluationMock).toHaveBeenCalledTimes(1));
+
+    segmentsCtrl.segments = ['(tabs)', 'profile'];
+    rerender(<BoardLookStepGate ready tourDecided present={false} />);
+    rerender(<BoardLookStepGate ready tourDecided present={false} />);
+
+    expect(reportEvaluationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the tour like the presenting gate does', () => {
+    render(<BoardLookStepGate ready tourDecided={false} present={false} />);
+
+    expect(reportEvaluationMock).not.toHaveBeenCalled();
+    expect(hasSeenTipMock).not.toHaveBeenCalled();
   });
 });

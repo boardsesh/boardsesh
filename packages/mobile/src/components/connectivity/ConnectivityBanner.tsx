@@ -28,6 +28,8 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
 import { useAuth } from '../../providers/auth-provider';
+import { useConnectivityBannerEnabled } from '../../providers/feature-flags-provider';
+import { useLaunchReady } from '../../providers/launch-ready-context';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { publishConnectivityBannerHeight } from '../../lib/connectivity-banner-inset-store';
@@ -68,15 +70,23 @@ type BannerPresentation = {
 };
 
 /**
- * The app-wide connectivity banner. `ready` gates it behind the same
- * auth-plus-fonts signal the onboarding gate uses, so it never paints over the
- * splash.
+ * The app-wide connectivity banner. It waits on the launch-ready context (auth
+ * plus fonts) like the onboarding gate, so it never paints over the splash.
+ *
+ * That wait is also why it never painted at all from 2.2.0 until #5654: the
+ * `ready` prop it used to take was frozen at false behind the database provider
+ * (see `launch-ready-context.tsx`). Waking it up is a fleet-wide change, so it
+ * has its own kill switch, `connectivity-banner-kill`, separate from
+ * `backend-outage-detection`: killing the banner leaves the outage detection and
+ * its fail-fast path running, and the reverse.
  */
-export function ConnectivityBanner({ ready }: { ready: boolean }) {
+export function ConnectivityBanner() {
+  const ready = useLaunchReady();
+  const enabled = useConnectivityBannerEnabled();
   // Screenshot builds never show it: a store screenshot must not carry a "server
   // trouble" card, and the capture rig has no backend to reach anyway.
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return null;
-  if (!ready) return null;
+  if (!ready || !enabled) return null;
   return <ConnectivityBannerContent />;
 }
 

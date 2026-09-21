@@ -446,6 +446,30 @@ export const SHARED_EVENTS = {
   // real activation metric (board history turns on here), distinct from tapping
   // through the framing screen. Props: { boardType, source: 'onboarding' }.
   OnboardingBoardActivated: 'Onboarding Board Activated',
+  // Mobile-only: what the launch-time first-run gate decided, and why (#5654).
+  // It exists because the gate went silent for 10 weeks with nothing to show
+  // for it. From 2.2.0 its `ready` input was frozen at false behind the database
+  // provider, and "never decided" looked exactly like "decided not to".
+  //
+  // One event per decision, plus `outcome: 'stalled'` from a 15 s watchdog that
+  // counts foreground time only and fires when the gate has not decided at all.
+  // The watchdog is the part that matters: it does not depend on the inputs
+  // that froze, so a repeat of that bug shows up as a `stalled` spike in a day.
+  //
+  // Props: { outcome: 'would_present' | 'skipped' | 'stalled', reason:
+  // 'no_board' | 'has_board' | 'deep_link_segment' | 'launched_by_url' |
+  // 'segment_after_reads' | 'not_ready' | 'board_unresolved' | 'reads_pending',
+  // step: 'intro' | 'board' | null, had_board and seen_flag (boolean, or null
+  // when not read yet), account_age_hours (whole hours since the account was
+  // created, null until the profile loads), ota_is_embedded, trigger:
+  // 'cold_start' | 'remount' | 'account_switch', top_segment, ms_since_mount }.
+  //
+  // `would_present` is deliberate: the gate evaluates and logs, and presents
+  // nothing until the first-run redesign turns presenting on for new accounts.
+  // A returning climber's steady state (a board bound, seen flag not known to
+  // be false) is NOT sent, and neither is a signed-out launch on the login
+  // screen, so the volume is newcomers, climbers without a board and anomalies.
+  OnboardingGateEvaluated: 'Onboarding Gate Evaluated',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with
@@ -1099,6 +1123,17 @@ export const SHARED_EVENTS = {
   // the funnel can never read a climber who backed out as one who never arrived.
   BoardLookStepShown: 'Board Look Step Shown',
   BoardLookStepResolved: 'Board Look Step Resolved',
+  // What the launch-time board-look gate would have done, while it evaluates
+  // without presenting (#5654). It answers one question, how many devices would
+  // get the step, so it fires ONCE PER DEVICE and not per launch: while the step
+  // is never shown, nearly every climber qualifies again on every launch.
+  // Props: { outcome: 'would_present' | 'skipped', reason: 'never_asked' |
+  // 'look_chosen' | 'step_seen' }. Only those three settled verdicts report: a
+  // launch the step would sit out for the moment (a deep link, a blocked route)
+  // says nothing about the climber, so it waits for the next launch instead.
+  // Log-only mode skips the example-climb query and the renderer probe, so
+  // `would_present` is an upper bound on the audience the real step would reach.
+  BoardLookStepEvaluated: 'Board Look Step Evaluated',
   // Connectivity (issue #4862) — a backend outage used to look like a broken
   // app: the ONLY connectivity signal was NetInfo's `isConnected`, so a dead
   // server read "online" and every screen answered with a spinner that never

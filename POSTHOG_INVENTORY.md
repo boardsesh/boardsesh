@@ -520,3 +520,27 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 - `reason: 'unknown'` is outside the three reasons the plan named. It covers a stop the radio state can't explain, so those stops aren't counted as the radio being off.
 - `found_count` is snake_case because the #5654 experiment plan names it that way. The other properties follow the camelCase used by the Bluetooth events around them.
 - "Scanned" for the #5654 funnel is `Bluetooth Scan Started` (connect) or `Board Quickstart Scan Finished` (quickstart). The quickstart doesn't fire `Bluetooth Scan Started`, because that event's board config properties don't exist before a board is picked.
+
+---
+
+## Appendix C — 2026-09-21 launch-gate telemetry (#5654)
+
+The first-run gate went silent for 10 weeks (2.2.0 to #5654) and nothing noticed, because no event
+said whether it had decided anything. Mobile only; names live in `SHARED_EVENTS`
+(`packages/shared/analytics/src/events.ts`), where the full property contracts sit beside them.
+
+### New events (2)
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Skips a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so roughly newcomers, climbers without a board, and stalls |
+| `Board Look Step Evaluated` | `outcome` (`would_present` / `skipped`), `reason` (`never_asked` / `look_chosen` / `step_seen`) | `packages/mobile/src/lib/board-render/board-look-step-evaluation-log.ts`, from `BoardLookStepGate.tsx` in log-only mode | Once per device (AsyncStorage marker `boardLookStepEvaluationLogged`) |
+
+### Reading them
+
+- `outcome: 'would_present'` is not a presentation. In #5654's first PR both gates evaluate and log
+  only; nothing is pushed. A later change turns presenting on for new accounts and adds `presented`.
+- `stalled` should stay under 1% of evaluations. A spike means the gate's inputs stopped arriving
+  again; `reason` names which one.
+- Compare `Onboarding Gate Evaluated` (`trigger = remount`) with `Login Succeeded` for the "does the
+  gate run after sign-in" check. `ota_is_embedded` splits first launches (binary JS) from OTA JS.
