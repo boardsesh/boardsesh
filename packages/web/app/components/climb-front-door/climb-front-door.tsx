@@ -192,7 +192,6 @@ export default async function ClimbFrontDoor({
           overlayUrl={overlayUrl}
           currentAngleStats={currentAngleStats}
           description={jsonLdDescription}
-          locale={locale}
         />
       )}
 
