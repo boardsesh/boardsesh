@@ -24,6 +24,7 @@ import {
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  DR_PRIMARY_CNAME_TARGET,
   DR_PRIMARY_HOSTNAME,
   DYNAMIC_REDIRECT_RULE_PHASE,
   LIST_PAGE_PATH_SUFFIX,
@@ -503,10 +504,14 @@ describe('buildPlan', () => {
 
     expect(dnsChanges.map((change) => change.dnsName)).toEqual([DR_PRIMARY_HOSTNAME]);
     expect(dnsChanges[0]?.blocked).toBeUndefined();
-    // Orange-clouding it would break replication outright: Cloudflare's proxy
-    // carries neither raw TCP nor a non-HTTP port.
-    expect(drPrimaryDnsRecord.proxied).toBe(false);
-    expect(drPrimaryDnsRecord.settings?.flatten_cname).toBe(false);
+    expect(dnsChanges[0]?.summary).toContain('missing — will create');
+    // What the apply would actually create, read off the plan rather than off the
+    // constant it was built from. Orange-clouding this record would break
+    // replication outright: Cloudflare's proxy carries neither raw TCP nor a
+    // non-HTTP port.
+    expect(dnsChanges[0]?.detail).toContain(`CNAME ${DR_PRIMARY_HOSTNAME} → ${DR_PRIMARY_CNAME_TARGET}`);
+    expect(dnsChanges[0]?.detail).toContain('proxied false');
+    expect(dnsChanges[0]?.detail).toContain('CNAME flattening disabled');
   });
 
   it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
@@ -531,6 +536,22 @@ describe('buildPlan', () => {
     const flattenedZone: LiveState = { ...inSyncLiveState(), flattenAllCnames: true };
 
     expect(() => buildPlan(desired, flattenedZone, { allowZoneSsl: false })).toThrow('Disable "Flatten all CNAMEs"');
+  });
+});
+
+describe('pgdr.boardsesh.com desired state', () => {
+  it('declares the exact DNS-only CNAME to the Railway TCP proxy', () => {
+    expect(drPrimaryDnsRecord).toEqual({
+      management: 'full',
+      name: 'pgdr.boardsesh.com',
+      type: 'CNAME',
+      content: 'iriguchi.proxy.rlwy.net',
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    });
   });
 });
 
