@@ -105,7 +105,7 @@ def test_a_tiled_dir_with_no_stamp_is_refused(
     dataset = _coco_set(tmp_path / "coco")
     _coco_set(train.tiled_dataset_dir(config, dataset))
 
-    with pytest.raises(SystemExit, match="different source"):
+    with pytest.raises(SystemExit, match="missing provenance"):
         train.prepare_dataset(config, dataset)
     assert fake_tiler == []
 
@@ -185,6 +185,19 @@ def test_segmentation_training_refuses_a_matching_cache_with_empty_masks(
     assert fake_tiler == []
 
 
+def test_valid_mask_cache_without_provenance_is_still_refused(
+    holds_dir: Path, tmp_path: Path, fake_tiler: list[dict[str, str]]
+) -> None:
+    config = load_config("seg-nano-tiled-1024")
+    dataset = _mask_set(tmp_path / "segmented", VALID_POLYGON)
+    cached = _mask_set(train.tiled_dataset_dir(config, dataset), VALID_POLYGON)
+
+    with pytest.raises(SystemExit, match="missing provenance"):
+        train.prepare_dataset(config, dataset)
+    assert fake_tiler == []
+    assert not (cached / train.TILE_SOURCE_FILENAME).exists()
+
+
 def test_segmentation_training_rejects_generated_tiles_without_mask_targets(
     holds_dir: Path, tmp_path: Path, fake_tiler: list[dict[str, str]]
 ) -> None:
@@ -193,7 +206,17 @@ def test_segmentation_training_rejects_generated_tiles_without_mask_targets(
     with pytest.raises(SystemExit, match="mask training needs annotated holds"):
         train.prepare_dataset(config, dataset)
     assert len(fake_tiler) == 1
-    assert not (train.tiled_dataset_dir(config, dataset) / train.TILE_SOURCE_FILENAME).exists()
+    tiled_dir = train.tiled_dataset_dir(config, dataset)
+    assert not (tiled_dir / train.TILE_SOURCE_FILENAME).exists()
+
+    # A retry must preserve the useful mask failure, rather than claim that the
+    # unchanged source corpus changed. Keep failed output for inspection; do not
+    # silently overwrite it or manufacture a successful provenance stamp.
+    with pytest.raises(SystemExit, match="mask training needs annotated holds"):
+        train.prepare_dataset(config, dataset)
+    assert len(fake_tiler) == 1
+    assert (tiled_dir / "train" / "_annotations.coco.json").exists()
+    assert not (tiled_dir / train.TILE_SOURCE_FILENAME).exists()
 
 
 @pytest.mark.parametrize("config_name", ["nano-tiled-1024", "nano-tiled-1024-classical-mask"])

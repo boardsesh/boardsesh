@@ -202,7 +202,17 @@ def prepare_dataset(config: DetectorConfig, dataset_dir: Path) -> Path:
     expected_source = tile_source_record(config, dataset_dir)
     source_path = tiled_dir / TILE_SOURCE_FILENAME
     if (tiled_dir / "train" / "_annotations.coco.json").exists():
-        recorded = json.loads(source_path.read_text()) if source_path.exists() else None
+        if not source_path.exists():
+            # Failed post-tiling validation deliberately leaves no success stamp.
+            # Preserve that mask error on retry, while never trusting an unstamped
+            # cache even if its labels happen to be valid.
+            validate_mask_training_dataset(config, tiled_dir)
+            raise SystemExit(
+                f"{tiled_dir} is missing provenance ({TILE_SOURCE_FILENAME}); "
+                "tiling may be incomplete or validation may have failed. "
+                "Inspect the retained files, then remove that directory to re-tile."
+            )
+        recorded = json.loads(source_path.read_text())
         if recorded == expected_source:
             validate_mask_training_dataset(config, tiled_dir)
             print(f"reusing tiled dataset {tiled_dir}")

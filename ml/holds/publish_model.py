@@ -98,11 +98,11 @@ class ConfigInfo:
     family: str
     resolution: int
     score_threshold: float
+    long_side: int
     # Whether the export carries a third, mask tensor. Read straight from
     # configs.json rather than through common.py, which would drag torch in.
     produces_masks: bool = False
     mask_source: str = "none"
-    long_side: int = 0
     tile_rows: int = 1
     tile_cols: int = 1
     tile_overlap: float = 0.0

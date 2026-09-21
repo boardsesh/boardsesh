@@ -287,7 +287,10 @@ RF-DETR `seg-*` training requires a usable polygon for every annotated hold in
 train, validation and test splits. The default Way Up corpus is box-only and
 cannot train a mask model; choose a fully polygon-labelled corpus with
 `--dataset`. Mixed box/polygon labels, empty masks and stale tiled caches are
-rejected before model construction. Source labels and prepared/cached tiles
+rejected before model construction. If post-tiling validation fails, a retry
+reports the same mask error and leaves the generated files unstamped for
+inspection. A cache without its provenance record is never reused; after fixing
+the labels, remove that incomplete cache before re-tiling. Source labels and prepared/cached tiles
 are both checked, including the capped training subset. Ordinary box models
 and box models with classical postprocessing can still use box-only labels.
 
