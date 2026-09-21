@@ -103,6 +103,10 @@ export function useActiveBoardFollowHeal(): void {
   const healEnabled = useActiveBoardFollowHealEnabled();
   // No callbacks: a silent follow. It still invalidates `myBoards` on success.
   const followBoard = useFollowBoard();
+  // mutateAsync is stable (the MutationObserver's bound `mutate`, and the
+  // observer lives as long as the hook), so it can sit in the effect's deps.
+  // Depending on the whole `followBoard` object (fresh each render) would re-run
+  // the effect on every render; `use-adopt-found-board.ts` does the same.
   const followBoardAsync = followBoard.mutateAsync;
 
   const boardUuid = activeBoard?.uuid ?? null;
