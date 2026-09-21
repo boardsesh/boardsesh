@@ -41,6 +41,9 @@ enableGlobalVirtualStore: false
 virtualStoreDirMaxLength: 120
 
 overrides:
+  # These Expo fingerprint inputs advance with the release train's native builds.
+  baseline-browser-mapping: 2.11.24
+  caniuse-lite: 1.0.30001810
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
   react-native-screens: 4.26.2
