@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://boardsesh.com/schemas/hold-detector-manifest.schema.json",
   "title": "Hold detector model manifest",
-  "description": "Published to models/hold-detector/<version>/manifest.json in the public media R2 bucket by ml/holds/publish_model.py (epic #5346, SW-01, issue #5434). Consumed by the mobile model loader (issue #5435) and the server-side inference container (issue #5451). Weights are immutable per version; the manifest is the only mutable pointer for a given version, so a bad manifest can be re-published with --force but the weight files it points at never change underneath a version tag.",
+  "description": "Published to models/hold-detector/<version>/manifest.json in the public media R2 bucket by ml/holds/publish_model.py (epic #5346, SW-01, issue #5434). Consumed by the recognition service in packages/hold-detector; deployment and exposure gates are documented in docs/spray-recognition-rollout.md. The earlier phone inference runtime (issue #5435) has been superseded. Weights are immutable per version; the manifest is the only mutable pointer for a given version, so a bad manifest can be re-published with --force but the weight files it points at never change underneath a version tag.",
   "type": "object",
   "additionalProperties": true,
   "required": [
