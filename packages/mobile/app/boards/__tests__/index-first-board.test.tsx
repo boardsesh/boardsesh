@@ -197,7 +197,8 @@ vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
 vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
-  BoardModeCard: ({ label }: { label: string }) => createElement('div', { 'data-mode-card': label }, label),
+  BoardModeCard: ({ label, onPress }: { label: string; onPress?: () => void }) =>
+    createElement('button', { 'data-mode-card': label, onClick: onPress, type: 'button' }, label),
 }));
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
   BluetoothQuickstartSheet: () => null,
@@ -389,5 +390,36 @@ describe('the ordinary onboarding picker', () => {
     state.params = { firstBoard: '1' };
     render(createElement(BoardSelection));
     expect(screen.queryByTestId('first-board-choice')).toBeNull();
+  });
+
+  // The Find gym tile forwards `source` too, so a gym-map pick from the ordinary
+  // onboarding picker is the activation bind, like a pick from its own list (the
+  // gym finder's side is pinned in app/gyms/__tests__/index.test.tsx).
+  it('opens the gym map as an onboarding pick', () => {
+    state.params = { source: 'onboarding' };
+    render(createElement(BoardSelection));
+
+    act(() => {
+      screen.getByText('mobile.discovery.findGym').click();
+    });
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding' },
+    });
+  });
+
+  it('opens the gym map as an ordinary switch outside onboarding', () => {
+    state.params = {};
+    render(createElement(BoardSelection));
+
+    act(() => {
+      screen.getByText('mobile.discovery.findGym').click();
+    });
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms',
+      params: { returnTo: '/(tabs)/climbs', source: undefined },
+    });
   });
 });
