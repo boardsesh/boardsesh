@@ -200,6 +200,18 @@ export function isClaimableDomain(websiteUrl: string | null | undefined): boolea
 }
 
 /**
+ * Whether a listing can offer the domain-verified claim form. This describes
+ * its website, not the viewer's permission to claim; the mutation still checks
+ * access and provenance before comparing the supplied email address.
+ */
+export function computeCanClaimByDomain(gym: {
+  website: string | null | undefined;
+  websiteVouchedByOwner: boolean;
+}): boolean {
+  return isClaimableDomain(gym.website) && gym.websiteVouchedByOwner;
+}
+
+/**
  * Whether the claimant's email proves control of the gym's website domain:
  * the website has a usable (non-free) domain and the email's domain matches it
  * exactly (after normalizing `www.`).
