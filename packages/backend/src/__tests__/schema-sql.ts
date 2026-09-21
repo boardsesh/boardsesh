@@ -1112,6 +1112,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     v_hot_score double precision;
     v_created_at timestamp;
   BEGIN
+    -- Production migration 0130 permits bulk jobs to maintain counts separately.
+    IF current_setting('boardsesh.skip_vote_counts', true) = 'on' THEN
+      RETURN NULL;
+    END IF;
+
     IF TG_OP = 'DELETE' THEN
       v_entity_type := OLD.entity_type;
       v_entity_id := OLD.entity_id;

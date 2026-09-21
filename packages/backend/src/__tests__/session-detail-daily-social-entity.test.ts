@@ -45,6 +45,9 @@ const SPRAY_BOARD_UUID = 'sd-daily-social-private-wall';
 const SPRAY_CLIMB_UUID = 'sd-daily-social-private-climb';
 const SPRAY_CLIMB_ALIAS = 'sd-daily-social-private-alias';
 const SPRAY_TICK = 'sd-daily-social-private-send';
+const PRIVATE_ONLY_DAY = '2026-03-11';
+const PRIVATE_ONLY_SESSION = `daily:${USER_ID}:${PRIVATE_ONLY_DAY}`;
+const PRIVATE_ONLY_TICK = 'sd-daily-social-private-only';
 const SPRAY_LAYOUT_ID = 1_990_000_537;
 
 let boardId: number;
@@ -157,6 +160,19 @@ describe('sessionDetail — daily-highlight social entity (real DB)', () => {
       climbedAt: `${DAY} 11:00:00`,
       sessionId: null,
     });
+    await db.insert(dbSchema.boardseshTicks).values({
+      uuid: PRIVATE_ONLY_TICK,
+      userId: USER_ID,
+      boardType: 'spray',
+      boardId: sprayBoard.id,
+      climbUuid: SPRAY_CLIMB_ALIAS,
+      angle: 40,
+      status: 'send',
+      attemptCount: 1,
+      difficulty: 32,
+      climbedAt: `${PRIVATE_ONLY_DAY} 11:00:00`,
+      sessionId: null,
+    });
   });
 
   afterAll(cleanup);
@@ -211,6 +227,21 @@ describe('sessionDetail — daily-highlight social entity (real DB)', () => {
       }
     },
   );
+
+  it.each([undefined, VIEWER_ID])('hides an entirely private day from viewer %s', async (viewer) => {
+    const viewerContext = ctx({ userId: viewer, isAuthenticated: viewer !== undefined });
+    const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: PRIVATE_ONLY_SESSION }, viewerContext);
+    const feed = await sessionFeedQueries.sessionGroupedFeed(
+      null,
+      { input: { userId: USER_ID, includeDailyHighlights: true } },
+      viewerContext,
+    );
+    expect(detail).toBeNull();
+    expect(feed.sessions.some((session) => session.sessionId === PRIVATE_ONLY_SESSION)).toBe(false);
+    expect(JSON.stringify(feed)).not.toContain(PRIVATE_ONLY_TICK);
+    const ownerDetail = await sessionFeedQueries.sessionDetail(null, { sessionId: PRIVATE_ONLY_SESSION }, ctx());
+    expect(ownerDetail?.socialEntityId).toBe(PRIVATE_ONLY_TICK);
+  });
 
   it('round-trips a comment through addComment via the resolved social entity', async () => {
     const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: DAILY_SESSION_ID });

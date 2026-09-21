@@ -874,8 +874,10 @@ export const sessionFeedQueries = {
     // may be the synthetic `daily:<user>:<date>` feed key, which no social table
     // is ever keyed on — callers (SessionDetailScreen) must use these, not
     // `sessionId`, when posting a vote or a comment.
+    // Never substitute a synthetic key if the daily ranking invariant changes.
+    if (dailySession && !dailyHighlightTick) return null;
     const socialEntityType: 'session' | 'tick' = dailySession ? 'tick' : 'session';
-    const socialEntityId = dailySession ? (dailyHighlightTick?.uuid ?? sessionId) : sessionId;
+    const socialEntityId = dailyHighlightTick ? dailyHighlightTick.uuid : sessionId;
 
     // Vote/comment counts
     const [voteData] = dailySession
