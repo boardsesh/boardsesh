@@ -298,6 +298,9 @@ describe('board_climb_holds writes', () => {
       }),
     ).toEqual([{ holdId: 1, frameNumber: 0, holdState: 'STARTING' }]);
     expect(mockProjectStoredRows).toHaveBeenLastCalledWith('p1r1', 'decoy');
+    mockProjectStoredRows.mockClear();
+    expect(projectAuthoritativeClimbRows('decoy', 'p1r1p2r2', { boardType: 'decoy', frames: '' })).toEqual([]);
+    expect(mockProjectStoredRows).not.toHaveBeenCalled();
   });
 });
 
