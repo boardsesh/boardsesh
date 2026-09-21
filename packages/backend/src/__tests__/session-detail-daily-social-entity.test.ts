@@ -16,7 +16,8 @@
  * these tests don't depend on the per-process/Redis rate limiter.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
@@ -39,6 +40,12 @@ const DAY = '2026-03-10';
 const DAILY_SESSION_ID = `daily:${USER_ID}:${DAY}`;
 const ATTEMPT_TICK = 'sd-daily-social-attempt';
 const SEND_TICK = 'sd-daily-social-send';
+const VIEWER_ID = 'sd-daily-social-viewer';
+const SPRAY_BOARD_UUID = 'sd-daily-social-private-wall';
+const SPRAY_CLIMB_UUID = 'sd-daily-social-private-climb';
+const SPRAY_CLIMB_ALIAS = 'sd-daily-social-private-alias';
+const SPRAY_TICK = 'sd-daily-social-private-send';
+const SPRAY_LAYOUT_ID = 1_990_000_537;
 
 let boardId: number;
 
@@ -55,6 +62,11 @@ const cleanup = async () => {
   await db.execute(sql`DELETE FROM votes WHERE entity_id IN (${ATTEMPT_TICK}, ${SEND_TICK})`);
   await db.execute(sql`DELETE FROM vote_counts WHERE entity_id IN (${ATTEMPT_TICK}, ${SEND_TICK})`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+  await db.delete(dbSchema.boardClimbAliases).where(eq(dbSchema.boardClimbAliases.aliasUuid, SPRAY_CLIMB_ALIAS));
+  await db.delete(dbSchema.boardClimbs).where(eq(dbSchema.boardClimbs.uuid, SPRAY_CLIMB_UUID));
+  await db.delete(dbSchema.sprayWalls).where(eq(dbSchema.sprayWalls.boardUuid, SPRAY_BOARD_UUID));
+  await db.delete(dbSchema.userBoards).where(eq(dbSchema.userBoards.uuid, SPRAY_BOARD_UUID));
+  await db.delete(dbSchema.users).where(eq(dbSchema.users.id, VIEWER_ID));
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
   await db.execute(sql`DELETE FROM user_boards WHERE uuid = ${BOARD_UUID}`);
   await db.execute(sql`DELETE FROM "users" WHERE id = ${USER_ID}`);
@@ -89,6 +101,62 @@ describe('sessionDetail — daily-highlight social entity (real DB)', () => {
       INSERT INTO boardsesh_ticks (uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
       VALUES (${SEND_TICK}, ${USER_ID}, 'kilter', ${boardId}, ${CLIMB_UUID}, 40, 'send', 1, 25, ${DAY + ' 10:00:00'}, NULL)
     `);
+    await db.insert(dbSchema.users).values({
+      id: VIEWER_ID,
+      email: `${VIEWER_ID}@test.com`,
+      name: 'Another climber',
+    });
+    const [sprayBoard] = await db
+      .insert(dbSchema.userBoards)
+      .values({
+        uuid: SPRAY_BOARD_UUID,
+        slug: SPRAY_BOARD_UUID,
+        ownerId: USER_ID,
+        boardType: 'spray',
+        layoutId: SPRAY_LAYOUT_ID,
+        sizeId: SPRAY_LAYOUT_ID,
+        setIds: '1',
+        name: 'Private spray wall',
+        isPublic: false,
+      })
+      .returning({ id: dbSchema.userBoards.id });
+    await db.insert(dbSchema.sprayWalls).values({ boardUuid: SPRAY_BOARD_UUID, layoutId: SPRAY_LAYOUT_ID });
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: SPRAY_CLIMB_UUID,
+      boardType: 'spray',
+      layoutId: SPRAY_LAYOUT_ID,
+      setterUsername: 'private-setter',
+      name: 'Private spray send',
+      frames: 'p1r1',
+      framesCount: 1,
+      isDraft: false,
+      isListed: true,
+      edgeLeft: 0,
+      edgeRight: 100,
+      edgeBottom: 0,
+      edgeTop: 150,
+    });
+    await db.insert(dbSchema.boardClimbAliases).values({
+      boardType: 'spray',
+      aliasUuid: SPRAY_CLIMB_ALIAS,
+      canonicalUuid: SPRAY_CLIMB_UUID,
+      source: 'test',
+    });
+    // The private send outranks both public ticks. Reference an alias so the
+    // visibility check must resolve the canonical climb before finding its wall.
+    await db.insert(dbSchema.boardseshTicks).values({
+      uuid: SPRAY_TICK,
+      userId: USER_ID,
+      boardType: 'spray',
+      boardId: sprayBoard.id,
+      climbUuid: SPRAY_CLIMB_ALIAS,
+      angle: 40,
+      status: 'send',
+      attemptCount: 1,
+      difficulty: 32,
+      climbedAt: `${DAY} 11:00:00`,
+      sessionId: null,
+    });
   });
 
   afterAll(cleanup);
@@ -107,6 +175,42 @@ describe('sessionDetail — daily-highlight social entity (real DB)', () => {
     expect(detail!.upvotes).toBe(0);
     expect(detail!.commentCount).toBe(0);
   });
+
+  it.each([
+    { viewer: VIEWER_ID, expectedTick: SEND_TICK, expectedTickCount: 2 },
+    { viewer: USER_ID, expectedTick: SPRAY_TICK, expectedTickCount: 3 },
+  ])(
+    'keeps mixed-day feed and detail targets consistent for $viewer',
+    async ({ viewer, expectedTick, expectedTickCount }) => {
+      const viewerContext = ctx({ userId: viewer });
+      const feed = await sessionFeedQueries.sessionGroupedFeed(
+        null,
+        { input: { userId: USER_ID, includeDailyHighlights: true } },
+        viewerContext,
+      );
+      const card = feed.sessions.find((session) => session.sessionId === DAILY_SESSION_ID);
+      const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: DAILY_SESSION_ID }, viewerContext);
+
+      expect(card).toBeDefined();
+      expect(detail).not.toBeNull();
+      expect(card!.socialEntityType).toBe('tick');
+      expect(card!.socialEntityId).toBe(expectedTick);
+      expect(card!.socialEntityId).toBe(detail!.socialEntityId);
+      expect(card!.hardestSend?.uuid).toBe(expectedTick);
+      expect(card!.tickCount).toBe(expectedTickCount);
+      expect(detail!.tickCount).toBe(expectedTickCount);
+      expect(card!.totalSends).toBe(detail!.totalSends);
+      expect(card!.gradeDistribution.reduce((total, grade) => total + grade.send + grade.flash, 0)).toBe(
+        card!.totalSends,
+      );
+      expect([...card!.boardTypes].sort()).toEqual([...detail!.boardTypes].sort());
+      if (viewer !== USER_ID) {
+        expect(JSON.stringify(card)).not.toContain(SPRAY_CLIMB_UUID);
+        expect(JSON.stringify(card)).not.toContain(SPRAY_CLIMB_ALIAS);
+        expect(JSON.stringify(card)).not.toContain('Private spray');
+      }
+    },
+  );
 
   it('round-trips a comment through addComment via the resolved social entity', async () => {
     const detail = await sessionFeedQueries.sessionDetail(null, { sessionId: DAILY_SESSION_ID });

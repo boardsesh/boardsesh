@@ -10579,6 +10579,8 @@ export type GetSessionDetailQuery = {
     __typename?: 'SessionDetail';
     sessionId: string;
     sessionType: string;
+    socialEntityType: SocialEntityType;
+    socialEntityId: string;
     sessionName?: string | null;
     ownerUserId?: string | null;
     totalSends: number;
@@ -14940,6 +14942,8 @@ export const GetSessionDetailDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
                 {

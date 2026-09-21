@@ -187,12 +187,21 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
+          LEFT JOIN board_climbs daily_climb
+            ON daily_climb.uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
+            AND daily_climb.board_type = t.board_type
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
             AND bcs.board_type = t.board_type
             AND bcs.angle = t.angle
           WHERE t.session_id IS NULL
             ${sessionBoardFilter}
+            -- Rank and aggregate the same visible ticks as sessionDetail, so a
+            -- private spray climb cannot redirect this card's votes/comments.
+            AND ${sprayClimbVisibilityCondition(
+              { boardType: sql`daily_climb.board_type`, layoutId: sql`daily_climb.layout_id` },
+              ctx?.userId,
+            )}
             AND NOT EXISTS (
               SELECT 1
               FROM boardsesh_ticks session_tick
@@ -446,7 +455,7 @@ export async function getSessionFeed(
   ] = await Promise.all([
     fetchParticipantsBatch(sessionIds, filterOptions),
     fetchGradeDistributionBatch(sessionIds, filterOptions),
-    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
+    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions, ctx?.userId),
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
     fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
@@ -1488,6 +1497,7 @@ async function fetchHardestSendsBatch(
 async function fetchDailyGradeDistributionBatch(
   dailyHighlightKeys: DailyHighlightKey[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (dailyHighlightKeys.length === 0) return new Map();
 
@@ -1517,12 +1527,19 @@ async function fetchDailyGradeDistributionBatch(
       AND t.climbed_at::date = keys.day
       AND t.session_id IS NULL
     LEFT JOIN board_climb_aliases bca ON bca.board_type = t.board_type AND bca.alias_uuid = t.climb_uuid
+    LEFT JOIN board_climbs daily_climb
+      ON daily_climb.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
+      AND daily_climb.board_type = t.board_type
     LEFT JOIN board_climb_stats bcs
       ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
     WHERE COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
       ${batchTickFilter}
+      AND ${sprayClimbVisibilityCondition(
+        { boardType: sql`daily_climb.board_type`, layoutId: sql`daily_climb.layout_id` },
+        viewerUserId,
+      )}
     GROUP BY keys.session_id, diff_num
     ORDER BY diff_num DESC
   `);
