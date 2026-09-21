@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
+import sharp from 'sharp';
 
 const isS3ConfiguredMock = vi.hoisted(() => vi.fn(() => true));
 const getFromS3Mock = vi.hoisted(() => vi.fn());
@@ -79,7 +80,7 @@ describe('serving beta-link thumbnails stored in S3', () => {
     // plain 404 with no cache header, letting an edge cache pin the miss and
     // hide the repair — the direct path's guard never saw this traffic.
     const baseKey = 'beta-link-thumbnails/instagram/ABC123.jpg';
-    getFromS3Mock.mockImplementation((key: string) =>
+    getFromS3Mock.mockImplementation((_bucket: string, key: string) =>
       Promise.resolve(
         key === resizedVariantKey(baseKey, 280)
           ? null
@@ -95,6 +96,66 @@ describe('serving beta-link thumbnails stored in S3', () => {
       expect(response.headers.get('cache-control')).toBe('no-store');
       // The empty original must never be written back as a cached variant.
       expect(uploadToS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it.each(['absent', 'empty'] as const)(
+    '404s an empty cached variant when its original is %s',
+    async (originalState) => {
+      const baseKey = 'beta-link-thumbnails/instagram/ABC123.jpg';
+      const cachedStream = Readable.from([]);
+      getFromS3Mock.mockImplementation(async (bucket: string, key: string) => {
+        expect(bucket).toBe('media');
+        if (key === resizedVariantKey(baseKey, 280)) {
+          return { stream: cachedStream, contentType: 'image/jpeg', contentLength: 0 };
+        }
+        expect(key).toBe(baseKey);
+        return originalState === 'absent'
+          ? null
+          : { stream: Readable.from([]), contentType: 'image/jpeg', contentLength: 0 };
+      });
+      const { baseUrl, server } = await startThumbnailServer();
+      try {
+        const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}?size=280`);
+        expect(response.status).toBe(404);
+        expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(cachedStream.destroyed).toBe(true);
+        expect(uploadToS3Mock).not.toHaveBeenCalled();
+      } finally {
+        await closeServer(server);
+      }
+    },
+  );
+
+  it('replaces an empty cached variant with resized bytes from a healthy original', async () => {
+    const baseKey = 'beta-link-thumbnails/instagram/ABC123.jpg';
+    const variantKey = resizedVariantKey(baseKey, 280);
+    const originalBytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#ffffff' } })
+      .jpeg()
+      .toBuffer();
+    const cachedStream = Readable.from([]);
+    getFromS3Mock.mockImplementation(async (bucket: string, key: string) => {
+      expect(bucket).toBe('media');
+      if (key === variantKey) {
+        return { stream: cachedStream, contentType: 'image/jpeg', contentLength: 0 };
+      }
+      expect(key).toBe(baseKey);
+      return { stream: Readable.from([originalBytes]), contentType: 'image/jpeg', contentLength: originalBytes.length };
+    });
+    const { baseUrl, server } = await startThumbnailServer();
+    try {
+      const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}?size=280`);
+      expect(response.status).toBe(200);
+      const responseBytes = Buffer.from(await response.arrayBuffer());
+      expect(responseBytes.length).toBeGreaterThan(0);
+      expect(await sharp(responseBytes).metadata()).toMatchObject({ width: 280, height: 280, format: 'jpeg' });
+      expect(cachedStream.destroyed).toBe(true);
+      expect(uploadToS3Mock).toHaveBeenCalledWith('media', responseBytes, variantKey, 'image/jpeg', {
+        cacheControl: 'public, max-age=31536000, immutable',
+        acl: null,
+      });
     } finally {
       await closeServer(server);
     }

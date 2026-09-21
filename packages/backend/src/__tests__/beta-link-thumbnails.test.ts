@@ -122,6 +122,20 @@ describe('cacheInstagramThumbnail', () => {
     expect(uploadToS3).not.toHaveBeenCalled();
   });
 
+  it('rejects a streamed empty image before publishing the original or resized variants', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array(), {
+          status: 200,
+          headers: { 'Content-Type': 'image/jpeg' },
+        }),
+      ),
+    );
+    expect(await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg')).toBeNull();
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
   it('returns null when fetch throws (network error)', async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new Error('boom'));
     vi.stubGlobal('fetch', fetchMock);
