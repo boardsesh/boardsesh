@@ -211,6 +211,60 @@ describe('collectMentionCommand', () => {
     expect(result.source.context.map((entry) => entry.content)).toEqual(['This happens on Android.']);
   });
 
+  it.each([
+    ['forum post', 11, 15, false],
+    ['forum post with a reply', 11, 15, true],
+    ['private thread', 12, 0, false],
+    ['private thread with a reply', 12, 0, true],
+  ] as const)(
+    'keeps an authorized command as the starter of a %s',
+    async (_label, threadType, parentType, withReply) => {
+      const threadId = COMMAND_ID;
+      const parentId = '500000000000000001';
+      const command = message({
+        channel_id: threadId,
+        content: `<@${BOT_ID}> file the queue crash from this report`,
+        attachments: [{ id: 'command-image', url: 'https://cdn.test/crash.png', content_type: 'image/png' }],
+      });
+      const reply = message({
+        id: '900000000000000002',
+        channel_id: threadId,
+        content: 'I can reproduce it on Android.',
+        timestamp: '2026-09-03T01:01:00.000Z',
+        author: { id: USER_ID },
+        mentions: [],
+      });
+      const botMessage = message({
+        id: '900000000000000003',
+        channel_id: threadId,
+        author: { id: BOT_ID, bot: true },
+      });
+      const discordSource = source({
+        getChannel: vi.fn(async (channelId) =>
+          channelId === threadId
+            ? channel({ id: threadId, type: threadType, parent_id: parentId })
+            : channel({ id: parentId, type: parentType }),
+        ),
+        getMessage: vi.fn(async (channelId, messageId) => {
+          if (channelId === threadId && messageId === COMMAND_ID) return command;
+          throw new Error('The parent channel has no starter message');
+        }),
+        // DiscordClient exposes chronological order after reversing the API response.
+        listRecentMessages: vi.fn(async () => (withReply ? [command, reply, botMessage] : [command, botMessage])),
+      });
+
+      const result = await collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource });
+
+      expect(result.command.sourceKind).toBe('thread');
+      expect(result.source.messageId).toBe(command.id);
+      expect(result.source.channelId).toBe(threadId);
+      expect(result.source.content).toContain('file the queue crash from this report');
+      expect(result.source.context.map((entry) => entry.content)).toEqual(withReply ? [reply.content] : []);
+      expect(result.source.attachments).toHaveLength(1);
+      expect(result.source.attachments[0]?.url).toBe('https://cdn.test/crash.png');
+    },
+  );
+
   it('uses up to ten preceding human messages from the prior 30 minutes', async () => {
     const recent = Array.from({ length: 12 }, (_, index) =>
       message({

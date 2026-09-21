@@ -497,9 +497,9 @@ export async function collectMentionCommand(
       deps.source.getChannel(commandChannel.parent_id),
       deps.source.listRecentMessages(commandChannel.id, 100),
     ]);
-    const humanThreadMessages = humanMessages(rawThreadMessages, selfUserId).filter(
-      (message) => message.id !== command.id,
-    );
+    // A forum/private thread's first human message can itself be the command.
+    // Keep it eligible as the primary report; exclude it only from context below.
+    const humanThreadMessages = humanMessages(rawThreadMessages, selfUserId);
     let starter = await deps.source
       .getMessage(commandChannel.parent_id, commandChannel.id)
       .catch(() => humanThreadMessages[0]);
@@ -511,7 +511,7 @@ export async function collectMentionCommand(
     source = collectedSource({
       primary: starter,
       context,
-      attachmentMessages: [starter, ...context, command],
+      attachmentMessages: starter.id === command.id ? [starter, ...context] : [starter, ...context, command],
       guildId: options.guildId,
       channel: starter.channel_id === parentChannel.id ? parentChannel : commandChannel,
       threadId: commandChannel.id,
