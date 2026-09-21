@@ -880,7 +880,7 @@ export async function runDatabaseAudit(
       );
       if (databaseRows.length === 0) break;
       for (const databaseRow of databaseRows) {
-        const tick = parseDatabaseRow(databaseRow as Record<string, unknown>);
+        const tick = parseDatabaseRow(databaseRow);
         counters.scannedRows += 1;
         const nextGroupKey = groupKey(tick);
         if (currentGroupKey !== null && nextGroupKey !== currentGroupKey) await flushGroup();
