@@ -130,5 +130,18 @@
     "kilter": "Hallen mit einem Kilter Board",
     "moonboard": "Hallen mit einem MoonBoard",
     "tension": "Hallen mit einem Tension Board"
+  },
+  "places": {
+    "loading": "Orte werden gesucht…",
+    "clear": "Ort entfernen",
+    "open": "Orte anzeigen",
+    "close": "Orte ausblenden",
+    "hint": "Wähle einen vorgeschlagenen Ort oder suche eine Halle nach Namen.",
+    "empty": "Keine Orte gefunden. Du kannst weiterhin eine Halle nach Namen suchen.",
+    "error": "Ortsvorschläge sind nicht verfügbar. Du kannst weiterhin eine Halle nach Namen suchen.",
+    "attribution": "Ortsnamen von GeoNames",
+    "area": "Hallen im Umkreis von {{radius}} km um {{place}}",
+    "selectedArea": "den ausgewählten Standort",
+    "pinlessNotice": "Ergebnisse in der Nähe enthalten nur Hallen mit einem Kartenmarker."
   }
 }

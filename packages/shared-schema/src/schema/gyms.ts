@@ -1,4 +1,15 @@
 export const gymsTypeDefs = /* GraphQL */ `
+  "A city or town from the locally hosted GeoNames gazetteer."
+  type PlaceSuggestion {
+    id: Int!
+    name: String!
+    region: String!
+    country: String!
+    countryCode: String!
+    latitude: Float!
+    longitude: Float!
+  }
+
   # ============================================
   # Gym Entity Types
   # ============================================

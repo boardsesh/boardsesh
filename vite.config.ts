@@ -381,6 +381,10 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:import-woods-catalog',
         cache: false,
       },
+      'db:import-places': {
+        command: 'pnpm --filter @boardsesh/db run db:import-places',
+        cache: false,
+      },
       // Regenerates the committed MoonBoard cell->set map from the per-set board
       // art. No DB needed (reads images, writes a TS file). Pass `-- --check` for
       // a drift check that fails instead of writing.

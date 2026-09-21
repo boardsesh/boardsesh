@@ -90,6 +90,7 @@
     "lint-fix": "vp lint --fix",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:import-places": "tsx scripts/import-places.ts",
     "test": "tsx --test 'scripts/**/*.test.ts' 'src/**/*.test.ts'",
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
