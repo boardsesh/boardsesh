@@ -251,7 +251,9 @@ so maintainers can return to the discussion.
 Image attachments are downloaded immediately and hosted on the existing
 `discord-attachments` prerelease because signed Discord CDN URLs expire. This
 publishes screenshots on the public tracker. The bot reply says when screenshots
-were copied. Limits are four images per command context and 5 MB per image.
+were copied. Limits are four images per command context and 5 MB per image. Each download has
+a 30-second deadline covering response headers and the body. A failed or timed-out
+image is skipped; later images and issue creation continue.
 
 ## Rollback
 

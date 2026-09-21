@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -448,6 +449,93 @@ describe('applyTriage', () => {
     expect(deps.removeReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '👀');
     expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '✅');
     expect(deps.postReply).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['headers', 'body'] as const)('continues after an attachment stalls during %s', async (phase) => {
+    const timeoutController = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementationOnce(() => timeoutController.signal);
+    let markStalled: (() => void) | undefined;
+    const stalled = new Promise<void>((resolve) => {
+      markStalled = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.url === '/good.png') {
+        response.writeHead(200, { 'Content-Type': 'image/png' });
+        response.end('image bytes');
+        return;
+      }
+      if (phase === 'body') {
+        response.writeHead(200, { 'Content-Type': 'image/png' });
+        response.flushHeaders();
+      } else {
+        markStalled?.();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Local attachment server has no TCP port');
+    const attachmentBundle = bundle();
+    attachmentBundle.source.attachments = ['stalled', 'good'].map((name) => ({
+      id: name,
+      sourceMessageId: attachmentBundle.source.messageId,
+      filename: `${name}.png`,
+      contentType: 'image/png',
+      size: null,
+      url: `http://127.0.0.1:${address.port}/${name}.png`,
+    }));
+    const deps = applyDependencies();
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const uploadAttachment = vi.fn(async () => 'https://uploads.test/good.png');
+    const completion = applyTriage(
+      attachmentBundle,
+      { decisions: [decision()] },
+      { dryRun: false },
+      {
+        ...deps,
+        issueSink: { ...deps.issueSink, uploadAttachment },
+        logger,
+        fetcher: async (url, init) => {
+          const response = await fetch(url, init);
+          if (phase === 'body' && String(url).endsWith('/stalled.png')) {
+            // Let the real fetch body reader start before expiring its signal.
+            setImmediate(() => markStalled?.());
+          }
+          return response;
+        },
+      },
+    );
+    let outcomeTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await stalled;
+      timeoutController.abort(new DOMException('Attachment deadline expired', 'TimeoutError'));
+      const outcome = await Promise.race([
+        completion,
+        new Promise<never>((_resolve, reject) => {
+          outcomeTimer = setTimeout(
+            () => reject(new Error('Attachment deadline did not resume issue processing')),
+            500,
+          );
+        }),
+      ]);
+      expect(outcome).toEqual({ filed: 1, recovered: 0, duplicates: 0 });
+      expect(timeoutSpy).toHaveBeenCalledWith(30_000);
+      expect(timeoutSpy).toHaveBeenCalledTimes(2);
+      expect(uploadAttachment).toHaveBeenCalledExactlyOnceWith(
+        'good.png',
+        new Uint8Array(Buffer.from('image bytes')),
+        'image/png',
+      );
+      expect(deps.createdDrafts[0]?.body).toContain('https://uploads.test/good.png');
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('attachment stalled.png failed'));
+      expect(deps.postReply).toHaveBeenCalledOnce();
+    } finally {
+      clearTimeout(outcomeTimer);
+      timeoutController.abort();
+      server.closeAllConnections();
+      await completion.catch(() => undefined);
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      timeoutSpy.mockRestore();
+    }
   });
 
   it('recovers an existing indexed marker without creating another issue', async () => {
