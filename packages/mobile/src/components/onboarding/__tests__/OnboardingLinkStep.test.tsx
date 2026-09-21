@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, cleanup, fireEvent, act } from '@testing-library/react';
+import { render, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const mocks = vi.hoisted(() => ({
@@ -8,6 +8,14 @@ const mocks = vi.hoisted(() => ({
   shown: vi.fn(),
   resolved: vi.fn(),
   modalProps: null as Record<string, unknown> | null,
+  backHandler: null as (() => boolean) | null,
+  removeBackHandler: vi.fn(),
+  isFocused: true,
+  linkEnabled: true,
+  boardType: 'tension' as string | undefined,
+  replace: vi.fn(),
+  markAnswered: vi.fn().mockResolvedValue(undefined),
+  reportError: vi.fn(),
 }));
 
 vi.mock('../../../lib/onboarding/link-step-analytics', () => ({
@@ -23,6 +31,15 @@ vi.mock('../../integrations/LinkBoardAccountModal', () => ({
     return null;
   },
 }));
+
+vi.mock('expo-router', () => ({
+  useIsFocused: () => mocks.isFocused,
+  useLocalSearchParams: () => ({ boardType: mocks.boardType }),
+  router: { replace: mocks.replace },
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => mocks.linkEnabled }));
+vi.mock('../../../lib/onboarding/link-step-answered', () => ({ markLinkStepAnswered: mocks.markAnswered }));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: mocks.reportError }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 
@@ -41,6 +58,12 @@ type RNProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: RNProps) => createElement('div', {}, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  BackHandler: {
+    addEventListener: (_name: string, handler: () => boolean) => {
+      mocks.backHandler = handler;
+      return { remove: mocks.removeBackHandler };
+    },
+  },
 }));
 
 vi.mock('../../Text', () => ({ Text: ({ children }: RNProps) => createElement('span', {}, children) }));
@@ -57,6 +80,7 @@ vi.mock('../../Button', () => ({
 }));
 
 import { OnboardingLinkStep } from '../OnboardingLinkStep';
+import { OnboardingLinkRoute } from '../OnboardingLinkRoute';
 
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
@@ -75,6 +99,15 @@ const renderStep = () =>
 
 describe('OnboardingLinkStep', () => {
   beforeEach(() => {
+    cleanup();
+    mocks.backHandler = null;
+    mocks.removeBackHandler.mockReset();
+    mocks.isFocused = true;
+    mocks.linkEnabled = true;
+    mocks.boardType = 'tension';
+    mocks.replace.mockReset();
+    mocks.markAnswered.mockReset().mockResolvedValue(undefined);
+    mocks.reportError.mockReset();
     mocks.onResolved.mockReset();
     mocks.shown.mockReset();
     mocks.resolved.mockReset();
@@ -108,6 +141,32 @@ describe('OnboardingLinkStep', () => {
     expect(mocks.onResolved).toHaveBeenCalledTimes(1);
   });
 
+  it('records Android back as one decline and removes its handler on unmount', () => {
+    const screen = renderStep();
+    expect(mocks.backHandler).toBeTypeOf('function');
+    act(() => expect(mocks.backHandler?.()).toBe(true));
+    screen.unmount();
+    expect(mocks.onResolved).toHaveBeenCalledTimes(1);
+    expect(mocks.resolved).toHaveBeenCalledExactlyOnceWith('tension', 'declined');
+    expect(mocks.removeBackHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes an open credential dialog on Android back without declining the prompt', () => {
+    const { container } = renderStep();
+    fireEvent.click(button(container, 'mobile.onboarding.link.continue:Tension')!);
+    expect(mocks.modalProps?.boardType).toBe('tension');
+    act(() => expect(mocks.backHandler?.()).toBe(true));
+    expect(mocks.modalProps?.boardType).toBeNull();
+    expect(mocks.onResolved).not.toHaveBeenCalled();
+    expect(mocks.resolved).not.toHaveBeenCalled();
+  });
+
+  it('does not intercept back while another route is focused', () => {
+    mocks.isFocused = false;
+    renderStep();
+    expect(mocks.backHandler).toBeNull();
+  });
+
   it('hands the dialog the board and tags the funnel with this surface', () => {
     const { container } = renderStep();
     fireEvent.click(button(container, 'mobile.onboarding.link.continue:Tension')!);
@@ -118,7 +177,7 @@ describe('OnboardingLinkStep', () => {
   it('records a successful link and leaves', () => {
     const { container } = renderStep();
     fireEvent.click(button(container, 'mobile.onboarding.link.continue:Tension')!);
-    act(() => (mocks.modalProps?.onLinked as (board: string) => void)('tension'));
+    act(() => (mocks.modalProps!.onLinked as (board: string) => void)('tension'));
     expect(mocks.resolved).toHaveBeenCalledWith('tension', 'linked');
     expect(mocks.onResolved).toHaveBeenCalledTimes(1);
   });
@@ -128,7 +187,7 @@ describe('OnboardingLinkStep', () => {
   it('returns to the card when the dialog closes without linking', () => {
     const { container } = renderStep();
     fireEvent.click(button(container, 'mobile.onboarding.link.continue:Tension')!);
-    act(() => (mocks.modalProps?.onClose as () => void)());
+    act(() => (mocks.modalProps!.onClose as () => void)());
     expect(mocks.onResolved).not.toHaveBeenCalled();
     expect(mocks.resolved).not.toHaveBeenCalled();
   });
@@ -147,5 +206,35 @@ describe('OnboardingLinkStep', () => {
     cleanup();
     expect(mocks.resolved).toHaveBeenCalledTimes(1);
     expect(mocks.resolved).toHaveBeenCalledWith('tension', 'declined');
+  });
+  it('the route records one declined answer on Android back, even if persistence fails', async () => {
+    const storageError = new Error('storage unavailable');
+    mocks.markAnswered.mockRejectedValueOnce(storageError);
+    render(<OnboardingLinkRoute accentColor="#6D28D9" iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
+    expect(mocks.shown).toHaveBeenCalledExactlyOnceWith('tension');
+    expect(mocks.markAnswered).not.toHaveBeenCalled();
+    act(() => {
+      mocks.backHandler?.();
+    });
+    expect(mocks.resolved).toHaveBeenCalledExactlyOnceWith('tension', 'declined');
+    expect(mocks.markAnswered).toHaveBeenCalledTimes(1);
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    await waitFor(() => expect(mocks.reportError).toHaveBeenCalledExactlyOnceWith(storageError));
+  });
+
+  it.each([
+    { enabled: false, boardType: 'tension' },
+    { enabled: true, boardType: undefined },
+    { enabled: true, boardType: 'moonboard' },
+    { enabled: true, boardType: 'woods' },
+    { enabled: true, boardType: 'spray' },
+  ])('direct navigation skips an unavailable link step: %j', ({ enabled, boardType }) => {
+    mocks.linkEnabled = enabled;
+    mocks.boardType = boardType;
+    render(<OnboardingLinkRoute accentColor="#6D28D9" iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
+    expect(mocks.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+    expect(mocks.shown).not.toHaveBeenCalled();
+    expect(mocks.markAnswered).not.toHaveBeenCalled();
+    expect(mocks.backHandler).toBeNull();
   });
 });

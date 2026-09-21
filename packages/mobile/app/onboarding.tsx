@@ -17,10 +17,11 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * board picker in first-board mode instead (`/boards?firstBoard=1`), and this
  * route is what the More tab's "Replay" rows open.
  *
- * Three steps, none of them skippable:
+ * Three mandatory steps, with optional account linking after the board pick:
  *
  *   `/onboarding`                  the framing card — why a named board matters
  *   `/onboarding?step=board`       pick one, and take it offline while you're here
+ *   `/onboarding?step=link`        optionally link that board account; Back declines
  *   `/onboarding?step=board-look`  the 2.4 "which drawing?" question
  *
  * They live behind one route so the app keeps a single launch-time interruption
@@ -33,10 +34,11 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * away. So the board step leaves to Climbs and the gate takes over from there.
  *
  * Presented as a `transparentModal` over the live tabs (see app/_layout.tsx),
- * with the swipe-to-dismiss gesture disabled; each step swallows Android hardware
- * back as well. Transparent so UIKit never snapshots the iOS 26 tab bar (hard
- * rule 2 in docs/mobile-sheets-vs-routes.md), which is why one `OnboardingBacking`
- * paints an opaque page under every step: the live tabs must not show through.
+ * with the swipe-to-dismiss gesture disabled. The mandatory steps swallow Android
+ * hardware back; optional linking treats Back as a decline. Transparent so UIKit
+ * never snapshots the iOS 26 tab bar (hard rule 2 in docs/mobile-sheets-vs-routes.md),
+ * which is why one `OnboardingBacking` paints an opaque page under every step: the
+ * live tabs must not show through.
  * The steps are variant-agnostic — this route resolves the palette from the
  * active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
  */

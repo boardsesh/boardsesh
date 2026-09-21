@@ -476,7 +476,7 @@
       },
       "link": {
         "title": "Nimm deine {{boardName}}-Begehungen mit",
-        "body": "Dein {{boardName}}-Konto gehört denen, die das Board bauen. Boardsesh ist davon getrennt — gleiche E-Mail, aber die beiden wissen nichts voneinander. Verknüpf sie und deine Begehungen, Versuche und Bewertungen landen hier, dein Routenbuch startet also voll.",
+        "body": "Dein {{boardName}}-Konto und Boardsesh sind getrennt, auch mit derselben E-Mail-Adresse. Verknüpfe dein Konto, um verfügbare Begehungen mit deinem Routenbuch zu synchronisieren. Dauer und verfügbarer Verlauf variieren.",
         "footnote": "Zum Verknüpfen brauchst du deinen {{boardName}}-Benutzernamen, nicht deine E-Mail.",
         "continue": "Mein {{boardName}}-Konto verknüpfen",
         "skip": "Jetzt nicht",

@@ -475,12 +475,12 @@
         "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
       },
       "link": {
-        "title": "Emportez vos croix {{boardName}} avec vous",
-        "body": "Votre compte {{boardName}} appartient à ceux qui fabriquent le board. Boardsesh est séparé : même e-mail, mais les deux s'ignorent. Liez-les et vos croix, essais et cotations arrivent ici, votre carnet démarre plein.",
-        "footnote": "Pour lier, il faut votre identifiant {{boardName}}, pas votre e-mail.",
+        "title": "Emporte tes croix {{boardName}} avec toi",
+        "body": "Ton compte {{boardName}} et Boardsesh sont distincts, même si tu utilises le même e-mail. Lie ton compte pour synchroniser les croix disponibles avec ton carnet. Le délai de synchronisation et l’historique disponible varient.",
+        "footnote": "Pour lier ton compte, utilise ton identifiant {{boardName}}, pas ton e-mail.",
         "continue": "Lier mon compte {{boardName}}",
         "skip": "Pas maintenant",
-        "skipHint": "Vous pourrez le faire à tout moment dans Réglages › Apps connectées."
+        "skipHint": "Tu peux le faire à tout moment dans Réglages › Apps connectées."
       }
     },
     "nav": {

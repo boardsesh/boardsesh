@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { BackHandler, StyleSheet, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
@@ -26,28 +27,7 @@ type OnboardingLinkStepProps = {
   onResolved: () => void;
 };
 
-/**
- * The first-run "link your board account" card.
- *
- * **This is the one step in onboarding with a visible exit, and that is
- * deliberate.** Issue #4961 stripped the escape hatches out of the other three
- * because each guarantees state the app cannot run without — a bound board, a
- * chosen drawing — and a "look around first" that dropped climbers onto empty
- * screens was worse than no choice at all. This step is different in kind: it asks
- * for a password to somebody else's service, and nobody may be compelled to type
- * that. It also asks a question that is simply false for some people, because
- * there is no way to detect whether a board account exists — Aurora has no
- * lookup-by-email — so we can only ask.
- *
- * So: no `useBlockBack`. The route sets `gestureEnabled: false` for the whole
- * `/onboarding` file, which means "skippable" here has to be a real button rather
- * than a swipe, and Android hardware back reaches the same handler as "Not now".
- *
- * Every presentation resolves to exactly one outcome, including the nav-aways no
- * button produced — the unmount guard reports `abandoned`. Without it this would
- * repeat the hole `onboarding-analytics.ts` documents, where ~a third of tour
- * Starts resolved to nothing and quietly deflated the completion rate.
- */
+// Optional account linking resolves once per presentation, including navigation away.
 export function OnboardingLinkStep({
   boardType,
   accentColor,
@@ -57,12 +37,14 @@ export function OnboardingLinkStep({
   onResolved,
 }: OnboardingLinkStepProps) {
   const { t } = useTranslation('common');
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { variant } = useTheme();
   const [dialogOpen, setDialogOpen] = useState(false);
   const resolvedRef = useRef(false);
 
   useEffect(() => {
+    resolvedRef.current = false;
     trackLinkPromptShown(boardType);
     return () => {
       if (!resolvedRef.current) trackLinkPromptResolved(boardType, 'abandoned');
@@ -76,9 +58,7 @@ export function OnboardingLinkStep({
     setDialogOpen(true);
   }, []);
 
-  // Declining is an answer, so it is recorded like one — the step does not come
-  // back on the next launch. The empty-logbook prompt is what catches a climber
-  // who says "not now" here and later wonders where their sends are.
+  // A decline completes this optional step; linking remains available in Settings.
   const decline = useCallback(() => {
     if (resolvedRef.current) return;
     resolvedRef.current = true;
@@ -87,8 +67,7 @@ export function OnboardingLinkStep({
     onResolved();
   }, [boardType, onResolved]);
 
-  // A successful link leaves immediately: the dialog already toasted, and holding
-  // onboarding open while the sends trickle in would be a worse lie than leaving.
+  // Sync may continue after the account is linked.
   const handleLinked = useCallback(() => {
     if (resolvedRef.current) return;
     resolvedRef.current = true;
@@ -96,10 +75,18 @@ export function OnboardingLinkStep({
     onResolved();
   }, [boardType, onResolved]);
 
-  // Closing the dialog WITHOUT linking returns to the card rather than leaving —
-  // a failed password is not a decision to skip, and dropping them out of
-  // onboarding on a typo would be the worst possible reading of it.
+  // Closing the credential dialog leaves the optional question unanswered.
   const closeDialog = useCallback(() => setDialogOpen(false), []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (dialogOpen) closeDialog();
+      else decline();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isFocused, dialogOpen, closeDialog, decline]);
 
   const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
 

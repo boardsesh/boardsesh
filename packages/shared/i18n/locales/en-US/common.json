@@ -476,7 +476,7 @@
       },
       "link": {
         "title": "Bring your {{boardName}} sends with you",
-        "body": "Your {{boardName}} account lives with the people who make the board. Boardsesh is separate — same email, but the two don't know about each other. Link them and your sends, attempts and ratings land here, so your logbook starts full.",
+        "body": "Your {{boardName}} account and Boardsesh are separate, even if you use the same email. Link your account to sync available sends into your logbook. Sync timing and history vary.",
         "footnote": "Linking asks for your {{boardName}} username, not your email.",
         "continue": "Link my {{boardName}} account",
         "skip": "Not now",
