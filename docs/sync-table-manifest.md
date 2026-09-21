@@ -341,10 +341,15 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   rows it has: the server re-serves them at a lower `sync_seq`, `excluded.sync_seq >= COALESCE(local, -1)` is
   false, and the pull silently applies nothing for that table until the sequence climbs back past the high-water
   mark. Nothing surfaces: the pull reports success, the checkpoint advances, and the rows just do not change.
-  **On any restore, set the sequence forward, never back** — `SELECT setval('board_climb_stats_sync_seq_seq',
-  GREATEST((SELECT MAX(sync_seq) FROM board_climb_stats), nextval('board_climb_stats_sync_seq_seq')));` — and
-  verify `MAX(sync_seq)` is at least what it was before. If devices are already stuck, the only client-side
-  recovery is remove + re-download of the scope, which drops the local rows the guard was protecting.
+  **On any restore, preserve a pre-restore revision bound, never infer it from an older dump.** Capture
+  the sequence high-water mark before restoring and keep future revisions above it. Setting the sequence
+  from only the restored table's maximum cannot recover revisions already issued to devices. Advancing
+  a sequence also does not restamp restored rows: older rows need a separately reviewed recovery plan
+  that accounts for both their revisions and pull cursors before service resumes. If the previous bound
+  is unavailable, do not assume the restored maximum is safe. Verify a previously synced device receives
+  newer stats. Scope removal and re-download is a client-side recovery that discards the protected local
+  rows; it is not an automatic consequence of a server sequence adjustment. See the
+  [production restore runbook](./production-deploy.md#database-restores-and-offline-stats-revisions).
 
 ### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 
