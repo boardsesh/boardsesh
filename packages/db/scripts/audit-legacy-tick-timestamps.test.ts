@@ -19,6 +19,7 @@ import {
   AUDIT_SCAN_QUERY,
   awaitDatabaseResponse,
   buildAuditSummary,
+  helpText,
   parseArgs,
   parseDatabaseRow,
   requireNoFollowFlag,
@@ -101,6 +102,16 @@ async function withProcessEnvironment(name: string, replacement: string, action:
 }
 
 void describe('legacy timestamp audit CLI', () => {
+  void it('documents every required policy flag and the audit-only contract', () => {
+    const usage = helpText();
+    for (const argument of validArgs('/tmp/report.jsonl').filter((entry) => entry.startsWith('--'))) {
+      assert.ok(usage.includes(argument), `Help must document ${argument}`);
+    }
+    assert.match(usage, /no --apply/);
+    assert.match(usage, /no stdout/);
+    assert.match(usage, /deployment evidence, not Git/);
+  });
+
   void it('parses a complete verified deployment policy', () => {
     const parsed = parseArgs(validArgs('/tmp/audit.jsonl'));
     assert.equal(parsed.outputPath, '/tmp/audit.jsonl');
@@ -255,6 +266,17 @@ void describe('database response bounds', () => {
 });
 
 void describe('JSONL output safety', () => {
+  void it('reports a missing parent directory as a CLI usage error', async () => {
+    const directory = await createFixtureDirectory('audit-missing-parent-');
+    const outputPath = join(directory, 'missing', 'report.jsonl');
+    await assert.rejects(validateOutputPath(outputPath, directory), (error: unknown) => {
+      assert.ok(error instanceof CliUsageError);
+      assert.match(error.message, /Output parent directory does not exist/);
+      return true;
+    });
+    assert.deepEqual(await readdir(directory), []);
+  });
+
   void it('fails closed when O_NOFOLLOW is unavailable', () => {
     assert.equal(requireNoFollowFlag(0x20_000), 0x20_000);
     assert.throws(() => requireNoFollowFlag(undefined), /requires O_NOFOLLOW support/);
