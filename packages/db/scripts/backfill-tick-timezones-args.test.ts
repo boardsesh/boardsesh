@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   parseArgs,
@@ -82,4 +84,62 @@ void test('--revert without a run id is rejected', () => {
   assert.throws(() => parseArgs(['--revert']), ArgError);
   assert.throws(() => parseArgs(['--revert', '--apply']), ArgError);
   assert.equal(parseArgs(['--revert', 'run-1', '--apply']).revertRunId, 'run-1');
+});
+
+const BACKFILL_VALUE_FLAGS = ['--origin', '--user', '--limit', '--revert', '--batch'];
+const REPORT_VALUE_FLAGS = ['--origin', '--user', '--out', '--batch'];
+
+for (const flag of BACKFILL_VALUE_FLAGS) {
+  void test(`${flag} refuses absent, empty and flag-shaped apply operands`, () => {
+    for (const operand of [undefined, '', '   ', '--apply']) {
+      const args = ['--apply', flag, ...(operand === undefined ? [] : [operand])];
+      assert.throws(() => parseArgs(args), ArgError);
+    }
+  });
+}
+
+for (const flag of REPORT_VALUE_FLAGS) {
+  void test(`report ${flag} refuses absent, empty and flag-shaped operands`, () => {
+    for (const operand of [undefined, '', '   ', '--batch']) {
+      assert.throws(() => parseReportArgs([flag, ...(operand === undefined ? [] : [operand])], '2026-09-21'), ArgError);
+    }
+  });
+}
+
+void test('duplicate value flags and stray operands cannot create ambiguous scope', () => {
+  assert.throws(() => parseArgs(['--user', 'canary', '--user', 'other', '--apply']), ArgError);
+  assert.throws(() => parseArgs(['--apply', 'canary']), ArgError);
+  assert.throws(() => parseReportArgs(['--user', 'canary', '--user', 'other'], '2026-09-21'), ArgError);
+  assert.throws(() => parseReportArgs(['canary'], '2026-09-21'), ArgError);
+});
+
+void test('the real apply CLI rejects an omitted or empty canary before opening a database', () => {
+  const scriptPath = fileURLToPath(new URL('./backfill-mislabeled-tick-timezones.ts', import.meta.url));
+  for (const args of [
+    ['--apply', '--user'],
+    ['--apply', '--user', ''],
+    ['--apply', '--limit'],
+    ['--apply', '--batch', '--user', 'canary'],
+  ]) {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', scriptPath, ...args], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      env: { ...process.env, DB_URL: 'invalid-cli-target://no-connection', TICK_TZ_BACKFILL_ALLOW_REMOTE: '1' },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /needs a nonempty value/);
+    assert.doesNotMatch(result.stderr, /failed:|Invalid URL|protocol|connect/i);
+  }
+});
+
+void test('valid canary, limit and leading separator remain unchanged', () => {
+  assert.deepEqual(parseArgs(['--', '--apply', '--user', 'canary', '--limit', '25', '--batch', '10']), {
+    origins: ['json_import'],
+    userId: 'canary',
+    limit: 25,
+    apply: true,
+    revertRunId: null,
+    batchSize: 10,
+  });
 });
