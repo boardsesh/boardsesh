@@ -24,6 +24,7 @@ import {
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  DR_PRIMARY_HOSTNAME,
   DYNAMIC_REDIRECT_RULE_PHASE,
   LIST_PAGE_PATH_SUFFIX,
   RATE_LIMIT_RULE_PHASE,
@@ -87,6 +88,7 @@ const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
 const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
+const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -142,6 +144,19 @@ function liveAssetsDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRec
     ttl: assetsDnsRecord.ttl,
     proxied: assetsDnsRecord.proxied,
     settings: assetsDnsRecord.settings,
+    ...overrides,
+  };
+}
+
+function liveDrPrimaryDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'dr-primary-dns-record-id',
+    name: drPrimaryDnsRecord.name,
+    type: drPrimaryDnsRecord.type,
+    content: drPrimaryDnsRecord.content,
+    ttl: drPrimaryDnsRecord.ttl,
+    proxied: drPrimaryDnsRecord.proxied,
+    settings: drPrimaryDnsRecord.settings,
     ...overrides,
   };
 }
@@ -234,6 +249,7 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     [wwwDnsRecord.name]: liveWwwDnsRecord(),
     [apexDnsRecord.name]: liveApexDnsRecord(),
+    [drPrimaryDnsRecord.name]: liveDrPrimaryDnsRecord(),
   };
 }
 
@@ -1504,6 +1520,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       [WS_HOSTNAME]: [liveDnsRecord()],
       [ASSETS_HOSTNAME]: [liveAssetsDnsRecord()],
       [WWW_HOSTNAME]: [liveWwwDnsRecord()],
+      [DR_PRIMARY_HOSTNAME]: [liveDrPrimaryDnsRecord()],
       // The apex carries the mail and verification records every zone has.
       // Cloudflare returns them from the same by-name lookup, and they must not
       // make the address record look ambiguous and fail the whole run.
