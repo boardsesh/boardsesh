@@ -241,13 +241,6 @@ export default function TabLayout() {
       options={{
         title: t('mobile.nav.profile'),
         tabBarIcon: materialTabIcon('account-circle', 'account-circle-outline'),
-        // Settings, Edit Profile, and other rows opened from the global user-drawer
-        // (reachable from any tab) push straight into this tab's nested stack via
-        // an absolute `router.push`, so this tab isn't always left on its own
-        // index route. Without this, switching away and back showed whatever
-        // screen was pushed last (e.g. Settings) instead of the profile root —
-        // the tab looked stuck there instead of opening on the logbook/sessions.
-        popToTopOnBlur: true,
       }}
     />,
   ];

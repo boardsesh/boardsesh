@@ -1,12 +1,19 @@
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
+import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-blur';
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 
 export default function DiscoverLayout() {
   const { t } = useTranslation('playlists');
   const screenOptions = useStackScreenOptions();
+  // The user-drawer's "Playlists" row pushes straight into this stack's "all"
+  // (My Playlists) screen via an absolute `router.push` from whatever tab is
+  // current — same cross-tab push pattern as Settings on the Profile tab (see
+  // its _layout.tsx). Without this, switching away and back left Discover
+  // stuck on My Playlists instead of its own browse/search feed.
+  usePopToTopOnTabBlur('discover');
 
   return (
     <BoardArtVisibilityProvider tab="discover">
