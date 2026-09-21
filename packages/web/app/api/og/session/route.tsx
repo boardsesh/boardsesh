@@ -42,8 +42,11 @@ function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>,
   // every V-step below the session's lowest send, so the chart spans the board's
   // whole range instead of only the hard end climbed. Each floor bar renders at
   // the minimum height with a faded grade colour.
-  if (gradeRows.length > 0) {
-    const minDifficulty = gradeRows.reduce((min, row) => Math.min(min, row.difficulty), Infinity);
+  if (gradeBars.length > 0) {
+    const minDifficulty = gradeRows.reduce(
+      (minimum, row) => (DIFFICULTY_TO_GRADE[row.difficulty] ? Math.min(minimum, row.difficulty) : minimum),
+      Infinity,
+    );
     const minV = vGradeNumber(DIFFICULTY_TO_V[minDifficulty] ?? '');
     if (minV != null) {
       const floorBars = gradeAxisFloorSteps(minV, boardType ? getGradesForBoard(boardType) : BOULDER_GRADES).map(
