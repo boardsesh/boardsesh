@@ -7,6 +7,9 @@ const track = vi.hoisted(() => vi.fn());
 vi.mock('../../analytics', () => ({ track }));
 
 import { useBoardPickerAnalytics } from '../use-board-picker-analytics';
+import type { BoundBoard } from '../use-activate-board';
+
+const picked: BoundBoard = { pickSource: 'your_boards', followed: false };
 
 const board = {
   uuid: 'wall-a',
@@ -62,7 +65,7 @@ describe('board picker analytics', () => {
         fromOnboarding: false,
       }),
     );
-    await result.current(board);
+    await result.current(board, picked);
     for (const [, properties] of track.mock.calls) {
       expect(properties.returnTo).toBe('/(tabs)/climbs/setter/[username]');
     }
@@ -77,7 +80,7 @@ describe('board picker analytics', () => {
         fromOnboarding: false,
       }),
     );
-    await result.current({ ...board, uuid: 'wall-b', setIds: '2,1' });
+    await result.current({ ...board, uuid: 'wall-b', setIds: '2,1' }, picked);
     expect(track).toHaveBeenLastCalledWith(
       'Board Picker Selection Completed',
       expect.objectContaining({
@@ -85,7 +88,7 @@ describe('board picker analytics', () => {
         sameConfig: true,
       }),
     );
-    await result.current(board);
+    await result.current(board, picked);
     expect(track).toHaveBeenLastCalledWith(
       'Board Picker Selection Completed',
       expect.objectContaining({
@@ -93,10 +96,73 @@ describe('board picker analytics', () => {
         sameConfig: true,
       }),
     );
-    await result.current({ ...board, setIds: '1,3' });
+    await result.current({ ...board, setIds: '1,3' }, picked);
     expect(track).toHaveBeenLastCalledWith(
       'Board Picker Selection Completed',
       expect.objectContaining({ sameConfig: false }),
+    );
+  });
+
+  it('says which list the board was picked from and whether it landed in Your boards', async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+      }),
+    );
+    await result.current(board, { pickSource: 'nearby', followed: true });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: 'nearby', followed: true, hadActiveBoard: false }),
+    );
+    await result.current(board, { pickSource: undefined, followed: false });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: null, followed: false }),
+    );
+  });
+
+  // The picker pushed the gym finder and already counted the opening.
+  it("reports only selections from a gym finder the picker opened, under the picker's source", async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: true,
+        surface: 'gym_finder_from_picker',
+      }),
+    );
+    expect(track).not.toHaveBeenCalled();
+    await result.current(board, { pickSource: 'gym_finder', followed: true });
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ source: 'onboarding', pickSource: 'gym_finder', followed: true }),
+    );
+  });
+
+  // Home and My gyms open the gym finder directly: nothing else counted that
+  // opening, and its picks must not inflate the picker's own conversion.
+  it('counts its own opening under its own source when the gym finder was opened directly', async () => {
+    const { result } = renderHook(() =>
+      useBoardPickerAnalytics({
+        activeBoard: null,
+        restoreFailed: false,
+        returnTo: '/(tabs)/climbs',
+        fromOnboarding: false,
+        surface: 'gym_finder',
+      }),
+    );
+    expect(track).toHaveBeenCalledExactlyOnceWith(
+      'Board Picker Opened',
+      expect.objectContaining({ source: 'gym_finder', hadActiveBoard: false }),
+    );
+    await result.current(board, { pickSource: 'gym_finder', followed: false });
+    expect(track).toHaveBeenLastCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ source: 'gym_finder', pickSource: 'gym_finder' }),
     );
   });
 });

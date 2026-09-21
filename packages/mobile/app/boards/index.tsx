@@ -50,7 +50,7 @@ import { useBoardOfflineState } from '../../src/components/board-discovery/use-b
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
+import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
@@ -239,9 +239,11 @@ export default function BoardSelection() {
 
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
   // activate. Popular/custom items have no UserBoard, so they go through the
-  // custom sheet (CREATE_BOARD) — see onSelectPopular.
-  const onSelectMyBoard = useCallback(
-    (item: DiscoveryBoardItem) => {
+  // custom sheet (CREATE_BOARD) — see onSelectPopular. `pickSource` is the
+  // section the card sits in, not the list the lookup happened to hit: a board
+  // you follow can also be Near you, and the event should say where you tapped.
+  const activateItem = useCallback(
+    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
       const board =
         myBoards.find((b) => b.uuid === item.key) ??
         (nearby?.boards ?? []).find((b) => b.uuid === item.key) ??
@@ -249,7 +251,7 @@ export default function BoardSelection() {
         // network list — without this an offline tap is dead.
         offlineRows.find((b) => b.uuid === item.key);
       if (board) {
-        void activateBoard(board);
+        void activateBoard(board, { pickSource });
       } else {
         // The item's UserBoard should always be in one of the lists it came
         // from; if a refetch dropped it between render and tap, give feedback
@@ -259,10 +261,13 @@ export default function BoardSelection() {
     },
     [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t],
   );
+  const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
+  const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
+  const onSelectOfflineBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'offline'), [activateItem]);
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel items={nearbyItems} onSelect={onSelectMyBoard} />
+        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
@@ -410,8 +415,7 @@ export default function BoardSelection() {
     },
     [runMyBoardAction],
   );
-  // Edit mode already disables the card body, but the handler guards it too: the
-  // same `onSelect` also serves Near you and the offline rows.
+  // Edit mode already disables the card body, but the handler guards it too.
   const onSelectMyBoardCard = useCallback(
     (item: DiscoveryBoardItem) => {
       if (isEditingBoards) return;
@@ -556,9 +560,12 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
 
+  // `source` rides along for the same reason as the builder's: a board picked on
+  // the gym map during onboarding has to close out first-run too. `from=picker`
+  // tells the gym finder this picker already counted the opening.
   const onModeFindGym = useCallback(() => {
-    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo } });
-  }, [router, boardReturnTo]);
+    router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo, source, from: 'picker' } });
+  }, [router, boardReturnTo, source]);
 
   // A popular config has no UserBoard — open the builder pre-seeded with the
   // tapped config so the user names and creates it (the builder dedupes against
@@ -643,7 +650,7 @@ export default function BoardSelection() {
         </Text>
         {offlineItems.length > 0 ? (
           <Section title={t('mobile.discovery.yourBoardsTitle')}>
-            <BoardCarousel items={offlineItems} onSelect={onSelectMyBoard} />
+            <BoardCarousel items={offlineItems} onSelect={onSelectOfflineBoard} />
             {manageBoardsRow}
           </Section>
         ) : (
@@ -775,7 +782,7 @@ export default function BoardSelection() {
         onClose={() => setBluetoothActive(false)}
         onSelect={(board) => {
           bluetoothSheetRef.current?.close();
-          void activateBoard(board);
+          void activateBoard(board, { pickSource: 'bluetooth' });
         }}
       />
     </>

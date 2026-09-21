@@ -5,6 +5,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
+const willFollowFoundBoardMock = vi.hoisted(() => vi.fn((): boolean => true));
 const dismissToMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
@@ -12,11 +13,24 @@ const hapticMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const setBoardRevealTipPendingMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const reportErrorMock = vi.hoisted(() => vi.fn());
+const adoptOptionsSeen = vi.hoisted(() => ({ value: undefined as { offerOffline?: boolean } | undefined }));
+// What the next render's adoption hooks hand back, when a test swaps them to
+// stand in for a viewer id that loaded between renders.
+const nextViewerCallbacks = vi.hoisted(() => ({
+  adopt: undefined as ((board: UserBoard) => void) | undefined,
+  willFollow: undefined as ((board: UserBoard) => boolean) | undefined,
+}));
 
 vi.mock('expo-router', () => ({ useRouter: () => ({ dismissTo: dismissToMock }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
-vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
+vi.mock('../../board-discovery/use-adopt-found-board', () => ({
+  useAdoptFoundBoard: (options?: { offerOffline?: boolean }) => {
+    adoptOptionsSeen.value = options;
+    return nextViewerCallbacks.adopt ?? adoptFoundBoardMock;
+  },
+  useWillFollowFoundBoard: () => nextViewerCallbacks.willFollow ?? willFollowFoundBoardMock,
+}));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
@@ -38,7 +52,11 @@ function activate(options: Partial<ActivateBoardOptions> = {}) {
 describe('useActivateBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    adoptOptionsSeen.value = undefined;
+    nextViewerCallbacks.adopt = undefined;
+    nextViewerCallbacks.willFollow = undefined;
     setActiveBoardMock.mockResolvedValue(undefined);
+    willFollowFoundBoardMock.mockReturnValue(true);
     markOnboardingSeenMock.mockResolvedValue(undefined);
     setBoardRevealTipPendingMock.mockResolvedValue(undefined);
   });
@@ -117,6 +135,11 @@ describe('useActivateBoard', () => {
       expect(setBoardRevealTipPendingMock).not.toHaveBeenCalled();
       expect(markOnboardingSeenMock).not.toHaveBeenCalled();
     });
+
+    it('lets adoption offer the offline download', () => {
+      activate();
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: true });
+    });
   });
 
   describe('the onboarding bind', () => {
@@ -143,6 +166,15 @@ describe('useActivateBoard', () => {
       expect(dismissToMock).toHaveBeenCalled();
       await waitFor(() => expect(reportErrorMock).toHaveBeenCalled());
     });
+
+    // The onboarding step makes its own offer in onBound; a second "Download X?"
+    // from adoption would be the first thing a newcomer sees on Climbs.
+    it('still follows the board but tells adoption not to ask about offline', async () => {
+      const result = activate({ source: 'onboarding' });
+      expect(adoptOptionsSeen.value).toEqual({ offerOffline: false });
+      await result.current(BOARD);
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+    });
   });
 
   describe('onBound', () => {
@@ -155,6 +187,60 @@ describe('useActivateBoard', () => {
       await result.current(BOARD);
 
       expect(order).toEqual(['bind', 'onBound', 'navigate']);
+    });
+
+    // The pick event rides onBound, so it has to learn where the tap came from
+    // and whether this bind put the board in Your boards (#5654).
+    it('hears where the board was picked and whether the bind follows it', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD, { pickSource: 'nearby' });
+
+      expect(willFollowFoundBoardMock).toHaveBeenCalledWith(BOARD);
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'nearby', followed: true });
+    });
+
+    it('reports no follow for a board that is already theirs, and no pick source when none was given', async () => {
+      willFollowFoundBoardMock.mockReturnValue(false);
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound });
+
+      await result.current(BOARD);
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: undefined, followed: false });
+    });
+
+    // `followed` is read before navigation and adoption runs after it. A viewer id
+    // that loads in between re-renders the hook, but the bind already in flight
+    // must adopt with the pair it reported, or the event could say "followed"
+    // for a follow adoption then skips.
+    it('adopts for the same viewer the pick event answered for, even when it loads mid-bind', async () => {
+      const laterAdopt = vi.fn();
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const { result, rerender } = renderHook(() => useActivateBoard({ returnTo: '/(tabs)/climbs', onBound }));
+      onBound.mockImplementation(() => {
+        nextViewerCallbacks.adopt = laterAdopt;
+        nextViewerCallbacks.willFollow = () => false;
+        rerender();
+        return Promise.resolve();
+      });
+
+      await result.current(BOARD);
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: undefined, followed: true });
+      expect(adoptFoundBoardMock).toHaveBeenCalledWith(BOARD);
+      expect(laterAdopt).not.toHaveBeenCalled();
+    });
+
+    // Adoption is skipped for on-device rows, so nothing is followed.
+    it('reports no follow when the rows came from the on-device snapshots', async () => {
+      const onBound = vi.fn((): Promise<void> => Promise.resolve());
+      const result = activate({ onBound, isLocalOnly: true });
+
+      await result.current(BOARD, { pickSource: 'offline' });
+
+      expect(onBound).toHaveBeenCalledWith(BOARD, { pickSource: 'offline', followed: false });
     });
 
     // The board IS bound by this point. Refusing to navigate over a failed extra

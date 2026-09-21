@@ -23,6 +23,9 @@ const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const rememberDownloadedBoardsMock = vi.hoisted(() => vi.fn());
+// What adoption would answer for a networked pick. The offline test sets it to
+// true so `followed: false` can only come from the on-device rows.
+const willFollowMock = vi.hoisted(() => vi.fn((): boolean => false));
 
 const state = vi.hoisted(() => ({
   isOffline: false,
@@ -142,6 +145,7 @@ vi.mock('../../../src/hooks/use-current-user-id', () => ({
 
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useWillFollowFoundBoard: () => willFollowMock,
 }));
 
 vi.mock('../../../src/lib/use-device-location', () => ({
@@ -279,6 +283,7 @@ const downloadedBoard = board({ uuid: 'board-a', name: 'Marco garage' });
 beforeEach(() => {
   vi.clearAllMocks();
   setActiveBoardMock.mockResolvedValue(undefined);
+  willFollowMock.mockReturnValue(false);
   state.isOffline = false;
   state.connectivityReason = null;
   state.offlineCards = [];
@@ -314,6 +319,8 @@ describe('board picker with no usable network list', () => {
     state.connectivityReason = 'device_offline';
     state.offlineCards = [downloadedBoard];
     state.downloadedScopeKeys = ['kilter:8:17'];
+    // Networked, this pick would follow; the on-device rows are what say no.
+    willFollowMock.mockReturnValue(true);
 
     render(createElement(BoardSelection));
     fireEvent.click(screen.getByRole('button', { name: 'Marco garage' }));
@@ -322,6 +329,12 @@ describe('board picker with no usable network list', () => {
     // Adoption is a follow mutation plus a download confirm — offline all it can do is
     // raise a "Could not follow X" error toast on a board the user already has.
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'offline', followed: false }),
+      ),
+    );
   });
 
   it('shows the offline empty state, not "create a board", when nothing is downloaded', () => {
@@ -465,6 +478,11 @@ describe('board picker with no usable network list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Network board' }));
 
     await waitFor(() => expect(adoptFoundBoardMock).toHaveBeenCalledTimes(1));
+    // The pick event names the section the card was tapped in.
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: 'your_boards' }),
+    );
   });
 
   // The board-card glyph is the widest-reach discovery surface in #4318, and it

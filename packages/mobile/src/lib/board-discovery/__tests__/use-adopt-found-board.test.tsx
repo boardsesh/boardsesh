@@ -13,6 +13,9 @@ const cfg = vi.hoisted(() => ({
   autoOffline: false,
   syncEnabled: [] as string[],
   confirmResult: true,
+  isAuthenticated: true,
+  profileId: 'viewer-1' as string | undefined,
+  storedUserId: undefined as string | undefined,
 }));
 
 const spies = vi.hoisted(() => ({
@@ -32,6 +35,11 @@ vi.mock('../../graphql/hooks', () => ({
     spies.followOptions = options;
     return { mutate: spies.mutate };
   },
+  useProfile: () => ({ data: cfg.profileId ? { id: cfg.profileId } : undefined }),
+}));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: cfg.isAuthenticated }) }));
+vi.mock('../../../hooks/use-current-user-id', () => ({
+  useStoredUserId: (enabled: boolean) => ({ userId: enabled ? cfg.storedUserId : undefined, isLoading: false }),
 }));
 vi.mock('../../../offline/use-board-downloads', () => ({
   useBoardDownloads: () => ({ enableBoardsOffline: spies.enableBoardsOffline }),
@@ -49,7 +57,7 @@ vi.mock('../../../settings', () => ({
 vi.mock('../../error-reporting', () => ({ reportError: spies.reportError }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
-import { useAdoptFoundBoard } from '../use-adopt-found-board';
+import { useAdoptFoundBoard, useWillFollowFoundBoard } from '../use-adopt-found-board';
 
 const makeBoard = (over: Partial<UserBoard> = {}): UserBoard =>
   ({
@@ -58,7 +66,11 @@ const makeBoard = (over: Partial<UserBoard> = {}): UserBoard =>
     boardType: 'kilter',
     layoutId: 1,
     sizeId: 10,
-    isOwned: false,
+    // Someone else's board, marked by its creator as a real wall: the default
+    // for every board built in the app.
+    ownerId: 'setter-1',
+    isOwned: true,
+    isPublic: true,
     isFollowedByMe: false,
     ...over,
   }) as unknown as UserBoard;
@@ -68,6 +80,9 @@ beforeEach(() => {
   cfg.autoOffline = false;
   cfg.syncEnabled = [];
   cfg.confirmResult = true;
+  cfg.isAuthenticated = true;
+  cfg.profileId = 'viewer-1';
+  cfg.storedUserId = undefined;
   spies.mutate.mockClear();
   spies.enableBoardsOffline.mockClear();
   spies.showToast.mockClear();
@@ -88,9 +103,51 @@ describe('useAdoptFoundBoard', () => {
     expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
   });
 
-  it('does not follow a board the user already owns', async () => {
+  // #5654: `isOwned` is the creator's "a real wall" flag, true for every board
+  // built in the app. Reading it as "yours" left these boards unfollowed.
+  it("follows someone else's board even though its creator marked it as their own wall", async () => {
     const { result } = renderHook(() => useAdoptFoundBoard());
-    await result.current(makeBoard({ isOwned: true }));
+    const board = makeBoard({ ownerId: 'setter-1', isOwned: true });
+    await result.current(board);
+    expect(spies.mutate).toHaveBeenCalledWith(board);
+  });
+
+  it('does not follow a board the viewer built', async () => {
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    await result.current(makeBoard({ ownerId: 'viewer-1' }));
+    expect(spies.mutate).not.toHaveBeenCalled();
+  });
+
+  it('follows an Aurora gym pin (isOwned false)', async () => {
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    const board = makeBoard({ ownerId: '00000000-0000-0000-0000-000000000000', isOwned: false });
+    await result.current(board);
+    expect(spies.mutate).toHaveBeenCalledWith(board);
+  });
+
+  // No signal: the profile never answers, but the id on the device does.
+  it('recognises the viewer from the stored id when the profile has not loaded', async () => {
+    cfg.profileId = undefined;
+    cfg.storedUserId = 'viewer-1';
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    await result.current(makeBoard({ ownerId: 'viewer-1' }));
+    expect(spies.mutate).not.toHaveBeenCalled();
+  });
+
+  it('does not ask about offline while the viewer is unresolved', async () => {
+    cfg.profileId = undefined;
+    cfg.offlineEnabled = true;
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    const board = makeBoard();
+    await result.current(board);
+    // A harmless self-follow at worst, never a download prompt for your own wall.
+    expect(spies.mutate).toHaveBeenCalledWith(board);
+    expect(spies.confirm).not.toHaveBeenCalled();
+  });
+
+  it("does not try to follow someone else's private board", async () => {
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    await result.current(makeBoard({ isPublic: false }));
     expect(spies.mutate).not.toHaveBeenCalled();
   });
 
@@ -144,6 +201,42 @@ describe('useAdoptFoundBoard', () => {
     expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
   });
 
+  // The onboarding bind and the drawer's wall switch: the follow stays, the
+  // dialog goes, and only the climber's own auto-offline setting still downloads.
+  describe('with offerOffline: false', () => {
+    it('follows but never asks about offline', async () => {
+      cfg.offlineEnabled = true;
+      const { result } = renderHook(() => useAdoptFoundBoard({ offerOffline: false }));
+      const board = makeBoard();
+      await result.current(board);
+      expect(spies.mutate).toHaveBeenCalledWith(board);
+      expect(spies.confirm).not.toHaveBeenCalled();
+      expect(spies.enableBoardsOffline).not.toHaveBeenCalled();
+    });
+
+    it('still auto-downloads when auto-offline is on', async () => {
+      cfg.offlineEnabled = true;
+      cfg.autoOffline = true;
+      const { result } = renderHook(() => useAdoptFoundBoard({ offerOffline: false }));
+      const board = makeBoard();
+      await result.current(board);
+      expect(spies.confirm).not.toHaveBeenCalled();
+      expect(spies.enableBoardsOffline).toHaveBeenCalledWith(board, { trigger: 'adopt-auto', source: 'adopt' });
+    });
+  });
+
+  // followBoard needs a session. Without this gate a signed-out pick (guest mode)
+  // would end in a "Couldn't add X" toast and an error report.
+  it('never tries to follow while signed out', async () => {
+    cfg.isAuthenticated = false;
+    const { result } = renderHook(() => useAdoptFoundBoard());
+    await result.current(makeBoard());
+    expect(spies.mutate).not.toHaveBeenCalled();
+    expect(spies.showToast).not.toHaveBeenCalled();
+    expect(spies.reportError).not.toHaveBeenCalled();
+    expect(spies.confirm).not.toHaveBeenCalled();
+  });
+
   it('shows a success toast via the follow onFollowed callback', async () => {
     const { result } = renderHook(() => useAdoptFoundBoard());
     const board = makeBoard();
@@ -160,5 +253,21 @@ describe('useAdoptFoundBoard', () => {
     spies.followOptions?.onFollowError?.(board, error);
     expect(spies.reportError).toHaveBeenCalledWith(error);
     expect(spies.showToast).toHaveBeenCalledWith('mobile.discovery.followError', 'error');
+  });
+});
+
+describe('useWillFollowFoundBoard', () => {
+  it('agrees with adoption about whether a pick follows the board', () => {
+    const { result } = renderHook(() => useWillFollowFoundBoard());
+    expect(result.current(makeBoard())).toBe(true);
+    expect(result.current(makeBoard({ ownerId: 'viewer-1' }))).toBe(false);
+    expect(result.current(makeBoard({ isFollowedByMe: true }))).toBe(false);
+    expect(result.current(makeBoard({ isPublic: false }))).toBe(false);
+  });
+
+  it('says a signed-out pick follows nothing', () => {
+    cfg.isAuthenticated = false;
+    const { result } = renderHook(() => useWillFollowFoundBoard());
+    expect(result.current(makeBoard())).toBe(false);
   });
 });
