@@ -138,4 +138,29 @@ openssl pkey -noout -in "$tls_dir/server.key" ||
 [[ ! -e "$tls_dir/server.crt.incoming" && ! -e "$tls_dir/server.key.incoming" ]] ||
   fail 'a rejected update left staged material behind'
 
+# 8. The upstream entrypoint accepts leading PostgreSQL options and prepends
+#    `postgres` itself, so this wrapper has to normalise that form too -- otherwise
+#    it installs the certificate and starts PostgreSQL without pointing at it.
+tls_dir="$TEST_ROOT/case-leading-option"
+PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  run_entrypoint "$tls_dir" -c shared_buffers=128MB >/dev/null
+[[ "$(head -n 1 "$ARGS_LOG")" == 'postgres' ]] ||
+  fail "a leading option must be normalised to postgres, got: $(tr '\n' ' ' <"$ARGS_LOG")"
+grep -Fqx -- 'ssl=on' "$ARGS_LOG" || fail 'a leading option must still get the TLS settings'
+grep -Fqx -- 'shared_buffers=128MB' "$ARGS_LOG" || fail 'the caller option must survive'
+
+# 9. Bash suspends errexit inside a function called in condition context, which
+#    previously let a failed mkdir/chmod/mv/chown continue into PostgreSQL with
+#    unusable TLS files. An unwritable target must stop the boot.
+readonly LOCKED="$TEST_ROOT/locked"
+mkdir -p "$LOCKED"
+chmod 0500 "$LOCKED"
+expect_failure 'an unwritable TLS directory' env \
+  PG_TLS_DIR="$LOCKED/tls" \
+  PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
+  PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
+  bash "$ENTRYPOINT" postgres
+chmod 0700 "$LOCKED"
+
 printf 'postgres-entrypoint TLS contract passed\n'

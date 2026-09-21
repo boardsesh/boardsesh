@@ -55,15 +55,17 @@ staged_material_is_valid() {
   return 0
 }
 
-# 0 when TLS material was installed and the server should be told to use it.
+# A pure test, so it is safe to call in condition context. Bash suspends errexit
+# inside a function called there, which is why the mutating half below is kept
+# out of it: a failed mkdir, chmod, mv or chown would otherwise be swallowed and
+# the boot would continue with unusable TLS files, or silently without TLS.
+tls_material_requested() {
+  [[ -n "${PG_TLS_SERVER_CERT:-}" || -n "${PG_TLS_SERVER_KEY:-}" ]]
+}
+
 install_tls_material() {
   local cert="${PG_TLS_SERVER_CERT:-}"
   local key="${PG_TLS_SERVER_KEY:-}"
-
-  if [[ -z "$cert" && -z "$key" ]]; then
-    log 'PG_TLS_SERVER_CERT/KEY unset; leaving TLS configuration untouched'
-    return 1
-  fi
 
   # Failing closed matters more than convenience here: half a pair means someone
   # intended TLS and mis-wired it, and starting without it would look fine while
@@ -107,10 +109,25 @@ install_tls_material() {
   fi
 
   log "installed TLS material at $TLS_DIR ($(openssl x509 -noout -subject -enddate -in "$TLS_CERT" | tr '\n' ' '))"
-  return 0
 }
 
-if install_tls_material && [[ "${1:-}" == 'postgres' ]]; then
+# The upstream entrypoint treats a leading option as PostgreSQL's own and prepends
+# `postgres` itself, so `docker run IMAGE -c shared_buffers=...` is a supported
+# form. Normalise it first, or the check below would install the certificate and
+# then start PostgreSQL without being told to use it.
+if [[ "${1:-}" == -* ]]; then
+  set -- postgres "$@"
+fi
+
+if tls_material_requested; then
+  # Called outside condition context on purpose: errexit is live here, so a
+  # failed mkdir, chmod, mv or chown stops the boot instead of being ignored.
+  install_tls_material
+else
+  log 'PG_TLS_SERVER_CERT/KEY unset; leaving TLS configuration untouched'
+fi
+
+if tls_material_requested && [[ "${1:-}" == 'postgres' ]]; then
   shift
   # Command-line settings outrank postgresql.auto.conf, which is deliberate: it
   # makes the image authoritative, so an ALTER SYSTEM left over from an earlier
