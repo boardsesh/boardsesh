@@ -130,13 +130,14 @@ const styles = StyleSheet.create({
   },
   // No `textTransform: 'uppercase'` and no tracking: #4883 is about this cluster
   // shouting FOOTLESS / NO KB / CAMPUS beside a quietly-set no-match glyph. Sentence
-  // case at the shared caption weight puts the two on the same footing, and the
+  // case on the shared caption scale puts the two on the same footing, and the
   // catalog strings stay ABBREVIATED on purpose — see the PR body's width budget:
   // spelling "No KB" out in full costs the German row roughly three times the
   // badge width at Dynamic Type 1.5×, all of it taken from the climb's name.
   method: {
     marginLeft: 6,
     flexShrink: 0,
+    // Keep short attribute labels semibold while caption1 supplies size/line height.
     fontWeight: '600',
   },
 });

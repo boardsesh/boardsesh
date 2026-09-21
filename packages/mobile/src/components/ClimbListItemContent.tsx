@@ -499,7 +499,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             skipped from inside, so mounting it on every row would put an i18n
             listener on every row in the list. */}
         {isMultiFrameClimb(climb.framesCount) ? (
-          <ClimbFramesBadge framesCount={climb.framesCount ?? 0} compact={isCompact} />
+          <ClimbFramesBadge framesCount={climb.framesCount} compact={isCompact} />
         ) : null}
       </View>
 
