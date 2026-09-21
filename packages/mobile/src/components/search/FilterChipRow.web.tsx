@@ -29,7 +29,7 @@ import {
   climbTypeChipLabel,
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
-import type { FilterChipRowProps } from './FilterChipRow.types';
+import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
 // A chip that anchors a controlled Paper Menu. The `children` render-prop receives
 // a `close` so single-choice items can dismiss (keep-open toggle items simply
@@ -57,6 +57,50 @@ function MenuChip({
       }
     >
       {children(() => setVisible(false))}
+    </Menu>
+  );
+}
+
+// Tall / Wide board-shape chip: tap toggles the filter, long-press opens a Lock /
+// Unlock menu anchored on the chip (the same gestures as the iOS and Android rows).
+// A locked chip shows a lock icon and ignores tap until unlocked.
+function DimensionChipView({
+  dimension,
+  label,
+  lockLabel,
+  unlockLabel,
+}: {
+  dimension: DimensionChip;
+  label: string;
+  lockLabel: string;
+  unlockLabel: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <Menu
+      visible={visible}
+      onDismiss={() => setVisible(false)}
+      anchor={
+        <Chip
+          mode="outlined"
+          selected={dimension.active}
+          icon={dimension.locked ? 'lock' : undefined}
+          onPress={dimension.onToggle}
+          onLongPress={() => setVisible(true)}
+          style={styles.chip}
+        >
+          {label}
+        </Chip>
+      }
+    >
+      <Menu.Item
+        title={dimension.locked ? unlockLabel : lockLabel}
+        leadingIcon={dimension.locked ? 'lock-open-variant' : 'lock'}
+        onPress={() => {
+          dimension.onToggleLock();
+          setVisible(false);
+        }}
+      />
     </Menu>
   );
 }
@@ -279,23 +323,20 @@ function FilterChipRowComponent({
           </MenuChip>
         ) : null}
 
-        {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
-            can be both). The menu stays open so both can be toggled. Shown only
-            when the board size has the expansion. */}
-        {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
-          <MenuChip label={t('mobile.filter.shape')} selected={dimensionChips.some((dimension) => dimension.active)}>
-            {() =>
-              dimensionChips.map((dimension) => (
-                <Menu.Item
-                  key={dimension.key}
-                  title={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                  leadingIcon={dimension.active ? 'check' : undefined}
-                  onPress={dimension.onToggle}
-                />
-              ))
-            }
-          </MenuChip>
-        ) : null}
+        {/* Tall / Wide — board-shape chips, each pinned on its own and present
+            only on sizes with a shorter/narrower sibling. Tap toggles, long-press
+            opens Lock / Unlock. */}
+        {dimensionChips
+          .filter((dimension) => pinnedChips.includes(dimension.key))
+          .map((dimension) => (
+            <DimensionChipView
+              key={dimension.key}
+              dimension={dimension}
+              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+              lockLabel={t('mobile.search.chips.lock')}
+              unlockLabel={t('mobile.search.chips.unlock')}
+            />
+          ))}
 
         {/* Beta videos — a plain on/off toggle chip. Opt-in. */}
         {pinnedChips.includes('beta') ? (

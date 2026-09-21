@@ -19,7 +19,8 @@ export const PINNABLE_CHIP_KINDS = [
   'progress',
   'collection',
   'climbType',
-  'shape',
+  'tall',
+  'wide',
   'beta',
   'popularity',
   'rating',
@@ -30,7 +31,7 @@ export type PinnableChipKind = (typeof PINNABLE_CHIP_KINDS)[number];
 
 // Fixed canonical order the chips render in, regardless of pin/unpin sequence.
 // Grouped to mirror the sheet's section order: accuracy sits by grade, climbType
-// by shape (both "The Climb"), beta after shape, sort last.
+// by Tall/Wide (all "The Climb"), beta after Wide, sort last.
 export const PINNABLE_CHIP_CATALOG: readonly PinnableChipKind[] = PINNABLE_CHIP_KINDS;
 
 // Default pins = exactly the Tier-1 chips, so existing users see the same row
@@ -40,7 +41,8 @@ export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
   'grade',
   'progress',
   'collection',
-  'shape',
+  'tall',
+  'wide',
   'popularity',
   'rating',
 ];
@@ -53,13 +55,30 @@ export function isValidChipKind(value: unknown): value is PinnableChipKind {
   return typeof value === 'string' && (PINNABLE_CHIP_KINDS as readonly string[]).includes(value);
 }
 
+// Retired kinds a stored pin set may still hold, mapped to the kinds that
+// replaced them. 'shape' was one menu chip grouping Tall + Wide (#3802); they're
+// separate chips again (#5659), so a saved 'shape' pin becomes both — nobody who
+// had the Shape chip loses Tall or Wide after the update.
+const LEGACY_CHIP_KINDS: ReadonlyMap<unknown, readonly PinnableChipKind[]> = new Map<
+  unknown,
+  readonly PinnableChipKind[]
+>([['shape', ['tall', 'wide']]]);
+
+/** Whether a stored pin set still holds a retired kind that {@link normalizePinnedChips} rewrites. */
+export function hasLegacyChipKinds(kinds: readonly unknown[]): boolean {
+  return kinds.some((kind) => LEGACY_CHIP_KINDS.has(kind));
+}
+
 /**
  * Returns pins re-sorted into {@link PINNABLE_CHIP_CATALOG} order and stripped of
- * unknown/duplicate kinds. Keeps the fixed-order invariant no matter what order
- * kinds were toggled in, and makes a stored payload safe to grow the catalog.
+ * unknown/duplicate kinds, with retired kinds mapped to their replacements (a
+ * stored 'shape' becomes 'tall' + 'wide'). Keeps the fixed-order invariant no
+ * matter what order kinds were toggled in, and makes a stored payload safe to
+ * grow the catalog.
  */
 export function normalizePinnedChips(kinds: readonly unknown[]): PinnableChipKind[] {
-  const set = new Set(kinds.filter(isValidChipKind));
+  const expanded = kinds.flatMap<unknown>((kind) => LEGACY_CHIP_KINDS.get(kind) ?? [kind]);
+  const set = new Set(expanded.filter(isValidChipKind));
   return PINNABLE_CHIP_CATALOG.filter((kind) => set.has(kind));
 }
 
@@ -94,8 +113,10 @@ export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
       // group's "Unrepeated" (status='projects'), so it's left unclaimed here — a
       // drafts token can still show alongside a pinned Collection chip (rare).
       return ['benchmark'];
-    case 'shape':
-      return ['tall', 'wide'];
+    case 'tall':
+      return ['tall'];
+    case 'wide':
+      return ['wide'];
     case 'popularity':
       return ['minAscents'];
     case 'rating':

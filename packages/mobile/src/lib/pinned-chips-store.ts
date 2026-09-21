@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
-import { DEFAULT_PINNED_CHIPS, normalizePinnedChips, type PinnableChipKind } from './pinnable-chips';
+import {
+  DEFAULT_PINNED_CHIPS,
+  hasLegacyChipKinds,
+  normalizePinnedChips,
+  type PinnableChipKind,
+} from './pinnable-chips';
 
 // Which filter chips the user has pinned to the persistent chip row. A non-secret
 // UI-layout preference → AsyncStorage via preference-store (NOT SecureStore).
@@ -44,6 +49,13 @@ export async function loadPinnedChips(): Promise<readonly PinnableChipKind[]> {
   current = normalized.length > 0 ? normalized : DEFAULT_PINNED_CHIPS;
   hasLoaded = true;
   notify();
+  // A set saved before a chip was split (e.g. 'shape' → 'tall' + 'wide') loads
+  // already migrated above; write the migrated set back once so storage stops
+  // carrying the retired kind. Best-effort: a failed write just means the same
+  // migration runs again on the next load.
+  if (Array.isArray(stored) && hasLegacyChipKinds(stored)) {
+    void persist(current).catch(() => {});
+  }
   return current;
 }
 

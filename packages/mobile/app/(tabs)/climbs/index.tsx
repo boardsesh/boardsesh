@@ -54,6 +54,8 @@ import {
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
+import { useDimensionLocks, useDimensionRepin } from '../../../src/lib/dimension-lock-store';
+import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
@@ -1342,7 +1344,10 @@ function ClimbListInner() {
   // Tall/Wide chips appear on any board whose active size has a shorter/narrower
   // size in its product family — Kilter Homewall & Original, Tension Board 2,
   // Decoy, Grasshopper (getTallWideScope is the shared source of truth, matching
-  // the server filter). Tap toggles the filter.
+  // the server filter). Tap toggles the filter; long-press locks it (persisted)
+  // so it survives clears — the re-pin effects below re-apply a locked filter
+  // whenever it's cleared.
+  const { locks: dimensionLocks, setLock: setDimensionLock } = useDimensionLocks();
   const { hasShorter: showTallChip, hasNarrower: showWideChip } = getTallWideScope(
     boardName as BoardName,
     layoutId,
@@ -1351,26 +1356,77 @@ function ClimbListInner() {
   const dimensionChips = useMemo<DimensionChip[]>(() => {
     const chips: DimensionChip[] = [];
     if (showTallChip) {
+      const locked = dimensionLocks.tall;
       chips.push({
         key: 'tall',
-        active: !!filters.onlyTallClimbs,
-        onToggle: () => patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true }),
+        active: locked || !!filters.onlyTallClimbs,
+        locked,
+        // A locked chip ignores tap — only a long-press unlock frees it.
+        onToggle: () => {
+          if (locked) return;
+          patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true });
+        },
+        onToggleLock: () => {
+          hapticMedium();
+          const next = !locked;
+          setDimensionLock('tall', next);
+          if (next) patchFilters({ onlyTallClimbs: true });
+        },
       });
     }
     if (showWideChip) {
+      const locked = dimensionLocks.wide;
       chips.push({
         key: 'wide',
-        active: !!filters.onlyWideClimbs,
-        onToggle: () => patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true }),
+        active: locked || !!filters.onlyWideClimbs,
+        locked,
+        onToggle: () => {
+          if (locked) return;
+          patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true });
+        },
+        onToggleLock: () => {
+          hapticMedium();
+          const next = !locked;
+          setDimensionLock('wide', next);
+          if (next) patchFilters({ onlyWideClimbs: true });
+        },
       });
     }
     return chips;
-  }, [showTallChip, showWideChip, filters.onlyTallClimbs, filters.onlyWideClimbs, patchFilters]);
+  }, [
+    showTallChip,
+    showWideChip,
+    dimensionLocks.tall,
+    dimensionLocks.wide,
+    filters.onlyTallClimbs,
+    filters.onlyWideClimbs,
+    patchFilters,
+    setDimensionLock,
+  ]);
+  // A locked dimension stays active through any clear (sheet Reset, FAB clear,
+  // recent re-apply): re-pin its filter whenever it's been cleared while locked.
+  // Only while its chip is actually in the row (board supports it AND it's
+  // pinned): an unpinned chip's filter is a removable token, and re-pinning it
+  // would make that token impossible to clear.
+  const pinTall = useCallback(() => patchFilters({ onlyTallClimbs: true }), [patchFilters]);
+  const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
+  useDimensionRepin(
+    showTallChip && pinnedChips.includes('tall'),
+    dimensionLocks.tall,
+    !!filters.onlyTallClimbs,
+    pinTall,
+  );
+  useDimensionRepin(
+    showWideChip && pinnedChips.includes('wide'),
+    dimensionLocks.wide,
+    !!filters.onlyWideClimbs,
+    pinWide,
+  );
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it
   // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
   // filter as a removable token (and re-pinning removes the token). Tall/Wide are
-  // chip-backed only when Shape is pinned AND the homewall size shows their chip.
+  // chip-backed only when their own chip is pinned AND the board size shows it.
   const chipBackedTokenKeys = useMemo(
     () => new Set<string>(pinnedChips.flatMap((kind) => chipKindToTokenKeys(kind))),
     [pinnedChips],

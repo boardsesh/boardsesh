@@ -15,13 +15,17 @@ import type { ClimbFilters } from '../ClimbFilterSheet';
 /**
  * Board-shape toggle chips, present only on the sizes where they apply (a shorter
  * or narrower size exists in the same product family; the caller derives this via
- * @boardsesh/board-constants). Grouped under the single "Shape" menu chip, where
- * Tall and Wide are independent toggles — tap either to flip its filter.
+ * @boardsesh/board-constants). Tall and Wide are separate chips, each pinnable on
+ * its own. Tap toggles the filter; long-press offers Lock / Unlock, a persisted
+ * lock that keeps the filter on through Reset and clears (shown with a lock
+ * icon). A locked chip ignores tap; only a long-press unlock frees it.
  */
 export type DimensionChip = {
   key: 'tall' | 'wide';
   active: boolean;
+  locked: boolean;
   onToggle: () => void;
+  onToggleLock: () => void;
 };
 
 export type FilterChipRowProps = {
@@ -52,7 +56,10 @@ export type FilterChipRowProps = {
   gradeRailOpen: boolean;
   onCloseGrade: () => void;
 
-  /** Tall/Wide chips for the current Kilter homewall size (empty otherwise). */
+  /**
+   * Tall/Wide chips the current board size supports (empty otherwise). Each one
+   * still renders only when its own kind ('tall' / 'wide') is pinned.
+   */
   dimensionChips: DimensionChip[];
 
   minAscents: number | undefined;
