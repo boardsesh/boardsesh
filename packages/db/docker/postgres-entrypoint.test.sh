@@ -97,15 +97,30 @@ expect_failure() {
   fi
 }
 
+# Every rejection must also leave nothing behind. A staged pair left on the volume
+# would be key material the boot never validated, and on a restart it is what a
+# careless fix might promote into place.
+expect_nothing_installed() {
+  local description="$1"
+  local directory="$2"
+  local leftover
+  for leftover in server.crt server.key server.crt.incoming server.key.incoming; do
+    [[ ! -e "$directory/$leftover" ]] ||
+      fail "$description left $leftover behind"
+  done
+}
+
 # 4. Half a pair is a mis-wiring, not a reason to fall back to no TLS.
 expect_failure 'a certificate with no key' env -u PG_TLS_SERVER_KEY \
   PG_TLS_DIR="$TEST_ROOT/case-cert-only" \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   bash "$ENTRYPOINT" postgres
+expect_nothing_installed 'a certificate with no key' "$TEST_ROOT/case-cert-only"
 expect_failure 'a key with no certificate' env -u PG_TLS_SERVER_CERT \
   PG_TLS_DIR="$TEST_ROOT/case-key-only" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" postgres
+expect_nothing_installed 'a key with no certificate' "$TEST_ROOT/case-key-only"
 
 # 5. Garbage in either variable.
 expect_failure 'a certificate that is not PEM' env \
@@ -113,11 +128,13 @@ expect_failure 'a certificate that is not PEM' env \
   PG_TLS_SERVER_CERT='not a certificate' \
   PG_TLS_SERVER_KEY="$(cat "$PKI/good.key")" \
   bash "$ENTRYPOINT" postgres
+expect_nothing_installed 'a non-PEM certificate' "$TEST_ROOT/case-bad-cert"
 expect_failure 'a key that is not PEM' env \
   PG_TLS_DIR="$TEST_ROOT/case-bad-key" \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY='not a key' \
   bash "$ENTRYPOINT" postgres
+expect_nothing_installed 'a non-PEM key' "$TEST_ROOT/case-bad-key"
 
 # 6. The one PostgreSQL would only reveal at startup, on a service with no shell.
 expect_failure 'a certificate and key that are not a pair' env \
@@ -125,6 +142,7 @@ expect_failure 'a certificate and key that are not a pair' env \
   PG_TLS_SERVER_CERT="$(cat "$PKI/good.crt")" \
   PG_TLS_SERVER_KEY="$(cat "$PKI/other.key")" \
   bash "$ENTRYPOINT" postgres
+expect_nothing_installed 'a mismatched pair' "$TEST_ROOT/case-mismatch"
 
 # 7. A broken update must leave a working pair intact. Overwriting first and
 #    validating afterwards would take a healthy primary down at its next boot.
