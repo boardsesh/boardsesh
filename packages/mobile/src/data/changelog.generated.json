@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T21:44:18.776Z",
+  "generatedAt": "2026-09-21T22:06:32.262Z",
   "entries": [
+    {
+      "prNumber": 5677,
+      "category": "new",
+      "title": "New here? Boardsesh now asks where you climb right after sign-up, then takes you to your board's climbs",
+      "mergedAt": "2026-09-21T22:04:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5677",
+      "body": "Pick your gym's board nearby or on the map, set up your home wall, or scan for the board in front of you"
+    },
     {
       "prNumber": 5675,
       "category": "fixed",

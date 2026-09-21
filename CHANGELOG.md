@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- New here? Boardsesh now asks where you climb right after sign-up, then takes you to your board's climbs ([#5677](https://github.com/boardsesh/boardsesh/pull/5677))
+  Pick your gym's board nearby or on the map, set up your home wall, or scan for the board in front of you
 - Sign in with Apple or Google right from the top of the screen ([#5674](https://github.com/boardsesh/boardsesh/pull/5674))
   Signing up asks for your password once
 - Long-press any climb and hit "Play next" to slot it right behind the one on the wall — no more waiting out the whole queue while the crew rests. ([#4712](https://github.com/boardsesh/boardsesh/pull/4712))
