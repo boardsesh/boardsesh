@@ -330,6 +330,7 @@ async function repointClaims(
              SELECT 1
                FROM gyms AS original_gym
                JOIN gym_owner_reassignments AS handover ON handover.gym_uuid = original_gym.uuid
+               -- Compare the selected survivor's owner independently of the source gym.
                JOIN gyms AS survivor ON survivor.id = ${canonicalGymId}
               WHERE original_gym.id = source_claim.gym_id
                 AND original_gym.owner_id <> source_claim.claimant_user_id
