@@ -299,7 +299,7 @@ export async function loadCrossLinkedPlaylists(
       userId: row.ownerUserId,
       userEmail: row.ownerEmail,
       role: row.ownerRole,
-      createdAt: new Date(row.ownerCreatedAt),
+      createdAt: row.ownerCreatedAt,
     });
   }
 
@@ -582,7 +582,7 @@ export async function applyRepairPlans(
 
     const plannedOwnersByUserId = new Map(plan.playlist.owners.map((owner) => [owner.userId, owner]));
     const latestLockedOwner = [...lockedOwners].sort(
-      (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+      (first, second) => second.createdAt.getTime() - first.createdAt.getTime(),
     )[0];
 
     const stillMatchesPlan =
