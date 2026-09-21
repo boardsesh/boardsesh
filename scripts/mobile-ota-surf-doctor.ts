@@ -74,6 +74,7 @@ import {
   type SurfableBranch,
 } from './lib/ota-branch-probe';
 
+// Preserve the legacy exports; probeBranchList is internal to the shared helper.
 export {
   DEFAULT_BASE_URL,
   OTA_APP_ID,
