@@ -195,7 +195,11 @@ describe('diffServiceVars', () => {
   });
 
   // A private key must never reach the plan output, which an operator pastes around.
-  it('never puts TLS key material in the plan output', () => {
+  // Two branches matter and they are different code paths: a bracketed value is
+  // classified as a placeholder and reported, while a real PEM is classified as set
+  // and reported not at all. The second is the one that actually carries key
+  // material, so it needs its own case rather than being implied by the first.
+  it('never echoes a placeholder key back in the plan output', () => {
     const primaryService = desiredRailwayState.services.find(
       (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
     );
@@ -204,7 +208,25 @@ describe('diffServiceVars', () => {
       variables: { [POSTGRES_PRIMARY_SERVICE_NAME]: { PG_TLS_SERVER_KEY: '<SUPERSECRETKEYMATERIAL>' } },
     });
     const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes.some((change) => change.summary.includes('placeholder'))).toBe(true);
     expect(JSON.stringify(changes)).not.toContain('SUPERSECRETKEYMATERIAL');
+  });
+
+  it('stays silent, and leaks nothing, when a real key is set', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const realKey = '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49SECRETBODY\n-----END PRIVATE KEY-----';
+    const realCert = '-----BEGIN CERTIFICATE-----\nMIIBhjCCAS2gAwIBAgIUSECRETBODY\n-----END CERTIFICATE-----';
+    const live = liveState({
+      variables: {
+        [POSTGRES_PRIMARY_SERVICE_NAME]: { PG_TLS_SERVER_CERT: realCert, PG_TLS_SERVER_KEY: realKey },
+      },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes).toEqual([]);
+    expect(JSON.stringify(changes)).not.toContain('SECRETBODY');
   });
 
   it('flags a placeholder that a naive is-it-set check would pass', () => {
