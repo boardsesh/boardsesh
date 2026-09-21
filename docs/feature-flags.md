@@ -131,6 +131,28 @@ diagnostic) applies on native. The whole surface lives in three files:
   because the heal is a one-shot server write at launch: acting on the
   unresolved first frame would send the follow before a set switch could stop
   it.
+  Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0
+  until that fix, all of them sat behind a `ready` prop frozen at `false` under
+  `DatabaseProvider` (expo-sqlite's memo'd provider never re-renders its
+  children; see `packages/mobile/src/providers/launch-ready-context.tsx`), so
+  the OTA that fixed the wiring turned on features the fleet had never run.
+  `connectivity-banner-kill` hides the bottom connectivity banner
+  (`useConnectivityBannerEnabled`); outage detection itself stays on, since
+  that is `backend-outage-detection`. `qa-tester-gate-kill` stops the
+  tester-only launch prompt (`useQaTesterGateEnabled`). `send-recovery-gate-kill`
+  stops the one-time recovered-sends notice (`useSendRecoveryGateEnabled`); the
+  note stays owed in the database and the sends are requeued either way. All
+  three read unresolved as enabled, and all three surfaces wait for
+  `useFeatureFlagsResolved()` (at most 2 s) before they act, so a switch flipped
+  in PostHog lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the
+  first paint (`ConnectivityBanner`) it exists to stop. That holds on a build
+  baked with `EXPO_PUBLIC_STRAVA_INTEGRATION` or `EXPO_PUBLIC_LOGBOOK_FILTERS`
+  too: the root layout passes that env bag with `staticFlagsAreFinal={false}`,
+  because it pins only its own keys, so the resolved hook still waits for
+  PostHog. Only a test's `flags` bag counts as final on the first frame. The
+  onboarding and board-look gates woke up in the same change but only
+  evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`),
+  so they have nothing to kill yet.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BOARD_LOOK_STEP_BLOCKED_TOP_SEGMENTS,
   decideBoardLookStep,
+  explainBoardLookStep,
+  isSettledBoardLookReason,
   type BoardLookStepInput,
 } from '../board-look-step-decision';
 
@@ -117,5 +119,39 @@ describe('decideBoardLookStep', () => {
     ])('still rules out %s without any async read', (_label, overrides) => {
       expect(preflight(overrides)).toBe('none');
     });
+  });
+});
+
+// The reason is what the gate logs while it evaluates without presenting
+// (#5654), so each rule has to name itself, and the decision has to stay exactly
+// what `decideBoardLookStep` returns.
+describe('explainBoardLookStep', () => {
+  it.each([
+    ['never_asked', {}, 'show'],
+    ['not_ready', { ready: false }, 'wait'],
+    ['screenshot', { screenshotMode: true }, 'none'],
+    ['settings_loading', { settingsLoaded: false }, 'wait'],
+    ['look_chosen', { storedMode: 'classic' as const }, 'none'],
+    ['blocked_segment', { topSegment: 'boards' }, 'none'],
+    ['seen_pending', { stepSeen: undefined }, 'wait'],
+    ['step_seen', { stepSeen: true }, 'none'],
+    ['launched_by_url', { launchedByDeepLink: true }, 'none'],
+    ['preview_loading', { previewStatus: 'loading' as const }, 'wait'],
+    ['preview_unavailable', { previewStatus: 'unavailable' as const }, 'none'],
+    ['renderer_pending', { boardseshRendererAvailable: null }, 'wait'],
+    ['renderer_unavailable', { boardseshRendererAvailable: false }, 'none'],
+  ] as const)('names %s', (reason, overrides, decision) => {
+    const input = eligible(overrides);
+    expect(explainBoardLookStep(input)).toEqual({ decision, reason });
+    expect(decideBoardLookStep(input)).toBe(decision);
+  });
+
+  it('counts only the verdicts about the climber as settled', () => {
+    expect(isSettledBoardLookReason('never_asked')).toBe(true);
+    expect(isSettledBoardLookReason('look_chosen')).toBe(true);
+    expect(isSettledBoardLookReason('step_seen')).toBe(true);
+    expect(isSettledBoardLookReason('launched_by_url')).toBe(false);
+    expect(isSettledBoardLookReason('blocked_segment')).toBe(false);
+    expect(isSettledBoardLookReason('seen_pending')).toBe(false);
   });
 });

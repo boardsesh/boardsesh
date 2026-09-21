@@ -10,11 +10,8 @@ import { hasSeenOnboarding } from '../../lib/onboarding/onboarding-storage';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { decideSendRecovery, type SendRecoveryInput } from '../../lib/offline-recovery/send-recovery-decision';
-
-type SendRecoveryGateProps = {
-  /** True once auth + fonts are resolved and the splash has hidden. */
-  ready: boolean;
-};
+import { useFeatureFlagsResolved, useSendRecoveryGateEnabled } from '../../providers/feature-flags-provider';
+import { useLaunchReady } from '../../providers/launch-ready-context';
 
 // Once per JS session, not once per mount — a re-render must never push a second
 // copy of the notice.
@@ -42,8 +39,18 @@ export function resetSendRecoverySessionForTests(): void {
  * The decision lives in `decideSendRecovery`, a pure function, so the policy is
  * unit-tested without a renderer. Everyone with nothing to recover — which is
  * almost everyone, and every fresh install — reads one `sync_meta` row and stops.
+ *
+ * It waits on the launch-ready context and on the feature flags having resolved,
+ * because `send-recovery-gate-kill` must be able to stop the push (and the note
+ * clear that precedes it) before it happens. The gate never ran from 2.2.0 until
+ * #5654 (its `ready` prop was frozen behind the database provider), which is why
+ * that switch exists at all. Killed, the note stays owed in the database.
  */
-export function SendRecoveryGate({ ready }: SendRecoveryGateProps) {
+export function SendRecoveryGate() {
+  const launchReady = useLaunchReady();
+  const flagsResolved = useFeatureFlagsResolved();
+  const enabled = useSendRecoveryGateEnabled();
+  const ready = launchReady && flagsResolved;
   const segments = useSegments();
   // Latest top-level segment for the async re-check, without re-running the
   // effect on every navigation — the gate decides once per launch.
@@ -53,7 +60,8 @@ export function SendRecoveryGate({ ready }: SendRecoveryGateProps) {
   const schemaReady = useOfflineSchemaReady();
 
   useEffect(() => {
-    if (announcedThisSession) return;
+    // Killed: stand down without spending the session guard.
+    if (!enabled || announcedThisSession) return;
 
     const sharedInput = {
       ready,
@@ -108,7 +116,9 @@ export function SendRecoveryGate({ ready }: SendRecoveryGateProps) {
         if (cancelled) return;
 
         // Re-decide against the CURRENT route: a deep link may have arrived
-        // while the reads were in flight.
+        // while the reads were in flight, or QaTesterGate may have finished first
+        // and put its prompt up (first to finish wins; see its segment list in
+        // send-recovery-decision.ts).
         const decision = decideSendRecovery({
           ...sharedInput,
           topSegment: topSegmentRef.current,
@@ -140,7 +150,7 @@ export function SendRecoveryGate({ ready }: SendRecoveryGateProps) {
       cancelled = true;
       interaction.cancel();
     };
-  }, [ready, schemaReady]);
+  }, [ready, enabled, schemaReady]);
 
   return null;
 }

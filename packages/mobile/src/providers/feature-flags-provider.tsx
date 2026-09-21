@@ -164,6 +164,24 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch: stops the app silently following the board it launched on when that board is neither yours nor followed (#5654). The heal waits for flags to resolve before it runs, so turning this on takes effect on the next launch without an OTA. Unresolved reads as enabled.',
   },
+  {
+    key: 'connectivity-banner-kill',
+    label: 'Disable the connectivity banner',
+    description:
+      'Emergency kill switch for the bottom "No signal / server trouble / Back online" banner, which never painted from 2.2.0 until #5654 woke it up. Hides the banner only: outage detection and the fail-fast path keep running (that is backend-outage-detection). Unresolved reads as enabled.',
+  },
+  {
+    key: 'qa-tester-gate-kill',
+    label: 'Disable the QA launch prompt',
+    description:
+      'Emergency kill switch for the tester-only launch prompt that offers a PR preview or shows the brief for the running one. Dormant from 2.2.0 until #5654. The More-tab QA rows stay. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'send-recovery-gate-kill',
+    label: 'Disable the recovered-sends notice',
+    description:
+      'Emergency kill switch for the one-time "sends we lost are on their way" notice (#5335), dormant from 2.2.0 until #5654. The sends themselves are requeued by the schema migration either way, and the notice stays owed in the database while this is on. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -228,9 +246,18 @@ export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
 
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
+  staticFlagsAreFinal = true,
   children,
 }: {
   flags?: FeatureFlags;
+  /**
+   * Whether a supplied `flags` bag is the whole answer. True for a test, which
+   * hands over every value it cares about. False for the root layout's env
+   * override, which pins one or two keys while PostHog still answers for every
+   * other flag, kill switches included: reading that bag as final would let a
+   * gate act before a switch flipped in PostHog could reach it.
+   */
+  staticFlagsAreFinal?: boolean;
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
@@ -262,9 +289,10 @@ export function FeatureFlagsProvider({
     };
   }, []);
 
-  // A statically supplied bag — the env override, and every test — is already
-  // final: there is nothing on its way that could change it.
-  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS;
+  // A statically supplied bag that is the whole answer (every test) is already
+  // final: there is nothing on its way that could change it. A partial one (the
+  // env override) still waits for PostHog like an empty bag does.
+  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS && staticFlagsAreFinal;
 
   const value = useMemo<FeatureFlags>(() => {
     // Policy-controlled flags lose their override outside a dev build, so this
@@ -375,6 +403,30 @@ export function useClimbModerationEnabled(): boolean {
  */
 export function useActiveBoardFollowHealEnabled(): boolean {
   return useFeatureFlag('active-board-follow-heal-kill') !== true;
+}
+
+/**
+ * Kill switches for the three launch surfaces #5654 woke up. All three sat
+ * behind a `ready` prop frozen at false from 2.2.0 on, so the OTA that fixed the
+ * wiring turned on features the fleet had never run. Each gets its own switch so
+ * one misbehaving surface can go without the others.
+ *
+ * KILL switches, for the usual reason (see `useAnonymousClimbViewEnabled`):
+ * missing/undefined reads as "not killed". All three surfaces also wait for
+ * `useFeatureFlagsResolved()` before they act, so a switch flipped in PostHog
+ * lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the first paint
+ * (`ConnectivityBanner`) it is meant to stop, not after.
+ */
+export function useConnectivityBannerEnabled(): boolean {
+  return useFeatureFlag('connectivity-banner-kill') !== true;
+}
+
+export function useQaTesterGateEnabled(): boolean {
+  return useFeatureFlag('qa-tester-gate-kill') !== true;
+}
+
+export function useSendRecoveryGateEnabled(): boolean {
+  return useFeatureFlag('send-recovery-gate-kill') !== true;
 }
 
 /**

@@ -26,6 +26,11 @@ brief: what this PR is and its `## Test plan`, once per branch + bundle, with **
 **Finish testing**, **Open on GitHub**, **Leave preview**. Everyone else reaches the same screens
 when they go looking, and is never interrupted. `decideQaGate` owns that line.
 
+The prompt never actually fired between 2.2.0 and #5654: `QaTesterGate`'s `ready` prop was frozen
+at `false` behind `DatabaseProvider`. It now reads readiness from `LaunchReadyProvider`, waits for
+the feature flags to resolve, and the `qa-tester-gate-kill` flag switches the prompt off without
+touching the drawer and More-tab entry points.
+
 **Filing a verdict is open; moving the label is not.** Anyone signed in can finish testing —
 Approve / Decline plus notes — and it is recorded and posted as a comment on the PR. Only a tester's
 verdict moves the `qa-approved` / `qa-declined` label, because that label gates a merge on a public

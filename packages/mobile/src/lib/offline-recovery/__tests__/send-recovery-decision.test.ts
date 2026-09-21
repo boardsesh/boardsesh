@@ -58,6 +58,12 @@ describe('decideSendRecovery', () => {
     expect(decideSendRecovery({ ...READY, topSegment: 'send-recovery' })).toBe('none');
   });
 
+  // The QA gate runs beside this one on every launch. Its prompt outranks the
+  // notice, and the note stays owed in the database for the next launch.
+  it('yields to the QA prompt instead of stacking on top of it', () => {
+    expect(decideSendRecovery({ ...READY, topSegment: 'qa' })).toBe('none');
+  });
+
   it('stays out of App Store screenshots', () => {
     expect(decideSendRecovery({ ...READY, screenshotMode: true })).toBe('none');
   });

@@ -100,6 +100,27 @@ function initializeAndRetainDatabase(db: SQLiteDatabase): Promise<void> {
   return Promise.all([initialization, retainDatabaseConnection()]).then(() => undefined);
 }
 
+/**
+ * Opens the offline database and publishes it to everything below.
+ *
+ * **Nothing below this provider receives its parent's re-renders (#5654).**
+ * `SQLiteProvider` is `memo()`'d with a comparator over its connection props
+ * only (`databaseName`, `options`, `assetSource`, `directory`, `onInit`,
+ * `onError`, `useSuspense`; expo-sqlite `build/hooks.js`). It never compares
+ * `children`, and every prop passed here is stable, so it renders once and then
+ * keeps serving the `children` it got the first time. In `app/_layout.tsx` that
+ * is the whole app: a prop built from `RootLayout` state and passed to anything
+ * inside this provider stays at its first-render value. That is how the four
+ * launch gates' `ready={authReady && fontsReady}` stayed `false` from 2.2.0 on.
+ *
+ * Share such state through a context provided ABOVE this component, as
+ * `LaunchReadyProvider` does: a context value change reaches its consumers past
+ * a memo. The alternative, handing `children` through a context here so they
+ * re-render with the parent, was deliberately not taken in #5654. The tree has
+ * run this way since July, and un-freezing all of it in one fleet-wide OTA is a
+ * wider change than the four gates needed. `root-layout-memo-freeze-guard`
+ * fails if `_layout.tsx` passes RootLayout state as a prop below this provider.
+ */
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   return (
     <SQLiteProvider databaseName={DATABASE_NAME} onInit={initializeAndRetainDatabase} onError={handleDatabaseError}>

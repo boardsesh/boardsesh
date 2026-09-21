@@ -470,6 +470,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
 
       anonymousSessionIsolatedRef.current = false;
+      // Signing in, not re-checking a session that was already signed in. The
+      // signed-out screens mount profile readers too, and what they cached for
+      // `['profile']` is the backend's answer to a request with no token:
+      // `profile: null`. That answer stays fresh for the 5 min staleTime, so
+      // every reader the new session mounts would get "nobody" until then
+      // (#5654: the first-run gate's account age came out null for exactly the
+      // climbers who had just signed up). Invalidating before the tree swaps
+      // puts the refetch in flight, and the remounted readers wait on it.
+      if (!wasAuthenticated) void queryClient.invalidateQueries({ queryKey: ['profile'], exact: true });
       authStateRef.current = { ...authStateRef.current, isAuthenticated: true };
       setIsSessionUnavailable(false);
       setIsAuthenticated(true);
@@ -491,7 +500,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
       return true;
     },
-    [isAuthTransitionCurrent, runSignedOutCleanup],
+    [isAuthTransitionCurrent, queryClient, runSignedOutCleanup],
   );
 
   const handleResolvedAuthenticatedTransition = useCallback(
