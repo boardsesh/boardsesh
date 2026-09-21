@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T13:59:05.557Z",
+  "generatedAt": "2026-09-21T14:13:21.582Z",
   "entries": [
+    {
+      "prNumber": 5670,
+      "category": "fixed",
+      "title": "Fixed: the Profile, Discover, and Climbs tabs no longer get stuck on a screen you opened from another tab (Settings, My Playlists, a setter's profile) — tapping back always returns you to that tab's own home.",
+      "mergedAt": "2026-09-21T13:24:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5670"
+    },
     {
       "prNumber": 5661,
       "category": "fixed",
