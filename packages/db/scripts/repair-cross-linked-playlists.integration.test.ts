@@ -10,6 +10,12 @@ import { applyRepairPlans, loadAdopterAttachments, loadCrossLinkedPlaylists } fr
 import { planCrossLinkedPlaylistRepairs, selectApplyablePlans } from './repair-cross-linked-playlists-helpers.js';
 
 /**
+ * Required before changing the apply path: run this suite with
+ * REPAIR_CROSS_LINKED_PLAYLISTS_DB_URL pointing to a local migrated database,
+ * using `vp exec tsx --test packages/db/scripts/repair-cross-linked-playlists.integration.test.ts`.
+ * Both cases must pass with zero skips. Standard CI does not run this suite;
+ * CI green alone does not validate ownership changes, drift refusal, or rollback.
+ *
  * Only ever runs against a local database. `.env.local` carries a real
  * (read-only) production credential and db-connection.ts loads it into
  * process.env on import, so the local check is not optional — isLocalDatabaseUrl

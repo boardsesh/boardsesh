@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { Session } from 'next-auth';
 import { useSession } from 'next-auth/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,7 +88,10 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  cleanup();
+  // Settle the bridge's final getSession before restoring the real fetch.
+  await act(async () => Promise.resolve());
   clearLockInstallation();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
