@@ -88,19 +88,27 @@ async function persist(): Promise<void> {
 
 /**
  * Upkeep for one dimension's lock, driven by the pure rules in dimension-chips.ts:
- * re-apply the filter whenever it's been cleared while the lock is live
- * (shouldReapplyDimension), and drop the lock once its chip is unpinned
- * (shouldClearDimensionLock). Extracted from the climbs screen so both
+ * re-apply the filter whenever it's been cleared while the lock is enforced
+ * (shouldReapplyDimension, which also waits for `searchReady` so the board's
+ * saved-search restore can't overwrite it), and drop the lock once its chip is
+ * unpinned (shouldClearDimensionLock). Extracted from the climbs screen so both
  * guarantees are testable without rendering the whole screen; `pin` should be a
  * stable `useCallback`.
  */
-export function useDimensionLockUpkeep(
-  key: DimensionKey,
-  state: DimensionLockState,
-  filterActive: boolean,
-  pin: () => void,
-): void {
-  const reapply = shouldReapplyDimension(state, filterActive);
+export function useDimensionLockUpkeep({
+  key,
+  state,
+  filterActive,
+  searchReady,
+  pin,
+}: {
+  key: DimensionKey;
+  state: DimensionLockState;
+  filterActive: boolean;
+  searchReady: boolean;
+  pin: () => void;
+}): void {
+  const reapply = shouldReapplyDimension(state, filterActive, searchReady);
   const clearLock = shouldClearDimensionLock(state);
   useEffect(() => {
     if (reapply) pin();
