@@ -302,7 +302,8 @@ async function rebuildGymVoteCounts(commandDb: MergeExecuteDb, gymUuids: string[
  *     (claimant, method, message, timestamps) is preserved on the survivor for
  *     audit/reversal; `expired` keeps them clear of the unique-pending index.
  * Non-pending claims (approved/denied/expired) carry no unique constraint and are
- * moved wholesale so the ownership history follows the survivor.
+ * moved wholesale so the ownership history follows the survivor. Preserve their
+ * resolution timestamps: moving an approved claim is not a new ownership event.
  */
 async function repointClaims(
   commandDb: MergeExecuteDb,
@@ -357,8 +358,7 @@ async function repointClaims(
     sql`
       WITH moved AS (
         UPDATE gym_claims
-           SET gym_id = ${canonicalGymId},
-               updated_at = NOW()
+           SET gym_id = ${canonicalGymId}
          WHERE gym_id IN (${duplicateGymIdList})
            AND status <> 'pending'
          RETURNING id

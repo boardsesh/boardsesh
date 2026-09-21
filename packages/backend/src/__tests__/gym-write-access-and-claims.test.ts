@@ -17,6 +17,7 @@ import {
   GYM_CLAIM_LIMIT_CODE,
   GYM_CLAIM_SUPERSEDED_CODE,
 } from '../graphql/resolvers/social/gym-claims';
+import { socialGymDuplicateMutations } from '../graphql/resolvers/social/gym-duplicates';
 import { socialGymOwnerReassignMutations } from '../graphql/resolvers/social/gym-owner-reassign';
 import {
   socialCommunitySettingsMutations,
@@ -2473,6 +2474,70 @@ describe('a claim ownership has moved past cannot be approved (#4525)', () => {
   beforeEach(() => {
     resetAllRateLimits();
   });
+
+  it.each([
+    { approvalTime: '2026-01-01 00:00:00.123456', shouldApprove: true },
+    { approvalTime: '2026-01-03 00:00:00.123456', shouldApprove: false },
+  ])(
+    'orders merged ownership history by its original approval time: $approvalTime',
+    async ({ approvalTime, shouldApprove }) => {
+      const canonical = await insertGym({ ownerId: PRIOR_OWNER, name: 'Canonical Claim Gym' });
+      const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Duplicate Claim Gym' });
+      await db.execute(
+        sql`UPDATE gyms SET latitude = 52.0, longitude = 4.0 WHERE id IN (${canonical.id}, ${duplicate.id})`,
+      );
+      const pendingClaimId = await insertClaim({ gymId: canonical.id, claimantUserId: CLAIMANT, method: 'admin' });
+      const approvedClaimId = await insertClaim({
+        gymId: duplicate.id,
+        claimantUserId: PRIOR_OWNER,
+        method: 'admin',
+        status: 'approved',
+      });
+      await db.execute(sql`
+      UPDATE gym_claims
+         SET created_at = TIMESTAMP '2026-01-02 00:00:00', updated_at = TIMESTAMP '2026-01-02 00:00:00'
+       WHERE id = ${pendingClaimId}
+    `);
+      await db.execute(sql`
+      UPDATE gym_claims
+         SET created_at = TIMESTAMP '2025-12-01 00:00:00', updated_at = ${approvalTime}::timestamp
+       WHERE id = ${approvedClaimId}
+    `);
+
+      await socialGymDuplicateMutations.mergeGyms(
+        null,
+        { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+        authCtx(GLOBAL_ADMIN),
+      );
+
+      // Repointing history does not transfer the canonical gym or re-date approval.
+      expect(await gymOwnerId(canonical.uuid)).toBe(PRIOR_OWNER);
+      const [history] = Array.from(
+        (await db.execute(sql`
+        SELECT gym_id::int AS gym_id, status, updated_at::text AS approval_time
+          FROM gym_claims WHERE id = ${approvedClaimId}
+      `)) as Iterable<{ gym_id: number; status: string; approval_time: string }>,
+      );
+      expect(history).toEqual({ gym_id: canonical.id, status: 'approved', approval_time: approvalTime });
+
+      const review = socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: pendingClaimId, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      );
+      if (shouldApprove) {
+        await review;
+        expect(await claimStatus(pendingClaimId)).toBe('approved');
+        expect(await gymOwnerId(canonical.uuid)).toBe(CLAIMANT);
+        expect(sendGymClaimApprovedEmail).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(review).rejects.toMatchObject({ extensions: { code: GYM_CLAIM_SUPERSEDED_CODE } });
+        expect(await claimStatus(pendingClaimId)).toBe('pending');
+        expect(await gymOwnerId(canonical.uuid)).toBe(PRIOR_OWNER);
+        expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   const REASSIGN_REASON = 'The wall was sold and the buyer runs it now.';
 
