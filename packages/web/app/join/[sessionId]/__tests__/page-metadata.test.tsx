@@ -77,6 +77,7 @@ describe('join page metadata', () => {
       participantCount: 2,
       totalSends: 5,
       gradeRows: [{ difficulty: 10, count: 5 }],
+      boardType: 'kilter',
       boardLabel: 'Kilter Original 12x12',
       boardAngle: 40,
       boardPreviewPath:
@@ -105,6 +106,7 @@ describe('join page metadata', () => {
       participantCount: 0,
       totalSends: 0,
       gradeRows: [],
+      boardType: null,
       boardLabel: null,
       boardAngle: null,
       boardPreviewPath: null,

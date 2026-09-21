@@ -214,20 +214,20 @@ persisted, so the climber comes back where they were. Keeping the previous
 deploys' chunks live would avoid the reload entirely; that is tracked
 in #5780.
 
-### Favicon + link-preview (OpenGraph) tags
+### Static link-preview tags
 
-`output: 'single'` ships a default `index.html` shell and only runs
-`app/+html.tsx` inside the JS bundle, so link unfurlers (Discord, Slack,
-iMessage) — which read the static HTML without executing JS — saw no favicon or
-OG image. `build-expo-web-export.sh` therefore post-processes `index.html`,
-injecting `<link rel="icon">` + OpenGraph/Twitter tags that point at the
-route-mark logo. The images are static assets committed under
-`packages/mobile/public/{favicon,og}.png` (regenerate from
-`assets/splash-icon.png` if the logo changes) and ship at the export root. The
-`og:image` is absolute and depends on the serve origin: the `--subdomain` build
-uses `https://app.boardsesh.com`, the legacy `/app` build uses
-`https://www.boardsesh.com`. Editing the tags in `app/+html.tsx` alone will
-**not** reach the static shell — change the injection in the export script.
+Link unfurlers read the exported HTML without executing JavaScript.
+`scripts/lib/patch-expo-web-social.mjs` adds Open Graph and Twitter metadata
+pointing at `packages/mobile/public/og.png`, the current route-mark artwork.
+The export fails if this asset is missing. The Node patch runs in both export
+modes and replaces its own tags on repeat runs; it preserves the shell's
+existing icons, theme and `noindex` directive. The PWA patch above continues to
+own icon URLs, including the production CDN rewrite.
+
+The image URL is absolute: `https://app.boardsesh.com/og.png` for the subdomain
+and `https://www.boardsesh.com/app/og.png` for the local static `/app` export.
+Regenerate the artwork from `packages/mobile/assets/splash-icon.png` if the
+logo changes.
 
 ### Cross-origin backend
 

@@ -150,6 +150,7 @@ describe('getSessionOgSummary', () => {
     expect(summary.participantNames).toEqual(['Alex', 'Sam']);
     expect(summary.participantCount).toBe(2);
     expect(summary.totalSends).toBe(2);
+    expect(summary.boardType).toBe('kilter');
     expect(summary.boardLabel).toBe('Kilter Original 12x12');
     expect(summary.boardAngle).toBe(40);
     expect(summary.boardPreviewPath).toBe('/api/internal/board-render?frames=&thumbnail=1');
@@ -221,6 +222,7 @@ describe('getSessionOgSummary', () => {
       set_ids: 'main_aux',
       angle: '35',
     });
+    expect(summary.boardType).toBe('tension');
     expect(summary.boardLabel).toBe('Tension Original 8x10');
     expect(summary.boardAngle).toBe(35);
   });

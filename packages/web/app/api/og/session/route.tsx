@@ -3,7 +3,8 @@ import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
 import { themeTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
-import { BOULDER_GRADES } from '@/app/lib/board-data';
+import { BOULDER_GRADES, getGradesForBoard } from '@/app/lib/board-data';
+import type { BoardName } from '@/app/lib/types';
 import { gradeAxisFloorSteps, vGradeNumber } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
@@ -26,7 +27,7 @@ function gradeBarColor(grade: string, opacity: number): string {
   return hex ? getGradeColorWithOpacity(hex, opacity) : 'rgba(209, 213, 219, 0.65)';
 }
 
-function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>) {
+function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>, boardType: BoardName | null) {
   const gradeBars: Array<{ grade: string; count: number; color: string }> = [];
 
   for (const row of gradeRows) {
@@ -37,7 +38,7 @@ function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>)
 
   gradeBars.sort((a, b) => GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade));
 
-  // Anchor the axis at the boulder floor (V0): prepend empty (count 0) bars for
+  // Anchor at the board's supported floor: prepend empty (count 0) bars for
   // every V-step below the session's lowest send, so the chart spans the board's
   // whole range instead of only the hard end climbed. Each floor bar renders at
   // the minimum height with a faded grade colour.
@@ -45,11 +46,13 @@ function buildGradeBars(gradeRows: Array<{ difficulty: number; count: number }>)
     const minDifficulty = gradeRows.reduce((min, row) => Math.min(min, row.difficulty), Infinity);
     const minV = vGradeNumber(DIFFICULTY_TO_V[minDifficulty] ?? '');
     if (minV != null) {
-      const floorBars = gradeAxisFloorSteps(minV).map((entry) => ({
-        grade: entry.font_grade,
-        count: 0,
-        color: gradeBarColor(entry.font_grade, 0.4),
-      }));
+      const floorBars = gradeAxisFloorSteps(minV, boardType ? getGradesForBoard(boardType) : BOULDER_GRADES).map(
+        (entry) => ({
+          grade: entry.font_grade,
+          count: 0,
+          color: gradeBarColor(entry.font_grade, 0.4),
+        }),
+      );
       return [...floorBars, ...gradeBars];
     }
   }
@@ -84,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     const sessionName = summary.sessionName;
     const participantNames = summary.participantNames.join(', ');
-    const gradeBars = buildGradeBars(summary.gradeRows);
+    const gradeBars = buildGradeBars(summary.gradeRows, summary.boardType);
     const maxCount = Math.max(...gradeBars.map((b) => b.count), 1);
     const isJoinVariant = variant === 'join';
     const renderMs = performance.now() - routeT0 - dbMs;

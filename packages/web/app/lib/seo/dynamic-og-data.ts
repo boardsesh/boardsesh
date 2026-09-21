@@ -183,6 +183,7 @@ export type SessionOgSummary = {
   participantCount: number;
   totalSends: number;
   gradeRows: SessionOgGradeRow[];
+  boardType: BoardName | null;
   boardLabel: string | null;
   boardAngle: number | null;
   boardPreviewPath: string | null;
@@ -247,6 +248,7 @@ function formatBoardLabel(boardDetails: BoardDetails): string {
 }
 
 async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
+  boardType: BoardName;
   boardLabel: string;
   boardAngle: number | null;
   boardPreviewPath: string;
@@ -319,6 +321,7 @@ async function resolveSessionBoardInfo(seed: SessionBoardSeed): Promise<{
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
     return {
+      boardType: boardDetails.board_name,
       boardLabel: formatBoardLabel(boardDetails),
       boardAngle: boardAngle != null && !Number.isNaN(boardAngle) ? boardAngle : null,
       boardPreviewPath: buildBoardRenderUrl(boardDetails, '', {
@@ -384,6 +387,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       participantCount: 0,
       totalSends: 0,
       gradeRows: [],
+      boardType: null,
       boardLabel: null,
       boardAngle: null,
       boardPreviewPath: null,
@@ -475,6 +479,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
     participantCount: Number(participantCountResult[0]?.participant_count || 0),
     totalSends: Number(totalSendsResult[0]?.total_sends || 0),
     gradeRows,
+    boardType: boardInfo?.boardType ?? null,
     boardLabel: boardInfo?.boardLabel || null,
     boardAngle: boardInfo?.boardAngle ?? null,
     boardPreviewPath: boardInfo?.boardPreviewPath || null,
