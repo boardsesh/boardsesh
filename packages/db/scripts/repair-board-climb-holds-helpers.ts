@@ -207,7 +207,13 @@ export function classifyFingerprint(
 }
 
 function sameRows(left: ReadonlyArray<RepairHoldRow>, right: ReadonlyArray<RepairHoldRow>): boolean {
-  return JSON.stringify(sortRepairRows(left)) === JSON.stringify(sortRepairRows(right));
+  if (left.length !== right.length) return false;
+  const sortedLeft = sortRepairRows(left);
+  const sortedRight = sortRepairRows(right);
+  return sortedLeft.every((row, index) => {
+    const other = sortedRight[index];
+    return row.holdId === other.holdId && row.frameNumber === other.frameNumber && row.holdState === other.holdState;
+  });
 }
 
 export function placementKey(boardType: string, layoutId: number, holdId: number): string {
