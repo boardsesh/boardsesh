@@ -14,6 +14,7 @@ vi.mock('../graphql/operations', () => ({ GET_PROFILE: 'query GetProfile' }));
 const {
   NEW_ACCOUNT_MAX_AGE_MS,
   PROFILE_READ_TIMEOUT_MS,
+  PROFILE_REUSE_MS,
   accountAgeProperties,
   readAccountCreatedAt,
   useTrackLoginSucceeded,
@@ -84,12 +85,58 @@ describe('readAccountCreatedAt', () => {
     graphql.request.mockReset();
   });
 
-  it('reuses a profile already in the cache instead of fetching again', async () => {
+  it('reuses a profile cached in the last minute instead of fetching again', async () => {
     const queryClient = createTestQueryClient();
-    queryClient.setQueryData(['profile'], { profile: { createdAt: '2026-09-20T08:00:00.000Z' } });
+    queryClient.setQueryData(
+      ['profile'],
+      { profile: { createdAt: '2026-09-20T08:00:00.000Z' } },
+      { updatedAt: Date.now() - PROFILE_REUSE_MS + 1_000 },
+    );
 
     await expect(readAccountCreatedAt(queryClient)).resolves.toBe('2026-09-20T08:00:00.000Z');
     expect(graphql.request).not.toHaveBeenCalled();
+  });
+
+  it('reads the profile again when the cached one is older than a minute', async () => {
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(
+      ['profile'],
+      { profile: { createdAt: '2026-09-20T08:00:00.000Z' } },
+      { updatedAt: Date.now() - PROFILE_REUSE_MS - 1_000 },
+    );
+    graphql.request.mockResolvedValue({ profile: { createdAt: '2026-09-21T07:59:00.000Z' } });
+
+    await expect(readAccountCreatedAt(queryClient)).resolves.toBe('2026-09-21T07:59:00.000Z');
+    expect(graphql.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the profile again when the cache holds the signed-out empty profile', async () => {
+    const queryClient = createTestQueryClient();
+    // A screen that read the profile before sign-in cached the backend's null.
+    queryClient.setQueryData(['profile'], { profile: null });
+    graphql.request.mockResolvedValue({ profile: { createdAt: '2026-09-21T07:59:00.000Z' } });
+
+    await expect(readAccountCreatedAt(queryClient)).resolves.toBe('2026-09-21T07:59:00.000Z');
+    expect(graphql.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('joins a profile read already in flight rather than making its own', async () => {
+    const queryClient = createTestQueryClient();
+    queryClient.setQueryData(['profile'], { profile: null });
+    let answerProfile: (response: { profile: { createdAt: string } }) => void = () => {};
+    graphql.request.mockReturnValue(
+      new Promise((resolve) => {
+        answerProfile = resolve;
+      }),
+    );
+    // The refetch PartyProfileProvider starts when sign-in flips it on.
+    void queryClient.fetchQuery({ queryKey: ['profile'], queryFn: () => graphql.request('query GetProfile') });
+
+    const createdAt = readAccountCreatedAt(queryClient);
+    answerProfile({ profile: { createdAt: '2026-09-21T07:59:00.000Z' } });
+
+    await expect(createdAt).resolves.toBe('2026-09-21T07:59:00.000Z');
+    expect(graphql.request).toHaveBeenCalledTimes(1);
   });
 
   it('fetches the profile into the shared cache entry', async () => {

@@ -34,8 +34,8 @@ export const NEW_ACCOUNT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** How long Login Succeeded waits for the profile before firing with the account-age props null. */
 export const PROFILE_READ_TIMEOUT_MS = 5_000;
 
-// A cached profile younger than this is reused rather than fetched again.
-const PROFILE_REUSE_MS = 60_000;
+/** A cached profile that names its creation time is reused, not fetched again, while it is younger than this. */
+export const PROFILE_REUSE_MS = 60_000;
 
 export type AccountAgeProperties = { is_new_account: boolean | null; account_age_hours: number | null };
 
@@ -59,8 +59,14 @@ export type LoginSucceededProperties = AnalyticsEventProperties & { screen: 'log
 /**
  * The signed-in account's creation time, or null when the profile can't be
  * read in time. Shares the `['profile']` query, so it joins the fetch
- * PartyProfileProvider starts on sign-in rather than making its own. The cache
- * is cleared at every sign-out, so what it finds belongs to this account.
+ * PartyProfileProvider starts on sign-in rather than making its own.
+ *
+ * Only a cached profile that names its creation time and is under
+ * PROFILE_REUSE_MS old is taken as is. The cache is cleared at every sign-out
+ * but not at sign-in, and screens that read the profile while signed out cache
+ * `{ profile: null }` under the same key (the backend answers null without a
+ * token), so an empty entry is read again. The age bound keeps a reused entry
+ * to one read made around this sign-in.
  */
 export async function readAccountCreatedAt(
   queryClient: QueryClient,
@@ -74,8 +80,7 @@ export async function readAccountCreatedAt(
     .fetchQuery({
       queryKey: ['profile'],
       queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
-      // Anything already cached was fetched after this sign-in, so take it as is.
-      staleTime: PROFILE_REUSE_MS,
+      staleTime: (query) => (query.state.data?.profile?.createdAt ? PROFILE_REUSE_MS : 0),
     })
     .then((response) => response.profile?.createdAt ?? null)
     .catch(() => null);
