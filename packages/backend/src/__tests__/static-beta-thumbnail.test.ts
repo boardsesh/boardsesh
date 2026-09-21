@@ -54,6 +54,19 @@ afterEach(() => {
 });
 
 describe('serving beta-link thumbnails stored in S3', () => {
+  it.each(['', '?size=280'])('does not cache a missing media configuration%s', async (query) => {
+    isS3ConfiguredMock.mockReturnValue(false);
+    const { baseUrl, server } = await startThumbnailServer();
+    try {
+      const response = await fetch(`${baseUrl}${THUMBNAIL_PATH}${query}`);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(getFromS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('404s a zero-byte object instead of answering 200 with an empty body', async () => {
     // The 200 path is `immutable, max-age=1y`, so an empty body would be
     // pinned in browser and CDN caches with no way to repair it.

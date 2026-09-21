@@ -129,6 +129,7 @@ export async function handleStaticAvatar(
   size: AllowedImageSize | null = null,
 ): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   // Security: validate filename to prevent path traversal
   if (!fileName || fileName !== path.basename(fileName)) {
@@ -421,8 +422,7 @@ export async function handleStaticBetaThumbnail(
   if (!isS3Configured('media')) {
     // No S3 means no cached thumbnails to serve. Dev environments use the
     // /api/internal/beta-link-thumbnail proxy instead.
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendNotFound(res);
     return;
   }
 

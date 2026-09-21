@@ -70,6 +70,8 @@ describe('beta-link-thumbnails: key + url helpers', () => {
   });
 });
 
+// Exercise the non-stream arrayBuffer fallback; empty-stream regressions below
+// use real Response bodies to cover the streaming reader separately.
 function mockFetchImageOnce(opts: { ok?: boolean; contentType?: string; body?: Uint8Array } = {}) {
   const { ok = true, contentType = 'image/jpeg', body = new Uint8Array([0xff, 0xd8, 0xff]) } = opts;
   const fetchMock = vi.fn().mockResolvedValueOnce({
