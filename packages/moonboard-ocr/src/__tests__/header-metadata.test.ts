@@ -26,6 +26,12 @@ describe('metadata distinctions exposed by the old-catalog comparison', () => {
     expect(result.name).toBe('13.63');
   });
 
+  it('keeps an attached trailing symbol while stripping a separate icon token', () => {
+    const metadata = ['Set by Setter @ 40°', 'User 7A/V6 - Setter 6C+/V5'];
+    expect(parseHeaderText(['SYNTHETIC@', ...metadata]).name).toBe('SYNTHETIC@');
+    expect(parseHeaderText(['SYNTHETIC @', ...metadata]).name).toBe('SYNTHETIC');
+  });
+
   it('preserves different explicitly labelled Android grades', () => {
     const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'User 7A/V6 - Setter 6C+/V5']);
     expect(result.userGrade).toBe('7A/V6');
