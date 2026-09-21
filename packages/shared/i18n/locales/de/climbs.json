@@ -561,7 +561,9 @@
       "chips": {
         "filtersWithCount": "Filter · {{count}}",
         "tall": "Hoch",
-        "wide": "Breit"
+        "wide": "Breit",
+        "lock": "Sperren",
+        "unlock": "Entsperren"
       },
       "removeFilterAria": "{{filter}} entfernen"
     },

@@ -55,6 +55,55 @@ describe('pinned-chips-store', () => {
     expect(await loadPinnedChips()).toEqual(['grade', 'collection']);
   });
 
+  it('migrates a stored "shape" pin to Tall + Wide and writes the migrated set back', async () => {
+    (await getMockStorage()).__setRaw(
+      STORAGE_KEY,
+      JSON.stringify(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']),
+    );
+    const { loadPinnedChips } = await import('../pinned-chips-store');
+    expect(await loadPinnedChips()).toEqual([
+      'grade',
+      'progress',
+      'collection',
+      'tall',
+      'wide',
+      'popularity',
+      'rating',
+    ]);
+    // The write-back is fire-and-forget; let it land before reading storage.
+    await vi.waitFor(async () => {
+      const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
+      expect(JSON.parse(raw as string)).toEqual([
+        'grade',
+        'progress',
+        'collection',
+        'tall',
+        'wide',
+        'popularity',
+        'rating',
+      ]);
+    });
+  });
+
+  it('migrates a customised "shape" set, then Tall and Wide unpin independently', async () => {
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'shape']));
+    const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
+    expect(await loadPinnedChips()).toEqual(['tall', 'wide', 'rating']);
+    // After the split, Tall and Wide unpin independently.
+    await togglePinnedChip('tall');
+    const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
+    expect(JSON.parse(raw as string)).toEqual(['wide', 'rating']);
+  });
+
+  it('does not rewrite a stored set that has nothing to migrate', async () => {
+    const storage = await getMockStorage();
+    storage.__setRaw(STORAGE_KEY, JSON.stringify(['rating', 'grade']));
+    const { loadPinnedChips } = await import('../pinned-chips-store');
+    await loadPinnedChips();
+    // Still the raw, un-normalised payload: no write happened.
+    expect(storage.__getRaw(STORAGE_KEY)).toBe(JSON.stringify(['rating', 'grade']));
+  });
+
   it('falls back to defaults for an empty stored array (never a blank row)', async () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify([]));
     const { loadPinnedChips } = await import('../pinned-chips-store');
@@ -66,7 +115,7 @@ describe('pinned-chips-store', () => {
     await loadPinnedChips();
     await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'shape', 'popularity', 'rating']);
+    expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'tall', 'wide', 'popularity', 'rating']);
   });
 
   it('togglePin re-adds an unpinned kind back into canonical order', async () => {

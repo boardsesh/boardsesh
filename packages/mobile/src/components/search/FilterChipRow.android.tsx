@@ -12,10 +12,15 @@
 //   • Single-select menus (Your progress, Popularity, Rating) close on pick by
 //     calling the renderItems `close()`; a keep-open menu would simply not call it
 //     (Compose has no menuActionDismissBehavior and doesn't auto-dismiss on click).
-//   • Shape is a single MENU chip grouping the independent Tall + Wide toggles (a
-//     climb can be both), like Popularity/Rating: tap opens a DropdownMenu with a
-//     checkable item per dimension. It renders only when the board size has a
-//     shorter/narrower sibling in its family (dimensionChips non-empty).
+//   • Tall / Wide match iOS: TAP toggles the filter, LONG-PRESS opens a Lock/Unlock
+//     menu. Compose's FilterChip always wires its own internal click, which eats the
+//     gesture before any `combinedClickable` on the chip's modifier or on a wrapping
+//     parent can see it (both tried and failed on-device, #3319 / #3322). So the
+//     chip sits in a Box under a transparent SIBLING overlay (`matchParentSize` +
+//     `combinedClickable`). Compose hit-tests a Box's children top-down and stops
+//     at the first one that takes pointer input, so the overlay gets the tap and the
+//     long-press and the chip underneath only draws. The chip keeps its own onClick
+//     for TalkBack, whose double-tap acts on the chip node rather than a touch.
 //   • Single-choice (Popularity/Rating) skips the iOS string-tag Picker round-trip:
 //     each item's onClick closure carries the real `number | undefined` bucket.
 // Labels reuse FilterChipRow.logic so a filter is never worded two ways across
@@ -26,6 +31,7 @@ import { StyleSheet, type ImageSourcePropType } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host } from '@expo/ui';
 import {
+  Box,
   Row,
   Text,
   Icon,
@@ -34,7 +40,13 @@ import {
   DropdownMenuItem,
   HorizontalDivider,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
+import {
+  combinedClickable,
+  fillMaxWidth,
+  horizontalScroll,
+  matchParentSize,
+  padding,
+} from '@expo/ui/jetpack-compose/modifiers';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
@@ -53,7 +65,7 @@ import {
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
-import type { FilterChipRowProps } from './FilterChipRow.types';
+import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
 // Semantic icon → Material XML vector drawable. White-filled (#FFFFFFFF) so the
 // Compose `Icon` recolours them: inside a chip/menu slot the Icon inherits the
@@ -139,8 +151,8 @@ function MenuChip({
   );
 }
 
-// A single menu row: optional leading check, a text label, optional text colour
-// (for the destructive Clear).
+// A single menu row: optional leading icon (a check when `checked`, or an explicit
+// `iconSource`), a text label, optional text colour (for the destructive Clear).
 //
 // The DropdownMenu popup is a separate Compose composition — the Host's
 // `colorScheme` does not reach it, and a custom `Text` in an item slot does NOT
@@ -150,29 +162,92 @@ function MenuChip({
 function MenuItem({
   label,
   checked,
+  iconSource,
   onClick,
   textColor,
   enabled,
 }: {
   label: string;
   checked: boolean;
+  iconSource?: ImageSourcePropType;
   onClick: () => void;
   textColor?: string;
   enabled?: boolean;
 }) {
   const { systemColors } = useTheme();
   const itemColor = textColor ?? (systemColors.label as string);
+  const leadingIcon = iconSource ?? (checked ? ICON.check : null);
   return (
     <DropdownMenuItem onClick={onClick} enabled={enabled} elementColors={{ textColor: itemColor }}>
-      {checked ? (
+      {leadingIcon ? (
         <DropdownMenuItem.LeadingIcon>
-          <Icon source={ICON.check} size={ICON_SIZE} />
+          <Icon source={leadingIcon} size={ICON_SIZE} />
         </DropdownMenuItem.LeadingIcon>
       ) : null}
       <DropdownMenuItem.Text>
         <Text color={itemColor}>{label}</Text>
       </DropdownMenuItem.Text>
     </DropdownMenuItem>
+  );
+}
+
+// Tall / Wide board-shape chip: tap toggles, long-press opens Lock / Unlock (see the
+// file header for why the gestures ride a sibling overlay instead of the chip). A
+// locked chip carries a lock leading icon; its toggle is a no-op until unlocked.
+function DimensionChipView({
+  dimension,
+  label,
+  colors,
+  lockLabel,
+  unlockLabel,
+}: {
+  dimension: DimensionChip;
+  label: string;
+  colors: ChipColors;
+  lockLabel: string;
+  unlockLabel: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
+      <DropdownMenu.Trigger>
+        <Box>
+          <FilterChip selected={dimension.active} colors={colors} onClick={dimension.onToggle}>
+            {dimension.locked ? (
+              <FilterChip.LeadingIcon>
+                <Icon source={ICON.lock} size={ICON_SIZE} />
+              </FilterChip.LeadingIcon>
+            ) : null}
+            <FilterChip.Label>
+              <Text>{label}</Text>
+            </FilterChip.Label>
+          </FilterChip>
+          {/* No ripple: the overlay spans the chip's 48dp touch target, taller than
+              the 32dp chip, so a ripple would spill past the chip's outline. The
+              chip's selected state flipping is the tap feedback. */}
+          <Box
+            modifiers={[
+              matchParentSize(),
+              combinedClickable(
+                { onClick: dimension.onToggle, onLongClick: () => setExpanded(true) },
+                { indication: false },
+              ),
+            ]}
+          />
+        </Box>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Items>
+        <MenuItem
+          label={dimension.locked ? unlockLabel : lockLabel}
+          checked={false}
+          iconSource={dimension.locked ? ICON.lockOpen : ICON.lock}
+          onClick={() => {
+            dimension.onToggleLock();
+            setExpanded(false);
+          }}
+        />
+      </DropdownMenu.Items>
+    </DropdownMenu>
   );
 }
 
@@ -414,28 +489,21 @@ function FilterChipRowComponent({
             />
           ) : null}
 
-          {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
-            can be both). The menu stays open so both can be toggled. Shown only when
-            the board size has the expansion. */}
-          {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
-            <MenuChip
-              label={t('mobile.filter.shape')}
-              selected={dimensionChips.some((dimension) => dimension.active)}
-              colors={chipColors}
-              renderItems={() => (
-                <>
-                  {dimensionChips.map((dimension) => (
-                    <MenuItem
-                      key={dimension.key}
-                      label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                      checked={dimension.active}
-                      onClick={dimension.onToggle}
-                    />
-                  ))}
-                </>
-              )}
-            />
-          ) : null}
+          {/* Tall / Wide — board-shape chips, each pinned on its own and present
+            only on sizes with a shorter/narrower sibling. Tap toggles, long-press
+            opens Lock / Unlock. */}
+          {dimensionChips
+            .filter((dimension) => pinnedChips.includes(dimension.key))
+            .map((dimension) => (
+              <DimensionChipView
+                key={dimension.key}
+                dimension={dimension}
+                label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                colors={chipColors}
+                lockLabel={t('mobile.search.chips.lock')}
+                unlockLabel={t('mobile.search.chips.unlock')}
+              />
+            ))}
 
           {/* Beta videos — a plain on/off toggle (an action chip, no menu). Opt-in. */}
           {pinnedChips.includes('beta') ? (
