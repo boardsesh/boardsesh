@@ -80,9 +80,10 @@ vi.mock('@/app/lib/realtime/graphql-client', () => ({
     executedOperations.push(name);
     if (!backendUp) throw new Error('backend unreachable');
     if (name === 'BoardRecentClimbs') return { boardRecentClimbs: [WALL_CLIMB] };
+    if (name === 'BoardRecentHistory') return { boardRecentHistory: [WALL_CLIMB] };
     if (name === 'BoardPresenceStats') return { boardPresenceStats: { totalSends: 42 } };
     if (name === 'BoardConnection') return { boardConnection: null };
-    return {};
+    throw new Error(`Unexpected kiosk operation: ${name}`);
   }),
   subscribe: vi.fn((_client: unknown, operation: { variables?: { boardId?: number } }, sink: Sink) => {
     const boardId = operation.variables?.boardId ?? 0;
@@ -137,7 +138,7 @@ async function advancePastRebuildWindow() {
   await settle();
 }
 
-describe('kiosk wall recovery', () => {
+describe.sequential('kiosk wall recovery', () => {
   beforeEach(() => {
     createdClients.length = 0;
     executedOperations.length = 0;
@@ -240,6 +241,50 @@ describe('kiosk wall recovery', () => {
     await advancePastRebuildWindow();
 
     expect(createdClients).toHaveLength(1);
+  });
+
+  it('retains the partly spent subscription budget across a socket outage', async () => {
+    permanentlyRejectedBoardIds.add(8);
+    render(
+      <KioskPresenceHub boardIds={[7, 8]}>
+        <div>kiosk</div>
+      </KioskPresenceHub>,
+    );
+    await settle();
+    act(() => createdClients[0].emit('connected'));
+    await settle();
+
+    // Spend two subscription retries before an unrelated transport outage.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await advancePastRebuildWindow();
+      act(() => createdClients[createdClients.length - 1].emit('connected'));
+      await settle();
+    }
+    expect(createdClients).toHaveLength(3);
+
+    backendUp = false;
+    act(() => {
+      createdClients[2].emit('closed');
+      liveSinks.get(7)?.error(new Error('retry budget exhausted'));
+    });
+    await settle();
+    await advancePastRebuildWindow();
+    expect(createdClients).toHaveLength(4);
+
+    backendUp = true;
+    act(() => createdClients[3].emit('connected'));
+    await settle();
+    for (let attempt = 0; attempt < MAX_STALE_SUBSCRIPTION_REBUILDS + 2; attempt++) {
+      await advancePastRebuildWindow();
+      act(() => createdClients[createdClients.length - 1].emit('connected'));
+      await settle();
+    }
+
+    // One socket rebuild is additional to the bounded subscription retries.
+    // Board 8 never recovered, so it cannot spend a fresh three-retry budget.
+    expect(createdClients).toHaveLength(MAX_STALE_SUBSCRIPTION_REBUILDS + 2);
+    expect(wallByBoardId[7]).toEqual({ climb: 'Test Problem', historyLength: 1, isLive: true });
+    expect(wallByBoardId[8].isLive).toBe(false);
   });
 
   it('stops rebuilding for a board the backend will never serve again', async () => {
