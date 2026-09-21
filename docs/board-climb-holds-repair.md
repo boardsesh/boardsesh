@@ -2,6 +2,14 @@
 
 This repair rebuilds stale materialized hold rows for multi-frame Aurora-family climbs and removes globally invalid rows (`hold_id < 0`, zero on boards other than Woods, an empty state, or a state containing `=`) elsewhere. A valid frame sequence that projects to no canonical holds is cleaned to an empty row set. The repair also migrates fingerprints only when the old value is provably derived from the old rows or the historical per-frame Grips tokens; independent fingerprints are left alone. It does not change climb frames or run against MoonBoard multi-frame data.
 
+## Production status
+
+As of this PR's backlog repair on 2026-09-21, no production connection, count,
+dry-run, apply or cache refresh has been performed by this work. The production
+baseline is **unknown**, not zero. Local fixture results and green CI do not
+establish production acceptance. Keep #3985 open until the operator records the
+approved target, commit, timestamp, manifest digest and exact before/after counts.
+
 ## Kilter rollout bridge
 
 Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned Kilter rows with multi-frame or noncanonical single-frame text once, proves which stored fingerprints came from the historical raw frame events, and adds their current projected fingerprints to the in-memory dedup index without changing the database. Existing stored fingerprint owners always win, and empty or unproven projections add no key.
@@ -61,3 +69,22 @@ After the locks are acquired, the script rebuilds the manifest inside the repeat
 The database script never touches Redis. After a successful, approved production apply, request separate approval before changing the cache.
 
 Inspect the lock key `boardsesh:popular-board-configs:lock`. Never delete or overwrite that lock. If it exists, wait for its 120-second TTL to expire. Then delete only `boardsesh:popular-board-configs`, warm or restart one backend instance, and verify that the rebuilt value exists and has the expected TTL. Counts may move in either direction because repaired valid rows can change config membership.
+
+## Existing missing-hold backfill
+
+The separate `backfill-board-climb-holds.ts` script fills missing single-frame
+materialized rows; it is not this guarded historical repair. It retains the
+`NOT EXISTS` missing-row filter and adds an in-memory ascending UUID cursor so a
+full batch with no valid projected holds cannot be fetched forever. Each invocation
+starts that cursor from the beginning for each board type. Inserts sorting before
+the current cursor may wait for the next invocation; no resume cursor is persisted.
+The final remaining-row report includes rows whose frames could not be projected.
+Aurora-family frames use the canonical projection; Woods (including hold zero) and
+spray retain their existing single-frame parsing. This script is not wired into
+the board-snapshot publication pipeline.
+
+Similarity target reads use nonempty multi-frame text as the authoritative hold
+projection. The LEFT JOIN skips materialized rows only when that projection is
+already selected; null/empty frames and single/unknown frame counts retain the
+materialized fallback. Running the repair does not switch that reader policy or
+remove the need to parse authoritative animation frames.
