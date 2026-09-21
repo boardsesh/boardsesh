@@ -583,7 +583,7 @@ async function downloadAttachments(
   for (const attachment of bundle.source.attachments) {
     if (attachment.size !== null && attachment.size > MAX_ATTACHMENT_BYTES) continue;
     try {
-      const response = await deps.fetcher(attachment.url);
+      const response = await deps.fetcher(attachment.url, { signal: AbortSignal.timeout(30_000) });
       if (!response.ok) continue;
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (bytes.byteLength > MAX_ATTACHMENT_BYTES) continue;
