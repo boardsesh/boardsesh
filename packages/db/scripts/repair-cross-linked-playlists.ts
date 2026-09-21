@@ -9,7 +9,9 @@
  * exists purely to clean up the rows that were written before the guards landed.
  *
  * SAFETY
- *   - Dry-run by default. --apply is the only mode that writes.
+ *   - Dry-run by default. --apply writes only with --writers-stopped, which
+ *     acknowledges stopped and drained application, sync/import, account-merge
+ *     and other repair writers.
  *   - The only rows it ever deletes are `playlist_ownership`, `user_playlist_pins`
  *     and `playlist_follows` rows belonging to the LATER of the two owners.
  *     Pins and follows on public playlists are preserved: those remain valid
@@ -31,8 +33,8 @@
  * Usage:
  *   vp run db:repair-cross-linked-playlists
  *   vp run db:repair-cross-linked-playlists --playlist-ids 12,34
- *   vp run db:repair-cross-linked-playlists --apply
- *   vp run db:repair-cross-linked-playlists --apply --include-merge-candidates
+ *   vp run db:repair-cross-linked-playlists --apply --writers-stopped
+ *   vp run db:repair-cross-linked-playlists --apply --writers-stopped --include-merge-candidates
  *
  * (A `--` separator before the flags also works — `vp` forwards it to the script
  * verbatim and parseArgs skips it — but it isn't needed.)
@@ -59,6 +61,7 @@ import {
 const LOG_TAG = '[repair-cross-linked-playlists]';
 
 const APPLY_FLAG = '--apply';
+const WRITERS_STOPPED_FLAG = '--writers-stopped';
 const PLAYLIST_IDS_FLAG = '--playlist-ids';
 const INCLUDE_MERGE_CANDIDATES_FLAG = '--include-merge-candidates';
 const MIN_SPREAD_MINUTES_FLAG = '--min-spread-minutes';
@@ -69,6 +72,7 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 export type ScriptArgs = {
   apply: boolean;
+  writersStopped: boolean;
   playlistIds: string[] | null;
   includeMergeCandidates: boolean;
   minSpreadMinutes: number;
@@ -149,6 +153,7 @@ function parseNonNegativeNumber(rawValue: string, flagName: string): number {
 export function parseArgs(args: string[]): ScriptArgs {
   const parsedArgs: ScriptArgs = {
     apply: false,
+    writersStopped: false,
     playlistIds: null,
     includeMergeCandidates: false,
     minSpreadMinutes: DEFAULT_MIN_OWNERSHIP_SPREAD_MINUTES,
@@ -166,6 +171,10 @@ export function parseArgs(args: string[]): ScriptArgs {
     }
     if (currentArg === APPLY_FLAG) {
       parsedArgs.apply = true;
+      continue;
+    }
+    if (currentArg === WRITERS_STOPPED_FLAG) {
+      parsedArgs.writersStopped = true;
       continue;
     }
     if (currentArg === INCLUDE_MERGE_CANDIDATES_FLAG) {
@@ -200,14 +209,17 @@ function printHelp(): void {
   console.info(`Usage:
   vp run db:repair-cross-linked-playlists
   vp run db:repair-cross-linked-playlists --playlist-ids 12,34
-  vp run db:repair-cross-linked-playlists --apply
-  vp run db:repair-cross-linked-playlists --apply --include-merge-candidates
+  vp run db:repair-cross-linked-playlists --apply --writers-stopped
+  vp run db:repair-cross-linked-playlists --apply --writers-stopped --include-merge-candidates
 
 Options:
   --apply                       Delete the later owner's playlist_ownership row (plus that
                                 user's private-playlist pin/follow) and write an
                                 adopter-scoped sync_deletions tombstone so their offline
                                 clients drop the playlist too. Omit for dry-run.
+  --writers-stopped             Required with --apply. Acknowledge that application,
+                                sync/import, account-merge and other repair writers are
+                                stopped and drained. This flag does not stop those writers.
   --playlist-ids <a,b,c>        Restrict the run to these playlists.id values.
   --include-merge-candidates    Also repair pairs whose two owners are the same email up to
                                 case. Off by default — merge-accounts.ts (#3278) handles those
@@ -662,6 +674,15 @@ async function main(): Promise<void> {
   if (scriptArgs.help) {
     printHelp();
     return;
+  }
+
+  if (scriptArgs.apply && !scriptArgs.writersStopped) {
+    console.error(
+      `${LOG_TAG} --apply requires --writers-stopped: stop application, sync/import, account-merge and other repair writers, ` +
+        'drain in-flight writes, and keep writers stopped through post-apply verification. ' +
+        'The flag acknowledges your check; it does not stop writers or make authorization atomic.',
+    );
+    process.exit(2);
   }
 
   // Name the target before doing anything: db-connection.ts loads .env.local,

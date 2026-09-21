@@ -11,6 +11,7 @@ import {
 test('defaults are read-only: no apply, no merge candidates, full scope', () => {
   assert.deepEqual(parseArgs([]), {
     apply: false,
+    writersStopped: false,
     playlistIds: null,
     includeMergeCandidates: false,
     minSpreadMinutes: DEFAULT_MIN_OWNERSHIP_SPREAD_MINUTES,
@@ -20,6 +21,13 @@ test('defaults are read-only: no apply, no merge candidates, full scope', () => 
 
 test('the vp-forwarded `--` separator is skipped rather than rejected', () => {
   assert.equal(parseArgs(['--', '--apply']).apply, true);
+});
+
+test('--writers-stopped is a separate acknowledgement for an apply run', () => {
+  assert.equal(parseArgs(['--apply']).writersStopped, false);
+  const acknowledged = parseArgs(['--apply', '--writers-stopped']);
+  assert.equal(acknowledged.apply, true);
+  assert.equal(acknowledged.writersStopped, true);
 });
 
 test('--playlist-ids accepts both `=value` and separate-argument forms', () => {
@@ -72,6 +80,9 @@ test('the dry-run deletion preview preserves public pins and follows', () => {
 
 for (const { args, message } of [
   { args: ['--aply'], message: /Unknown argument/ },
+  { args: ['--apply'], message: /--apply requires --writers-stopped/ },
+  { args: ['--apply', '--playlist-ids', '12,34'], message: /--apply requires --writers-stopped/ },
+  { args: ['--apply', '--writers-stopped=false'], message: /Unknown argument/ },
   { args: ['--playlist-ids'], message: /requires a value/ },
   { args: ['--playlist-ids', '--apply'], message: /requires a value/ },
   { args: ['--playlist-ids='], message: /requires at least one id/ },

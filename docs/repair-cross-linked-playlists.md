@@ -57,11 +57,23 @@ merge. Review both options explicitly rather than using them to clear refusals.
 ## Apply only the reviewed scope
 
 Before an approved production apply, retain a restorable database backup and the
-private audit, choose a low-traffic window, and verify the target, commit, IDs and
-options again. There is no built-in undo or persisted recovery snapshot.
+private audit, and verify the target, commit, IDs and options again. There is no
+built-in undo or persisted recovery snapshot.
+
+Apply requires a maintenance window with **all writers stopped**. Stop accepting
+application mutations, sync/import work, account merges and other repair work;
+then drain every in-flight write before running the repair. Keep those writers
+stopped through post-apply verification. A low-traffic window is insufficient:
+application resolvers can check ownership before the repair, wait on its row
+lock, then commit an already-authorized write after ownership is revoked.
+
+`--writers-stopped` acknowledges this manual check. It neither detects quiescence
+nor stops services, drains requests or makes application authorization atomic.
+Without the flag, `--apply` exits before opening a database connection. The
+default read-only audit does not require the flag.
 
 ```sh
-vp run db:repair-cross-linked-playlists -- --playlist-ids 12,34 --apply
+vp run db:repair-cross-linked-playlists -- --playlist-ids 12,34 --apply --writers-stopped
 ```
 
 The script takes an advisory lock and locks each selected playlist and ownership
@@ -84,7 +96,9 @@ adopter-scoped `sync_deletions` playlist tombstone is appended after a real owne
 removal so that user's offline replica drops its stale owned copy; the creator and
 other viewers do not receive that tombstone. See [offline deletion semantics](./offline-sync-plan.md).
 
-Record the actual counts, skipped IDs and errors privately. Confirm the creator's
-access, the adopter's updated owned-playlist list, preserved public pins/follows,
-and offline refresh before closing the issue. A rollback after commit requires a
+Record the actual counts, skipped IDs and errors privately. Verify the committed
+ownership and attachment rows while writers remain stopped, then resume services.
+Confirm the creator's access, the adopter's updated owned-playlist list, preserved
+public pins/follows and offline refresh before closing the issue. A rollback after
+commit requires a
 separately reviewed recovery from the backup, including offline-sync consequences.
