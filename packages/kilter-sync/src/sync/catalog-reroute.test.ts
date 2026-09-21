@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTableName, type Table } from 'drizzle-orm';
+import {
+  legacyAuroraRawFrameHoldEvents,
+  projectAuroraFramesToStoredRows,
+} from '@boardsesh/board-constants/hold-states';
+import { fingerprintFromHolds } from './fingerprint';
 
 import type { KilterCatalogClimb, KilterCatalogStat } from '../api/kilter-rest';
 import type { KilterReferencePull } from './reference-pull';
@@ -174,6 +179,8 @@ function baseQueues(overrides: TableQueues = {}): TableQueues {
     // Preload order follows reference.productLayouts: layout 1, then layout 8.
     board_placements: [[{ holeId: 10, id: 100 }], [{ holeId: 4000, id: 900 }]],
     ...overrides,
+    // Once-per-run legacy bridge preload precedes each layout's normal reads.
+    board_climbs: [[], ...(overrides.board_climbs ?? [])],
   };
 }
 
@@ -284,4 +291,65 @@ void describe('a failed /delteduuids fetch', () => {
       expect(deletionMocks.reconcileDeletions).not.toHaveBeenCalled();
     });
   });
+});
+
+void describe('reroute fingerprint compatibility', () => {
+  it.each([false, true])(
+    'folds onto the legacy owner unless a current projected owner exists (%s)',
+    async (hasCurrentOwner) => {
+      const frames = 'p900r12,"x900p900r13';
+      const legacyFingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+      const projectedFingerprint = fingerprintFromHolds(projectAuroraFramesToStoredRows(frames, 'kilter').rows);
+      const legacyOwner = {
+        uuid: 'LEGACY',
+        layoutId: TARGET_LAYOUT_ID,
+        fingerprint: legacyFingerprint,
+        isListed: true,
+        userId: null,
+        isDraft: false,
+      };
+      const currentOwner = { ...legacyOwner, uuid: 'CURRENT', fingerprint: projectedFingerprint };
+      const queues = baseQueues({
+        board_climbs: [[], [], hasCurrentOwner ? [legacyOwner, currentOwner] : [legacyOwner]],
+        board_climb_aliases: [[], []],
+      });
+      queues.board_climbs[0] = [
+        { uuid: legacyOwner.uuid, layoutId: TARGET_LAYOUT_ID, frames, fingerprint: legacyFingerprint },
+      ];
+      restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb()]);
+      const { db, inserts } = createFakeDb(queues);
+      const summary = await runCatalog(db);
+      expect(summary.climbsRerouted).toBe(1);
+      expect(inserts.some((row) => row.table === 'board_climbs')).toBe(false);
+      expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+        expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: hasCurrentOwner ? 'CURRENT' : 'LEGACY' }),
+      );
+    },
+  );
+});
+
+it('preserves database UUID order when reroute fingerprints have mixed-case duplicate owners', async () => {
+  const frames = 'p900r12,"x900p900r13';
+  const fingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+  const owners = ['Z-owner', 'a-owner'].map((uuid) => ({
+    uuid,
+    layoutId: TARGET_LAYOUT_ID,
+    fingerprint,
+    isListed: true,
+    userId: null,
+    isDraft: false,
+  }));
+  const queues = baseQueues({ board_climbs: [[], [], owners], board_climb_aliases: [[], []] });
+  queues.board_climbs[0] = owners.map((owner) => ({
+    uuid: owner.uuid,
+    layoutId: TARGET_LAYOUT_ID,
+    frames,
+    fingerprint,
+  }));
+  restMocks.fetchLayoutClimbs.mockResolvedValue([catalogClimb()]);
+  const { db, inserts } = createFakeDb(queues);
+  await runCatalog(db);
+  expect(inserts.filter((row) => row.table === 'board_climb_aliases').flatMap((row) => row.values)).toContainEqual(
+    expect.objectContaining({ aliasUuid: 'MISTAGGED', canonicalUuid: 'Z-owner' }),
+  );
 });

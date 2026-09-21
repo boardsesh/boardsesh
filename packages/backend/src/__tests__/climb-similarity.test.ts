@@ -62,6 +62,16 @@ describe('parseFramesToHoldEntries', () => {
     ]);
   });
 
+  it('keeps Woods zero-based holds while rejecting Aurora zero placeholders', () => {
+    expect(parseFramesToHoldEntries('woods', 'p0r4p1r3')).toEqual([
+      { frameNumber: 0, holdId: 0, holdState: 'STARTING' },
+      { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
+    ]);
+    expect(parseFramesToHoldEntries('tension', 'p0r1p1r3')).toEqual([
+      { frameNumber: 0, holdId: 1, holdState: 'FINISH' },
+    ]);
+  });
+
   it('returns an empty list for null / empty input', () => {
     expect(parseFramesToHoldEntries('kilter', null)).toEqual([]);
     expect(parseFramesToHoldEntries('kilter', '')).toEqual([]);
@@ -408,16 +418,14 @@ describe('findSimilarClimbs', () => {
   });
 
   it('excludes nonpositive materialized hold IDs from candidate overlap and size scans', async () => {
-    mockDb.execute.mockResolvedValueOnce([]);
+    mockSimilarClimbRows([]);
     await findSimilarClimbs({
       boardType: 'kilter',
       layoutId: 1,
       holds: [{ holdId: 1, holdState: 'STARTING' }],
       threshold: 0.5,
     });
-    const [query] = mockDb.execute.mock.calls[0];
-    const compiled = new PgDialect().sqlToQuery(query as SQL).sql;
-    expect(compiled.match(/hold_id > 0/g)).toHaveLength(2);
+    expect(getRenderedSimilarityQuery().sql.match(/hold_id > 0/g)).toHaveLength(2);
   });
 
   it('maps each row to the SimilarClimbResult shape', async () => {

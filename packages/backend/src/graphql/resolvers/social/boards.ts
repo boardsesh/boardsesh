@@ -851,8 +851,9 @@ export function dropPopularConfigsFallback(): void {
 // not require a currently known state name: a well-formed state introduced by
 // a future board still belongs to a placement and must count here. Similarity
 // matching is stricter because both sides must use states its parser supports.
+// This fragment requires the surrounding board_climb_holds alias `bch`.
 // `hold_state` is NOT NULL in the schema, so excluding SQL NULL here is intentional.
-export const POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE = sql`bch.hold_id > 0 AND bch.hold_state <> '' AND bch.hold_state NOT LIKE '%=%'`;
+export const POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE = sql`(bch.hold_id > 0 OR (bch.hold_id = 0 AND bch.board_type = 'woods')) AND bch.hold_state <> '' AND bch.hold_state NOT LIKE '%=%'`;
 
 /** Exported so regression tests render the exact query the resolver executes. */
 export const POPULAR_CONFIGS_QUERY = sql`

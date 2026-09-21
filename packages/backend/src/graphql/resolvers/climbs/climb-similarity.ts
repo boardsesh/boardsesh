@@ -6,6 +6,7 @@ import {
   convertLitUpHoldsStringToMap,
   isAuroraBoardName,
   isSentinelHoldState,
+  minimumStoredHoldId,
   projectAuroraFramesToStoredRows,
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
@@ -90,8 +91,16 @@ const KNOWN_HOLD_STATES_SQL = sql`(${sql.join(
   sql`, `,
 )})`;
 
-export function isSupportedSimilarityHold(row: NormalizedHold): boolean {
-  return Number.isSafeInteger(row.holdId) && row.holdId > 0 && KNOWN_HOLD_STATE_SET.has(row.holdState);
+export function isSupportedSimilarityHold(row: NormalizedHold, boardType: BoardName): boolean {
+  return (
+    Number.isSafeInteger(row.holdId) &&
+    row.holdId >= minimumStoredHoldId(boardType) &&
+    KNOWN_HOLD_STATE_SET.has(row.holdState)
+  );
+}
+
+function supportedHoldIdSql(boardType: BoardName, column: SQLWrapper): SQL {
+  return minimumStoredHoldId(boardType) === 0 ? sql`${column} >= 0` : sql`${column} > 0`;
 }
 
 /**
@@ -116,7 +125,7 @@ export function parseFramesToHoldEntries(boardType: BoardName, frames: string | 
     for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
       if (isSentinelHoldState(hold.state)) continue;
       const holdId = Number(holdIdKey);
-      if (!Number.isSafeInteger(holdId) || holdId <= 0) continue;
+      if (!Number.isSafeInteger(holdId) || holdId < minimumStoredHoldId(boardType)) continue;
       rows.push({ frameNumber, holdId, holdState: hold.state });
     }
   }
@@ -285,7 +294,7 @@ export async function findExactDuplicateMatch({
       INNER JOIN ${dbSchema.boardClimbHolds}
        ON ${dbSchema.boardClimbHolds.climbUuid} = ${dbSchema.boardClimbs.uuid}
        AND ${dbSchema.boardClimbHolds.boardType} = ${dbSchema.boardClimbs.boardType}
-       AND ${dbSchema.boardClimbHolds.holdId} > 0
+       AND ${supportedHoldIdSql(boardType, dbSchema.boardClimbHolds.holdId)}
        AND ${dbSchema.boardClimbHolds.holdState} IN ${KNOWN_HOLD_STATES_SQL}
       LEFT JOIN ${dbSchema.boardClimbStats}
         ON ${dbSchema.boardClimbStats.boardType} = ${dbSchema.boardClimbs.boardType}
@@ -395,7 +404,13 @@ export async function findSimilarClimbs({
 }: FindSimilarClimbsArgs): Promise<SimilarClimbResult[]> {
   // Reduce to unique hold positions on the target. State is intentionally
   // dropped — see the docblock above.
-  const targetHoldIds = Array.from(new Set(holds.map(({ holdId }) => holdId).filter((holdId) => holdId > 0)));
+  const targetHoldIds = Array.from(
+    new Set(
+      holds
+        .map(({ holdId }) => holdId)
+        .filter((holdId) => Number.isSafeInteger(holdId) && holdId >= minimumStoredHoldId(boardType)),
+    ),
+  );
   if (targetHoldIds.length === 0) return [];
 
   const targetSize = targetHoldIds.length;
@@ -451,7 +466,7 @@ export async function findSimilarClimbs({
           ON c.uuid = h.climb_uuid
          AND c.board_type = h.board_type
         WHERE h.board_type = ${boardType}
-          AND h.hold_id > 0
+          AND ${supportedHoldIdSql(boardType, sql`h.hold_id`)}
           AND h.hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND c.layout_id = ${layoutId}
           AND c.is_draft = FALSE
@@ -481,7 +496,7 @@ export async function findSimilarClimbs({
         SELECT climb_uuid AS uuid, COUNT(DISTINCT hold_id) AS n
         FROM ${dbSchema.boardClimbHolds}
         WHERE board_type = ${boardType}
-          AND hold_id > 0
+          AND ${supportedHoldIdSql(boardType, sql`hold_id`)}
           AND hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND climb_uuid IN (SELECT uuid FROM candidate_overlaps)
         GROUP BY climb_uuid

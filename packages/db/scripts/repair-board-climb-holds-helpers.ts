@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   isAuroraBoardName,
+  minimumStoredHoldId,
   legacyAuroraRawFrameHoldEvents,
   projectAuroraFramesToStoredRows,
   type StoredClimbHoldRow,
@@ -148,11 +149,11 @@ export function strictlyProjectStoredRows(
   };
 }
 
-export function isInvalidStoredRow(row: RepairHoldRow): boolean {
+export function isInvalidStoredRow(row: RepairHoldRow, boardType: string): boolean {
   // Delete only shapes proven to be corrupt. Unknown but well-formed state
   // names may belong to a newer board definition and are preserved; readers
   // that require parser symmetry apply their narrower supported-state filter.
-  return row.holdId <= 0 || row.holdState.length === 0 || row.holdState.includes('=');
+  return row.holdId < minimumStoredHoldId(boardType) || row.holdState.length === 0 || row.holdState.includes('=');
 }
 
 function compareText(left: string, right: string): number {
@@ -220,7 +221,7 @@ export function buildRepairManifest(
   const entries: RepairManifestEntry[] = climbs
     .map((climb): RepairManifestEntry => {
       const oldRows = sortRepairRows(climb.rows);
-      const invalidRows = oldRows.filter(isInvalidStoredRow);
+      const invalidRows = oldRows.filter((row) => isInvalidStoredRow(row, climb.boardType));
       const multiFrame = climb.multiFrameTarget;
       const blockers: string[] = [];
       let projectedRows: RepairHoldRow[] | null = null;
@@ -243,7 +244,7 @@ export function buildRepairManifest(
       const rowsAfterRepair = changed
         ? (projectedRows ?? oldRows)
         : invalidOnlyCleanup
-          ? oldRows.filter((row) => !isInvalidStoredRow(row))
+          ? oldRows.filter((row) => !isInvalidStoredRow(row, climb.boardType))
           : oldRows;
       const fingerprintClassification = classifyFingerprint(
         climb.holdFingerprint,

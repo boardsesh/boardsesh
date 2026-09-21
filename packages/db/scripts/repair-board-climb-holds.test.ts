@@ -128,7 +128,10 @@ void test('dry-run issues reads only and never starts a transaction', async () =
   assert.equal(result.applied, false);
   assert.equal(transactionStarted, false);
   assert.equal(executed.length, 1);
-  assert.match(renderedSql(executed[0]), /invalid\.hold_id <= 0/);
+  assert.match(
+    renderedSql(executed[0]),
+    /invalid\.hold_id < 0 or \(invalid\.hold_id = 0 and invalid\.board_type <> 'woods'\)/,
+  );
 });
 
 void test('candidate query scopes multi-frame projection to Aurora and preserves global invalid cleanup', async () => {
@@ -153,7 +156,10 @@ void test('candidate query scopes multi-frame projection to Aurora and preserves
   const statement = renderedSql(capturedQuery);
   assert.match(statement, /where bc\.board_type in \([^)]*\) and bc\.frames_count > 1/);
   assert.match(statement, /union all select invalid\.board_type/);
-  assert.match(statement, /from board_climb_holds invalid where invalid\.hold_id <= 0/);
+  assert.match(
+    statement,
+    /from board_climb_holds invalid where \(invalid\.hold_id < 0 or \(invalid\.hold_id = 0 and invalid\.board_type <> 'woods'\)\)/,
+  );
   assert.doesNotMatch(statement, /from board_climb_holds invalid where invalid\.board_type in/);
   assert.match(statement, /inner join board_climbs bc on bc\.uuid = candidate_identity\.uuid/);
   assert.doesNotMatch(
@@ -973,6 +979,24 @@ void test('real Postgres apply deletes, inserts, updates fingerprints, verifies,
       );
       assert.equal(parentFingerprint, 'parent-fingerprint');
 
+      // Woods is code-driven and zero-based, without board_placements rows.
+      // Its valid zero must survive both candidate selection and global verify.
+      const woodsUuid = 'repair-integration-woods';
+      await transaction.execute(sql`
+        INSERT INTO board_climbs (board_type, uuid, layout_id, frames, frames_count, hold_fingerprint)
+        VALUES ('woods', ${woodsUuid}, 1, 'p0r4', 1, NULL)
+      `);
+      await transaction.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES ('woods', ${woodsUuid}, 0, 0, 'STARTING'), ('woods', ${woodsUuid}, -1, 0, 'HAND')
+      `);
+      const woodsManifest = buildRepairManifest(await fetchCandidateClimbs(transaction), new Set());
+      assert.equal(woodsManifest.counts.invalidRows, 1);
+      assert.equal(woodsManifest.counts.deleteRows, 1);
+      await applyRepairManifest(transaction, woodsManifest);
+      await verifyAppliedRepair(transaction, woodsManifest);
+      assert.deepEqual(await fetchCandidateClimbs(transaction), []);
+
       const initialManifest = buildRepairManifest(
         [
           {
@@ -1036,6 +1060,7 @@ void test('real Postgres apply deletes, inserts, updates fingerprints, verifies,
         { climb_uuid: invalidUuid, hold_id: 3, frame_number: 0, hold_state: 'FOOT' },
         { climb_uuid: multiUuid, hold_id: 1, frame_number: 0, hold_state: 'STARTING' },
         { climb_uuid: multiUuid, hold_id: 2, frame_number: 1, hold_state: 'HAND' },
+        { climb_uuid: woodsUuid, hold_id: 0, frame_number: 0, hold_state: 'STARTING' },
       ]);
 
       const [{ hold_fingerprint: repairedFingerprint }] = await executeRows<{ hold_fingerprint: string | null }>(

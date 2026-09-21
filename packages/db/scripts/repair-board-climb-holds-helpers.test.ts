@@ -382,3 +382,37 @@ void test('a logically repaired manifest is idempotent', () => {
   assert.equal(second.counts.changedMultiFrameClimbs, 0);
   assert.equal(second.counts.invalidRows, 0);
 });
+
+void test('global cleanup preserves valid zero-based Woods holds but removes Woods sentinels', () => {
+  const manifest = buildRepairManifest(
+    [
+      climb({
+        boardType: 'woods',
+        frames: 'p0r4p1r3',
+        framesCount: 1,
+        multiFrameTarget: false,
+        rows: [
+          { holdId: 0, frameNumber: 0, holdState: 'STARTING' },
+          { holdId: 1, frameNumber: 0, holdState: 'FINISH' },
+          { holdId: -1, frameNumber: 0, holdState: 'HAND' },
+          { holdId: 2, frameNumber: 0, holdState: '2=undefined' },
+        ],
+      }),
+    ],
+    new Set(),
+  );
+  assert.equal(manifest.counts.blockers, 0);
+  assert.equal(manifest.counts.invalidRows, 2);
+  assert.equal(manifest.counts.deleteRows, 2);
+  assert.deepEqual(
+    manifest.entries[0]?.invalidRows.map((row) => row.holdId),
+    [-1, 2],
+  );
+  assert.equal(
+    manifest.entries[0]?.rowHashes.projected,
+    fingerprintFromRepairRows([
+      { holdId: 0, frameNumber: 0, holdState: 'STARTING' },
+      { holdId: 1, frameNumber: 0, holdState: 'FINISH' },
+    ]),
+  );
+});

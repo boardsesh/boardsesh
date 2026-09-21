@@ -78,14 +78,17 @@ describe('climbQueries.similarClimbs', () => {
   });
 
   it('looks up Woods physical size from the target climb', async () => {
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 0, holdState: 'STARTING' }]));
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p0r4', compatibleSizeIds: [2] }]));
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([{ frames: 'p0r4', framesCount: 1, compatibleSizeIds: [2], holdId: 0, holdState: 'STARTING' }]),
+    );
     await climbQueries.similarClimbs(
       {},
       { input: { boardType: 'woods', layoutId: 1, climbUuid: 'target' } },
       makeCtx(),
     );
-    expect(findSimilarClimbsMock).toHaveBeenCalledWith(expect.objectContaining({ sizeId: 2 }));
+    expect(findSimilarClimbsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sizeId: 2, holds: [{ holdId: 0, holdState: 'STARTING' }] }),
+    );
   });
 
   it('does not compare Woods frames across unknown physical sizes', async () => {
