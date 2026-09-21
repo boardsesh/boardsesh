@@ -488,6 +488,27 @@ describe('buildPlan', () => {
     expect(dnsChange?.blocked).toBeUndefined();
   });
 
+  // The first apply after this record is declared is a create, and the DR standby
+  // cannot verify a certificate for a name that does not resolve -- so the create
+  // must be planned, and must not be held back behind the zone-wide SSL change the
+  // way a proxied record is.
+  it('creates the DR primary record when the zone does not have it yet', () => {
+    const drifted: LiveState = {
+      ...inSyncLiveState(),
+      dnsRecords: { ...inSyncDnsRecords(), [drPrimaryDnsRecord.name]: null },
+      sslMode: 'full',
+    };
+    const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+    const dnsChanges = changes.filter((change) => change.resource === 'dns');
+
+    expect(dnsChanges.map((change) => change.dnsName)).toEqual([DR_PRIMARY_HOSTNAME]);
+    expect(dnsChanges[0]?.blocked).toBeUndefined();
+    // Orange-clouding it would break replication outright: Cloudflare's proxy
+    // carries neither raw TCP nor a non-HTTP port.
+    expect(drPrimaryDnsRecord.proxied).toBe(false);
+    expect(drPrimaryDnsRecord.settings?.flatten_cname).toBe(false);
+  });
+
   it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
     const drifted: LiveState = {
       ...inSyncLiveState(),
