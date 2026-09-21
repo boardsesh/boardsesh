@@ -246,9 +246,18 @@ export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
 
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
+  staticFlagsAreFinal = true,
   children,
 }: {
   flags?: FeatureFlags;
+  /**
+   * Whether a supplied `flags` bag is the whole answer. True for a test, which
+   * hands over every value it cares about. False for the root layout's env
+   * override, which pins one or two keys while PostHog still answers for every
+   * other flag, kill switches included: reading that bag as final would let a
+   * gate act before a switch flipped in PostHog could reach it.
+   */
+  staticFlagsAreFinal?: boolean;
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
@@ -280,9 +289,10 @@ export function FeatureFlagsProvider({
     };
   }, []);
 
-  // A statically supplied bag — the env override, and every test — is already
-  // final: there is nothing on its way that could change it.
-  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS;
+  // A statically supplied bag that is the whole answer (every test) is already
+  // final: there is nothing on its way that could change it. A partial one (the
+  // env override) still waits for PostHog like an empty bag does.
+  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS && staticFlagsAreFinal;
 
   const value = useMemo<FeatureFlags>(() => {
     // Policy-controlled flags lose their override outside a dev build, so this

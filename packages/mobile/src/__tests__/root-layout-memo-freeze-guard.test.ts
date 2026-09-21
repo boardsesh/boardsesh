@@ -20,6 +20,15 @@ import { describe, expect, it } from 'vitest';
 // && fontsReady` one line up reproduces the bug just as well as the state
 // itself. The only names allowed through are callbacks whose identity never
 // changes, and each of those is checked to really be one.
+//
+// What a text guard cannot see, so do not lean on it alone. It reads only
+// RootLayout: a new wrapper component that renders <DatabaseProvider> with
+// children built from its own state has the same bug and passes here. It
+// matches names at the formatter's two-space body indent, so it trusts the
+// formatter. The real fix is structural: the gates read `useLaunchReady()`
+// from a provider above the database instead of taking a prop, and
+// launch-ready-through-database.test.tsx renders them through the real
+// provider. This file only keeps RootLayout from reintroducing the prop.
 
 const layoutSource = readFileSync(new URL('../../app/_layout.tsx', import.meta.url), 'utf8');
 

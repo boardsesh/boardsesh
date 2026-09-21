@@ -5,6 +5,8 @@ import type { OnboardingGateEvaluation } from '../onboarding-gate-analytics';
 const trackMock = vi.hoisted(() => vi.fn());
 const updatesCtrl = vi.hoisted(() => ({ isEmbeddedLaunch: true }));
 const clockCtrl = vi.hoisted(() => ({ nowMs: Date.parse('2026-09-21T12:30:00.000Z') }));
+// Stands in for the platform fork: native reports, the Expo browser build does not.
+const reportingCtrl = vi.hoisted(() => ({ reports: true }));
 
 vi.mock('../../analytics', () => ({ track: trackMock }));
 vi.mock('expo-updates', () => ({
@@ -13,6 +15,11 @@ vi.mock('expo-updates', () => ({
   },
 }));
 vi.mock('../../clock', () => ({ nowMs: () => clockCtrl.nowMs }));
+vi.mock('../onboarding-gate-reporting', () => ({
+  get REPORTS_ONBOARDING_GATE_EVALUATIONS() {
+    return reportingCtrl.reports;
+  },
+}));
 
 const { accountAgeHours, shouldReportOnboardingGate, trackOnboardingGateEvaluated } =
   await import('../onboarding-gate-analytics');
@@ -36,6 +43,7 @@ function evaluation(overrides: Partial<OnboardingGateEvaluation> = {}): Onboardi
 beforeEach(() => {
   trackMock.mockClear();
   updatesCtrl.isEmbeddedLaunch = true;
+  reportingCtrl.reports = true;
 });
 
 describe('accountAgeHours', () => {
@@ -175,5 +183,21 @@ describe('trackOnboardingGateEvaluated', () => {
       evaluation({ outcome: 'skipped', reason: 'has_board', hadBoard: true, seenFlag: true }),
     );
     expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing from the Expo browser build, where every launch looks like a URL launch', () => {
+    reportingCtrl.reports = false;
+    trackOnboardingGateEvaluated(evaluation());
+    trackOnboardingGateEvaluated(evaluation({ outcome: 'stalled', reason: 'not_ready', step: null }));
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('onboarding-gate-reporting forks', () => {
+  it('reports on native and stays silent in the browser build', async () => {
+    const native = await vi.importActual<typeof import('../onboarding-gate-reporting')>('../onboarding-gate-reporting');
+    const web = await import('../onboarding-gate-reporting.web');
+    expect(native.REPORTS_ONBOARDING_GATE_EVALUATIONS).toBe(true);
+    expect(web.REPORTS_ONBOARDING_GATE_EVALUATIONS).toBe(false);
   });
 });

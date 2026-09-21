@@ -5,8 +5,9 @@ import { DEEP_LINK_SEGMENTS } from '../deep-link-segments';
  * deep-link set, plus `qa` itself so a re-render while the pick list or the
  * brief is already up can never push a second copy of it, plus
  * `send-recovery`: that gate runs beside this one on a launch and reads SQLite
- * while this one waits on the network, so its notice can be up first. Stacking
- * a second modal on it would bury the one the climber is reading.
+ * while this one waits on the network, so its notice is usually up first.
+ * Stacking a second modal on it would bury the one the climber is reading, and
+ * the brief offers itself again on the next launch.
  */
 export const QA_BLOCKED_TOP_SEGMENTS: ReadonlySet<string> = new Set([
   ...DEEP_LINK_SEGMENTS,

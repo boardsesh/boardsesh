@@ -463,9 +463,13 @@ export const SHARED_EVENTS = {
   // when not read yet), account_age_hours (whole hours since the account was
   // created; the gate waits up to 5 s for the profile, so null means that read
   // failed or ran out of time), ota_is_embedded, trigger: 'cold_start' |
-  // 'remount' | 'account_switch', top_segment, ms_since_mount, after_stall
+  // 'remount' | 'account_switch', top_segment, ms_since_mount (from the mount,
+  // or from the switch on an `account_switch` decision), after_stall
   // (true on a decision that landed after this mount already reported
   // `stalled`, so one mount can send two events) }.
+  //
+  // Native builds only. The Expo browser build sends nothing: its launch URL is
+  // always the page itself, so every launch would read as `launched_by_url`.
   //
   // `would_present` is deliberate: the gate evaluates and logs, and presents
   // nothing until the first-run redesign turns presenting on for new accounts.

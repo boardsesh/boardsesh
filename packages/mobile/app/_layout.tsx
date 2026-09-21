@@ -613,7 +613,9 @@ function RootLayout() {
                     {/* Inside MaterialThemeProvider (Paper Portal host) and above every
                     provider that may call useConfirm (incl. Bluetooth). */}
                     <DialogProvider>
-                      <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
+                      {/* The env bag pins a key or two; PostHog still answers for
+                        the rest, kill switches included, so it is not final. */}
+                      <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS} staticFlagsAreFinal={false}>
                         {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
                         <OfflineEngineFlagSync />
@@ -892,17 +894,23 @@ function RootLayout() {
                                                                     <OnboardingGate />
                                                                     {/* Asks a tester to try a PR preview (or shows what to
                                                             test on the one already running). No-op for everyone
-                                                            else. Mounted after OnboardingGate so the first-run
-                                                            walkthrough always wins a cold start. */}
+                                                            else. A first run outranks it through the seen flag
+                                                            it waits for, not through mount order. */}
                                                                     <QaTesterGate />
                                                                     {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
-                                                            everyone else, which is almost everyone. Mounted last
-                                                            of the launch gates: a first run and a PR brief both
-                                                            outrank it, and its note is durable, so a launch it
-                                                            sits out costs nothing. It and QaTesterGate each stand
-                                                            down on the other's route, so their two modals never
-                                                            stack on one launch. */}
+                                                            everyone else, which is almost everyone. It and
+                                                            QaTesterGate run side by side, and neither outranks
+                                                            the other: whichever finishes its reads first pushes,
+                                                            and the other re-reads the route and stands down on
+                                                            it. In practice this notice wins, because its SQLite
+                                                            read beats the QA gate's network round trip. Losing
+                                                            costs either one a launch, nothing more: the note is
+                                                            durable and the brief offers itself again. The route
+                                                            only changes on the render after a push, so two
+                                                            finishes inside one frame could still stack both
+                                                            modals; that takes a tester with owed sends, and each
+                                                            dismisses normally. */}
                                                                     <SendRecoveryGate />
                                                                     {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the

@@ -526,14 +526,16 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 ## Appendix C — 2026-09-21 launch-gate telemetry (#5654)
 
 The first-run gate went silent for 10 weeks (2.2.0 to #5654) and nothing noticed, because no event
-said whether it had decided anything. Mobile only; names live in `SHARED_EVENTS`
+said whether it had decided anything. Mobile only, and `Onboarding Gate Evaluated` is native only:
+the Expo browser build does not send it, because its launch URL is always the page and every launch
+would read as `launched_by_url`. Names live in `SHARED_EVENTS`
 (`packages/shared/analytics/src/events.ts`), where the full property contracts sit beside them.
 
 ### New events (2)
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount`, `after_stall` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Decisions skip a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so they are roughly newcomers and climbers without a board. Stalls are sent for every climber |
+| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount` (from the switch on an `account_switch` decision), `after_stall` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Decisions skip a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so they are roughly newcomers and climbers without a board. Stalls are sent for every climber |
 | `Board Look Step Evaluated` | `outcome` (`would_present` / `skipped`), `reason` (`never_asked` / `look_chosen` / `step_seen`) | `packages/mobile/src/lib/board-render/board-look-step-evaluation-log.ts`, from `BoardLookStepGate.tsx` in log-only mode | Once per device (AsyncStorage marker `boardLookStepEvaluationLogged`) |
 
 ### Reading them

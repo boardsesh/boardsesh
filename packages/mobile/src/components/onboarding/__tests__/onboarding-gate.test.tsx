@@ -372,6 +372,28 @@ describe('OnboardingGate', () => {
     expect(decisions()[1]).toMatchObject({ outcome: 'would_present', trigger: 'account_switch' });
   });
 
+  it("counts an account switch's ms_since_mount from the switch, not the first mount", async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    try {
+      hasSeenMock.mockResolvedValue(true);
+      activeBoardCtrl.board = { uuid: 'board-1' };
+      profileCtrl.id = 'user-a';
+      const { rerender } = render(<OnboardingGate />);
+      await waitFor(() => expect(decisions()).toHaveLength(1));
+
+      // User B signs in a minute later on the same mount.
+      nowSpy.mockReturnValue(61_000);
+      hasSeenMock.mockResolvedValue(false);
+      activeBoardCtrl.board = null;
+      profileCtrl.id = 'user-b';
+      rerender(<OnboardingGate />);
+      await waitFor(() => expect(decisions()).toHaveLength(2));
+      expect(decisions()[1]).toMatchObject({ trigger: 'account_switch', msSinceMount: 0 });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('does not re-decide when the same user id stays stable across rerenders', async () => {
     hasSeenMock.mockResolvedValue(true);
     activeBoardCtrl.board = { uuid: 'board-1' };

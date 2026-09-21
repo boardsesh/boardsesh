@@ -116,7 +116,9 @@ export function SendRecoveryGate() {
         if (cancelled) return;
 
         // Re-decide against the CURRENT route: a deep link may have arrived
-        // while the reads were in flight.
+        // while the reads were in flight, or QaTesterGate may have finished first
+        // and put its prompt up (first to finish wins; see its segment list in
+        // send-recovery-decision.ts).
         const decision = decideSendRecovery({
           ...sharedInput,
           topSegment: topSegmentRef.current,

@@ -145,7 +145,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   three read unresolved as enabled, and all three surfaces wait for
   `useFeatureFlagsResolved()` (at most 2 s) before they act, so a switch flipped
   in PostHog lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the
-  first paint (`ConnectivityBanner`) it exists to stop. The onboarding and board-look gates woke up in the same change but only
+  first paint (`ConnectivityBanner`) it exists to stop. That holds on a build
+  baked with `EXPO_PUBLIC_STRAVA_INTEGRATION` or `EXPO_PUBLIC_LOGBOOK_FILTERS`
+  too: the root layout passes that env bag with `staticFlagsAreFinal={false}`,
+  because it pins only its own keys, so the resolved hook still waits for
+  PostHog. Only a test's `flags` bag counts as final on the first frame. The
+  onboarding and board-look gates woke up in the same change but only
   evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`),
   so they have nothing to kill yet.
   `spray-walls` is a POSITIVE rollout flag (read through

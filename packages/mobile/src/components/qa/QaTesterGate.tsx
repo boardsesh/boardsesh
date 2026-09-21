@@ -150,7 +150,9 @@ export function QaTesterGate() {
         }
 
         // Re-decide against the CURRENT route: a deep link may have arrived
-        // while the reads were in flight.
+        // while the reads were in flight, or SendRecoveryGate may have finished
+        // first and put its notice up (first to finish wins; see its segment
+        // list in qa-gate-decision.ts).
         const decision = decideQaGate({
           ...sharedInput,
           topSegment: topSegmentRef.current,

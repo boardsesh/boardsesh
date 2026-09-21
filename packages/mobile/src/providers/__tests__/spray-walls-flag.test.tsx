@@ -80,8 +80,20 @@ describe('useFeatureFlagsResolved', () => {
   });
 
   it('is true immediately for a statically supplied bag', () => {
-    // The env override, and every test: there is nothing on its way that could
-    // change it, so waiting would be waiting for nothing.
+    // Every test hands over the whole answer: there is nothing on its way that
+    // could change it, so waiting would be waiting for nothing.
     expect(renderResolved({ 'spray-walls': false }).current).toBe(true);
+  });
+
+  it('still waits for PostHog when the static bag is only partial', () => {
+    // The root layout's env override pins a key or two and leaves every other
+    // flag, kill switches included, to PostHog. Reading it as final would let a
+    // launch gate push before a kill switch flipped in PostHog could stop it.
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ 'strava-integration': true }} staticFlagsAreFinal={false}>
+        {children}
+      </FeatureFlagsProvider>
+    );
+    expect(renderHook(() => useFeatureFlagsResolved(), { wrapper }).result.current).toBe(false);
   });
 });

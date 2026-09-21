@@ -128,6 +128,9 @@ export function OnboardingGate() {
     if (switchedAccount) {
       decidedRef.current = false;
       triggerRef.current = 'account_switch';
+      // `ms_since_mount` on the new account's decision counts from the switch,
+      // not from a mount that belonged to the previous account.
+      mountedAtRef.current = Date.now();
     }
   }
 

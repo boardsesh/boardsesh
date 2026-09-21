@@ -8,6 +8,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import * as Updates from 'expo-updates';
 import { track } from '../analytics';
 import { nowMs } from '../clock';
+import { REPORTS_ONBOARDING_GATE_EVALUATIONS } from './onboarding-gate-reporting';
 
 /**
  * `would_present` rather than `presented`: in #5654's first PR the gate decides
@@ -52,6 +53,11 @@ export type OnboardingGateEvaluation = {
   accountCreatedAt: string | null | undefined;
   trigger: OnboardingGateTrigger;
   topSegment: string | undefined;
+  /**
+   * From the gate's mount, or, on an `account_switch` decision, from the switch
+   * that re-opened it: the previous account's time on screen is not the new
+   * account's wait.
+   */
   msSinceMount: number;
   /**
    * The watchdog had already reported this mount as `stalled` when the decision
@@ -100,6 +106,8 @@ export function shouldReportOnboardingGate(
 }
 
 export function trackOnboardingGateEvaluated(evaluation: OnboardingGateEvaluation): void {
+  // Off in the Expo browser build, where every launch reads as a URL launch.
+  if (!REPORTS_ONBOARDING_GATE_EVALUATIONS) return;
   if (!shouldReportOnboardingGate(evaluation)) return;
   track(SHARED_EVENTS.OnboardingGateEvaluated, {
     outcome: evaluation.outcome,
