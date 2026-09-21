@@ -1,5 +1,5 @@
 /**
- * Re-file ticks that landed on a per-config SHARED FEED board onto the wall
+ * Re-file ticks that landed on a per-config SHARED FEED board onto
  * the active matching session wall, or their climber's unique matching wall.
  *
  * Prepares tooling for the historical data half of #5121. The code path was fixed in the same issue's
@@ -43,13 +43,13 @@
  *   --apply          Enable database writes (forward or revert).
  *   --dry-run        Default: match and report, write no database rows. Still writes the plan file.
  *   --revert <file>  Preview a prior snapshot; add --apply to restore board ids.
- *   --out <file>     Snapshot path (default ./shared-feed-tick-boards-<date>.json).
+ *   --out <file>     Snapshot path (default ./shared-feed-tick-boards-<plan|apply>-<timestamp>.json).
  *
  * A tick already moved off the feed stops matching. Use a new --out path on
  * every run: existing plan/recovery files are never overwritten.
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { resolve } from 'path';
 import { and, eq, inArray, isNull, like } from 'drizzle-orm';
@@ -208,6 +208,16 @@ export function parseSnapshot(contents: string): Snapshot {
   return { writtenAt: parsed.writtenAt, entries };
 }
 
+export function resolveSnapshotPath(options: Pick<RepairOptions, 'apply' | 'outPath'>, now = new Date()): string {
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+  const snapshotPath =
+    options.outPath ?? `./shared-feed-tick-boards-${options.apply ? 'apply' : 'plan'}-${timestamp}.json`;
+  if (existsSync(snapshotPath)) {
+    throw new Error(`Snapshot already exists: ${snapshotPath}. Choose a new --out path to preserve recovery files.`);
+  }
+  return snapshotPath;
+}
+
 export function writeSnapshot(snapshotPath: string, snapshot: Snapshot): void {
   try {
     writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2), { flag: 'wx' });
@@ -242,7 +252,7 @@ async function main() {
     return;
   }
   if (options.revertPath) return revert(options.revertPath, options.apply);
-  const outPath = options.outPath ?? `./shared-feed-tick-boards-${new Date().toISOString().slice(0, 10)}.json`;
+  const outPath = resolveSnapshotPath(options);
 
   const { db, close } = createScriptDb();
   try {
