@@ -12,6 +12,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Open a climb's actions with VoiceOver or TalkBack even when its quick-actions button is hidden. ([#5218](https://github.com/boardsesh/boardsesh/pull/5218))
+  Hear the climb row's existing grade and status labels alongside its name.
 - Fixed: the Profile, Discover, and Climbs tabs no longer get stuck on a screen you opened from another tab (Settings, My Playlists, a setter's profile) — tapping back always returns you to that tab's own home. ([#5670](https://github.com/boardsesh/boardsesh/pull/5670))
 - Tall and Wide are back as their own one-tap filter chips on the Climbs screen ([#5661](https://github.com/boardsesh/boardsesh/pull/5661))
   On iPhone, long-press Tall or Wide to lock it, so Reset keeps it on

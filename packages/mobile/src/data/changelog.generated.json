@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-21T14:13:21.582Z",
+  "generatedAt": "2026-09-21T21:09:32.603Z",
   "entries": [
+    {
+      "prNumber": 5218,
+      "category": "fixed",
+      "title": "Open a climb's actions with VoiceOver or TalkBack even when its quick-actions button is hidden.",
+      "mergedAt": "2026-09-21T21:08:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5218",
+      "body": "Hear the climb row's existing grade and status labels alongside its name."
+    },
     {
       "prNumber": 5670,
       "category": "fixed",
