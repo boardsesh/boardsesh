@@ -611,7 +611,7 @@ describe("the ordinary picker's Find nearby tile", () => {
     fireEvent.click(screen.getByText('mobile.firstBoard.findGymOnMap'));
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: { returnTo: '/(tabs)/climbs', source: undefined },
+      params: { returnTo: '/(tabs)/climbs', source: undefined, from: 'picker' },
     });
 
     // Same spot: a fresh fix, then the same search again.
