@@ -35,7 +35,7 @@ The timestamp-normalizer source lineage has six distinct points:
   the live pull and JSON importer;
 - `ad4b39c08` made that shared normalizer safe for space-separated timestamps
   carrying an explicit UTC-offset suffix;
-- `cdf1406dfb53f1865513fd005d39b13f469a74e1` made the still-active legacy web
+- `cdf1406dfb53f1865513fd005d39b13f469a74e1` made the historical legacy web
   `saveAscent` proxy use the shared normalizer when it writes
   `boardsesh_ticks.origin='native'`; its parent lineage already contains the
   explicit-offset fix above.
@@ -85,7 +85,9 @@ inherited `GIT_*` repository, ceiling, index, config, and pathspec controls are
 discarded; system/global config is disabled; and the output-relative path is
 passed after `--` with literal pathspec handling. The command stages a
 mode-`0600` partial file, syncs it, and publishes it with an exclusive hard link
-so a racing file is never overwritten.
+so a racing file is never overwritten. If removal of the staging link fails after
+publication, the complete report remains valid and a private mode-`0600` partial
+link may remain beside it; cleanup does not invalidate a completed artifact.
 
 Database startup is limited to 30 seconds. Inside the transaction, PostgreSQL
 aborts any individual statement or cursor fetch that runs for more than 300
