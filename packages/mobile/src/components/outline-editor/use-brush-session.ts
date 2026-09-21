@@ -59,8 +59,8 @@ export type BrushSession = {
    * stroke painting on top of the edit that was just undone.
    */
   snapshot: () => Uint8Array | null;
-  /** Put a {@link snapshot} back. Ignored when the session has moved on to a
-   *  different hold, where the cells would not line up. */
+  /** Restore a snapshot from this hold. A missing or resized snapshot clears
+   *  the session so the next stroke reseeds from the visible restored outline. */
   restore: (cells: Uint8Array | null) => void;
 };
 
@@ -140,11 +140,19 @@ export function useBrushSession(): BrushSession {
 
   const snapshot = useCallback(() => (maskRef.current ? maskRef.current.cells.slice() : null), []);
 
-  const restore = useCallback((cells: Uint8Array | null) => {
-    const mask = maskRef.current;
-    if (!mask || !cells || cells.length !== mask.cells.length) return;
-    mask.cells.set(cells);
-  }, []);
+  const restore = useCallback(
+    (cells: Uint8Array | null) => {
+      const mask = maskRef.current;
+      if (!mask || !cells || cells.length !== mask.cells.length) {
+        // Undo before the first stroke, or across a resized frame. The next
+        // stroke must seed from the restored outline, never the undone bitmap.
+        reset();
+        return;
+      }
+      mask.cells.set(cells);
+    },
+    [reset],
+  );
 
   // Memoized: this object is read by `clearDraft`, `handleStrokeEnd` and the
   // render props they feed, so a fresh identity every render would churn the

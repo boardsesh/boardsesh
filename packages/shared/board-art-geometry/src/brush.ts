@@ -27,6 +27,7 @@
  */
 
 import {
+  CENTRE_TOLERANCE_RADII,
   MAX_RING_COORDINATE,
   MAX_RING_NUMBERS,
   MIN_RING_NUMBERS,
@@ -142,6 +143,8 @@ export type BrushMask = {
   /** The placement centre this mask was framed around, in board px. */
   anchorX: number;
   anchorY: number;
+  /** Placement radius in board pixels, for the shared centre-tolerance gate. */
+  holdRadius: number;
 };
 
 function flatten(points: ReadonlyArray<RingPoint>): number[] {
@@ -256,7 +259,7 @@ export function outlineToMask(params: {
     }
   }
 
-  return { cells, width: side, height: side, originX, originY, supersample, anchorX, anchorY };
+  return { cells, width: side, height: side, originX, originY, supersample, anchorX, anchorY, holdRadius };
 }
 
 /**
@@ -325,12 +328,38 @@ export function stampBrushStroke(
   return changed;
 }
 
-/** The cell index of a mask's placement centre, or -1 if it sits outside. */
-function anchorIndexOf(mask: BrushMask): number {
-  const x = Math.round((mask.anchorX - mask.originX) * mask.supersample);
-  const y = Math.round((mask.anchorY - mask.originY) * mask.supersample);
-  if (x < 0 || y < 0 || x >= mask.width || y >= mask.height) return -1;
-  return y * mask.width + x;
+/** Nearest occupied cell within the same centre tolerance as a stored ring. */
+function anchorIndexOf(mask: BrushMask, cells: Uint8Array): number {
+  const centreX = (mask.anchorX - mask.originX) * mask.supersample;
+  const centreY = (mask.anchorY - mask.originY) * mask.supersample;
+  const radiusCells = CENTRE_TOLERANCE_RADII * mask.holdRadius * mask.supersample;
+  let nearest = -1;
+  let nearestDistanceSquared = radiusCells * radiusCells;
+  // Only inspect the small centre neighborhood. A remote, larger offcut must
+  // never replace the hold. Cells are sampled at their integer coordinates;
+  // their half-cell footprint accounts for raster quantisation at the boundary.
+  for (
+    let y = Math.max(0, Math.floor(centreY - radiusCells));
+    y <= Math.min(mask.height - 1, Math.ceil(centreY + radiusCells));
+    y += 1
+  ) {
+    for (
+      let x = Math.max(0, Math.floor(centreX - radiusCells));
+      x <= Math.min(mask.width - 1, Math.ceil(centreX + radiusCells));
+      x += 1
+    ) {
+      const index = y * mask.width + x;
+      if (cells[index] !== 1) continue;
+      const deltaX = Math.max(0, Math.abs(x - centreX) - 0.5);
+      const deltaY = Math.max(0, Math.abs(y - centreY) - 0.5);
+      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+      if (distanceSquared > nearestDistanceSquared) continue;
+      if (nearest >= 0 && distanceSquared === nearestDistanceSquared) continue;
+      nearest = index;
+      nearestDistanceSquared = distanceSquared;
+    }
+  }
+  return nearest;
 }
 
 export type AnchoredComponent =
@@ -349,9 +378,9 @@ export type AnchoredComponent =
  * a 4 board-px radius, 51% split the shape and 32% of all strokes would have
  * committed the wrong piece.
  *
- * The blob covering the placement centre wins, because the outline has to
- * enclose the placement it belongs to (the backend's own gate) — so the piece on
- * the bolt is definitionally the hold and the rest are offcuts.
+ * The blob nearest the placement centre within the shared tolerance wins.
+ * Stored outlines may legitimately miss the exact bolt position, so requiring
+ * its exact cell would make those accepted outlines impossible to edit.
  *
  * This step is also a RECONCILIATION, not just a filter, so skipping it when
  * there looks to be only one blob would be wrong: `components` is 4-connected
@@ -379,9 +408,9 @@ export function keepAnchoredComponent(mask: BrushMask): AnchoredComponent {
     for (const index of blobs[blob]) labels[index] = blob;
   }
 
-  const anchor = anchorIndexOf(mask);
+  const anchor = anchorIndexOf(mask, filled);
   const anchoredLabel = anchor >= 0 ? labels[anchor] : -1;
-  // Erasing the placement centre itself is its own failure, not a candidate for
+  // Erasing every cell within the accepted centre tolerance is not a candidate for
   // "largest blob wins": the largest survivor can be nowhere near the bolt, and
   // the user would then get a message about a ring not covering its centre for a
   // ring they never asked for. Say what they actually did instead.
@@ -425,7 +454,7 @@ function dedupeConsecutive(points: ReadonlyArray<RingPoint>): RingPoint[] {
  * boundary degrades into a coarser ring instead of a dead end.
  */
 export function maskToRing(cells: Uint8Array, mask: BrushMask): BrushResult {
-  const anchor = anchorIndexOf(mask);
+  const anchor = anchorIndexOf(mask, cells);
   const trimmed = anchor >= 0 ? trimNecks(cells, mask.width, mask.height, anchor, NECK_TRIM_CELLS) : cells;
   const filled = fillHoles(trimmed, mask.width, mask.height);
   const border = traceMaskBorder(filled, mask.width, mask.height);

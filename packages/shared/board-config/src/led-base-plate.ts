@@ -51,6 +51,8 @@ const PLATED_LAYOUTS_BY_BOARD: Partial<Record<BoardName, ReadonlySet<number>>> =
  */
 export function hasLedBasePlate(boardName: string | undefined, layoutId: number): boolean {
   if (!boardName) return false;
-  const platedLayouts = PLATED_LAYOUTS_BY_BOARD[boardName.toLowerCase() as BoardName];
+  const normalizedBoardName = boardName.toLowerCase();
+  if (!Object.hasOwn(PLATED_LAYOUTS_BY_BOARD, normalizedBoardName)) return false;
+  const platedLayouts = PLATED_LAYOUTS_BY_BOARD[normalizedBoardName as BoardName];
   return platedLayouts?.has(layoutId) ?? false;
 }

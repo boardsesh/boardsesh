@@ -10,7 +10,8 @@ import {
   outlineToMask,
   stampBrushStroke,
 } from '../brush';
-import { MAX_RING_COORDINATE, MAX_RING_NUMBERS, pointInRing } from '../ring';
+import { CENTRE_TOLERANCE_RADII, MAX_RING_COORDINATE, MAX_RING_NUMBERS, distanceToRing, pointInRing } from '../ring';
+import { loadBoardArtGeometry } from '../loader';
 import { isSimpleRing } from '../raster';
 
 /** A closed circle as a flat board-px ring, `steps` points around. */
@@ -500,7 +501,7 @@ describe('frame sizing for the stroke about to be painted', () => {
 });
 
 describe('failure modes', () => {
-  it('names erasing the centre for what it is, rather than blaming the ring', () => {
+  it('rejects erasing every cell within the accepted centre tolerance', () => {
     // Falling back to "largest blob wins" here would hand back a ring nowhere near
     // the bolt and then reject it for not covering its centre — a message about a
     // ring the user never asked for.
@@ -509,7 +510,7 @@ describe('failure modes', () => {
       outlineBoardPx: before,
       // A wide swipe straight through the middle, cutting the disc in half.
       strokeBoardPx: [CENTRE - HOLD_RADIUS - 5, CENTRE, CENTRE + HOLD_RADIUS + 5, CENTRE],
-      brushRadiusBoardPx: 5,
+      brushRadiusBoardPx: HOLD_RADIUS * CENTRE_TOLERANCE_RADII + 2,
       mode: 'erase',
       anchorX: CENTRE,
       anchorY: CENTRE,
@@ -586,5 +587,51 @@ describe('failure modes', () => {
     for (let index = 0; index + 1 < result.outlineBoardPx.length; index += 2) {
       expect(Math.abs(result.outlineBoardPx[index] - CENTRE)).toBeLessThanOrEqual(MAX_RING_COORDINATE * HOLD_RADIUS);
     }
+  });
+});
+
+describe('near-centre brush anchoring', () => {
+  it.each([4800, 4810])('accepts the shipped centre-offset Kilter outline %i', (placementId) => {
+    const geometry = loadBoardArtGeometry({ boardName: 'kilter', layoutId: 1, sizeId: 28 });
+    const outline = geometry?.outlines[placementId];
+    expect(outline).toBeDefined();
+    if (!outline) return;
+    if (placementId === 4810) expect(pointInRing(outline, 0, 0)).toBe(false);
+    expect(distanceToRing(outline, 0, 0)).toBeLessThanOrEqual(CENTRE_TOLERANCE_RADII);
+    const mask = outlineToMask({
+      outlineBoardPx: outline.map((coordinate) => coordinate * HOLD_RADIUS + CENTRE),
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+    });
+    expect(keepAnchoredComponent(mask).ok).toBe(true);
+  });
+
+  it('allows a brush away from the bolt on an accepted offset outline', () => {
+    const offset = HOLD_RADIUS * 1.2;
+    const result = brushEditOutline({
+      outlineBoardPx: circle(CENTRE + offset, CENTRE, HOLD_RADIUS),
+      strokeBoardPx: [CENTRE + offset + HOLD_RADIUS, CENTRE, CENTRE + offset + HOLD_RADIUS + 4, CENTRE],
+      brushRadiusBoardPx: 4,
+      mode: 'add',
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(distanceToRing(result.outlineBoardPx, CENTRE, CENTRE)).toBeLessThanOrEqual(
+      HOLD_RADIUS * CENTRE_TOLERANCE_RADII,
+    );
+  });
+
+  it('refuses a surviving blob beyond the centre tolerance', () => {
+    const mask = outlineToMask({
+      outlineBoardPx: circle(CENTRE + HOLD_RADIUS * 1.5, CENTRE, HOLD_RADIUS),
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+    });
+    expect(keepAnchoredComponent(mask)).toEqual({ ok: false, reason: 'anchor-erased' });
   });
 });

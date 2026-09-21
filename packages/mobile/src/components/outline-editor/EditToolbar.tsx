@@ -33,7 +33,7 @@ const DRAW_MODE_OPTIONS: { key: DrawMode; label: string }[] = [
 
 // A hold with no outline yet has nothing to add to or erase from, so the control
 // collapses to its one usable option rather than dimming two dead segments.
-const REDRAW_ONLY_OPTIONS = DRAW_MODE_OPTIONS.slice(0, 1);
+const REDRAW_ONLY_OPTIONS = [{ key: 'redraw' as const, label: 'Redraw' }];
 
 // i18n-ignore-next-line — admin-only screen
 const BOUNDARY_EXPLAINER =
@@ -188,7 +188,7 @@ export const EditToolbar = React.memo(function EditToolbar({
       {hasLedBasePlate ? (
         <>
           <SegmentedControl
-            options={KIND_OPTIONS}
+            options={kindOptions}
             selectedKey={editKind}
             onSelect={onEditKindChange}
             // i18n-ignore-next-line — admin-only screen
