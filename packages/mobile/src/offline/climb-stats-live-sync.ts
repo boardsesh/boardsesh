@@ -325,7 +325,10 @@ export type ClimbStatsLiveSyncOptions = {
 
 export type ClimbStatsLiveSync = {
   handleEvent: (event: ClimbStatsWriteThroughInput) => void;
-  persistReconciliationChunk: (events: readonly ClimbStatsWriteThroughInput[]) => Promise<void>;
+  persistReconciliationChunk: (
+    events: readonly ClimbStatsWriteThroughInput[],
+    isAuthGenerationCurrent: () => boolean,
+  ) => Promise<void>;
   onForeground: () => void;
   dispose: () => void;
 };
@@ -363,6 +366,10 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
   let cancelRetryDrain: (() => void) | null = null;
   let cancelReconciliationRetry: (() => void) | null = null;
   let resolveReconciliationRetry: (() => void) | null = null;
+  // The shared read coordinator awaits one chunk before producing another.
+  // Serializing here keeps the one cancellable lock wait owned by exactly one
+  // chunk even if another adapter caller is introduced later.
+  let reconciliationWriteChain = Promise.resolve();
   let retryDrainNotBefore = 0;
 
   function reportFirstError(error: unknown): void {
@@ -705,7 +712,10 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
     });
   }
 
-  async function persistReconciliationChunk(events: readonly ClimbStatsWriteThroughInput[]): Promise<void> {
+  async function persistReconciliationChunkNow(
+    events: readonly ClimbStatsWriteThroughInput[],
+    isAuthGenerationCurrent: () => boolean,
+  ): Promise<void> {
     // The producer keeps this bounded to 500. Do not enqueue it into the live
     // backlog: an unavailable database may discard that bounded map, while the
     // reconciliation producer must apply every healthy response row in order.
@@ -715,7 +725,7 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
       if (db) resetMemoOnNewHandle(db);
       return !alreadySettled(event);
     });
-    while (remaining.length > 0 && !disposed && !options.shouldSkipWrites()) {
+    while (remaining.length > 0 && !disposed && !options.shouldSkipWrites() && isAuthGenerationCurrent()) {
       const db = options.getDb();
       if (!db) return;
       resetMemoOnNewHandle(db);
@@ -726,12 +736,26 @@ export function createClimbStatsLiveSync(options: ClimbStatsLiveSyncOptions): Cl
         reportFirstError(error);
         return;
       }
-      if (disposed || options.shouldSkipWrites()) return;
+      if (disposed || options.shouldSkipWrites() || !isAuthGenerationCurrent()) return;
       const keys = remaining.map(pendingKey);
       remaining = recordWriteResults(keys, remaining, results);
       if (remaining.length === 0) return;
       await waitForReconciliationRetry();
+      if (disposed || options.shouldSkipWrites() || !isAuthGenerationCurrent()) return;
     }
+  }
+
+  function persistReconciliationChunk(
+    events: readonly ClimbStatsWriteThroughInput[],
+    isAuthGenerationCurrent: () => boolean,
+  ): Promise<void> {
+    const write = () => persistReconciliationChunkNow(events, isAuthGenerationCurrent);
+    const next = reconciliationWriteChain.then(write, write);
+    reconciliationWriteChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 
   return {

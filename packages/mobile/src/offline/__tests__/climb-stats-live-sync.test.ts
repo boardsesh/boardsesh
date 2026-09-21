@@ -379,7 +379,10 @@ describe('createClimbStatsLiveSync — the queue keeps the newer revision', () =
     );
     const persist = (async () => {
       for (let offset = 0; offset < events.length; offset += CLIMB_STATS_MAX_PENDING_EVENTS) {
-        await harness.sync.persistReconciliationChunk(events.slice(offset, offset + CLIMB_STATS_MAX_PENDING_EVENTS));
+        await harness.sync.persistReconciliationChunk(
+          events.slice(offset, offset + CLIMB_STATS_MAX_PENDING_EVENTS),
+          () => true,
+        );
       }
     })();
 
@@ -398,9 +401,24 @@ describe('createClimbStatsLiveSync — the queue keeps the newer revision', () =
     harness.sync.handleEvent(makeEvent({ syncSeq: '101' }));
     await settleWrites();
 
-    await harness.sync.persistReconciliationChunk([makeEvent({ syncSeq: '100' })]);
+    await harness.sync.persistReconciliationChunk([makeEvent({ syncSeq: '100' })], () => true);
 
     expect(harness.writtenEvents().map((event) => event.syncSeq)).toEqual(['101']);
+  });
+
+  it('does not retry an old reconciliation chunk after its auth generation changes', async () => {
+    let authGenerationCurrent = true;
+    const harness = createHarness({ writeEvents: allSettled('lock_lost') as never });
+
+    const persist = harness.sync.persistReconciliationChunk([makeEvent()], () => authGenerationCurrent);
+    await settleWrites();
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
+
+    authGenerationCurrent = false;
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS);
+    await persist;
+
+    expect(harness.writeEvents).toHaveBeenCalledTimes(1);
   });
   // The reconciliation read is a server snapshot taken BEFORE the recompute the
   // stream already published, so the two arrive out of order for the same key.
