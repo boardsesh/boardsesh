@@ -47,13 +47,7 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
             Router.toNoSession();
             return;
         }
-        var active = [];
-        for (var i = 0; i < data.size(); i += 1) {
-            var session = data[i];
-            if (session != null && session["isActive"] == true) {
-                active.add(session);
-            }
-        }
+        var active = AppState.activeSessions(data);
         if (active.size() == 0) {
             Router.toNoSession();
         } else {

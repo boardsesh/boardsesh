@@ -46,7 +46,7 @@ class SessionSummaryView extends WatchUi.View {
         Theme.textC(dc, cx, y, Theme.metaFont(), color, value.toString() + "  " + label);
     }
 
-    // Elapsed time as m:ss (frozen at the value when the summary opened).
+    // Elapsed time as m:ss at the most recent redraw.
     private function _duration() as Lang.String {
         var totalSec = Services.activity.elapsedMs() / 1000;
         var minutes = totalSec / 60;

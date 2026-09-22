@@ -33,8 +33,7 @@ base.excludeAnnotations = staging
 # Named build "flavors" via `<name>.sourcePath` are NOT supported by monkeyc —
 # the compiler reads `<name>.` as a device/family qualifier (e.g. `fenix7.`), so
 # a `staging.*` block errors with "not a valid device / family qualifier".
-# To build against the staging backend, flip the annotation this base build
-# strips: change `base.excludeAnnotations` above from `staging` to `production`
-# (so the (:staging) baseUrl() in BuildConfig.mc compiles instead of the
-# (:production) one), or keep a separate monkey-staging.jungle that overrides
-# only that line.
+# To build against staging, add the committed monkey-staging.jungle overlay:
+# monkeyc -f "garmin/monkey.jungle;garmin/monkey-staging.jungle" ...
+# It overrides only base.excludeAnnotations so the (:staging) URL compiles.
+# Set that placeholder URL to your test backend before using the build.

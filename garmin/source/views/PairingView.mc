@@ -14,7 +14,7 @@ using Toybox.Lang;
 // forwards input events to it.
 class PairingView extends WatchUi.View {
 
-    // Exactly the 30-char alphabet the backend mints pairing codes from
+    // Exactly the backend alphabet the backend mints pairing codes from
     // (WATCH_PAIR_CODE_ALPHABET in native-auth.ts): uppercase A-Z minus the
     // ambiguous I/L/O/U, plus digits 2-9 (no 0/1). Matching it means the char
     // wheel only cycles through glyphs a real code can actually contain — faster,

@@ -1,5 +1,6 @@
 using Toybox.Communications;
 using Toybox.Lang;
+using Toybox.System;
 
 // HTTP client for the Boardsesh backend.
 //
@@ -145,7 +146,10 @@ class BsClient {
 
     function _onRefreshResponse(code as Lang.Number, data) as Void {
         _refreshing = false;
-        if (code >= 200 && code < 300 && data != null && data["jwt"] != null) {
+        if (code >= 200 && code < 300 && data instanceof Lang.Dictionary &&
+                data["jwt"] instanceof Lang.String &&
+                data["refreshToken"] instanceof Lang.String &&
+                data["expiresAt"] instanceof Lang.String) {
             // Persist the rotated triple BEFORE retrying anything (single-use).
             TokenStore.store(data["jwt"], data["refreshToken"], data["expiresAt"]);
             var queued = _retryQueue;
@@ -153,17 +157,16 @@ class BsClient {
             for (var i = 0; i < queued.size(); i += 1) {
                 queued[i].fire();   // retry with the new token
             }
-        } else if (code >= 400 && code < 500) {
+        } else if (code >= 400 && code < 500 && code != 429) {
             // Definitive auth failure (the refresh endpoint rejected the token):
             // clear tokens and route to pairing.
             _onRefreshFailed();
         } else {
             // TRANSIENT: a transport error (Connect IQ negative code — phone out
             // of range), a 5xx, or the refresh endpoint's own 429/503. The
-            // single-use refresh token was NOT consumed server-side, so DON'T
-            // clear tokens or route to pairing. Fail the queued requests so their
-            // callers see the error; the poll loop re-arms and retries refresh on
-            // the next 401.
+            // error alone does not prove that authentication was rejected.
+            // Retain credentials and fail queued requests for retry; a later
+            // definitive rejection still routes to pairing.
             _failQueuedTransient(code);
         }
     }
@@ -246,10 +249,16 @@ class BsRequest {
         // .hasKey() would throw — only a Dictionary has it.
         if (data != null && data instanceof Toybox.Lang.Dictionary && data.hasKey("data")) {
             var gqlData = data["data"];
-            if (gqlData != null) {
+            if (gqlData instanceof Lang.Dictionary && gqlData.hasKey(_unwrapField)) {
                 return gqlData[_unwrapField];
             }
+            if (data.hasKey("errors")) {
+                System.println("Boardsesh GraphQL request returned errors");
+                return null;
+            }
         }
+        // Do not log bodies: they may contain personal data or credentials.
+        System.println("Boardsesh GraphQL response has an invalid shape");
         return null;
     }
 }

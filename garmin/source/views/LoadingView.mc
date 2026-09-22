@@ -43,7 +43,7 @@ class LoadingView extends WatchUi.View {
             return;
         }
 
-        var active = _activeSessions(data);
+        var active = AppState.activeSessions(data);
         if (active.size() == 0) {
             Router.toNoSession();
         } else if (active.size() == 1) {
@@ -58,17 +58,6 @@ class LoadingView extends WatchUi.View {
         AppState.attachSession(session["id"], session["name"]);
     }
 
-    // Filter mySessions to isActive == true.
-    private function _activeSessions(sessions as Lang.Array) as Lang.Array {
-        var out = [];
-        for (var i = 0; i < sessions.size(); i += 1) {
-            var session = sessions[i];
-            if (session != null && session["isActive"] == true) {
-                out.add(session);
-            }
-        }
-        return out;
-    }
 }
 
 class LoadingDelegate extends WatchUi.BehaviorDelegate {

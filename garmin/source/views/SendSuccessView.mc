@@ -27,8 +27,18 @@ class SendSuccessView extends WatchUi.View {
     }
 
     function onShow() as Void {
+        _done = false;
         _timer = new Timer.Timer();
         _timer.start(method(:dismiss), 1200, false);
+    }
+
+    function onHide() as Void {
+        // A hidden celebration must never pop whichever screen replaced it.
+        _done = true;
+        if (_timer != null) {
+            _timer.stop();
+            _timer = null;
+        }
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {

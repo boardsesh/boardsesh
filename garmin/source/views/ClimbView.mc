@@ -20,10 +20,15 @@ class ClimbView extends WatchUi.View {
     }
 
     function onShow() as Void {
+        var sessionId = AppState.sessionId;
+        if (!(sessionId instanceof Lang.String)) {
+            Router.toLoading();
+            return;
+        }
         // Idempotent: the singleton's _started guard prevents a second recording
         // when ClimbView is re-entered (switch session / 410 -> retry).
         Services.activity.startIfNeeded();
-        _poller.start(AppState.sessionId);
+        _poller.start(sessionId);
     }
 
     function onHide() as Void {
@@ -52,7 +57,7 @@ class ClimbView extends WatchUi.View {
         var climb = state["climb"];
         if (climb == null) {
             Theme.centerMsg(dc, WatchUi.loadResource(Rez.Strings.EmptyQueue));
-            Theme.counter(dc, AppState.currentIndex() + 1, AppState.queueLength());
+            Theme.counter(dc, AppState.queuePosition(), AppState.queueLength());
             _offline(dc);
             return;
         }
@@ -93,9 +98,9 @@ class ClimbView extends WatchUi.View {
         _drawStatus(dc, uuid, h * 77 / 100);
 
         // ---- counter (+ optional progress arc) ----
-        Theme.counter(dc, AppState.currentIndex() + 1, AppState.queueLength());
+        Theme.counter(dc, AppState.queuePosition(), AppState.queueLength());
         if (Theme.showArc()) {
-            Theme.progressArc(dc, AppState.currentIndex() + 1, AppState.queueLength());
+            Theme.progressArc(dc, AppState.queuePosition(), AppState.queueLength());
         }
         _offline(dc);
     }
@@ -214,15 +219,14 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
             return;
         }
 
-        // Per-verb debounce. Treat a negative delta (a System.getTimer() wrap,
-        // ~24.8 days) as "elapsed" so a wrap can't soft-lock the verb.
+        // Per-verb debounce retains its 600ms window across uptime rollover.
         var now = System.getTimer();
         if (kind.equals("attempt")) {
-            var sinceAttempt = now - _lastAttemptMs;
+            var sinceAttempt = TimeUtil.elapsedTimerMs(_lastAttemptMs, now);
             if (sinceAttempt >= 0 && sinceAttempt < 600) { return; }
             _lastAttemptMs = now;
         } else {
-            var sinceSend = now - _lastSendMs;
+            var sinceSend = TimeUtil.elapsedTimerMs(_lastSendMs, now);
             if (sinceSend >= 0 && sinceSend < 600) { return; }
             _lastSendMs = now;
         }
@@ -277,6 +281,10 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
         }
 
         var qlen = AppState.queueLength();
+        if (qlen <= 0) {
+            Feedback.boundary();
+            return;
+        }
         var idx = AppState.currentIndex();
         var newIndex = action.equals("next") ? (idx + 1) : (idx - 1);
 

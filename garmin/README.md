@@ -26,14 +26,15 @@ foreground. Real-time control is therefore foreground-only.
 
 ## 1. Install the Connect IQ SDK
 
-You do **not** need a Garmin account or a physical device to compile, run in the
-simulator, or run the unit tests. An account is only required to submit to the
-Connect IQ Store and to side-load onto real hardware.
+The SDK and device profiles are separate downloads. Install the profiles for
+all products in the manifest through Garmin's SDK Manager before compiling;
+follow its sign-in requirements. A physical watch is not required for simulator
+unit tests.
 
 1. Install the **Connect IQ SDK Manager** from
    <https://developer.garmin.com/connect-iq/sdk/>.
-2. Launch the SDK Manager, sign in is optional; download the latest **SDK**
-   (4.x) and at least one **device** (e.g. `fenix7`). Accept the SDK license.
+2. Launch the SDK Manager and download the **SDK**
+   (9.2.0 at the latest repair) and at least one **device** (e.g. `fenix7`). Accept the SDK license.
 3. Make sure the SDK `bin/` is on your `PATH` so `monkeyc`, `monkeydo`, and
    `connectiq` (the simulator launcher) are available. The SDK Manager prints
    the install path; typically:
@@ -80,17 +81,18 @@ monkeyc -f garmin/monkey.jungle \
 
 `source/config/BuildConfig.mc` exposes `baseUrl()` twice — a `(:production)`
 copy (`https://ws.boardsesh.com`) and a `(:staging)` copy. The base build strips
-`(:staging)`; the `staging` flavor strips `(:production)`:
+`(:staging)`. Add the staging jungle overlay to strip `(:production)` instead.
+Set the placeholder staging URL to your test backend before use:
 
 ```bash
-monkeyc -f garmin/monkey.jungle --flavor staging \
+monkeyc -f "garmin/monkey.jungle;garmin/monkey-staging.jungle" \
   -o garmin/bin/boardsesh-staging.prg -y garmin/developer_key -d fenix7
 ```
 
 To point at a **local** backend during development, edit the `(:staging)`
 `baseUrl()` to your machine's LAN URL (the watch reaches it via the phone, so
 `localhost` won't work — use the host's LAN IP, e.g. `https://192.168.1.20:8080`,
-and note the phone must trust the TLS cert). Rebuild with `--flavor staging`.
+and note the phone must trust the TLS cert). Rebuild with both jungle files in the `-f` list shown above.
 
 ## 4. Run in the simulator
 
@@ -138,8 +140,18 @@ The watch authenticates with a short-lived **mobile JWT**. To obtain one:
 
 Tokens are refreshed automatically on a `401` via `POST /auth/native/refresh`.
 Refresh tokens are **single-use** (rotated every refresh); the client persists
-the new pair before retrying and serializes concurrent refreshes. If a refresh
-fails, tokens are cleared and the watch returns to the pairing screen.
+the new pair before retrying and serializes concurrent refreshes. A definitive authentication rejection clears tokens and returns to pairing.
+Transport errors, rate limits and server failures retain credentials for retry.
+
+### Shared-watch security
+
+A paired watch holds native-session credentials in Garmin's application storage,
+which is not a secure enclave. They are not restricted to a watch-only API scope.
+Treat the watch as signed into the account and do not share it while paired.
+Re-pairing successfully clears offline ticks from the previous account; those
+pending ticks are not transferred to the new account. A definitive refresh
+rejection also clears credentials and the pending queue. Device loss and
+server-side session revocation follow the account's native-session controls.
 
 ## 7. How the board actually gets repainted (delivery model)
 
@@ -188,7 +200,8 @@ art — use a real logo export.
 ```
 garmin/
   manifest.xml            App metadata, product allow-list, Communications permission
-  monkey.jungle           Build config: source/resource paths + staging flavor
+  monkey.jungle           Default production build config
+  monkey-staging.jungle   Staging annotation override
   README.md               This runbook
   source/
     BoardseshApp.mc       AppBase entry point + boot routing
@@ -212,30 +225,21 @@ garmin/
   tests/                  (:test) functions for the pure logic
 ```
 
-## Open `// VERIFY:` items
+## Validation status
 
-Since the SDK isn't installed here, this code has never been compiled. A
-compile-correctness pass fixed the real risks (unconditional `SUB_SPORT_BOULDERING`,
-a suspect device id, showing the `Menu2` picker via `pushView`, typing the shared
-client). These remain worth a glance once you have the SDK — search the tree for
-`// VERIFY:`:
+Earlier PR discussion records successful compilation and simulator tests; the
+old statement that this app had never compiled was stale. The September 22
+repair compiled the app and test sources with the official Connect IQ 9.2.0
+compiler using its generic target. Fresh device-specific builds and simulator
+test execution still require installed device profiles. Generic compilation is
+separate from executing the tests or checking a watch's memory/API limits.
 
-- **`Activity.SPORT_ROCK_CLIMBING`** (`ActivityController.mc`) — long-standing, but
-  confirm it resolves in your SDK. `:subSport` was dropped (the bouldering constant
-  isn't on every SDK); re-add `:subSport => Activity.SUB_SPORT_BOULDERING` if yours
-  exposes it.
-- **Product ids** (`manifest.xml`) — the shipped list is a confident set that
-  exports cleanly. Add the fenix 8 / epix 2 Pro / vivoactive 5 families once you've
-  confirmed their exact tokens in the SDK's `devices.xml`.
-- **`--flavor staging`** selection support (`monkey.jungle`) — if your `monkeyc`
-  doesn't support `--flavor`, use a dedicated jungle with `excludeAnnotations=production`.
-- **Pairing charset** (`PairingView.mc`) — the backend mints codes from the
-  30-char unambiguous set `ABCDEFGHJKMNPQRSTVWXYZ23456789` and normalizes input to
-  uppercase (stripping separators), so the picker just needs to send the 8 chars
-  the user sees.
+The backend pairing alphabet matches `PairingView.CHARSET`. SDK 9.2.0 documents
+`Activity.SPORT_ROCK_CLIMBING`, `Gregorian.utcInfo` with numeric `FORMAT_SHORT`
+fields, and the signed `System.getTimer` rollover. The staging build uses an
+explicit jungle overlay rather than unsupported `--flavor` syntax.
 
-Confirmed correct during review (no change needed): `WatchUi.showToast` (`has`-gated
-in `Toast.mc`), `Communications.REQUEST_CONTENT_TYPE_JSON` / `HTTP_RESPONSE_CONTENT_TYPE_JSON`
-(`BsClient.mc`), and the `Gregorian.utcInfo(..., Time.FORMAT_SHORT)` ISO-8601 build
-(`TimeUtil.mc`). Tick `angle` uses the session/board angle from `/api/session/state`
-(equal to the climb's angle), matching the backend contract.
+Before store submission, compile every product in the manifest, run the Monkey C
+unit suite, replace the launcher placeholder, and test pairing, queue navigation,
+logging, reconnect, FIT save/discard and shared-watch re-pairing on hardware.
+A phone OTA preview does not validate or install this Garmin application.

@@ -2,13 +2,9 @@ using Toybox.Lang;
 
 // Build-time configuration.
 //
-// The backend base URL is selected by build flavor (see monkey.jungle):
-//   * the base/default flavor keeps the (:production) baseUrl() and strips
-//     the (:staging) one (base.excludeAnnotations = staging).
-//   * the `staging` flavor does the opposite (staging.excludeAnnotations =
-//     production), swapping in the staging host.
-// Annotating two same-named functions and excluding one per flavor guarantees
-// exactly one baseUrl() compiles, so callers just use BuildConfig.baseUrl().
+// The default jungle excludes (:staging). Adding monkey-staging.jungle to
+// the -f jungle list instead excludes (:production). Exactly one baseUrl()
+// compiles. Named --flavor options are not supported by monkeyc.
 module BuildConfig {
 
     (:production)
@@ -19,7 +15,7 @@ module BuildConfig {
     (:staging)
     function baseUrl() as Lang.String {
         // Placeholder — set this to YOUR staging / LAN backend before a
-        // `--flavor staging` build. Deliberately a non-real host so a staging
+        // staging jungle build. Deliberately a non-real host so a staging
         // build can't accidentally send traffic to production or an assumed host.
         return "https://your-staging-host.example";
     }

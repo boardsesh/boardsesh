@@ -29,6 +29,21 @@ module AppState {
     function attachSession(id as Lang.Object or Null, name as Lang.Object or Null) as Void {
         sessionId = id;
         sessionName = name;
+        state = null;
+        clearOptimistic();
+    }
+
+    // Shared by initial loading and the explicit session switcher.
+    function activeSessions(sessions) as Lang.Array {
+        var active = [];
+        if (!(sessions instanceof Lang.Array)) { return active; }
+        for (var index = 0; index < sessions.size(); index += 1) {
+            var session = sessions[index];
+            if (session instanceof Lang.Dictionary && session["isActive"] == true) {
+                active.add(session);
+            }
+        }
+        return active;
     }
 
     function currentIndex() as Lang.Number {
@@ -41,6 +56,15 @@ module AppState {
         if (state == null) { return 0; }
         var len = state["queueLength"];
         return (len == null) ? 0 : len;
+    }
+
+    // Display only: stale optimistic indexes cannot exceed a shrinking queue.
+    function queuePosition() as Lang.Number {
+        var total = queueLength();
+        if (total <= 0) { return 0; }
+        var position = currentIndex() + 1;
+        if (position < 1) { return 1; }
+        return position > total ? total : position;
     }
 
     function climb() as Lang.Dictionary or Null {
@@ -61,6 +85,7 @@ module AppState {
     // Cancel any outstanding optimistic window (server index wins on next poll).
     function clearOptimistic() as Void {
         optimisticUntilMs = 0;
+        optimisticIndex = null;
     }
 
     // PURE reconciliation decision, extracted for unit testing.
@@ -77,10 +102,12 @@ module AppState {
         pollIndex as Lang.Number,
         nowMs as Lang.Number
     ) as Lang.Boolean {
-        if (nowMs >= optimisticUntil) {
+        if (optimisticIdx == null) {
             return true;
         }
-        if (optimisticIdx == null) {
+        // Number subtraction wraps with System.getTimer(). Comparing the
+        // bounded deadline delta works even when the signed timer rolls over.
+        if (nowMs - optimisticUntil >= 0) {
             return true;
         }
         if (pollIndex == optimisticIdx) {

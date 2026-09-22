@@ -50,11 +50,11 @@ class ActivityController {
         return _started;
     }
 
-    function elapsedMs() as Lang.Number {
+    function elapsedMs() as Lang.Long {
         if (!_started) {
-            return 0;
+            return 0l;
         }
-        return System.getTimer() - _startMs;
+        return TimeUtil.elapsedTimerMs(_startMs, System.getTimer());
     }
 
     function startIfNeeded() as Void {

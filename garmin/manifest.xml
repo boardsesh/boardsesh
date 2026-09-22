@@ -15,16 +15,8 @@
         name="@Strings.AppName"
         type="watch-app">
 
-        <!--
-          Product allow-list — a confident, modern CIQ 3.2+ device set that
-          exports (`monkeyc -e`) cleanly out of the box. A single wrong id fails
-          the store export, so newer families whose exact tokens vary by SDK are
-          deliberately NOT listed yet. To broaden coverage, confirm the exact ids
-          in the SDK's `bin/devices.xml` (SDK Manager) and add them here — likely
-          candidates: the fenix 8 family (fenix843mm / fenix847mm /
-          fenix8solar47mm / fenix8solar51mm), the epix 2 Pro variants
-          (epix2pro42mm / 47mm / 51mm), and vivoactive5.
-        -->
+        <!-- Product ids must have matching SDK Manager device profiles.
+             Compile every listed product before exporting a store package. -->
         <iq:products>
             <iq:product id="fenix7"/>
             <iq:product id="fenix7s"/>

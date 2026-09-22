@@ -4,10 +4,10 @@ using Toybox.Lang;
 // Persisted auth tokens for the mobile JWT flow.
 //
 // NOTE: Application.Storage is NOT a secure enclave — values sit in the app's
-// object store in plaintext. That is an accepted trade-off here: the token is a
-// short-lived (~7 day) climb-logging JWT scoped to session mutation, not a
-// password or a long-lived credential. Refresh tokens are single-use and
-// rotated on every refresh (see BsClient), which limits replay value.
+// object store in plaintext. These are native-session credentials, not a
+// watch-only permission scope. Treat a paired watch as signed into the account.
+// Refresh tokens are single-use and rotated on refresh; see the shared-watch
+// security notes in README.md.
 module TokenStore {
     const KEY_JWT     = "bs.jwt";
     const KEY_REFRESH = "bs.refresh";
