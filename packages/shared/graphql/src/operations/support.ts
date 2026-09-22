@@ -90,14 +90,17 @@ export type GetPublicSupportersResponse = { publicSupporters: PublicSupporter[] 
 export type GetPublicSupportersVariables = { limit: number; offset: number };
 
 export const PUBLIC_SUPPORTERS_PAGE_SIZE = 500;
+export const PUBLIC_SUPPORTERS_MAX_PAGES = 20;
 
 export async function fetchAllPublicSupporters(
   requestPage: (variables: GetPublicSupportersVariables) => Promise<GetPublicSupportersResponse>,
 ): Promise<PublicSupporter[]> {
   const supporters: PublicSupporter[] = [];
-  for (let offset = 0; ; offset += PUBLIC_SUPPORTERS_PAGE_SIZE) {
+  for (let pageIndex = 0; pageIndex < PUBLIC_SUPPORTERS_MAX_PAGES; pageIndex += 1) {
+    const offset = pageIndex * PUBLIC_SUPPORTERS_PAGE_SIZE;
     const page = await requestPage({ limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset });
     supporters.push(...page.publicSupporters);
     if (page.publicSupporters.length < PUBLIC_SUPPORTERS_PAGE_SIZE) return supporters;
   }
+  return supporters;
 }

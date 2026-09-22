@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parse } from 'graphql';
-import { fetchAllPublicSupporters, PUBLIC_SUPPORTERS_PAGE_SIZE, type PublicSupporter } from '../operations/support';
+import {
+  fetchAllPublicSupporters,
+  PUBLIC_SUPPORTERS_MAX_PAGES,
+  PUBLIC_SUPPORTERS_PAGE_SIZE,
+  type PublicSupporter,
+} from '../operations/support';
 
 // Smoke tests over the hand-written operation strings. The dedicated
 // schema-validation suite at packages/backend/src/__tests__/operations-schema-validation.test.ts
@@ -71,6 +76,20 @@ describe('supporter pagination', () => {
       limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
       offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
     });
+  });
+
+  it('stops after the public supporter page ceiling', async () => {
+    const fullPage = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const requestPage = vi.fn().mockResolvedValue({ publicSupporters: fullPage });
+
+    const supporters = await fetchAllPublicSupporters(requestPage);
+
+    expect(requestPage).toHaveBeenCalledTimes(PUBLIC_SUPPORTERS_MAX_PAGES);
+    expect(supporters).toHaveLength(PUBLIC_SUPPORTERS_MAX_PAGES * PUBLIC_SUPPORTERS_PAGE_SIZE);
   });
 });
 
