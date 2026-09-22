@@ -1,5 +1,5 @@
 {
-  "id": "b6d7c312-6bf8-4d40-b06a-0d119d3ffc34",
+  "id": "845dfaa9-70b6-49c5-b4a9-fc7209221bda",
   "prevId": "f5948742-ccce-43fb-bacb-c3479ab8d012",
   "version": "7",
   "dialect": "postgresql",
@@ -14588,12 +14588,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14680,6 +14674,12 @@
         "subscription_status": {
           "name": "subscription_status",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_event_created_at": {
+          "name": "stripe_event_created_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },

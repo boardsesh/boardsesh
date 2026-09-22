@@ -45,7 +45,6 @@ export const stripeSupportClaims = pgTable(
     cadence: text('cadence').notNull(),
     showPublicly: boolean('show_publicly').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow().notNull(),
-    completedAt: timestamp('completed_at'),
   },
   (table) => ({
     checkoutUnique: uniqueIndex('stripe_support_claims_checkout_unique').on(table.checkoutSessionId),

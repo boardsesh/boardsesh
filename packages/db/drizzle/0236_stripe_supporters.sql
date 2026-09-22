@@ -4,8 +4,7 @@ CREATE TABLE "stripe_support_claims" (
 	"checkout_session_id" text,
 	"cadence" text NOT NULL,
 	"show_publicly" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"completed_at" timestamp
+	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "stripe_supporters" (
@@ -14,6 +13,7 @@ CREATE TABLE "stripe_supporters" (
 	"stripe_customer_id" text,
 	"stripe_subscription_id" text,
 	"subscription_status" text,
+	"stripe_event_created_at" timestamp,
 	"show_publicly" boolean DEFAULT false NOT NULL,
 	"supported_at" timestamp,
 	"cancel_at_period_end" boolean DEFAULT false NOT NULL,

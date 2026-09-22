@@ -1,1 +1,0 @@
-ALTER TABLE "stripe_supporters" ADD COLUMN "stripe_event_created_at" timestamp;
