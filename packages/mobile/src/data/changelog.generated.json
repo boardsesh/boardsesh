@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-22T09:08:29.327Z",
+  "generatedAt": "2026-09-22T10:13:24.673Z",
   "entries": [
+    {
+      "prNumber": 5684,
+      "category": "fixed",
+      "title": "Choose whether PR previews open when Boardsesh starts.",
+      "mergedAt": "2026-09-22T10:10:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5684"
+    },
     {
       "prNumber": 5235,
       "category": "new",
@@ -5656,9 +5663,11 @@
       "date": "2026-09-22T18:21:48+10:00",
       "sha": "560358e9f7e88965fc3ab9b8f0f3feb69b18c4d6",
       "platforms": [
+        "android",
         "ios"
       ],
       "fingerprints": {
+        "android": "6ff7f9e5265402b6cc4c3532330f55fe99429051",
         "ios": "ad75a3da716fbe67bb8d58e96247ae443b94bd98"
       }
     },

@@ -8,7 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### App update
 
-A new version shipped to the App Store.
+A new version shipped to the App Store and Play Store.
 
 ### New
 
@@ -19,6 +19,7 @@ A new version shipped to the App Store.
 
 ### Fixed
 
+- Choose whether PR previews open when Boardsesh starts. ([#5684](https://github.com/boardsesh/boardsesh/pull/5684))
 - Link your board account with clearer instructions and correctly spelled board names. ([#5231](https://github.com/boardsesh/boardsesh/pull/5231))
 
 ## 2026-09-21
