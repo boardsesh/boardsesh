@@ -18,11 +18,15 @@ on:
     branches: [main]
     paths:
       - 'garmin/**'
+      - '!garmin/README.md'
       - '.github/workflows/garmin-ci.yml'
       - '.github/actions/connectiq-sdk/action.yml'
   pull_request:
     paths:
       - 'garmin/**'
+      # Prose changes compile to the same bytes; skip the SDK download for them,
+      # matching garmin-release.yml.
+      - '!garmin/README.md'
       - '.github/workflows/garmin-ci.yml'
       # The gate's SDK setup lives in the shared composite action, so a change
       # there (a token-handling fix, an SDK bump) has to rerun this gate too.
