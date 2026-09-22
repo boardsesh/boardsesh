@@ -4,12 +4,18 @@ import { describe, expect, it } from 'vitest';
 import {
   RULES as REAL_RULES,
   UNGUARDED_PATCHES,
+  checkIosPatchesBuildFromSource,
   checkPatchInventory,
   checkPatchesApplied,
+  createNodeEnv,
   extractObjCMethodBody,
+  packageFromExternalDependency,
+  readSpmConfigFrom,
+  sourceBuildChain,
   versionFromKey,
   type PatchCheckEnv,
   type PatchRule,
+  type SpmConfig,
 } from '../mobile-patches-check';
 
 const PKG = 'react-native-screens';
@@ -1072,5 +1078,205 @@ if url.scheme == "file" {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('hasAbsoluteFilePath');
+  });
+
+  // Guards against the #5296 fix silently dropping on the next
+  // expo-modules-core bump, the same way the expo-image guard above does.
+  it('keeps the expo-modules-core Exception patch keyed to the pinned mobile version', () => {
+    const exceptionRule = REAL_RULES.find(
+      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
+    );
+    expect(exceptionRule).toBeDefined();
+
+    const mobilePackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> };
+    const pinnedVersion = mobilePackageJson.dependencies?.['expo-modules-core'];
+
+    expect(pinnedVersion, 'expo-modules-core must stay a direct packages/mobile dependency').toBeDefined();
+    expect(versionFromKey(exceptionRule?.patchedKey ?? '')).toBe(pinnedVersion);
+    expect(exceptionRule?.sentinels).toEqual(
+      expect.arrayContaining([
+        'boardsesh/boardsesh#5296',
+        'private let explicitReason: String?',
+        'explicitReason ?? "undefined reason"',
+      ]),
+    );
+  });
+
+  // The literal pre-#5296 upstream source at expo-modules-core@57.0.14, verified
+  // against both the installed node_modules copy and github.com/expo/expo's
+  // default branch, where `init(name:description:code:)` still never assigns
+  // `reason` (expo/expo#49677 was bot-closed for lacking a repro, not fixed).
+  // Every `promise.reject(code, description)` call — ours and expo-updates' own
+  // — reached JS as "<CODE>: undefined reason (...)". This is the "fails on
+  // today's code" proof: this exact text is what ships without the patch.
+  it('rejects the real pre-#5296 Exception.swift — every rejection loses its description', () => {
+    const exceptionRule = REAL_RULES.find(
+      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
+    );
+    if (!exceptionRule) throw new Error('no expo-modules-core Exception rule registered');
+
+    const unpatchedUpstreamSource = `
+// Copyright 2022-present 650 Industries. All rights reserved.
+
+open class Exception: CodedError, ChainableException, CustomStringConvertible, CustomDebugStringConvertible, JavaScriptThrowable, @unchecked Sendable {
+  open lazy var name: String = String(describing: Self.self)
+
+  /**
+   String describing the reason of the exception.
+   */
+  open var reason: String {
+    "undefined reason"
+  }
+
+  open var origin: ExceptionOrigin
+
+  let customCode: String?
+
+  public init(file: String = #fileID, line: UInt = #line, function: String = #function) {
+    self.origin = ExceptionOrigin(file: file, line: line, function: function)
+    self.customCode = nil
+  }
+
+  public init(name: String, description: String, code: String? = nil, file: String = #fileID, line: UInt = #line, function: String = #function) {
+    self.origin = ExceptionOrigin(file: file, line: line, function: function)
+    self.customCode = code
+    self.name = name
+    self.description = description
+  }
+}
+`;
+
+    const env = makeEnv({
+      patchedDependencies: { [exceptionRule.patchedKey]: 'patches/expo-modules-core@57.0.14.patch' },
+      versions: { [exceptionRule.package]: versionFromKey(exceptionRule.patchedKey) },
+      files: { [`${exceptionRule.package}::${exceptionRule.file}`]: unpatchedUpstreamSource },
+    });
+
+    const result = checkPatchesApplied([exceptionRule], env);
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('explicitReason');
+  });
+});
+
+// #5296: the Exception.swift patch applied to node_modules and CI went green, but
+// ExpoModulesCore ships a prebuilt xcframework, so the binary never compiled it.
+describe('checkIosPatchesBuildFromSource', () => {
+  const iosRule = (pkg: string, file = 'ios/Thing.swift'): PatchRule => ({
+    package: pkg,
+    file,
+    sentinels: ['x'],
+    patchedKey: `${pkg}@1.0.0`,
+  });
+  const spm = (configs: Record<string, SpmConfig>) => (pkg: string) => configs[pkg] ?? null;
+
+  it('passes an ios/ patch whose package is listed in buildFromSource', () => {
+    expect(
+      checkIosPatchesBuildFromSource({
+        rules: [iosRule('expo-modules-core')],
+        buildFromSource: ['expo-modules-core'],
+        readSpmConfig: spm({}),
+      }),
+    ).toEqual([]);
+  });
+
+  it('fails an ios/ patch on a package nothing builds from source (the #5296 false green)', () => {
+    const errors = checkIosPatchesBuildFromSource({
+      rules: [iosRule('expo-modules-core', 'ios/Core/Exceptions/Exception.swift')],
+      buildFromSource: ['react-native-screens'],
+      readSpmConfig: spm({}),
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('expo-modules-core: patch edits ios/Core/Exceptions/Exception.swift');
+    expect(errors[0]).toContain('buildFromSource');
+  });
+
+  it('passes a dependent pod that the precompile resolver cascades to source', () => {
+    const readSpmConfig = spm({
+      'expo-image': {
+        products: [{ name: 'ExpoImage', externalDependencies: ['React', 'expo-modules-core/ExpoModulesCore'] }],
+      },
+    });
+    expect(
+      checkIosPatchesBuildFromSource({
+        rules: [iosRule('expo-image', 'ios/ImageView.swift')],
+        buildFromSource: ['expo-modules-core'],
+        readSpmConfig,
+      }),
+    ).toEqual([]);
+    expect(sourceBuildChain('expo-image', { buildFromSource: ['expo-modules-core'], readSpmConfig })).toBe(
+      'expo-image → expo-modules-core (buildFromSource)',
+    );
+  });
+
+  it('fails the dependent pod once its dependency leaves buildFromSource', () => {
+    const errors = checkIosPatchesBuildFromSource({
+      rules: [iosRule('expo-image', 'ios/ImageView.swift')],
+      buildFromSource: [],
+      readSpmConfig: spm({
+        'expo-image': { products: [{ externalDependencies: ['expo-modules-core/ExpoModulesCore'] }] },
+      }),
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('expo-image: patch edits ios/ImageView.swift');
+  });
+
+  it('ignores patches that touch no ios/ file', () => {
+    expect(
+      checkIosPatchesBuildFromSource({
+        rules: [iosRule('react-native-ble-plx', 'android/src/main/java/Foo.java'), iosRule('@expo/ui', 'src/a.tsx')],
+        buildFromSource: [],
+        readSpmConfig: spm({}),
+      }),
+    ).toEqual([]);
+  });
+
+  it('treats buildFromSource entries as anchored patterns, like precompiled_modules.rb', () => {
+    const readSpmConfig = spm({});
+    expect(sourceBuildChain('expo-image', { buildFromSource: ['expo-.*'], readSpmConfig })).toBe(
+      'expo-image (buildFromSource)',
+    );
+    expect(sourceBuildChain('expo-image-manipulator', { buildFromSource: ['expo-image'], readSpmConfig })).toBeNull();
+  });
+
+  it('terminates on a dependency cycle', () => {
+    const readSpmConfig = spm({
+      a: { products: [{ externalDependencies: ['b/B'] }] },
+      b: { products: [{ externalDependencies: ['a/A'] }] },
+    });
+    expect(sourceBuildChain('a', { buildFromSource: [], readSpmConfig })).toBeNull();
+  });
+
+  it('maps externalDependencies entries to packages the way prebuilt_dependency_pods does', () => {
+    expect(packageFromExternalDependency('expo-modules-core/ExpoModulesCore')).toBe('expo-modules-core');
+    expect(packageFromExternalDependency('@scope/pkg/Product')).toBe('@scope/pkg');
+    expect(packageFromExternalDependency('RNWorklets')).toBeNull();
+    expect(packageFromExternalDependency('@scope/pkg')).toBeNull();
+  });
+});
+
+// Reads the REAL packages/mobile/package.json and the installed spm.config.json
+// files: remove "expo-modules-core" from buildFromSource and this goes red for
+// both expo-modules-core and the expo-image patch that rides its cascade.
+describe('the shipped buildFromSource list', () => {
+  const mobilePackageJsonPath = resolve(import.meta.dirname, '../../packages/mobile/package.json');
+  const mobileManifest = JSON.parse(readFileSync(mobilePackageJsonPath, 'utf8')) as {
+    expo?: { autolinking?: { buildFromSource?: string[] } };
+  };
+  const buildFromSource = mobileManifest.expo?.autolinking?.buildFromSource ?? [];
+  const env = createNodeEnv(mobilePackageJsonPath, {});
+  const readSpmConfig = (pkg: string) => readSpmConfigFrom(env, pkg);
+
+  it('builds every ios/-patched pod from source, so each patch reaches the binary', () => {
+    expect(checkIosPatchesBuildFromSource({ rules: REAL_RULES, buildFromSource, readSpmConfig })).toEqual([]);
+  });
+
+  it('builds expo-image from source only through the expo-modules-core cascade', () => {
+    expect(sourceBuildChain('expo-image', { buildFromSource, readSpmConfig })).toBe(
+      'expo-image → expo-modules-core (buildFromSource)',
+    );
   });
 });

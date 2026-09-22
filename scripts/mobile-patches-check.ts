@@ -43,10 +43,29 @@
  * the only symptom is an OTA published mid-build silently losing to the binary
  * forever — months later, on devices, with a green publish in the log.
  *
+ * For expo-modules-core, the patch makes `Exception.reason` fall back to the
+ * description passed to `init(name:description:code:)` instead of a hardcoded
+ * "undefined reason" (#5296). Every native `promise.reject(code, description)`
+ * across the app goes through that initializer, so a dropped patch silently
+ * turns every native rejection message back into a fixed string with no
+ * diagnostic value — invisible to typecheck and the bundle, visible only in
+ * Sentry.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
  * patch stops applying — no Xcode required.
+ *
+ * A patched node_modules is not a patched binary, though. Expo's precompiled
+ * modules (on by default) link a prebuilt xcframework in place of a pod's
+ * source, so an `ios/` patch on a precompiled pod applies cleanly here and
+ * never reaches the app — exactly how the #5296 Exception.swift patch first
+ * went green while ExpoModulesCore shipped as a prebuild. So every rule that
+ * edits an `ios/` file must also name a package that builds from source: listed
+ * in `expo.autolinking.buildFromSource`, or depending (through its installed
+ * spm.config.json `externalDependencies`) on one that is, which is the cascade
+ * precompiled_modules.rb applies as `dependency_unavailable`. See
+ * {@link checkIosPatchesBuildFromSource}.
  *
  * Usage: vp run check:mobile-patches
  */
@@ -291,6 +310,32 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'expo-updates@57.0.19',
   },
+  // `Exception.reason` is a hardcoded "undefined reason" that the
+  // `init(name:description:code:)` overload never assigns, so every
+  // `promise.reject(code, description)` across the app — BoardBleModule,
+  // HealthWorkoutsModule, LiveActivityModule, and expo-updates' own rejections —
+  // reached JS as "<CODE>: undefined reason (at ExpoModulesCore/Promise.swift:65)",
+  // dropping the description entirely (#5296). Upstream is unaware: their own
+  // internal workaround (ExpoRuntimeInstaller.swift's
+  // ReadOnlyExpoModulesPropertyException) overrides `reason` per-subclass rather
+  // than fixing the base initializer, and the tracking issue
+  // (github.com/expo/expo/issues/49677) was bot-closed for lacking a repro, not
+  // fixed. `explicitReason` is what nothing else can see: types are unchanged
+  // (still `String?`), the Metro bundle is unaffected, and the only symptom of a
+  // dropped patch is a Sentry message reading "undefined reason" again.
+  {
+    package: 'expo-modules-core',
+    file: 'ios/Core/Exceptions/Exception.swift',
+    sentinels: [
+      'boardsesh/boardsesh#5296',
+      'private let explicitReason: String?',
+      'explicitReason ?? "undefined reason"',
+      'self.explicitReason = nil',
+      'self.explicitReason = description',
+    ],
+    orderedSentinels: ['self.explicitReason = nil', 'self.explicitReason = description'],
+    patchedKey: 'expo-modules-core@57.0.14',
+  },
 ];
 
 /**
@@ -448,6 +493,91 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
   return errors;
 }
 
+/** The slice of an installed package's spm.config.json the precompile resolver reads. */
+export interface SpmConfig {
+  products?: readonly { name?: string; externalDependencies?: readonly unknown[] }[];
+}
+
+export interface BuildFromSourceInput {
+  rules: readonly PatchRule[];
+  /** `expo.autolinking.buildFromSource` from packages/mobile/package.json. */
+  buildFromSource: readonly string[];
+  /** The installed package's spm.config.json, or null when it has none or can't be resolved. */
+  readSpmConfig(pkg: string): SpmConfig | null;
+}
+
+/**
+ * Map an spm.config.json `externalDependencies` entry to its npm package, the
+ * same split precompiled_modules.rb's `prebuilt_dependency_pods` does:
+ * `pkg/Product` and `@scope/pkg/Product`. A bare product name ("React",
+ * "RNWorklets") names no package, so it can't carry the cascade here.
+ */
+export function packageFromExternalDependency(dependency: string): string | null {
+  const parts = dependency.split('/');
+  if (parts[0].startsWith('@')) return parts.length >= 3 ? `${parts[0]}/${parts[1]}` : null;
+  return parts.length >= 2 ? parts[0] : null;
+}
+
+/**
+ * Why `pkg` builds from source, as a chain ("expo-image → expo-modules-core
+ * (buildFromSource)"), or null when nothing forces it off its prebuild.
+ *
+ * Mirrors `resolve_prebuilt_status` in expo-modules-autolinking's
+ * precompiled_modules.rb: patterns are anchored regexes (`^p$`), and a pod whose
+ * dependency builds from source falls back to source (`dependency_unavailable`).
+ * The reverse direction (`dependent_unavailable`) is deliberately not modelled —
+ * it is only ever an extra reason, so leaving it out can fail a safe config but
+ * never pass an unsafe one.
+ */
+export function sourceBuildChain(
+  pkg: string,
+  input: Pick<BuildFromSourceInput, 'buildFromSource' | 'readSpmConfig'>,
+  visiting: ReadonlySet<string> = new Set(),
+): string | null {
+  const listed = input.buildFromSource.some((pattern) => {
+    try {
+      return new RegExp(`^${pattern}$`).test(pkg);
+    } catch {
+      return pattern === pkg;
+    }
+  });
+  if (listed) return `${pkg} (buildFromSource)`;
+  if (visiting.has(pkg)) return null;
+
+  const nextVisiting = new Set(visiting).add(pkg);
+  for (const product of input.readSpmConfig(pkg)?.products ?? []) {
+    for (const dependency of product.externalDependencies ?? []) {
+      if (typeof dependency !== 'string') continue;
+      const dependencyPackage = packageFromExternalDependency(dependency);
+      if (!dependencyPackage || dependencyPackage === pkg) continue;
+      const chain = sourceBuildChain(dependencyPackage, input, nextVisiting);
+      if (chain) return `${pkg} → ${chain}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Every rule that edits an `ios/` file must name a package that builds from
+ * source, or the patch is applied to node_modules and never compiled into the
+ * app (#5296). One error per package.
+ */
+export function checkIosPatchesBuildFromSource(input: BuildFromSourceInput): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  for (const rule of input.rules) {
+    if (!rule.file.startsWith('ios/') || seen.has(rule.package)) continue;
+    seen.add(rule.package);
+    if (sourceBuildChain(rule.package, input)) continue;
+    errors.push(
+      `${rule.package}: patch edits ${rule.file}, but nothing builds ${rule.package} from source. Expo's ` +
+        `precompiled modules link its prebuilt xcframework instead, so the patch applies to node_modules and never ` +
+        `reaches the app. Add "${rule.package}" to expo.autolinking.buildFromSource in packages/mobile/package.json.`,
+    );
+  }
+  return errors;
+}
+
 /**
  * I/O abstracted so {@link checkPatchesApplied} can be unit-tested without a
  * real node_modules tree. The real implementation is {@link createNodeEnv}.
@@ -598,6 +728,17 @@ export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Re
   };
 }
 
+/** Read `pkg`'s installed spm.config.json through `env`; null when it has none or can't be resolved. */
+export function readSpmConfigFrom(env: Pick<PatchCheckEnv, 'readInstalledFile'>, pkg: string): SpmConfig | null {
+  let raw: string;
+  try {
+    raw = env.readInstalledFile(pkg, 'spm.config.json');
+  } catch {
+    return null;
+  }
+  return JSON.parse(raw) as SpmConfig;
+}
+
 /** Wire the real filesystem and run the check. Returns the process exit code. */
 export function main(): number {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -631,7 +772,23 @@ export function main(): number {
     guardedKeys: RULES.map((rule) => rule.patchedKey),
     allowUnguarded: UNGUARDED_PATCHES,
   });
-  const allErrors = [...errors, ...inventoryErrors];
+  let buildFromSource: string[];
+  try {
+    const mobileManifest = JSON.parse(readFileSync(mobilePackageJson, 'utf8')) as {
+      expo?: { autolinking?: { buildFromSource?: string[] } };
+    };
+    buildFromSource = mobileManifest.expo?.autolinking?.buildFromSource ?? [];
+  } catch (error) {
+    console.error(`[mobile-patches] FAILED — cannot read packages/mobile/package.json: ${(error as Error).message}`);
+    return 1;
+  }
+  const buildFromSourceErrors = checkIosPatchesBuildFromSource({
+    rules: RULES,
+    buildFromSource,
+    readSpmConfig: (pkg) => readSpmConfigFrom(env, pkg),
+  });
+
+  const allErrors = [...errors, ...inventoryErrors, ...buildFromSourceErrors];
 
   if (allErrors.length > 0) {
     console.error('[mobile-patches] FAILED — native patch(es) not applied:');
