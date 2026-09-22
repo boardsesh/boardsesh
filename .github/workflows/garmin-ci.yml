@@ -10,6 +10,16 @@ name: Garmin CI
 # every single push to main.
 
 on:
+  # Both events, matching firmware-tests.yml. The "Require CI on main" ruleset
+  # carries only required_status_checks -- no pull-request requirement -- so a
+  # direct push, revert or force-push to main is possible, and without the push
+  # trigger those would publish a release that never went through this gate.
+  push:
+    branches: [main]
+    paths:
+      - 'garmin/**'
+      - '.github/workflows/garmin-ci.yml'
+      - '.github/actions/connectiq-sdk/action.yml'
   pull_request:
     paths:
       - 'garmin/**'
@@ -51,8 +61,12 @@ jobs:
     # Fork PRs cannot read secrets, so they cannot download the SDK, so this job
     # cannot run for them. Skipping is honest; failing would be noise. A
     # maintainer who wants the gate on a fork contribution pushes the branch to
-    # this repo and reopens the PR.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # this repo and reopens the PR. The event check matters: on a push,
+    # github.event.pull_request is null and the comparison alone would skip the
+    # job on main -- exactly the case the push trigger above exists to cover.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - uses: actions/checkout@v6
