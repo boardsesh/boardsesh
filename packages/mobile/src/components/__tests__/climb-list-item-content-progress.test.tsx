@@ -25,10 +25,13 @@ const logbookContextRef = vi.hoisted(() => ({
 
 const thumbnailRenders = vi.hoisted(() => ({ count: 0 }));
 const fontScale = vi.hoisted(() => ({ current: 1 }));
-const frozenNowMs = vi.hoisted(() => Date.UTC(2026, 6, 15, 12));
+const clock = vi.hoisted(() => ({ nowMs: Date.UTC(2026, 6, 15, 12) }));
+const translate = vi.hoisted(
+  () => (key: string, options?: { count?: number }) => (options?.count == null ? key : `${key}:${options.count}`),
+);
 
 // Recency must use the app clock even when the fixture date differs from today.
-vi.mock('../../lib/clock', () => ({ nowMs: () => frozenNowMs }));
+vi.mock('../../lib/clock', () => ({ nowMs: () => clock.nowMs }));
 
 vi.mock('@boardsesh/board-react', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
@@ -81,7 +84,7 @@ vi.mock('react-native', () => ({
 // exact token it expects without depending on English copy.
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { count?: number }) => (options?.count == null ? key : `${key}:${options.count}`),
+    t: translate,
     i18n: { language: 'en-US' },
   }),
 }));
@@ -129,7 +132,9 @@ const climb = {
   ascensionist_count: 10,
 };
 
-const entry = (overrides: Partial<LogbookEntry> = {}): LogbookEntry =>
+const entry = (
+  overrides: Omit<Partial<LogbookEntry>, 'climbed_at'> & { climbed_at?: string | null } = {},
+): LogbookEntry =>
   ({
     uuid: 't1',
     climb_uuid: 'c1',
@@ -139,7 +144,7 @@ const entry = (overrides: Partial<LogbookEntry> = {}): LogbookEntry =>
     quality: null,
     difficulty: null,
     comment: '',
-    climbed_at: new Date(frozenNowMs).toISOString().replace('Z', ''),
+    climbed_at: new Date(clock.nowMs).toISOString().replace('Z', ''),
     is_ascent: true,
     status: 'send',
     upvotes: 0,
@@ -183,6 +188,7 @@ const progressText = (container: HTMLElement) =>
 beforeEach(() => {
   thumbnailRenders.count = 0;
   fontScale.current = 1;
+  clock.nowMs = Date.UTC(2026, 6, 15, 12);
 });
 
 describe('rich-tier progress line', () => {
@@ -199,6 +205,12 @@ describe('rich-tier progress line', () => {
   it('leads with the outcome and closes with recency', () => {
     const { container } = renderRow('rich', [entry()]);
     expect(progressText(container)).toBe('mobile.climbRow.progress.sent · mobile.climbRow.progress.today');
+  });
+
+  it('omits recency when the tick has no timestamp', () => {
+    const { container } = renderRow('rich', [entry({ climbed_at: null })]);
+    expect(progressText(container)).toBe('mobile.climbRow.progress.sent');
+    expect(container.querySelector('[aria-label="mobile.climbRow.progress.sent"]')).not.toBeNull();
   });
 
   it('names the mirror state when both orientations are sent (#4801)', () => {
@@ -259,6 +271,21 @@ describe('rich-tier progress line', () => {
 });
 
 describe('rich-tier progress line memo boundary', () => {
+  it('keeps its recency label across midnight until a memo dependency changes', () => {
+    clock.nowMs = new Date(2026, 6, 15, 12).getTime();
+    const entries = [entry()];
+    const { container, merge } = renderRow('rich', entries);
+    expect(progressText(container)).toBe('mobile.climbRow.progress.sent · mobile.climbRow.progress.today');
+
+    clock.nowMs = new Date(2026, 6, 16, 0, 1).getTime();
+    merge(entries);
+    expect(progressText(container)).toBe('mobile.climbRow.progress.sent · mobile.climbRow.progress.today');
+
+    fontScale.current = 1.01;
+    merge(entries);
+    expect(progressText(container)).toBe('mobile.climbRow.progress.sent · mobile.climbRow.progress.daysAgo:1');
+  });
+
   it('does not re-render the thumbnail when a logbook merge lands', () => {
     const { container, merge } = renderRow('rich', []);
     expect(thumbnailRenders.count).toBe(1);
