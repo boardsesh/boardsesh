@@ -406,6 +406,46 @@ describe('createClimbStatsLiveSync — the queue keeps the newer revision', () =
     expect(harness.writtenEvents().map((event) => event.syncSeq)).toEqual(['101']);
   });
 
+  it('awaits contention backoff and retries only unsettled reconciliation rows', async () => {
+    const settled = makeEvent({ climbUuid: 'settled' });
+    const contended = makeEvent({ climbUuid: 'contended' });
+    let firstWrite = true;
+    const writeEvents = vi.fn(async (_db: OfflineDatabase, events: readonly ClimbStatsWriteThroughInput[]) => {
+      const results = events.map((event) =>
+        firstWrite && event.climbUuid === 'contended'
+          ? { status: 'lock_lost' as const, compatibleSizeIds: null, layoutId: null, settledBy: 'write' as const }
+          : applied(),
+      );
+      firstWrite = false;
+      return results;
+    });
+    const harness = createHarness({ writeEvents });
+    let completed = false;
+    const persist = harness.sync
+      .persistReconciliationChunk([settled, contended], () => true)
+      .then(() => {
+        completed = true;
+      });
+
+    await settleWrites();
+    expect(writeEvents).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(false);
+    await vi.advanceTimersByTimeAsync(CLIMB_STATS_LOCK_BACKOFF_MS - 1);
+    expect(writeEvents).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await persist;
+    expect(writeEvents).toHaveBeenCalledTimes(2);
+    expect(writeEvents.mock.calls[1][1]).toEqual([contended]);
+    expect(completed).toBe(true);
+    expect(harness.onError).not.toHaveBeenCalled();
+
+    await harness.sync.persistReconciliationChunk([settled, contended], () => true);
+    expect(writeEvents).toHaveBeenCalledTimes(2);
+    harness.sync.dispose();
+  });
+
   it('does not retry an old reconciliation chunk after its auth generation changes', async () => {
     let authGenerationCurrent = true;
     const harness = createHarness({ writeEvents: allSettled('lock_lost') as never });
