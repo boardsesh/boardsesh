@@ -268,6 +268,8 @@ export const userMutations = {
       // charging without its Boardsesh account. Stripe and Postgres cannot
       // share a transaction: if the final DB commit fails after Stripe accepts
       // cancellation, the account survives with cancellation scheduled.
+      // Both branches are retry-safe: a Stripe failure rolls back the DB work,
+      // while repeating cancel_at_period_end after a DB failure is idempotent.
       if (
         supporter?.subscriptionId &&
         isLiveStripeSubscription(supporter.subscriptionStatus) &&
