@@ -342,6 +342,7 @@ export const userMutations = {
 
         // A Stripe failure rolls deletion back. If the final database commit fails
         // after Stripe accepts cancellation, the account survives with cancellation scheduled.
+        // Repeating cancel_at_period_end after a database failure is idempotent.
         if (
           supporter?.subscriptionId &&
           isLiveStripeSubscription(supporter.subscriptionStatus) &&
