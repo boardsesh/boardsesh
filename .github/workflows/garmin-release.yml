@@ -1,0 +1,198 @@
+name: Garmin Build & Release
+
+# Builds a signed .prg for every watch in garmin/release-devices.txt and
+# republishes them under the rolling `garmin-latest` tag, so the download URL a
+# climber follows never changes:
+#
+#   https://github.com/boardsesh/boardsesh/releases/download/garmin-latest/boardsesh-fenix7.prg
+#
+# Path-filtered on garmin/** so unrelated pushes to main cut no release. See
+# docs/garmin-sideload-build.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'garmin/**'
+      # A docs-only edit changes nothing a watch would run.
+      - '!garmin/README.md'
+      - '.github/workflows/garmin-release.yml'
+      - '.github/actions/connectiq-sdk/action.yml'
+  workflow_dispatch:
+
+concurrency:
+  # Global, not per-ref: two runs racing to delete and recreate `garmin-latest`
+  # would leave the release holding a mix of two builds.
+  group: garmin-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Garmin
+    permissions:
+      contents: write # publishes the garmin-latest release
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Read the published device list
+        id: devices
+        run: |
+          set -Eeuo pipefail
+          # manifest.xml says what CAN be built; release-devices.txt picks what we
+          # publish. Disagreement between them is a typo, so fail loudly rather
+          # than quietly shipping eleven watches instead of twelve.
+          devices=""
+          while read -r device; do
+            case "$device" in ''|'#'*) continue ;; esac
+            if ! grep -q "iq:product id=\"$device\"" garmin/manifest.xml; then
+              echo "::error file=garmin/release-devices.txt::$device is not an <iq:product> in garmin/manifest.xml"
+              exit 1
+            fi
+            devices="${devices:+$devices,}$device"
+          done < garmin/release-devices.txt
+          test -n "$devices" || { echo '::error::garmin/release-devices.txt is empty'; exit 1; }
+          echo "list=$devices" >> "$GITHUB_OUTPUT"
+          echo "Publishing: $devices"
+
+      - name: Install the Connect IQ SDK
+        uses: ./.github/actions/connectiq-sdk
+        with:
+          sdk-version: ${{ vars.CIQ_SDK_VERSION }}
+          sdk-manager-version: ${{ vars.CIQ_SDK_MANAGER_VERSION }}
+          agreement-hash: ${{ vars.CIQ_AGREEMENT_HASH }}
+          devices: ${{ steps.devices.outputs.list }}
+          garmin-username: ${{ secrets.GARMIN_USERNAME }}
+          garmin-password: ${{ secrets.GARMIN_PASSWORD }}
+
+      - name: Decode the developer signing key
+        env:
+          KEY_B64: ${{ secrets.GARMIN_DEVELOPER_KEY_BASE64 }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          # printf, not echo: a trailing newline corrupts the DER.
+          printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/developer_key"
+          openssl pkcs8 -inform DER -nocrypt -in "$RUNNER_TEMP/developer_key" -out /dev/null
+          bits="$(openssl rsa -inform DER -in "$RUNNER_TEMP/developer_key" -noout -text 2>/dev/null \
+                   | sed -n 's/.*Private-Key: (\([0-9]*\) bit.*/\1/p')"
+          [ "$bits" = 4096 ] || { echo "::error::developer key is ${bits:-unreadable}-bit, expected 4096"; exit 1; }
+          # The Connect IQ Store rejects an update signed with a different key, so
+          # this digest must never change once the app is listed. Printing it makes
+          # an accidental rotation visible in the run history instead of at
+          # submission time. It is recorded in docs/garmin-sideload-build.md.
+          sha256sum "$RUNNER_TEMP/developer_key"
+
+      - name: Build one .prg per watch
+        env:
+          DEVICE_LIST: ${{ steps.devices.outputs.list }}
+        run: |
+          set -Eeuo pipefail
+          # Two directories on purpose. monkeyc drops a ~420 KB <name>.prg.debug.xml,
+          # a <name>-fit_contributions.json and gen/ mir/ internal-mir/ trees beside
+          # every output, none of which a climber wants and none of which should
+          # reach a release asset glob. Build in one place, publish from another.
+          build="$RUNNER_TEMP/build"
+          release="$RUNNER_TEMP/release"
+          mkdir -p "$build" "$release"
+          # -r strips debug info: 34 KB instead of 157 KB, which matters on a
+          # watch with a few MB of app storage.
+          for device in ${DEVICE_LIST//,/ }; do
+            echo "::group::$device"
+            monkeyc -f garmin/monkey.jungle -w -r \
+              -o "$build/boardsesh-$device.prg" \
+              -y "$RUNNER_TEMP/developer_key" \
+              -d "$device"
+            install -m 644 "$build/boardsesh-$device.prg" "$release/boardsesh-$device.prg"
+            echo "::endgroup::"
+          done
+          ( cd "$release" && sha256sum ./*.prg > SHA256SUMS.txt )
+          ls -l "$release"
+
+      - name: Destroy the signing key
+        if: always()
+        run: shred -u "$RUNNER_TEMP/developer_key" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: garmin-prg
+          path: ${{ runner.temp }}/release/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Write the release notes
+        run: |
+          set -Eeuo pipefail
+          cat > "$RUNNER_TEMP/notes.md" <<'NOTES'
+          Boardsesh on your wrist: flick through the queue, log attempts and sends,
+          and keep the board moving without touching your phone.
+
+          Not on the Connect IQ Store yet, so it installs by copying one file across.
+
+          ## Install it
+
+          1. Download the file for your watch below — e.g. `boardsesh-fenix7.prg`.
+          2. Plug the watch into a computer. It shows up as a drive called **GARMIN**.
+          3. Drop the file into the `GARMIN/APPS/` folder on that drive.
+          4. Eject and unplug. **Boardsesh** is now in your app list.
+          5. Nothing there? Rename the file to `BRDSESH.PRG` and copy it again.
+
+          To remove it, delete the file from `GARMIN/APPS/`.
+
+          ## Pair it
+
+          Start a session in the Boardsesh app, generate an 8-character watch code,
+          then type that code on the watch. Your phone keeps driving the board over
+          Bluetooth — the watch just tells the session what you did.
+
+          ## Notes
+
+          Your watch isn't listed? Open an issue and we'll add it — it's a one-line
+          change. Verify a download with `sha256sum -c SHA256SUMS.txt`.
+          NOTES
+          {
+            echo ''
+            echo "Built from \`${GITHUB_SHA}\` by [run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+          } >> "$RUNNER_TEMP/notes.md"
+
+      - name: Publish the rolling sideload release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          # Mutable on purpose. The URL under this tag is the one the docs, the
+          # app and Discord hand people, so it has to keep working across builds.
+          # Per-commit archaeology is covered by the 30-day Actions artifact above.
+          gh release delete garmin-latest --yes --cleanup-tag 2>/dev/null \
+            || gh release delete garmin-latest --yes 2>/dev/null \
+            || true
+          git push origin --delete garmin-latest 2>/dev/null || true
+          gh release create garmin-latest \
+            --title "Boardsesh for Garmin (main-${GITHUB_SHA:0:7})" \
+            --target "$GITHUB_SHA" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease \
+            "$RUNNER_TEMP/release"/*
+          echo "::notice::Published https://github.com/${GITHUB_REPOSITORY}/releases/tag/garmin-latest"
+
+      - name: Verify the published assets match what we built
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          # Cheap insurance that a truncated upload does not become the file
+          # people flash onto a watch.
+          gh release download garmin-latest --dir "$RUNNER_TEMP/published" --pattern '*.prg'
+          ( cd "$RUNNER_TEMP/published" && sha256sum -c "$RUNNER_TEMP/release/SHA256SUMS.txt" )

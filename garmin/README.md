@@ -169,7 +169,31 @@ That means board changes land while the phone is:
 If the phone is fully disconnected from the board, the watch's changes still
 persist in the session and repaint the board as soon as the phone reconnects.
 
-## 8. Connect IQ Store submission
+## 8. CI/CD
+
+Two workflows cover this directory, both path-filtered so nothing else in the
+monorepo triggers them. Full reference: [`docs/garmin-sideload-build.md`](../docs/garmin-sideload-build.md).
+
+- **`.github/workflows/garmin-ci.yml`** — on every PR touching `garmin/**`.
+  Compiles `fenix7`, the staging jungle flavour, and the `-t` unit-test target,
+  and fails if the `monkeyc` warning count grows. It signs with a **throwaway**
+  key minted in the job, so the real `developer_key` never touches a PR build.
+- **`.github/workflows/garmin-release.yml`** — on every push to `main` touching
+  `garmin/**` (except this README). Builds a signed, `-r` release `.prg` for
+  each watch in `garmin/release-devices.txt` and republishes them under the
+  rolling `garmin-latest` tag, so the download URL never moves:
+  `https://github.com/boardsesh/boardsesh/releases/download/garmin-latest/boardsesh-fenix7.prg`
+
+CI installs the SDK per run with a dedicated Garmin account rather than pulling a
+prebaked image, because the SDK licence forbids redistributing it. The signing
+key lives in the `Garmin` GitHub Environment as `GARMIN_DEVELOPER_KEY_BASE64`;
+its SHA-256 is recorded in the doc above and printed on every release run, so an
+accidental rotation is visible immediately. **Keep a copy in 1Password** — the
+store rejects an update signed with a different key.
+
+Adding a watch to the published set is one line in `garmin/release-devices.txt`.
+
+## 9. Connect IQ Store submission
 
 1. Create a Garmin/Connect IQ **developer account** at
    <https://developer.garmin.com/connect-iq/> and agree to the developer terms.
@@ -204,6 +228,7 @@ garmin/
   monkey.jungle           Default production build config
   monkey-staging.jungle   Staging annotation override
   README.md               This runbook
+  release-devices.txt     Which watches get a published .prg (CI reads this)
   source/
     BoardseshApp.mc       AppBase entry point + boot routing
     Services.mc           Shared BsClient locator
@@ -229,11 +254,13 @@ garmin/
 ## Validation status
 
 Earlier PR discussion records successful compilation and simulator tests; the
-old statement that this app had never compiled was stale. The September 22
-repair compiled the app and test sources with the official Connect IQ 9.2.0
-compiler using its generic target. Fresh device-specific builds and simulator
-test execution still require installed device profiles. Generic compilation is
-separate from executing the tests or checking a watch's memory/API limits.
+old statement that this app had never compiled was stale. Device-specific
+compilation is now CI-verified: every PR compiles `fenix7` (app, staging flavour
+and test target) and every merge to `main` compiles all twelve published watches
+with the official Connect IQ 9.2.0 compiler. Simulator test **execution** is
+still manual (section 5) — `monkeydo` needs the Qt simulator, which is documented
+upstream to segfault and hang headlessly. Compilation is separate from executing
+the tests or checking a watch's memory/API limits.
 
 The backend pairing alphabet matches `PairingView.CHARSET`. SDK 9.2.0 documents
 `Activity.SPORT_ROCK_CLIMBING`, `Gregorian.utcInfo` with numeric `FORMAT_SHORT`

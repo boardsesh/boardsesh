@@ -1,0 +1,103 @@
+name: Connect IQ SDK
+description: Install the Connect IQ SDK and the requested device profiles, and put monkeyc on PATH.
+
+# Why we download instead of pulling a prebaked image:
+#
+# The Connect IQ SDK licence (section 3) forbids "rent, lease, lend, upload to
+# or host on any website or server, sell, redistribute, or sublicense the SDK
+# ... or to enable others to do so". A public GHCR image would breach that
+# outright and a private one is not clearly permitted. Garmin also gates every
+# device profile behind an account login and offers no scoped API token -- unlike
+# App Store Connect -- so CI signs in as a dedicated Garmin account that exists
+# only for this. Nothing is redistributed; we fetch our own copy per run.
+
+inputs:
+  sdk-version:
+    description: Connect IQ SDK version, e.g. 9.2.0
+    required: true
+  sdk-manager-version:
+    description: lindell/connect-iq-sdk-manager-cli release, e.g. 0.8.4
+    required: true
+  agreement-hash:
+    description: SDK agreement acceptance hash from `connect-iq-sdk-manager agreement view`
+    required: true
+  devices:
+    description: Comma-separated product ids to download profiles for
+    required: true
+  garmin-username:
+    description: Garmin account used only to download the SDK
+    required: true
+  garmin-password:
+    description: Password for that account
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the SDK and device profiles
+      id: sdk_cache
+      uses: actions/cache@v4
+      with:
+        # Only the SDK and device payloads. The CLI's config file -- which holds
+        # a live Garmin session token after `login` -- is deliberately kept in
+        # $RUNNER_TEMP instead, because caches are restorable by fork PRs from
+        # the base branch and a cached token would hand them our session.
+        path: ~/.Garmin/ConnectIQ
+        key: ciq-${{ runner.os }}-${{ inputs.sdk-version }}-${{ hashFiles('garmin/manifest.xml') }}-${{ inputs.devices }}
+
+    - name: Download the SDK and device profiles
+      if: steps.sdk_cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GARMIN_USERNAME: ${{ inputs.garmin-username }}
+        GARMIN_PASSWORD: ${{ inputs.garmin-password }}
+        SDK_VERSION: ${{ inputs.sdk-version }}
+        SDK_MANAGER_VERSION: ${{ inputs.sdk-manager-version }}
+        AGREEMENT_HASH: ${{ inputs.agreement-hash }}
+        DEVICES: ${{ inputs.devices }}
+      run: |
+        set -Eeuo pipefail
+        # Asset names are `connect-iq-sdk-manager-cli_<ver>_Linux_x86_64.tar.gz`
+        # (note the -cli suffix and the capitalised OS) and the tarball holds the
+        # binary as `connect-iq-sdk-manager` at its root.
+        curl -fsSL \
+          "https://github.com/lindell/connect-iq-sdk-manager-cli/releases/download/v${SDK_MANAGER_VERSION}/connect-iq-sdk-manager-cli_${SDK_MANAGER_VERSION}_Linux_x86_64.tar.gz" \
+          | tar -xz -C "$RUNNER_TEMP" connect-iq-sdk-manager
+        ciq="$RUNNER_TEMP/connect-iq-sdk-manager --config $RUNNER_TEMP/ciq-config.yaml"
+
+        # Accepting by hash is the non-interactive path. Re-read the agreement and
+        # refresh this hash whenever Garmin revises it -- a stale hash fails here
+        # rather than silently accepting something nobody read.
+        $ciq agreement accept --acceptance-hash="$AGREEMENT_HASH"
+        $ciq login
+        $ciq sdk download "$SDK_VERSION"
+        $ciq device download --device "$DEVICES"
+
+        # The config holds a live session token. It is outside every cached path,
+        # but drop it as soon as the downloads are done anyway.
+        shred -u "$RUNNER_TEMP/ciq-config.yaml" 2>/dev/null || rm -f "$RUNNER_TEMP/ciq-config.yaml"
+
+    - name: Put monkeyc on PATH
+      shell: bash
+      env:
+        SDK_VERSION: ${{ inputs.sdk-version }}
+      run: |
+        set -Eeuo pipefail
+        # Resolved by glob rather than `connect-iq-sdk-manager sdk current-path`,
+        # because that reads the config we just destroyed -- and on a cache hit
+        # the CLI was never downloaded at all.
+        sdk_bin="$(find "$HOME/.Garmin/ConnectIQ/Sdks" -maxdepth 2 -type d -name bin | head -1)"
+        if [ -z "$sdk_bin" ]; then
+          echo "::error::no Connect IQ SDK found under ~/.Garmin/ConnectIQ/Sdks"
+          exit 1
+        fi
+        echo "$sdk_bin" >> "$GITHUB_PATH"
+
+        # A cache restored from a different SDK version would compile silently
+        # against the wrong Toybox. Fail loudly instead.
+        installed="$("$sdk_bin/monkeyc" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+        echo "Connect IQ compiler $installed (requested $SDK_VERSION)"
+        if [ "$installed" != "$SDK_VERSION" ]; then
+          echo "::error::SDK on PATH is $installed but $SDK_VERSION was requested"
+          exit 1
+        fi
