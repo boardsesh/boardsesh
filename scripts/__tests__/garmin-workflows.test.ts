@@ -104,6 +104,25 @@ describe('garmin signing-key boundary', () => {
   });
 });
 
+describe('garmin release publication', () => {
+  it('updates the release in place rather than deleting it first', () => {
+    // garmin-latest is the only way to install the app. Deleting before
+    // recreating means a publish that fails halfway leaves every climber with
+    // no download at all, so the workflow clobbers assets onto the existing
+    // release instead.
+    expect(releaseSource).not.toContain('gh release delete garmin-latest');
+    expect(releaseSource).toContain('gh release upload');
+    expect(releaseSource).toContain('--clobber');
+    // ...and prunes assets for watches that have left release-devices.txt,
+    // which --clobber alone would strand on the release forever.
+    expect(releaseSource).toContain('gh release delete-asset');
+  });
+
+  it('verifies published assets against the checksums it built', () => {
+    expect(releaseSource).toContain('sha256sum -c');
+  });
+});
+
 describe('garmin release device list', () => {
   it('lists at least one device', () => {
     expect(releaseDevices().length).toBeGreaterThan(0);
