@@ -20,11 +20,14 @@ or *"Nothing to test right now"*. It is hidden only on a binary that cannot surf
 The floating xprem marker and its light-only sheet were removed for #5287; preview selection
 uses these themed menu destinations. The app still uses xprem's branch API through `qa-surf.ts`.
 
-**The cold-start prompt is still tester-only.** A user whose profile has `isTester` gets one prompt
-per cold start without asking for it — the pick list on production, or on a `pr-<n>` bundle the
-brief: what this PR is and its `## Test plan`, once per branch + bundle, with **Start testing**,
-**Finish testing**, **Open on GitHub**, **Leave preview**. Everyone else reaches the same screens
-when they go looking, and is never interrupted. `decideQaGate` owns that line.
+**The cold-start prompt is tester-only and off by default.** A user whose profile has `isTester`
+can enable **Show previews on launch** under **More → Previews**. The device-local preference
+takes effect on the next launch. When enabled, production offers the pick list once per cold
+start; a `pr-<n>` bundle shows its brief once per branch + bundle: what this PR is and its
+`## Test plan`, with **Start testing**, **Finish testing**, **Open on GitHub**, **Leave preview**.
+Turning the preference off suppresses both automatic screens. Everyone can still open previews
+and test plans manually. `QaTesterGate` checks the preference before doing launch-prompt work;
+`decideQaGate` owns the remaining eligibility checks.
 
 The prompt never actually fired between 2.2.0 and #5654: `QaTesterGate`'s `ready` prop was frozen
 at `false` behind `DatabaseProvider`. It now reads readiness from `LaunchReadyProvider`, waits for
@@ -151,9 +154,14 @@ is the LAST root sibling, so its publishing effect runs after the gate's — whi
 an unpublished store as "this build cannot surf" would resolve to `none`, and the gate marks the
 session decided on a `none`: QA would switch itself off with nothing said anywhere.
 
-## The two settings keys
+## Settings
 
-Both live in `src/settings/types.ts`, both default to `null`, and both hold a
+All QA preferences and markers live in `src/settings/types.ts`. `qaPromptOnLaunch` defaults to
+`false` for both new installs and existing installs without a saved choice. It is stored on the
+device and controls only automatic launch prompts, starting with the next launch; the remote
+`qa-tester-gate-kill` switch can still suppress prompts even when the preference is on.
+
+The two account-scoped markers both default to `null` and hold a
 `qaSessionKey(userId, branch, updateId)` — `9f3c…:pr-4792:abc123`, or `9f3c…:pr-4792:embedded` for a
 launch with no update id.
 

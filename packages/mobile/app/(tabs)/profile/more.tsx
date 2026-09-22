@@ -99,6 +99,7 @@ export default function MoreScreen() {
     useSessionRecordingPreference();
   const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
   const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
+  const [qaPromptOnLaunch, setQaPromptOnLaunch] = useSetting('qaPromptOnLaunch');
   const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
@@ -912,6 +913,21 @@ export default function MoreScreen() {
               icon: 'branchSwitcher',
               onPress: navAction(() => router.push('/qa/pick')),
             },
+        ...(profile?.isTester
+          ? [
+              {
+                kind: 'toggle' as const,
+                key: 'qaPromptOnLaunch',
+                label: t('mobile.more.previews.promptOnLaunchTitle'),
+                subtitle: t('mobile.more.previews.promptOnLaunchSubtitle'),
+                value: qaPromptOnLaunch,
+                onValueChange: (next: boolean) => {
+                  hapticSelection();
+                  setQaPromptOnLaunch(next);
+                },
+              },
+            ]
+          : []),
       ],
     });
   }

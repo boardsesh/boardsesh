@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Aperçus",
+        "promptOnLaunchTitle": "Afficher les aperçus au démarrage",
+        "promptOnLaunchSubtitle": "S'applique au prochain démarrage de Boardsesh",
         "pickTitle": "Tester un aperçu de PR",
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",

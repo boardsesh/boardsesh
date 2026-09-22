@@ -10,7 +10,7 @@ const listPrBranchesMock = vi.hoisted(() => vi.fn());
 const readRunningPrNumberMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const reportHandledErrorMock = vi.hoisted(() => vi.fn());
-const settingsStore = vi.hoisted(() => ({ values: {} as Record<string, string | null> }));
+const settingsStore = vi.hoisted(() => ({ values: {} as Record<string, boolean | string | null> }));
 const setSettingMock = vi.hoisted(() => vi.fn());
 const profileCtrl = vi.hoisted(() => ({ id: 'user-a' as string | undefined, isTester: true as boolean | undefined }));
 const surfingCtrl = vi.hoisted(() => ({ surfingBuild: true, ready: true }));
@@ -52,6 +52,7 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => settingsStore.values[key] ?? null,
   setSetting: setSettingMock,
+  useSetting: (key: string) => [settingsStore.values[key] ?? false, vi.fn()],
 }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: reportHandledErrorMock }));
@@ -81,7 +82,7 @@ beforeEach(() => {
   getInitialURLMock.mockReset().mockResolvedValue(null);
   listPrBranchesMock.mockReset().mockResolvedValue(branchList(4792, 4800));
   readRunningPrNumberMock.mockReset().mockReturnValue(null);
-  settingsStore.values = {};
+  settingsStore.values = { qaPromptOnLaunch: true };
   profileCtrl.id = 'user-a';
   profileCtrl.isTester = true;
   surfingCtrl.surfingBuild = true;
@@ -133,6 +134,38 @@ describe('QaTesterGate on production', () => {
 });
 
 describe('QaTesterGate stays out of the way', () => {
+  it.each([
+    ['missing preference on production', undefined, null],
+    ['disabled preference on production', false, null],
+    ['disabled preference on a preview', false, 4792],
+  ] as const)('does no automatic QA work with a %s', async (_caseName, preference, runningPrNumber) => {
+    if (preference === undefined) delete settingsStore.values.qaPromptOnLaunch;
+    else settingsStore.values.qaPromptOnLaunch = preference;
+    readRunningPrNumberMock.mockReturnValue(runningPrNumber);
+
+    render(<QaTesterGate />);
+    await Promise.resolve();
+
+    expect(listPrBranchesMock).not.toHaveBeenCalled();
+    expect(setSettingMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('waits for the next cold start when the preference is enabled', async () => {
+    settingsStore.values.qaPromptOnLaunch = false;
+    const { rerender, unmount } = render(<QaTesterGate />);
+
+    settingsStore.values.qaPromptOnLaunch = true;
+    rerender(<QaTesterGate />);
+    await Promise.resolve();
+    expect(pushMock).not.toHaveBeenCalled();
+
+    unmount();
+    resetQaGateSessionForTests();
+    render(<QaTesterGate />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+  });
+
   it('does nothing until the app is ready', async () => {
     launchCtrl.ready = false;
     render(<QaTesterGate />);
@@ -185,6 +218,25 @@ describe('QaTesterGate stays out of the way', () => {
     await waitFor(() => expect(listPrBranchesMock).toHaveBeenCalled());
 
     flagsCtrl.enabled = false;
+    rerender(<QaTesterGate />);
+    resolveBranches(branchList(4792));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('abandons a prompt already in flight when the preference is disabled', async () => {
+    let resolveBranches: (branches: ReturnType<typeof branchList>) => void = () => {};
+    listPrBranchesMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveBranches = resolve;
+      }),
+    );
+    const { rerender } = render(<QaTesterGate />);
+    await waitFor(() => expect(listPrBranchesMock).toHaveBeenCalled());
+
+    settingsStore.values.qaPromptOnLaunch = false;
     rerender(<QaTesterGate />);
     resolveBranches(branchList(4792));
     await Promise.resolve();
