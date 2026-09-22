@@ -78,6 +78,22 @@ describe('garmin signing-key boundary', () => {
     expect(ciSource).toContain('github.event.pull_request.head.repo.full_name == github.repository');
   });
 
+  it('names the missing configuration instead of failing obscurely', () => {
+    // With no `Garmin` environment every input is empty, the download URL is
+    // built from empty version strings, and the only symptom is
+    // `gzip: stdin: unexpected end of file`. The preflight says what is missing.
+    const action = readFileSync(ACTION_PATH, 'utf8');
+    for (const name of [
+      'vars.CIQ_SDK_VERSION',
+      'vars.CIQ_SDK_MANAGER_VERSION',
+      'vars.CIQ_AGREEMENT_HASH',
+      'secrets.GARMIN_USERNAME',
+      'secrets.GARMIN_PASSWORD',
+    ]) {
+      expect(action).toContain(name);
+    }
+  });
+
   it('never caches the SDK manager config, which holds a live session token', () => {
     const action = readFileSync(ACTION_PATH, 'utf8');
     // Caches are restorable by fork PRs from the base branch. The config lives in
