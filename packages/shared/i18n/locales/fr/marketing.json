@@ -143,6 +143,12 @@
     }
   },
   "about": {
+    "supporters": {
+      "title": "Soutiens",
+      "body": "Merci aux grimpeurs qui participent aux frais et choisissent d’être nommés.",
+      "stripeTitle": "Soutiens Stripe",
+      "githubTitle": "Sponsors GitHub"
+    },
     "hero": {
       "title": "Fait par des grimpeurs. Ouvert à tous.",
       "subtitle": "Fait par des grimpeurs fatigués d'avoir une app par board."
@@ -187,6 +193,28 @@
     }
   },
   "support": {
+    "stripe": {
+      "title": "Soutenir avec Stripe",
+      "body": "Choisissez le montant et payez par carte, Apple Pay ou Google Pay. Aucun compte GitHub nécessaire.",
+      "amount": "Montant (USD)",
+      "amountError": "Choisissez un montant entre 1 et 500 dollars.",
+      "monthly": "Mensuel",
+      "oneTime": "Une fois",
+      "publicCredit": "Me remercier sur la page À propos",
+      "publicCreditSignIn": "Connectez-vous pour être remercié publiquement",
+      "publicCreditHint": "Facultatif. Nous affichons votre nom et avatar Boardsesh, jamais le montant.",
+      "cta": "Soutenir avec Stripe",
+      "processing": "Ouverture de Stripe…",
+      "error": "Impossible d’ouvrir Stripe. Réessayez.",
+      "thanks": "Merci de soutenir Boardsesh. Votre remerciement apparaîtra après confirmation du paiement par Stripe.",
+      "cancelled": "Le paiement a été annulé. Aucun débit n’a été effectué.",
+      "unavailable": "Le paiement par carte est temporairement indisponible. GitHub Sponsors reste disponible ci-dessous."
+    },
+    "manage": {
+      "title": "Votre soutien Stripe",
+      "publicCredit": "M’afficher sur la page À propos",
+      "billing": "Gérer la facturation dans Stripe"
+    },
     "hero": {
       "title": "Gardez Boardsesh en vie",
       "subtitle": "Gratuit, open source, et payé par des grimpeurs"
@@ -204,11 +232,6 @@
       "title": "GitHub Sponsors",
       "body": "Soutenez Boardsesh chaque mois. Le plus simple si vous avez déjà un compte GitHub.",
       "cta": "Devenir sponsor sur GitHub"
-    },
-    "oneTime": {
-      "title": "Don unique",
-      "body": "Payez par carte, Apple Pay ou Google Pay depuis le navigateur. Aucun compte à créer.",
-      "cta": "Faire un don"
     },
     "otherWays": {
       "title": "Autres façons d'aider",
@@ -878,7 +901,7 @@
   },
   "privacy": {
     "title": "Politique de confidentialité",
-    "lastUpdatedProductAnalytics": "Dernière mise à jour : mai 2026",
+    "lastUpdatedProductAnalytics": "Dernière mise à jour : 22 septembre 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
     "collect": {
@@ -912,16 +935,21 @@
       "auroraLabel": "API Aurora Climbing.",
       "auroraBody": "Si vous liez votre compte Aurora Climbing (utilisé par les boards Kilter et Tension), nous synchronisons vos données de blocs avec les serveurs d'Aurora afin que votre carnet reste cohérent entre les apps. Cette synchronisation n'a lieu que lorsque vous la déclenchez. Voir ",
       "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " pour leurs pratiques de données."
+      "auroraBodyEnd": " pour leurs pratiques de données.",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Stripe traite les soutiens et gère la facturation. Boardsesh ne conserve que les identifiants Stripe nécessaires pour lier un remerciement public facultatif et gérer un abonnement ; nous ne conservons ni carte, ni adresse de facturation, ni montant. Voir ",
+      "stripeLink": "la politique de confidentialité de Stripe"
     },
     "sharing": {
       "title": "Partage de données",
       "body1ProductAnalytics": "Nous ne vendons pas vos données. Nous n'affichons pas de publicités. Nous ne partageons pas vos informations avec des marketeurs tiers ou des courtiers en données. Les seules données partagées en externe sont celles décrites ci-dessus (hébergement/analytique Vercel, analytique produit PostHog, sync Aurora Climbing si vous l'activez).",
-      "body2": "Les autres utilisateurs de Boardsesh peuvent voir votre nom d'utilisateur, votre profil et vos blocs enregistrés si vous participez à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit."
+      "body2": "Les autres utilisateurs de Boardsesh peuvent voir votre nom d'utilisateur, votre profil et vos blocs enregistrés si vous participez à des fonctionnalités sociales comme le Mode Party. C'est visible dans l'app et fait partie du fonctionnement du produit.",
+      "stripe": "Si vous acceptez le remerciement public, votre nom et votre avatar Boardsesh apparaissent sur les pages À propos et Remerciements. Le montant n’est jamais affiché."
     },
     "retention": {
       "title": "Conservation des données",
-      "body": "Nous conservons les données de votre compte et votre historique de blocs tant que votre compte est actif. Si vous arrêtez d'utiliser Boardsesh, vos données restent jusqu'à ce que vous supprimiez votre compte."
+      "body": "Nous conservons les données de votre compte et votre historique de blocs tant que votre compte est actif. Si vous arrêtez d'utiliser Boardsesh, vos données restent jusqu'à ce que vous supprimiez votre compte.",
+      "stripe": "Un soutien lié et vérifié conserve son remerciement jusqu’à ce que vous le masquiez ou supprimiez votre compte. La résiliation d’un abonnement ne retire pas ce remerciement historique. Stripe conserve les paiements selon sa politique."
     },
     "deletion": {
       "title": "Suppression du compte",
@@ -932,7 +960,8 @@
       "onWebBody": " Connectez-vous sur ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " et ouvrez Plus depuis votre profil pour trouver le même bouton Supprimer le compte.",
-      "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
+      "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé.",
+      "stripe": "Si un abonnement Stripe lié est actif, nous programmons d’abord sa fin à l’issue de la période de facturation. Si Stripe ne confirme pas ce changement, votre compte n’est pas supprimé. La suppression retire le lien Stripe et le remerciement public de Boardsesh."
     },
     "children": {
       "title": "Enfants",

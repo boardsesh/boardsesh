@@ -46,6 +46,7 @@
     "dialog": {
       "warning": "Définitif. Votre profil, vos brouillons de blocs, votre carnet et toutes les autres données seront supprimés sans possibilité de récupération.",
       "checking": "Vérification de vos blocs...",
+      "stripeCancellation": "Votre abonnement Stripe actif sera programmé pour prendre fin avant la suppression de votre compte.",
       "publishedClimbs_one": "Vous avez <strong>{{count}}</strong> bloc publié qui sera conservé après la suppression.",
       "publishedClimbs_other": "Vous avez <strong>{{count}}</strong> blocs publiés qui seront conservés après la suppression.",
       "removeSetterName": "Retirer mon nom d'ouvreur des blocs publiés",

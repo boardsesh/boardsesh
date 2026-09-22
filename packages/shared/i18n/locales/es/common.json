@@ -688,6 +688,7 @@
       "contributorsBody": "Todas las personas que han aportado código, arreglos e ideas en GitHub.",
       "sponsorsTitle": "Patrocinadores",
       "sponsorsBody": "Escaladores que mantienen esto en marcha a través de GitHub Sponsors.",
+      "stripeSponsorsBody": "Escaladores que mantienen esto en marcha a través de Stripe.",
       "sponsorsEmpty": "Aún no hay patrocinadores, ¿quieres ser el primero?",
       "privateSponsorsThanks": "y {{count}} más patrocinando en privado — gracias también",
       "becomeSponsor": "Apoya Boardsesh",

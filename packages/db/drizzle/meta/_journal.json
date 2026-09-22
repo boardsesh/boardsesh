@@ -1653,6 +1653,13 @@
       "when": 1789880949272,
       "tag": "0235_places_search",
       "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1790046337957,
+      "tag": "0236_stripe_supporters",
+      "breakpoints": true
     }
   ]
 }

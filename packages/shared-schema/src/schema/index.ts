@@ -33,6 +33,7 @@ import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 import { sprayDetectionTypeDefs } from './spray-detection';
+import { supportTypeDefs } from './support';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -62,6 +63,7 @@ export const typeDefs = [
   holdOutlineOverridesTypeDefs,
   sprayWallsTypeDefs,
   sprayDetectionTypeDefs,
+  supportTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
   queriesTypeDefs,

@@ -3,6 +3,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
   Root mutation type for all write operations.
   """
   type Mutation {
+    "Create a Stripe-hosted Checkout Session. Public credit requires authentication."
+    createSupportCheckoutSession(input: CreateSupportCheckoutSessionInput!): SupportCheckoutSession!
+    "Show or hide the signed-in supporter on public credit lists."
+    updateSupporterVisibility(showPublicly: Boolean!): SupporterStatus!
+    "Open Stripe's self-service billing portal for the signed-in supporter."
+    createSupportBillingPortalSession(locale: String): SupportBillingPortalSession!
+
     """
     Join an existing session or create it if it doesn't exist.
     Returns the session with current state.

@@ -107,6 +107,12 @@
   padding-top: var(--spacing-3);
 }
 
+.stripeForm {
+  display: grid;
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-3);
+}
+
 /* Four ways to help make two balanced rows, never a stranded fourth column. */
 .helpGrid {
   display: grid;

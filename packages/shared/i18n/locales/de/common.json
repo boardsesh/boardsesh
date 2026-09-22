@@ -423,6 +423,7 @@
       "contributorsBody": "Alle, die auf GitHub Code, Fixes und Ideen beigesteuert haben.",
       "sponsorsTitle": "Sponsoren",
       "sponsorsBody": "Kletterer*innen, die über GitHub Sponsors das Licht anlassen.",
+      "stripeSponsorsBody": "Kletterer*innen, die über Stripe das Licht anlassen.",
       "sponsorsEmpty": "Noch keine Sponsoren — willst du den Anfang machen?",
       "privateSponsorsThanks": "und {{count}} weitere, die privat sponsern — auch euch danke",
       "becomeSponsor": "Boardsesh unterstützen",

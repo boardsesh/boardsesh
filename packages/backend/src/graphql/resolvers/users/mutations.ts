@@ -29,6 +29,7 @@ import {
 } from '../../../services/aurora-credentials';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { deleteClimbDependentRows, groupClimbUuidsByBoardType } from '../climbs/climb-cleanup';
+import { getStripeClient, isLiveStripeSubscription } from '../../../services/stripe-support';
 
 function mapAuroraCredentialStatus(credential: RestAuroraCredentialStatus): AuroraCredentialStatus {
   return {
@@ -218,6 +219,30 @@ export const userMutations = {
     validateInput(DeleteAccountInputSchema, input, 'input');
 
     const userId = ctx.userId!;
+
+    const [supporter] = await db
+      .select({
+        subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
+        subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
+        cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
+      })
+      .from(dbSchema.stripeSupporters)
+      .where(eq(dbSchema.stripeSupporters.userId, userId))
+      .limit(1);
+    if (
+      supporter?.subscriptionId &&
+      isLiveStripeSubscription(supporter.subscriptionStatus) &&
+      !supporter.cancelAtPeriodEnd
+    ) {
+      try {
+        await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
+      } catch (error) {
+        logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+        throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+          extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+        });
+      }
+    }
 
     await db.transaction(async (tx) => {
       // Find this user's draft climbs first — the dependent-row cleanup below

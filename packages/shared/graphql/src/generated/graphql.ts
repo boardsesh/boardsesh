@@ -1816,6 +1816,13 @@ export type CreateSprayWallVersionInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type CreateSupportCheckoutSessionInput = {
+  amount: Scalars['Int']['input'];
+  cadence: SupportCadence;
+  locale?: InputMaybe<Scalars['String']['input']>;
+  publicCredit: Scalars['Boolean']['input'];
+};
+
 /**
  * Several climbs one setter published on one local day, newest first.
  *
@@ -1898,6 +1905,8 @@ export type CurrentClimbChanged = {
 /** Information needed before account deletion. */
 export type DeleteAccountInfo = {
   __typename?: 'DeleteAccountInfo';
+  /** Whether account deletion will schedule a linked Stripe subscription to end */
+  hasActiveStripeSubscription: Scalars['Boolean']['output'];
   /** Number of published (non-draft) climbs the user has created */
   publishedClimbCount: Scalars['Int']['output'];
 };
@@ -3762,6 +3771,10 @@ export type Mutation = {
    * anchors were tapped. There are no user-entered wall dimensions. Owner only.
    */
   createSprayWallVersion: SprayWallVersion;
+  /** Open Stripe's self-service billing portal for the signed-in supporter. */
+  createSupportBillingPortalSession: SupportBillingPortalSession;
+  /** Create a Stripe-hosted Checkout Session. Public credit requires authentication. */
+  createSupportCheckoutSession: SupportCheckoutSession;
   /**
    * Delete the current user's account.
    * Deletes draft climbs, optionally removes setter name from published climbs,
@@ -4271,6 +4284,8 @@ export type Mutation = {
    * default, because a wall is somebody's home — could never be shown to anybody.
    */
   updateSprayWall: SprayWall;
+  /** Show or hide the signed-in supporter on public credit lists. */
+  updateSupporterVisibility: SupporterStatus;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -4406,6 +4421,16 @@ export type MutationCreateSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateSprayWallVersionArgs = {
   input: CreateSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateSupportBillingPortalSessionArgs = {
+  locale?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateSupportCheckoutSessionArgs = {
+  input: CreateSupportCheckoutSessionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4999,6 +5024,11 @@ export type MutationUpdateSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdateSupporterVisibilityArgs = {
+  showPublicly: Scalars['Boolean']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateTickArgs = {
   input: UpdateTickInput;
   uuid: Scalars['ID']['input'];
@@ -5587,6 +5617,14 @@ export type ProposeSprayWallResetInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+export type PublicSupporter = {
+  __typename?: 'PublicSupporter';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName: Scalars['String']['output'];
+  supportedAt: Scalars['String']['output'];
+  userId: Scalars['ID']['output'];
+};
+
 /** Public-facing user profile for social features. */
 export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
@@ -6109,6 +6147,8 @@ export type Query = {
   mySmartPlaylistCounts: Array<SmartPlaylistCount>;
   /** Every wall the caller owns, newest first. Includes walls with no published version. */
   mySprayWalls: Array<SprayWall>;
+  /** The signed-in user's Stripe supporter settings. */
+  mySupporterStatus: SupporterStatus;
   /**
    * Find discoverable sessions near a GPS location.
    * Default radius is 1000 meters.
@@ -6167,6 +6207,8 @@ export type Query = {
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
   publicProfile?: Maybe<PublicUserProfile>;
+  /** Accounts that chose public credit after a verified Stripe payment. */
+  publicSupporters: Array<PublicSupporter>;
   /**
    * Crowdsourced QA: the open pull requests among `prNumbers` (the tester's
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
@@ -6320,6 +6362,8 @@ export type Query = {
    * the same spot. Merged-twin candidates first, then nearest. Capped at 25.
    */
   strayBoardsForGym: Array<StrayBoard>;
+  /** Stripe Checkout availability and accepted amount range, in minor units. */
+  supportConfiguration: SupportConfiguration;
   /**
    * Pull Boardsesh grades for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
@@ -9301,6 +9345,36 @@ export type SubscriptionSessionUpdatesArgs = {
   sessionId: Scalars['ID']['input'];
 };
 
+export type SupportBillingPortalSession = {
+  __typename?: 'SupportBillingPortalSession';
+  url: Scalars['String']['output'];
+};
+
+export type SupportCadence = 'MONTHLY' | 'ONE_TIME';
+
+export type SupportCheckoutSession = {
+  __typename?: 'SupportCheckoutSession';
+  url: Scalars['String']['output'];
+};
+
+export type SupportConfiguration = {
+  __typename?: 'SupportConfiguration';
+  currency: Scalars['String']['output'];
+  enabled: Scalars['Boolean']['output'];
+  legacyDonateUrl?: Maybe<Scalars['String']['output']>;
+  maximumAmount: Scalars['Int']['output'];
+  minimumAmount: Scalars['Int']['output'];
+};
+
+export type SupporterStatus = {
+  __typename?: 'SupporterStatus';
+  cancelAtPeriodEnd: Scalars['Boolean']['output'];
+  hasActiveSubscription: Scalars['Boolean']['output'];
+  hasSupported: Scalars['Boolean']['output'];
+  linked: Scalars['Boolean']['output'];
+  showPublicly: Scalars['Boolean']['output'];
+};
+
 /**
  * Composite sync cursor returned by a pull. Feed it back as SyncCursorInput on
  * the next page.
@@ -10050,7 +10124,11 @@ export type GetDeleteAccountInfoQueryVariables = Exact<{ [key: string]: never }>
 
 export type GetDeleteAccountInfoQuery = {
   __typename?: 'Query';
-  deleteAccountInfo: { __typename?: 'DeleteAccountInfo'; publishedClimbCount: number };
+  deleteAccountInfo: {
+    __typename?: 'DeleteAccountInfo';
+    publishedClimbCount: number;
+    hasActiveStripeSubscription: boolean;
+  };
 };
 
 export type DeleteAccountMutationVariables = Exact<{
@@ -13492,6 +13570,75 @@ export type RetrySprayDetectionMutation = {
   };
 };
 
+export type GetSupportPageQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetSupportPageQuery = {
+  __typename?: 'Query';
+  supportConfiguration: {
+    __typename?: 'SupportConfiguration';
+    enabled: boolean;
+    currency: string;
+    minimumAmount: number;
+    maximumAmount: number;
+    legacyDonateUrl?: string | null;
+  };
+  mySupporterStatus: {
+    __typename?: 'SupporterStatus';
+    linked: boolean;
+    hasSupported: boolean;
+    showPublicly: boolean;
+    hasActiveSubscription: boolean;
+    cancelAtPeriodEnd: boolean;
+  };
+};
+
+export type GetPublicSupportersQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetPublicSupportersQuery = {
+  __typename?: 'Query';
+  publicSupporters: Array<{
+    __typename?: 'PublicSupporter';
+    userId: string;
+    displayName: string;
+    avatarUrl?: string | null;
+    supportedAt: string;
+  }>;
+};
+
+export type CreateSupportCheckoutMutationVariables = Exact<{
+  input: CreateSupportCheckoutSessionInput;
+}>;
+
+export type CreateSupportCheckoutMutation = {
+  __typename?: 'Mutation';
+  createSupportCheckoutSession: { __typename?: 'SupportCheckoutSession'; url: string };
+};
+
+export type UpdateSupporterVisibilityMutationVariables = Exact<{
+  showPublicly: Scalars['Boolean']['input'];
+}>;
+
+export type UpdateSupporterVisibilityMutation = {
+  __typename?: 'Mutation';
+  updateSupporterVisibility: {
+    __typename?: 'SupporterStatus';
+    linked: boolean;
+    hasSupported: boolean;
+    showPublicly: boolean;
+    hasActiveSubscription: boolean;
+    cancelAtPeriodEnd: boolean;
+  };
+};
+
+export type CreateSupportBillingPortalMutationVariables = Exact<{
+  locale?: InputMaybe<Scalars['String']['input']>;
+}>;
+
+export type CreateSupportBillingPortalMutation = {
+  __typename?: 'Mutation';
+  createSupportBillingPortalSession: { __typename?: 'SupportBillingPortalSession'; url: string };
+};
+
 export type GetTicksQueryVariables = Exact<{
   input: GetTicksInput;
 }>;
@@ -14267,7 +14414,10 @@ export const GetDeleteAccountInfoDocument = {
             name: { kind: 'Name', value: 'deleteAccountInfo' },
             selectionSet: {
               kind: 'SelectionSet',
-              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'publishedClimbCount' } }],
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'publishedClimbCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasActiveStripeSubscription' } },
+              ],
             },
           },
         ],
@@ -22034,6 +22184,197 @@ export const RetrySprayDetectionDocument = {
     },
   ],
 } as unknown as DocumentNode<RetrySprayDetectionMutation, RetrySprayDetectionMutationVariables>;
+export const GetSupportPageDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSupportPage' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'supportConfiguration' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'enabled' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currency' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'minimumAmount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'maximumAmount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'legacyDonateUrl' } },
+              ],
+            },
+          },
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'mySupporterStatus' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'linked' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasSupported' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'showPublicly' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasActiveSubscription' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'cancelAtPeriodEnd' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSupportPageQuery, GetSupportPageQueryVariables>;
+export const GetPublicSupportersDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPublicSupporters' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicSupporters' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'supportedAt' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPublicSupportersQuery, GetPublicSupportersQueryVariables>;
+export const CreateSupportCheckoutDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreateSupportCheckout' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CreateSupportCheckoutSessionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createSupportCheckoutSession' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'url' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreateSupportCheckoutMutation, CreateSupportCheckoutMutationVariables>;
+export const UpdateSupporterVisibilityDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateSupporterVisibility' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'showPublicly' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Boolean' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateSupporterVisibility' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'showPublicly' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'showPublicly' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'linked' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasSupported' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'showPublicly' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasActiveSubscription' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'cancelAtPeriodEnd' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateSupporterVisibilityMutation, UpdateSupporterVisibilityMutationVariables>;
+export const CreateSupportBillingPortalDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreateSupportBillingPortal' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'locale' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createSupportBillingPortalSession' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'locale' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'locale' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'url' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreateSupportBillingPortalMutation, CreateSupportBillingPortalMutationVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

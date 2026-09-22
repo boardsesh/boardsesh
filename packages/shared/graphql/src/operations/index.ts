@@ -25,6 +25,7 @@ export * from './integrations';
 export * from './location-sync-admin';
 export * from './gym-owner-reassign';
 export * from './spray-walls';
+export * from './support';
 // queue-session.ts is intentionally NOT re-exported here: its CREATE_SESSION,
 // END_SESSION etc. collide with the per-feature operations above. Import it
 // directly via `@boardsesh/graphql/operations/queue-session`.

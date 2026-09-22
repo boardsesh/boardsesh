@@ -143,6 +143,12 @@
     }
   },
   "about": {
+    "supporters": {
+      "title": "Unterstützer*innen",
+      "body": "Danke an alle, die laufende Kosten mittragen und hier genannt werden möchten.",
+      "stripeTitle": "Stripe-Unterstützer*innen",
+      "githubTitle": "GitHub Sponsors"
+    },
     "hero": {
       "title": "Von Kletterer*innen gebaut. Offen für alle.",
       "subtitle": "Von Kletterer*innen gebaut, die genug hatten von einer App pro Board."
@@ -187,6 +193,28 @@
     }
   },
   "support": {
+    "stripe": {
+      "title": "Mit Stripe unterstützen",
+      "body": "Wähle deinen Betrag und zahle per Karte, Apple Pay oder Google Pay. Kein GitHub-Konto nötig.",
+      "amount": "Betrag (USD)",
+      "amountError": "Wähle einen Betrag zwischen 1 und 500 US-Dollar.",
+      "monthly": "Monatlich",
+      "oneTime": "Einmalig",
+      "publicCredit": "Mich auf der Über-uns-Seite nennen",
+      "publicCreditSignIn": "Melde dich für eine öffentliche Nennung an",
+      "publicCreditHint": "Optional. Wir zeigen deinen Boardsesh-Namen und Avatar, niemals den Betrag.",
+      "cta": "Mit Stripe unterstützen",
+      "processing": "Stripe wird geöffnet…",
+      "error": "Stripe konnte nicht geöffnet werden. Versuche es erneut.",
+      "thanks": "Danke für deine Unterstützung. Deine Nennung erscheint, sobald Stripe die Zahlung bestätigt hat.",
+      "cancelled": "Der Bezahlvorgang wurde abgebrochen. Es wurde nichts berechnet.",
+      "unavailable": "Kartenzahlungen sind vorübergehend nicht verfügbar. GitHub Sponsors funktioniert weiterhin."
+    },
+    "manage": {
+      "title": "Deine Stripe-Unterstützung",
+      "publicCredit": "Mich auf der Über-uns-Seite zeigen",
+      "billing": "Zahlungen in Stripe verwalten"
+    },
     "hero": {
       "title": "Halt Boardsesh am Laufen",
       "subtitle": "Kostenlos, Open Source und von Kletterer*innen bezahlt"
@@ -204,11 +232,6 @@
       "title": "GitHub Sponsors",
       "body": "Unterstütz Boardsesh monatlich. Am einfachsten, wenn du schon einen GitHub-Account hast.",
       "cta": "Auf GitHub sponsern"
-    },
-    "oneTime": {
-      "title": "Einmalige Spende",
-      "body": "Zahl per Karte, Apple Pay oder Google Pay direkt im Browser. Ohne Account.",
-      "cta": "Einmal spenden"
     },
     "otherWays": {
       "title": "Andere Wege zu helfen",
@@ -878,7 +901,7 @@
   },
   "privacy": {
     "title": "Datenschutzerklärung",
-    "lastUpdatedProductAnalytics": "Zuletzt aktualisiert: Mai 2026",
+    "lastUpdatedProductAnalytics": "Zuletzt aktualisiert: 22. September 2026",
     "intro1": "Boardsesh ist eine quelloffene App, die Kletter-Trainingsboards (Kilter, Tension, MoonBoard) über Bluetooth steuert. Diese Erklärung sagt dir, welche Daten wir erheben, wozu, und was wir damit machen.",
     "intro2ProductAnalytics": "Kurz gesagt: Wir erheben nur, was die App zum Laufen braucht. Wir verkaufen deine Daten nicht, wir schalten keine Werbung, und wir geben nichts an Werbetreibende oder Datenhändler weiter.",
     "collect": {
@@ -912,16 +935,21 @@
       "auroraLabel": "Aurora-Climbing-API.",
       "auroraBody": "Wenn du dein Konto bei Aurora Climbing verknüpfst (das Kilter und Tension nutzen), gleichen wir deine Boulderdaten mit den Servern von Aurora ab, damit dein Routenbuch überall gleich aussieht. Das passiert nur, wenn du es anstößt. Siehe ",
       "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " für deren Umgang mit Daten."
+      "auroraBodyEnd": " für deren Umgang mit Daten.",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Stripe verarbeitet Unterstützungszahlungen und verwaltet die Abrechnung. Boardsesh speichert nur Stripe-Kennungen für die optionale öffentliche Nennung und Abo-Verwaltung; wir speichern keine Kartenangaben, Rechnungsadressen oder Beträge. Siehe ",
+      "stripeLink": "Datenschutzerklärung von Stripe"
     },
     "sharing": {
       "title": "Datenweitergabe",
       "body1ProductAnalytics": "Wir verkaufen deine Daten nicht. Wir schalten keine Werbung. Wir geben deine Daten nicht an Werbetreibende oder Datenhändler weiter. Nach außen geht nur, was oben beschrieben ist (Hosting und Analytics bei Vercel, Produktanalyse bei PostHog, Sync mit Aurora Climbing, wenn du sie einschaltest).",
-      "body2": "Andere Boardsesh-Nutzer*innen sehen deinen Benutzernamen, dein Profil und deine eingetragenen Boulder, wenn du bei sozialen Funktionen wie dem Party-Modus mitmachst. Das ist in der App sichtbar und gehört dazu."
+      "body2": "Andere Boardsesh-Nutzer*innen sehen deinen Benutzernamen, dein Profil und deine eingetragenen Boulder, wenn du bei sozialen Funktionen wie dem Party-Modus mitmachst. Das ist in der App sichtbar und gehört dazu.",
+      "stripe": "Wenn du der öffentlichen Nennung zustimmst, erscheinen dein Boardsesh-Name und Avatar auf den Seiten Über uns und Danksagungen. Der Betrag wird nie angezeigt."
     },
     "retention": {
       "title": "Speicherdauer",
-      "body": "Wir behalten deine Kontodaten und deine Kletterhistorie, solange dein Konto aktiv ist. Wenn du Boardsesh nicht mehr nutzt, bleiben deine Daten, bis du dein Konto löschst."
+      "body": "Wir behalten deine Kontodaten und deine Kletterhistorie, solange dein Konto aktiv ist. Wenn du Boardsesh nicht mehr nutzt, bleiben deine Daten, bis du dein Konto löschst.",
+      "stripe": "Eine bestätigte verknüpfte Zahlung behält ihre Nennung, bis du sie ausblendest oder dein Konto löschst. Das Beenden eines Abos entfernt diese frühere Nennung nicht. Stripe bewahrt Zahlungsdaten nach seiner eigenen Richtlinie auf."
     },
     "deletion": {
       "title": "Konto löschen",
@@ -932,7 +960,8 @@
       "onWebBody": " Melde dich an unter ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " und öffne „Mehr“ in deinem Profil — dort steht derselbe Button „Konto löschen“.",
-      "permanent": "Das Löschen passiert sofort und ist endgültig. Nach der Bestätigung entfernen wir deine E-Mail-Adresse, deinen Benutzernamen, deine Routenbuch-Einträge, deine Warteschlangen-Daten und die Historie deiner Party-Sessions von unseren Servern. Das lässt sich nicht rückgängig machen."
+      "permanent": "Das Löschen passiert sofort und ist endgültig. Nach der Bestätigung entfernen wir deine E-Mail-Adresse, deinen Benutzernamen, deine Routenbuch-Einträge, deine Warteschlangen-Daten und die Historie deiner Party-Sessions von unseren Servern. Das lässt sich nicht rückgängig machen.",
+      "stripe": "Bei einem aktiven verknüpften Stripe-Abo planen wir zuerst die Kündigung zum Ende des Abrechnungszeitraums. Bestätigt Stripe die Änderung nicht, wird dein Konto nicht gelöscht. Beim Löschen werden Stripe-Verknüpfung und öffentliche Nennung aus Boardsesh entfernt."
     },
     "children": {
       "title": "Kinder",

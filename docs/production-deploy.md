@@ -542,7 +542,7 @@ request, changeable without a rebuild.
 
 | Name                 | Kind   | Purpose                                                                            |
 | -------------------- | ------ | ---------------------------------------------------------------------------------- |
-| `STRIPE_DONATE_URL`  | var    | Stripe Payment Link behind the one-time donation rail on `/support`. Unset hides the rail. |
+| `STRIPE_DONATE_URL`  | var    | Legacy Payment Link fallback while backend Checkout is unavailable.                        |
 
 `STRIPE_DONATE_URL` has no `NEXT_PUBLIC_` prefix on purpose. A prefixed name is
 inlined at build time, and neither `Dockerfile.web` nor `production-deploy.yml`
@@ -551,6 +551,20 @@ set in production at all. `/support` reads it from a server component, so the
 unprefixed name resolves from the service environment on every request. It must
 be an `https://` URL; anything else is treated as unset and the rail stays
 hidden rather than linking somewhere unintended.
+
+The Railway backend service owns Stripe Checkout and must set:
+
+| Name                    | Kind   | Purpose                                                               |
+| ----------------------- | ------ | --------------------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`     | secret | Creates Checkout and Billing Portal sessions.                         |
+| `STRIPE_WEBHOOK_SECRET` | secret | Verifies `POST /webhooks/stripe` before linking supporter accounts.   |
+| `BOARDSESH_URL`         | var    | Builds locale-preserving Checkout and Billing Portal return URLs.     |
+
+Configure Stripe to send `checkout.session.completed`,
+`checkout.session.async_payment_succeeded`, `customer.subscription.updated`,
+and `customer.subscription.deleted` to the backend webhook URL. Keep
+`STRIPE_DONATE_URL` on the web service during rollout; the support page uses it
+only when backend Checkout is unavailable.
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper

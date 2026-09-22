@@ -16,6 +16,7 @@ import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
 import { borderRadius, spacing } from '../src/theme/tokens';
 import type { IconName } from '../src/components/icon-map';
+import { usePublicSupporters } from '../src/lib/graphql/hooks/use-public-supporters';
 
 function Chip({ label, icon, onPress }: { label: string; icon?: IconName; onPress: () => void }) {
   const { systemColors } = useTheme();
@@ -90,6 +91,7 @@ export default function AcknowledgementsScreen() {
   // Store rules only let some regions have a tappable donation link; everywhere
   // else the same message goes out as plain, unlinked text. See donation-links.ts.
   const donationLinksAllowed = useDonationLinksAllowed();
+  const { data: stripeSupporters = [] } = usePublicSupporters();
 
   const handleOpenProfile = useCallback((url: string) => {
     void openExternalUrl(url, 'acknowledgements');
@@ -172,6 +174,23 @@ export default function AcknowledgementsScreen() {
 
         <View style={styles.section}>
           <SectionHeader title={t('mobile.acknowledgements.sponsorsTitle')} />
+          {stripeSupporters.length > 0 ? (
+            <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
+              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
+                {t('mobile.acknowledgements.stripeSponsorsBody')}
+              </Text>
+              <View style={styles.chips}>
+                {stripeSupporters.map((supporter) => (
+                  <Chip
+                    key={supporter.userId}
+                    icon="favorite.fill"
+                    label={supporter.displayName}
+                    onPress={() => router.push({ pathname: '/users/[userId]', params: { userId: supporter.userId } })}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           {sponsors.length > 0 ? (
             <View style={[styles.groupCard, { backgroundColor: systemColors.secondaryBackground }]}>
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.sectionBody}>
