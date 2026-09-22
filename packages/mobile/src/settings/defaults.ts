@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   kioskHintSeen: false,
   browseNoticeSeen: false,
   bottomChromeDiagnostics: false,
+  qaPromptOnLaunch: false,
   qaBriefSeenKey: null,
   qaVerdictSubmittedKey: null,
 };

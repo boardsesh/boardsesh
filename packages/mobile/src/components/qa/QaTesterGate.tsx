@@ -6,7 +6,7 @@ import * as Updates from 'expo-updates';
 import { hasSeenOnboarding } from '../../lib/onboarding/onboarding-storage';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useOtaBranchSurfingState } from '../../lib/ota-branch-surfing-state';
-import { getSetting, setSetting } from '../../settings';
+import { getSetting, setSetting, useSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import { decideQaGate, type QaGateInput } from '../../lib/qa/qa-gate-decision';
@@ -31,11 +31,11 @@ export function resetQaGateSessionForTests(): void {
  * Launch-time gate for crowdsourced QA (see `docs/crowdsourced-qa-mobile.md`).
  * Renders nothing.
  *
- * On a store / TestFlight build that can surf OTA branches, a tester is asked
- * once per cold start either to pick a PR preview (when running production) or
- * to read the test plan for the preview they are already on. Everyone else —
- * every non-tester, every dev client, every build without the surfing headers —
- * sees nothing, ever.
+ * On a store / TestFlight build that can surf OTA branches, an opted-in tester
+ * is asked once per cold start either to pick a PR preview (when running
+ * production) or to read the test plan for the preview they are already on.
+ * Everyone else — every opted-out or non-tester account, every dev client,
+ * every build without the surfing headers — sees nothing, ever.
  *
  * The decision itself lives in `decideQaGate`, a pure function, so the policy is
  * unit-tested without a renderer. This component is only the plumbing: it reads
@@ -52,6 +52,12 @@ export function QaTesterGate() {
   const launchReady = useLaunchReady();
   const flagsResolved = useFeatureFlagsResolved();
   const enabled = useQaTesterGateEnabled();
+  const [qaPromptOnLaunch] = useSetting('qaPromptOnLaunch');
+  // This is a launch preference, not an immediate action. Enabling it from More
+  // waits for the next cold start; disabling it remains live so it can cancel
+  // deferred work that has not navigated yet.
+  const promptEnabledAtLaunchRef = useRef(qaPromptOnLaunch);
+  const promptEnabledForSession = promptEnabledAtLaunchRef.current && qaPromptOnLaunch;
   const ready = launchReady && flagsResolved;
   const segments = useSegments();
   // Latest top-level segment for the async re-check, without re-running the
@@ -77,6 +83,13 @@ export function QaTesterGate() {
     // Killed: stand down without spending the session guard, so nothing is
     // decided for this session on the killed flag's behalf.
     if (!enabled || promptedThisSession) return;
+    // Spend this session while the personal preference is off. That keeps
+    // switching it on from immediately interrupting the screen the tester is on;
+    // the next cold start gets a fresh module-level session guard.
+    if (!promptEnabledForSession) {
+      promptedThisSession = true;
+      return;
+    }
 
     const runningPrNumber = readRunningPrNumber();
     // Null until BOTH are known: the markers are account-scoped, so a key built
@@ -190,7 +203,7 @@ export function QaTesterGate() {
     };
     // `userId` is here so the effect re-runs after a sign-out / sign-in resets
     // the session guard above — the new account gets its own evaluation.
-  }, [ready, enabled, surfingBuild, surfingReady, profile?.isTester, userId]);
+  }, [ready, enabled, promptEnabledForSession, surfingBuild, surfingReady, profile?.isTester, userId]);
 
   return null;
 }

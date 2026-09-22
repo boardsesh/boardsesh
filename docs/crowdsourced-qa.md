@@ -10,8 +10,9 @@ Three pieces, landing in this order:
    by CI.
 2. **The backend** (`qaPreviews` query, `submitQaVerdict` mutation): serves a PR's plan to the app
    and posts the verdict to GitHub.
-3. **The app** (ships with the next native build): a tester is asked on launch to pick a PR
-   preview, reads the plan, and files a verdict from the user drawer.
+3. **The app**: testers can enable **Show previews on launch** under **More → Previews** to be
+   asked to pick a PR at startup; this defaults to off. Anyone can open a preview manually,
+   read the plan, and file a verdict from the user drawer.
 
 The pick screen's spine is xprem's branch list, not GitHub: `listPrBranches` asks
 `GET /branch_lists?all=1` for **every** `pr-<n>` branch published for this build's exact

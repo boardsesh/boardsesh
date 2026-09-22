@@ -649,6 +649,8 @@
       },
       "previews": {
         "title": "Vistas previas",
+        "promptOnLaunchTitle": "Mostrar vistas previas al iniciar",
+        "promptOnLaunchSubtitle": "Se aplica la próxima vez que inicies Boardsesh",
         "pickTitle": "Prueba una vista previa de PR",
         "pickSubtitle": "Prueba un cambio antes de que salga y cuéntanos qué tal",
         "testPlanTitle": "Plan de pruebas #{{prNumber}}",

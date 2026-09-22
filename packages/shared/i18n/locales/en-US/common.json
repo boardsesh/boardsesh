@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Previews",
+        "promptOnLaunchTitle": "Show previews on launch",
+        "promptOnLaunchSubtitle": "Applies the next time you launch Boardsesh",
         "pickTitle": "Test a PR preview",
         "pickSubtitle": "Try a change before it ships and tell us how it went",
         "testPlanTitle": "Test plan #{{prNumber}}",
