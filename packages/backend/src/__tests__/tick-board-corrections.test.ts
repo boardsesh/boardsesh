@@ -1,8 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { rowsFromResult } from '@boardsesh/db/client';
 import { v4 as uuidv4 } from 'uuid';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { setupWorkerDatabase } from './worker-db';
+import { createBarrier, createValueBarrier, handleLater } from './helpers/concurrency';
 
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
@@ -188,6 +190,43 @@ describe('tick board corrections', () => {
       tickMutations.updateTick(undefined, { uuid, input: { boardUuid: original.uuid, comment: 'bad edit' } }, ctx),
     ).rejects.toMatchObject({ extensions: { code: 'TICK_BOARD_INCOMPATIBLE' } });
     expect((await readTick(uuid)).comment).toBe('');
+  });
+  it('clears attribution after a board merge without locking the tick ahead of the board', async () => {
+    const sessionId = uuidv4();
+    await db
+      .insert(schema.boardSessions)
+      .values({ id: sessionId, boardId: homewall.id, boardPath: '/kilter/8/17/26,27/35' });
+    const uuid = await save(homewall, { boardUuid: homewall.uuid, sessionId });
+    const mergeReady = createValueBarrier<number>();
+    const releaseMerge = createBarrier();
+    const merge = db.transaction(async (tx) => {
+      const [connection] = rowsFromResult<{ pid: number }>(await tx.execute(sql`SELECT pg_backend_pid() AS pid`));
+      await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
+      await tx.select().from(schema.userBoards).where(eq(schema.userBoards.id, homewall.id)).for('update');
+      await tx.update(schema.boardSessions).set({ boardId: homewall.id }).where(eq(schema.boardSessions.id, sessionId));
+      mergeReady.release(connection.pid);
+      await releaseMerge.promise;
+      await tx.update(schema.boardseshTicks).set({ boardId: homewall.id }).where(eq(schema.boardseshTicks.uuid, uuid));
+    });
+    handleLater(merge);
+    const mergePid = await mergeReady.promise;
+    const clear = tickMutations.updateTick(undefined, { uuid, input: { boardUuid: null } }, ctx);
+    handleLater(clear);
+    try {
+      await vi.waitFor(async () => {
+        const waiting = rowsFromResult<{ query: string }>(
+          await db.execute(sql`
+          SELECT query FROM pg_stat_activity
+          WHERE datname = current_database() AND ${mergePid} = ANY(pg_blocking_pids(pid))
+        `),
+        );
+        expect(waiting.some((connection) => connection.query.includes('candidate_ids'))).toBe(true);
+      });
+    } finally {
+      releaseMerge.release();
+      await Promise.all([merge, clear]);
+    }
+    expect((await readTick(uuid)).boardId).toBeNull();
   });
   it('uses corrected attribution when an older ascent event arrives later', async () => {
     const uuid = await save(homewall, { boardUuid: homewall.uuid });

@@ -1360,6 +1360,16 @@ export const tickMutations = {
       // Board merges lock boards before ticks. Keep that order when changing
       // attribution, otherwise an edit and a merge can deadlock each other.
       let selectedBoard: typeof dbSchema.userBoards.$inferSelect | null = null;
+      if (validatedInput.boardUuid === null) {
+        const [ownedTick] = await tx
+          .select({ boardId: dbSchema.boardseshTicks.boardId })
+          .from(dbSchema.boardseshTicks)
+          .where(and(eq(dbSchema.boardseshTicks.uuid, uuid), eq(dbSchema.boardseshTicks.userId, userId)))
+          .limit(1);
+        // A merge also locks sessions before ticks. Clearing must wait on the
+        // old board before holding its tick, since we update its session later.
+        if (ownedTick?.boardId != null) await lockCanonicalTickBoardId(tx, ownedTick.boardId);
+      }
       if (validatedInput.boardUuid != null) {
         const [ownedTick] = await tx
           .select({ uuid: dbSchema.boardseshTicks.uuid })
