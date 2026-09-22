@@ -129,14 +129,14 @@ export const supportMutations = {
 
     const claimId = userId ? randomUUID() : null;
     if (userId) {
-      await db
-        .delete(dbSchema.stripeSupportClaims)
-        .where(
-          and(
-            eq(dbSchema.stripeSupportClaims.userId, userId),
-            lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
-          ),
-        );
+      await db.delete(dbSchema.stripeSupportClaims).where(
+        and(
+          eq(dbSchema.stripeSupportClaims.userId, userId),
+          // Checkout can remain valid for a full day, and delayed-payment
+          // webhooks can arrive later. Keep a week of delivery grace.
+          lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+        ),
+      );
       await db.insert(dbSchema.stripeSupportClaims).values({
         id: claimId!,
         userId,

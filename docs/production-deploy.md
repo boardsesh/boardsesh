@@ -560,6 +560,10 @@ The Railway backend service owns Stripe Checkout and must set:
 | `STRIPE_WEBHOOK_SECRET` | secret | Verifies `POST /webhooks/stripe` before linking supporter accounts.   |
 | `BOARDSESH_URL`         | var    | Builds locale-preserving Checkout and Billing Portal return URLs.     |
 
+Use Stripe test-mode keys (`sk_test_...` and the matching `whsec_...`) in
+development, CI, staging, and preview environments. Only production may use a
+live secret key, and rotating either secret requires a backend restart.
+
 Configure Stripe to send `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `customer.subscription.updated`,
 and `customer.subscription.deleted` to the backend webhook URL. Keep
