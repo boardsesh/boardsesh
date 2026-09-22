@@ -33,3 +33,9 @@ export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen
 // the tab bar's search-role magnifier (#5654): shown the first time another tab
 // is open, pointing back to the magnifier. Written as soon as it shows.
 export const ONBOARDING_TIP_CLIMBS_TAB_KEY = 'onboarding_tip_climbs_tab_seen';
+
+// Dismissal of the "your board account isn't linked" card on the empty Progress /
+// Logbook tabs. Not a tip: an empty logbook with no linked account is a standing
+// true condition rather than a one-time thing to teach, so only an explicit dismiss
+// hides it — it is not consumed on first render like the banners above.
+export const ONBOARDING_LINK_EMPTY_DISMISSED_KEY = 'onboarding_link_empty_dismissed';

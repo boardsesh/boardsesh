@@ -103,6 +103,10 @@ vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../OfflineState', () => ({ OfflineState: () => null }));
 vi.mock('../../onboarding/OnboardingTipBanner', () => ({ OnboardingTipBanner: () => null }));
 vi.mock('../ProfileBetaShelf', () => ({ ProfileBetaShelf: () => null }));
+vi.mock('../BoardLinkPrompt', () => ({
+  BoardLinkPrompt: ({ viewerIsOwner, hasNoSends }: { viewerIsOwner: boolean; hasNoSends: boolean }) =>
+    viewerIsOwner && hasNoSends ? createElement('span', { 'data-testid': 'board-link-prompt' }) : null,
+}));
 vi.mock('../StatsSummaryCard', () => ({ StatsSummaryCard: () => null }));
 vi.mock('../PeriodComparisonCard', () => ({ PeriodComparisonCard: () => null }));
 vi.mock('../ActivityHeatmap', () => ({ ActivityHeatmap: () => null }));
@@ -228,6 +232,24 @@ describe('all-board profile overview', () => {
     expect(getByText('stats.boardOverview.empty')).toBeTruthy();
     expect(queryByTestId('profile-board-expand')).toBeNull();
   });
+
+  it.each([
+    [true, false, true],
+    [false, false, false],
+    [true, true, false],
+  ])(
+    'offers board linking only for an unfiltered empty owned profile: owner=%s filters=%s',
+    (owner, filtered, visible) => {
+      const { queryByTestId } = render(
+        <ProgressTab
+          data={makeData({ statisticsSummary: { totalAscents: 0, layoutPercentages: [] }, hasActiveFilters: filtered })}
+          topInset={0}
+          isOwnProfile={owner}
+        />,
+      );
+      expect(queryByTestId('board-link-prompt') !== null).toBe(visible);
+    },
+  );
 
   it('uses third-person copy and hides filters when a public profile has no filter sheet', () => {
     const { getByText, queryByTestId } = render(<ProgressTab data={makeData()} topInset={0} isOwnProfile={false} />);

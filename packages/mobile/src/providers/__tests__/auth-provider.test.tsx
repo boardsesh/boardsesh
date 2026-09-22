@@ -31,6 +31,11 @@ const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const resetActiveBoardSelfHealValidationCacheMock = vi.hoisted(() => vi.fn());
+const linkEmptyDismissalMocks = vi.hoisted(() => ({
+  clear: vi.fn(async () => {}),
+  resume: vi.fn(),
+  suspend: vi.fn(),
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -69,6 +74,12 @@ vi.mock('../../components/AppLoadingSplash', () => ({
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
+}));
+
+vi.mock('../../lib/onboarding/onboarding-storage', () => ({
+  clearLinkEmptyPromptDismissal: linkEmptyDismissalMocks.clear,
+  resumeLinkEmptyDismissalWrites: linkEmptyDismissalMocks.resume,
+  suspendLinkEmptyDismissalWrites: linkEmptyDismissalMocks.suspend,
 }));
 
 vi.mock('../../lib/auth-token-events', () => ({
@@ -115,6 +126,9 @@ beforeEach(() => {
   routerState.segments = [];
   appStateState.listener = null;
   redirectMock.mockReset();
+  linkEmptyDismissalMocks.clear.mockReset().mockResolvedValue(undefined);
+  linkEmptyDismissalMocks.resume.mockReset();
+  linkEmptyDismissalMocks.suspend.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   authTokenEventsState.listener = null;
@@ -1678,19 +1692,32 @@ describe('AuthProvider forced sign-out registration', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
 
+    let finishDismissalClear!: () => void;
+    linkEmptyDismissalMocks.clear.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDismissalClear = resolve;
+        }),
+    );
     webSessionIdentityState.userId = 'user-2';
     webSessionIdentityState.authSessionId = 'login-2';
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    // B must remain unpublished while A's shared dismissal clear is pending.
+    expect(userStorageOwnerState.current).toBeNull();
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishDismissalClear();
+    });
     const previousOwner = { userId: 'user-1', authSessionId: 'login-1' };
     expect(clearStoredSessionIdMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledWith(previousOwner);
     expect(clearStoredQueueSnapshotMock).toHaveBeenCalledWith(previousOwner);
     expect(resetActiveBoardSelfHealValidationCacheMock).toHaveBeenCalledOnce();
+    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
-    expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });
+    expect(linkEmptyDismissalMocks.resume).toHaveBeenCalledTimes(2);
   });
 
   it('hides and cleans A when B is confirmed but the backend token bridge is unavailable', async () => {
@@ -1729,6 +1756,8 @@ describe('AuthProvider forced sign-out registration', () => {
     act(() => authTokenEventsState.listener?.(null, 'remote'));
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    expect(linkEmptyDismissalMocks.suspend).toHaveBeenCalledOnce();
+    expect(linkEmptyDismissalMocks.clear).toHaveBeenCalledOnce();
     expect(clearStoredActiveBoardMock).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
     expect(authSignOutMock).not.toHaveBeenCalled();

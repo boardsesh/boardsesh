@@ -81,6 +81,14 @@ vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
 }));
 
+// AuthProvider clears the shared banner dismissal at an account boundary.
+// Keep this browser gate test independent of SecureStore's native EventEmitter.
+vi.mock('../../lib/onboarding/onboarding-storage', () => ({
+  clearLinkEmptyPromptDismissal: vi.fn(async () => {}),
+  resumeLinkEmptyDismissalWrites: vi.fn(),
+  suspendLinkEmptyDismissalWrites: vi.fn(),
+}));
+
 vi.mock('../../lib/auth-token-events', () => ({
   subscribeAuthTokenChanges: (
     listener: (token: string | null, source: 'local' | 'remote' | 'remote-signout' | 'session' | 'hint') => void,

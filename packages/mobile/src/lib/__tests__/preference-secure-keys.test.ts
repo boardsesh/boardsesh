@@ -67,6 +67,7 @@ describe('PREFERENCE_SECURE_KEYS', () => {
       'changelog_last_seen',
       'onboarding_seen',
       'onboarding_board_tip_pending',
+      'onboarding_link_empty_dismissed',
       'onboarding_tip_workout_seen',
       'onboarding_tip_crew_seen',
       'onboarding_tip_record_seen',

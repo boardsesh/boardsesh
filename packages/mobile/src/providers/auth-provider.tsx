@@ -38,6 +38,11 @@ import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-s
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { getAppEntryHref } from '../lib/app-entry-route';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
+import {
+  clearLinkEmptyPromptDismissal,
+  resumeLinkEmptyDismissalWrites,
+  suspendLinkEmptyDismissalWrites,
+} from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { resetSyncStatus } from '../sync/sync-status';
@@ -191,6 +196,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     // the active-board write generation, so neither validation nor storage
     // state can leak into the next account.
     resetActiveBoardSelfHealValidationCache();
+    // Stop an account A dismissal click from writing after this account boundary
+    // has removed the shared key. The clear is queued behind any pre-existing
+    // write and is awaited before account B is published.
+    suspendLinkEmptyDismissalWrites();
     return Promise.allSettled([
       clearStoredSessionId(owner),
       clearStoredActiveBoardCoordinated(owner),
@@ -199,6 +208,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // Keyed by account already; cleared here too so a shared phone never
       // carries one climber's first-run state into the next session.
       clearFirstBoardPickerShowCount(),
+      clearLinkEmptyPromptDismissal(),
       // Create-climb and session-recap drafts are wiped for account
       // isolation only on web (the new surface). Native sign-out keeps its
       // origin behavior and leaves these drafts intact, so shipping this via
@@ -474,6 +484,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         authenticatedStorageOwnerRef.current = nextStorageOwner;
       }
 
+      resumeLinkEmptyDismissalWrites();
       anonymousSessionIsolatedRef.current = false;
       // Signing in, not re-checking a session that was already signed in. The
       // signed-out screens mount profile readers too, and what they cached for

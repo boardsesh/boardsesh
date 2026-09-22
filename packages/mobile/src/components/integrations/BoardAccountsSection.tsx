@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
+import { AURORA_CREDENTIALS_QUERY_KEY } from '../../lib/integrations/use-board-account-credentials';
 import {
   trackLinkFailed,
   trackLinkStarted,
@@ -102,7 +103,6 @@ type MoonBoardSharedSchemaModule = {
 
 const MAX_IMPORT_SIZE_BYTES = 200 * 1024 * 1024;
 const IMPORT_RESULT_LIMIT = 8;
-const AURORA_CREDENTIALS_QUERY_KEY = ['auroraCredentials'] as const;
 const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
