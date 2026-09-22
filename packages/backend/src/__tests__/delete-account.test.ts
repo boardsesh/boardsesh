@@ -80,11 +80,9 @@ function setupTransactionMock(options?: {
   txCalls.length = 0;
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
-    let selectCount = 0;
     const tx = {
       select: vi.fn().mockImplementation((columns: unknown) => {
-        selectCount += 1;
-        if (selectCount === 1) {
+        if (typeof columns === 'object' && columns !== null && 'subscriptionId' in columns) {
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({

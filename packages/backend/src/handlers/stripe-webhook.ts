@@ -6,6 +6,7 @@ import { db } from '../db/client';
 import { readJsonBody, sendJson } from './http-utils';
 import {
   getStripeClient,
+  isStripeSupportConfigured,
   stripeId,
   SUPPORT_CURRENCY,
   SUPPORT_MAXIMUM_AMOUNT,
@@ -127,6 +128,10 @@ export async function handleStripeWebhook(req: IncomingMessage, res: ServerRespo
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
     sendJson(res, 503, { error: 'Stripe webhook is not configured' });
+    return;
+  }
+  if (!isStripeSupportConfigured()) {
+    sendJson(res, 503, { error: 'Stripe support is not configured' });
     return;
   }
   const signature = req.headers['stripe-signature'];
