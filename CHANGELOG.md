@@ -6,8 +6,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-22
 
+### App update
+
+A new version shipped to the App Store.
+
 ### New
 
+- When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing. ([#5235](https://github.com/boardsesh/boardsesh/pull/5235))
 - Infrastructure: lets the database image serve a real certificate. Nothing deployed here. ([#5650](https://github.com/boardsesh/boardsesh/pull/5650))
 - Infrastructure DNS for the disaster-recovery standby. No user-facing change. ([#5649](https://github.com/boardsesh/boardsesh/pull/5649))
 - This separate Garmin app is not shipped through the mobile app's release notes and still requires Connect IQ Store preparation. ([#3466](https://github.com/boardsesh/boardsesh/pull/3466))

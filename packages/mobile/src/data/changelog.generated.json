@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-22T08:18:06.023Z",
+  "generatedAt": "2026-09-22T09:08:29.327Z",
   "entries": [
+    {
+      "prNumber": 5235,
+      "category": "new",
+      "title": "When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing.",
+      "mergedAt": "2026-09-22T08:43:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5235"
+    },
     {
       "prNumber": 5650,
       "category": "new",
@@ -5644,6 +5651,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-22T18:21:48+10:00",
+      "sha": "560358e9f7e88965fc3ab9b8f0f3feb69b18c4d6",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "ad75a3da716fbe67bb8d58e96247ae443b94bd98"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-19T21:21:37+10:00",
