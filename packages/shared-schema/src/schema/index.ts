@@ -37,6 +37,7 @@ import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
+import { supportTypeDefs } from './support';
 
 export const typeDefs = [
   appleAdsAttributionTypeDefs,
@@ -68,6 +69,7 @@ export const typeDefs = [
   holdOutlineOverridesTypeDefs,
   sprayWallsTypeDefs,
   sprayDetectionTypeDefs,
+  supportTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
   queriesTypeDefs,

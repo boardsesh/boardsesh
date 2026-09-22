@@ -58,6 +58,7 @@ export type SaveAuroraCredentialInput = {
 
 export type DeleteAccountInfo = {
   publishedClimbCount: number;
+  hasActiveStripeSubscription: boolean;
 };
 
 export type DeleteAccountInput = {

@@ -127,7 +127,9 @@
         "workouts": "Dale un plan a tu sesión.",
         "island": "Controla el plafón desde la Dynamic Island.",
         "log": "Recuerda cada encadene.",
-        "outro": "Menos móvil. Más plafón."
+        "outro": "Menos móvil. Más plafón.",
+        "hook": "Tu plafón. Encendido desde el móvil.",
+        "light": "Desliza y el plafón te sigue."
       },
       "unsupported": "Tu navegador no puede reproducir este vídeo.",
       "pause": "Pausar demo",
@@ -209,6 +211,12 @@
       "title": "Qué viene ahora",
       "body": "Más plafones, mejor modo sin conexión y poder sacar tus datos tan fácil como entraron. La hoja de ruta es pública y se discute en Discord.",
       "cta": "Lee la hoja de ruta"
+    },
+    "supporters": {
+      "title": "Personas que apoyan",
+      "body": "Gracias a quienes ayudan a pagar las facturas y eligen aparecer aquí.",
+      "stripeTitle": "Apoyo mediante Stripe",
+      "githubTitle": "Patrocinio en GitHub"
     }
   },
   "support": {
@@ -270,7 +278,29 @@
     },
     "aboutLink": "Conoce más sobre el proyecto →",
     "docsLink": "Mira cómo está construido en la documentación →",
-    "footer": "Gratis para todos, financiado por quien puede echar una mano."
+    "footer": "Gratis para todos, financiado por quien puede echar una mano.",
+    "stripe": {
+      "title": "Apoya con Stripe",
+      "body": "Elige el importe y paga con tarjeta, Apple Pay o Google Pay. No necesitas una cuenta de GitHub.",
+      "amount": "Importe (USD)",
+      "amountError": "Elige un importe entre 1 y 500 dólares.",
+      "monthly": "Mensual",
+      "oneTime": "Una vez",
+      "publicCredit": "Incluidme en la página Acerca de",
+      "publicCreditSignIn": "Inicia sesión para aparecer en los agradecimientos",
+      "publicCreditHint": "Opcional. Mostramos tu nombre y avatar de Boardsesh, nunca el importe.",
+      "cta": "Apoyar con Stripe",
+      "processing": "Abriendo Stripe…",
+      "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
+      "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
+      "cancelled": "El pago se canceló. No se realizó ningún cargo.",
+      "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."
+    },
+    "manage": {
+      "title": "Tu apoyo con Stripe",
+      "publicCredit": "Mostrarme en la página Acerca de",
+      "billing": "Gestionar pagos en Stripe"
+    }
   },
   "legal": {
     "intro": {
@@ -1057,16 +1087,24 @@
       "expoLink": "la documentación de Expo Observe",
       "hostingBody": "Usamos Railway para alojar la aplicación y la base de datos, y Cloudflare para distribuir contenido, alojar la app del navegador y almacenar archivos multimedia. Estos proveedores procesan las solicitudes necesarias para ofrecer Boardsesh. Consulta ",
       "sentryBody": "Usamos Sentry para supervisar errores por interés legítimo y mantener Boardsesh funcionando. La recopilación predeterminada de información personal está desactivada; limitamos los informes de errores y eliminamos los campos sensibles. El servicio sigue activo si rechazas la analítica. Consulta ",
-      "expoBody": "Usamos Expo Observe para medir tiempos de rendimiento, información del dispositivo y la versión de la app y diagnósticos de errores en nuestro propio servidor, por interés legítimo para mantener Boardsesh funcionando. Los diagnósticos siguen activos si rechazas la analítica. Los identificadores de instalación y sesión del SDK sirven para comprobar el estado de las actualizaciones; no asignamos ninguna identidad de cuenta de Boardsesh a Observe. Consulta "
+      "expoBody": "Usamos Expo Observe para medir tiempos de rendimiento, información del dispositivo y la versión de la app y diagnósticos de errores en nuestro propio servidor, por interés legítimo para mantener Boardsesh funcionando. Los diagnósticos siguen activos si rechazas la analítica. Los identificadores de instalación y sesión del SDK sirven para comprobar el estado de las actualizaciones; no asignamos ninguna identidad de cuenta de Boardsesh a Observe. Consulta ",
+      "vercelLabel": "Vercel.",
+      "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
+      "vercelLink": "la política de privacidad de Vercel",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Stripe procesa las aportaciones y gestiona los pagos. Boardsesh solo guarda los identificadores de Stripe necesarios para vincular el reconocimiento público opcional y gestionar una suscripción; no guardamos datos de tarjeta, direcciones de facturación ni importes. Consulta ",
+      "stripeLink": "la política de privacidad de Stripe"
     },
     "sharing": {
       "title": "Compartir de datos",
       "body1ProductAnalytics": "No vendemos tus datos, no mostramos anuncios ni compartimos información con anunciantes o intermediarios de datos. Los proveedores descritos arriba procesan datos para alojamiento, almacenamiento, fiabilidad del servicio y analítica opcional. La sincronización con Aurora Climbing funciona cuando la activas.",
-      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto."
+      "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto.",
+      "stripe": "Si aceptas el reconocimiento público, tu nombre y avatar de Boardsesh aparecen en las páginas Acerca de y Agradecimientos. Nunca mostramos el importe."
     },
     "retention": {
       "title": "Retención de datos",
-      "body": "Conservamos los datos de tu cuenta y tu historial de escalada mientras tu cuenta esté activa. Si dejas de usar Boardsesh, tus datos se quedan hasta que borres la cuenta."
+      "body": "Conservamos los datos de tu cuenta y tu historial de escalada mientras tu cuenta esté activa. Si dejas de usar Boardsesh, tus datos se quedan hasta que borres la cuenta.",
+      "stripe": "Una aportación vinculada y verificada conserva el reconocimiento hasta que lo ocultes o elimines tu cuenta. Cancelar una suscripción no elimina ese reconocimiento histórico. Stripe conserva los registros de pago según su política."
     },
     "deletion": {
       "title": "Eliminación de cuenta",
@@ -1077,7 +1115,8 @@
       "onWebBody": " Inicia sesión en ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " y abre Ajustes desde el menú de tu avatar para encontrar el mismo botón Eliminar Cuenta.",
-      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer."
+      "permanent": "La eliminación es inmediata y permanente. Una vez confirmada, eliminamos de nuestros servidores tu correo, nombre de usuario, entradas del logbook, datos de la cola y el historial de sesiones de fiesta. Esto no se puede deshacer.",
+      "stripe": "Si hay una suscripción de Stripe activa, primero programamos su cancelación al final del periodo de facturación. Si Stripe no confirma el cambio, no eliminamos tu cuenta. Al eliminarla se borra el vínculo con Stripe y el reconocimiento público en Boardsesh."
     },
     "children": {
       "title": "Menores",

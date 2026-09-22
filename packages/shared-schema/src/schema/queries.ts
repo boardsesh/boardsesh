@@ -3,6 +3,13 @@ export const queriesTypeDefs = /* GraphQL */ `
   Root query type for all read operations.
   """
   type Query {
+    "Stripe Checkout availability and accepted amount range, in minor units."
+    supportConfiguration: SupportConfiguration!
+    "Accounts that chose public credit after a verified Stripe payment."
+    publicSupporters: [PublicSupporter!]!
+    "The signed-in user's Stripe supporter settings."
+    mySupporterStatus: SupporterStatus!
+
     """
     Get details of a specific session by ID.
     Returns null if session doesn't exist.

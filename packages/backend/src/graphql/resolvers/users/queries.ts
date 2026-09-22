@@ -13,6 +13,7 @@ import { getAuroraCredentialStatuses } from '../../../services/aurora-credential
 import { mapAuroraCredentialStatus } from './credential-status';
 import { loadProfileRoleFlags } from './role-flags';
 import { FAVORITE_COUNT_SUBQUERY } from './favorite-count';
+import { isLiveStripeSubscription } from '../../../services/stripe-support';
 
 export const userQueries = {
   /**
@@ -98,13 +99,26 @@ export const userQueries = {
   deleteAccountInfo: async (_: unknown, __: unknown, ctx: ConnectionContext): Promise<DeleteAccountInfo> => {
     requireAuthenticated(ctx);
 
-    const result = await db
-      .select({ count: count() })
-      .from(dbSchema.boardClimbs)
-      .where(and(eq(dbSchema.boardClimbs.userId, ctx.userId!), eq(dbSchema.boardClimbs.isDraft, false)));
+    const [result, supporter] = await Promise.all([
+      db
+        .select({ count: count() })
+        .from(dbSchema.boardClimbs)
+        .where(and(eq(dbSchema.boardClimbs.userId, ctx.userId!), eq(dbSchema.boardClimbs.isDraft, false))),
+      db
+        .select({
+          subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
+          subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
+        })
+        .from(dbSchema.stripeSupporters)
+        .where(eq(dbSchema.stripeSupporters.userId, ctx.userId!))
+        .limit(1),
+    ]);
 
     return {
       publishedClimbCount: result[0]?.count ?? 0,
+      hasActiveStripeSubscription: Boolean(
+        supporter[0]?.subscriptionId && isLiveStripeSubscription(supporter[0]?.subscriptionStatus),
+      ),
     };
   },
 };
