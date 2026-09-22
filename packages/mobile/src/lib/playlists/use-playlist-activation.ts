@@ -68,7 +68,7 @@ export function _resetEmptyBoardFetchReportsForTests(): void {
 }
 
 /**
- * The loaded climbs the active board could actually render, in playlist order.
+ * How many of the loaded climbs the active board could actually render.
  *
  * The canary below compares the board-scoped fetch against THIS, not against the
  * raw loaded count. The playlist detail list runs the resolver in all-boards mode
@@ -85,9 +85,13 @@ export function _resetEmptyBoardFetchReportsForTests(): void {
  * `required_set_ids <@ selected sets` containment on MoonBoard — whose render
  * data covers the whole grid whichever add-on sets are actually bolted on.
  */
-function climbsThisBoardCanRender(climbs: Climb[], board: PlaylistRenderBoard): Climb[] {
+function countClimbsThisBoardCanRender(climbs: Climb[], board: PlaylistRenderBoard): number {
   const target = getPlaylistRenderBoardTarget(board);
-  return climbs.filter((climb) => canAddClimbToBoard(climb, target).ok);
+  let count = 0;
+  for (const climb of climbs) {
+    if (canAddClimbToBoard(climb, target).ok) count += 1;
+  }
+  return count;
 }
 
 /** A single page of the suggestion-refresh fetch. */
@@ -456,40 +460,28 @@ export function usePlaylistActivation({
             extra: { sourceId, pagesFetched: drainPagesFetched, climbCount: climbs.length },
           });
         }
-        const fetchedClimbs = climbs;
-        const loadedBoardClimbs = activeBoard
-          ? climbsThisBoardCanRender(loadedClimbsRef.current, {
-              boardName: activeBoard.boardType,
-              layoutId: activeBoard.layoutId,
-              sizeId: activeBoard.sizeId,
-              setIds: activeBoard.setIds,
-              angle: activeBoard.angle,
-            })
-          : [];
-
-        // The detail screen already has an ordered, visible playlist window. A
-        // successful board-scoped refresh must not shrink navigation below that
-        // known-good window: doing so leaves the player with only the tapped
-        // climb and disables both arrows/swipes. Prefer the refreshed list once
-        // it is at least as complete; otherwise keep the compatible loaded rows.
-        const queueClimbs = fetchedClimbs.length >= loadedBoardClimbs.length ? fetchedClimbs : loadedBoardClimbs;
-
         // Canary. A board-scoped fetch that comes back empty for a playlist the
         // detail list has already rendered climbable rows for used to degrade
         // into a plausible one-item queue with no error anywhere — exactly how
-        // #3891's MoonBoard size filter stayed invisible for months. The fallback
-        // above now keeps navigation working, but the backend mismatch still
-        // needs reporting. Sentry-only, once per playlist per session, and gated
-        // on climbs this board CAN render so an off-board playlist stays silent.
+        // #3891's MoonBoard size filter stayed invisible for months. Report it
+        // Sentry-only, once per playlist per session, and gate on climbs this
+        // board CAN render so an off-board playlist stays silent. The fresh list
+        // remains authoritative: a shorter result may reflect a real removal.
         if (
-          fetchedClimbs.length === 0 &&
+          climbs.length === 0 &&
           // A capped or repeating drain is a different, already-reported fault.
           // Firing #3891's canary on it would poison that signal.
           (drainStopReason === null || drainStopReason === 'complete') &&
           activeBoard &&
           !reportedEmptyBoardFetches.has(sourceId)
         ) {
-          const renderableCount = loadedBoardClimbs.length;
+          const renderableCount = countClimbsThisBoardCanRender(loadedClimbsRef.current, {
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          });
           if (renderableCount > 0) {
             reportedEmptyBoardFetches.add(sourceId);
             reportHandledError(new Error('Playlist board-scoped fetch returned no climbs'), {
@@ -514,7 +506,7 @@ export function usePlaylistActivation({
           });
           return;
         }
-        const { queue, currentItem } = buildPlaylistQueue(queueClimbs, climb, options.previewQueueItem);
+        const { queue, currentItem } = buildPlaylistQueue(climbs, climb, options.previewQueueItem);
         setQueue(queue, currentItem);
         // The circuit IS the queue now, so swipes must walk it. Swipes are
         // list-first (#4829) and the provider only drops a source whose list

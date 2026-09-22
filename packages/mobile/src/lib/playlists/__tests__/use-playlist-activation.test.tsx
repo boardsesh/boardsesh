@@ -732,9 +732,10 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     // #3891 canary. A board-scoped fetch that comes back empty for a playlist whose
     // detail list already has climbs used to degrade into a plausible one-item
-    // queue: no error, no toast, just a circuit you couldn't swipe through. Keep
-    // reporting that backend mismatch, but fall back to the compatible loaded rows.
-    it('reports (and does not silently one-item) an empty board-scoped fetch for a non-empty playlist', async () => {
+    // queue: no error, no toast, just a circuit you couldn't swipe through. The
+    // loaded swipe track covers the pending window; the completed refresh remains
+    // authoritative because the playlist may really have changed on the server.
+    it('reports an empty board-scoped fetch for a non-empty playlist', async () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
@@ -754,12 +755,12 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         });
       });
       const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
-      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
       expect(lastSetQueue?.[1].climb.uuid).toBe('b');
       expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
-    it('keeps the larger compatible loaded window when the board refresh is shorter', async () => {
+    it('accepts a shorter completed refresh instead of restoring removed climbs', async () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false });
       const { result } = renderActivation(fetchPage, {
@@ -772,7 +773,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
-      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
       expect(lastSetQueue?.[1].climb.uuid).toBe('b');
       expect(mocks.reportHandledError).not.toHaveBeenCalled();
     });
