@@ -48,6 +48,9 @@ describe('garmin workflow path filters', () => {
     // Editing the workflow must re-run it, or a broken trigger ships unnoticed.
     // Repo-wide convention; see firmware-build.yml and hold-detector-image.yml.
     expect(source).toContain(`- '${path}'`);
+    // Both workflows get their SDK from the shared composite action, so a change
+    // there has to retrigger both -- not just whichever one remembered to list it.
+    expect(source).toContain(`- '${ACTION_PATH}'`);
   });
 
   it('never adds a garmin filter to ci.yml', () => {
@@ -104,7 +107,7 @@ describe('garmin signing-key boundary', () => {
       .filter((line) => line.trim().startsWith('path:'))
       .map((line) => line.trim());
     expect(cachedPaths).toEqual(['path: ~/.Garmin/ConnectIQ']);
-    expect(action).toContain('--config "$RUNNER_TEMP/ciq-config.yaml"');
+    expect(action).toContain('ciq_config="$RUNNER_TEMP/ciq-config.yaml"');
   });
 });
 
@@ -124,6 +127,17 @@ describe('garmin release publication', () => {
 
   it('verifies published assets against the checksums it built', () => {
     expect(releaseSource).toContain('sha256sum -c');
+  });
+});
+
+describe('garmin SDK login', () => {
+  it('cannot stall on the interactive SSO fallback', () => {
+    // `login --help`: credentials come from GARMIN_USERNAME / GARMIN_PASSWORD,
+    // but on bad ones the CLI drops to an interactive Garmin SSO prompt. In CI
+    // that blocks until the job timeout with nothing useful logged.
+    const action = readFileSync(ACTION_PATH, 'utf8');
+    expect(action).toContain('login </dev/null');
+    expect(action).toMatch(/timeout \d+ "\$ciq_bin"/);
   });
 });
 
