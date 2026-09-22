@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-22T08:09:26.080Z",
+  "generatedAt": "2026-09-22T08:18:06.023Z",
   "entries": [
+    {
+      "prNumber": 5650,
+      "category": "new",
+      "title": "Infrastructure: lets the database image serve a real certificate. Nothing deployed here.",
+      "mergedAt": "2026-09-22T08:13:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5650"
+    },
     {
       "prNumber": 5231,
       "category": "fixed",
