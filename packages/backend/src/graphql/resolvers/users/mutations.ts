@@ -220,16 +220,17 @@ export const userMutations = {
 
     const userId = ctx.userId!;
 
-    const [supporter] = await db
-      .select({
-        subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
-        subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
-        cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
-      })
-      .from(dbSchema.stripeSupporters)
-      .where(eq(dbSchema.stripeSupporters.userId, userId))
-      .limit(1);
     await db.transaction(async (tx) => {
+      const [supporter] = await tx
+        .select({
+          subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
+          subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
+          cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
+        })
+        .from(dbSchema.stripeSupporters)
+        .where(eq(dbSchema.stripeSupporters.userId, userId))
+        .limit(1);
+
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
       // themselves are deleted or the rows it targets would already be gone.
