@@ -694,9 +694,9 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
 
     // #3891 canary. A board-scoped fetch that comes back empty for a playlist whose
-    // detail list already has climbs degrades into a plausible one-item queue —
-    // no error, no toast, just a circuit you can't swipe through. That is exactly
-    // how the MoonBoard size filter hid for months, so it now reports to Sentry.
+    // detail list already has climbs used to degrade into a plausible one-item
+    // queue: no error, no toast, just a circuit you couldn't swipe through. Keep
+    // reporting that backend mismatch, but fall back to the compatible loaded rows.
     it('reports (and does not silently one-item) an empty board-scoped fetch for a non-empty playlist', async () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
@@ -716,11 +716,28 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
           extra: { sourceId: 'playlist:empty-fetch-1', renderableCount: 3, loadedCount: 3 },
         });
       });
-      // Documents the degraded-but-not-crashed behaviour: the tapped climb is still
-      // playable, it just has nowhere to swipe to. The canary is telemetry, not a fix.
       const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
-      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      expect(lastSetQueue?.[1].climb.uuid).toBe('b');
       expect(mocks.showToast).not.toHaveBeenCalled();
+    });
+
+    it('keeps the larger compatible loaded window when the board refresh is shorter', async () => {
+      const tapped = makeClimb('b');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false });
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
+      });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+
+      const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      expect(lastSetQueue?.[1].climb.uuid).toBe('b');
+      expect(mocks.reportHandledError).not.toHaveBeenCalled();
     });
 
     it('reports an empty board-scoped fetch at most once per playlist per session', async () => {
@@ -811,6 +828,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
           extra: { sourceId: 'playlist:empty-fetch-5', renderableCount: 1, loadedCount: 2 },
         });
       });
+      const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b']);
     });
 
     it('stays silent when a MoonBoard wall lacks the sets its playlist climbs need', async () => {
