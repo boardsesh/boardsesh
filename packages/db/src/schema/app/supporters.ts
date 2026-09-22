@@ -9,10 +9,8 @@ import { users } from '../auth/users';
 export const stripeSupporters = pgTable(
   'stripe_supporters',
   {
-    id: text('id')
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
     userId: text('user_id')
+      .primaryKey()
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     stripeCustomerId: text('stripe_customer_id'),
@@ -26,7 +24,6 @@ export const stripeSupporters = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
-    userUnique: uniqueIndex('stripe_supporters_user_unique').on(table.userId),
     customerIdx: index('stripe_supporters_customer_idx').on(table.stripeCustomerId),
     subscriptionUnique: uniqueIndex('stripe_supporters_subscription_unique').on(table.stripeSubscriptionId),
     publicIdx: index('stripe_supporters_public_idx').on(table.showPublicly, table.supportedAt),

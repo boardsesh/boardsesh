@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parse } from 'graphql';
+import { fetchAllPublicSupporters, PUBLIC_SUPPORTERS_PAGE_SIZE, type PublicSupporter } from '../operations/support';
 
 // Smoke tests over the hand-written operation strings. The dedicated
 // schema-validation suite at packages/backend/src/__tests__/operations-schema-validation.test.ts
@@ -31,6 +32,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'queue-session', load: () => import('../operations/queue-session') },
   { name: 'sessions', load: () => import('../operations/sessions') },
   { name: 'social', load: () => import('../operations/social') },
+  { name: 'support', load: () => import('../operations/support') },
   { name: 'ticks', load: () => import('../operations/ticks') },
 ];
 
@@ -49,6 +51,26 @@ describe('every operation string is valid GraphQL', () => {
       // failure message would require regex juggling, so let parse() report.
       expect(() => parse(operation)).not.toThrow();
     }
+  });
+});
+
+describe('supporter pagination', () => {
+  it('requests every page without dropping supporters', async () => {
+    const supporters = Array.from({ length: PUBLIC_SUPPORTERS_PAGE_SIZE + 1 }, (_, index): PublicSupporter => ({
+      userId: `user-${index}`,
+      displayName: `Supporter ${index}`,
+      supportedAt: new Date(index).toISOString(),
+    }));
+    const requestPage = vi.fn(async ({ limit, offset }: { limit: number; offset: number }) => ({
+      publicSupporters: supporters.slice(offset, offset + limit),
+    }));
+
+    await expect(fetchAllPublicSupporters(requestPage)).resolves.toEqual(supporters);
+    expect(requestPage).toHaveBeenNthCalledWith(1, { limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset: 0 });
+    expect(requestPage).toHaveBeenNthCalledWith(2, {
+      limit: PUBLIC_SUPPORTERS_PAGE_SIZE,
+      offset: PUBLIC_SUPPORTERS_PAGE_SIZE,
+    });
   });
 });
 

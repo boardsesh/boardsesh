@@ -57,7 +57,9 @@ export const supportQueries = {
       }
     })(),
   }),
-  publicSupporters: async () => {
+  publicSupporters: async (_: unknown, { limit, offset }: { limit: number; offset: number }) => {
+    const pageLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
+    const pageOffset = Math.max(Math.trunc(offset), 0);
     const rows = await db
       .select({
         userId: dbSchema.users.id,
@@ -71,7 +73,9 @@ export const supportQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.stripeSupporters.userId))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(and(eq(dbSchema.stripeSupporters.showPublicly, true), isNotNull(dbSchema.stripeSupporters.supportedAt)))
-      .orderBy(desc(dbSchema.stripeSupporters.supportedAt));
+      .orderBy(desc(dbSchema.stripeSupporters.supportedAt))
+      .limit(pageLimit)
+      .offset(pageOffset);
     return rows.map((row) => ({
       userId: row.userId,
       displayName: row.displayName || row.accountName || 'Boardsesh supporter',
@@ -187,7 +191,7 @@ export const supportMutations = {
       .where(eq(dbSchema.stripeSupporters.userId, ctx.userId!))
       .returning();
     if (!row?.supportedAt) {
-      throw new GraphQLError('No linked Stripe support was found.', { extensions: { code: 'NOT_FOUND' } });
+      throw new GraphQLError('No completed linked Stripe support was found.', { extensions: { code: 'NOT_FOUND' } });
     }
     return supporterStatus(row);
   },

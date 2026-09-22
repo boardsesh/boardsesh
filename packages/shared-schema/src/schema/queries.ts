@@ -6,7 +6,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Stripe Checkout availability and accepted amount range, in minor units."
     supportConfiguration: SupportConfiguration!
     "Accounts that chose public credit after a verified Stripe payment."
-    publicSupporters: [PublicSupporter!]!
+    publicSupporters(limit: Int! = 100, offset: Int! = 0): [PublicSupporter!]!
     "The signed-in user's Stripe supporter settings."
     mySupporterStatus: SupporterStatus!
 
