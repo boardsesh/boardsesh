@@ -10,6 +10,7 @@ import {
   CANONICAL_WEB_ORIGIN,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
+  POSTGRES_PRIMARY_SERVICE_NAME,
   WEB_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
@@ -37,15 +38,20 @@ import {
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
-const WEB_SYNC_VARIABLES = {
+// The main stubs answer every service's variables() query with one set, so this
+// holds every variable any declared service requires, across all of them. A
+// service-specific value is merged over it by the caller.
+const BASELINE_REQUIRED_VARS = {
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
   BOARDSESH_WEB: '1',
   BASE_URL: CANONICAL_WEB_ORIGIN,
+  PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
+  PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
 };
 
-function withWebSyncVariables(variables: Record<string, string>): Record<string, string> {
-  return { ...WEB_SYNC_VARIABLES, ...variables };
+function withBaselineRequiredVars(variables: Record<string, string>): Record<string, string> {
+  return { ...BASELINE_REQUIRED_VARS, ...variables };
 }
 
 function liveState(overrides: Partial<LiveState> = {}): LiveState {
@@ -54,9 +60,15 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-ota', name: OTA_SERVICE_NAME },
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
       { id: 'svc-web', name: WEB_SERVICE_NAME },
+      { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
     ],
     variables: {
       [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
+      // Presence is all this config asserts; the PEM bodies live only in Railway.
+      [POSTGRES_PRIMARY_SERVICE_NAME]: {
+        PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
+        PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+      },
       [WEB_SERVICE_NAME]: {
         SMTP_USER: 'mailer@boardsesh.com',
         SMTP_PASSWORD: 'test-password',
@@ -141,6 +153,80 @@ describe('diffServiceVars', () => {
     const supplied = { suppliedVars: new Set([varKey(OTA_SERVICE_NAME, 'CLICKHOUSE_URL')]) };
     const [change] = diffServiceVars(otaService, live, supplied);
     expect(change.blocked).toBe(false);
+  });
+
+  // The primary's TLS variables get the same absent/placeholder coverage every
+  // other service's required vars have. Without it, dropping requiredVars from
+  // this service would silently stop the check that keeps the primary from
+  // falling back to a certificate whose private key is public.
+  it('reports each absent TLS variable on the primary', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({ variables: { [POSTGRES_PRIMARY_SERVICE_NAME]: {} } });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+
+    expect(changes.map((change) => change.summary).join(' ')).toContain('PG_TLS_SERVER_CERT');
+    expect(changes.map((change) => change.summary).join(' ')).toContain('PG_TLS_SERVER_KEY');
+    for (const change of changes) {
+      expect(change).toMatchObject({ resource: 'env-var', blocked: true });
+      expect(change.summary).toContain('absent');
+    }
+  });
+
+  it('flags a placeholder TLS certificate on the primary', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({
+      variables: {
+        [POSTGRES_PRIMARY_SERVICE_NAME]: {
+          PG_TLS_SERVER_CERT: '<-----BEGIN CERTIFICATE----- …>',
+          PG_TLS_SERVER_KEY: '-----BEGIN PRIVATE KEY-----\nreal\n-----END PRIVATE KEY-----',
+        },
+      },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.summary).toContain('PG_TLS_SERVER_CERT');
+    expect(changes[0]?.summary).toContain('placeholder');
+  });
+
+  // A private key must never reach the plan output, which an operator pastes around.
+  // Two branches matter and they are different code paths: a bracketed value is
+  // classified as a placeholder and reported, while a real PEM is classified as set
+  // and reported not at all. The second is the one that actually carries key
+  // material, so it needs its own case rather than being implied by the first.
+  it('never echoes a placeholder key back in the plan output', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const live = liveState({
+      variables: { [POSTGRES_PRIMARY_SERVICE_NAME]: { PG_TLS_SERVER_KEY: '<SUPERSECRETKEYMATERIAL>' } },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes.some((change) => change.summary.includes('placeholder'))).toBe(true);
+    expect(JSON.stringify(changes)).not.toContain('SUPERSECRETKEYMATERIAL');
+  });
+
+  it('stays silent, and leaks nothing, when a real key is set', () => {
+    const primaryService = desiredRailwayState.services.find(
+      (service) => service.name === POSTGRES_PRIMARY_SERVICE_NAME,
+    );
+    if (!primaryService) throw new Error('Expected the primary service assertion.');
+    const realKey = '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49SECRETBODY\n-----END PRIVATE KEY-----';
+    const realCert = '-----BEGIN CERTIFICATE-----\nMIIBhjCCAS2gAwIBAgIUSECRETBODY\n-----END CERTIFICATE-----';
+    const live = liveState({
+      variables: {
+        [POSTGRES_PRIMARY_SERVICE_NAME]: { PG_TLS_SERVER_CERT: realCert, PG_TLS_SERVER_KEY: realKey },
+      },
+    });
+    const changes = diffServiceVars(primaryService, live, NO_SUPPLIED);
+    expect(changes).toEqual([]);
+    expect(JSON.stringify(changes)).not.toContain('SECRETBODY');
   });
 
   it('flags a placeholder that a naive is-it-set check would pass', () => {
@@ -269,7 +355,7 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {} });
     const plan = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(3);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(4);
   });
 
   it('reports missing TTLs', () => {
@@ -373,7 +459,7 @@ describe('main', () => {
       }
 
       const data = body.query.includes('variables(')
-        ? { variables: withWebSyncVariables(variables) }
+        ? { variables: withBaselineRequiredVars(variables) }
         : {
             project: {
               name: 'boardsesh-ota',
@@ -383,6 +469,7 @@ describe('main', () => {
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+                  { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
                 ],
               },
             },
@@ -515,6 +602,7 @@ describe('Railway authentication', () => {
           { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
           { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
           { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+          { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
         ],
       },
     },
@@ -571,7 +659,7 @@ describe('Railway authentication', () => {
       const data = query.includes('volumes {')
         ? VOLUMES_DATA
         : query.includes('variables(')
-          ? { variables: withWebSyncVariables({ CLICKHOUSE_URL: 'clickhouse://x/y' }) }
+          ? { variables: withBaselineRequiredVars({ CLICKHOUSE_URL: 'clickhouse://x/y' }) }
           : PROJECT_DATA;
       return new Response(JSON.stringify({ data }), { status: 200 });
     }) as typeof globalThis.fetch;
@@ -815,7 +903,9 @@ describe('apply mode', () => {
         );
       }
       if (body.query.includes('variables(')) {
-        return new Response(JSON.stringify({ data: { variables: withWebSyncVariables(variables) } }), { status: 200 });
+        return new Response(JSON.stringify({ data: { variables: withBaselineRequiredVars(variables) } }), {
+          status: 200,
+        });
       }
       return new Response(
         JSON.stringify({
@@ -828,6 +918,7 @@ describe('apply mode', () => {
                   { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
+                  { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
                 ],
               },
             },

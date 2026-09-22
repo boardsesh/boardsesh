@@ -41,6 +41,13 @@ export const CLICKHOUSE_SERVICE_NAME = 'boardsesh-ota-clickhouse';
 /** The public www service. It is asserted here but never created by this tool. */
 export const WEB_SERVICE_NAME = 'boardsesh-web';
 
+/**
+ * The production PostgreSQL 18 primary. Declared assert-only and for its TLS
+ * variables alone: its image digest, volume and networking are managed by the
+ * reviewed publish flow in docs/postgres-image-publishing.md, not from here.
+ */
+export const POSTGRES_PRIMARY_SERVICE_NAME = 'PostGIS - PG18';
+
 /** The only public origin that can safely issue Boardsesh's cross-subdomain session cookies. */
 export const CANONICAL_WEB_ORIGIN = 'https://www.boardsesh.com';
 
@@ -262,6 +269,27 @@ export const desiredRailwayState: RailwayDesiredState = {
         image: CLICKHOUSE_IMAGE,
         volumeMountPath: CLICKHOUSE_VOLUME_MOUNT_PATH,
       },
+    },
+    {
+      name: POSTGRES_PRIMARY_SERVICE_NAME,
+      management: 'assert-only',
+      requiredVars: [
+        {
+          name: 'PG_TLS_SERVER_CERT',
+          reason:
+            'The primary serves this certificate. Without it the image falls back to the base ' +
+            "image's snakeoil certificate, whose private key is published in a public Docker Hub " +
+            'layer, and the homelab DR standby refuses to replicate because it verifies the chain ' +
+            'and the hostname.',
+        },
+        {
+          name: 'PG_TLS_SERVER_KEY',
+          reason:
+            'The matching private key. It cannot live in the image, which is public on GHCR, and ' +
+            'it must not live under PGDATA, which pg_basebackup copies wholesale onto the standby ' +
+            'and into every WAL-G backup. The entrypoint writes it to the volume outside PGDATA.',
+        },
+      ],
     },
     {
       name: WEB_SERVICE_NAME,

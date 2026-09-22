@@ -163,6 +163,32 @@ prevalidated layouts in GHCR after a partial copy; such a run emits no digest
 handoff artifact. Preserve partial output for audit and start a new run only
 after understanding the failure.
 
+## What the portable image contains beyond PostgreSQL
+
+The portable image wraps the upstream entrypoint rather than using it directly.
+`/usr/local/bin/boardsesh-postgres-entrypoint.sh` runs first, then `exec`s
+`docker-entrypoint.sh`, so an audit of image contents after a publish should expect
+both.
+
+Its whole job is TLS material. When `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY`
+are both set it writes them to `PG_TLS_DIR` — `/var/lib/postgresql/tls` by default,
+on the volume and deliberately **outside** PGDATA, because `pg_basebackup` copies the
+data directory wholesale and a key there would reach every standby and backup. It
+then starts PostgreSQL with `ssl=on` and those paths on the command line, which
+outranks `postgresql.auto.conf` so a stale `ALTER SYSTEM` cannot shadow them.
+
+With both variables unset it logs one line and changes nothing, which is why local
+dev, CI, a fresh volume and the homelab DR standby all behave as they did before it
+existed. With only one set, a non-PEM value, or a certificate and key that are not a
+pair, it refuses to start rather than falling back to the base image's snakeoil
+certificate — whose private key is published in that public layer. A rejected update
+leaves any previously installed pair untouched.
+
+The contract is covered by `packages/db/docker/postgres-entrypoint.test.sh`, which
+runs in `vp run test:postgres18-contract`. Installing the certificate on the
+production primary is an operator procedure with its own reviewed rollout and
+rollback path, not part of publishing an image.
+
 ## PostgreSQL 18 rollout sequence
 
 Use three changes with a quiet `main` window around the dispatch:
