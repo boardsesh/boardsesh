@@ -109,9 +109,10 @@ mocked backend reachable from your machine.
 
 ## 5. Run the unit tests
 
-The pure logic (`BsEndpoints`, `TickQueue.boundedAppend`, and the optimistic-nav
-reconciliation in `AppState.acceptPollIndex`) has `(:test)` functions under
-`garmin/tests/`. Build a **test** binary (`-t`) and run it with `-t`:
+The pure logic (`BsEndpoints`, UUID formatting, exact tick-queue removal,
+navigation generations/wraparound, and poll reconciliation) has `(:test)`
+functions under `garmin/tests/`. Build a **test** binary (`-t`) and run it with
+`-t`:
 
 ```bash
 monkeyc -f garmin/monkey.jungle \

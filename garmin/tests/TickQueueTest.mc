@@ -2,8 +2,8 @@ using Toybox.Test;
 using Toybox.Lang;
 
 // Tests for the PURE bounded-FIFO math (TickQueue.boundedAppend). The
-// Storage-backed wrappers (enqueue/popFront/peekFront) are thin adapters over
-// this and aren't unit-tested here (they need Application.Storage).
+// Storage-backed wrappers (enqueue/prepareFront/removeUuid) are thin adapters
+// over this and aren't unit-tested here (they need Application.Storage).
 
 (:test)
 function testBoundedAppendGrows(logger as Test.Logger) as Lang.Boolean {
@@ -48,6 +48,45 @@ function testBoundedAppendDoesNotMutateInput(logger as Test.Logger) as Lang.Bool
     // original must be untouched (boundedAppend returns a new array).
     Test.assertEqual(original.size(), 1);
     Test.assertEqual(derived.size(), 2);
+    return true;
+}
+
+(:test)
+function testWithoutUuidRemovesExactTickIdempotently(logger as Test.Logger) as Lang.Boolean {
+    var original = [
+        { "uuid" => "tick-a", "status" => "attempt" },
+        { "uuid" => "tick-b", "status" => "send" },
+        { "status" => "legacy" }
+    ];
+    var remaining = TickQueue.withoutUuid(original, "tick-a");
+    Test.assertEqual(remaining.size(), 2);
+    Test.assertEqual(remaining[0]["uuid"], "tick-b");
+    Test.assertEqual(remaining[1]["status"], "legacy");
+    Test.assertEqual(TickQueue.withoutUuid(remaining, "tick-a").size(), 2);
+    Test.assertEqual(original.size(), 3);
+    return true;
+}
+
+(:test)
+function testContainsUuidSupportsConcurrentFlushDecision(logger as Test.Logger) as Lang.Boolean {
+    var pending = [{ "uuid" => "tick-a" }, { "uuid" => "tick-b" }];
+    Test.assertEqual(TickQueue.containsUuidIn(pending, "tick-a"), true);
+    pending = TickQueue.withoutUuid(pending, "tick-a");
+    Test.assertEqual(TickQueue.containsUuidIn(pending, "tick-a"), false);
+    Test.assertEqual(TickQueue.containsUuidIn(pending, "tick-b"), true);
+    return true;
+}
+
+(:test)
+function testLegacyTickGetsOneStableUuidBeforeRetry(logger as Test.Logger) as Lang.Boolean {
+    var legacy = { "status" => "attempt" };
+    var assigned = TickQueue.assignUuidIfMissing(legacy, "generated-once");
+    Test.assertEqual(assigned, "generated-once");
+    var firstUuid = legacy["uuid"];
+    Test.assertEqual(firstUuid instanceof Lang.String && firstUuid.equals("generated-once"), true);
+    Test.assertEqual(TickQueue.assignUuidIfMissing(legacy, "must-not-replace"), "generated-once");
+    var retainedUuid = legacy["uuid"];
+    Test.assertEqual(retainedUuid instanceof Lang.String && retainedUuid.equals("generated-once"), true);
     return true;
 }
 
