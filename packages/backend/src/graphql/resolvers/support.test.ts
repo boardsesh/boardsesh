@@ -95,6 +95,7 @@ describe('supportMutations', () => {
       supportMutations.updateSupporterVisibility({}, { showPublicly: true }, authContext()),
     ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
     expect(where).toHaveBeenCalledOnce();
+    expect(applyRateLimit).toHaveBeenCalledWith(authContext(), 10, 'updateSupporterVisibility');
   });
 
   it('rate-limits billing portal creation before checking configuration', async () => {
@@ -145,6 +146,21 @@ describe('supportMutations', () => {
     );
 
     expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ customer_creation: 'always' }));
+  });
+
+  it('keeps anonymous support intentionally unlinked', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    checkoutSessionCreate.mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/session' });
+    const anonymousContext = { ...authContext(), isAuthenticated: false, userId: undefined };
+
+    await supportMutations.createSupportCheckoutSession(
+      {},
+      { input: { amount: 500, cadence: 'ONE_TIME', publicCredit: false } },
+      anonymousContext,
+    );
+
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ client_reference_id: undefined }));
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
   it('rejects a second monthly checkout for a live subscription', async () => {

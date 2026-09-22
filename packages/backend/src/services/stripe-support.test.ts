@@ -24,6 +24,7 @@ describe('supportReturnUrl', () => {
 describe('isLiveStripeSubscription', () => {
   it('treats chargeable and recoverable subscriptions as live', () => {
     expect(isLiveStripeSubscription('active')).toBe(true);
+    expect(isLiveStripeSubscription('trialing')).toBe(true);
     expect(isLiveStripeSubscription('past_due')).toBe(true);
   });
 
@@ -33,6 +34,7 @@ describe('isLiveStripeSubscription', () => {
     expect(isLiveStripeSubscription('incomplete_expired')).toBe(false);
     expect(isLiveStripeSubscription('paused')).toBe(false);
     expect(isLiveStripeSubscription('unpaid')).toBe(false);
+    expect(isLiveStripeSubscription('future_status')).toBe(false);
     expect(isLiveStripeSubscription(null)).toBe(false);
   });
 });
