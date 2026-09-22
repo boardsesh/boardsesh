@@ -156,26 +156,34 @@ export const supportMutations = {
     }
 
     const returnUrl = supportReturnUrl(input.locale);
-    const session = await stripe.checkout.sessions.create({
-      mode: input.cadence === 'MONTHLY' ? 'subscription' : 'payment',
-      customer_creation: input.cadence === 'ONE_TIME' && !existing?.stripeCustomerId ? 'always' : undefined,
-      client_reference_id: claimId ?? undefined,
-      customer: existing?.stripeCustomerId || undefined,
-      customer_email: existing?.stripeCustomerId ? undefined : account?.email,
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: SUPPORT_CURRENCY,
-            unit_amount: input.amount,
-            product_data: { name: 'Support Boardsesh' },
-            recurring: input.cadence === 'MONTHLY' ? { interval: 'month' } : undefined,
+    let session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        mode: input.cadence === 'MONTHLY' ? 'subscription' : 'payment',
+        customer_creation: input.cadence === 'ONE_TIME' && !existing?.stripeCustomerId ? 'always' : undefined,
+        client_reference_id: claimId ?? undefined,
+        customer: existing?.stripeCustomerId || undefined,
+        customer_email: existing?.stripeCustomerId ? undefined : account?.email,
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: SUPPORT_CURRENCY,
+              unit_amount: input.amount,
+              product_data: { name: 'Support Boardsesh' },
+              recurring: input.cadence === 'MONTHLY' ? { interval: 'month' } : undefined,
+            },
           },
-        },
-      ],
-      success_url: `${returnUrl}?support=thanks`,
-      cancel_url: `${returnUrl}?support=cancelled`,
-    });
+        ],
+        success_url: `${returnUrl}?support=thanks`,
+        cancel_url: `${returnUrl}?support=cancelled`,
+      });
+    } catch (error) {
+      if (claimId) {
+        await db.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claimId));
+      }
+      throw error;
+    }
     if (!session.url) throw new Error('Stripe Checkout did not return a URL');
     if (userId) {
       try {
