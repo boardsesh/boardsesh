@@ -83,6 +83,51 @@ One-time setup order:
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
 
+## pgdr.boardsesh.com, the DR standby's route to the primary
+
+The homelab PostgreSQL DR standby reaches the production primary through this
+name. `vp run cf:apply` creates and maintains the complete record:
+
+```text
+pgdr.boardsesh.com CNAME iriguchi.proxy.rlwy.net
+TTL: automatic (Cloudflare API value 1)
+Proxy status: DNS only
+CNAME flattening: disabled
+```
+
+**Keep it DNS-only.** This carries the PostgreSQL wire protocol on a high port.
+Cloudflare's proxy handles neither raw TCP nor a non-HTTP port, so orange-clouding
+this record stops replication outright rather than degrading it.
+
+The record exists so the standby can verify a certificate against a name we
+control. Railway allocates a random high port for a TCP proxy and can reassign
+the proxy hostname; a certificate issued for `*.proxy.rlwy.net` would be an
+identity claim over a name someone else administers, and would need reissuing
+whenever Railway moved it. With this record in front, that becomes a DNS edit.
+
+Two things this record does **not** do. It does not terminate TLS — the primary
+presents its own certificate end-to-end and the standby checks it with
+`sslmode=verify-full` against this name, so the record is pure indirection. And
+it cannot carry the port: DNS has no field for one, so the port lives in the
+standby's `primary_conninfo`. If Railway ever recreates the proxy, the new port
+is a reviewed change in the ansible role plus a pgpass remint, not a DNS edit.
+
+The standby side, including the certificate contract, is
+`docs/BOARDSESH_POSTGRES_DR.md` in `blackheathdc-ansible`.
+
+Verify:
+
+```bash
+dig +short pgdr.boardsesh.com            # expect the Railway proxy address
+openssl s_client -starttls postgres -connect pgdr.boardsesh.com:17963 \
+  -CAfile <ca.crt> -verify_hostname pgdr.boardsesh.com -verify_return_error </dev/null
+```
+
+`-verify_return_error` is not optional if you act on the exit status. Without it
+`s_client` prints the verification failure and still exits 0 — measured against
+this endpoint: an untrusted chain reports `Verify return code: 18` and exits 0,
+and a hostname mismatch exits 0 too. With the flag both exit 1.
+
 ## www.boardsesh.com DNS, and the origin flip
 
 `www.boardsesh.com` is a proxied CNAME to the Railway `boardsesh-web` service
