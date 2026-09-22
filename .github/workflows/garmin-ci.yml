@@ -14,6 +14,9 @@ on:
     paths:
       - 'garmin/**'
       - '.github/workflows/garmin-ci.yml'
+      # The gate's SDK setup lives in the shared composite action, so a change
+      # there (a token-handling fix, an SDK bump) has to rerun this gate too.
+      - '.github/actions/connectiq-sdk/action.yml'
 
 concurrency:
   group: garmin-ci-${{ github.event.pull_request.number || github.ref }}

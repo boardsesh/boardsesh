@@ -88,17 +88,27 @@ runs:
         curl -fsSL \
           "https://github.com/lindell/connect-iq-sdk-manager-cli/releases/download/v${SDK_MANAGER_VERSION}/connect-iq-sdk-manager-cli_${SDK_MANAGER_VERSION}_Linux_x86_64.tar.gz" \
           | tar -xz -C "$RUNNER_TEMP" connect-iq-sdk-manager
+        ciq_bin="$RUNNER_TEMP/connect-iq-sdk-manager"
+        ciq_config="$RUNNER_TEMP/ciq-config.yaml"
         # A function, not a string expanded unquoted: the latter word-splits on
         # anything in the paths and silently mangles arguments.
-        ciq() {
-          "$RUNNER_TEMP/connect-iq-sdk-manager" --config "$RUNNER_TEMP/ciq-config.yaml" "$@"
-        }
+        ciq() { "$ciq_bin" --config "$ciq_config" "$@"; }
 
         # Accepting by hash is the non-interactive path. Re-read the agreement and
         # refresh this hash whenever Garmin revises it -- a stale hash fails here
         # rather than silently accepting something nobody read.
         ciq agreement accept --acceptance-hash="$AGREEMENT_HASH"
-        ciq login
+
+        # The CLI reads GARMIN_USERNAME / GARMIN_PASSWORD (its `login --help`
+        # documents both), but with bad credentials it falls back to an
+        # interactive Garmin SSO prompt -- which in CI means blocking until the
+        # job timeout with nothing useful in the log. </dev/null makes the prompt
+        # fail instead of wait, and the timeout bounds any other stall.
+        if ! timeout 180 "$ciq_bin" --config "$ciq_config" login </dev/null; then
+          echo "::error::Garmin login failed. Check GARMIN_USERNAME / GARMIN_PASSWORD on the 'Garmin' environment -- the CLI cannot complete its interactive SSO fallback in CI."
+          exit 1
+        fi
+
         ciq sdk download "$SDK_VERSION"
         ciq device download --device "$DEVICES"
 
