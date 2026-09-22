@@ -23,7 +23,18 @@ const setterData = vi.hoisted(() => ({
 const ogSummary = vi.hoisted(() => ({
   value: { displayName: 'Marco', version: 'v1' } as { displayName: string; version: string } | null,
   calls: 0,
+  /** Set to drive the head down its `catch`, the way a database blip would. */
+  failure: null as Error | null,
 }));
+
+/**
+ * The locale the head is serving, mutable so a test can ask for a twin.
+ *
+ * The board-content carve-out is invisible at `en-US` — the canonical is the
+ * served URL either way — so only a prefixed locale can tell
+ * `createBoardContentPageMetadata` apart from a self-canonicalising helper.
+ */
+const serverLocale = vi.hoisted(() => ({ value: 'en-US' as 'en-US' | 'de' }));
 
 /**
  * Which of the head's two reads started when.
@@ -90,14 +101,15 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
     readOrder.events.push('og:start');
     await Promise.resolve();
     readOrder.events.push('og:end');
+    if (ogSummary.failure) throw ogSummary.failure;
     return ogSummary.value;
   },
 }));
 
-vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => 'en-US' }));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => serverLocale.value }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({
-    locale: 'en-US',
+    locale: serverLocale.value,
     t: (key: string, options?: { name?: string }) => (options?.name ? `${key}:${options.name}` : key),
   }),
 }));
@@ -229,6 +241,8 @@ beforeEach(() => {
   notFoundCalls.count = 0;
   ogSummary.value = { displayName: 'Marco', version: 'v1' };
   ogSummary.calls = 0;
+  ogSummary.failure = null;
+  serverLocale.value = 'en-US';
   readOrder.events = [];
 });
 
@@ -397,6 +411,49 @@ describe('the setter front door, as a crawler reads its head', () => {
     expect(viewStart).toBeGreaterThan(-1);
     expect(ogEnd).toBeGreaterThan(-1);
     expect(viewStart).toBeLessThan(ogEnd);
+  });
+
+  it.each([
+    [
+      'a setter the OG summary does not know',
+      () => {
+        ogSummary.value = null;
+      },
+    ],
+    [
+      'a lookup that blew up',
+      () => {
+        ogSummary.failure = new Error('summary lookup failed');
+      },
+    ],
+  ])('keeps the %s cross-canonicalised instead of republishing its locale twins', async (_case, arrange) => {
+    // Both fallback branches used to answer through `createNoIndexMetadata`,
+    // which delegates to `createPageMetadata` and therefore ships a
+    // self-canonical plus the full four-locale `alternates.languages` map. On a
+    // surface of ~32,000 setter URLs that is the hreflang cluster the whole
+    // board-content carve-out exists to collapse — and `robots: noindex` does
+    // not suppress it, because `hreflang` is read independently.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+    serverLocale.value = 'de';
+    arrange();
+
+    const metadata = await metadataFor();
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates?.canonical).toBe('/setter/marco');
+    expect(metadata.alternates?.languages).toBeUndefined();
+  });
+
+  it('still canonicalises the served locale onto the default one when the setter DOES resolve', async () => {
+    // The control: a green pair above would also be satisfied by a head that
+    // emitted no `alternates` at all on any branch.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Linkable' }]);
+    serverLocale.value = 'de';
+
+    const metadata = await metadataFor();
+
+    expect(metadata.alternates?.canonical).toBe('/setter/marco');
+    expect(metadata.alternates?.languages).toBeUndefined();
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {
