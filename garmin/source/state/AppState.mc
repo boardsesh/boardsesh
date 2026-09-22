@@ -3,8 +3,8 @@ using Toybox.Lang;
 // Cross-cutting session state singleton.
 //
 // Holds the currently attached sessionId, the last slim state payload from
-// /api/session/state, and the optimistic-navigation reconciliation window used
-// by PollController + ClimbDelegate.
+// /api/session/state and the navigation generation used to reject stale poll
+// callbacks while a navigate + authoritative refresh is in flight.
 module AppState {
     // Lang.String or Null — the attached multiplayer session id.
     var sessionId = null;
@@ -16,6 +16,13 @@ module AppState {
     var optimisticUntilMs = 0;
     // Lang.Number or Null — the index we optimistically navigated to.
     var optimisticIndex = null;
+    // Monotonic generation captured by every state request. Starting/cancelling
+    // navigation invalidates callbacks created against an older climb.
+    var stateGeneration = 0;
+    var navigationPending = false;
+    var navigationAccepted = false;
+    var navigationRefreshInFlight = false;
+    var navigationOriginalIndex = null;
     // Whether the last poll succeeded (drives the offline banner).
     var online = true;
 
@@ -30,6 +37,11 @@ module AppState {
         sessionId = id;
         sessionName = name;
         state = null;
+        stateGeneration += 1;
+        navigationPending = false;
+        navigationAccepted = false;
+        navigationRefreshInFlight = false;
+        navigationOriginalIndex = null;
         clearOptimistic();
     }
 
@@ -80,6 +92,64 @@ module AppState {
         if (state != null) {
             state["currentIndex"] = newIndex;
         }
+    }
+
+    // PURE wraparound index used by both next and previous navigation.
+    function wrappedIndex(current as Lang.Number, total as Lang.Number, action as Lang.String) as Lang.Number {
+        if (total <= 0) { return 0; }
+        if (action.equals("next")) {
+            return (current + 1) % total;
+        }
+        return (current + total - 1) % total;
+    }
+
+    function beginNavigation(newIndex as Lang.Number, nowMs as Lang.Number) as Lang.Number {
+        stateGeneration += 1;
+        navigationPending = true;
+        navigationAccepted = false;
+        navigationRefreshInFlight = false;
+        navigationOriginalIndex = currentIndex();
+        beginOptimistic(newIndex, nowMs);
+        return stateGeneration;
+    }
+
+    function markNavigationAccepted() as Void {
+        navigationAccepted = true;
+    }
+
+    function beginNavigationRefresh() as Void {
+        navigationRefreshInFlight = true;
+    }
+
+    function endNavigationRefresh() as Void {
+        navigationRefreshInFlight = false;
+    }
+
+    function completeNavigation(newState as Lang.Dictionary) as Void {
+        state = newState;
+        navigationPending = false;
+        navigationAccepted = false;
+        navigationRefreshInFlight = false;
+        navigationOriginalIndex = null;
+        clearOptimistic();
+    }
+
+    function cancelNavigation() as Void {
+        if (state != null && navigationOriginalIndex != null) {
+            state["currentIndex"] = navigationOriginalIndex;
+        }
+        stateGeneration += 1;
+        navigationPending = false;
+        navigationAccepted = false;
+        navigationRefreshInFlight = false;
+        navigationOriginalIndex = null;
+        clearOptimistic();
+    }
+
+    // PURE callback-generation guard. A response may mutate visible state only
+    // if no navigation/session transition has invalidated its request.
+    function acceptsStateGeneration(generation as Lang.Number) as Lang.Boolean {
+        return generation == stateGeneration;
     }
 
     // Cancel any outstanding optimistic window (server index wins on next poll).

@@ -8,10 +8,11 @@ using Toybox.Lang;
 //
 // The FIT lap, haptics, and counters are applied by the CALLER on press
 // (optimistic, decoupled from the network); this class only reacts to the save
-// outcome via the SAME classifier the offline flusher uses:
-//   * :success -> already celebrated on press; nothing to do.
-//   * :retry   -> offline / 5xx / 429: queue the tick for a later flush.
-//   * :drop    -> a permanent 4xx / GraphQL rejection: surface the failure.
+// outcome via the SAME classifier the offline flusher uses. submit() persists
+// first, so a crash or exit between request and callback cannot lose the tick:
+//   * :success -> remove its uuid from the outbox.
+//   * :retry   -> leave it queued for a later flush.
+//   * :drop    -> remove it and surface the permanent rejection.
 class TickLogger {
     private var _input as Lang.Dictionary;
 
@@ -20,16 +21,22 @@ class TickLogger {
     }
 
     function submit() as Void {
+        TickQueue.enqueue(_input);
         Services.client.saveTick(_input, method(:onResult));
     }
 
     function onResult(code as Lang.Number, data) as Void {
         var outcome = TickQueue.classifyFlushResult(code, data != null);
         if (outcome == :retry) {
-            TickQueue.enqueue(_input);
             Feedback.offlineQueued();
             Toast.show(WatchUi.loadResource(Rez.Strings.QueuedOffline));
-        } else if (outcome == :drop) {
+        } else {
+            var tickUuid = _input["uuid"];
+            if (tickUuid instanceof Lang.String) {
+                TickQueue.removeUuid(tickUuid);
+            }
+        }
+        if (outcome == :drop) {
             Feedback.error();
             Toast.show(WatchUi.loadResource(Rez.Strings.LogFailed));
         }

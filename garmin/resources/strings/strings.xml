@@ -21,6 +21,7 @@
     <string id="MirrorShort">MIR</string>
     <string id="DegreeSuffix">°</string>
     <string id="Offline">OFFLINE</string>
+    <string id="UpdatingClimb">Updating climb…</string>
     <string id="StatusSent">SENT</string>
     <string id="StatusFlash">FLASH</string>
 

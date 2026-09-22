@@ -12,7 +12,8 @@ using Toybox.Lang;
 //   * skip a redraw when `sequence` is unchanged (nothing moved),
 //   * exponential backoff on error (3 -> 6 -> 12 -> ... capped 30s), reset on
 //     success,
-//   * optimistic-nav reconciliation via AppState.acceptPollIndex.
+//   * generation-gated callbacks so pre-navigation responses cannot win,
+//   * authoritative post-navigation adoption before input is unblocked.
 class PollController {
     private var _timer as Timer.Timer;
     private var _notify;                 // Method() -> redraw request
@@ -45,7 +46,19 @@ class PollController {
         if (!_running || _sessionId == null) {
             return;
         }
-        Services.client.fetchState(_sessionId, method(:_onState));
+        // The navigate POST must be accepted before a GET can represent its
+        // resulting climb. A direct refresh gets first chance; polling retries
+        // it on the normal/backoff cadence if that request fails.
+        if (AppState.navigationPending &&
+                (!AppState.navigationAccepted || AppState.navigationRefreshInFlight)) {
+            _arm();
+            return;
+        }
+        if (AppState.navigationPending) {
+            AppState.beginNavigationRefresh();
+        }
+        var response = new PollStateResponse(self, AppState.stateGeneration);
+        Services.client.fetchState(_sessionId, response.method(:onResult));
     }
 
     private function _arm() as Void {
@@ -67,10 +80,19 @@ class PollController {
         _intervalMs = next;
     }
 
-    function _onState(code as Lang.Number, data) as Void {
+    function onStateForGeneration(generation as Lang.Number, code as Lang.Number, data) as Void {
         if (!_running) {
             // A late response after stop() (view hidden): ignore it.
             return;
+        }
+        if (!AppState.acceptsStateGeneration(generation)) {
+            // The response was requested for the climb shown before a navigation
+            // or session switch. It must not replace the authoritative refresh.
+            _arm();
+            return;
+        }
+        if (AppState.navigationPending) {
+            AppState.endNavigationRefresh();
         }
         if (code == 401) {
             // BsClient owns token refresh + routing. If a refresh FAILED it
@@ -96,12 +118,20 @@ class PollController {
             return;
         }
 
+        var wasOnline = AppState.online;
         AppState.online = true;
         _intervalMs = BuildConfig.POLL_INTERVAL_MS;   // reset backoff
 
-        var changed = _reconcile(data);
+        var changed = false;
+        if (AppState.navigationPending) {
+            AppState.completeNavigation(data);
+            _lastSequence = data["sequence"];
+            changed = true;
+        } else {
+            changed = _reconcile(data);
+        }
         _arm();
-        if (changed) {
+        if (PollLogic.shouldNotify(changed, wasOnline)) {
             _notify.invoke();
         }
     }
@@ -136,5 +166,29 @@ class PollController {
 
     private function _seqEquals(a, b) as Lang.Boolean {
         return a == b;
+    }
+}
+
+module PollLogic {
+    // PURE: returning online removes the offline banner even if the session
+    // sequence and climb payload did not change.
+    function shouldNotify(stateChanged as Lang.Boolean, wasOnline as Lang.Boolean) as Lang.Boolean {
+        return stateChanged || !wasOnline;
+    }
+}
+
+// One object per request captures the generation at dispatch time. Bound method
+// callbacks otherwise carry no request context in Monkey C.
+class PollStateResponse {
+    private var _controller as PollController;
+    private var _generation as Lang.Number;
+
+    function initialize(controller as PollController, generation as Lang.Number) {
+        _controller = controller;
+        _generation = generation;
+    }
+
+    function onResult(code as Lang.Number, data) as Void {
+        _controller.onStateForGeneration(_generation, code, data);
     }
 }

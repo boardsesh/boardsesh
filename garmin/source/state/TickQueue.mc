@@ -1,12 +1,12 @@
 using Toybox.Application;
 using Toybox.Lang;
 
-// Bounded FIFO of SaveTickInput dictionaries that failed to save, persisted in
+// Bounded FIFO of SaveTickInput dictionaries waiting to save, persisted in
 // Application.Storage under `bs.pendingTicks`.
 //
-// A tick is only queued on a FAILED save (offline / backend error). The queue
-// is flushed on the next successful moment (activity end) by TickFlusher.
-// When full, the oldest entry is dropped.
+// A tick is persisted BEFORE its first request. Its RFC 4122 uuid makes retries
+// idempotent at the backend. Accepted and permanently rejected ticks are removed
+// by uuid; retryable failures remain queued. When full, the oldest entry drops.
 //
 // The list math (boundedAppend) is pure so it can be unit-tested without
 // Storage; the Storage-touching helpers wrap it.
@@ -33,6 +33,45 @@ module TickQueue {
             result = trimmed;
         }
         return result;
+    }
+
+    // PURE: remove every entry bearing `uuid`. Removing all duplicates makes a
+    // repeated callback harmless and repairs any duplicate persisted entries.
+    function withoutUuid(list as Lang.Array or Null, uuid as Lang.String) as Lang.Array {
+        var result = [];
+        if (list == null) { return result; }
+        for (var index = 0; index < list.size(); index += 1) {
+            var entry = list[index];
+            var entryUuid = entry instanceof Lang.Dictionary ? entry["uuid"] : null;
+            var matches = entryUuid instanceof Lang.String && entryUuid.equals(uuid);
+            if (!matches) {
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+
+    function containsUuidIn(list as Lang.Array or Null, uuid as Lang.String) as Lang.Boolean {
+        if (list == null) { return false; }
+        for (var index = 0; index < list.size(); index += 1) {
+            var entry = list[index];
+            var entryUuid = entry instanceof Lang.Dictionary ? entry["uuid"] : null;
+            if (entryUuid instanceof Lang.String && entryUuid.equals(uuid)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Deterministic helper for legacy entries. The caller persists the containing
+    // queue before sending; repeated calls retain the first assigned identifier.
+    function assignUuidIfMissing(input as Lang.Dictionary, generatedUuid as Lang.String) as Lang.String {
+        var existingUuid = input["uuid"];
+        if (existingUuid instanceof Lang.String && !existingUuid.equals("")) {
+            return existingUuid;
+        }
+        input["uuid"] = generatedUuid;
+        return generatedUuid;
     }
 
     // PURE: classify a tick-flush result so the front item is handled correctly.
@@ -73,29 +112,38 @@ module TickQueue {
     }
 
     function enqueue(input as Lang.Dictionary) as Void {
+        var existingUuid = input["uuid"];
+        if (!(existingUuid instanceof Lang.String) || existingUuid.equals("")) {
+            assignUuidIfMissing(input, Uuid.generate());
+        }
         var next = boundedAppend(all(), input, BuildConfig.TICK_QUEUE_MAX);
         Application.Storage.setValue(KEY, next);
     }
 
-    function peekFront() {
+    // Returns the front tick after ensuring legacy pre-uuid queue entries have
+    // a generated uuid persisted BEFORE the request is made.
+    function prepareFront() {
         var pending = all();
         if (pending.size() == 0) {
             return null;
         }
-        return pending[0];
+        var first = pending[0];
+        if (first instanceof Lang.Dictionary) {
+            var existingUuid = first["uuid"];
+            if (!(existingUuid instanceof Lang.String) || existingUuid.equals("")) {
+                assignUuidIfMissing(first, Uuid.generate());
+                Application.Storage.setValue(KEY, pending);
+            }
+        }
+        return first;
     }
 
-    // Remove and persist without the first element.
-    function popFront() as Void {
-        var pending = all();
-        if (pending.size() == 0) {
-            return;
-        }
-        var rest = [];
-        for (var i = 1; i < pending.size(); i += 1) {
-            rest.add(pending[i]);
-        }
-        Application.Storage.setValue(KEY, rest);
+    function removeUuid(uuid as Lang.String) as Void {
+        Application.Storage.setValue(KEY, withoutUuid(all(), uuid));
+    }
+
+    function containsUuid(uuid as Lang.String) as Lang.Boolean {
+        return containsUuidIn(all(), uuid);
     }
 
     function clear() as Void {
@@ -103,15 +151,17 @@ module TickQueue {
     }
 }
 
-// Drains TickQueue sequentially: save the front item, and only pop it once the
-// backend accepts it. Stops on the first failure (leaving the rest for later)
-// and invokes onComplete when the queue is drained or a save fails.
+// Drains TickQueue sequentially. Accepted and permanently rejected ticks are
+// removed by exact UUID; retryable failures stay queued for the next flush.
+// Invokes onComplete when the queue drains or a retryable failure stops it.
 class TickFlusher {
     private var _client as BsClient or Null;
     private var _onComplete;   // Method() or Null
+    private var _currentUuid as Lang.String or Null;
 
     function initialize(client as BsClient or Null) {
         _client = client;
+        _currentUuid = null;
     }
 
     function start(onComplete) as Void {
@@ -125,24 +175,49 @@ class TickFlusher {
             _finish();
             return;
         }
-        var first = TickQueue.peekFront();
+        var first = TickQueue.prepareFront();
         if (first == null) {
             _finish();
             return;
         }
+        if (!(first instanceof Lang.Dictionary)) {
+            // Stored ticks are dictionaries. Stop safely if storage is corrupt
+            // rather than indexing an unexpected value and crashing on exit.
+            _finish();
+            return;
+        }
+        var firstUuid = first["uuid"];
+        if (!(firstUuid instanceof Lang.String)) {
+            // A malformed stored item cannot be sent idempotently. prepareFront
+            // normally repairs this; stop defensively rather than crash.
+            _finish();
+            return;
+        }
+        _currentUuid = firstUuid;
         client.saveTick(first, method(:onResult));
     }
 
     function onResult(code as Lang.Number, data) as Void {
         var outcome = TickQueue.classifyFlushResult(code, data != null);
         if (outcome == :retry) {
-            // Retryable failure — keep the queue and try again on the next flush.
+            // A direct TickLogger request for this same UUID may already have
+            // succeeded while our duplicate exit-flush request failed. If so,
+            // continue with the next tick instead of ending the drain early.
+            if (_currentUuid != null && !TickQueue.containsUuid(_currentUuid)) {
+                _currentUuid = null;
+                _step();
+                return;
+            }
+            // Still pending: keep the queue and try again on the next flush.
             _finish();
             return;
         }
-        // :success (accepted) or :drop (permanent failure) — either way remove
-        // the front item so it can't block the rest, and continue draining.
-        TickQueue.popFront();
+        // :success (accepted) or :drop (permanent failure) — remove the exact
+        // request, not whichever tick is currently first after concurrent logs.
+        if (_currentUuid != null) {
+            TickQueue.removeUuid(_currentUuid);
+        }
+        _currentUuid = null;
         _step();
     }
 

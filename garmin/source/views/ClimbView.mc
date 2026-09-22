@@ -48,6 +48,11 @@ class ClimbView extends WatchUi.View {
         dc.clear();
 
         var state = AppState.state;
+        if (AppState.navigationPending) {
+            Theme.centerMsg(dc, WatchUi.loadResource(Rez.Strings.UpdatingClimb));
+            _offline(dc);
+            return;
+        }
         if (state == null) {
             Theme.centerMsg(dc, WatchUi.loadResource(Rez.Strings.Loading));
             _offline(dc);
@@ -157,6 +162,7 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
     // guard against accidental double-logs.
     private var _lastAttemptMs as Lang.Number = 0;
     private var _lastSendMs as Lang.Number = 0;
+    private var _navGeneration as Lang.Number = 0;
 
     function initialize() {
         BehaviorDelegate.initialize();
@@ -214,7 +220,8 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
     // queue on a retryable failure, a toast on a permanent rejection).
     private function _log(kind as Lang.String) as Void {
         var state = AppState.state;
-        if (state == null || state["climb"] == null || AppState.sessionId == null) {
+        if (AppState.navigationPending || state == null || state["climb"] == null ||
+                AppState.sessionId == null) {
             Feedback.boundary();   // nothing to log
             return;
         }
@@ -269,14 +276,15 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
         // at 1 preserves the existing backend saveTick contract (each attempt/send
         // press is its own tick, exactly as the previous log menu sent them).
         var input = BsEndpoints.saveTickInput(
-            state, AppState.sessionId, status, 1, TimeUtil.nowIso());
+            state, AppState.sessionId, status, 1, TimeUtil.nowIso(), Uuid.generate());
         new TickLogger(input).submit();
         WatchUi.requestUpdate();
     }
 
     private function _navigate(action as Lang.String) as Void {
         var state = AppState.state;
-        if (state == null || AppState.sessionId == null) {
+        if (AppState.navigationPending || state == null || AppState.sessionId == null) {
+            Feedback.boundary();
             return;
         }
 
@@ -286,21 +294,22 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
             return;
         }
         var idx = AppState.currentIndex();
-        var newIndex = action.equals("next") ? (idx + 1) : (idx - 1);
-
-        if (newIndex < 0) { newIndex = 0; }
-        if (qlen > 0 && newIndex > qlen - 1) { newIndex = qlen - 1; }
-        if (newIndex == idx) {
-            Feedback.boundary();   // at a queue boundary; acknowledge the press
+        if (qlen == 1) {
+            Feedback.boundary();
             return;
         }
+        var newIndex = AppState.wrappedIndex(idx, qlen, action);
 
-        AppState.beginOptimistic(newIndex, System.getTimer());
+        _navGeneration = AppState.beginNavigation(newIndex, System.getTimer());
         WatchUi.requestUpdate();
         Services.client.navigate(AppState.sessionId, action, method(:onNavResult));
     }
 
     function onNavResult(code as Lang.Number, data) as Void {
+        if (!AppState.navigationPending ||
+                !AppState.acceptsStateGeneration(_navGeneration)) {
+            return;
+        }
         if (code == 401) {
             return;   // BsClient is refreshing / routing
         }
@@ -310,11 +319,40 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
             return;
         }
         if (code >= 200 && code < 300) {
-            return;   // accepted; the next poll reconciles the authoritative index
+            AppState.markNavigationAccepted();
+            AppState.beginNavigationRefresh();
+            Services.client.fetchState(AppState.sessionId, method(:onNavState));
+            return;
         }
-        // 403 / 409 / 429 / 5xx: drop the optimism and let the server win.
-        AppState.clearOptimistic();
+        // A transport/5xx response does not prove the POST was not committed.
+        // Even a definitive rejection is safest when reconciled from the server:
+        // keep input blocked until a full state fetch says which climb is active.
         Toast.show(WatchUi.loadResource(Rez.Strings.NavFailed));
+        AppState.markNavigationAccepted();
+        AppState.beginNavigationRefresh();
+        Services.client.fetchState(AppState.sessionId, method(:onNavState));
+    }
+
+    function onNavState(code as Lang.Number, data) as Void {
+        if (!AppState.navigationPending ||
+                !AppState.acceptsStateGeneration(_navGeneration)) {
+            return;
+        }
+        AppState.endNavigationRefresh();
+        if (code == 410) {
+            Toast.show(WatchUi.loadResource(Rez.Strings.SessionEnded));
+            Router.toNoSession();
+            return;
+        }
+        if (code >= 200 && code < 300 && data instanceof Lang.Dictionary) {
+            AppState.completeNavigation(data);
+            AppState.online = true;
+            WatchUi.requestUpdate();
+            return;
+        }
+        // Keep input blocked. PollController retries the authoritative GET; its
+        // generation guard prevents any pre-navigation response from landing.
+        AppState.online = false;
         WatchUi.requestUpdate();
     }
 }

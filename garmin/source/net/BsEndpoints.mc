@@ -90,7 +90,8 @@ module BsEndpoints {
         sessionId as Lang.String,
         status as Lang.String,
         attemptCount as Lang.Number,
-        climbedAtIso as Lang.String
+        climbedAtIso as Lang.String,
+        tickUuid as Lang.String
     ) as Lang.Dictionary {
         var climb = state["climb"];
 
@@ -100,6 +101,7 @@ module BsEndpoints {
         // climb's native angle and is intentionally NOT used here. Confirm the
         // backend expects the board angle on saveTick.
         return {
+            "uuid"         => tickUuid,
             "boardType"    => state["boardType"],
             "climbUuid"    => climb["climbUuid"],
             "angle"        => state["angle"],

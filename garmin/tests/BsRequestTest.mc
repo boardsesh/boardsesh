@@ -17,9 +17,9 @@ function testGraphqlResponseRejectsMalformedNestedData(logger as Test.Logger) as
     var request = new BsRequest(client, "https://example.invalid", {}, 0, false,
         "saveTick", observer.method(:onResult));
     request.onResponse(200, { "data" => "not an object" });
-    Test.assertEqual(observer.result, null);
+    Test.assertEqual(observer.result == null, true);
     request.onResponse(200, { "data" => [1, 2] });
-    Test.assertEqual(observer.result, null);
+    Test.assertEqual(observer.result == null, true);
     request.onResponse(200, { "data" => { "saveTick" => { "uuid" => "tick" } } });
     Test.assertEqual(observer.result["uuid"], "tick");
     return true;

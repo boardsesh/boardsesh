@@ -12,7 +12,7 @@ using Toybox.Lang;
 class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
     private var _flusher as TickFlusher or Null;
     // Set once we start the async flush. Blocks a second Save/Discard (which
-    // would spawn a duplicate TickFlusher — double saveTick + double popFront)
+    // would spawn a duplicate TickFlusher — duplicate saveTick requests)
     // and a Back-out while the app is on its way to exiting.
     private var _submitting as Lang.Boolean;
 

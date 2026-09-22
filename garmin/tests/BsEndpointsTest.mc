@@ -81,7 +81,8 @@ function sampleState() as Lang.Dictionary {
 
 (:test)
 function testSaveTickInputFlashMapping(logger as Test.Logger) as Lang.Boolean {
-    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "flash", 1, "2026-07-05T12:00:00Z");
+    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "flash", 1,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174000");
 
     // Copied straight from state / climb.
     Test.assertEqual(input["boardType"], "kilter");
@@ -90,6 +91,7 @@ function testSaveTickInputFlashMapping(logger as Test.Logger) as Lang.Boolean {
     Test.assertEqual(input["sizeId"], 22);
     Test.assertEqual(input["setIds"], "26,27");
     Test.assertEqual(input["sessionId"], "sess-1");
+    Test.assertEqual(input["uuid"], "123e4567-e89b-42d3-a456-426614174000");
 
     // angle comes from the session/board angle (state.angle == 40), not the
     // climb's native angle (45).
@@ -113,7 +115,8 @@ function testSaveTickInputFlashMapping(logger as Test.Logger) as Lang.Boolean {
 
 (:test)
 function testSaveTickInputAttempt(logger as Test.Logger) as Lang.Boolean {
-    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "attempt", 1, "2026-07-05T12:00:00Z");
+    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "attempt", 1,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174001");
     Test.assertEqual(input["status"], "attempt");
     Test.assertEqual(input["attemptCount"], 1);
     return true;
@@ -124,8 +127,20 @@ function testSaveTickInputPassesAttemptCountThrough(logger as Test.Logger) as La
     // The builder is generic: it forwards whatever attemptCount the caller passes.
     // (ClimbDelegate currently always sends 1 — one tick per logged effort — but
     // the builder must not hardcode it.)
-    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "send", 4, "2026-07-05T12:00:00Z");
+    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "send", 4,
+        "2026-07-05T12:00:00Z", "123e4567-e89b-42d3-a456-426614174002");
     Test.assertEqual(input["status"], "send");
     Test.assertEqual(input["attemptCount"], 4);
+    return true;
+}
+
+(:test)
+function testUuidV4Formatting(logger as Test.Logger) as Lang.Boolean {
+    var formatted = Uuid.formatV4([
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0xf6, 0x07,
+        0x48, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    ]);
+    Test.assertEqual(formatted, "00010203-0405-4607-8809-0a0b0c0d0e0f");
+    Test.assertEqual(formatted.length(), 36);
     return true;
 }
