@@ -488,6 +488,7 @@ describe('useQuickTickForm board attribution', () => {
   });
   it('keeps the opening board after presence and active board change', () => {
     bindWall(4242);
+    activeBoardState.current = { ...ACTIVE_BOARD, uuid: 'opening-wall' };
     const props: QuickTickFormInput = {
       ...ACTIVE_BOARD_FIELDS,
       climbUuid: CLIMB_UUID,
@@ -499,10 +500,15 @@ describe('useQuickTickForm board attribution', () => {
     };
     const { rerender, getByTestId } = render(createElement(Harness, props));
     presenceState.boardId = 777;
-    activeBoardState.current = { ...ACTIVE_BOARD, layoutId: 8, sizeId: 17, setIds: '26,27' };
+    activeBoardState.current = { ...ACTIVE_BOARD, uuid: 'next-wall', layoutId: 8, sizeId: 17, setIds: '26,27' };
     rerender(createElement(Harness, props));
     fireEvent.click(getByTestId('save'));
-    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ boardId: 4242, layoutId: 1, sizeId: 10 });
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({
+      boardId: 4242,
+      boardUuid: 'opening-wall',
+      layoutId: 1,
+      sizeId: 10,
+    });
   });
 });
 
