@@ -163,6 +163,23 @@ describe('supportMutations', () => {
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
+  it('removes a linked claim when Stripe session creation fails', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const { insertValues } = setupCheckoutDatabase();
+    checkoutSessionCreate.mockRejectedValue(new Error('Stripe unavailable'));
+
+    await expect(
+      supportMutations.createSupportCheckoutSession(
+        {},
+        { input: { amount: 500, cadence: 'ONE_TIME', publicCredit: false } },
+        authContext(),
+      ),
+    ).rejects.toThrow('Stripe unavailable');
+
+    expect(insertValues).toHaveBeenCalledOnce();
+    expect(mockDb.delete).toHaveBeenCalledOnce();
+  });
+
   it('rejects a second monthly checkout for a live subscription', async () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     setupCheckoutDatabase([{ stripeSubscriptionId: 'sub_1', subscriptionStatus: 'active' }]);
