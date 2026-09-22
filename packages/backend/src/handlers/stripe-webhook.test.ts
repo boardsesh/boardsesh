@@ -155,6 +155,16 @@ describe('acceptCheckout', () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
+  it('accepts the signed claim ID when session bookkeeping was not recorded', async () => {
+    const { insertedValues } = setupCheckoutTransaction({
+      claim: { id: 'claim-1', userId: 'user-1', checkoutSessionId: null, showPublicly: true },
+    });
+
+    await acceptCheckout(checkoutSession(), 1_000);
+
+    expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }));
+  });
+
   it('links a valid one-time payment without inventing a subscription', async () => {
     const { deleteClaim, insertedValues, conflictUpdate } = setupCheckoutTransaction();
 
@@ -274,5 +284,23 @@ describe('handleStripeWebhook', () => {
     expect(mockConstructEvent).toHaveBeenCalledWith('{}', 'valid', 'whsec_test');
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'past_due' }));
     expect(result().statusCode).toBe(200);
+  });
+
+  it('returns 500 so Stripe retries a transient processing failure', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_1',
+      type: 'checkout.session.completed',
+      created: 2_000,
+      data: { object: checkoutSession() },
+    });
+    mockDb.transaction.mockRejectedValue(new Error('database unavailable'));
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+
+    expect(result().statusCode).toBe(500);
+    expect(JSON.parse(result().body)).toEqual({ error: 'Stripe webhook processing failed' });
   });
 });
