@@ -229,21 +229,6 @@ export const userMutations = {
       .from(dbSchema.stripeSupporters)
       .where(eq(dbSchema.stripeSupporters.userId, userId))
       .limit(1);
-    if (
-      supporter?.subscriptionId &&
-      isLiveStripeSubscription(supporter.subscriptionStatus) &&
-      !supporter.cancelAtPeriodEnd
-    ) {
-      try {
-        await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
-      } catch (error) {
-        logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-        throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
-          extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
-        });
-      }
-    }
-
     await db.transaction(async (tx) => {
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
@@ -275,6 +260,25 @@ export const userMutations = {
           .update(dbSchema.boardClimbs)
           .set({ setterUsername: null })
           .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+      }
+
+      // Keep cancellation inside the transaction and after the other database
+      // work. A Stripe failure rolls the transaction back, preserving the
+      // explicit contract that deletion never leaves a linked subscription
+      // charging without its Boardsesh account.
+      if (
+        supporter?.subscriptionId &&
+        isLiveStripeSubscription(supporter.subscriptionStatus) &&
+        !supporter.cancelAtPeriodEnd
+      ) {
+        try {
+          await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
+        } catch (error) {
+          logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+          throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+            extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+          });
+        }
       }
 
       // Delete the user row — all related tables with onDelete: cascade

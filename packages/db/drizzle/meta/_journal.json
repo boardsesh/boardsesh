@@ -1660,6 +1660,13 @@
       "when": 1790046337957,
       "tag": "0236_stripe_supporters",
       "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1790050424633,
+      "tag": "0237_stripe_event_ordering",
+      "breakpoints": true
     }
   ]
 }

@@ -17,7 +17,7 @@ import { userMutations } from '../graphql/resolvers/users/mutations';
 import { userQueries } from '../graphql/resolvers/users/queries';
 
 // Hoist mock variables so they're available before module evaluation
-const { mockDb, txCalls } = vi.hoisted(() => {
+const { mockDb, mockStripeSubscriptionUpdate, txCalls } = vi.hoisted(() => {
   const txCalls: Array<{ method: string; args: unknown[] }> = [];
 
   const mockDb = {
@@ -31,12 +31,19 @@ const { mockDb, txCalls } = vi.hoisted(() => {
     transaction: vi.fn(),
   };
 
-  return { mockDb, txCalls };
+  return { mockDb, mockStripeSubscriptionUpdate: vi.fn(), txCalls };
 });
 
 vi.mock('../db/client', () => ({
   db: mockDb,
 }));
+vi.mock('../services/stripe-support', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../services/stripe-support')>();
+  return {
+    ...original,
+    getStripeClient: () => ({ subscriptions: { update: mockStripeSubscriptionUpdate } }),
+  };
+});
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {
@@ -171,6 +178,40 @@ describe('deleteAccount mutation', () => {
     const result = await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
 
     expect(result).toBe(true);
+  });
+
+  it('schedules an active linked subscription to cancel before deletion commits', async () => {
+    mockDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi
+            .fn()
+            .mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false }]),
+        }),
+      }),
+    });
+    mockStripeSubscriptionUpdate.mockResolvedValue({});
+
+    await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx());
+
+    expect(mockStripeSubscriptionUpdate).toHaveBeenCalledWith('sub_1', { cancel_at_period_end: true });
+  });
+
+  it('aborts deletion when an active subscription cannot be cancelled', async () => {
+    mockDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi
+            .fn()
+            .mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false }]),
+        }),
+      }),
+    });
+    mockStripeSubscriptionUpdate.mockRejectedValue(new Error('Stripe unavailable'));
+
+    await expect(
+      userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+    ).rejects.toThrow('Your account was not deleted');
   });
 
   it('should propagate transaction errors (rollback)', async () => {
