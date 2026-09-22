@@ -9,6 +9,7 @@ const { mockConstructEvent, mockDb, mockRetrieveSubscription } = vi.hoisted(() =
     transaction: vi.fn(),
     select: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
   },
   mockRetrieveSubscription: vi.fn(),
 }));
@@ -197,6 +198,15 @@ describe('acceptCheckout', () => {
       }),
     );
   });
+
+  it('preserves the original support date on a later payment', async () => {
+    const firstSupportedAt = new Date('2025-01-02T00:00:00.000Z');
+    const { insertedValues } = setupCheckoutTransaction({ supporter: { supportedAt: firstSupportedAt } });
+
+    await acceptCheckout(checkoutSession(), 1_000);
+
+    expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ supportedAt: firstSupportedAt }));
+  });
 });
 
 describe('updateSubscription', () => {
@@ -301,6 +311,25 @@ describe('handleStripeWebhook', () => {
     await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
 
     expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }));
+    expect(result().statusCode).toBe(200);
+  });
+
+  it('removes the claim for an expired checkout session', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const where = vi.fn().mockResolvedValue(undefined);
+    mockDb.delete.mockReturnValue({ where });
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_expired_1',
+      type: 'checkout.session.expired',
+      created: 2_000,
+      data: { object: checkoutSession({ payment_status: 'unpaid' }) },
+    });
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+
+    expect(where).toHaveBeenCalledOnce();
     expect(result().statusCode).toBe(200);
   });
 

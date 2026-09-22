@@ -206,6 +206,7 @@ export const supportMutations = {
     ctx: ConnectionContext,
   ) => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 10, 'updateSupporterVisibility');
     const [row] = await db
       .update(dbSchema.stripeSupporters)
       .set({ showPublicly, updatedAt: new Date() })

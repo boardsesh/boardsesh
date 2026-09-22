@@ -12,7 +12,7 @@ export function isStripeSupportConfigured(): boolean {
 }
 
 export function isLiveStripeSubscription(status?: string | null): boolean {
-  return Boolean(status && !['canceled', 'incomplete', 'incomplete_expired', 'paused', 'unpaid'].includes(status));
+  return status === 'active' || status === 'trialing' || status === 'past_due';
 }
 
 export function getStripeClient(): Stripe {
