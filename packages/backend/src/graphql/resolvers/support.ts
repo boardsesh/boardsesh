@@ -57,7 +57,12 @@ export const supportQueries = {
       }
     })(),
   }),
-  publicSupporters: async (_: unknown, { limit, offset }: { limit: number; offset: number }) => {
+  publicSupporters: async (
+    _: unknown,
+    { limit, offset }: { limit: number; offset: number },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, 120, 'publicSupporters');
     const pageLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
     const pageOffset = Math.max(Math.trunc(offset), 0);
     const rows = await db
@@ -146,12 +151,6 @@ export const supportMutations = {
           lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
         ),
       );
-      await db.insert(dbSchema.stripeSupportClaims).values({
-        id: claimId!,
-        userId,
-        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
-        showPublicly: input.publicCredit,
-      });
     }
 
     const returnUrl = supportReturnUrl(input.locale);
@@ -176,10 +175,13 @@ export const supportMutations = {
     });
     if (!session.url) throw new Error('Stripe Checkout did not return a URL');
     if (userId) {
-      await db
-        .update(dbSchema.stripeSupportClaims)
-        .set({ checkoutSessionId: session.id })
-        .where(and(eq(dbSchema.stripeSupportClaims.userId, userId), eq(dbSchema.stripeSupportClaims.id, claimId!)));
+      await db.insert(dbSchema.stripeSupportClaims).values({
+        id: claimId!,
+        userId,
+        checkoutSessionId: session.id,
+        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
+        showPublicly: input.publicCredit,
+      });
     }
     return { url: session.url };
   },
