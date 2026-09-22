@@ -242,5 +242,16 @@ jobs:
           set -Eeuo pipefail
           # Cheap insurance that a truncated upload does not become the file
           # people flash onto a watch.
-          gh release download garmin-latest --dir "$RUNNER_TEMP/published" --pattern '*.prg'
-          ( cd "$RUNNER_TEMP/published" && sha256sum -c "$RUNNER_TEMP/release/SHA256SUMS.txt" )
+          gh release download garmin-latest --dir "$RUNNER_TEMP/published" \
+            --pattern '*.prg' --pattern 'SHA256SUMS.txt'
+
+          # Verify against the checksum file we DOWNLOADED, not the local one.
+          # The release notes tell climbers to run `sha256sum -c SHA256SUMS.txt`,
+          # so a failed or stale upload of that file would hand them a check that
+          # silently proves nothing -- and --clobber means a stale copy from the
+          # previous build is exactly what they would get.
+          if ! diff -q "$RUNNER_TEMP/release/SHA256SUMS.txt" "$RUNNER_TEMP/published/SHA256SUMS.txt" >/dev/null; then
+            echo "::error::the published SHA256SUMS.txt does not match the one just built"
+            exit 1
+          fi
+          ( cd "$RUNNER_TEMP/published" && sha256sum -c SHA256SUMS.txt )

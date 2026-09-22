@@ -71,6 +71,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Validate the published device list
+        # garmin-release.yml refuses to build an id that is not in the manifest,
+        # but by then it is on main. The spec that cross-checks these two files
+        # lives in scripts/, which ci.yml only runs for a diff matching its
+        # `anyJs` filter -- and release-devices.txt is not a .ts file, so a
+        # one-line typo here would reach main entirely unchecked. Needs no SDK,
+        # so it runs before the download.
+        run: |
+          set -Eeuo pipefail
+          while read -r device; do
+            case "$device" in ''|'#'*) continue ;; esac
+            grep -q "iq:product id=\"$device\"" garmin/manifest.xml || {
+              echo "::error file=garmin/release-devices.txt::$device is not an <iq:product> in garmin/manifest.xml"
+              exit 1
+            }
+          done < garmin/release-devices.txt
+          echo "device list OK"
+
       - name: Set up Java
         # monkeyc and monkeydo are JVM wrappers -- bin/monkeydo is literally
         # `java -classpath monkeybrains.jar ...`.
@@ -125,6 +143,13 @@ jobs:
             echo "::error::monkeyc emitted $count warnings, up from $CIQ_WARNING_BASELINE. Fix them, or raise CIQ_WARNING_BASELINE in this workflow and explain why in the PR."
             grep -E '^WARNING' "$RUNNER_TEMP/compile.log" || true
             exit 1
+          fi
+          if [ "$count" -lt "$CIQ_WARNING_BASELINE" ]; then
+            # Surfaced, not failed. A baseline left above reality lets one new
+            # warning slip in behind a fixed one, but failing here would red-X
+            # the very PR that improved things -- and the count can legitimately
+            # differ by toolchain.
+            echo "::warning::monkeyc emitted $count warnings, below the $CIQ_WARNING_BASELINE baseline. Lower CIQ_WARNING_BASELINE to $count so the gate keeps its grip."
           fi
           {
             echo "### Garmin compile"
