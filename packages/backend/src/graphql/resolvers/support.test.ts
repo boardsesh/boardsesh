@@ -15,7 +15,7 @@ vi.mock('./shared/helpers', async (importOriginal) => {
   return { ...original, applyRateLimit };
 });
 
-import { supportMutations } from './support';
+import { supportMutations, supportQueries } from './support';
 
 const originalStripeSecret = process.env.STRIPE_SECRET_KEY;
 
@@ -68,5 +68,28 @@ describe('supportMutations', () => {
       supportMutations.createSupportBillingPortalSession({}, { locale: 'en-US' }, authContext()),
     ).rejects.toMatchObject({ extensions: { code: 'SERVICE_UNAVAILABLE' } });
     expect(applyRateLimit).toHaveBeenCalledWith(authContext(), 10, 'createSupportBillingPortalSession');
+  });
+});
+
+describe('supportQueries', () => {
+  it('rate-limits the public supporter page query', async () => {
+    const offset = vi.fn().mockResolvedValue([]);
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          leftJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({ offset }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    });
+    const context = authContext();
+
+    await expect(supportQueries.publicSupporters({}, { limit: 500, offset: 0 }, context)).resolves.toEqual([]);
+    expect(applyRateLimit).toHaveBeenCalledWith(context, 120, 'publicSupporters');
   });
 });

@@ -28,6 +28,7 @@ vi.mock('../services/stripe-support', async (importOriginal) => {
 import { acceptCheckout, handleStripeWebhook, updateSubscription } from './stripe-webhook';
 
 const originalWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const originalStripeSecret = process.env.STRIPE_SECRET_KEY;
 
 function webhookRequest(headers: Record<string, string> = {}): IncomingMessage {
   const request = Readable.from([Buffer.from('{}')]) as unknown as IncomingMessage;
@@ -135,6 +136,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   if (originalWebhookSecret === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
   else process.env.STRIPE_WEBHOOK_SECRET = originalWebhookSecret;
+  if (originalStripeSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+  else process.env.STRIPE_SECRET_KEY = originalStripeSecret;
 });
 
 describe('acceptCheckout', () => {
@@ -220,8 +223,20 @@ describe('handleStripeWebhook', () => {
     expect(result().statusCode).toBe(503);
   });
 
+  it('returns 503 when Stripe Checkout is not configured', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    delete process.env.STRIPE_SECRET_KEY;
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+
+    expect(result().statusCode).toBe(503);
+    expect(mockConstructEvent).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when the Stripe signature is missing', async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     const { response, result } = webhookResponse();
 
     await handleStripeWebhook(webhookRequest(), response);
@@ -232,6 +247,7 @@ describe('handleStripeWebhook', () => {
 
   it('returns 400 when Stripe rejects the signature', async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     mockConstructEvent.mockImplementation(() => {
       throw new Error('bad signature');
     });
@@ -244,6 +260,7 @@ describe('handleStripeWebhook', () => {
 
   it('verifies and routes a subscription event before acknowledging it', async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     const set = setupSubscriptionUpdate(null);
     mockConstructEvent.mockReturnValue({
       type: 'customer.subscription.updated',
