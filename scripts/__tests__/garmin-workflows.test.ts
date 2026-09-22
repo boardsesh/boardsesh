@@ -67,6 +67,40 @@ describe('garmin workflow path filters', () => {
   });
 });
 
+describe('garmin gate coverage', () => {
+  it('runs on pushes to main, not only on pull requests', () => {
+    // "Require CI on main" carries only required_status_checks -- no
+    // pull-request requirement -- so a direct push, revert or force-push to main
+    // is possible. Without this the release would publish a build that never
+    // went through the gate. Same shape as firmware-tests.yml.
+    const triggers = ciSource.slice(0, ciSource.indexOf('concurrency:'));
+    expect(triggers).toContain('branches: [main]');
+    expect(triggers).toContain('pull_request:');
+  });
+
+  it('does not skip itself on a push while guarding fork PRs', () => {
+    // github.event.pull_request is null on a push, so the fork comparison alone
+    // would evaluate false and skip the job on main -- silently undoing the
+    // push trigger above.
+    expect(ciSource).toContain("github.event_name != 'pull_request' ||");
+  });
+});
+
+describe('garmin release provenance', () => {
+  it('refuses to publish from anywhere but main', () => {
+    // A workflow_dispatch from a feature branch would overwrite the garmin-latest
+    // assets and force-move the tag that every install URL points at.
+    expect(releaseSource).toContain("if: github.ref != 'refs/heads/main'");
+  });
+
+  it('will not prune assets unless the checksums are in the publish dir', () => {
+    // The prune loop deletes anything not in $release. SHA256SUMS.txt is only
+    // spared because the build step writes it there; assert it rather than
+    // trusting step order.
+    expect(releaseSource).toContain('refusing to prune assets');
+  });
+});
+
 describe('garmin signing-key boundary', () => {
   it('keeps the real developer key out of PR builds', () => {
     // The Connect IQ Store rejects an update signed with a different key, so the

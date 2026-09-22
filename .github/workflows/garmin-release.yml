@@ -18,6 +18,10 @@ on:
       - '!garmin/README.md'
       - '.github/workflows/garmin-release.yml'
       - '.github/actions/connectiq-sdk/action.yml'
+  # Dispatch is for rebuilding main (a transient SDK outage, a re-publish after
+  # fixing the Garmin environment). It is NOT a way to ship a branch: the job
+  # refuses to run off main, because publishing here overwrites the assets and
+  # the tag that every climber's download URL points at.
   workflow_dispatch:
 
 concurrency:
@@ -39,6 +43,15 @@ jobs:
       contents: write # publishes the garmin-latest release
 
     steps:
+      - name: Refuse to publish from anywhere but main
+        # Cheap, explicit, and first: everything after this signs binaries and
+        # overwrites the rolling release. A dispatch from a feature branch would
+        # hand unreviewed code to everyone who sideloads.
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::garmin-release only publishes from main (got ${GITHUB_REF}). It overwrites the garmin-latest assets and tag that every install URL points at."
+          exit 1
+
       - uses: actions/checkout@v6
 
       - name: Set up Java
@@ -196,6 +209,16 @@ jobs:
               --prerelease
             # Drop assets for watches that have since left release-devices.txt,
             # which --clobber alone would leave behind forever.
+            #
+            # This prunes anything not present in $release, so EVERY file we mean
+            # to publish must live there -- SHA256SUMS.txt included. It does
+            # today, written by the build step. Assert it rather than trusting
+            # step order: if a refactor moved that write, the checksums would be
+            # silently deleted from the release instead of failing here.
+            [ -e "$release/SHA256SUMS.txt" ] || {
+              echo "::error::SHA256SUMS.txt is not in $release; refusing to prune assets"
+              exit 1
+            }
             gh release view "$tag" --json assets --jq '.assets[].name' \
               | while read -r asset; do
                   [ -e "$release/$asset" ] && continue
