@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-21T23:19:22.877Z",
+  "generatedAt": "2026-09-21T23:48:11.616Z",
   "entries": [
+    {
+      "prNumber": 5634,
+      "category": "fixed",
+      "title": "Session climbs that need to load their hold details now become current after loading when you're climbing solo. Preview actions and browsing with your crew still leave the current climb alone.",
+      "mergedAt": "2026-09-21T23:39:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5634"
+    },
     {
       "prNumber": 5629,
       "category": "fixed",
