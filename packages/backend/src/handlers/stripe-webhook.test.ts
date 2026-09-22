@@ -286,6 +286,24 @@ describe('handleStripeWebhook', () => {
     expect(result().statusCode).toBe(200);
   });
 
+  it('routes a delayed-payment success to checkout acceptance', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    const { insertedValues } = setupCheckoutTransaction();
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_async_1',
+      type: 'checkout.session.async_payment_succeeded',
+      created: 2_000,
+      data: { object: checkoutSession() },
+    });
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+
+    expect(insertedValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }));
+    expect(result().statusCode).toBe(200);
+  });
+
   it('returns 500 so Stripe retries a transient processing failure', async () => {
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
