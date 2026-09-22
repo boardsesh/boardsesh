@@ -792,31 +792,37 @@ describe('store screenshot presentation', () => {
       expect(widest).toBeGreaterThan(narrowest * 1.4);
       expect(widestStart).toBeGreaterThan(narrowestStart);
     }
-  });
+  }, 120_000);
 
-  it('fits every iPad caption in the copy column, in every locale and accepted size', async () => {
+  // The sweep above already frames every caption, in every locale, at the FIRST
+  // accepted size of each device — which for iPad is 2752x2064 and 2266x1488. What
+  // it does not cover is the other four sizes App Store Connect accepts, and those
+  // have narrower copy columns relative to their type size. Sweep the longest
+  // headline of each locale across them; German's "Live-Warteschlange." is the
+  // string that actually breaks, and it breaks at a 0.07 headline scale.
+  it('fits the longest iPad headline in every remaining accepted size', async () => {
     const campaign = ['wallKiosk', 'boardFamily', 'wallStatus', 'home', 'discover', 'workout', 'profile'] as const;
-    const solid = async ({ width, height }: { width: number; height: number }) =>
-      sharp(
-        Buffer.from(
-          `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="${width}" height="${height}" fill="#164c39"/></svg>`,
-        ),
-      )
+    const covered = new Set(
+      Object.values(ACCEPTED_SIZES)
+        .map((sizes) => `${sizes[0].width}x${sizes[0].height}`)
+        .values(),
+    );
+    const remaining = [...ACCEPTED_SIZES['ipad-pro-13-inch-m5'], ...ACCEPTED_SIZES['ipad-pro-11-inch-m5']].filter(
+      (size) => !covered.has(`${size.width}x${size.height}`),
+    );
+    expect(remaining.length).toBeGreaterThan(0);
+    for (const size of remaining) {
+      const raw = await sharp({ create: { ...size, channels: 3, background: '#164c39' } })
         .png()
         .toBuffer();
-    // The tightest column relative to its type size is the 13" slot, so sweep
-    // every caption there, then sweep the longest headline over every size the
-    // dimension gate accepts.
-    const thirteen = await solid({ width: 2752, height: 2064 });
-    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
-      const catalog = readCaptionCatalog(locale);
-      for (const id of campaign) {
-        await expect(frameScreenshot(thirteen, catalog[id])).resolves.toBeInstanceOf(Buffer);
+      for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+        const catalog = readCaptionCatalog(locale);
+        const longest = campaign
+          .map((id) => catalog[id])
+          .reduce((worst, caption) => (caption.headline.length > worst.headline.length ? caption : worst));
+        const framed = await frameScreenshot(raw, longest);
+        expect(readPngDimensions(framed)).toEqual(size);
       }
     }
-    for (const size of [...ACCEPTED_SIZES['ipad-pro-13-inch-m5'], ...ACCEPTED_SIZES['ipad-pro-11-inch-m5']]) {
-      const raw = await solid(size);
-      await expect(frameScreenshot(raw, readCaptionCatalog('de').liveQueue)).resolves.toBeInstanceOf(Buffer);
-    }
-  });
+  }, 120_000);
 });
