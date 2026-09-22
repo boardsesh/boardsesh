@@ -220,6 +220,34 @@ export const userMutations = {
 
     const userId = ctx.userId!;
 
+    const [supporterBeforeCancellation] = await db
+      .select({
+        subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
+        subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
+        cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
+      })
+      .from(dbSchema.stripeSupporters)
+      .where(eq(dbSchema.stripeSupporters.userId, userId))
+      .limit(1);
+    let cancelledSubscriptionId: string | null = null;
+    if (
+      supporterBeforeCancellation?.subscriptionId &&
+      isLiveStripeSubscription(supporterBeforeCancellation.subscriptionStatus) &&
+      !supporterBeforeCancellation.cancelAtPeriodEnd
+    ) {
+      try {
+        await getStripeClient().subscriptions.update(supporterBeforeCancellation.subscriptionId, {
+          cancel_at_period_end: true,
+        });
+        cancelledSubscriptionId = supporterBeforeCancellation.subscriptionId;
+      } catch (error) {
+        logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+        throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+          extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+        });
+      }
+    }
+
     await db.transaction(async (tx) => {
       const [supporter] = await tx
         .select({
@@ -230,6 +258,16 @@ export const userMutations = {
         .from(dbSchema.stripeSupporters)
         .where(eq(dbSchema.stripeSupporters.userId, userId))
         .limit(1);
+      if (
+        supporter?.subscriptionId &&
+        isLiveStripeSubscription(supporter.subscriptionStatus) &&
+        !supporter.cancelAtPeriodEnd &&
+        supporter.subscriptionId !== cancelledSubscriptionId
+      ) {
+        throw new GraphQLError('Your Stripe subscription changed. Retry account deletion to cancel it safely.', {
+          extensions: { code: 'STRIPE_SUBSCRIPTION_CHANGED' },
+        });
+      }
 
       // Find this user's draft climbs first — the dependent-row cleanup below
       // needs the (boardType, uuid) pairs, and it must run before the drafts
@@ -261,29 +299,6 @@ export const userMutations = {
           .update(dbSchema.boardClimbs)
           .set({ setterUsername: null })
           .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
-      }
-
-      // Keep cancellation inside the transaction and after the other database
-      // work. A Stripe failure rolls the transaction back, preserving the
-      // explicit contract that deletion never leaves a linked subscription
-      // charging without its Boardsesh account. Stripe and Postgres cannot
-      // share a transaction: if the final DB commit fails after Stripe accepts
-      // cancellation, the account survives with cancellation scheduled.
-      // Both branches are retry-safe: a Stripe failure rolls back the DB work,
-      // while repeating cancel_at_period_end after a DB failure is idempotent.
-      if (
-        supporter?.subscriptionId &&
-        isLiveStripeSubscription(supporter.subscriptionStatus) &&
-        !supporter.cancelAtPeriodEnd
-      ) {
-        try {
-          await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
-        } catch (error) {
-          logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-          throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
-            extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
-          });
-        }
       }
 
       // Delete the user row — all related tables with onDelete: cascade

@@ -133,6 +133,20 @@ describe('supportMutations', () => {
     expect(insertValues.mock.invocationCallOrder[0]).toBeLessThan(checkoutSessionCreate.mock.invocationCallOrder[0]);
   });
 
+  it('creates a reusable Stripe customer for first-time one-time support', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
+    setupCheckoutDatabase();
+    checkoutSessionCreate.mockResolvedValue({ id: 'cs_test_1', url: 'https://checkout.stripe.test/session' });
+
+    await supportMutations.createSupportCheckoutSession(
+      {},
+      { input: { amount: 500, cadence: 'ONE_TIME', publicCredit: false } },
+      authContext(),
+    );
+
+    expect(checkoutSessionCreate).toHaveBeenCalledWith(expect.objectContaining({ customer_creation: 'always' }));
+  });
+
   it('rejects a second monthly checkout for a live subscription', async () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_example';
     setupCheckoutDatabase([{ stripeSubscriptionId: 'sub_1', subscriptionStatus: 'active' }]);

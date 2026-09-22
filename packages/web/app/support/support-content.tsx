@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Image from 'next/image';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -50,9 +50,16 @@ type SupportContentProps = {
   locale: string;
 };
 
+function SupportResultAlert() {
+  const { t } = useTranslation('marketing');
+  const result = useSearchParams().get('support');
+  if (result === 'thanks') return <Alert severity="success">{t('support.stripe.thanks')}</Alert>;
+  if (result === 'cancelled') return <Alert severity="info">{t('support.stripe.cancelled')}</Alert>;
+  return null;
+}
+
 export default function SupportContent({ configuration, initialStatus, locale }: SupportContentProps) {
   const { t } = useTranslation('marketing');
-  const searchParams = useSearchParams();
   const { token: authToken, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
   const [amount, setAmount] = useState('5');
   const [cadence, setCadence] = useState<'MONTHLY' | 'ONE_TIME'>('MONTHLY');
@@ -138,10 +145,9 @@ export default function SupportContent({ configuration, initialStatus, locale }:
       }
     >
       {/* The promise belongs next to the ask, not buried in the small print. */}
-      {searchParams.get('support') === 'thanks' ? <Alert severity="success">{t('support.stripe.thanks')}</Alert> : null}
-      {searchParams.get('support') === 'cancelled' ? (
-        <Alert severity="info">{t('support.stripe.cancelled')}</Alert>
-      ) : null}
+      <Suspense fallback={null}>
+        <SupportResultAlert />
+      </Suspense>
       <Box className={styles.promise}>
         <Typography variant="h5" component="p">
           {t('support.promise')}
