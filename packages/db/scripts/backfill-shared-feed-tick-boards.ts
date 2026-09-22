@@ -118,24 +118,29 @@ export type ForwardMovePlan = {
 
 /** Match saveTick's session rung: another user's session is valid, deleted walls are not. */
 export async function loadSharedFeedTicks(db: Pick<ScriptDb, 'select'>, feedIds: number[]): Promise<FeedTick[]> {
-  const ticks = await db
-    .select({
-      uuid: boardseshTicks.uuid,
-      userId: boardseshTicks.userId,
-      boardId: boardseshTicks.boardId,
-      sessionBoard: {
-        id: userBoards.id,
-        boardType: userBoards.boardType,
-        layoutId: userBoards.layoutId,
-        sizeId: userBoards.sizeId,
-        setIds: userBoards.setIds,
-      },
-    })
-    .from(boardseshTicks)
-    .leftJoin(boardSessions, eq(boardSessions.id, boardseshTicks.sessionId))
-    .leftJoin(userBoards, and(eq(userBoards.id, boardSessions.boardId), isNull(userBoards.deletedAt)))
-    .where(inArray(boardseshTicks.boardId, feedIds));
-  return ticks.map((tick) => ({ ...tick, boardId: Number(tick.boardId) }));
+  const ticks: FeedTick[] = [];
+  const distinctFeedIds = [...new Set(feedIds)];
+  for (let offset = 0; offset < distinctFeedIds.length; offset += BATCH_SIZE) {
+    const rows = await db
+      .select({
+        uuid: boardseshTicks.uuid,
+        userId: boardseshTicks.userId,
+        boardId: boardseshTicks.boardId,
+        sessionBoard: {
+          id: userBoards.id,
+          boardType: userBoards.boardType,
+          layoutId: userBoards.layoutId,
+          sizeId: userBoards.sizeId,
+          setIds: userBoards.setIds,
+        },
+      })
+      .from(boardseshTicks)
+      .leftJoin(boardSessions, eq(boardSessions.id, boardseshTicks.sessionId))
+      .leftJoin(userBoards, and(eq(userBoards.id, boardSessions.boardId), isNull(userBoards.deletedAt)))
+      .where(inArray(boardseshTicks.boardId, distinctFeedIds.slice(offset, offset + BATCH_SIZE)));
+    ticks.push(...rows.map((tick) => ({ ...tick, boardId: Number(tick.boardId) })));
+  }
+  return ticks;
 }
 
 async function loadTicksByUuid(db: Pick<ScriptDb, 'select'>, uuids: string[]): Promise<FeedTick[]> {
@@ -466,24 +471,7 @@ async function main() {
     const ownerIds = [...new Set(ticks.map((tick) => tick.userId))].filter(
       (ownerId) => ownerId !== SYSTEM_BOARD_OWNER_ID,
     );
-    const ownedBoards = [];
-    for (let offset = 0; offset < ownerIds.length; offset += BATCH_SIZE) {
-      ownedBoards.push(
-        ...(await db
-          .select({
-            id: userBoards.id,
-            ownerId: userBoards.ownerId,
-            boardType: userBoards.boardType,
-            layoutId: userBoards.layoutId,
-            sizeId: userBoards.sizeId,
-            setIds: userBoards.setIds,
-          })
-          .from(userBoards)
-          .where(
-            and(inArray(userBoards.ownerId, ownerIds.slice(offset, offset + BATCH_SIZE)), isNull(userBoards.deletedAt)),
-          )),
-      );
-    }
+    const ownedBoards = await loadOwnedBoards(db, ownerIds);
 
     const plannedFeeds = feeds.map((feed) => ({
       id: Number(feed.id),
@@ -495,14 +483,7 @@ async function main() {
     const plan = planSharedFeedTickMoves({
       feeds: plannedFeeds,
       ticks,
-      ownedBoards: ownedBoards.map((board) => ({
-        id: Number(board.id),
-        ownerId: board.ownerId,
-        boardType: board.boardType,
-        layoutId: Number(board.layoutId),
-        sizeId: Number(board.sizeId),
-        setIds: board.setIds,
-      })),
+      ownedBoards,
     });
     const entries: SnapshotEntry[] = plan.moves;
 
