@@ -164,6 +164,25 @@ describe('garmin release publication', () => {
   });
 });
 
+describe('garmin SDK manager invocation', () => {
+  it('uses the flag name the CLI actually has', () => {
+    // v0.8.4 exposes `-H, --agreement-hash`. `--acceptance-hash`, which upstream
+    // prose uses in places, is rejected as an unknown flag.
+    // Comment lines stripped: the action deliberately NAMES the wrong flag in a
+    // comment so the next reader does not reintroduce it.
+    const live = withoutCommentLines(readFileSync(ACTION_PATH, 'utf8')).join('\n');
+    expect(live).toContain('--agreement-hash=');
+    expect(live).not.toContain('--acceptance-hash');
+  });
+
+  it('creates the config file before passing --config', () => {
+    // --config on a path that does not exist fails with "no such file or
+    // directory" before doing anything else.
+    const action = readFileSync(ACTION_PATH, 'utf8');
+    expect(action).toContain(': > "$ciq_config"');
+  });
+});
+
 describe('garmin SDK login', () => {
   it('cannot stall on the interactive SSO fallback', () => {
     // `login --help`: credentials come from GARMIN_USERNAME / GARMIN_PASSWORD,

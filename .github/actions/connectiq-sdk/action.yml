@@ -90,6 +90,10 @@ runs:
           | tar -xz -C "$RUNNER_TEMP" connect-iq-sdk-manager
         ciq_bin="$RUNNER_TEMP/connect-iq-sdk-manager"
         ciq_config="$RUNNER_TEMP/ciq-config.yaml"
+        # --config errors out if the file does not already exist ("no such file
+        # or directory"), so create it before the first call rather than letting
+        # every command fail on it.
+        : > "$ciq_config"
         # A function, not a string expanded unquoted: the latter word-splits on
         # anything in the paths and silently mangles arguments.
         ciq() { "$ciq_bin" --config "$ciq_config" "$@"; }
@@ -97,19 +101,28 @@ runs:
         # Accepting by hash is the non-interactive path. Re-read the agreement and
         # refresh this hash whenever Garmin revises it -- a stale hash fails here
         # rather than silently accepting something nobody read.
-        ciq agreement accept --acceptance-hash="$AGREEMENT_HASH"
+        #
+        # The flag is --agreement-hash (-H). It is NOT --acceptance-hash, which
+        # upstream prose calls it in places and which v0.8.4 rejects outright as
+        # an unknown flag.
+        ciq agreement accept --agreement-hash="$AGREEMENT_HASH"
 
         # The CLI reads GARMIN_USERNAME / GARMIN_PASSWORD (its `login --help`
-        # documents both), but with bad credentials it falls back to an
-        # interactive Garmin SSO prompt -- which in CI means blocking until the
-        # job timeout with nothing useful in the log. </dev/null makes the prompt
-        # fail instead of wait, and the timeout bounds any other stall.
+        # documents both), but without usable credentials it falls back to an
+        # interactive Garmin SSO flow. Measured against v0.8.4: that flow does
+        # NOT exit on EOF -- it was still running after three minutes with stdin
+        # closed -- so `timeout` is the part actually doing the work here and
+        # </dev/null is only belt and braces. Without it a bad secret would burn
+        # the entire job timeout and log nothing useful.
         if ! timeout 180 "$ciq_bin" --config "$ciq_config" login </dev/null; then
           echo "::error::Garmin login failed. Check GARMIN_USERNAME / GARMIN_PASSWORD on the 'Garmin' environment -- the CLI cannot complete its interactive SSO fallback in CI."
           exit 1
         fi
 
         ciq sdk download "$SDK_VERSION"
+        # --device is a pflag string slice, so one comma-separated value is
+        # parsed into several devices (verified against v0.8.4: it gets past
+        # parsing to the auth check).
         ciq device download --device "$DEVICES"
 
         # The config holds a live session token. It is outside every cached path,
