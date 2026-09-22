@@ -164,6 +164,18 @@
         "editTitle": "Welchen Eintrag bearbeiten?",
         "deleteTitle": "Welchen Eintrag löschen?"
       }
+    },
+    "boardLink": {
+      "title": "Fehlen deine {{boardName}}-Begehungen?",
+      "titleGeneric": "Schon mal an einem Board geklettert?",
+      "body": "Dein Login hat dein {{boardName}}-Konto nicht verknüpft — das sind zwei getrennte Zugänge. Verknüpf es, um deine Begehungen zu synchronisieren. Sie erscheinen hier nach und nach.",
+      "bodyGeneric": "Dein Kilter- oder Tension-Konto ist ein eigener Zugang, getrennt von Boardsesh. Verknüpf es, um deine Begehungen zu synchronisieren. Sie erscheinen hier nach und nach.",
+      "cta": "Mein {{boardName}}-Konto verknüpfen",
+      "ctaGeneric": "Board-Konto verknüpfen",
+      "moonboardTitle": "Hol dir dein MoonBoard-Routenbuch",
+      "moonboardBody": "Fordere deine Daten bei MoonBoard an und importier die Datei hier, um dein Routenbuch zu übertragen.",
+      "moonboardCta": "Mein MoonBoard-Routenbuch importieren",
+      "dismiss": "Jetzt nicht"
     }
   }
 }

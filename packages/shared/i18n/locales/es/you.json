@@ -164,6 +164,18 @@
         "editTitle": "¿Qué registro quieres editar?",
         "deleteTitle": "¿Qué registro quieres eliminar?"
       }
+    },
+    "boardLink": {
+      "title": "¿Te faltan tus encadenes de {{boardName}}?",
+      "titleGeneric": "¿Ya has escalado en un plafón?",
+      "body": "Iniciar sesión no vinculó tu cuenta de {{boardName}}: son dos accesos distintos. Vincúlala para empezar a sincronizar tus encadenes. Aparecerán aquí a medida que se sincronicen.",
+      "bodyGeneric": "Tu cuenta de Kilter o Tension es un acceso distinto al de Boardsesh. Vincúlala para empezar a sincronizar tus encadenes. Aparecerán aquí a medida que se sincronicen.",
+      "cta": "Vincular mi cuenta de {{boardName}}",
+      "ctaGeneric": "Vincular una cuenta de plafón",
+      "moonboardTitle": "Trae tu historial de MoonBoard",
+      "moonboardBody": "Pide tus datos a MoonBoard y luego importa el archivo aquí para traer tu historial.",
+      "moonboardCta": "Importar mi historial de MoonBoard",
+      "dismiss": "Ahora no"
     }
   }
 }

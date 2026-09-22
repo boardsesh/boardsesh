@@ -13,6 +13,7 @@ import { SectionHeader } from '../SectionHeader';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
+import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { ProfileBoardOverview, ProfileBoardRow } from './ProfileBoardOverview';
 import { StatsSummaryCard } from './StatsSummaryCard';
 import { PeriodComparisonCard } from './PeriodComparisonCard';
@@ -197,9 +198,12 @@ export const ProgressTab = memo(function ProgressTab({
           );
         case 'empty':
           return (
-            <Text variant="body" color={systemColors.secondaryLabel} style={styles.empty}>
-              {isOwnProfile ? t('stats.boardOverview.empty') : t('stats.boardOverview.publicEmpty')}
-            </Text>
+            <>
+              <BoardLinkPrompt key={userId} viewerIsOwner={isOwnProfile} hasNoSends={!data.hasActiveFilters} />
+              <Text variant="body" color={systemColors.secondaryLabel} style={styles.empty}>
+                {isOwnProfile ? t('stats.boardOverview.empty') : t('stats.boardOverview.publicEmpty')}
+              </Text>
+            </>
           );
         case 'tip':
           return (

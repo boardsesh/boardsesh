@@ -164,6 +164,18 @@
         "editTitle": "Quelle entrée modifier ?",
         "deleteTitle": "Quelle entrée supprimer ?"
       }
+    },
+    "boardLink": {
+      "title": "Vos croix {{boardName}} manquent à l’appel ?",
+      "titleGeneric": "Déjà grimpé sur une board ?",
+      "body": "Vous connecter n'a pas lié votre compte {{boardName}} : ce sont deux identifiants distincts. Liez-le pour commencer à synchroniser vos croix. Elles apparaîtront ici au fil de la synchronisation.",
+      "bodyGeneric": "Votre compte Kilter ou Tension est un identifiant distinct de Boardsesh. Liez-le pour commencer à synchroniser vos croix. Elles apparaîtront ici au fil de la synchronisation.",
+      "cta": "Lier mon compte {{boardName}}",
+      "ctaGeneric": "Lier un compte de board",
+      "moonboardTitle": "Récupérez votre carnet MoonBoard",
+      "moonboardBody": "Demandez vos données à MoonBoard, puis importez le fichier ici pour récupérer votre carnet.",
+      "moonboardCta": "Importer mon carnet MoonBoard",
+      "dismiss": "Pas maintenant"
     }
   }
 }
