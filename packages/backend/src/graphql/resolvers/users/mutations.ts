@@ -281,21 +281,6 @@ export const userMutations = {
       .from(dbSchema.stripeSupporters)
       .where(eq(dbSchema.stripeSupporters.userId, userId))
       .limit(1);
-    if (
-      supporter?.subscriptionId &&
-      isLiveStripeSubscription(supporter.subscriptionStatus) &&
-      !supporter.cancelAtPeriodEnd
-    ) {
-      try {
-        await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
-      } catch (error) {
-        logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
-        throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
-          extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
-        });
-      }
-    }
-
     let deletedWallIds: number[] = [];
     await retryAccountDeletion(() =>
       db.transaction(async (tx) => {
@@ -353,6 +338,21 @@ export const userMutations = {
             .update(dbSchema.boardClimbs)
             .set({ setterUsername: null })
             .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
+        }
+
+        if (
+          supporter?.subscriptionId &&
+          isLiveStripeSubscription(supporter.subscriptionStatus) &&
+          !supporter.cancelAtPeriodEnd
+        ) {
+          try {
+            await getStripeClient().subscriptions.update(supporter.subscriptionId, { cancel_at_period_end: true });
+          } catch (error) {
+            logger.error('[deleteAccount] could not schedule Stripe subscription cancellation', { userId, error });
+            throw new GraphQLError('Could not cancel your Stripe subscription. Your account was not deleted.', {
+              extensions: { code: 'STRIPE_CANCELLATION_FAILED' },
+            });
+          }
         }
 
         // Delete the user row — all related tables with onDelete: cascade

@@ -11,7 +11,7 @@ export function isStripeSupportConfigured(): boolean {
 }
 
 export function isLiveStripeSubscription(status?: string | null): boolean {
-  return Boolean(status && !['canceled', 'incomplete_expired'].includes(status));
+  return Boolean(status && !['canceled', 'incomplete_expired', 'unpaid'].includes(status));
 }
 
 export function getStripeClient(): Stripe {

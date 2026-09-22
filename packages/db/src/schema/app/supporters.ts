@@ -18,6 +18,7 @@ export const stripeSupporters = pgTable(
     stripeCustomerId: text('stripe_customer_id'),
     stripeSubscriptionId: text('stripe_subscription_id'),
     subscriptionStatus: text('subscription_status'),
+    stripeEventCreatedAt: timestamp('stripe_event_created_at'),
     showPublicly: boolean('show_publicly').notNull().default(false),
     supportedAt: timestamp('supported_at'),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
