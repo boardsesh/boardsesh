@@ -48,7 +48,7 @@ function subscription(overrides: Record<string, unknown> = {}): Stripe.Subscript
 
 function setupCheckoutTransaction(options?: { claim?: Record<string, unknown>; supporter?: Record<string, unknown> }) {
   const insertedValues = vi.fn();
-  const claimUpdate = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+  const deleteClaim = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   const conflictUpdate = vi.fn().mockResolvedValue(undefined);
   const transaction = {
     select: vi
@@ -76,12 +76,12 @@ function setupCheckoutTransaction(options?: { claim?: Record<string, unknown>; s
     insert: vi.fn().mockReturnValue({
       values: insertedValues.mockReturnValue({ onConflictDoUpdate: conflictUpdate }),
     }),
-    update: vi.fn().mockReturnValue({ set: claimUpdate }),
+    delete: deleteClaim,
   };
   mockDb.transaction.mockImplementation(async (callback: (database: typeof transaction) => Promise<void>) => {
     await callback(transaction);
   });
-  return { insertedValues, conflictUpdate, transaction };
+  return { deleteClaim, insertedValues, conflictUpdate, transaction };
 }
 
 beforeEach(() => {
@@ -106,7 +106,7 @@ describe('acceptCheckout', () => {
   });
 
   it('links a valid one-time payment without inventing a subscription', async () => {
-    const { insertedValues, conflictUpdate } = setupCheckoutTransaction();
+    const { deleteClaim, insertedValues, conflictUpdate } = setupCheckoutTransaction();
 
     await acceptCheckout(checkoutSession(), 1_000);
 
@@ -120,6 +120,7 @@ describe('acceptCheckout', () => {
       }),
     );
     expect(conflictUpdate).toHaveBeenCalledOnce();
+    expect(deleteClaim).toHaveBeenCalledOnce();
   });
 
   it('uses Stripe subscription state instead of assuming checkout means active', async () => {

@@ -340,6 +340,8 @@ export const userMutations = {
             .where(and(eq(dbSchema.boardClimbs.userId, userId), eq(dbSchema.boardClimbs.isDraft, false)));
         }
 
+        // A Stripe failure rolls deletion back. If the final database commit fails
+        // after Stripe accepts cancellation, the account survives with cancellation scheduled.
         if (
           supporter?.subscriptionId &&
           isLiveStripeSubscription(supporter.subscriptionStatus) &&

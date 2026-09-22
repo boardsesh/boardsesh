@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, lt } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { randomUUID } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -71,7 +71,8 @@ export const supportQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.stripeSupporters.userId))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(and(eq(dbSchema.stripeSupporters.showPublicly, true), isNotNull(dbSchema.stripeSupporters.supportedAt)))
-      .orderBy(desc(dbSchema.stripeSupporters.supportedAt));
+      .orderBy(desc(dbSchema.stripeSupporters.supportedAt))
+      .limit(500);
     return rows.map((row) => ({
       userId: row.userId,
       displayName: row.displayName || row.accountName || 'Boardsesh supporter',
@@ -129,6 +130,15 @@ export const supportMutations = {
 
     const claimId = userId ? randomUUID() : null;
     if (userId) {
+      await db
+        .delete(dbSchema.stripeSupportClaims)
+        .where(
+          and(
+            eq(dbSchema.stripeSupportClaims.userId, userId),
+            isNull(dbSchema.stripeSupportClaims.completedAt),
+            lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          ),
+        );
       await db
         .insert(dbSchema.stripeSupportClaims)
         .values({
