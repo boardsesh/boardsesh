@@ -140,7 +140,120 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
+  # Holds the publish until the live backend serves the GraphQL schema this OTA
+  # queries (#5370). On 2026-09-08 #5283 changed the schema and the client in one
+  # commit; the OTA published at 21:36 UTC and the backend with the new argument
+  # finished deploying at 21:55, so updated phones got GRAPHQL_VALIDATION_FAILED
+  # for 19 minutes. production-deploy.yml runs off the same push, so the fix is
+  # to wait for it rather than race it.
+  #
+  # FAIL OPEN, always. Every path out of this job lets `publish` run: a pass, a
+  # 60-minute cap, no deploy running, or the job itself crashing (publish uses
+  # `!cancelled()`). A wedged backend deploy must not also freeze mobile, and a
+  # per-platform republish dispatched by a native build must never be stranded.
+  #
+  # Deliberately NOT `environment: Production`: it needs no secret beyond the
+  # repo-level Discord webhook, and a second environment gate would park every
+  # OTA behind a manual approval. No workflow-level env either — the shared env
+  # above is locked by scripts/mobile-ci-env-parity.test.ts.
+  await-backend-schema:
+    runs-on: ubuntu-latest
+    # The poll loop caps itself at 60 minutes; this is the backstop above it.
+    timeout-minutes: 75
+    permissions:
+      # actions: read for `gh run list` on production-deploy.yml.
+      actions: read
+      contents: read
+    steps:
+      # A republish dispatched by a native build re-ships JS main already
+      # published (and gated) on push. Skip every step so it goes straight to
+      # publish; the job still succeeds, so `publish` is not skipped with it.
+      - name: Skip for a native-build republish
+        if: github.event.inputs.expect_fingerprint != ''
+        env:
+          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
+        run: echo "::notice::Republish for fingerprint $EXPECT_FINGERPRINT — not waiting for the backend."
+
+      - name: Checkout repository
+        if: github.event.inputs.expect_fingerprint == ''
+        uses: actions/checkout@v4
+        with:
+          # Full history: merge-base and diff need both the OTA commit and the
+          # deployed release, which can be newer than this checkout.
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        if: github.event.inputs.expect_fingerprint == ''
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Wait for the backend to serve this schema
+        if: github.event.inputs.expect_fingerprint == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # No `set -e`: every failure below degrades to "publish anyway".
+          set -uo pipefail
+          schema_path=packages/shared-schema/src/schema
+          need="$(git log -1 --format=%H "$GITHUB_SHA" -- "$schema_path" 2>/dev/null || true)"
+          echo "Schema commit this OTA needs: ${need:-<none>}"
+          start=$SECONDS
+          while :; do
+            elapsed=$((SECONDS - start))
+            git fetch --quiet origin main || echo "::warning::git fetch origin main failed; comparing against the local history."
+            # No -f: a 503 (Redis down) still carries `release`.
+            release="$(curl -sS --max-time 20 https://ws.boardsesh.com/health 2>/dev/null | jq -r '.release // empty' 2>/dev/null || true)"
+            is_ancestor=false
+            schema_diff_empty=false
+            if printf '%s' "$release" | grep -Eq '^[0-9a-f]{40}$' && git cat-file -e "${release}^{commit}" 2>/dev/null; then
+              [ -n "$need" ] && git merge-base --is-ancestor "$need" "$release" && is_ancestor=true
+              git diff --quiet "$release" "$GITHUB_SHA" -- "$schema_path" && schema_diff_empty=true
+            fi
+            running="$(gh run list -w production-deploy.yml -b main --limit 20 --json status \
+              -q '[.[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested")] | length' \
+              2>/dev/null || echo 0)"
+            deploy_running=false
+            [ "${running:-0}" -gt 0 ] 2>/dev/null && deploy_running=true
+            verdict="$(node --experimental-strip-types scripts/mobile-ota-backend-gate.ts \
+              --need "$need" --release "$release" --is-ancestor "$is_ancestor" \
+              --schema-diff-empty "$schema_diff_empty" --deploy-running "$deploy_running" \
+              --elapsed-seconds "$elapsed" 2>/dev/null)"
+            decision="$(printf '%s\n' "$verdict" | sed -n 's/^decision=//p')"
+            reason="$(printf '%s\n' "$verdict" | sed -n 's/^reason=//p')"
+            echo "[$((elapsed / 60))m] ${decision:-<no verdict>}: ${reason:-decision script produced no output}"
+            case "$decision" in
+              pass)
+                echo "::notice::Backend is ready: $reason"
+                echo "Backend schema gate: **pass** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+                ;;
+              wait)
+                sleep 60
+                ;;
+              *)
+                reason="${reason:-the decision script failed to run}"
+                echo "::warning::Publishing without confirming the backend schema: $reason"
+                echo "Backend schema gate: **published without confirmation** after $((elapsed / 60)) min — $reason" >> "$GITHUB_STEP_SUMMARY"
+                if [ -n "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+                  content="$(printf '⚠️ **Production OTA publishing before the backend confirmed its schema** on `%s`\n• %s\n<%s>' \
+                    "${GITHUB_SHA:0:7}" "$reason" "$RUN_URL")"
+                  jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+                    | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" \
+                    || echo "::warning::Failed to post Discord notification (see status above)"
+                fi
+                exit 0
+                ;;
+            esac
+          done
+
   publish:
+    # Fail open: runs after the gate whatever its result, unless the run was
+    # cancelled. A gate that crashed or hit its job timeout still publishes.
+    needs: await-backend-schema
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
