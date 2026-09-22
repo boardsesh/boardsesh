@@ -43,6 +43,10 @@
     "headline": "Verfolge die Aktivität am Board",
     "description": "Sieh die letzten Begehungen und die Statistiken für dein Board."
   },
+  "wallKiosk": {
+    "headline": "Stell es neben das Board.",
+    "description": "Der beleuchtete Boulder — lesbar von der Matte."
+  },
   "boardFamily": {
     "headline": "Deine Boards. Eine App.",
     "description": "Wechsle das Board, ohne die App zu wechseln."

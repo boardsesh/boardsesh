@@ -59,8 +59,10 @@ Canonical: [`fastlane/metadata/en-US/release_notes.txt`](../../fastlane/metadata
 
 Generated iPhone portrait and iPad landscape screenshots, captured + uploaded by
 `vp run mobile:screenshots` (Maestro -> fastlane; see
-`packages/mobile/.maestro/README.md`). Ten slots, in store display order (the
-filename prefix sets the order):
+`packages/mobile/.maestro/README.md`). iPhone and iPad are separate App Store
+slots and carry different sets — the iPad one is its own campaign, below.
+
+### iPhone — ten slots, in store display order (the filename prefix sets the order)
 
 1. `00-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
 2. `01-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
@@ -78,6 +80,36 @@ only one most people see — the feed and the climb list read like any app's unt
 you already know what the board is for.
 
 Apple allows up to 10; the current generated set uploads 10 screenshots. Google Play caps phones at 8, so its set drops playlist detail and logbook (see the Play metadata).
+
+### iPad — eight framed slots
+
+The iPad slot does not auto-scale from iPhone, and an iPad is used differently: it
+gets mounted by the wall. So it leads with the kiosk, then the boards it works
+with, then the shared session, then the live wall column beside the browse list —
+the shell no phone screenshot can show.
+
+| Output | What the image shows |
+| --- | --- |
+| `00-wall-kiosk.png` | The wall kiosk: the lit climb, readable from the mat. |
+| `01-board-family.png` | Kilter, Tension and MoonBoard 2016, captured on the same iPad. |
+| `02-live-queue.png` | A shared session: the crew and the queue inside the shell. |
+| `03-wall-status.png` | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
+| `04-home.png` | The crew's activity feed. |
+| `05-discover.png` | The playlist library. |
+| `06-workout-generator.png` | The Record tab's workout generator. |
+| `07-profile.png` | Sends and progress across every board. |
+
+Maestro captures ten raw PNGs for this set: the six shell screens the sidebar flow
+already took, three per-board views, and the shared session. The raw Climbs capture
+feeds `03-wall-status.png`; the raw `01-home` and `04-discover` captures each take a
+slot of their own. Board switching runs through the real UI — the iPad cannot use
+the `screenshot*` deep links the Android flow relies on, because the simulator's
+scheme-confirm dialog swallows them.
+
+iPad frames are landscape, so the copy sits in a left column beside the capture
+rather than in a band above it: a 4:3 canvas has no room for both. A single screen
+therefore renders about 80% of the size it would at full width, and the side gutters
+that used to take a quarter of the canvas are gone.
 
 Every board in the set is drawn with **Aura**, the app's default look. Both the
 drawing and which wall each shot sits on are pinned by the screenshots build

@@ -650,4 +650,190 @@ describe('store screenshot presentation', () => {
     ).toThrow('--locale');
     expect(() => parseFrameArguments(['--unsafe', 'true'])).toThrow('Invalid');
   });
+
+  it('resolves the iPad campaign and still frames a legacy landscape capture set', () => {
+    const legacy = Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'));
+    expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', legacy).map(({ output }) => output)).toEqual(
+      [...legacy].sort(),
+    );
+    const names = [
+      ...legacy,
+      '06-kilter-board-view.png',
+      '07-tension-board-view.png',
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+    ];
+    const recipes = resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names);
+    expect(resolveScreenshotRecipes('ios', 'ipad-pro-11-inch-m5', names)).toEqual(recipes);
+    expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', [...names].reverse())).toEqual(recipes);
+    expect(recipes.map(({ output }) => output)).toEqual([
+      '00-wall-kiosk.png',
+      '01-board-family.png',
+      '02-live-queue.png',
+      '03-wall-status.png',
+      '04-home.png',
+      '05-discover.png',
+      '06-workout-generator.png',
+      '07-profile.png',
+    ]);
+    expect(recipes[1]).toEqual({
+      output: '01-board-family.png',
+      caption: 'boardFamily',
+      layout: 'board-family',
+      sources: ['06-kilter-board-view.png', '07-tension-board-view.png', '08-moonboard-board-view.png'],
+    });
+    // The browse capture carries the wall column; nothing else stands in for it.
+    expect(recipes[3]).toEqual({
+      output: '03-wall-status.png',
+      caption: 'wallStatus',
+      layout: 'wall-column',
+      sources: ['02-climbs.png'],
+    });
+    for (const missing of names) {
+      expect(() =>
+        resolveScreenshotRecipes(
+          'ios',
+          'ipad-pro-13-inch-m5',
+          names.filter((name) => name !== missing),
+        ),
+      ).toThrow('Incomplete or unknown');
+    }
+    expect(() => resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', [...names, names[0]])).toThrow(
+      'Incomplete or unknown',
+    );
+  });
+
+  it('leaves the iPhone and Android recipes untouched by the iPad campaign', () => {
+    const phone = Object.keys(screenshotCaptions('ios', 'iphone-16-pro-max'));
+    const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro-max', phone);
+    expect(recipes).toHaveLength(phone.length);
+    for (const recipe of recipes) {
+      expect(recipe.layout).toBe('screen');
+      expect(recipe.sources).toEqual([recipe.output]);
+    }
+    // The iPad capture set is not a phone capture set, on either platform.
+    const ipad = [
+      ...Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5')),
+      '06-kilter-board-view.png',
+      '07-tension-board-view.png',
+      '08-moonboard-board-view.png',
+      '09-live-queue.png',
+    ];
+    expect(() => resolveScreenshotRecipes('ios', 'iphone-16-pro-max', ipad)).toThrow('Incomplete or unknown');
+    expect(() => resolveScreenshotRecipes('android', 'pixel-2', ipad)).toThrow('Incomplete or unknown');
+  });
+
+  it('puts the iPad copy beside the capture rather than in a band above it', async () => {
+    const raw = await sharp(
+      Buffer.from(
+        `<svg width="2752" height="2064" xmlns="http://www.w3.org/2000/svg"><rect width="2752" height="2064" fill="#164c39"/></svg>`,
+      ),
+    )
+      .png()
+      .toBuffer();
+    const framed = await frameComposition([raw], readCaptionCatalog('en-US').wallKiosk, 'screen');
+    expect(readPngDimensions(framed)).toEqual({ width: 2752, height: 2064 });
+    const { data } = await sharp(framed).raw().toBuffer({ resolveWithObject: true });
+    const capture = (x: number, y: number) => {
+      const at = (y * 2752 + x) * 3;
+      return data[at] === 22 && data[at + 1] === 76 && data[at + 2] === 57;
+    };
+    // The capture occupies the right of the canvas and never the copy column.
+    expect(capture(2000, 1032)).toBe(true);
+    for (let y = 0; y < 2064; y += 16) expect(capture(400, y)).toBe(false);
+    // Copy ink sits in the left column, vertically around the middle.
+    const columnInk = (() => {
+      for (let y = 0; y < 2064; y += 4) {
+        for (let x = 100; x < 900; x += 4) {
+          const at = (y * 2752 + x) * 3;
+          if (data[at] > 120 && data[at + 1] > 120 && data[at + 2] > 120) return { x, y };
+        }
+      }
+      return null;
+    })();
+    expect(columnInk).not.toBeNull();
+    expect(columnInk!.y).toBeGreaterThan(2064 * 0.2);
+  });
+
+  it('lifts the trailing wall column out of the iPad capture and enlarges it', async () => {
+    // 600px of the capture width is the shell's 300pt wall column at @2x.
+    const raw = await sharp(
+      Buffer.from(`<svg width="2752" height="2064" xmlns="http://www.w3.org/2000/svg">
+      <rect width="2752" height="2064" fill="#164c39"/>
+      <rect x="2152" width="600" height="2064" fill="#ac3478"/>
+      <rect x="2152" y="80" width="600" height="160" fill="#e69a32"/>
+    </svg>`),
+    )
+      .png()
+      .toBuffer();
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const framed = await frameComposition([raw], readCaptionCatalog(locale).wallStatus, 'wall-column');
+      const { data } = await sharp(framed).raw().toBuffer({ resolveWithObject: true });
+      // Widest horizontal run of the "on the wall" band, per side of the canvas.
+      let widest = 0;
+      let widestStart = 0;
+      let narrowest = Number.POSITIVE_INFINITY;
+      let narrowestStart = 0;
+      for (let y = 0; y < 2064; y += 2) {
+        let run = 0;
+        for (let x = 0; x <= 2752; x++) {
+          const at = (y * 2752 + x) * 3;
+          const hit = x < 2752 && data[at] === 230 && data[at + 1] === 154 && data[at + 2] === 50;
+          if (hit) {
+            run += 1;
+            continue;
+          }
+          if (run > widest) {
+            widest = run;
+            widestStart = x - run;
+          }
+          if (run > 0 && run < narrowest) {
+            narrowest = run;
+            narrowestStart = x - run;
+          }
+          run = 0;
+        }
+      }
+      // The enlarged column reads clearly bigger than the same pixels in context,
+      // and sits to the trailing side of them.
+      expect(narrowest).toBeGreaterThan(0);
+      expect(widest).toBeGreaterThan(narrowest * 1.4);
+      expect(widestStart).toBeGreaterThan(narrowestStart);
+    }
+  });
+
+  it('fits every iPad caption in the copy column, in every locale and accepted size', async () => {
+    const campaign = [
+      'wallKiosk',
+      'boardFamily',
+      'liveQueue',
+      'wallStatus',
+      'home',
+      'discover',
+      'workout',
+      'profile',
+    ] as const;
+    const solid = async ({ width, height }: { width: number; height: number }) =>
+      sharp(
+        Buffer.from(
+          `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="${width}" height="${height}" fill="#164c39"/></svg>`,
+        ),
+      )
+        .png()
+        .toBuffer();
+    // The tightest column relative to its type size is the 13" slot, so sweep
+    // every caption there, then sweep the longest headline over every size the
+    // dimension gate accepts.
+    const thirteen = await solid({ width: 2752, height: 2064 });
+    for (const locale of ['en-US', 'es', 'fr', 'de'] as const) {
+      const catalog = readCaptionCatalog(locale);
+      for (const id of campaign) {
+        await expect(frameScreenshot(thirteen, catalog[id])).resolves.toBeInstanceOf(Buffer);
+      }
+    }
+    for (const size of [...ACCEPTED_SIZES['ipad-pro-13-inch-m5'], ...ACCEPTED_SIZES['ipad-pro-11-inch-m5']]) {
+      const raw = await solid(size);
+      await expect(frameScreenshot(raw, readCaptionCatalog('de').liveQueue)).resolves.toBeInstanceOf(Buffer);
+    }
+  });
 });

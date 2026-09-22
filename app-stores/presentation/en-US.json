@@ -43,6 +43,10 @@
     "headline": "Follow your board’s activity",
     "description": "See recent sends and stats for your board."
   },
+  "wallKiosk": {
+    "headline": "Leave it by the board.",
+    "description": "The lit climb, big enough to read from the mat."
+  },
   "boardFamily": {
     "headline": "Your boards. One app.",
     "description": "Switch boards without switching apps."

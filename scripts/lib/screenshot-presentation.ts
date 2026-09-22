@@ -19,6 +19,7 @@ export const CAPTION_IDS = [
   'logbook',
   'profile',
   'wall',
+  'wallKiosk',
   'boardFamily',
   'liveQueue',
   'liveClimb',
@@ -63,7 +64,7 @@ const PHONE_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '09-profile.png': 'profile',
 };
 const IPAD_CAPTIONS: Readonly<Record<string, CaptionId>> = {
-  '00-wall.png': 'wall',
+  '00-wall.png': 'wallKiosk',
   '01-home.png': 'home',
   '02-climbs.png': 'climbs',
   '03-workout-generator.png': 'workout',
@@ -94,6 +95,7 @@ export type ScreenshotLayout =
   | 'more-boards'
   | 'live-climb'
   | 'wall-status'
+  | 'wall-column'
   | 'cross-board-logbook';
 export interface ScreenshotRecipe {
   output: string;
@@ -114,6 +116,15 @@ const MORE_BOARD_CAPTURES = [
   '13-moonboard-2024-view.png',
 ] as const;
 const PROFILE_HISTORY_CAPTURES = ['14-logbook.png', '15-session-detail.png'] as const;
+// The iPad campaign's extra captures, numbered after the six shell screens the
+// sidebar flow already takes. One board view per board (the iPad switches boards
+// through the UI — it has no screenshot deep links) plus the shared session.
+const IPAD_BOARD_CAPTURES = [
+  '06-kilter-board-view.png',
+  '07-tension-board-view.png',
+  '08-moonboard-board-view.png',
+] as const;
+const IPAD_LIVE_CAPTURE = '09-live-queue.png';
 
 /** Keep old capture flows usable; the new opening requires the complete live capture set. */
 export function resolveScreenshotRecipes(
@@ -128,6 +139,37 @@ export function resolveScreenshotRecipes(
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
   if (matches(legacyNames)) {
     return legacyNames.map((name) => ({ output: name, caption: mapping[name], layout: 'screen', sources: [name] }));
+  }
+  // The iPad listing is its own campaign, not the phone set in landscape. It leads
+  // with the wall kiosk, then the boards, the shared session, and the live wall
+  // column beside the browse list — the shell no phone screenshot can show.
+  if (
+    platform === 'ios' &&
+    device.startsWith('ipad-') &&
+    matches([...legacyNames, ...IPAD_BOARD_CAPTURES, IPAD_LIVE_CAPTURE])
+  ) {
+    return [
+      { output: '00-wall-kiosk.png', caption: 'wallKiosk', layout: 'screen', sources: ['00-wall.png'] },
+      {
+        output: '01-board-family.png',
+        caption: 'boardFamily',
+        layout: 'board-family',
+        sources: IPAD_BOARD_CAPTURES,
+      },
+      { output: '02-live-queue.png', caption: 'liveQueue', layout: 'screen', sources: [IPAD_LIVE_CAPTURE] },
+      // The wall column is part of this very capture, enlarged beside the screen
+      // it came from — never a second screen standing in for it.
+      { output: '03-wall-status.png', caption: 'wallStatus', layout: 'wall-column', sources: ['02-climbs.png'] },
+      { output: '04-home.png', caption: 'home', layout: 'screen', sources: ['01-home.png'] },
+      { output: '05-discover.png', caption: 'discover', layout: 'screen', sources: ['04-discover.png'] },
+      {
+        output: '06-workout-generator.png',
+        caption: 'workout',
+        layout: 'screen',
+        sources: ['03-workout-generator.png'],
+      },
+      { output: '07-profile.png', caption: 'profile', layout: 'screen', sources: ['05-profile.png'] },
+    ];
   }
   const liveNames = [...legacyNames, ...ANDROID_LIVE_CAPTURES];
   const wallNames = [...legacyNames, ...ANDROID_WALL_CAPTURES];
@@ -188,7 +230,7 @@ export function resolveScreenshotRecipes(
     ];
   }
   throw new Error(
-    `Incomplete or unknown screenshot set. Expected ${legacyNames.join(', ')}${platform === 'android' ? `; the wall-status set also requires ${ANDROID_WALL_CAPTURES.join(', ')}; the older live set requires ${ANDROID_LIVE_CAPTURES.join(', ')} (either optionally adds ${MOONBOARD_CAPTURE}); the extended board set requires all wall-status captures, ${MOONBOARD_CAPTURE}, and ${MORE_BOARD_CAPTURES.join(', ')}` : ''}; found ${actualNames.join(', ')}.`,
+    `Incomplete or unknown screenshot set. Expected ${legacyNames.join(', ')}${device.startsWith('ipad-') ? `; the iPad campaign set also requires ${[...IPAD_BOARD_CAPTURES, IPAD_LIVE_CAPTURE].join(', ')}` : ''}${platform === 'android' ? `; the wall-status set also requires ${ANDROID_WALL_CAPTURES.join(', ')}; the older live set requires ${ANDROID_LIVE_CAPTURES.join(', ')} (either optionally adds ${MOONBOARD_CAPTURE}); the extended board set requires all wall-status captures, ${MOONBOARD_CAPTURE}, and ${MORE_BOARD_CAPTURES.join(', ')}` : ''}; found ${actualNames.join(', ')}.`,
   );
 }
 

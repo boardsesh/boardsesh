@@ -43,6 +43,10 @@
     "headline": "Suis l’activité de ta board",
     "description": "Retrouve les dernières croix et les stats de ta board."
   },
+  "wallKiosk": {
+    "headline": "Pose-le près de la board.",
+    "description": "Le bloc allumé, lisible depuis le tapis."
+  },
   "boardFamily": {
     "headline": "Tes boards. Une seule app.",
     "description": "Change de board sans changer d’app."

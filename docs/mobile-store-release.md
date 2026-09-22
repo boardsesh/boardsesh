@@ -123,6 +123,24 @@ The complete upright screen fits below
 a headline and a short explanation, using the dark Velvet palette. PNG sizes
 and filenames are unchanged. Onboarding and custom flows remain unframed.
 
+**Portrait and landscape are laid out differently, and the split is derived from
+the capture, not the device.** A portrait capture (iPhone, Android) keeps the copy
+in a band across the top. A landscape capture (iPad, shot `LANDSCAPE_LEFT`) puts it
+in a left column beside the screens, because a 4:3 canvas has no room for a copy
+band above a 4:3 screen. The cost is that a single iPad screen renders at about 80%
+of the width it would otherwise get; the gain is that the quarter of the canvas that
+used to be empty side gutters is now doing work. Panels are never bled off the
+canvas edge.
+
+The iPad set is its own campaign rather than the phone set in landscape — eight
+frames leading with the wall kiosk, the boards, the shared session, and the
+trailing wall column lifted out of the browse screen and enlarged beside it. The
+frame table lives in `app-stores/apple/app-store-metadata.md`. The wall-column crop
+is derived, not hardcoded: the shell's column is `WALL_COLUMN_WIDTH` (300pt,
+`packages/mobile/src/theme/size-class.ts`) and every iPad capture is @2x, so the
+crop is 600px / capture width — 21.8% on the 13" slot, 24.8% on the 11". One
+expression covers both, unlike the Android rail crop, which is pinned to 1080x1920.
+
 Edit copy in `app-stores/presentation/{en-US,es,fr,de}.json`. Apple uses the app
 locale; `es-ES` and `es-MX` share Spanish captions. Google Play stays English.
 The renderer uses the pinned, licensed Roboto fonts in that directory and
