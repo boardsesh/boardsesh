@@ -667,8 +667,24 @@ export function usePlaylistActivation({
           }
           const item = climbToQueueItem(schemaClimb);
           setQueue([item], item);
-          // Same as the full replacement below: the queue is the list from here.
-          setPlaylistSuggestionSource(null);
+          // The detail screen already has an ordered playlist window in memory.
+          // Seed it as the player's swipe track before opening the drawer, so
+          // previous/next and board swipes work on its first frame without
+          // pretending those browsable neighbours are queued climbs.
+          //
+          // A one-item queue with a null track made navigation depend entirely on
+          // the follow-up network drain. A slow, cancelled, or stuck refresh
+          // therefore left both arrow buttons disabled indefinitely even though
+          // the adjacent rows were already visible on the playlist screen.
+          setPlaylistSuggestionSource(
+            createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs: loadedClimbsRef.current,
+              boardKey: target.boardKey,
+              isClimbable: target.isClimbable,
+            }),
+          );
           openPlayDrawer(schemaClimb, { committedExternally: true });
           return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
         }
