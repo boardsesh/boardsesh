@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../db/client';
+import { logger } from '../../utils/logger';
 import { applyRateLimit, requireAuthenticated } from './shared/helpers';
 import {
   getStripeClient,
@@ -83,7 +84,7 @@ export const supportQueries = {
       .offset(pageOffset);
     return rows.map((row) => ({
       userId: row.userId,
-      displayName: row.displayName || row.accountName || 'Boardsesh supporter',
+      displayName: row.displayName || row.accountName || row.userId,
       avatarUrl: row.avatarUrl || row.accountImage || null,
       supportedAt: row.supportedAt!.toISOString(),
     }));
@@ -143,14 +144,21 @@ export const supportMutations = {
 
     const claimId = userId ? randomUUID() : null;
     if (userId) {
-      await db.delete(dbSchema.stripeSupportClaims).where(
-        and(
-          eq(dbSchema.stripeSupportClaims.userId, userId),
-          // Checkout can remain valid for a full day, and delayed-payment
-          // webhooks can arrive later. Keep a week of delivery grace.
-          lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
-        ),
-      );
+      // Checkout can remain valid for a full day, and delayed-payment
+      // webhooks can arrive later. Keep a week of delivery grace, then bound
+      // abandoned claims globally even if their owners never return.
+      await db
+        .delete(dbSchema.stripeSupportClaims)
+        .where(lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+      // Persist the authoritative claim before asking Stripe to create a
+      // payable session. The signed webhook can therefore grant credit even
+      // if the post-create bookkeeping update below fails.
+      await db.insert(dbSchema.stripeSupportClaims).values({
+        id: claimId!,
+        userId,
+        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
+        showPublicly: input.publicCredit,
+      });
     }
 
     const returnUrl = supportReturnUrl(input.locale);
@@ -175,13 +183,18 @@ export const supportMutations = {
     });
     if (!session.url) throw new Error('Stripe Checkout did not return a URL');
     if (userId) {
-      await db.insert(dbSchema.stripeSupportClaims).values({
-        id: claimId!,
-        userId,
-        checkoutSessionId: session.id,
-        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
-        showPublicly: input.publicCredit,
-      });
+      try {
+        await db
+          .update(dbSchema.stripeSupportClaims)
+          .set({ checkoutSessionId: session.id })
+          .where(eq(dbSchema.stripeSupportClaims.id, claimId!));
+      } catch (error) {
+        logger.error('[stripe-support] failed to record Checkout session ID', {
+          claimId,
+          sessionId: session.id,
+          error,
+        });
+      }
     }
     return { url: session.url };
   },

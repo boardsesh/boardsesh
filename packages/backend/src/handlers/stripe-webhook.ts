@@ -39,12 +39,10 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
     const [claim] = await tx
       .select()
       .from(dbSchema.stripeSupportClaims)
-      .where(
-        and(
-          eq(dbSchema.stripeSupportClaims.id, claimId),
-          eq(dbSchema.stripeSupportClaims.checkoutSessionId, session.id),
-        ),
-      )
+      // The cryptographically random client_reference_id is embedded in the
+      // Stripe-signed event and is authoritative. checkoutSessionId is only
+      // bookkeeping because its post-create DB update can fail independently.
+      .where(eq(dbSchema.stripeSupportClaims.id, claimId))
       .limit(1);
     if (!claim) return;
 
@@ -150,17 +148,23 @@ export async function handleStripeWebhook(req: IncomingMessage, res: ServerRespo
     return;
   }
 
-  switch (event.type) {
-    case 'checkout.session.completed':
-    case 'checkout.session.async_payment_succeeded':
-      await acceptCheckout(event.data.object, event.created);
-      break;
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted':
-      await updateSubscription(event.data.object, event.created);
-      break;
-    default:
-      break;
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+      case 'checkout.session.async_payment_succeeded':
+        await acceptCheckout(event.data.object, event.created);
+        break;
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted':
+        await updateSubscription(event.data.object, event.created);
+        break;
+      default:
+        break;
+    }
+  } catch (error) {
+    logger.error('[stripe-webhook] event processing failed', { eventId: event.id, eventType: event.type, error });
+    sendJson(res, 500, { error: 'Stripe webhook processing failed' });
+    return;
   }
   sendJson(res, 200, { received: true });
 }
