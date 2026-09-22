@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
   credentials: [] as AuroraCredentialStatus[],
+  auroraBoards: ['kilter', 'tension'],
 }));
 
 vi.mock('../../../lib/aurora-credentials', () => ({
@@ -37,7 +38,7 @@ vi.mock('../../../lib/aurora-credentials', () => ({
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({
-  AURORA_BOARDS: ['kilter', 'tension'],
+  AURORA_BOARDS: mocks.auroraBoards,
   parseAuroraExportJson: vi.fn(() => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
     preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
@@ -148,9 +149,9 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 
-type TextProps = { children?: ReactNode };
+type TextProps = { children?: ReactNode; variant?: string };
 vi.mock('../../Text', () => ({
-  Text: ({ children }: TextProps) => createElement('span', {}, children),
+  Text: ({ children, variant }: TextProps) => createElement('span', { 'data-text-variant': variant }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 vi.mock('../../SectionHeader', () => ({
@@ -171,7 +172,11 @@ const button = (root: HTMLElement, title: string) =>
 const input = (root: HTMLElement, placeholder: string) =>
   root.querySelector(`[data-input="${placeholder}"]`) as HTMLInputElement | null;
 
-describe('BoardAccountsSection — Kilter password card', () => {
+beforeEach(() => {
+  mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
+});
+
+describe('BoardAccountsSection — board cards', () => {
   beforeEach(() => {
     mocks.saveAurora.mockReset();
     mocks.saveKilterViaPassword.mockReset().mockResolvedValue(undefined);
@@ -179,6 +184,12 @@ describe('BoardAccountsSection — Kilter password card', () => {
     mocks.invalidate.mockClear();
     mocks.flags = {};
     mocks.credentials = [];
+  });
+
+  it('renders the So iLL card heading with its canonical brand name', () => {
+    mocks.auroraBoards.push('soill');
+    const { getByText } = render(<BoardAccountsSection />);
+    expect(getByText('So iLL', { selector: '[data-text-variant="headline"]' })).toBeTruthy();
   });
 
   it('shows the Kilter (new) sign-in card when the flag is on', () => {

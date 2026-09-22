@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
@@ -100,10 +101,6 @@ const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
-
-function boardDisplayName(boardType: AuroraBoardName): string {
-  return boardType.charAt(0).toUpperCase() + boardType.slice(1);
-}
 
 function getCredential(credentials: AuroraCredentialStatus[] | undefined, boardType: AuroraBoardName) {
   return credentials?.find((credential) => credential.boardType === boardType) ?? null;
@@ -295,7 +292,7 @@ export function BoardAccountsSection() {
   const saveCredentialMutation = useMutation({
     mutationFn: saveBoardCredential,
     onSuccess: async (_credential, variables) => {
-      const boardName = boardDisplayName(variables.boardType);
+      const boardName = boardTypeLabel(variables.boardType);
       showToast(t('aurora.mobile.linkSuccess', { boardName }), 'success');
       setLinkBoard(null);
       setUsername('');
@@ -313,7 +310,7 @@ export function BoardAccountsSection() {
   const deleteCredentialMutation = useMutation({
     mutationFn: deleteAuroraCredential,
     onSuccess: async (result, boardType) => {
-      const boardName = boardDisplayName(boardType);
+      const boardName = boardTypeLabel(boardType);
       if (result.success) {
         showToast(t('aurora.mobile.unlinkSuccess', { boardName }), 'success');
       } else {
@@ -373,7 +370,7 @@ export function BoardAccountsSection() {
 
   const handleUnlink = useCallback(
     async (boardType: AuroraBoardName) => {
-      const boardName = boardDisplayName(boardType);
+      const boardName = boardTypeLabel(boardType);
       const confirmed = await confirm({
         title: t('aurora.card.unlinkConfirm.title'),
         message: t('aurora.card.unlinkConfirm.description', { boardName }),
@@ -422,7 +419,7 @@ export function BoardAccountsSection() {
             showToast(
               t('aurora.mobile.importBoardWarning', {
                 layoutName: parsed.boardMismatchLayoutName,
-                boardName: boardDisplayName(boardType),
+                boardName: boardTypeLabel(boardType),
               }),
               'warning',
               5000,
@@ -588,12 +585,12 @@ export function BoardAccountsSection() {
             <Text variant="headline" style={styles.modalTitle}>
               {linkBoard === 'kilter'
                 ? t('aurora.kilterLinkDialog.title')
-                : t('aurora.linkDialog.title', { boardName: linkBoard ? boardDisplayName(linkBoard) : '' })}
+                : t('aurora.linkDialog.title', { boardName: linkBoard ? boardTypeLabel(linkBoard) : '' })}
             </Text>
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
               {linkBoard === 'kilter'
                 ? t('aurora.kilterLinkDialog.description')
-                : t('aurora.linkDialog.description', { boardName: linkBoard ? boardDisplayName(linkBoard) : '' })}
+                : t('aurora.linkDialog.description', { boardName: linkBoard ? boardTypeLabel(linkBoard) : '' })}
             </Text>
             <TextInput
               value={username}
@@ -638,7 +635,7 @@ export function BoardAccountsSection() {
       <ImportDialog
         visible={importPhase !== null}
         phase={importPhase}
-        boardName={importBoard ? boardDisplayName(importBoard) : ''}
+        boardName={importBoard ? boardTypeLabel(importBoard) : ''}
         preview={importPreview}
         progress={importProgress}
         progressLabels={stepLabels}
@@ -1080,7 +1077,7 @@ function BoardAccountCard({
   onUnlink,
 }: BoardAccountCardProps) {
   const { t } = useTranslation('settings');
-  const boardName = boardDisplayName(boardType);
+  const boardName = boardTypeLabel(boardType);
   const cardTitle =
     variant === 'kilterAurora'
       ? t('aurora.card.kilterAuroraTitle')

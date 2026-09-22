@@ -40,6 +40,7 @@ import {
   type StrippedExportData,
 } from '@/app/lib/data-sync/aurora/parse-aurora-export';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import styles from './board-credential-card.module.css';
 
 type BoardImportPromptProps = {
@@ -51,7 +52,7 @@ export default function BoardImportPrompt({ boardType, onImportComplete }: Board
   const { t } = useTranslation('settings');
   const { showMessage } = useSnackbar();
   const { token: authToken, isLoading: authTokenLoading } = useWsAuthToken();
-  const boardName = boardType.charAt(0).toUpperCase() + boardType.slice(1);
+  const boardName = boardTypeLabel(boardType);
 
   // Credential state
   const [credential, setCredential] = useState<AuroraCredentialStatus | null>(null);

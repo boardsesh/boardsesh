@@ -128,10 +128,13 @@ describe('BoardImportPrompt', () => {
   });
 
   describe('link account modal flow', () => {
-    it('opens link account dialog on button click', async () => {
+    it.each([
+      ['tension', 'Tension'],
+      ['soill', 'So iLL'],
+    ] as const)('opens the %s link dialog with its canonical name', async (boardType, boardName) => {
       mockFetch.mockResolvedValue(mockCredentialsResponse([]));
 
-      render(<BoardImportPrompt boardType="tension" />);
+      render(<BoardImportPrompt boardType={boardType} />);
 
       await waitFor(() => {
         expect(screen.getByText('Link')).toBeTruthy();
@@ -139,7 +142,7 @@ describe('BoardImportPrompt', () => {
 
       fireEvent.click(screen.getByText('Link'));
 
-      expect(screen.getByText('Link Tension Account')).toBeTruthy();
+      expect(screen.getByText(`Link ${boardName} Account`)).toBeTruthy();
       expect(screen.getByLabelText('Username *')).toBeTruthy();
       expect(screen.getByLabelText('Password *')).toBeTruthy();
     });
@@ -178,7 +181,7 @@ describe('BoardImportPrompt', () => {
 
       await waitFor(() => {
         expect(mockShowMessage).toHaveBeenCalledWith(
-          'Tension account linked. Your data will show up within 12 hours.',
+          'Tension linked. Your sends will appear after syncing.',
           'success',
         );
       });
