@@ -98,9 +98,13 @@ describe('garmin signing-key boundary', () => {
     const action = readFileSync(ACTION_PATH, 'utf8');
     // Caches are restorable by fork PRs from the base branch. The config lives in
     // $RUNNER_TEMP and is shredded; only ~/.Garmin/ConnectIQ is cached.
-    const cachedPath = withoutCommentLines(action).find((line) => line.trim().startsWith('path:'));
-    expect(cachedPath?.trim()).toBe('path: ~/.Garmin/ConnectIQ');
-    expect(action).toContain('--config $RUNNER_TEMP/ciq-config.yaml');
+    // Every cache path in the action, not just the first: matching only the
+    // first would silently pass on the wrong step if a second cache is added.
+    const cachedPaths = withoutCommentLines(action)
+      .filter((line) => line.trim().startsWith('path:'))
+      .map((line) => line.trim());
+    expect(cachedPaths).toEqual(['path: ~/.Garmin/ConnectIQ']);
+    expect(action).toContain('--config "$RUNNER_TEMP/ciq-config.yaml"');
   });
 });
 
