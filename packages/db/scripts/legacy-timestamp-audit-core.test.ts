@@ -849,6 +849,10 @@ void describe('artifact primitives', () => {
     assert.equal(canonicalJson({ z: 1, a: { y: 2, b: 3 } }), '{"a":{"b":3,"y":2},"z":1}');
   });
 
+  void it('rejects undefined values rather than emitting invalid JSON', () => {
+    assert.throws(() => canonicalJson({ missing: undefined }), /undefined canonical JSON value/);
+  });
+
   void it('rejects raw identifiers, comments, session ids, and DSNs', () => {
     for (const unsafe of [
       { id: 'raw' },
