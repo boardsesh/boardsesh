@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, sql } from 'drizzle-orm';
@@ -39,10 +40,14 @@ const run = async (id: string) =>
 const fetch = async () => (await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 }))[0];
 
 beforeAll(async () => {
-  // Exercise the generated migration against this test worker's isolated database.
-  await owner.unsafe(
-    readFileSync(new URL('../../../../db/drizzle/0236_background_job_runs.sql', import.meta.url), 'utf8'),
-  );
+  // Local test-worker databases persist between runs. Apply the generated
+  // migration when the fixture does not already contain its ledger table.
+  const [existingLedger] = await owner`SELECT to_regclass('public.background_job_runs') AS ledger`;
+  if (!existingLedger.ledger) {
+    await owner.unsafe(
+      readFileSync(new URL('../../../../db/drizzle/0236_background_job_runs.sql', import.meta.url), 'utf8'),
+    );
+  }
   await initializeJobQueueSchema(drizzle(owner));
   await boss.start();
 });
@@ -269,6 +274,31 @@ describe('durable worker jobs', () => {
       const loginUrl = new URL(process.env.DATABASE_URL!);
       loginUrl.username = roleName;
       loginUrl.password = password;
+      const operatorRunId = randomUUID();
+      const invokeOperator = (connectionUrl: string) =>
+        promisify(execFile)(
+          process.execPath,
+          ['--import', 'tsx', fileURLToPath(new URL('../operator.ts', import.meta.url)), 'enqueue', operatorRunId],
+          {
+            cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
+            env: {
+              ...process.env,
+              DATABASE_URL: connectionUrl,
+              WORKER_ROLE: role,
+              WORKER_OPERATOR_ENABLED: 'true',
+              DB_POOL_MAX: '2',
+              PGBOSS_POOL_SIZE: '1',
+              READ_REPLICA_URL: '',
+            },
+            timeout: 5000,
+          },
+        );
+      await expect(invokeOperator(process.env.DATABASE_URL!)).rejects.toMatchObject({ code: 1 });
+      expect(await run(operatorRunId)).toBeUndefined();
+      expect(await boss.getJobById(queue, operatorRunId)).toBeNull();
+      await invokeOperator(loginUrl.toString());
+      expect((await run(operatorRunId)).status).toBe('queued');
+      expect((await boss.getJobById(queue, operatorRunId))?.data).toEqual({ runId: operatorRunId });
       const startChild = (paused: boolean) => {
         child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL('../index.ts', import.meta.url))], {
           cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),

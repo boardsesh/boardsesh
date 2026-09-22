@@ -11,13 +11,15 @@ async function main() {
   const { createDb, closePool } = await import('@boardsesh/db/client');
   const { eq } = await import('drizzle-orm');
   const { backgroundJobRuns } = await import('@boardsesh/db/schema');
-  const { createJobQueueClient, assertQueuePrimary } = await import('../services/job-queue-client');
+  const { createJobQueueClient, assertQueuePrimary, assertWorkerPrivileges } =
+    await import('../services/job-queue-client');
   const { enqueueWorkerProbe, requireRunId } = await import('./jobs');
   const database = createDb();
   const boss = createJobQueueClient({ connectionString: config.databaseUrl, poolSize: 1, owner: 'worker' });
   try {
     await boss.start();
     await assertQueuePrimary(boss.getDb());
+    await assertWorkerPrivileges(boss.getDb());
     const [action, id, retryId, ...extra] = process.argv.slice(2);
     if (extra.length || !['enqueue', 'replay', 'status'].includes(action))
       throw new Error('INVALID_OPERATOR_ARGUMENTS');
