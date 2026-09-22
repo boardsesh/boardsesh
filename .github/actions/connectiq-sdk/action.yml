@@ -34,6 +34,31 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Check the Garmin environment is configured
+      # Without this the first symptom of a missing `Garmin` environment is
+      # `gzip: stdin: unexpected end of file` from a 404 on a URL built out of
+      # empty version strings -- which says nothing about the actual cause.
+      # Name what is missing instead.
+      shell: bash
+      env:
+        SDK_VERSION: ${{ inputs.sdk-version }}
+        SDK_MANAGER_VERSION: ${{ inputs.sdk-manager-version }}
+        AGREEMENT_HASH: ${{ inputs.agreement-hash }}
+        GARMIN_USERNAME: ${{ inputs.garmin-username }}
+        GARMIN_PASSWORD: ${{ inputs.garmin-password }}
+      run: |
+        set -Eeuo pipefail
+        missing=()
+        [ -n "$SDK_VERSION" ]         || missing+=('vars.CIQ_SDK_VERSION')
+        [ -n "$SDK_MANAGER_VERSION" ] || missing+=('vars.CIQ_SDK_MANAGER_VERSION')
+        [ -n "$AGREEMENT_HASH" ]      || missing+=('vars.CIQ_AGREEMENT_HASH')
+        [ -n "$GARMIN_USERNAME" ]     || missing+=('secrets.GARMIN_USERNAME')
+        [ -n "$GARMIN_PASSWORD" ]     || missing+=('secrets.GARMIN_PASSWORD')
+        if [ ${#missing[@]} -gt 0 ]; then
+          echo "::error::The Garmin environment is not configured. Missing: ${missing[*]}. Set them on the 'Garmin' GitHub Environment -- see docs/garmin-sideload-build.md, 'Configuration contract'."
+          exit 1
+        fi
+
     - name: Restore the SDK and device profiles
       id: sdk_cache
       uses: actions/cache@v4
