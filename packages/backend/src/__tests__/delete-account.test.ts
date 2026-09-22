@@ -23,7 +23,9 @@ const { mockDb, txCalls } = vi.hoisted(() => {
   const mockDb = {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ count: 0 }]),
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
       }),
     }),
     transaction: vi.fn(),
@@ -278,7 +280,7 @@ describe('deleteAccountInfo query', () => {
 
     const result = await userQueries.deleteAccountInfo({}, {}, makeAuthCtx());
 
-    expect(result).toEqual({ publishedClimbCount: 5 });
+    expect(result).toEqual({ publishedClimbCount: 5, hasActiveStripeSubscription: false });
   });
 
   it('should return 0 when user has no published climbs', async () => {
@@ -290,7 +292,7 @@ describe('deleteAccountInfo query', () => {
 
     const result = await userQueries.deleteAccountInfo({}, {}, makeAuthCtx());
 
-    expect(result).toEqual({ publishedClimbCount: 0 });
+    expect(result).toEqual({ publishedClimbCount: 0, hasActiveStripeSubscription: false });
   });
 
   it('should return 0 when query returns empty result', async () => {
@@ -302,6 +304,6 @@ describe('deleteAccountInfo query', () => {
 
     const result = await userQueries.deleteAccountInfo({}, {}, makeAuthCtx());
 
-    expect(result).toEqual({ publishedClimbCount: 0 });
+    expect(result).toEqual({ publishedClimbCount: 0, hasActiveStripeSubscription: false });
   });
 });
