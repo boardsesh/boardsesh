@@ -104,6 +104,24 @@ async function createForwardPlan(db: FixtureDb, sessionId: string | null = null)
   return { feeds: [{ id: 10, ...matchingConfig }], entries: plan.moves };
 }
 
+void test('feed loader covers all batches without duplicates or unrelated ticks', { skip: !databaseUrl }, async () => {
+  await withFixture(async (db) => {
+    await db.execute(sql`INSERT INTO boardsesh_ticks (uuid, user_id, board_id)
+      SELECT 'feed-' || feed_id, 'climber', feed_id FROM generate_series(2000, 3000) AS feed_id`);
+    await db.execute(sql`INSERT INTO boardsesh_ticks (uuid, user_id, board_id) VALUES ('unrelated', 'climber', 4000)`);
+    const feedIds = Array.from({ length: 1001 }, (_, index) => 2000 + index);
+    const ticks = await loadSharedFeedTicks(db, [...feedIds, feedIds[0]]);
+    assert.equal(ticks.length, 1001);
+    assert.deepEqual(new Set(ticks.map((tick) => tick.boardId)), new Set(feedIds));
+    assert.equal(new Set(ticks.map((tick) => tick.uuid)).size, 1001);
+    assert.equal(
+      ticks.every((tick) => tick.sessionBoard === null),
+      true,
+    );
+    assert.deepEqual(await loadSharedFeedTicks(db, []), []);
+  });
+});
+
 void test('forward apply revalidates the original destination before updating', { skip: !databaseUrl }, async () => {
   await withFixture(async (db) => {
     const forwardPlan = await createForwardPlan(db);
