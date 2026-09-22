@@ -1,7 +1,10 @@
 import type Stripe from 'stripe';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { Readable } from 'node:stream';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
-const { mockDb, mockRetrieveSubscription } = vi.hoisted(() => ({
+const { mockConstructEvent, mockDb, mockRetrieveSubscription } = vi.hoisted(() => ({
+  mockConstructEvent: vi.fn(),
   mockDb: {
     transaction: vi.fn(),
     select: vi.fn(),
@@ -17,11 +20,36 @@ vi.mock('../services/stripe-support', async (importOriginal) => {
     ...original,
     getStripeClient: () => ({
       subscriptions: { retrieve: mockRetrieveSubscription },
+      webhooks: { constructEvent: mockConstructEvent },
     }),
   };
 });
 
-import { acceptCheckout, updateSubscription } from './stripe-webhook';
+import { acceptCheckout, handleStripeWebhook, updateSubscription } from './stripe-webhook';
+
+const originalWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+function webhookRequest(headers: Record<string, string> = {}): IncomingMessage {
+  const request = Readable.from([Buffer.from('{}')]) as unknown as IncomingMessage;
+  Object.defineProperty(request, 'headers', { value: headers });
+  return request;
+}
+
+function webhookResponse() {
+  let statusCode = 0;
+  let body = '';
+  const response = {
+    writeHead: vi.fn((status: number) => {
+      statusCode = status;
+      return response;
+    }),
+    end: vi.fn((chunk?: string) => {
+      body = chunk ?? '';
+      return response;
+    }),
+  } as unknown as ServerResponse;
+  return { response, result: () => ({ statusCode, body }) };
+}
 
 function checkoutSession(overrides: Record<string, unknown> = {}): Stripe.Checkout.Session {
   return {
@@ -84,8 +112,23 @@ function setupCheckoutTransaction(options?: { claim?: Record<string, unknown>; s
   return { deleteClaim, insertedValues, conflictUpdate, transaction };
 }
 
+function setupSubscriptionUpdate(storedEventCreatedAt: Date | null) {
+  const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([{ stripeEventCreatedAt: storedEventCreatedAt }]),
+      }),
+    }),
+  });
+  mockDb.update.mockReturnValue({ set });
+  return set;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  if (originalWebhookSecret === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+  else process.env.STRIPE_WEBHOOK_SECRET = originalWebhookSecret;
 });
 
 describe('acceptCheckout', () => {
@@ -140,19 +183,6 @@ describe('acceptCheckout', () => {
 });
 
 describe('updateSubscription', () => {
-  function setupSubscriptionUpdate(storedEventCreatedAt: Date | null) {
-    const set = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
-    mockDb.select.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([{ stripeEventCreatedAt: storedEventCreatedAt }]),
-        }),
-      }),
-    });
-    mockDb.update.mockReturnValue({ set });
-    return set;
-  }
-
   it('ignores an event older than the stored subscription event', async () => {
     const set = setupSubscriptionUpdate(new Date(2_000 * 1000));
 
@@ -173,5 +203,55 @@ describe('updateSubscription', () => {
         stripeEventCreatedAt: new Date(2_000 * 1000),
       }),
     );
+  });
+});
+
+describe('handleStripeWebhook', () => {
+  it('returns 503 when the webhook secret is not configured', async () => {
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest(), response);
+
+    expect(result().statusCode).toBe(503);
+  });
+
+  it('returns 400 when the Stripe signature is missing', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest(), response);
+
+    expect(result().statusCode).toBe(400);
+    expect(mockConstructEvent).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when Stripe rejects the signature', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    mockConstructEvent.mockImplementation(() => {
+      throw new Error('bad signature');
+    });
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'bad' }), response);
+
+    expect(result().statusCode).toBe(400);
+  });
+
+  it('verifies and routes a subscription event before acknowledging it', async () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    const set = setupSubscriptionUpdate(null);
+    mockConstructEvent.mockReturnValue({
+      type: 'customer.subscription.updated',
+      created: 2_000,
+      data: { object: subscription({ status: 'past_due' }) },
+    });
+    const { response, result } = webhookResponse();
+
+    await handleStripeWebhook(webhookRequest({ 'stripe-signature': 'valid' }), response);
+
+    expect(mockConstructEvent).toHaveBeenCalledWith('{}', 'valid', 'whsec_test');
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({ subscriptionStatus: 'past_due' }));
+    expect(result().statusCode).toBe(200);
   });
 });

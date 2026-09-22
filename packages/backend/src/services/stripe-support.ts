@@ -17,6 +17,8 @@ export function isLiveStripeSubscription(status?: string | null): boolean {
 export function getStripeClient(): Stripe {
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
   if (!secretKey) throw new Error('Stripe support is not configured');
+  // The client intentionally lives for the process lifetime. Rotating the
+  // secret therefore requires restarting the backend deployment.
   stripeClient ??= new Stripe(secretKey);
   return stripeClient;
 }

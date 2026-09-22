@@ -71,8 +71,7 @@ export const supportQueries = {
       .innerJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.stripeSupporters.userId))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
       .where(and(eq(dbSchema.stripeSupporters.showPublicly, true), isNotNull(dbSchema.stripeSupporters.supportedAt)))
-      .orderBy(desc(dbSchema.stripeSupporters.supportedAt))
-      .limit(500);
+      .orderBy(desc(dbSchema.stripeSupporters.supportedAt));
     return rows.map((row) => ({
       userId: row.userId,
       displayName: row.displayName || row.accountName || 'Boardsesh supporter',
