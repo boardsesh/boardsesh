@@ -602,6 +602,12 @@ export default defineConfig({
         command: 'tsx scripts/migrate-user-media.ts',
         cache: false,
       },
+      // One-shot, no-delete copy of the live XPRem bucket from Tigris to R2.
+      // Source credentials are read from Railway; see docs/mobile-ota-updates.md.
+      'storage:migrate-ota': {
+        command: 'tsx scripts/migrate-ota-storage.ts',
+        cache: false,
+      },
       'generate:acknowledgements': {
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,

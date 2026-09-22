@@ -1,0 +1,92 @@
+name: Migrate OTA Storage to R2
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Inventory is read-only. Copy writes R2. Verify reads both providers.'
+        type: choice
+        options:
+          - inventory
+          - copy
+          - verify
+        default: inventory
+      ota_publishes_frozen:
+        description: 'Confirm all production, preview, backport, and cleanup OTA writes stay frozen through cutover.'
+        type: boolean
+        default: false
+
+concurrency:
+  group: migrate-ota-storage
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: Production
+    steps:
+      - name: Require a write freeze for copy and verification
+        if: inputs.mode != 'inventory' && !inputs.ota_publishes_frozen
+        run: |
+          echo '::error::Freeze every OTA publish and cleanup path through copy, verification, and Railway credential rotation.'
+          exit 1
+
+      - name: Verify every OTA writer is disabled and idle
+        if: inputs.mode != 'inventory'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for workflow in \
+            mobile-ota-production.yml \
+            mobile-ota-backport.yml \
+            mobile-ota-preview.yml \
+            mobile-ota-preview-prompt.yml \
+            mobile-ota-preview-sweep.yml; do
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" --jq .state)
+            if [ "$state" != disabled_manually ]; then
+              echo "::error::${workflow} must be disabled manually before copy or verification (state: ${state})."
+              exit 1
+            fi
+            for status in requested waiting pending queued in_progress; do
+              active=$(gh api --method GET \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+                -f status="$status" -f per_page=1 --jq .total_count)
+              if [ "$active" != 0 ]; then
+                echo "::error::${workflow} still has ${active} ${status} run(s). Wait for them before migration."
+                exit 1
+              fi
+            done
+          done
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Inventory, copy, or verify OTA objects
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          OTA_R2_AWS_ENDPOINT_URL: ${{ secrets.OTA_R2_AWS_ENDPOINT_URL }}
+          OTA_R2_AWS_ACCESS_KEY_ID: ${{ secrets.OTA_R2_AWS_ACCESS_KEY_ID }}
+          OTA_R2_AWS_SECRET_ACCESS_KEY: ${{ secrets.OTA_R2_AWS_SECRET_ACCESS_KEY }}
+          OTA_R2_AWS_REGION: auto
+        run: |
+          case '${{ inputs.mode }}' in
+            inventory) vp run storage:migrate-ota ;;
+            copy) vp run storage:migrate-ota -- --apply ;;
+            verify) vp run storage:migrate-ota -- --verify-only ;;
+            *) echo '::error::Unknown migration mode'; exit 1 ;;
+          esac
