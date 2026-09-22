@@ -67,16 +67,21 @@ describe('onboarding storage', () => {
     const cleanup = clearLinkEmptyPromptDismissal().finally(() => {
       cleanupSettled = true;
     });
-    await Promise.resolve();
-    expect(cleanupSettled).toBe(false);
-    expect(removeMock).not.toHaveBeenCalled();
+    try {
+      await Promise.resolve();
+      expect(cleanupSettled).toBe(false);
+      expect(removeMock).not.toHaveBeenCalled();
 
-    finishOldWrite();
-    await Promise.all([oldWrite, cleanup]);
-    expect(removeMock).toHaveBeenCalledWith('onboarding_link_empty_dismissed');
-    expect(setMock.mock.invocationCallOrder[0]).toBeLessThan(removeMock.mock.invocationCallOrder[0]!);
+      finishOldWrite();
+      await Promise.all([oldWrite, cleanup]);
+      expect(removeMock).toHaveBeenCalledWith('onboarding_link_empty_dismissed');
+      expect(setMock.mock.invocationCallOrder[0]).toBeLessThan(removeMock.mock.invocationCallOrder[0]!);
+    } finally {
+      finishOldWrite();
+      await Promise.allSettled([oldWrite, cleanup]);
+      resumeLinkEmptyDismissalWrites();
+    }
 
-    resumeLinkEmptyDismissalWrites();
     setMock.mockResolvedValue(undefined);
     await dismissLinkEmptyPrompt();
     expect(setMock).toHaveBeenLastCalledWith('onboarding_link_empty_dismissed', true);
