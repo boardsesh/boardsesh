@@ -10,6 +10,8 @@ import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 import { startJobQueue, stopJobQueue } from './services/job-queue';
 import { startSprayDetectionMaintenance } from './services/spray-detection-maintenance';
+import { startBackgroundJobMaintenance } from './services/background-job-maintenance';
+import { db } from './db/client';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -24,6 +26,7 @@ async function main() {
   // call `startJobQueue()` directly, which is the honest way to test it.
   const jobQueue = await startJobQueue();
   await startSprayDetectionMaintenance(jobQueue);
+  await startBackgroundJobMaintenance(jobQueue, db);
 
   let shuttingDown = false;
 

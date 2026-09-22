@@ -30,15 +30,16 @@
  */
 
 import { getConnectionConfig } from '@boardsesh/db/client';
-import { sql } from 'drizzle-orm';
-import { PgBoss, fromDrizzle } from 'pg-boss';
+import { jobQueueTransactionAdapter } from '@boardsesh/db/background-jobs';
+import type { PgBoss } from 'pg-boss';
+import { assertQueuePrimary, createJobQueueClient } from './job-queue-client';
 // `IDatabase` is published under the name `Db`.
 import type { Db, SendOptions } from 'pg-boss';
 
 import { logger } from '../utils/logger';
 
 /** Just enough of a drizzle transaction for the adapter; avoids naming the generic. */
-type DrizzleTransaction = Parameters<typeof fromDrizzle>[0];
+type DrizzleTransaction = Parameters<typeof jobQueueTransactionAdapter>[0];
 
 /**
  * The `{ db }` handle that makes `send()` enqueue inside a caller's transaction:
@@ -48,7 +49,7 @@ type DrizzleTransaction = Parameters<typeof fromDrizzle>[0];
  * enqueue outside one is a job that can exist for a row that rolled back.
  */
 export function enqueueOn(tx: DrizzleTransaction): Db {
-  return fromDrizzle(tx, sql);
+  return jobQueueTransactionAdapter(tx);
 }
 
 /** Options every queue in this service shares unless it says otherwise. */
@@ -78,25 +79,19 @@ export function requireJobQueue(): PgBoss {
 export async function startJobQueue(): Promise<PgBoss> {
   if (boss) return boss;
 
-  const instance = new PgBoss({
+  const instance = createJobQueueClient({
     connectionString: getConnectionConfig().connectionString,
-    // The queue shares the service's Postgres; keep its pool small so it cannot
-    // crowd out request-serving connections.
-    max: Number(process.env.PGBOSS_POOL_SIZE ?? 4),
-    // Schema upgrades run on the deployment's migration-owner connection.
-    // Isolated tests may bootstrap their disposable queue schema themselves.
-    migrate: process.env.NODE_ENV === 'test',
-    // `supervise` is what reclaims a job whose worker died mid-flight, which is
-    // the entire reason this is durable and a `setInterval` is not.
-    schedule: true,
-    supervise: true,
+    poolSize: Number(process.env.PGBOSS_POOL_SIZE ?? 4),
+    owner: 'backend',
+    testBootstrap: process.env.NODE_ENV === 'test',
   });
-
-  instance.on('error', (error) => {
-    logger.error('[job-queue] pg-boss error', { error });
-  });
-
-  await instance.start();
+  try {
+    await instance.start();
+    await assertQueuePrimary(instance.getDb());
+  } catch (error) {
+    await instance.stop({ graceful: false, close: true });
+    throw error;
+  }
   boss = instance;
   logger.info('[job-queue] started');
   return instance;

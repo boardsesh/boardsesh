@@ -109,7 +109,14 @@ async function runMigrations() {
         },
         async () => {
           await migrate(db, { migrationsFolder });
-          await initializeJobQueueSchema(db, migrationContract.runtimeRole, process.env.MIGRATION_DETECTOR_ROLE);
+          await initializeJobQueueSchema(
+            db,
+            migrationContract.runtimeRole,
+            process.env.MIGRATION_DETECTOR_ROLE,
+            process.env.MIGRATION_WORKER_ROLES?.split(',')
+              .map((role) => role.trim())
+              .filter(Boolean),
+          );
         },
       );
       console.info(`🔒 Reconciled runtime ACLs for ${migrationContract.runtimeRole}`);
