@@ -896,10 +896,17 @@ function NowOnTheWallPanelComponent(
         />
       )}
 
+      {/* testID anchors the store-screenshot flows: the iPad campaign has no
+          deep links, so this footer is the only way it can reach the board
+          picker. It rides BOTH variants, so a flow must never open the sheet
+          while the iPad wall column is docked — two copies of the id would make
+          the tap ambiguous (app-store-ipad.yaml opens the sheet only when the
+          column is absent). */}
       <Pressable
         onPress={handleSwitchBoard}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
+        testID="board-sheet-switch-board"
         style={[
           styles.footer,
           {

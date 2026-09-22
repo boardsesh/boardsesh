@@ -656,25 +656,18 @@ describe('store screenshot presentation', () => {
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', legacy).map(({ output }) => output)).toEqual(
       [...legacy].sort(),
     );
-    const names = [
-      ...legacy,
-      '06-kilter-board-view.png',
-      '07-tension-board-view.png',
-      '08-moonboard-board-view.png',
-      '09-live-queue.png',
-    ];
+    const names = [...legacy, '06-kilter-board-view.png', '07-tension-board-view.png', '08-moonboard-board-view.png'];
     const recipes = resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-11-inch-m5', names)).toEqual(recipes);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', [...names].reverse())).toEqual(recipes);
     expect(recipes.map(({ output }) => output)).toEqual([
       '00-wall-kiosk.png',
       '01-board-family.png',
-      '02-live-queue.png',
-      '03-wall-status.png',
-      '04-home.png',
-      '05-discover.png',
-      '06-workout-generator.png',
-      '07-profile.png',
+      '02-wall-status.png',
+      '03-home.png',
+      '04-discover.png',
+      '05-workout-generator.png',
+      '06-profile.png',
     ]);
     expect(recipes[1]).toEqual({
       output: '01-board-family.png',
@@ -683,8 +676,8 @@ describe('store screenshot presentation', () => {
       sources: ['06-kilter-board-view.png', '07-tension-board-view.png', '08-moonboard-board-view.png'],
     });
     // The browse capture carries the wall column; nothing else stands in for it.
-    expect(recipes[3]).toEqual({
-      output: '03-wall-status.png',
+    expect(recipes[2]).toEqual({
+      output: '02-wall-status.png',
       caption: 'wallStatus',
       layout: 'wall-column',
       sources: ['02-climbs.png'],
@@ -717,7 +710,6 @@ describe('store screenshot presentation', () => {
       '06-kilter-board-view.png',
       '07-tension-board-view.png',
       '08-moonboard-board-view.png',
-      '09-live-queue.png',
     ];
     expect(() => resolveScreenshotRecipes('ios', 'iphone-16-pro-max', ipad)).toThrow('Incomplete or unknown');
     expect(() => resolveScreenshotRecipes('android', 'pixel-2', ipad)).toThrow('Incomplete or unknown');
@@ -803,16 +795,7 @@ describe('store screenshot presentation', () => {
   });
 
   it('fits every iPad caption in the copy column, in every locale and accepted size', async () => {
-    const campaign = [
-      'wallKiosk',
-      'boardFamily',
-      'liveQueue',
-      'wallStatus',
-      'home',
-      'discover',
-      'workout',
-      'profile',
-    ] as const;
+    const campaign = ['wallKiosk', 'boardFamily', 'wallStatus', 'home', 'discover', 'workout', 'profile'] as const;
     const solid = async ({ width, height }: { width: number; height: number }) =>
       sharp(
         Buffer.from(

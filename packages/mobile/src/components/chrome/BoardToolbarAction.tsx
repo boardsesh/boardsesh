@@ -40,7 +40,17 @@ export function BoardToolbarAction({ onPress, accessibilityHint, badge = false }
   if (!boardLabel) return null;
 
   return (
-    <GlassToolbarAction onPress={handlePress} accessibilityLabel={boardLabel} accessibilityHint={accessibilityHint}>
+    // testID anchors the store-screenshot flows: the iPad campaign
+    // (.maestro/app-store-ipad.yaml) switches boards through the UI, and this is
+    // both the way into the board panel where no wall column is docked, and the
+    // proof a switch landed — the id is stable while the LABEL carries the
+    // active board's name, so one selector asserts "on Climbs, on that board".
+    <GlassToolbarAction
+      onPress={handlePress}
+      accessibilityLabel={boardLabel}
+      accessibilityHint={accessibilityHint}
+      testID="board-toolbar-action"
+    >
       <Icon name="boards" size={23} color={systemColors.label} />
       {badge ? (
         // Unclipped overlay so the parent toolbar's rounded corner can't crop the
