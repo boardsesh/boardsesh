@@ -357,4 +357,23 @@ describe('deleteAccountInfo query', () => {
 
     expect(result).toEqual({ publishedClimbCount: 0, hasActiveStripeSubscription: false });
   });
+
+  it('reports a linked live Stripe subscription', async () => {
+    mockDb.select
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{ count: 2 }]) }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'trialing' }]),
+          }),
+        }),
+      });
+
+    await expect(userQueries.deleteAccountInfo({}, {}, makeAuthCtx())).resolves.toEqual({
+      publishedClimbCount: 2,
+      hasActiveStripeSubscription: true,
+    });
+  });
 });

@@ -61,6 +61,7 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
         : eventCreatedAt
       : (existingSupporter?.stripeEventCreatedAt ?? null);
     const now = new Date();
+    const supportedAt = existingSupporter?.supportedAt ?? now;
     await tx
       .insert(dbSchema.stripeSupporters)
       .values({
@@ -71,7 +72,7 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
         stripeEventCreatedAt: retainedEventCreatedAt,
         cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? existingSupporter?.cancelAtPeriodEnd ?? false,
         showPublicly: claim.showPublicly,
-        supportedAt: now,
+        supportedAt,
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -83,7 +84,7 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
           stripeEventCreatedAt: retainedEventCreatedAt,
           cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? existingSupporter?.cancelAtPeriodEnd ?? false,
           showPublicly: claim.showPublicly,
-          supportedAt: now,
+          supportedAt,
           updatedAt: now,
         },
       });
@@ -91,6 +92,11 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
     // completed Checkout bindings from accumulating indefinitely.
     await tx.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claim.id));
   });
+}
+
+export async function discardCheckout(session: Stripe.Checkout.Session): Promise<void> {
+  if (!session.client_reference_id) return;
+  await db.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, session.client_reference_id));
 }
 
 export async function updateSubscription(subscription: Stripe.Subscription, eventCreated: number): Promise<void> {
@@ -153,6 +159,10 @@ export async function handleStripeWebhook(req: IncomingMessage, res: ServerRespo
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded':
         await acceptCheckout(event.data.object, event.created);
+        break;
+      case 'checkout.session.expired':
+      case 'checkout.session.async_payment_failed':
+        await discardCheckout(event.data.object);
         break;
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted':
