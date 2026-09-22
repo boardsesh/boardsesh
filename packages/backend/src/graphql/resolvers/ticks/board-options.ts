@@ -100,6 +100,7 @@ export const tickBoardQueries = {
         isNotNull(schema.boardFollows.boardUuid),
         isNotNull(schema.userBoardActivity.pinnedAt),
         isNotNull(schema.userBoardActivity.lastUsedAt),
+        // Drizzle's optional predicates omit undefined branches when composing OR.
         tick.boardId == null ? undefined : eq(schema.userBoards.id, tick.boardId),
       ),
       eq(schema.userBoards.boardType, climb.boardType),
