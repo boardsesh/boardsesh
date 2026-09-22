@@ -45,7 +45,7 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
         ),
       )
       .limit(1);
-    if (!claim || claim.completedAt) return;
+    if (!claim) return;
 
     const stripeCustomerId = stripeId(session.customer);
     const [existingSupporter] = await tx

@@ -74,7 +74,11 @@ function subscription(overrides: Record<string, unknown> = {}): Stripe.Subscript
   } as unknown as Stripe.Subscription;
 }
 
-function setupCheckoutTransaction(options?: { claim?: Record<string, unknown>; supporter?: Record<string, unknown> }) {
+function setupCheckoutTransaction(options?: {
+  claim?: Record<string, unknown>;
+  missingClaim?: boolean;
+  supporter?: Record<string, unknown>;
+}) {
   const insertedValues = vi.fn();
   const deleteClaim = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   const conflictUpdate = vi.fn().mockResolvedValue(undefined);
@@ -87,9 +91,11 @@ function setupCheckoutTransaction(options?: { claim?: Record<string, unknown>; s
             limit: vi
               .fn()
               .mockResolvedValue(
-                options?.claim === undefined
-                  ? [{ id: 'claim-1', userId: 'user-1', showPublicly: true, completedAt: null }]
-                  : [options.claim],
+                options?.missingClaim
+                  ? []
+                  : options?.claim === undefined
+                    ? [{ id: 'claim-1', userId: 'user-1', showPublicly: true }]
+                    : [options.claim],
               ),
           }),
         }),
@@ -138,10 +144,8 @@ describe('acceptCheckout', () => {
     expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 
-  it('does not apply a claim that was already completed', async () => {
-    const { transaction } = setupCheckoutTransaction({
-      claim: { id: 'claim-1', userId: 'user-1', showPublicly: true, completedAt: new Date() },
-    });
+  it('does not apply a missing or previously consumed claim', async () => {
+    const { transaction } = setupCheckoutTransaction({ missingClaim: true });
 
     await acceptCheckout(checkoutSession(), 1_000);
 
