@@ -88,15 +88,19 @@ runs:
         curl -fsSL \
           "https://github.com/lindell/connect-iq-sdk-manager-cli/releases/download/v${SDK_MANAGER_VERSION}/connect-iq-sdk-manager-cli_${SDK_MANAGER_VERSION}_Linux_x86_64.tar.gz" \
           | tar -xz -C "$RUNNER_TEMP" connect-iq-sdk-manager
-        ciq="$RUNNER_TEMP/connect-iq-sdk-manager --config $RUNNER_TEMP/ciq-config.yaml"
+        # A function, not a string expanded unquoted: the latter word-splits on
+        # anything in the paths and silently mangles arguments.
+        ciq() {
+          "$RUNNER_TEMP/connect-iq-sdk-manager" --config "$RUNNER_TEMP/ciq-config.yaml" "$@"
+        }
 
         # Accepting by hash is the non-interactive path. Re-read the agreement and
         # refresh this hash whenever Garmin revises it -- a stale hash fails here
         # rather than silently accepting something nobody read.
-        $ciq agreement accept --acceptance-hash="$AGREEMENT_HASH"
-        $ciq login
-        $ciq sdk download "$SDK_VERSION"
-        $ciq device download --device "$DEVICES"
+        ciq agreement accept --acceptance-hash="$AGREEMENT_HASH"
+        ciq login
+        ciq sdk download "$SDK_VERSION"
+        ciq device download --device "$DEVICES"
 
         # The config holds a live session token. It is outside every cached path,
         # but drop it as soon as the downloads are done anyway.
@@ -108,21 +112,30 @@ runs:
         SDK_VERSION: ${{ inputs.sdk-version }}
       run: |
         set -Eeuo pipefail
+        sdks="$HOME/.Garmin/ConnectIQ/Sdks"
         # Resolved by glob rather than `connect-iq-sdk-manager sdk current-path`,
         # because that reads the config we just destroyed -- and on a cache hit
         # the CLI was never downloaded at all.
-        sdk_bin="$(find "$HOME/.Garmin/ConnectIQ/Sdks" -maxdepth 2 -type d -name bin | head -1)"
-        if [ -z "$sdk_bin" ]; then
-          echo "::error::no Connect IQ SDK found under ~/.Garmin/ConnectIQ/Sdks"
+        #
+        # Matched on the REQUESTED version (directories are named
+        # connectiq-sdk-<os>-<version>-<date>-<hash>), so a stale SDK left beside
+        # it cannot be picked up by accident. `sort | tail -1` then makes the
+        # choice between same-version builds deterministic rather than whatever
+        # order find happened to walk.
+        sdk_root="$(find "$sdks" -maxdepth 1 -type d -name "connectiq-sdk-*-${SDK_VERSION}-*" 2>/dev/null | sort | tail -1)"
+        if [ -z "$sdk_root" ] || [ ! -x "$sdk_root/bin/monkeyc" ]; then
+          echo "::error::no Connect IQ SDK $SDK_VERSION under $sdks"
+          echo "present: $(ls "$sdks" 2>/dev/null | tr '\n' ' ')"
           exit 1
         fi
-        echo "$sdk_bin" >> "$GITHUB_PATH"
+        echo "$sdk_root/bin" >> "$GITHUB_PATH"
 
-        # A cache restored from a different SDK version would compile silently
-        # against the wrong Toybox. Fail loudly instead.
-        installed="$("$sdk_bin/monkeyc" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+        # Belt and braces: the directory name says one version, the compiler is
+        # the authority. A mismatch would compile silently against the wrong
+        # Toybox.
+        installed="$("$sdk_root/bin/monkeyc" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
         echo "Connect IQ compiler $installed (requested $SDK_VERSION)"
         if [ "$installed" != "$SDK_VERSION" ]; then
-          echo "::error::SDK on PATH is $installed but $SDK_VERSION was requested"
+          echo "::error::SDK at $sdk_root reports $installed but $SDK_VERSION was requested"
           exit 1
         fi
