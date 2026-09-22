@@ -557,7 +557,11 @@ export function redactSmallCell(count: number): number | '<5' {
 }
 
 export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (value === null || typeof value !== 'object') {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) throw new Error('Cannot render an undefined canonical JSON value');
+    return serialized;
+  }
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const record = value as Record<string, unknown>;
   return `{${Object.keys(record)
