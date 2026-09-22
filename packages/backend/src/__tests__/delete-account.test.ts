@@ -67,7 +67,7 @@ function makeAnonCtx(): ConnectionContext {
  * Set up the transaction mock so it records all calls on the tx object.
  * Returns the txCalls array for assertions.
  *
- * `draftClimbs` seeds what the initial `tx.select(...).from(boardClimbs)...`
+ * `draftClimbs` seeds the `tx.select(...).from(boardClimbs)...`
  * lookup returns — the (uuid, boardType) pairs deleteAccount uses to clean up
  * dependent rows before deleting the drafts themselves. Defaults to none, so
  * existing tests that don't care about this keep their original call counts.
@@ -75,12 +75,24 @@ function makeAnonCtx(): ConnectionContext {
 function setupTransactionMock(options?: {
   failOnUserDelete?: boolean;
   draftClimbs?: Array<{ uuid: string; boardType: string }>;
+  supporter?: { subscriptionId: string; subscriptionStatus: string; cancelAtPeriodEnd: boolean };
 }) {
   txCalls.length = 0;
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
+    let selectCount = 0;
     const tx = {
       select: vi.fn().mockImplementation((columns: unknown) => {
+        selectCount += 1;
+        if (selectCount === 1) {
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue(options?.supporter ? [options.supporter] : []),
+              }),
+            }),
+          };
+        }
         const call = { method: 'select', columns, args: [] as unknown[] };
         return {
           from: vi.fn().mockReturnValue({
@@ -181,14 +193,8 @@ describe('deleteAccount mutation', () => {
   });
 
   it('schedules an active linked subscription to cancel before deletion commits', async () => {
-    mockDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi
-            .fn()
-            .mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false }]),
-        }),
-      }),
+    setupTransactionMock({
+      supporter: { subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false },
     });
     mockStripeSubscriptionUpdate.mockResolvedValue({});
 
@@ -198,14 +204,8 @@ describe('deleteAccount mutation', () => {
   });
 
   it('aborts deletion when an active subscription cannot be cancelled', async () => {
-    mockDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi
-            .fn()
-            .mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false }]),
-        }),
-      }),
+    setupTransactionMock({
+      supporter: { subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false },
     });
     mockStripeSubscriptionUpdate.mockRejectedValue(new Error('Stripe unavailable'));
 
