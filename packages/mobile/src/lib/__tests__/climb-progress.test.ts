@@ -94,6 +94,18 @@ describe('deriveClimbProgress mirror state (#4801)', () => {
     );
     expect(progress?.mirror).toBe('mirror');
   });
+
+  it('reports both orientations when both only have attempts', () => {
+    const progress = deriveClimbProgress(
+      [
+        tick({ is_mirror: false, status: 'attempt', is_ascent: false, tries: 2 }),
+        tick({ is_mirror: true, status: 'attempt', is_ascent: false, tries: 3 }),
+      ],
+      parseMs,
+    );
+    expect(progress?.mirror).toBe('both');
+    expect(progress?.outcome).toEqual({ kind: 'attempt', tries: 5 });
+  });
 });
 
 describe('deriveClimbProgress recency', () => {
