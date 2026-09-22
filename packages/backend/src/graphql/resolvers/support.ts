@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, lt } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { randomUUID } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -134,19 +134,15 @@ export const supportMutations = {
         .where(
           and(
             eq(dbSchema.stripeSupportClaims.userId, userId),
-            isNull(dbSchema.stripeSupportClaims.completedAt),
             lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
           ),
         );
-      await db
-        .insert(dbSchema.stripeSupportClaims)
-        .values({
-          id: claimId!,
-          userId,
-          cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
-          showPublicly: input.publicCredit,
-        })
-        .onConflictDoNothing();
+      await db.insert(dbSchema.stripeSupportClaims).values({
+        id: claimId!,
+        userId,
+        cadence: input.cadence === 'MONTHLY' ? 'monthly' : 'one_time',
+        showPublicly: input.publicCredit,
+      });
     }
 
     const returnUrl = supportReturnUrl(input.locale);
