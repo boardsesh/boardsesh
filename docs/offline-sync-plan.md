@@ -394,7 +394,7 @@ It is schema migration **6**, and every property it needs falls out of being one
 
 It must land **with or after** the classifier fix. Revived rows meeting the old classifier would dead-letter again on the first hiccup.
 
-**Telling the climber.** The migration leaves a `sync_meta` note (`dead-letter-recovery-notice`) holding how many sends it put back, and only when that is at least one — a fresh install owes nobody a notice. `SendRecoveryGate`, a launch gate mounted after `OnboardingGate` and `QaTesterGate`, delivers it once as a dismissable modal route, clearing the note before it navigates, and emits `Offline Send Recovery Shown { recoveredCount }`. That event is the only way the recovery is measurable in the field: the rows it moves stop being dead letters, so nothing else can count them afterwards.
+**Telling the climber.** The migration leaves a `sync_meta` note (`dead-letter-recovery-notice`) holding how many sends it put back, and only when that is at least one — a fresh install owes nobody a notice. `SendRecoveryGate`, a launch gate mounted after `OnboardingGate` and `QaTesterGate`, delivers it once as a dismissable modal route, clearing the note before it navigates, and emits `Offline Send Recovery Shown { recoveredCount }`. That event is the only way the recovery is measurable in the field: the rows it moves stop being dead letters, so nothing else can count them afterwards. Until #5654 the gate never ran: its `ready` prop was frozen at `false` behind `DatabaseProvider`, so the note sat undelivered on every device that had one. It now reads readiness from `LaunchReadyProvider`, waits for the feature flags to resolve, and stands down under the `send-recovery-gate-kill` flag, which leaves the note owed rather than consuming it.
 
 The copy says the sends are **on their way**, not that they were recovered. At the moment the notice shows, the requeued rows may still be in flight, and a climber told "3 sends recovered" who then finds one still pending has been lied to. "On their way" is true when it is shown and cannot be falsified by a later failure — and with default-retry a failure now leaves the row pending rather than dead-lettering it, so the promise holds.
 
@@ -568,7 +568,9 @@ Syncing N changes…" → "All synced" on recovery. `OfflineState` gained the `b
 `backend-outage-detection` mobile flag (default on) is the kill switch: off disables the flip and the
 short-circuit, keeps the timeouts. A dev/tester-only More → Development row, **Force server
 unreachable**, pins the store for QA (`BACKEND_URL` is inlined at build time, so there is no other way
-to simulate an outage on a device).
+to simulate an outage on a device). The banner itself never painted in production until #5654: its
+`ready` prop was frozen at `false` behind `DatabaseProvider`. It now reads readiness from
+`LaunchReadyProvider`, and `connectivity-banner-kill` hides it without touching the detection above.
 
 **Offline mode.** The climber's own switch, first row of More → Offline ("Offline mode"), with two
 shortcuts on the banner: "Stay offline" during an outage, "Go online" to leave. It is a persisted MMKV

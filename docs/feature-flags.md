@@ -124,6 +124,65 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `active-board-follow-heal-kill` is a kill switch (read through
+  `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
+  launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).
+  Unlike most kill switches it is only read after `useFeatureFlagsResolved()`,
+  because the heal is a one-shot server write at launch: acting on the
+  unresolved first frame would send the follow before a set switch could stop
+  it.
+  Three more kill switches cover the launch surfaces #5654 woke up. From 2.2.0
+  until that fix, all of them sat behind a `ready` prop frozen at `false` under
+  `DatabaseProvider` (expo-sqlite's memo'd provider never re-renders its
+  children; see `packages/mobile/src/providers/launch-ready-context.tsx`), so
+  the OTA that fixed the wiring turned on features the fleet had never run.
+  `connectivity-banner-kill` hides the bottom connectivity banner
+  (`useConnectivityBannerEnabled`); outage detection itself stays on, since
+  that is `backend-outage-detection`. `qa-tester-gate-kill` stops the
+  tester-only launch prompt (`useQaTesterGateEnabled`). `send-recovery-gate-kill`
+  stops the one-time recovered-sends notice (`useSendRecoveryGateEnabled`); the
+  note stays owed in the database and the sends are requeued either way. All
+  three read unresolved as enabled, and all three surfaces wait for
+  `useFeatureFlagsResolved()` (at most 2 s) before they act, so a switch flipped
+  in PostHog lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the
+  first paint (`ConnectivityBanner`) it exists to stop. That holds on a build
+  baked with `EXPO_PUBLIC_STRAVA_INTEGRATION` or `EXPO_PUBLIC_LOGBOOK_FILTERS`
+  too: the root layout passes that env bag with `staticFlagsAreFinal={false}`,
+  because it pins only its own keys, so the resolved hook still waits for
+  PostHog. Only a test's `flags` bag counts as final on the first frame. The
+  onboarding and board-look gates woke up in the same change but only
+  evaluate and log (`Onboarding Gate Evaluated`, `Board Look Step Evaluated`).
+  `first-board-picker-kill` (read through `useFirstBoardPickerEnabled`,
+  unresolved = enabled) covers the one thing the onboarding gate does present:
+  the board picker in first-board mode ("Where do you climb?") for an account
+  at most 7 days old with no board, at most twice per account. It ships to
+  every new account with no experiment, so this switch is the only way to take
+  it back without a release. With it on the gate logs `would_present` with
+  `picker_verdict: 'kill_switch'` and opens nothing, and it stops marking the
+  board-look step seen for new accounts, so a new account gets exactly what it
+  got before the picker. Find my board and every other way into the picker keep
+  working. The gate waits for
+  `useFeatureFlagsResolved()` before it decides, like the others.
+  `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
+  unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
+  no new account is enrolled, and every enrolled one gets the plain bulb back
+  (no Climbs card, no "Light it on the board" pill, no first-connect
+  confirmation). The test deliberately assigns arms WITHOUT a PostHog flag: a
+  first launch has no cached flags, so a flag-driven arm could change under a
+  climber the moment it resolved. The arm is
+  `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
+  treatment), computed on the phone, and only dealt on a production build
+  (not a dev build, an EAS preview or a `pr-*` OTA preview) whose installed
+  binary is 2.7.0 or later (`CONNECT_STEP_MIN_NATIVE_VERSION`): the code
+  reaches older binaries by OTA and stays inert there. Its QA override,
+  `first-connect-cta-arm` (variants `treatment` / `control`), is the one
+  catalog entry whose PostHog value is IGNORED: the enrolment reads the
+  on-device override store directly, so a flag of that name created in
+  PostHog cannot move real climbers between arms. Forcing an arm skips the
+  build, binary, age and never-connected checks, wipes the phone's
+  connect-step state, takes effect right away for the signed-in account
+  (`FirstConnectHost` re-enrols when the override changes), and tags the
+  exposure `arm_forced: true`.
   `spray-walls` is a POSITIVE rollout flag (read through
   `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
   surface: the "Add a spray wall" tile on the boards picker and the

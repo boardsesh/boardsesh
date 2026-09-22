@@ -1,6 +1,5 @@
 import React from 'react';
-import { absoluteLocaleUrl } from '@/app/lib/seo/base-url';
-import type { Locale } from '@/app/lib/i18n/config';
+import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { frontDoorPagePath } from '@/app/lib/seo/list-page-robots';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
@@ -16,7 +15,6 @@ type SetterJsonLdProps = {
   unlinkedClimbUuids: ReadonlySet<string>;
   /** 1-based `?page=N`, already clamped. */
   page: number;
-  locale: Locale;
 };
 
 /**
@@ -31,6 +29,11 @@ type SetterJsonLdProps = {
  *
  * A climb with no resolvable canonical config is omitted rather than given a
  * best-effort URL. Those rows render without an anchor too, so the two agree.
+ *
+ * Every URL is locale-FREE. Setter pages go through
+ * `createBoardContentPageMetadata`, which pins `<link rel="canonical">` to the
+ * default-locale URL and drops `alternates.languages`, so a `/de` render naming
+ * `/de` URLs would contradict the canonical it ships beside them.
  */
 export default function SetterJsonLd({
   username,
@@ -39,17 +42,16 @@ export default function SetterJsonLd({
   boardDetailsByClimb,
   unlinkedClimbUuids,
   page,
-  locale,
 }: SetterJsonLdProps) {
   const basePath = `/setter/${encodeURIComponent(username)}`;
   // The person's own URL is the bare profile on every page: that is the one
   // canonical address for the entity.
-  const profileUrl = absoluteLocaleUrl(basePath, locale);
+  const profileUrl = absoluteUrl(basePath);
   // The DOCUMENT's URL is this page. `frontDoorPagePath` is the same call
   // `resolveListPageIndexation` makes for the `<link rel="canonical">`, so the
   // two can never name different URLs — on `?page=2` the graph used to claim
   // that page 1 contained items 51–100.
-  const pageUrl = absoluteLocaleUrl(frontDoorPagePath(basePath, page), locale);
+  const pageUrl = absoluteUrl(frontDoorPagePath(basePath, page));
   const offset = (page - 1) * SETTER_PAGE_SIZE;
 
   const listItems = climbs.flatMap((climb, index) => {
@@ -62,7 +64,7 @@ export default function SetterJsonLd({
         '@type': 'ListItem',
         position: offset + index + 1,
         name: climbName,
-        url: absoluteLocaleUrl(buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climbName), locale),
+        url: absoluteUrl(buildCanonicalClimbViewUrl(boardDetails, climb.angle, climb.uuid, climbName)),
       },
     ];
   });

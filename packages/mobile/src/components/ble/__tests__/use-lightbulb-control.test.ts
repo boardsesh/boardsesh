@@ -5,6 +5,7 @@ import { createElement, type ReactNode } from 'react';
 import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@boardsesh/board-presence-react';
 
 type BluetoothCtx = {
+  boardName: string | undefined;
   isConnected: boolean;
   lastLocalHolderUserId: string | null;
   loading: boolean;
@@ -54,6 +55,7 @@ import { useLightbulbControl } from '../use-lightbulb-control';
 
 function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullable<BluetoothCtx> {
   return {
+    boardName: 'kilter',
     isConnected: false,
     lastLocalHolderUserId: null,
     loading: false,
@@ -80,8 +82,8 @@ const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
 
-function renderControl(options: Parameters<typeof useLightbulbControl>[0] = {}) {
-  return renderHook(() => useLightbulbControl(options), { wrapper });
+function renderControl(options: Partial<Parameters<typeof useLightbulbControl>[0]> = {}) {
+  return renderHook(() => useLightbulbControl({ surface: 'play_drawer', ...options }), { wrapper });
 }
 
 beforeEach(() => {
@@ -201,9 +203,13 @@ describe('useLightbulbControl press action', () => {
     expect(ctrl.bluetooth?.armUndoWallChangeToast).toHaveBeenCalledOnce();
     expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
-    // The connect ATTEMPT is deliberately untracked — Bluetooth Connection
-    // Success / Failed carry the outcome.
-    expect(trackMock).not.toHaveBeenCalled();
+    // The tap is tracked (#5654): a connect that dies at a denied permission or a
+    // radio that's off never reaches Bluetooth Connection Success / Failed.
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'play_drawer',
+      boardName: 'kilter',
+      reconnect: true,
+    });
   });
 
   it('reconnects a MoonBoard by its remembered device id (no serial)', () => {
@@ -271,7 +277,9 @@ describe('useLightbulbControl on a wall with no LED light kit', () => {
     // radio, and there is no controller behind a virtual hold to write to.
     const openControls = vi.fn();
     ctrl.bluetooth = makeBluetooth({ ledless: true, virtualWallHeld: true });
-    const { result } = renderHook(() => useLightbulbControl({ onOpenControls: openControls }), { wrapper });
+    const { result } = renderHook(() => useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls }), {
+      wrapper,
+    });
     result.current.onLongPress();
     expect(openControls).not.toHaveBeenCalled();
   });
@@ -446,5 +454,106 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
 
     expect(onRelayToHolder).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useLightbulbControl Board Connect Tapped (#5654)', () => {
+  const connectTaps = () => trackMock.mock.calls.filter(([eventName]) => eventName === 'Board Connect Tapped');
+
+  it('reports which bulb was tapped', () => {
+    ctrl.bluetooth = makeBluetooth({ boardName: 'tension' });
+    const { result } = renderControl({ surface: 'app_bar' });
+    result.current.onPress();
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'app_bar',
+      boardName: 'tension',
+      reconnect: false,
+    });
+  });
+
+  it('marks a remembered MoonBoard device as a reconnect', () => {
+    ctrl.bluetooth = makeBluetooth({ boardName: 'moonboard', reconnectDeviceIdForCurrentBoard: 'moon-abc' });
+    const { result } = renderControl({ surface: 'toolbar' });
+    result.current.onPress();
+    expect(connectTaps()[0]?.[1]).toMatchObject({ surface: 'toolbar', reconnect: true });
+  });
+
+  it('counts only taps that start a connect', () => {
+    // Disconnect, take/release the wall and a no-op tap are not connect attempts.
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+    renderControl().result.current.onPress();
+    ctrl.bluetooth = makeBluetooth({ ledless: true });
+    renderControl().result.current.onPress();
+    ctrl.bluetooth = makeBluetooth({ loading: true });
+    renderControl().result.current.onPress();
+
+    expect(connectTaps()).toHaveLength(0);
+  });
+});
+
+describe('useLightbulbControl connect (#5654 connect step)', () => {
+  it('is the connect onPress runs: logged, undo armed, remembered board targeted, outcome returned', async () => {
+    const bluetooth = makeBluetooth({ reconnectSerialForCurrentBoard: 'serial-1' });
+    bluetooth.connect.mockResolvedValue(false);
+    ctrl.bluetooth = bluetooth;
+    const { result } = renderControl({ surface: 'first_connect_card' });
+
+    await expect(result.current.connect()).resolves.toBe(false);
+
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'first_connect_card',
+      boardName: 'kilter',
+      reconnect: true,
+    });
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(1);
+    expect(bluetooth.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
+  });
+
+  it('tags a connect with the surface it was started from', async () => {
+    const { result } = renderControl({ surface: 'play_drawer' });
+
+    await result.current.connect('first_connect_pill');
+
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'first_connect_pill',
+      boardName: 'kilter',
+      reconnect: false,
+    });
+  });
+
+  it('resolves false and logs nothing with no board selected', async () => {
+    ctrl.bluetooth = null;
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(false);
+    expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  // Same gate as onPress: a caller that skips its own pressAction check must
+  // not start a second link or a doomed one.
+  it.each([
+    ['a connect is already in flight', 'noop', () => ({ bluetooth: makeBluetooth({ loading: true }) })],
+    ['the wall has no lights', 'takeWall', () => ({ bluetooth: makeBluetooth({ ledless: true }) })],
+    [
+      'a session peer holds the wall',
+      'relay',
+      () => {
+        ctrl.boardId = 42;
+        ctrl.sessionId = 'session-1';
+        ctrl.sessionMemberUserIds = new Set(['peer-user']);
+        ctrl.presence = holderPresenceFor('peer-user');
+        return { bluetooth: makeBluetooth() };
+      },
+    ],
+  ] as const)('resolves false without touching the radio when %s', async (_label, expectedAction, arrange) => {
+    const { bluetooth } = arrange();
+    ctrl.bluetooth = bluetooth;
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+
+    expect(result.current.pressAction).toBe(expectedAction);
+    await expect(result.current.connect('first_connect_card')).resolves.toBe(false);
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+    expect(bluetooth.armUndoWallChangeToast).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
   });
 });

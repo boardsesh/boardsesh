@@ -21,6 +21,17 @@ describe('resolveBoardReturnTo', () => {
     expect(resolveBoardReturnTo('/(tabs)/discover')).toBe('/(tabs)/discover');
   });
 
+  it('returns to Session after a board change initiated there', () => {
+    expect(resolveBoardReturnTo('/(tabs)/record')).toBe('/(tabs)/record');
+  });
+
+  it.each(['/(tabs)/record/../settings', '/(tabs)/record/', ' /(tabs)/record', '/(tabs)/record?next=/settings'])(
+    'rejects a modified Session return route: %s',
+    (route) => {
+      expect(resolveBoardReturnTo(route)).toBe('/(tabs)/climbs');
+    },
+  );
+
   it('returns climbs for the climbs route (already the default)', () => {
     expect(resolveBoardReturnTo('/(tabs)/climbs')).toBe('/(tabs)/climbs');
   });

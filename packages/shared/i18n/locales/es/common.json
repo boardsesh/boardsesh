@@ -736,7 +736,8 @@
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",
         "record": "Tus encadenes salen aquí en Progreso: reparto de grados y tu vía más dura. Importa tu logbook de Kilter y Tension desde Aurora para empezar con tu historial.",
-        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí."
+        "accessory": "La barra de abajo siempre muestra lo que hay en el muro. Cambia de vía desde ahí.",
+        "climbsTab": "Para volver a tus bloques, toca la lupa de la barra de pestañas."
       }
     },
     "nav": {

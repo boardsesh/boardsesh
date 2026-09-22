@@ -5,6 +5,11 @@
 // (packages/web/app/components/auth/validate-fields.ts) and the backend
 // /auth/native/register bounds, so the client never blocks an input the server
 // would accept, nor submits one the server will reject.
+//
+// Mobile register has no Confirm Password (#5654). The check was client-only
+// (the backend takes one password), and the field's show-password toggle does
+// the same job with one field fewer on the way into the app. Web's register
+// form still asks twice.
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PASSWORD_MIN_LENGTH = 8;
@@ -16,7 +21,6 @@ export type RegisterFieldErrors = {
   name?: string;
   email?: string;
   password?: string;
-  confirmPassword?: string;
 };
 
 export function validateLoginFields(values: { email: string; password: string }): LoginFieldErrors {
@@ -37,7 +41,6 @@ export function validateRegisterFields(values: {
   name?: string;
   email: string;
   password: string;
-  confirmPassword: string;
 }): RegisterFieldErrors {
   const errors: RegisterFieldErrors = {};
   const email = values.email.trim();
@@ -57,11 +60,6 @@ export function validateRegisterFields(values: {
     errors.password = 'login.validation.passwordTooShort';
   } else if (values.password.length > PASSWORD_MAX_LENGTH) {
     errors.password = 'login.validation.passwordTooLong';
-  }
-  if (!values.confirmPassword) {
-    errors.confirmPassword = 'login.validation.confirmPasswordRequired';
-  } else if (values.confirmPassword !== values.password) {
-    errors.confirmPassword = 'login.validation.passwordsMismatch';
   }
   return errors;
 }

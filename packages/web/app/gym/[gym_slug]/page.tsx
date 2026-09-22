@@ -32,6 +32,7 @@ import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
+import { gymIsIndexableVenue } from '@/app/lib/seo/gym-index-eligibility';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -211,21 +212,36 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // imageHeight for a user photo — we don't know its aspect ratio, and a wrong
   // one makes scrapers crop it.
   const photoSrc = resolveGymPhotoSrc(gym);
-  const options = {
+  const shareCard = photoSrc
+    ? {
+        imagePath: photoSrc,
+        imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
+        imageWidth: null,
+        imageHeight: null,
+      }
+    : {};
+
+  // A gym that isn't a public venue — a private listing, or a climber's personal
+  // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO
+  // `path`. Dropping `path` is the load-bearing half: `createNoIndexMetadata`
+  // delegates to `createPageMetadata`, which emits `alternates.canonical` plus
+  // the four-locale `hreflang` cluster whenever a path is present. A noindexed
+  // page that still advertises its three locale twins republishes the very
+  // cluster we are removing, and hands a crawler three more URLs each time it
+  // fetches one. The page keeps serving 200 and stays crawlable on purpose —
+  // `noindex` only works on a URL Google is still allowed to fetch. The sibling
+  // `/gym/[gym_slug]/poster` has taken the same no-`path` route since it landed.
+  if (!gymIsIndexableVenue(gym)) {
+    return createNoIndexMetadata({ title, description, locale, ...shareCard });
+  }
+
+  return createPageMetadata({
     title,
     description,
     path: `/gym/${gym_slug}`,
     locale,
-    ...(photoSrc
-      ? {
-          imagePath: photoSrc,
-          imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
-          imageWidth: null,
-          imageHeight: null,
-        }
-      : {}),
-  };
-  return gym.isPublic ? createPageMetadata(options) : createNoIndexMetadata(options);
+    ...shareCard,
+  });
 }
 
 export default async function GymPage(props: GymRouteProps) {
@@ -331,7 +347,12 @@ export default async function GymPage(props: GymRouteProps) {
   // Prefer the real photo for search-result thumbnails; fall back to the logo.
   const structuredDataImage = photoSrc ?? logoSrc;
 
-  const jsonLd = gym.isPublic
+  // `SportsActivityLocation` is markup about a PLACE the public can climb at, so
+  // it rides the same rule as the index directive rather than a bare `isPublic`
+  // check: a climber's home wall is not a venue, and describing one as an
+  // activity location — under a name that is usually the owner's own — is both
+  // wrong structured data and the same leak in a second format.
+  const jsonLd = gymIsIndexableVenue(gym)
     ? {
         '@context': 'https://schema.org',
         '@type': 'SportsActivityLocation',

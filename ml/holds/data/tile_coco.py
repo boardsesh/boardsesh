@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image
@@ -24,6 +26,92 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from common import TileGrid, tile_boxes  # noqa: E402
+
+
+Point = tuple[float, float]
+
+
+def clip_polygon_to_tile(
+    segmentation: object, scale: float, x0: float, y0: float, x1: float, y1: float
+) -> list[list[float]]:
+    """Clip COCO polygon rings to a tile and return tile-local coordinates.
+
+    Rectangle clipping uses Sutherland-Hodgman. Missing polygons remain empty
+    for box-only annotations. RLE masks are unsupported and fail explicitly so
+    a segmentation dataset cannot silently lose its training masks.
+    """
+    if segmentation is None:
+        return []
+    if not isinstance(segmentation, list):
+        raise ValueError("Expected COCO polygon lists; RLE segmentation is not supported")
+
+    def clip_edge(
+        points: list[Point],
+        inside: Callable[[Point], bool],
+        intersect: Callable[[Point, Point], Point],
+    ) -> list[Point]:
+        if not points:
+            return []
+        output: list[Point] = []
+        previous = points[-1]
+        for current in points:
+            if inside(current):
+                if not inside(previous):
+                    output.append(intersect(previous, current))
+                output.append(current)
+            elif inside(previous):
+                output.append(intersect(previous, current))
+            previous = current
+        return output
+
+    def cut(points: list[Point], axis: int, bound: float, keep_greater: bool) -> list[Point]:
+        def inside(point: Point) -> bool:
+            return point[axis] >= bound if keep_greater else point[axis] <= bound
+
+        def intersect(previous: Point, current: Point) -> Point:
+            span = current[axis] - previous[axis]
+            fraction = 0.0 if span == 0 else (bound - previous[axis]) / span
+            other_axis = 1 - axis
+            crossed = [0.0, 0.0]
+            crossed[axis] = bound
+            crossed[other_axis] = previous[other_axis] + fraction * (current[other_axis] - previous[other_axis])
+            return (crossed[0], crossed[1])
+
+        return clip_edge(points, inside, intersect)
+
+    clipped_rings: list[list[float]] = []
+    for ring in segmentation:
+        if not isinstance(ring, list) or len(ring) % 2:
+            raise ValueError("Each COCO polygon must contain complete coordinate pairs")
+        if not all(
+            isinstance(coordinate, (int, float))
+            and not isinstance(coordinate, bool)
+            and math.isfinite(coordinate)
+            for coordinate in ring
+        ):
+            raise ValueError("COCO polygon coordinates must be finite numbers")
+        points = [(ring[index] * scale, ring[index + 1] * scale) for index in range(0, len(ring), 2)]
+        if len(points) < 3:
+            continue
+        for axis, bound, keep_greater in ((0, x0, True), (0, x1, False), (1, y0, True), (1, y1, False)):
+            points = cut(points, axis, bound, keep_greater)
+            if not points:
+                break
+        if len(points) < 3:
+            continue
+        local_points = [(round(point[0] - x0, 2), round(point[1] - y0, 2)) for point in points]
+        # Coordinates are already rounded to hundredths. Test area on that
+        # integer grid so fractional collinear rings cannot survive float noise,
+        # without discarding the smallest real triangle on the grid.
+        grid_points = [(round(x * 100), round(y * 100)) for x, y in local_points]
+        twice_area = sum(
+            previous[0] * current[1] - current[0] * previous[1]
+            for previous, current in zip(grid_points, grid_points[1:] + grid_points[:1])
+        )
+        if twice_area == 0:
+            continue
+        clipped_rings.append([coordinate for point in local_points for coordinate in point])
+    return clipped_rings
 
 
 def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, long_side: int) -> dict[str, int]:
@@ -72,6 +160,9 @@ def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, l
                         {
                             "bbox": [clipped_x0 - x0, clipped_y0 - y0, clipped_w, clipped_h],
                             "area": clipped_w * clipped_h,
+                            "segmentation": clip_polygon_to_tile(
+                                annotation.get("segmentation"), scale, x0, y0, x1, y1
+                            ),
                         }
                     )
                 if not kept:
@@ -98,6 +189,7 @@ def tile_split(source: Path, target: Path, grid: TileGrid, min_visible: float, l
                             "category_id": 1,
                             "bbox": [round(v, 2) for v in entry["bbox"]],
                             "area": round(entry["area"], 2),
+                            "segmentation": entry["segmentation"],
                             "iscrowd": 0,
                         }
                     )

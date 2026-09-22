@@ -760,6 +760,68 @@ describe('AuthProvider.register', () => {
   });
 });
 
+// The signed-out screens mount profile readers too, and the backend answers a
+// request with no token with `profile: null`. With the 5 min staleTime that
+// answer outlived the sign-in, so every reader in the new session saw "nobody"
+// (#5654: the first-run gate's account age was null for fresh sign-ups).
+describe('AuthProvider sign-in and the cached signed-out profile', () => {
+  beforeEach(() => {
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+    clearStoredSessionIdMock.mockReset();
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    clearStoredActiveBoardMock.mockReset();
+    clearStoredActiveBoardMock.mockResolvedValue(undefined);
+  });
+
+  function renderWithProfileCache(queryClient: QueryClient) {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(() => useAuth(), { wrapper });
+  }
+
+  it('invalidates the profile the login screen cached once the climber signs in', async () => {
+    // On the login screen, so the signed-out provider still renders its children.
+    routerState.segments = ['auth', 'login'];
+    getAuthTokenMock.mockResolvedValueOnce(null).mockResolvedValue('jwt-token');
+    authSignInWithCredentialsMock.mockResolvedValue({ success: true });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['profile'], { profile: null });
+
+    const { result } = renderWithProfileCache(queryClient);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(false);
+
+    const { signInWithCredentials } = result.current;
+    await act(async () => {
+      await signInWithCredentials('climber@example.com', 'password');
+    });
+
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(true);
+  });
+
+  it('leaves a signed-in profile alone when the session is only re-checked', async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderWithProfileCache(queryClient);
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    queryClient.setQueryData(['profile'], { profile: { id: 'user-1' } });
+
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(false);
+  });
+});
+
 describe('AuthProvider browser-fallback foreground checks', () => {
   beforeEach(() => {
     platformState.OS = 'android';
@@ -993,6 +1055,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
       expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
         auth_method: 'apple',
         flow: 'web',
+        screen: 'register',
         is_registration: true,
       }),
     );
@@ -2442,7 +2505,7 @@ describe('native auth gate parity (this PR auto-OTAs to the store fleet)', () =>
 
     renderGate();
 
-    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/home'));
+    await waitFor(() => expect(redirectMock).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(redirectMock).not.toHaveBeenCalledWith(next);
     expect(redirectMock).not.toHaveBeenCalledWith(expect.stringContaining('next='));
   });

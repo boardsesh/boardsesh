@@ -418,9 +418,14 @@ export default function PlaylistDetailContent({
               />
             </div>
             <div className={styles.heroInfo}>
+              {/* The page's only `h1`, and `variant="h5"` keeps it looking
+                  exactly as it did — the name was an `h2` under no `h1` at
+                  all, so every playlist page shipped a heading outline with
+                  no top. Adding a heading here means checking this stays the
+                  one `h1` on the page. */}
               <Typography
                 variant="h5"
-                component="h2"
+                component="h1"
                 className={`${styles.heroName} ${playlist.isPublic ? styles.heroNameWithShare : ''}`}
               >
                 {playlist.name}

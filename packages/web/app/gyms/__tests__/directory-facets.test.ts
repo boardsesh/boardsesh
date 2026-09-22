@@ -27,6 +27,14 @@ describe('facet routes', () => {
 });
 
 describe('parseDirectoryQuery', () => {
+  it('carries a bounded place label only alongside valid coordinates', () => {
+    expect(parseDirectoryQuery('all', { place: 'Sydney' }).place).toBeUndefined();
+    const query = parseDirectoryQuery('all', { place: '  Sydney  ', lat: '-33.86', lng: '151.2', radius: '50' });
+    expect(query.place).toBe('Sydney');
+    expect(buildDirectoryHref('all', query, 2)).toBe('/gyms?place=Sydney&lat=-33.86&lng=151.2&radius=50&page=2');
+    expect(buildFacetSwitchHref('kilter', query)).toBe('/gyms/kilter?place=Sydney&lat=-33.86&lng=151.2&radius=50');
+    expect(parseDirectoryQuery('all', { place: 'x'.repeat(300), lat: '0', lng: '0' }).place).toHaveLength(200);
+  });
   it('defaults to an unfiltered first page', () => {
     expect(parseDirectoryQuery('all', {})).toEqual({
       query: '',

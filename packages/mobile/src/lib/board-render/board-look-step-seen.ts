@@ -35,6 +35,13 @@ export async function hasSeenBoardLookStep(): Promise<boolean> {
  * see `BoardLookStep.handleSave`. "Asked but walked away" must stay
  * indistinguishable from "never asked", or a force-quit mid-step burns the
  * one-shot question and accepts the default in silence (issue #4961).
+ *
+ * One exception, #5654: `OnboardingGate` writes it for an account at most 7 days
+ * old without asking, bound or not, unless `first-board-picker-kill` is on. A
+ * new account's stored mode is `default`, which already draws Aura, and the
+ * question is for climbers who knew the old look, so there is nothing to accept
+ * in silence. The marker is per device, so on a shared phone that also retires
+ * the step for an older account there.
  */
 export async function markBoardLookStepSeen(): Promise<void> {
   await setPreference(STORAGE_KEY, true);

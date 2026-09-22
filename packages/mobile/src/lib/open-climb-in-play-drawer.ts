@@ -4,6 +4,8 @@ import type { BoardConfig, OpenPlayDrawerOptions } from '../providers/drawer-hos
 import { climbToQueueItem } from './climb-to-queue-item';
 import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from './playlists/board-details-for-playlist';
 import { tickToClimb, type TickLike } from './tick-to-climb';
+import { buildBoardClimbTarget } from './routing/board-route-target';
+import { createClimbHandoffIntent } from './routing/climb-handoff-intent';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -37,15 +39,7 @@ export type OpenClimbArgs =
     };
 
 export type OpenClimbOptions = {
-  /**
-   * When `true`, the climb opens **view-only**: the drawer shows it with a
-   * "Preview" badge + a "Set active" button and leaves the queue untouched.
-   * Defaults to `false` — the climb is set as the current climb (and appended to
-   * the queue), so pressing a climb plays it. Used by the explicit "Preview"
-   * climb action and the deep-link / standalone climb-page route. Ignored on the
-   * `ref` fallback, which routes through the climb page and opens with its own
-   * default.
-   */
+  /** View-only when true. Direct refs always preview; ticks and loaded climbs default to active. */
   preview?: boolean;
 };
 
@@ -95,11 +89,8 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
       });
       return;
     }
-    // No frames (can't build the climb) or an unresolvable board (e.g. MoonBoard):
-    // fall back to the climb route, which loads the full climb by uuid. When the
-    // board itself can't resolve, the ref branch also no-ops — matching the prior
-    // navigate-helpers that returned early for MoonBoard.
-    openClimbInPlayDrawer(
+    // Resolve missing frames through the climb route without losing the tick tap's intent.
+    pushClimbReference(
       {
         kind: 'ref',
         climbUuid: args.tick.climbUuid,
@@ -109,12 +100,20 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
         sizeId: config?.sizeId,
         setIds: config?.setIds.join(','),
       },
-      deps,
+      router,
+      !climb && !preview,
     );
     return;
   }
 
-  // kind: 'ref'
+  pushClimbReference(args, router, false);
+}
+
+function pushClimbReference(
+  args: Extract<OpenClimbArgs, { kind: 'ref' }>,
+  router: OpenClimbDeps['router'],
+  activate: boolean,
+): void {
   let { sizeId, setIds } = args;
   let boardName = args.boardType;
   let layoutId = args.layoutId ?? null;
@@ -127,15 +126,18 @@ export function openClimbInPlayDrawer(args: OpenClimbArgs, deps: OpenClimbDeps, 
     setIds = config.setIds.join(',');
   }
   if (layoutId == null) return;
+  const params = {
+    climbUuid: args.climbUuid,
+    boardName,
+    layoutId: String(layoutId),
+    sizeId: String(sizeId),
+    setIds,
+    angle: String(args.angle),
+  };
+  const target = activate ? buildBoardClimbTarget(params, 'view', args.climbUuid) : null;
+  const activationIntent = target ? createClimbHandoffIntent(target) : undefined;
   router.push({
     pathname: '/(tabs)/climbs/[climbUuid]',
-    params: {
-      climbUuid: args.climbUuid,
-      boardName,
-      layoutId: String(layoutId),
-      sizeId: String(sizeId),
-      setIds,
-      angle: String(args.angle),
-    },
+    params: { ...params, ...(activationIntent ? { activationIntent } : {}) },
   });
 }

@@ -358,19 +358,26 @@ vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
 vi.mock('../SwitchRow', () => ({
   SwitchRow: ({
     label,
+    description,
     value,
     onValueChange,
+    disabled,
   }: {
     label: string;
+    description?: string;
     value?: boolean;
     onValueChange?: (next: boolean) => void;
+    disabled?: boolean;
   }) =>
     createElement(
       'button',
       {
         'data-testid': `switch-${label}`,
+        'data-description': description,
         'data-value': String(!!value),
-        onClick: () => onValueChange?.(!value),
+        // Mirrors the real SwitchRow: a disabled row ignores taps.
+        onClick: disabled ? undefined : () => onValueChange?.(!value),
+        disabled,
       },
       label,
     ),
@@ -1326,5 +1333,113 @@ describe('ClimbFilterSheet hold integrity (SW-13)', () => {
   it('shows the committed selection when the sheet opens', () => {
     const { getByTestId } = renderFilterSheet({ currentFilters: { ...currentFilters, holdIntegrity: 'broken' } });
     expect(getByTestId('segment-broken').getAttribute('data-selected')).toBe('true');
+  });
+});
+
+// #5659 review: on iOS a locked Tall/Wide (chip-row lock) must survive the sheet's
+// draft too, or the "Show N" count is taken without it while Apply's list gets it
+// back from the lock.
+describe('ClimbFilterSheet with a locked Tall/Wide', () => {
+  // Kilter Homewall 10x12: both Tall and Wide apply.
+  const homewall = { ...boardConfig, layoutId: 8, sizeId: 25 };
+
+  it('keeps a locked dimension in the draft through Reset', () => {
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      onApply,
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyTallClimbs: true, onlyWideClimbs: true },
+      lockedDimensions: { tall: true, wide: false },
+    });
+
+    fireEvent.click(getByText('mobile.filter.reset'));
+
+    expect(getByTestId('switch-mobile.filter.tall').getAttribute('data-value')).toBe('true');
+    expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    const [appliedFilters] = onApply.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
+    expect(appliedFilters.onlyTallClimbs).toBe(true);
+    expect(appliedFilters.onlyWideClimbs).toBeFalsy();
+    // Reset still cleared everything else.
+    expect(appliedFilters.setter).toBeUndefined();
+  });
+
+  it('holds a locked switch on and ignores taps on it, while an unlocked one still toggles', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      onApply,
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyTallClimbs: true },
+      lockedDimensions: { tall: true, wide: false },
+    });
+
+    const tallSwitch = getByTestId('switch-mobile.filter.tall');
+    expect((tallSwitch as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(tallSwitch);
+    expect(tallSwitch.getAttribute('data-value')).toBe('true');
+
+    const wideSwitch = getByTestId('switch-mobile.filter.wide');
+    fireEvent.click(wideSwitch);
+    expect(wideSwitch.getAttribute('data-value')).toBe('true');
+
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ onlyTallClimbs: true, onlyWideClimbs: true }),
+      currentBoardFilters,
+    );
+  });
+
+  it('explains a locked switch with an unlock hint, and keeps the usual line on an unlocked one', () => {
+    const { getByTestId } = renderFilterSheet({
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyTallClimbs: true },
+      lockedDimensions: { tall: true, wide: false },
+    });
+
+    expect(getByTestId('switch-mobile.filter.tall').getAttribute('data-description')).toBe(
+      'mobile.filter.tallLockedHint',
+    );
+    expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-description')).toBe(
+      'mobile.filter.wideDescription',
+    );
+  });
+
+  // Review of 8a0ac8b14: a pin toggle in the sheet rebuilt `lockedDimensions` on
+  // the screen, re-ran the parent sync and put back every filter Reset had cleared.
+  it('keeps a Reset draft reset when the screen re-renders with an equal but new lockedDimensions', () => {
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const onApply = vi.fn();
+    const rendered = renderFilterSheet({
+      onApply,
+      boardConfig: homewall,
+      currentFilters: { ...currentFilters, onlyWideClimbs: true },
+      lockedDimensions: { tall: false, wide: false },
+    });
+
+    fireEvent.click(rendered.getByText('mobile.filter.reset'));
+    expect(rendered.getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
+
+    // e.g. the climber taps a pin: the parent re-renders with a fresh object.
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} lockedDimensions={{ tall: false, wide: false }} />);
+
+    expect(rendered.getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('false');
+    applyAndClose(rendered.getByText('mobile.filter.showCount12'));
+    const [appliedFilters] = onApply.mock.calls[0] as [ClimbFilters, ClimbBoardFilterState];
+    expect(appliedFilters.onlyWideClimbs).toBeFalsy();
+    expect(appliedFilters.setter).toBeUndefined();
+  });
+
+  it('seeds a locked dimension into the draft even before the lock has re-applied it', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      onApply,
+      boardConfig: homewall,
+      lockedDimensions: { tall: false, wide: true },
+    });
+
+    expect(getByTestId('switch-mobile.filter.wide').getAttribute('data-value')).toBe('true');
+    applyAndClose(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ onlyWideClimbs: true }), currentBoardFilters);
   });
 });

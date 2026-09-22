@@ -274,7 +274,14 @@ one more reason the score threshold is a slider rather than a shipped constant.
 ## Adding a wall
 
 `packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
-#5442). One route, seven steps, behind the mobile flag `spray-walls`:
+#5442). One route, seven steps, behind the mobile flag `spray-walls`.
+
+Two front doors open it: the board picker's Spray wall tile, and "Add my spray
+wall" under My own board in the "Where do you climb?" block that Climbs' Find my
+board opens for a climber with no boards (#5654, `First Board Path Chosen
+{path: 'spray_wall'}`). The launch gate's first-board showing of that block does
+not offer it, because the wizard binds without the onboarding `source` and so
+would leave first-run open.
 
 | Step | What it does |
 | --- | --- |

@@ -6,6 +6,7 @@ import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
+import { reregisterConnectStepArm } from './analytics-connect-step-arm';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -225,6 +226,11 @@ export function registerRenderSuperProperties(effective: {
 //
 // `low_power_mode` too: it only moves on a power-state transition, so a
 // sign-out would strip it from every event until the climber plugs in.
+//
+// `arm_connect_step` (#5654) is the connect-step test's arm. It is registered
+// at exposure and on each launch for an enrolled account, and nothing else
+// would put it back before the next account's enrolment is read, so the
+// sign-out events of an enrolled climber would lose their arm.
 export function reset(): boolean {
   const didReset = analytics.reset();
   // Clear the screen gate here rather than at each sign-out call site, so a new
@@ -240,6 +246,7 @@ export function reset(): boolean {
     reregisterOfflineEngineState(client);
     reregisterActiveGym(client);
     reregisterLowPowerMode(client);
+    reregisterConnectStepArm(client);
   }
   return didReset;
 }

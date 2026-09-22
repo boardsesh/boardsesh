@@ -24,8 +24,15 @@ const mocks = vi.hoisted(() => ({
   // The board this screen is bound to, and whether its stored choice is still
   // being read. Mutable so a test can render the two states the settled default
   // hides: no board bound at all, and a board switch mid-flight.
-  activeBoard: null as { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number } | null,
-  isBoardLoading: false,
+  activeBoard: null as
+    | { boardType: string; layoutId: number; sizeId: number; setIds: string; angle: number }
+    | null
+    | undefined,
+  boardStatus: 'success' as 'pending' | 'error' | 'success',
+  boardFetchStatus: 'idle' as 'fetching' | 'paused' | 'idle',
+  refetchActiveBoard: vi.fn(),
+  setActiveBoard: vi.fn(),
+  push: vi.fn(),
   // Whether the climb search is fetching its first page — the other half of the
   // initial-skeleton gate.
   isClimbsLoading: false,
@@ -85,6 +92,8 @@ vi.mock('react-native', () => ({
   RefreshControl: ({ refreshing }: { refreshing?: boolean }) =>
     createElement('div', { 'data-refresh-control': 'true', 'data-refreshing': String(!!refreshing) }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
+  // The screen reads Platform.OS at module load (the iOS-only Tall/Wide lock).
+  Platform: { OS: 'ios' },
   // No `Image.prefetch` should ever fire for board art (#3191 — the native
   // Android image loader gets a 403 from the CDN/WAF for direct board-art
   // fetches). Exposed here so the pre-warm test can assert it stays unused.
@@ -135,7 +144,7 @@ vi.mock('react-native-safe-area-context', () => ({
 
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
 }));
@@ -145,6 +154,12 @@ vi.mock('expo-router', () => ({
 // test, so stub both.
 vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
   OnboardingTipBanner: () => null,
+}));
+// The connect-step card has its own suite; it reaches the Bluetooth provider,
+// which this suite has no reason to load.
+vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
+  FirstConnectCard: () => null,
+  useFirstConnectCardExpected: () => false,
 }));
 vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
@@ -409,8 +424,16 @@ vi.mock('../../../../src/lib/create-board-holds', () => ({
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   // Reads the fixture by reference (never rebuilds the object) so the board-keyed
   // effects in the screen see a stable identity across re-renders.
-  useActiveBoard: () => ({ data: mocks.activeBoard, isLoading: mocks.isBoardLoading }),
-  useSetActiveBoard: () => async () => {},
+  useActiveBoard: () => ({
+    data: mocks.activeBoard,
+    isPending: mocks.boardStatus === 'pending',
+    isSuccess: mocks.boardStatus === 'success',
+    isError: mocks.boardStatus === 'error',
+    isFetching: mocks.boardFetchStatus === 'fetching',
+    isLoading: mocks.boardStatus === 'pending' && mocks.boardFetchStatus === 'fetching',
+    refetch: mocks.refetchActiveBoard,
+  }),
+  useSetActiveBoard: () => mocks.setActiveBoard,
 }));
 
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
@@ -470,7 +493,12 @@ beforeEach(() => {
   mocks.imagePrefetch.mockClear();
   mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
   mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
-  mocks.isBoardLoading = false;
+  mocks.boardStatus = 'success';
+  mocks.boardFetchStatus = 'idle';
+  mocks.refetchActiveBoard.mockReset();
+  mocks.refetchActiveBoard.mockResolvedValue(undefined);
+  mocks.setActiveBoard.mockReset();
+  mocks.push.mockClear();
   mocks.isClimbsLoading = false;
   mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
   mocks.isOffline = false;
@@ -506,6 +534,73 @@ describe('ClimbList binding a board on the mounted screen', () => {
     mocks.activeBoard = null;
     rerender(<ClimbList />);
     await findByText('mobile.emptyState.noBoard.title');
+  });
+});
+
+// #5654: "Find my board" opens the picker's no-board entry, which shows "Where
+// do you climb?" to a climber with no boards. Not the onboarding entry: this
+// state shows for anyone with no board bound, so its bind is an ordinary pick.
+describe('ClimbList with no board bound', () => {
+  it('sends "Find my board" to the picker as the no-board entry', async () => {
+    mocks.activeBoard = null;
+    const { findByRole } = render(<ClimbList />);
+
+    fireEvent.click(await findByRole('button', { name: 'mobile.emptyState.noBoard.cta' }));
+
+    expect(mocks.push).toHaveBeenCalledWith({ pathname: '/boards', params: { source: 'no_board' } });
+  });
+});
+
+describe('ClimbList saved-board restoration', () => {
+  it.each(['fetching', 'paused'] as const)('shows skeletons while the board read is %s', (fetchStatus) => {
+    mocks.activeBoard = undefined;
+    mocks.boardStatus = 'pending';
+    mocks.boardFetchStatus = fetchStatus;
+
+    const { container, queryByText } = render(<ClimbList />);
+
+    expect(container.querySelectorAll('[data-skeleton-row]').length).toBeGreaterThan(0);
+    expect(queryByText('mobile.emptyState.noBoard.title')).toBeNull();
+    expect(queryByText('mobile.emptyState.boardRestoreFailed.title')).toBeNull();
+    expect(queryByText('Moonage')).toBeNull();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed read and restores the list without selecting the board again', async () => {
+    mocks.activeBoard = undefined;
+    mocks.boardStatus = 'error';
+    const { getByRole, getByText, queryByText, findByText, rerender } = render(<ClimbList />);
+
+    expect(getByText('mobile.emptyState.boardRestoreFailed.title')).toBeTruthy();
+    expect(queryByText('mobile.emptyState.noBoard.title')).toBeNull();
+    fireEvent.click(getByRole('button', { name: 'actions.retry' }));
+    expect(mocks.refetchActiveBoard).toHaveBeenCalledOnce();
+    expect(mocks.push).not.toHaveBeenCalled();
+
+    mocks.boardStatus = 'pending';
+    mocks.boardFetchStatus = 'fetching';
+    rerender(<ClimbList />);
+    expect(queryByText('mobile.emptyState.noBoard.title')).toBeNull();
+
+    mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+    mocks.boardStatus = 'success';
+    mocks.boardFetchStatus = 'idle';
+    rerender(<ClimbList />);
+
+    await findByText('Moonage');
+    expect(queryByText('mobile.emptyState.boardRestoreFailed.title')).toBeNull();
+    expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('keeps browsing the cached board if a later read fails', async () => {
+    mocks.boardStatus = 'error';
+
+    const { findByText, queryByText } = render(<ClimbList />);
+
+    await findByText('Moonage');
+    expect(queryByText('mobile.emptyState.boardRestoreFailed.title')).toBeNull();
+    expect(queryByText('mobile.emptyState.noBoard.title')).toBeNull();
   });
 });
 

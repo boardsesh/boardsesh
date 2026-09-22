@@ -1,14 +1,59 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useFollowBoard } from '../graphql/hooks';
+import { useFollowBoard, useProfile } from '../graphql/hooks';
 import { useBoardDownloads } from '../../offline/use-board-downloads';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
+import { useAuth } from '../../providers/auth-provider';
 import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
+import { useStoredUserId } from '../../hooks/use-current-user-id';
 import { getSetting, useSetting, offlineBoardKeyForBoard } from '../../settings';
 import { reportError } from '../error-reporting';
-import { decideAdoptFoundBoard } from './adopt-found-board-decision';
+import { boardOwnershipForViewer, decideAdoptFoundBoard, shouldFollowBoard } from './adopt-found-board-decision';
+
+/**
+ * Who is picking. Same degraded-never-blocked read as `/boards`: the profile when
+ * it has loaded, else the id stored on the device, so a start with no signal can
+ * still tell your own board from someone else's. `viewerId` is `undefined` when
+ * neither has answered, which the decision treats as "unknown", never as "not
+ * yours".
+ *
+ * `isAuthenticated` rides along because an unknown viewer and a signed-out one
+ * look the same to the decision, and only the first can follow: `followBoard`
+ * requires a session, so a signed-out pick would end in a "Couldn't add" toast.
+ */
+function useViewer(): { isAuthenticated: boolean; viewerId: string | undefined } {
+  const { isAuthenticated } = useAuth();
+  const { data: profile } = useProfile({ enabled: isAuthenticated });
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
+  return { isAuthenticated, viewerId: profile?.id ?? storedUserId };
+}
+
+/**
+ * Whether adopting `board` right now would follow it. Read by the bind before it
+ * adopts, so the pick event can say whether the board landed in Your boards
+ * without waiting for the adoption that runs after navigation. The same rule and
+ * the same viewer as `useAdoptFoundBoard`, so the two agree.
+ */
+export function useWillFollowFoundBoard() {
+  const { isAuthenticated, viewerId } = useViewer();
+  return useCallback(
+    (board: UserBoard): boolean => isAuthenticated && shouldFollowBoard(boardOwnershipForViewer(board, viewerId)),
+    [isAuthenticated, viewerId],
+  );
+}
+
+export type AdoptFoundBoardOptions = {
+  /**
+   * Whether this caller may ask "Download X?" after the pick. Defaults to true
+   * (the picker and the gym finder). Pass false where a dialog would interrupt:
+   * the onboarding bind, which makes its own offer, and the play drawer's wall
+   * switch mid-session. The follow still happens, and so does a download the
+   * `autoOfflineBoards` setting asked for.
+   */
+  offerOffline?: boolean;
+};
 
 /**
  * Adopt a board the user just picked from discovery (gym finder / Nearby): follow
@@ -18,9 +63,10 @@ import { decideAdoptFoundBoard } from './adopt-found-board-decision';
  * navigation; the offline confirm rides the root dialog, which survives the modal
  * dismiss that navigating away from the picker triggers.
  */
-export function useAdoptFoundBoard() {
+export function useAdoptFoundBoard({ offerOffline = true }: AdoptFoundBoardOptions = {}) {
   const { showToast } = useToast();
   const { t } = useTranslation('boards');
+  const { isAuthenticated, viewerId } = useViewer();
   // The toast rides useFollowBoard's config-level onSuccess (it fires after this
   // screen unmounts on navigation); a per-call mutate callback would be dropped.
   const followBoard = useFollowBoard({
@@ -38,14 +84,14 @@ export function useAdoptFoundBoard() {
   return useCallback(
     async (board: UserBoard) => {
       const decision = decideAdoptFoundBoard({
-        isOwned: board.isOwned,
-        isFollowedByMe: board.isFollowedByMe,
+        ...boardOwnershipForViewer(board, viewerId),
         offlineEnabled,
         autoOffline,
         alreadyEnabledOffline: getSetting('syncEnabledBoards').includes(offlineBoardKeyForBoard(board)),
+        offerOffline,
       });
 
-      if (decision.follow) {
+      if (decision.follow && isAuthenticated) {
         followBoard.mutate(board);
       }
 
@@ -68,6 +114,16 @@ export function useAdoptFoundBoard() {
     },
     // followBoard.mutate is stable; depending on the whole `followBoard` object
     // (fresh each render) would churn this callback and every onSelect built on it.
-    [followBoard.mutate, enableBoardsOffline, confirm, offlineEnabled, autoOffline, t],
+    [
+      followBoard.mutate,
+      enableBoardsOffline,
+      confirm,
+      offlineEnabled,
+      autoOffline,
+      offerOffline,
+      isAuthenticated,
+      viewerId,
+      t,
+    ],
   );
 }

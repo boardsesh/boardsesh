@@ -85,6 +85,9 @@ describe('isAccessorySurfaceRoute', () => {
     expect(isAccessorySurfaceRoute(['(tabs)', 'home', 'session', '[sessionId]'])).toBe(false);
     expect(isAccessorySurfaceRoute(['gyms'])).toBe(false);
     expect(isAccessorySurfaceRoute(['auth', 'login'])).toBe(false);
+    // The walkthrough keeps the host mounted underneath, but nothing of the
+    // accessory is on show over its opaque cover.
+    expect(isAccessorySurfaceRoute(['onboarding'])).toBe(false);
     expect(isAccessorySurfaceRoute([])).toBe(false);
   });
 
@@ -107,6 +110,9 @@ describe('isAccessoryHostRoute', () => {
     expect(isAccessoryHostRoute(['(tabs)', 'climbs', 'holds'])).toBe(true);
     // Kept mounted (occluded) under the transparent player, same as before.
     expect(isAccessoryHostRoute(['play'])).toBe(true);
+    // And under the walkthrough, a transparentModal over the live tabs since #5654
+    // (it was a fullScreenModal, which snapshots the tabs: rule 2).
+    expect(isAccessoryHostRoute(['onboarding'])).toBe(true);
   });
 
   it('is false on root pushes and modals, where the tab bar leaves too', () => {

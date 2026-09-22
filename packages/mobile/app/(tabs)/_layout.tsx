@@ -29,11 +29,11 @@ import {
 import { tabsActiveSegment } from '../../src/lib/route-segments';
 import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
+import { getAppEntryTab } from '../../src/lib/app-entry-route';
 
-// Cold-start on Home: the leftmost tab carries the beta shelf and followed
-// activity feed, while Climbs remains the search surface one tab over. Drives
-// the default-selected tab in both the native-tabs and Material `Tabs` variants.
-export const unstable_settings = { initialRouteName: 'home' };
+// Select Climbs on ordinary entry without moving its native search tab. Explicit
+// routes keep their destination; screenshot captures still start at Home.
+export const unstable_settings = { initialRouteName: getAppEntryTab() };
 
 type TabIconProps = { focused: boolean; color: ColorValue; size: number };
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];

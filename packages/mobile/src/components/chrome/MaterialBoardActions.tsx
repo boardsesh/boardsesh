@@ -62,6 +62,7 @@ export function MaterialLightbulbAction() {
   const { open: openControls } = useBleControlSheet();
   const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
     useLightbulbControl({
+      surface: 'app_bar',
       onOpenControls: openControls,
     });
   const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);

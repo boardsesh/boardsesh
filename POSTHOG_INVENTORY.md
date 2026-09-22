@@ -49,6 +49,7 @@ disappears for the rest of the launch after a sign-out.
 | `offline_engine_state` | `baked-on` \| `web-off` (+ legacy flag values) | `analytics-offline-engine-state.ts`, once per launch | Offline-engine bake measurement (#4312) |
 | `render_mode`, `glow_falloff`, `glow_falloff_source` | see `docs/board-render-analytics.md` | `registerRenderSuperProperties`, on settings change | Board-render A/B (#2202) |
 | `gym_uuid`, `gym_name` | the active board's gym, or absent | `analytics-gym.ts` via `AnalyticsGymProperties`, on active-board change | Which venue a climber is at — the only gym dimension on climbing events. Cleared (not left stale) when the active board has no gym |
+| `arm_connect_step` | `treatment` \| `control`, or absent | `analytics-connect-step-arm.ts`, at the connect-step exposure and on each launch for an enrolled account | The connect-step test's arm (#5654, Appendix C). Cleared for a signed-in account that is not enrolled |
 
 ### Server-Side Analytics
 
@@ -500,3 +501,166 @@ Six events added or enriched to unblock the new dashboard at `/dashboard/1597030
 ### Follow-up enrichment (recommended, not implemented)
 
 The Boardsesh user base skews **solo-BLE**: most users connect a board over Bluetooth and never start a party session ([[project-sessions-are-optional]]). To make session-mode a one-click breakdown on every BLE tile in the future, enrich `Bluetooth Connection Success` and `Climb Sent to Board Success` / `Failure` with `inActiveSession: bool` derived from `persistentSession.users.length > 0`. Today the same insight needs a HogQL join. Low effort, high analytical leverage.
+
+## Appendix B — 2026-09-21 honest Bluetooth states (#5654)
+
+Three mobile events so the "opened a climb, never scanned" stage of the newcomer funnel can be measured. The definitions live in `packages/shared/analytics/src/events.ts`.
+
+| Event                            | Properties                                                                                                                                          | Emit sites                                                                                                                                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again` / `notification` / `first_connect_card` / `first_connect_pill`), `boardName`, `reconnect` | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts`, the device picker's Scan again in `bluetooth-provider.tsx` and the Android session notification's bulb in `live-activity-bridge.tsx`. Fires on the tap, before permissions. |
+| `Bluetooth Unavailable`          | `reason` (`unauthorized` / `powered_off` / `unsupported` / `unknown`), `surface` (`connect` / `quickstart_scan`), `platform`, `boardName` (connect only) | `packages/mobile/src/lib/ble/bluetooth-unavailable.ts`, called from `bluetooth-unavailable-alert.ts` (connect) and `use-board-scan.ts` (quickstart). Fires with the alert or sheet state.                                                                    |
+| `Board Quickstart Scan Finished` | `outcome` (`completed` / `stopped` / `error`), `found_count`                                                                                        | `packages/mobile/src/lib/ble/use-board-scan.ts`. Once per quickstart scan that started the radio.                                                                                                                                                             |
+
+### Decisions
+
+- `Bluetooth Permission Denied` still fires for every Android denial. A browser with no Web Bluetooth (Expo web in Safari, Firefox or any iOS browser) no longer counts as one: it is `Bluetooth Unavailable {reason: 'unsupported'}`. `Bluetooth Unavailable` adds `unauthorized` only when only the Settings app can fix it (iOS denial, Android "never ask again").
+- Android's `never_ask_again` counts as `unauthorized` only when the permission request came back inside 500 ms, meaning no dialog was drawn. React Native also reports `never_ask_again` when a climber closes the first dialog with back or a tap outside, and Android shows that dialog again next time. A slow phone that misses the window reads as a plain denial, so `unauthorized` on Android undercounts rather than overcounts.
+- A connect picker whose scan hears nothing now stays open in its empty state (tips, Scan again, the no-lights offer) instead of failing at the 30 s scan timeout. So `Bluetooth Connection Failed {failureReason: 'board_not_found'}` no longer fires for an empty picker scan. Those sessions still show as `BLE Picker Devices Resolved {devicesTotal: 0}`, and the connect ends as `user_cancelled` when the climber closes the sheet, taps Scan again or takes the wall without lights. It also ends as `user_cancelled` when the scan window closes with the app in the background (the Android session notification's bulb), because nobody is there to close the sheet. Read `board_not_found` across this release as a break in the series.
+- Scan again in the connect picker cancels the empty picker and starts a new connect, so it logs `Bluetooth Connection Failed {failureReason: 'user_cancelled'}` for the attempt it replaces, followed by `Board Connect Tapped {surface: 'picker_scan_again', reconnect: false}`. The new connect always opens the picker straight away, without the silent search for a remembered board.
+- `reason: 'unknown'` is outside the three reasons the plan named. It covers a stop the radio state can't explain, so those stops aren't counted as the radio being off.
+- `found_count` is snake_case because the #5654 experiment plan names it that way. The other properties follow the camelCase used by the Bluetooth events around them.
+- "Scanned" for the #5654 funnel is `Bluetooth Scan Started` (connect) or `Board Quickstart Scan Finished` (quickstart). The quickstart doesn't fire `Bluetooth Scan Started`, because that event's board config properties don't exist before a board is picked.
+
+---
+
+## Appendix C — 2026-09-21 launch-gate telemetry (#5654)
+
+The first-run gate went silent for 10 weeks (2.2.0 to #5654) and nothing noticed, because no event
+said whether it had decided anything. Native app only: the Expo browser build sends neither event,
+because its launch URL is always the page, so every launch would read as a deep-link launch. Names
+live in `SHARED_EVENTS`
+(`packages/shared/analytics/src/events.ts`), where the full property contracts sit beside them.
+
+### New events (2)
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Onboarding Gate Evaluated` | `outcome` (`would_present` / `skipped` / `stalled`), `reason` (`no_board` / `has_board` / `deep_link_segment` / `launched_by_url` / `segment_after_reads` / `not_ready` / `board_unresolved` / `reads_pending`), `step` (`intro` / `board` / null), `had_board`, `seen_flag`, `account_age_hours`, `ota_is_embedded`, `trigger` (`cold_start` / `remount` / `account_switch`), `top_segment`, `ms_since_mount` (from the switch on an `account_switch` decision), `after_stall` | `packages/mobile/src/lib/onboarding/onboarding-gate-analytics.ts`, called from `OnboardingGate.tsx` once per decision and from its 15 s foreground-only stall watchdog | Decisions skip a returning climber's steady state (board bound, seen flag not false) and the signed-out login screen, so they are roughly newcomers and climbers without a board. Stalls are sent for every climber |
+| `Board Look Step Evaluated` | `outcome` (`would_present` / `skipped`), `reason` (`never_asked` / `look_chosen` / `step_seen`) | `packages/mobile/src/lib/board-render/board-look-step-evaluation-log.ts`, from `BoardLookStepGate.tsx` in log-only mode | Once per device (AsyncStorage marker `boardLookStepEvaluationLogged`) |
+
+### Reading them
+
+- `outcome: 'would_present'` is not a presentation. In #5654's first PR both gates evaluate and log
+  only; nothing is pushed. A later change turns presenting on for new accounts and adds `presented`.
+- `stalled` should stay under 1% of launches. Divide by `OTA Update Status` (one per launch), not by
+  this event's own count: stalls report for every climber while decisions leave out the returning
+  majority, so the event's own count would overstate the rate several times over. A spike means the
+  gate's inputs stopped arriving again; `reason` names which one.
+- A mount that stalls and then decides sends two events. The late decision carries
+  `after_stall = true`; leave it out when counting decisions, and use it to see how many stalls
+  resolved on their own.
+- `account_age_hours` splits new accounts from existing ones. The gate waits up to 5 s for the
+  profile before it decides, so a null age means that read failed or timed out.
+- Compare `Onboarding Gate Evaluated` (`trigger = remount`, `after_stall = false`) with
+  `Login Succeeded` for the "does the gate run after sign-in" check. `ota_is_embedded` splits first
+  launches (binary JS) from OTA JS.
+
+### First-board picker (#5654, PR 3)
+
+The onboarding gate now opens something for one group: an account at most 7 days old with no
+board gets the board picker in first-board mode ("Where do you climb?"), at most twice per account,
+never offline, never over a link or a tapped notification, and never with
+`first-board-picker-kill` on. It ships to every
+new account with no control, so it is read descriptively (2.6.0 cohorts against 2.5.0), with the
+skip rate and `Board Created` per newcomer as guardrails.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Onboarding Gate Evaluated` (changed) | adds `outcome: 'presented'` (reason `new_account`, step `first_board`), the skip reason `launched_by_notification` (a tapped push opened the app; it routes into a tab and leaves no launch URL, so `launched_by_url` misses it), `picker_verdict` (`presented` / `profile_unavailable` / `not_new_account` / `kill_switch` / `offline` / `shown_twice` / `storage_error`, null off the no-board branch) and `picker_times_shown` (showings before this decision, null when not read) | `OnboardingGate.tsx` via `onboarding-gate-analytics.ts` | Unchanged |
+| `First Board Path Chosen` | `path` (`gym` / `own` / `scan` / `gym_map`) | `use-first-board-picker-tracking.ts`, from the picker's choices | One per tap; a climber can try several |
+| `First Board Picker Skipped` | `method` (`close_button` = the header X "Not now" / `dismissed` = swipe or Android back), `secondsOpen`, `lastPath` | `use-first-board-picker-tracking.ts`, when the picker unmounts with no board stored | At most one per showing, so at most two per account |
+
+- **Skip rate** = `First Board Picker Skipped` (`entry = 'launch_gate'` or absent, see PR 5 below)
+  ÷ `Onboarding Gate Evaluated` with `outcome = 'presented'`. A bind from any path the picker leads to (the list, the builder, the gym
+  map, the Bluetooth scan) is not a skip, because every bind writes the board before it navigates.
+- **Bound from the picker**: `Onboarding Board Activated` (source `onboarding`) after a `presented`
+  decision. The picker also fires `Board Picker Opened` with source `onboarding` like any picker.
+  Every bind path counts, the gym map included: the picker forwards `source` to `/gyms`, which
+  binds through the same `useActivateBoard` as the picker itself.
+- `picker_verdict` on the `would_present` rows says why a climber without a board did not get the
+  picker; `not_new_account` is the existing fleet, which never gets it.
+
+### Connect-step test (#5654, PR 7)
+
+An A/B test on the largest drop-off: 18.6% of newcomers open a climb and never tap the unlabelled
+bulb. The treatment puts a "Light climbs on {{board}}" card at the top of Climbs (Connect · This
+wall has no lights · X "Not now", on at most two launches) and turns the play view's bulb into a
+labelled "Light it on the board" pill (share and queue move into ⋯) for at most three calendar
+days. Control keeps today's UI. Both arms get a one-time "Connected to {{board}}" confirmation
+after the phone's first successful connect. Kill switch: `first-connect-cta-kill`.
+
+**Assignment** is local and needs no flag: `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2`,
+1 = treatment (`packages/mobile/src/lib/onboarding/connect-step-arm.ts`). **Eligible**: the
+native app (the Expo browser build never enrols) on a production build (not a dev build, an EAS
+preview or a `pr-*` OTA preview) whose installed binary is 2.7.0 or later
+(`CONNECT_STEP_MIN_NATIVE_VERSION`; the code reaches 2.5 and 2.6 by OTA and stays inert there),
+signed in, account at most 7 days old (the first-board picker's line), kill switch off, and a
+phone that has never connected to a board (a board remembered for one-tap reconnect counts as
+connected, so returning climbers are never enrolled). Enrolment is stored per account on the
+phone, so the exposure fires once per account per phone.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `First Run Exposed` | `arm_connect_step` (`treatment` / `control`), `arm_forced` (QA override; leave these out), `assignment_salt`, `user_id`, `account_age_hours`, `ota_is_embedded`, `native_version` (the installed binary), `ui_variant` (`liquidGlass` / `material` / null), `had_board` | `packages/mobile/src/lib/onboarding/connect-step-enrolment.ts`, called by `OnboardingGate` at its post-login decision, before either arm differs | Once per account per phone, both arms |
+| `First Run Card Action` | `action` (`connect` / `no_lights` / `dismiss` / `retry`) | `FirstConnectCard.tsx` (treatment only) | One per tap |
+| `Board Lights Declined` | `surface` (`climbs_card` / `device_picker`) | `FirstConnectCard.tsx`; `device-picker-no-lights.ts`, from the tap on the device picker's own "This wall has no lights" (never inferred from a virtual hold, which also moves when a climber switches boards) | Once per phone that has never connected, enrolled accounts only (both arms) |
+
+New super property:
+
+| Property | Values | Registered from | Why |
+| --- | --- | --- | --- |
+| `arm_connect_step` | `treatment` \| `control`, or absent | `analytics-connect-step-arm.ts`: at exposure, and on each launch by `FirstConnectHost` for the signed-in account (cleared for anyone not enrolled); re-registered in `reset()` | Splits every funnel by arm without joining to `First Run Exposed` |
+
+Reading it:
+
+- **Primary**: `Climb Sent to Board Success` within 7 days of `First Run Exposed`, by
+  `arm_connect_step`, analysed per `user_id` (about 8% of newcomers are split across two persons),
+  with `arm_forced = true` removed. Only 2.7.0+ binaries enrol, but TestFlight testers on 2.7.0
+  can enrol before release day, so also keep exposures on or after the release day (iOS) or the
+  100% rollout day (Android). `ota_is_embedded` still splits a first launch on the binary's own JS
+  from a later OTA launch.
+- **Leading**: `Board Connect Tapped` with `surface` `first_connect_card` (the card's Connect and
+  Try again) and `first_connect_pill` (the play-view pill), next to the bare bulb's `play_drawer`,
+  plus `First Run Card Action` with `action = 'connect'`. The card, the pill and every bulb run
+  one connect (`useLightbulbControl().connect`), so each tap is logged once.
+- **"a"**: `Board Lights Declined` ÷ `First Run Exposed` bounds how many newcomers had no LED board
+  to connect to. Over 40% of card views in week 2 means the Bluetooth-first work should wait.
+  "No lights" is recorded per phone, not per board: one `noLightsAt` in the phone's
+  connect-step state, never the board's `hasLeds`. A climber who marks a dark board A as having no
+  lights never sees the card or the pill for a lit board B on the same phone, so read a decline
+  as "this phone left the treatment", not "this board is dark".
+- **SRM**: exposures per arm should sit near 50/50 every week.
+
+### No-board states and the iOS 26 tab tip (#5654, PR 5)
+
+Climbs' no-board empty state ("Pick your board" / **Find my board**) now opens the picker as its
+own entry, `source=no_board`. A climber with no boards at all gets the same "Where do you climb?"
+block the launch gate opens; one whose active board was only cleared gets their list. That entry is
+an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry with the spray-walls flag on) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
+| `First Board Picker Skipped` (changed) | adds `entry`; `close_button` now also covers the plain Close X on the `no_board` entry | `use-first-board-picker-tracking.ts` | Adds the Climbs showings |
+| `Board Picker Opened` / `Board Picker Selection Completed` (changed) | `source` gains `no_board`, a gym-map pick made from that picker included | `use-board-picker-analytics.ts` (the picker and `/gyms`) | Unchanged (those rows used to read `board_picker`) |
+| `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board", which preselects the board type's most used setup when the popular list carries that type), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
+| `Board Created` (changed) | adds `preset` (as on `Board Builder Abandoned`) and `presetKept` (the saved layout, size and sets are exactly the preselection: no chip below the board type changed) | `app/boards/create.tsx` | Unchanged |
+| `Board Create Reused Existing` (changed) | adds `preset`, `presetKept` (as on `Board Created`) | `app/boards/create.tsx` | Unchanged |
+| `Climbs Tab Tip Shown` | `fromTab` (the tab segment it showed on: `home` / `record` / `discover` / `profile`) | `ClimbsTabReturnTip.tsx` (root overlay) | At most once per device; iOS 26 Liquid Glass iPhones, accounts at most 7 days old |
+
+- **Read the launch gate's skip rate on `entry = 'launch_gate'` only.** Rows without `entry` came
+  from builds that had PR 3 but not PR 5, where every showing was the gate's.
+- **Builder funnel**: mobile builder visits ≈ `Board Created` (`source` `popular_seed` / `scratch`) +
+  `Board Create Reused Existing` + `Board Builder Abandoned`. The one path with no event of its own is
+  "use that wall" on the serial-reuse prompt, which follows an existing board. Split `Board Builder Abandoned` on `preset` before reading
+  `hadLayout` / `hadSize`: a preset visit usually starts with both true. `submitAttempted = true` means the
+  climber tapped Save and a server refusal or a duplicate prompt came first.
+- **Did the preset help?** Completion = (`Board Created` + `Board Create Reused Existing`) ÷ that plus
+  `Board Builder Abandoned`, split on `preset`. Within `preset = true`, the `presetKept` share of
+  `Board Created` is the wrong-board watch: those boards were saved with a setup nobody changed.
+  Split on `boardType` too. Only setups on the popular list are preselected, so a MoonBoard (absent
+  from that list today) opens with nothing chosen and never reads `presetKept = true`.
+- **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
+  tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
+  goes away when they tap back to Climbs or close it, and never shows again on that device.

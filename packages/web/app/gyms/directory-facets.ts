@@ -67,6 +67,8 @@ export const FILTERABLE_BOARD_TYPES: readonly string[] = CATALOGUE_BOARD_TYPES;
 export type DirectorySearchParams = Record<string, string | string[] | undefined>;
 
 export type DirectoryQuery = {
+  /** Display label only; coordinates determine the selected search area. */
+  place?: string;
   /** Free-text search, trimmed and length-capped. Empty string means "no search". */
   query: string;
   /** Board types to filter on. Fixed to `[facet]` on a facet route. */
@@ -139,6 +141,9 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
   const page = rawPage === null ? 1 : Math.max(Math.floor(rawPage), 1);
 
   return {
+    ...(hasValidOrigin && firstValue(searchParams.place)?.trim()
+      ? { place: firstValue(searchParams.place)!.trim().slice(0, 200) }
+      : {}),
     query,
     boardTypes: boardTypes.sort(),
     latitude: hasValidOrigin ? latitude : null,
@@ -169,6 +174,7 @@ export function buildDirectoryHref(facet: DirectoryFacet, query: DirectoryQuery,
     }
   }
   if (query.latitude !== null && query.longitude !== null) {
+    if (query.place) params.set('place', query.place);
     params.set('lat', String(query.latitude));
     params.set('lng', String(query.longitude));
     if (query.radiusKm !== null) {

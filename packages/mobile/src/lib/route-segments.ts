@@ -12,6 +12,10 @@ type Segments = readonly string[];
 const TABS_GROUP = '(tabs)';
 const CLIMBS_TAB = 'climbs';
 const PLAYER_ROUTE = 'play';
+// The replayable walkthrough (More tab). Like the player, a transparentModal
+// with an opaque backing over the live tabs (docs/mobile-sheets-vs-routes.md
+// rule 2), so the tab bar never leaves while it is up.
+const ONBOARDING_ROUTE = 'onboarding';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
@@ -21,11 +25,14 @@ export function isTabsRoute(segments: Segments): boolean {
 /**
  * True when the native bottom tab CHROME (the tab bar) is present and STABLE — on any
  * route inside the tabs (including pushed sub-routes, which keep the tab bar), OR under
- * the player route (`/play`).
+ * the player route (`/play`) or the walkthrough (`/onboarding`).
  *
- * The player is a `transparentModal` (app/_layout.tsx): the tabs screen stays LIVE
- * behind it, so UIKit never snapshots the presenting view controller. That lets the
- * tab-bar metrics stay put across the player's open/close instead of churning.
+ * Both are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
+ * them, so UIKit never snapshots the presenting view controller. That lets the tab-bar
+ * metrics stay put across their open/close instead of churning. The walkthrough joined
+ * the player when it stopped being a `fullScreenModal` (#5654): unmounting the
+ * accessory under a transparent cover would detach it while the bar is still up, which
+ * is the #5055 failure below.
  *
  * Drives the tab-bar height/padding in `useBottomChromeMetrics`, and — through
  * `isAccessoryHostRoute`, which is this predicate under another name — the native
@@ -33,7 +40,7 @@ export function isTabsRoute(segments: Segments): boolean {
  * cannot drift apart without re-breaking #5055.
  */
 export function isTabsChromeRoute(segments: Segments): boolean {
-  return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE;
+  return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE || segments[0] === ONBOARDING_ROUTE;
 }
 
 /** True when the focused route is the Climbs tab (or one of its sub-routes). */

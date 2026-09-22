@@ -61,7 +61,7 @@ export function useScreenshotOwnBetaLink(userId: string | null | undefined, enab
         // A capture is not a user session: swallowing this would leave the screen
         // holding on an empty link until Maestro's own timeout, with nothing in
         // the log to say why.
-        console.error("[screenshot] failed to resolve the account's own beta link:", error);
+        console.error('[screenshot] failed to resolve the account’s own beta link:', error);
       });
     return () => {
       cancelled = true;

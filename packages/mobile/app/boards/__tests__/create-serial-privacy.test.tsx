@@ -56,6 +56,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   useCreateBoard: () => ({ mutateAsync: createBoardMock }),
   useFollowBoard: () => ({ mutateAsync: followBoardMock }),
   useProfile: () => ({ data: { displayName: 'Climber' } }),
+  usePopularBoardConfigs: () => ({ data: undefined }),
   fetchBoardByUuid: fetchBoardByUuidMock,
   fetchBoardsBySerialNumbers: fetchBoardsBySerialNumbersMock,
 }));
@@ -70,6 +71,7 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
 // the sequence itself stays under test.
 vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
   useAdoptFoundBoard: () => adoptFoundBoardMock,
+  useWillFollowFoundBoard: () => () => false,
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
@@ -85,6 +87,7 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 
 vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('../../../src/lib/boards/board-config-preset', () => ({ presetBoardConfig: () => null }));
 
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../src/lib/boards/board-return-to', () => ({ resolveBoardReturnTo: () => '/boards' }));

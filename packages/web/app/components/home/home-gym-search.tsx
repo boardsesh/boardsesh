@@ -43,9 +43,8 @@ const EMPTY_FORM_QUERY: DirectoryQuery = {
  * traffic page on the site. The one client island is the geolocation button,
  * which cannot be anything else.
  *
- * The search box is a plain `method="get"` form pointed at `/gyms`. With
- * JavaScript off, or before hydration, typing a town and pressing enter still
- * lands on a real search result page.
+ * The search box is a server-rendered GET form pointed at `/gyms`. Town
+ * suggestions enhance it after hydration; gym-name searches work without JS.
  *
  * FAIL SOFT. `fetchFacetCounts` reports failure rather than throwing, and it
  * failing may not take the homepage with it: the heading, the intro, the search

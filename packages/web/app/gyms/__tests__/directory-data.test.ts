@@ -13,6 +13,18 @@ beforeEach(() => {
 });
 
 describe('directory query isolation', () => {
+  it('searches the selected city by coordinates without using its label as gym text', async () => {
+    await fetchDirectoryPage({
+      ...query,
+      place: 'Sydney, New South Wales, Australia',
+      latitude: -33.86785,
+      longitude: 151.20732,
+      radiusKm: 50,
+    });
+    expect(request).toHaveBeenCalledWith({
+      input: { requireSlug: true, latitude: -33.86785, longitude: 151.20732, radiusKm: 50, limit: 24, offset: 0 },
+    });
+  });
   it('keeps the normal directory at 24 results without claimed priority', async () => {
     await fetchDirectoryPage({ ...query, page: 2 });
     expect(request).toHaveBeenCalledWith({ input: { requireSlug: true, limit: 24, offset: 24 } });

@@ -249,6 +249,58 @@ describe('useBoardPresence — null inputs', () => {
   });
 });
 
+describe('useBoardPresence — Kilter current climb', () => {
+  it('keeps the newest display across mixed backfill, native backfill, and live events without reporting it', async () => {
+    const harness = makeClient();
+    const native = climb('native', 1);
+    const imported = climb('kilter', 100, { source: 'kilter', sentAt: new Date(2000).toISOString() });
+    harness.client.fetchRecentHistory = vi.fn(async () => [imported, native]);
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    await waitFor(() => expect(result.current.currentClimb).toEqual(imported));
+    await act(async () => {
+      await harness.resolveRecent(1, [native]);
+    });
+    expect(result.current.currentClimb).toEqual(imported);
+
+    const nextNative = climb('new-native', 2, { sentAt: new Date(3000).toISOString() });
+    act(() => harness.emit(setEvent(nextNative)));
+    expect(result.current.currentClimb).toEqual(nextNative);
+    act(() => harness.emit({ __typename: 'BoardHistoryUpdated', climbs: [imported], seq: 100 }));
+    expect(result.current.currentClimb).toEqual(nextNative);
+
+    const nextImport = climb('new-kilter', 101, { source: 'kilter', sentAt: new Date(4000).toISOString() });
+    act(() => harness.emit({ __typename: 'BoardHistoryUpdated', climbs: [nextImport, imported], seq: 101 }));
+    expect(result.current.currentClimb).toEqual(nextImport);
+    expect(result.current.history).toEqual([nextImport, nextNative, imported, native]);
+    expect(harness.reportClimb).not.toHaveBeenCalled();
+    expect(harness.reportDisconnect).not.toHaveBeenCalled();
+  });
+
+  it('recovers the latest Kilter display on reconnect without stale native backfill overriding it', async () => {
+    const harness = makeClient();
+    const native = climb('native', 1);
+    const imported = climb('kilter', 100, { source: 'kilter', sentAt: new Date(2000).toISOString() });
+    const fetchRecentHistory = vi.fn().mockResolvedValueOnce([native]).mockResolvedValue([imported, native]);
+    harness.client.fetchRecentHistory = fetchRecentHistory;
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    await act(async () => {
+      await harness.resolveRecent(1, [native]);
+      await harness.resolveStats(1, emptyStats);
+      await harness.resolveConnection(1, null);
+    });
+    expect(result.current.currentClimb).toEqual(native);
+    act(() => harness.triggerReconnect());
+    await act(async () => {
+      await harness.resolveRecent(1, [native]);
+      await harness.resolveStats(1, emptyStats);
+      await harness.resolveConnection(1, null);
+    });
+    await waitFor(() => expect(result.current.currentClimb).toEqual(imported));
+    expect(fetchRecentHistory).toHaveBeenCalledTimes(2);
+    expect(harness.reportClimb).not.toHaveBeenCalled();
+  });
+});
+
 describe('useBoardPresence — subscribe before backfill', () => {
   it('subscribes before fetching recent climbs', () => {
     const harness = makeClient();

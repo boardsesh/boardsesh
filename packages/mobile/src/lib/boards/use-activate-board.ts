@@ -6,7 +6,8 @@
 // version (write, then navigate), so a climber who arrived from onboarding and
 // CREATED their first board silently skipped both the activation metric and the
 // Climbs reveal banner — the two things that exist to mark exactly that moment.
-// One hook, three callers, no second version to drift.
+// The gym finder had a copy too, so its picks fired no pick event and never
+// closed out first-run. One hook for every picker, no second version to drift.
 
 import { useCallback } from 'react';
 import { useRouter } from 'expo-router';
@@ -14,13 +15,38 @@ import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useSetActiveBoard } from '../graphql/use-active-board';
-import { useAdoptFoundBoard } from '../board-discovery/use-adopt-found-board';
+import { useAdoptFoundBoard, useWillFollowFoundBoard } from '../board-discovery/use-adopt-found-board';
 import { useToast } from '../../providers/toast-provider';
 import { hapticSelection } from '../haptics';
 import { markOnboardingSeen, setBoardRevealTipPending } from '../onboarding/onboarding-storage';
 import { reportError } from '../error-reporting';
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
+
+/**
+ * Which list the climber tapped the board in. Analytics only: it rides the
+ * `Board Picker Selection Completed` event so a pick from Near you, the
+ * Bluetooth scan or the gym finder can be told apart from a switch between
+ * boards they already have.
+ */
+export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth' | 'gym_finder';
+
+/** What the caller knows about the tap, passed per bind. */
+export type ActivateBoardPick = {
+  pickSource?: BoardPickSource;
+};
+
+/** What `onBound` learns about the bind that just landed. */
+export type BoundBoard = {
+  /** The list the board was picked from, when the caller said. */
+  pickSource: BoardPickSource | undefined;
+  /**
+   * This bind follows the board, so it lands in Your boards. False when it was
+   * already theirs (built or followed), when the rows came from on-device data,
+   * or when it is someone else's private board, which can't be followed.
+   */
+  followed: boolean;
+};
 
 export type ActivateBoardOptions = {
   /**
@@ -56,7 +82,7 @@ export type ActivateBoardOptions = {
    * bound by this point, and refusing to navigate would strand the climber over
    * a failed extra.
    */
-  onBound?: (board: UserBoard) => Promise<void>;
+  onBound?: (board: UserBoard, bound: BoundBoard) => Promise<void>;
   /**
    * What a failed board write does.
    *
@@ -95,10 +121,14 @@ export function useActivateBoard({
   const { t } = useTranslation('boards');
   const { showToast } = useToast();
   const setActiveBoard = useSetActiveBoard();
-  const adoptFoundBoard = useAdoptFoundBoard();
+  // No "Download X?" on the onboarding bind: the onboarding step makes its own
+  // offer in `onBound`, and a second dialog on Climbs would be the first thing a
+  // newcomer sees after picking their board. The follow still happens.
+  const adoptFoundBoard = useAdoptFoundBoard({ offerOffline: source !== 'onboarding' });
+  const willFollowFoundBoard = useWillFollowFoundBoard();
 
   return useCallback(
-    async (board: UserBoard) => {
+    async (board: UserBoard, pick?: ActivateBoardPick) => {
       if (haptic) hapticSelection();
       try {
         // Persists to AsyncStorage + the ['activeBoard'] cache.
@@ -130,7 +160,15 @@ export function useActivateBoard({
 
       if (onBound) {
         try {
-          await onBound(board);
+          await onBound(board, {
+            pickSource: pick?.pickSource,
+            // Asked before adoption runs (it waits for the navigation below), from
+            // the same decision adoption uses, so the pick event can say whether
+            // this board landed in Your boards. Both callbacks come from the
+            // render that built this bind, so a viewer id that loads mid-bind
+            // reaches the next pick, never just one half of this one.
+            followed: !isLocalOnly && willFollowFoundBoard(board),
+          });
         } catch (error: unknown) {
           reportError(error);
         }
@@ -153,9 +191,9 @@ export function useActivateBoard({
         reportError(error);
       }
 
-      // Follow the board if it's new to the climber (so it lands in My Boards)
-      // and offer/auto-run its offline download. The isNew guard inside makes
-      // re-selecting a board already in My Boards a no-op for follow.
+      // Follow the board unless it is already the climber's (built by them or
+      // followed), so it lands in My Boards, and offer/auto-run its offline
+      // download. Re-selecting a board already in My Boards is a no-op for follow.
       // Fire-and-forget: its own errors are handled inside and intentionally
       // don't reach the catch above, which only guards the bind.
       if (!isLocalOnly) void adoptFoundBoard(board);
@@ -163,6 +201,7 @@ export function useActivateBoard({
     [
       setActiveBoard,
       adoptFoundBoard,
+      willFollowFoundBoard,
       router,
       returnTo,
       navigate,

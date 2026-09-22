@@ -471,7 +471,8 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
+        "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
       }
     },
     "nav": {

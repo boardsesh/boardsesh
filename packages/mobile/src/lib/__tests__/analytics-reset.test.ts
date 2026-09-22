@@ -161,6 +161,38 @@ describe('analytics reset', () => {
     expect(fakeClient.unregister).not.toHaveBeenCalled();
   });
 
+  // #5654: the connect-step arm is registered at exposure and once per launch,
+  // so a sign-out would strip it from the leaving climber's last events. The
+  // name is a literal for the same reason as the gym's: insights key on it.
+  it('re-registers the connect-step arm after resetting the client', async () => {
+    const fakeClient = { register: vi.fn(), unregister: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { registerConnectStepArm, __resetConnectStepArmForTests } = await import('../analytics-connect-step-arm');
+    __resetConnectStepArmForTests();
+    registerConnectStepArm('treatment');
+    fakeClient.register.mockClear();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ arm_connect_step: 'treatment' });
+  });
+
+  it('registers no connect-step arm before an account was ever enrolled', async () => {
+    const fakeClient = { register: vi.fn(), unregister: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { __resetConnectStepArmForTests } = await import('../analytics-connect-step-arm');
+    __resetConnectStepArmForTests();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).not.toHaveBeenCalledWith(
+      expect.objectContaining({ arm_connect_step: expect.anything() }),
+    );
+    expect(fakeClient.unregister).not.toHaveBeenCalledWith('arm_connect_step');
+  });
+
   it('does not re-register when analytics is disabled (no client)', async () => {
     posthogClientMocks.getPostHogClient.mockReturnValue(null);
     const { reset } = await import('../analytics');

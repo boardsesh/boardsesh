@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from common import DEFAULT_THREADS, HOLDS_DIR, DetectorConfig, cap_threads, load_config
+from data.tile_coco import clip_polygon_to_tile
 
 RFDETR_VARIANTS = {
     "nano": "RFDETRNano",
@@ -156,8 +157,53 @@ def tile_source_record(config: DetectorConfig, dataset_dir: Path) -> dict[str, o
     }
 
 
+def validate_mask_training_dataset(config: DetectorConfig, dataset_dir: Path) -> None:
+    """Reject missing mask targets before constructing an RF-DETR segmentation model."""
+    if config.family != "rfdetr" or not config.variant.startswith("seg-"):
+        return
+
+    for split in ("train", "valid", "test"):
+        annotation_path = dataset_dir / split / "_annotations.coco.json"
+        if not annotation_path.exists():
+            if split == "train":
+                raise SystemExit(f"{config.name}: missing training annotations at {annotation_path}")
+            continue
+        payload = json.loads(annotation_path.read_text())
+        annotations = payload["annotations"]
+        if split == "train" and not annotations:
+            raise SystemExit(f"{config.name}: mask training needs annotated holds in {annotation_path}")
+        images = {image["id"]: image for image in payload["images"]}
+        for annotation in annotations:
+            try:
+                image_id = annotation["image_id"]
+                image = images.get(image_id)
+                if image is None:
+                    raise ValueError(f"image_id {image_id} has no matching image")
+                width, height = image["width"], image["height"]
+                if width <= 0 or height <= 0:
+                    raise ValueError("image dimensions must be positive")
+            except (KeyError, TypeError, ValueError) as error:
+                raise SystemExit(
+                    f"{config.name}: invalid COCO image metadata in {annotation_path}, "
+                    f"annotation {annotation.get('id', '?')}: {error}. "
+                    "Correct the image reference and dimensions before training."
+                ) from error
+            try:
+                polygons = clip_polygon_to_tile(annotation.get("segmentation"), 1, 0, 0, width, height)
+                if not polygons:
+                    raise ValueError("missing or empty polygon mask")
+            except (TypeError, ValueError) as error:
+                raise SystemExit(
+                    f"{config.name} requires a usable polygon mask for every hold: "
+                    f"{annotation_path}, annotation {annotation.get('id', '?')}: {error}. "
+                    "Use a fully polygon-labelled corpus; box-only labels cannot train a mask model. "
+                    "After correcting source labels, rebuild any tiled cache generated without masks."
+                ) from error
+
+
 def prepare_dataset(config: DetectorConfig, dataset_dir: Path) -> Path:
     """Return the directory the trainer should read, tiling it first when needed."""
+    validate_mask_training_dataset(config, dataset_dir)
     if config.tiles.untiled:
         return dataset_dir
 
@@ -166,8 +212,19 @@ def prepare_dataset(config: DetectorConfig, dataset_dir: Path) -> Path:
     expected_source = tile_source_record(config, dataset_dir)
     source_path = tiled_dir / TILE_SOURCE_FILENAME
     if (tiled_dir / "train" / "_annotations.coco.json").exists():
-        recorded = json.loads(source_path.read_text()) if source_path.exists() else None
+        if not source_path.exists():
+            # Failed post-tiling validation deliberately leaves no success stamp.
+            # Preserve that mask error on retry, while never trusting an unstamped
+            # cache even if its labels happen to be valid.
+            validate_mask_training_dataset(config, tiled_dir)
+            raise SystemExit(
+                f"{tiled_dir} is missing provenance ({TILE_SOURCE_FILENAME}); "
+                "tiling may be incomplete or validation may have failed. "
+                "Inspect the retained files, then remove that directory to re-tile."
+            )
+        recorded = json.loads(source_path.read_text())
         if recorded == expected_source:
+            validate_mask_training_dataset(config, tiled_dir)
             print(f"reusing tiled dataset {tiled_dir}")
             return tiled_dir
         raise SystemExit(
@@ -191,6 +248,7 @@ def prepare_dataset(config: DetectorConfig, dataset_dir: Path) -> Path:
         ],
         check=True,
     )
+    validate_mask_training_dataset(config, tiled_dir)
     source_path.write_text(json.dumps(expected_source, indent=2) + "\n")
     return tiled_dir
 
@@ -250,6 +308,7 @@ def main() -> int:
     dataset_dir = prepare_dataset(config, Path(args.dataset))
     if args.max_train_images:
         dataset_dir = cap_train_split(dataset_dir, args.max_train_images)
+        validate_mask_training_dataset(config, dataset_dir)
 
     train_config = dict(config.train)
     if args.epochs is not None:

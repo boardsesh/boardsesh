@@ -284,13 +284,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
   climbRef.current = climb;
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
-  // Board metadata for analytics, read through a ref so the dep-free handlers below
-  // never capture a stale value when the list's board config changes.
   // One place that opens the reaction menu, whether it was reached by long press
   // or by the ⋮ button.
   const openActions = useCallback(() => {
     if (unsupportedRef.current) return;
-    onOpenActionsRef.current?.(climbRef.current);
+    const openActionsMenu = onOpenActionsRef.current;
+    if (!openActionsMenu) return;
+    hapticMedium();
+    openActionsMenu(climbRef.current);
   }, []);
 
   const handleRowPress = useCallback(() => {
@@ -302,14 +303,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
   }, []);
 
   const handleLongPress = useCallback(() => {
-    hapticMedium();
     openActions();
   }, [openActions]);
 
   // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
   // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
   const handleOpenActions = useCallback(() => {
-    hapticMedium();
     openActions();
   }, [openActions]);
 
@@ -331,17 +330,17 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleOpenActions],
   );
 
-  const hasMoreButton = !!(showMoreButton && onOpenActions);
+  const canOpenActions = !!onOpenActions && !unsupported;
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const moreActionsLabel = t('mobile.climbRow.moreActions');
   const rowAccessibilityActions = useMemo(
     () =>
-      hasMoreButton
+      canOpenActions
         ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
         : ACTIVATE_ACCESSIBILITY_ACTIONS,
-    [hasMoreButton, moreActionsLabel],
+    [canOpenActions, moreActionsLabel],
   );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
@@ -516,13 +515,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
             style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
             accessibilityRole="button"
-            accessibilityLabel={climb.name}
+            // Let React Native compose the name, grade and status from the
+            // content labels instead of replacing them with just the name.
             accessibilityState={{ selected: !!selected }}
             onAccessibilityTap={handleRowPress}
-            // Carries the ⋮ menu as a labelled custom action when that button is
-            // shown. When `showMoreButton` is false the reaction menu is reachable
-            // by long-press alone, which a screen reader can't perform — surfacing
-            // it there needs its own product copy, so it stays a follow-up.
+            // Keep the menu reachable through screen-reader actions even when
+            // the climber hides its visible quick-actions button.
             accessibilityActions={rowAccessibilityActions}
             onAccessibilityAction={handleRowAccessibilityAction}
           >
@@ -544,6 +542,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   accessible
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
+                  // iOS reaches this menu through the row's custom action;
+                  // exclude its button label from the composed row description.
+                  // Android retains the separately focusable button.
+                  accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
                   onAccessibilityTap={handleOpenActions}
                   accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}

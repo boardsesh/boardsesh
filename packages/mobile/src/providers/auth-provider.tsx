@@ -31,10 +31,12 @@ import { disposeWsClient } from '../lib/graphql/ws-client';
 import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
+import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-picker-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
+import { getAppEntryHref } from '../lib/app-entry-route';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
@@ -193,6 +195,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       clearStoredSessionId(owner),
       clearStoredActiveBoardCoordinated(owner),
       clearStoredQueueSnapshot(owner),
+      // How many times the launch gate opened the first-board picker (#5654).
+      // Keyed by account already; cleared here too so a shared phone never
+      // carries one climber's first-run state into the next session.
+      clearFirstBoardPickerShowCount(),
       // Create-climb and session-recap drafts are wiped for account
       // isolation only on web (the new surface). Native sign-out keeps its
       // origin behavior and leaves these drafts intact, so shipping this via
@@ -469,6 +475,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
 
       anonymousSessionIsolatedRef.current = false;
+      // Signing in, not re-checking a session that was already signed in. The
+      // signed-out screens mount profile readers too, and what they cached for
+      // `['profile']` is the backend's answer to a request with no token:
+      // `profile: null`. That answer stays fresh for the 5 min staleTime, so
+      // every reader the new session mounts would get "nobody" until then
+      // (#5654: the first-run gate's account age came out null for exactly the
+      // climbers who had just signed up). Invalidating before the tree swaps
+      // puts the refetch in flight, and the remounted readers wait on it.
+      if (!wasAuthenticated) void queryClient.invalidateQueries({ queryKey: ['profile'], exact: true });
       authStateRef.current = { ...authStateRef.current, isAuthenticated: true };
       setIsSessionUnavailable(false);
       setIsAuthenticated(true);
@@ -483,13 +498,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           track(SHARED_EVENTS.LoginSucceeded, {
             auth_method: marker.provider,
             flow: 'web',
+            screen: marker.isRegistration ? 'register' : 'login',
             ...(marker.isRegistration ? { is_registration: true } : {}),
           });
         });
       }
       return true;
     },
-    [isAuthTransitionCurrent, runSignedOutCleanup],
+    [isAuthTransitionCurrent, queryClient, runSignedOutCleanup],
   );
 
   const handleResolvedAuthenticatedTransition = useCallback(
@@ -1081,7 +1097,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href="/auth/session-unavailable" />;
   }
   if (!isSessionUnavailable && inSessionUnavailableRoute) {
-    return <Redirect href={isAuthenticated ? '/(tabs)/home' : '/auth/login'} />;
+    return <Redirect href={isAuthenticated ? getAppEntryHref() : '/auth/login'} />;
   }
 
   // Web only: the canonical board URLs the Next front door links into render for
@@ -1096,7 +1112,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {
-    return <Redirect href={readPostLoginReturnHref() ?? '/(tabs)/home'} />;
+    return <Redirect href={readPostLoginReturnHref() ?? getAppEntryHref()} />;
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

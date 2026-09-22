@@ -35,7 +35,7 @@
     },
     "helpSessions": {
       "title": "Empieza o únete a una sesión en directo y compartid una cola",
-      "description": "Empieza una sesión desde la pestaña Grabar, invita a tu grupo con un QR o un enlace y comparte una cola y un plafón sin encender los bloques de los demás."
+      "description": "Empieza una sesión desde la pestaña Sesión, invita a tu grupo con un QR o un enlace y comparte una cola y un plafón sin encender los bloques de los demás."
     },
     "helpFindingClimbs": {
       "title": "Filtra bloques por presa, zona del muro y equipador",
@@ -486,8 +486,8 @@
       },
       "start": {
         "title": "Empieza una sesión",
-        "intro": "Toda sesión empieza en la pestaña Grabar.",
-        "step1": "Abre la pestaña Grabar. Mira el plafón de arriba.",
+        "intro": "Toda sesión empieza en la pestaña Sesión.",
+        "step1": "Abre la pestaña Sesión. Mira el plafón de arriba.",
         "step2": "Mostrar esta sesión en directo deja que tu grupo la vea y se una. Apagado, solo vale tu enlace de invitación.",
         "step3": "Dale a Empezar y luego a Invitar escaladores para tener un QR, Copiar enlace y Compartir.",
         "shotAlt": "Una sesión en directo",

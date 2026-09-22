@@ -35,6 +35,9 @@ const bluetooth = vi.hoisted(() => ({
 }));
 
 const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn() }));
+// The connect-step test's (#5654) ear on the no-lights tap. Its own rules are
+// covered by device-picker-no-lights.test.ts.
+const recordNoLightsMock = vi.hoisted(() => vi.fn());
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
@@ -92,6 +95,10 @@ vi.mock('../../../lib/ble/picker-resolution-stats', () => ({
 
 vi.mock('../../../lib/haptics', () => ({
   hapticSelection: haptics.hapticSelection,
+}));
+
+vi.mock('../../../lib/onboarding/device-picker-no-lights', () => ({
+  recordDevicePickerNoLights: recordNoLightsMock,
 }));
 
 vi.mock('../../../lib/ble/use-android-scan-location-hint', () => ({
@@ -366,9 +373,12 @@ describe('DevicePickerSheet', () => {
         const { container } = render(<PickerHost />);
         const cta = container.querySelector('[data-button="ble.noLedsCta"]') as HTMLButtonElement;
 
+        recordNoLightsMock.mockClear();
         act(() => cta.click());
         expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
         expect(calls).toEqual(['dismiss', 'schedule']);
+        // Heard from the tap itself, once, for the connect-step test.
+        expect(recordNoLightsMock).toHaveBeenCalledTimes(1);
         expect(container.querySelector('[data-sheet]')).toBeNull();
         expect(bluetooth.takeVirtualWall).not.toHaveBeenCalled();
 
@@ -400,5 +410,56 @@ describe('DevicePickerSheet', () => {
       const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       expect(code).not.toMatch(/hasLeds|updateBoard|setActiveBoard/i);
     });
+  });
+});
+
+// #5654: an empty scan used to end in an OK-only alert, with no way to try again
+// short of finding the bulb again. The adapters now leave the picker up in this
+// state (see use-board-bluetooth.test.ts, "when the picker scan finds nothing").
+describe('DevicePickerSheet Scan again', () => {
+  beforeEach(() => {
+    stats.noneMatchedSelectedType = false;
+    locationHint.shouldOfferLocationGrant = false;
+    locationHint.wasGranted = false;
+    locationHint.shouldOfferLocationServicesEnable = false;
+    locationHint.servicesWereEnabled = false;
+  });
+
+  const scanAgainButton = (root: HTMLElement) =>
+    root.querySelector('[data-button="ble.scanAgain"]') as HTMLButtonElement | null;
+
+  it('offers Scan again next to "No boards found nearby" and the tips', () => {
+    const onScanAgain = vi.fn();
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain })} />);
+
+    expect(hasText(container, 'ble.noDevicesFound')).toBe(true);
+    expect(hasText(container, 'ble.troubleshootTips')).toBe(true);
+    act(() => scanAgainButton(container)?.click());
+    expect(onScanAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps it alongside the location hint, whose "granted" copy asks for a fresh scan', () => {
+    locationHint.wasGranted = true;
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain: vi.fn() })} />);
+
+    expect(hasText(container, 'ble.locationHintGranted')).toBe(true);
+    expect(scanAgainButton(container)).not.toBeNull();
+  });
+
+  it('hides it while the first scan is still running', () => {
+    const { container } = render(<DevicePickerSheet {...makeProps({ isScanning: true, onScanAgain: vi.fn() })} />);
+    expect(scanAgainButton(container)).toBeNull();
+  });
+
+  it('hides it once boards are listed', () => {
+    const { container } = render(
+      <DevicePickerSheet {...makeProps({ devices: [device('a')], onScanAgain: vi.fn() })} />,
+    );
+    expect(scanAgainButton(container)).toBeNull();
+  });
+
+  it('renders nothing where no host wires a rescan', () => {
+    const { container } = render(<DevicePickerSheet {...makeProps({ onScanAgain: undefined })} />);
+    expect(scanAgainButton(container)).toBeNull();
   });
 });

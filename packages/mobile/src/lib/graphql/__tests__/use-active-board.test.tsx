@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 // AsyncStorage-backed preference store (in-memory).
@@ -41,8 +41,7 @@ const otherBoard = {
   angle: 40,
 } as unknown as UserBoard;
 
-function wrapper() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function wrapper(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -57,8 +56,13 @@ async function resetAsyncStorage() {
 
 describe('useActiveBoard', () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
     vi.resetModules();
     await resetAsyncStorage();
+  });
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
   });
 
   it('returns the stored board', async () => {
@@ -77,6 +81,60 @@ describe('useActiveBoard', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBeNull();
+  });
+
+  it('retries a local read while offline without waiting for connectivity', async () => {
+    const { setStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const { useActiveBoard } = await import('../use-active-board');
+    const readStoredPreference = vi.spyOn(asyncStorage, 'getItem');
+    const removeStoredPreference = vi.spyOn(asyncStorage, 'removeItem');
+    await setStoredActiveBoard(storedBoard);
+    readStoredPreference
+      .mockRejectedValueOnce(new Error('Storage temporarily unavailable'))
+      .mockRejectedValueOnce(new Error('Storage still unavailable'));
+    onlineManager.setOnline(false);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { networkMode: 'offlineFirst', retry: 2, retryDelay: 0 } },
+    });
+
+    const { result } = renderHook(() => useActiveBoard(), { wrapper: wrapper(queryClient) });
+
+    await waitFor(() => expect(result.current.data).toEqual(storedBoard));
+    expect(result.current.isSuccess).toBe(true);
+    expect(readStoredPreference).toHaveBeenCalledTimes(3);
+    expect(onlineManager.isOnline()).toBe(false);
+    expect(removeStoredPreference).not.toHaveBeenCalled();
+  });
+
+  it('bounds failed reads and restores the saved board on retry without rewriting it', async () => {
+    const { setStoredActiveBoard, getStoredActiveBoard } = await import('../../active-board-store');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const { useActiveBoard } = await import('../use-active-board');
+    const readStoredPreference = vi.spyOn(asyncStorage, 'getItem');
+    const writeStoredPreference = vi.spyOn(asyncStorage, 'setItem');
+    const removeStoredPreference = vi.spyOn(asyncStorage, 'removeItem');
+    await setStoredActiveBoard(storedBoard);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      readStoredPreference.mockRejectedValueOnce(new Error('Storage temporarily unavailable'));
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, retryDelay: 0 } } });
+    const { result } = renderHook(() => useActiveBoard(), { wrapper: wrapper(queryClient) });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isSuccess).toBe(false);
+    expect(readStoredPreference).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual(storedBoard));
+    expect(result.current.isSuccess).toBe(true);
+    await expect(getStoredActiveBoard()).resolves.toEqual(storedBoard);
+    expect(writeStoredPreference).toHaveBeenCalledTimes(1);
+    expect(removeStoredPreference).not.toHaveBeenCalled();
   });
 
   it('setActiveBoard persists and updates the cache so reads see the new board', async () => {

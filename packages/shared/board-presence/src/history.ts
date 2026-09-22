@@ -9,9 +9,14 @@ function sortableTimestamp(timestamp: string): string {
   return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString().replace('Z', '000Z') : '';
 }
 
+/** Compare actual display times, including upstream microseconds, without arrival sequence. */
+export function compareBoardDisplayTimes(left: string, right: string): number {
+  return sortableTimestamp(left).localeCompare(sortableTimestamp(right));
+}
+
 /** Arrival sequence is a tie-breaker, never the time an imported climb was displayed. */
 export function compareBoardHistoryEntries(left: BoardPresenceClimb, right: BoardPresenceClimb): number {
-  return sortableTimestamp(right.sentAt).localeCompare(sortableTimestamp(left.sentAt)) || right.seq - left.seq;
+  return compareBoardDisplayTimes(right.sentAt, left.sentAt) || right.seq - left.seq;
 }
 
 export function boardHistoryEntryKey(climb: BoardPresenceClimb): string {

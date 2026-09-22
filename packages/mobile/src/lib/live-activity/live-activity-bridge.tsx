@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBoardCapabilities, toBoardName, boardSupportsMirroring } from '@boardsesh/board-config';
 import { nativeBleSupportsBoard } from '../ble/adapter-factory';
+import { trackBoardConnectTapped } from '../analytics-board-connect';
 import { requestedBoardRenderMode, useBoardRenderSettings } from '../board-render-settings';
 import { resolveClimbRenderBoard } from '../boards/climb-render-board';
 import { useQueue } from '../../providers/queue-provider';
@@ -195,17 +196,20 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       const bluetoothCtx = bluetoothRef.current;
       if (!bluetoothCtx) return;
       if (event.action === 'reconnect') {
-        // The connect ATTEMPT is not tracked — Bluetooth Connection Success /
-        // Failed record the outcome a few hundred ms later, which is the question
-        // the BLE health dashboard actually asks.
+        // Bluetooth Connection Success / Failed record the outcome a few hundred
+        // ms later. The tap is tracked too, like every other connect control
+        // (#5654): one that dies at a blocked permission or a radio that's off
+        // never reaches either outcome event.
+        const reconnectSerial = bluetoothCtx.reconnectSerialForCurrentBoard ?? undefined;
+        const reconnectDeviceId = bluetoothCtx.reconnectDeviceIdForCurrentBoard ?? undefined;
+        trackBoardConnectTapped({
+          surface: 'notification',
+          boardName: bluetoothCtx.boardName,
+          reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+        });
         bluetoothCtx.armUndoWallChangeToast();
         // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
-        void bluetoothCtx.connect(
-          undefined,
-          undefined,
-          bluetoothCtx.reconnectSerialForCurrentBoard ?? undefined,
-          bluetoothCtx.reconnectDeviceIdForCurrentBoard ?? undefined,
-        );
+        void bluetoothCtx.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
       } else if (event.action === 'reassert') {
         // A re-push of the current climb — no climb change to undo, so no toast.
         bluetoothCtx.reassertWall();

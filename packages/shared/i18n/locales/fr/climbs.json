@@ -203,6 +203,12 @@
     "namePlaceholder": "Nom du bloc",
     "descriptionPlaceholder": "Ajoutez du beta ou des notes sur votre bloc...",
     "dismiss": "Ignorer",
+    "cannotOpen": {
+      "boardCannotAuthor": "Tu ne peux pas encore ouvrir de blocs sur cette board.",
+      "boardConfigIncomplete": "Les détails de la board sont manquants ou invalides. Choisis à nouveau la board pour ouvrir ton bloc.",
+      "noUsableBoard": "Choisis d'abord une board, puis ouvre ton bloc.",
+      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board."
+    },
     "alerts": {
       "publishDuplicateNamed": "Cette configuration de prises correspond à « {{name}} ». Activez Brouillon pour l'enregistrer sans la publier, ou changez une prise.",
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
@@ -354,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Suis ton mur",
-        "subtitle": "Choisis la board où tu grimpes pour parcourir ses blocs et voir ce qui est allumé en ce moment.",
+        "title": "Choisis ta board",
+        "subtitle": "Sélectionne la board où tu grimpes pour parcourir ses blocs et les allumer.",
         "cta": "Trouver ma board"
       },
       "noClimbs": {
@@ -385,6 +391,10 @@
       "offlineCatalogQueued": {
         "title": "En file d’attente",
         "subtitle": "{{name}} se télécharge dès que tu es reconnecté, et ses blocs apparaîtront dans la recherche."
+      },
+      "boardRestoreFailed": {
+        "title": "Impossible de retrouver ta board",
+        "description": "Réessaie pour retrouver tes blocs."
       }
     },
     "detail": {
@@ -453,7 +463,6 @@
         "sort": "Tri"
       },
       "popularity": "Popularité",
-      "shape": "Forme",
       "collection": {
         "label": "Collection",
         "any": "Toutes"
@@ -511,9 +520,11 @@
       "tall": "Voies hautes uniquement",
       "tallClimbs": "Voies hautes",
       "tallDescription": "Atteignent le haut du mur",
+      "tallLockedHint": "Verrouillé. Appuie longuement sur le filtre « Hautes » pour le déverrouiller.",
       "wide": "Voies larges uniquement",
       "wideClimbs": "Voies larges",
       "wideDescription": "Utilisent l'extension 10x10",
+      "wideLockedHint": "Verrouillé. Appuie longuement sur le filtre « Larges » pour le déverrouiller.",
       "betaVideos": "Avec vidéo de beta uniquement",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
@@ -551,7 +562,9 @@
       "chips": {
         "filtersWithCount": "Filtres · {{count}}",
         "tall": "Hautes",
-        "wide": "Larges"
+        "wide": "Larges",
+        "lock": "Verrouiller",
+        "unlock": "Déverrouiller"
       },
       "removeFilterAria": "Retirer {{filter}}"
     },
@@ -642,6 +655,7 @@
     },
     "climbActions": {
       "preview": "Aperçu",
+      "playNext": "Mettre juste après",
       "copyLink": "Copier le lien",
       "linkCopied": "Lien copié",
       "nameCopied": "Nom copié",
@@ -654,7 +668,8 @@
       "edit": "Modifier la voie",
       "editEntry": "Modifier l'entrée du carnet",
       "report": "Signaler le bloc",
-      "closeOverlay": "Fermer les actions de la voie"
+      "closeOverlay": "Fermer les actions de la voie",
+      "openQueue": "Ouvrir la file"
     },
     "create": {
       "brush": {

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
-import { DEFAULT_PINNED_CHIPS, normalizePinnedChips, type PinnableChipKind } from './pinnable-chips';
+import {
+  DEFAULT_PINNED_CHIPS,
+  normalizePinnedChips,
+  toStoredPinnedChips,
+  type PinnableChipKind,
+} from './pinnable-chips';
 
 // Which filter chips the user has pinned to the persistent chip row. A non-secret
 // UI-layout preference → AsyncStorage via preference-store (NOT SecureStore).
@@ -29,8 +34,10 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
+// Written in the rollback-safe form (see toStoredPinnedChips): an older bundle
+// reading this key still finds the Shape chip it knows when Tall + Wide are pinned.
 async function persist(kinds: readonly PinnableChipKind[]): Promise<void> {
-  await setPreference(STORAGE_KEY, kinds);
+  await setPreference(STORAGE_KEY, toStoredPinnedChips(kinds));
 }
 
 export async function loadPinnedChips(): Promise<readonly PinnableChipKind[]> {

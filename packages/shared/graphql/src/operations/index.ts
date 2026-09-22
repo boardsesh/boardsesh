@@ -7,6 +7,7 @@ export * from './comments-votes';
 export * from './boards';
 export * from './board-presence';
 export * from './gyms';
+export * from './places';
 export * from './gym-kiosks';
 export * from './notifications';
 export * from './activity-feed';
