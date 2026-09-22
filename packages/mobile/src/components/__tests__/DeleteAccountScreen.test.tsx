@@ -11,7 +11,7 @@ import { createElement, type ReactNode } from 'react';
 // stub the leaf components + providers so this stays a focused unit test.
 
 const ctrl = vi.hoisted(() => ({
-  infoData: undefined as number | undefined,
+  infoData: undefined as { publishedClimbCount: number; hasActiveStripeSubscription: boolean } | undefined,
   infoLoading: false,
   mutateAsync: vi.fn(),
   signOut: vi.fn(),
@@ -94,7 +94,7 @@ const CONFIRM_BTN = 'deleteAccount.dialog.confirm';
 const CONFIRM_PLACEHOLDER = 'deleteAccount.dialog.confirmPlaceholder';
 
 beforeEach(() => {
-  ctrl.infoData = 0;
+  ctrl.infoData = { publishedClimbCount: 0, hasActiveStripeSubscription: false };
   ctrl.infoLoading = false;
   ctrl.mutateAsync.mockReset().mockResolvedValue(true);
   ctrl.signOut.mockReset().mockResolvedValue(undefined);
@@ -131,18 +131,18 @@ describe('DeleteAccountScreen', () => {
   });
 
   it('shows the setter-name toggle only when there are published climbs', () => {
-    ctrl.infoData = 0;
+    ctrl.infoData = { publishedClimbCount: 0, hasActiveStripeSubscription: false };
     const withoutClimbs = render(<DeleteAccountScreen />);
     expect(withoutClimbs.queryByTestId('setter-toggle')).toBeNull();
     withoutClimbs.unmount();
 
-    ctrl.infoData = 3;
+    ctrl.infoData = { publishedClimbCount: 3, hasActiveStripeSubscription: false };
     const withClimbs = render(<DeleteAccountScreen />);
     expect(withClimbs.queryByTestId('setter-toggle')).not.toBeNull();
   });
 
   it('deletes with the chosen setter-name option then signs out', async () => {
-    ctrl.infoData = 2;
+    ctrl.infoData = { publishedClimbCount: 2, hasActiveStripeSubscription: false };
     const { getByTestId, getByPlaceholderText } = render(<DeleteAccountScreen />);
 
     fireEvent.click(getByTestId('setter-toggle')); // opt in to removing setter name

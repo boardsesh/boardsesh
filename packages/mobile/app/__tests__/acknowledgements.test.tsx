@@ -9,6 +9,9 @@ const discord = vi.hoisted(() => ({ openDiscordInvite: vi.fn() }));
 // Donation links are region-gated (see src/lib/donation-links.ts). Flipped per
 // test: allowed renders the CTA, not-allowed renders unlinked text.
 const donationLinks = vi.hoisted(() => ({ allowed: false }));
+const publicSupporters = vi.hoisted(() => ({
+  items: [{ userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' }],
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -58,6 +61,9 @@ vi.mock('../../src/lib/donation-links', () => ({
   SUPPORT_URL_DISPLAY: 'boardsesh.com/support',
   useDonationLinksAllowed: () => donationLinks.allowed,
 }));
+vi.mock('../../src/lib/graphql/hooks/use-public-supporters', () => ({
+  usePublicSupporters: () => ({ data: publicSupporters.items }),
+}));
 
 vi.mock('../../src/components/Button', () => ({
   Button: ({ onPress, title }: { onPress: () => void; title: string }) =>
@@ -104,6 +110,9 @@ beforeEach(() => {
   openUrl.openExternalUrl.mockClear();
   discord.openDiscordInvite.mockClear();
   donationLinks.allowed = false;
+  publicSupporters.items = [
+    { userId: 'stripe-user', displayName: 'Stripe Climber', avatarUrl: null, supportedAt: '2026-09-22' },
+  ];
 });
 
 describe('AcknowledgementsScreen', () => {
@@ -121,6 +130,17 @@ describe('AcknowledgementsScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Shuying Zhang' }));
 
     expect(openUrl.openExternalUrl).toHaveBeenCalledWith('https://github.com/bluejayio', 'acknowledgements');
+  });
+
+  it('opens a Stripe supporter in their Boardsesh profile', () => {
+    render(<AcknowledgementsScreen />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stripe Climber' }));
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/[userId]',
+      params: { userId: 'stripe-user' },
+    });
   });
 
   it('thanks private sponsors as an anonymous count', () => {

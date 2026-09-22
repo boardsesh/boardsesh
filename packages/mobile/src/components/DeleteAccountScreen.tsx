@@ -65,7 +65,8 @@ export function DeleteAccountScreen() {
 
   // On a failed info fetch, `data` is undefined → treat as no published climbs
   // (hide the setter-name option) but still allow deletion, matching web.
-  const publishedClimbCount = infoQuery.data ?? 0;
+  const publishedClimbCount = infoQuery.data?.publishedClimbCount ?? 0;
+  const hasActiveStripeSubscription = infoQuery.data?.hasActiveStripeSubscription ?? false;
   const hasPublishedClimbs = publishedClimbCount > 0;
   const isConfirmed = confirmText === CONFIRM_PHRASE;
 
@@ -119,6 +120,14 @@ export function DeleteAccountScreen() {
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.checking}>
           {t('deleteAccount.dialog.checking')}
         </Text>
+      ) : null}
+
+      {hasActiveStripeSubscription ? (
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <Text variant="body" color={systemColors.secondaryLabel}>
+            {t('deleteAccount.dialog.stripeCancellation')}
+          </Text>
+        </View>
       ) : null}
 
       {hasPublishedClimbs ? (
