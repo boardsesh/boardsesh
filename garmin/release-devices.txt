@@ -1,0 +1,20 @@
+# Which of manifest.xml's products get a published .prg on every main build.
+#
+# Every id here MUST also appear in garmin/manifest.xml -- garmin-release.yml
+# fails the build otherwise. Adding a watch is a one-line edit and costs about
+# five seconds of build time, so if someone asks for theirs, just add it.
+#
+# Deliberately not published yet (ask and they go in): fenixe, fenix8solar51mm,
+# fr255s, fr255m, fr255sm, fr265s, fr955, venu2, venu2s, venu3s, vivoactive4s.
+fenix7
+fenix7s
+fenix7x
+fenix843mm
+fenix847mm
+fenix8solar47mm
+epix2
+fr255
+fr265
+fr965
+venu3
+vivoactive4

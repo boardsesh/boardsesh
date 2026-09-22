@@ -1,0 +1,145 @@
+name: Garmin CI
+
+# Compile gate for the Connect IQ watch app in garmin/. Runs only when that
+# directory changes -- the app has no JS, no package.json, and is not a pnpm
+# workspace member, so ci.yml never sees it. Same shape as firmware-tests.yml,
+# which guards the other non-vp toolchain (embedded/).
+#
+# Deliberately NOT a job inside ci.yml: that workflow's `changes` job hardcodes
+# every filter output to 'true' on push, so a Garmin job there would compile on
+# every single push to main.
+
+on:
+  pull_request:
+    paths:
+      - 'garmin/**'
+      - '.github/workflows/garmin-ci.yml'
+
+concurrency:
+  group: garmin-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # One device is enough for a PR: the Monkey C sources are shared across all
+  # products and a per-device break is almost always a resource/layout issue,
+  # which garmin-release.yml catches across the published set within minutes of
+  # merge. fenix7 is the oldest API surface in the manifest, so it is the
+  # strictest single choice.
+  CIQ_DEVICE: fenix7
+  # `monkeyc -w` emits this many WARNING lines on fenix7 today (24 as of
+  # 2026-09-23), including the known 60x60 launcher-icon placeholder and the
+  # empty FitUnitNone string. The gate fails only if the count GOES UP, so
+  # fixing the icon needs no edit here. If you legitimately add one, update this
+  # number in the same PR and say why.
+  CIQ_WARNING_BASELINE: '24'
+
+jobs:
+  compile:
+    name: compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Holds GARMIN_USERNAME / GARMIN_PASSWORD. The signing key lives here too
+    # but this workflow never reads it -- PR builds are signed with a throwaway
+    # key (see below).
+    environment: Garmin
+    # Fork PRs cannot read secrets, so they cannot download the SDK, so this job
+    # cannot run for them. Skipping is honest; failing would be noise. A
+    # maintainer who wants the gate on a fork contribution pushes the branch to
+    # this repo and reopens the PR.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java
+        # monkeyc and monkeydo are JVM wrappers -- bin/monkeydo is literally
+        # `java -classpath monkeybrains.jar ...`.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install the Connect IQ SDK
+        uses: ./.github/actions/connectiq-sdk
+        with:
+          sdk-version: ${{ vars.CIQ_SDK_VERSION }}
+          sdk-manager-version: ${{ vars.CIQ_SDK_MANAGER_VERSION }}
+          agreement-hash: ${{ vars.CIQ_AGREEMENT_HASH }}
+          devices: ${{ env.CIQ_DEVICE }}
+          garmin-username: ${{ secrets.GARMIN_USERNAME }}
+          garmin-password: ${{ secrets.GARMIN_PASSWORD }}
+
+      - name: Mint a throwaway signing key
+        # monkeyc -y wants a key for every build, but nothing compiled on a PR is
+        # ever installed or distributed, so the real developer_key has no reason
+        # to be here. It is irreplaceable -- the Connect IQ Store rejects an
+        # update signed with a different key -- so the fewer jobs that touch it,
+        # the better. $RUNNER_TEMP, never the workspace, so no artifact glob can
+        # pick it up.
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          openssl genrsa -out "$RUNNER_TEMP/dev.pem" 4096 2>/dev/null
+          openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt \
+            -in "$RUNNER_TEMP/dev.pem" -out "$RUNNER_TEMP/developer_key"
+          rm -f "$RUNNER_TEMP/dev.pem"
+
+      - name: Compile the app
+        run: |
+          set -Eeuo pipefail
+          # No -l flag: the default (gradual) type check is what the app is
+          # written against. -l 3 reports 254 errors on the current source and
+          # produces no .prg at all, so turning it on is a source-cleanup
+          # project, not a CI setting.
+          monkeyc -f garmin/monkey.jungle -w \
+            -o "$RUNNER_TEMP/boardsesh.prg" \
+            -y "$RUNNER_TEMP/developer_key" \
+            -d "$CIQ_DEVICE" 2>&1 | tee "$RUNNER_TEMP/compile.log"
+
+      - name: Check the warning count did not grow
+        run: |
+          set -Eeuo pipefail
+          count="$(grep -cE '^WARNING' "$RUNNER_TEMP/compile.log" || true)"
+          echo "monkeyc warnings: $count (baseline $CIQ_WARNING_BASELINE)"
+          if [ "$count" -gt "$CIQ_WARNING_BASELINE" ]; then
+            echo "::error::monkeyc emitted $count warnings, up from $CIQ_WARNING_BASELINE. Fix them, or raise CIQ_WARNING_BASELINE in this workflow and explain why in the PR."
+            grep -E '^WARNING' "$RUNNER_TEMP/compile.log" || true
+            exit 1
+          fi
+          {
+            echo "### Garmin compile"
+            echo
+            echo "- device: \`$CIQ_DEVICE\`"
+            echo "- warnings: $count / $CIQ_WARNING_BASELINE baseline"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compile the staging flavour
+        # monkey-staging.jungle is the only consumer of the (:staging) annotation
+        # in source/config/BuildConfig.mc. Nothing else builds it, so without
+        # this step it rots silently until someone needs a staging build.
+        run: |
+          set -Eeuo pipefail
+          monkeyc -f "garmin/monkey.jungle;garmin/monkey-staging.jungle" -w \
+            -o "$RUNNER_TEMP/boardsesh-staging.prg" \
+            -y "$RUNNER_TEMP/developer_key" \
+            -d "$CIQ_DEVICE"
+
+      - name: Compile the unit-test target
+        # Type-checks garmin/tests/*.mc, which the normal build excludes. The
+        # tests are not EXECUTED here: monkeydo needs the Connect IQ simulator,
+        # a Qt GUI app that is documented upstream to segfault and hang under
+        # Xvfb. Running them stays a manual pre-submission step (garmin/README.md
+        # section 5).
+        run: |
+          set -Eeuo pipefail
+          monkeyc -f garmin/monkey.jungle -w \
+            -o "$RUNNER_TEMP/boardsesh-test.prg" \
+            -y "$RUNNER_TEMP/developer_key" \
+            -d "$CIQ_DEVICE" -t
+
+      - name: Destroy the throwaway key
+        if: always()
+        run: shred -u "$RUNNER_TEMP/developer_key" 2>/dev/null || true
