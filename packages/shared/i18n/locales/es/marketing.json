@@ -220,6 +220,28 @@
     }
   },
   "support": {
+    "stripe": {
+      "title": "Apoya con Stripe",
+      "body": "Elige el importe y paga con tarjeta, Apple Pay o Google Pay. No necesitas una cuenta de GitHub.",
+      "amount": "Importe (USD)",
+      "amountError": "Elige un importe entre 1 y 500 dólares.",
+      "monthly": "Mensual",
+      "oneTime": "Una vez",
+      "publicCredit": "Inclúyeme en la página Acerca de",
+      "publicCreditSignIn": "Inicia sesión para aparecer en los agradecimientos",
+      "publicCreditHint": "Opcional. Mostramos tu nombre y avatar de Boardsesh, nunca el importe.",
+      "cta": "Apoyar con Stripe",
+      "processing": "Abriendo Stripe…",
+      "error": "No se pudo abrir Stripe. Inténtalo de nuevo.",
+      "thanks": "Gracias por apoyar Boardsesh. Tu reconocimiento aparecerá cuando Stripe confirme el pago.",
+      "cancelled": "El pago se canceló. No se realizó ningún cargo.",
+      "unavailable": "El pago con tarjeta no está disponible temporalmente. Puedes usar GitHub Sponsors abajo."
+    },
+    "manage": {
+      "title": "Tu apoyo con Stripe",
+      "publicCredit": "Mostrarme en la página Acerca de",
+      "billing": "Gestionar pagos en Stripe"
+    },
     "hero": {
       "title": "Mantén Boardsesh en marcha",
       "subtitle": "Gratis, de código abierto y pagado por escaladores"

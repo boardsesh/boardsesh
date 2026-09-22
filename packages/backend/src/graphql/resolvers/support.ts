@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, lt } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { randomUUID } from 'node:crypto';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -144,12 +144,6 @@ export const supportMutations = {
 
     const claimId = userId ? randomUUID() : null;
     if (userId) {
-      // Checkout can remain valid for a full day, and delayed-payment
-      // webhooks can arrive later. Keep a week of delivery grace, then bound
-      // abandoned claims globally even if their owners never return.
-      await db
-        .delete(dbSchema.stripeSupportClaims)
-        .where(lt(dbSchema.stripeSupportClaims.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
       // Persist the authoritative claim before asking Stripe to create a
       // payable session. The signed webhook can therefore grant credit even
       // if the post-create bookkeeping update below fails.
