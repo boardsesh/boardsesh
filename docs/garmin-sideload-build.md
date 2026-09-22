@@ -19,9 +19,17 @@ https://github.com/boardsesh/boardsesh/releases/download/garmin-latest/boardsesh
 https://github.com/boardsesh/boardsesh/releases/download/garmin-latest/SHA256SUMS.txt
 ```
 
-Link those from docs, the app and Discord. Every build deletes and recreates the
-tag, so the URL always serves the newest `main`. Per-commit archaeology comes
-from the 30-day `garmin-prg` Actions artifact on each run, not from the tag.
+Link those from docs, the app and Discord. Every build moves the tag to the new
+commit and updates the release **in place** — assets are re-uploaded with
+`--clobber` and any asset for a watch that left `release-devices.txt` is pruned.
+It is deliberately not delete-then-recreate: this release is the only way to
+install the app, so a publish that failed halfway after a delete would leave
+every climber with no download at all.
+
+`garmin-latest` sits outside the "Protect native release tags" ruleset
+(`build-*`, `fingerprint-*`, `release/*`), so `GITHUB_TOKEN` can move it.
+Per-commit archaeology comes from the 30-day `garmin-prg` Actions artifact on
+each run, not from the tag.
 
 ## How it runs
 

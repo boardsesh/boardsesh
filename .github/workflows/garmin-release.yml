@@ -172,20 +172,45 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
+          tag=garmin-latest
+          title="Boardsesh for Garmin (main-${GITHUB_SHA:0:7})"
+          release="$RUNNER_TEMP/release"
+
           # Mutable on purpose. The URL under this tag is the one the docs, the
           # app and Discord hand people, so it has to keep working across builds.
-          # Per-commit archaeology is covered by the 30-day Actions artifact above.
-          gh release delete garmin-latest --yes --cleanup-tag 2>/dev/null \
-            || gh release delete garmin-latest --yes 2>/dev/null \
-            || true
-          git push origin --delete garmin-latest 2>/dev/null || true
-          gh release create garmin-latest \
-            --title "Boardsesh for Garmin (main-${GITHUB_SHA:0:7})" \
-            --target "$GITHUB_SHA" \
-            --notes-file "$RUNNER_TEMP/notes.md" \
-            --prerelease \
-            "$RUNNER_TEMP/release"/*
-          echo "::notice::Published https://github.com/${GITHUB_REPOSITORY}/releases/tag/garmin-latest"
+          # Per-commit archaeology is covered by the 30-day Actions artifact.
+          #
+          # Updated in place rather than deleted and recreated: this release is
+          # the ONLY way to install the app, so a publish that failed halfway
+          # after a delete would leave every climber with no download at all.
+          # `garmin-latest` is outside the "Protect native release tags" ruleset
+          # (build-* / fingerprint-* / release/*), so GITHUB_TOKEN can move it.
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$tag"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$release"/* --clobber
+            gh release edit "$tag" \
+              --title "$title" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --prerelease
+            # Drop assets for watches that have since left release-devices.txt,
+            # which --clobber alone would leave behind forever.
+            gh release view "$tag" --json assets --jq '.assets[].name' \
+              | while read -r asset; do
+                  [ -e "$release/$asset" ] && continue
+                  echo "removing stale asset: $asset"
+                  gh release delete-asset "$tag" "$asset" --yes
+                done
+          else
+            gh release create "$tag" \
+              --title "$title" \
+              --target "$GITHUB_SHA" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --prerelease \
+              "$release"/*
+          fi
+          echo "::notice::Published https://github.com/${GITHUB_REPOSITORY}/releases/tag/$tag"
 
       - name: Verify the published assets match what we built
         env:
