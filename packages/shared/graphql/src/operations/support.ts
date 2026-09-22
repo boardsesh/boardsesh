@@ -20,8 +20,8 @@ export const GET_SUPPORT_PAGE = gql`
 `;
 
 export const GET_PUBLIC_SUPPORTERS = gql`
-  query GetPublicSupporters {
-    publicSupporters {
+  query GetPublicSupporters($limit: Int!, $offset: Int!) {
+    publicSupporters(limit: $limit, offset: $offset) {
       userId
       displayName
       avatarUrl
@@ -87,3 +87,17 @@ export type GetSupportPageResponse = {
 };
 
 export type GetPublicSupportersResponse = { publicSupporters: PublicSupporter[] };
+export type GetPublicSupportersVariables = { limit: number; offset: number };
+
+export const PUBLIC_SUPPORTERS_PAGE_SIZE = 500;
+
+export async function fetchAllPublicSupporters(
+  requestPage: (variables: GetPublicSupportersVariables) => Promise<GetPublicSupportersResponse>,
+): Promise<PublicSupporter[]> {
+  const supporters: PublicSupporter[] = [];
+  for (let offset = 0; ; offset += PUBLIC_SUPPORTERS_PAGE_SIZE) {
+    const page = await requestPage({ limit: PUBLIC_SUPPORTERS_PAGE_SIZE, offset });
+    supporters.push(...page.publicSupporters);
+    if (page.publicSupporters.length < PUBLIC_SUPPORTERS_PAGE_SIZE) return supporters;
+  }
+}

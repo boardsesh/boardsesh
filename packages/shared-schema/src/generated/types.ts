@@ -6943,6 +6943,12 @@ export type QueryPublicProfileArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPublicSupportersArgs = {
+  limit?: Scalars['Int']['input'];
+  offset?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryQaPreviewsArgs = {
   includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
   prNumbers: Array<Scalars['Int']['input']>;
@@ -14706,7 +14712,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryPublicProfileArgs, 'userId'>
   >;
-  publicSupporters?: Resolver<Array<ResolversTypes['PublicSupporter']>, ParentType, ContextType>;
+  publicSupporters?: Resolver<
+    Array<ResolversTypes['PublicSupporter']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryPublicSupportersArgs, 'limit' | 'offset'>
+  >;
   qaPreviews?: Resolver<
     Array<ResolversTypes['QaPreview']>,
     ParentType,

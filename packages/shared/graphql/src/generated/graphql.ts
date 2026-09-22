@@ -6940,6 +6940,12 @@ export type QueryPublicProfileArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPublicSupportersArgs = {
+  limit?: Scalars['Int']['input'];
+  offset?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryQaPreviewsArgs = {
   includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
   prNumbers: Array<Scalars['Int']['input']>;
@@ -13592,7 +13598,10 @@ export type GetSupportPageQuery = {
   };
 };
 
-export type GetPublicSupportersQueryVariables = Exact<{ [key: string]: never }>;
+export type GetPublicSupportersQueryVariables = Exact<{
+  limit: Scalars['Int']['input'];
+  offset: Scalars['Int']['input'];
+}>;
 
 export type GetPublicSupportersQuery = {
   __typename?: 'Query';
@@ -22234,12 +22243,36 @@ export const GetPublicSupportersDocument = {
       kind: 'OperationDefinition',
       operation: 'query',
       name: { kind: 'Name', value: 'GetPublicSupporters' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } } },
+        },
+      ],
       selectionSet: {
         kind: 'SelectionSet',
         selections: [
           {
             kind: 'Field',
             name: { kind: 'Name', value: 'publicSupporters' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'limit' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'offset' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+              },
+            ],
             selectionSet: {
               kind: 'SelectionSet',
               selections: [

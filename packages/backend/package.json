@@ -40,6 +40,7 @@
     "@boardsesh/email": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
     "@boardsesh/gym-claim": "workspace:*",
+    "@boardsesh/i18n": "workspace:*",
     "@boardsesh/kilter-sync": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",

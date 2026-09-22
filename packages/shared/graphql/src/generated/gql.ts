@@ -149,7 +149,7 @@ type Documents = {
   '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RequestSprayDetectionDocument;
   '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RetrySprayDetectionDocument;
   '\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n': typeof types.GetSupportPageDocument;
-  '\n  query GetPublicSupporters {\n    publicSupporters {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n': typeof types.GetPublicSupportersDocument;
+  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n': typeof types.GetPublicSupportersDocument;
   '\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n': typeof types.CreateSupportCheckoutDocument;
   '\n  mutation UpdateSupporterVisibility($showPublicly: Boolean!) {\n    updateSupporterVisibility(showPublicly: $showPublicly) {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n': typeof types.UpdateSupporterVisibilityDocument;
   '\n  mutation CreateSupportBillingPortal($locale: String) {\n    createSupportBillingPortalSession(locale: $locale) {\n      url\n    }\n  }\n': typeof types.CreateSupportBillingPortalDocument;
@@ -432,7 +432,7 @@ const documents: Documents = {
     types.RetrySprayDetectionDocument,
   '\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n':
     types.GetSupportPageDocument,
-  '\n  query GetPublicSupporters {\n    publicSupporters {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n':
+  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n':
     types.GetPublicSupportersDocument,
   '\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n':
     types.CreateSupportCheckoutDocument,
@@ -1291,8 +1291,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query GetPublicSupporters {\n    publicSupporters {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n',
-): (typeof documents)['\n  query GetPublicSupporters {\n    publicSupporters {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n'];
+  source: '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n',
+): (typeof documents)['\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -212,6 +212,9 @@ importers:
       '@boardsesh/gym-claim':
         specifier: workspace:*
         version: link:../shared/gym-claim
+      '@boardsesh/i18n':
+        specifier: workspace:*
+        version: link:../shared/i18n
       '@boardsesh/kilter-sync':
         specifier: workspace:*
         version: link:../kilter-sync

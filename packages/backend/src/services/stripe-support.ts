@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@boardsesh/i18n';
 
 export const SUPPORT_MINIMUM_AMOUNT = 100;
 export const SUPPORT_MAXIMUM_AMOUNT = 50_000;
@@ -28,7 +29,7 @@ export function getBoardseshBaseUrl(): string {
 }
 
 export function supportReturnUrl(locale?: string | null): string {
-  const localePrefix = locale && locale !== 'en-US' && ['es', 'fr', 'de'].includes(locale) ? `/${locale}` : '';
+  const localePrefix = isSupportedLocale(locale) && locale !== DEFAULT_LOCALE ? `/${locale}` : '';
   return `${getBoardseshBaseUrl()}${localePrefix}/support`;
 }
 
