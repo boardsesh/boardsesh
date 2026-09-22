@@ -88,10 +88,9 @@ export async function acceptCheckout(session: Stripe.Checkout.Session, eventCrea
           updatedAt: now,
         },
       });
-    await tx
-      .update(dbSchema.stripeSupportClaims)
-      .set({ completedAt: now })
-      .where(eq(dbSchema.stripeSupportClaims.id, claim.id));
+    // Removing the exact claim makes webhook retries a no-op and prevents
+    // completed Checkout bindings from accumulating indefinitely.
+    await tx.delete(dbSchema.stripeSupportClaims).where(eq(dbSchema.stripeSupportClaims.id, claim.id));
   });
 }
 

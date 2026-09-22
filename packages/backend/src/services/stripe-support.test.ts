@@ -29,7 +29,9 @@ describe('isLiveStripeSubscription', () => {
 
   it('excludes terminal or absent subscriptions', () => {
     expect(isLiveStripeSubscription('canceled')).toBe(false);
+    expect(isLiveStripeSubscription('incomplete')).toBe(false);
     expect(isLiveStripeSubscription('incomplete_expired')).toBe(false);
+    expect(isLiveStripeSubscription('paused')).toBe(false);
     expect(isLiveStripeSubscription('unpaid')).toBe(false);
     expect(isLiveStripeSubscription(null)).toBe(false);
   });

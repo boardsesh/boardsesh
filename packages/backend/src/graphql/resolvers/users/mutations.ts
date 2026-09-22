@@ -265,7 +265,9 @@ export const userMutations = {
       // Keep cancellation inside the transaction and after the other database
       // work. A Stripe failure rolls the transaction back, preserving the
       // explicit contract that deletion never leaves a linked subscription
-      // charging without its Boardsesh account.
+      // charging without its Boardsesh account. Stripe and Postgres cannot
+      // share a transaction: if the final DB commit fails after Stripe accepts
+      // cancellation, the account survives with cancellation scheduled.
       if (
         supporter?.subscriptionId &&
         isLiveStripeSubscription(supporter.subscriptionStatus) &&
