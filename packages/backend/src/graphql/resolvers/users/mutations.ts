@@ -272,15 +272,6 @@ export const userMutations = {
 
     const userId = ctx.userId!;
 
-    const [supporter] = await db
-      .select({
-        subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
-        subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
-        cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
-      })
-      .from(dbSchema.stripeSupporters)
-      .where(eq(dbSchema.stripeSupporters.userId, userId))
-      .limit(1);
     let deletedWallIds: number[] = [];
     await retryAccountDeletion(() =>
       db.transaction(async (tx) => {
@@ -293,6 +284,16 @@ export const userMutations = {
         // transaction keeps the lock until deletion commits and prevents the
         // migration from archiving favorites for an account being removed.
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL READ COMMITTED`);
+
+        const [supporter] = await tx
+          .select({
+            subscriptionId: dbSchema.stripeSupporters.stripeSubscriptionId,
+            subscriptionStatus: dbSchema.stripeSupporters.subscriptionStatus,
+            cancelAtPeriodEnd: dbSchema.stripeSupporters.cancelAtPeriodEnd,
+          })
+          .from(dbSchema.stripeSupporters)
+          .where(eq(dbSchema.stripeSupporters.userId, userId))
+          .limit(1);
         deletedWallIds = await deleteAccountSprayWalls(tx, userId);
         await withdrawDeletedAccountContent(tx, userId);
         await deleteAccountBoards(tx, userId);

@@ -13,8 +13,6 @@ import {
 } from '@boardsesh/graphql/operations/support';
 import { unstable_cache } from 'next/cache';
 
-export const dynamic = 'force-dynamic';
-
 const loadPublicSupporters = unstable_cache(
   async () => {
     const client = createGraphQLHttpClient();

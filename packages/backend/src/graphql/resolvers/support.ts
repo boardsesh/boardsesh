@@ -107,6 +107,11 @@ export const supportMutations = {
         extensions: { code: 'UNAUTHENTICATED' },
       });
     }
+    if (!isStripeSupportConfigured()) {
+      throw new GraphQLError('Stripe support is temporarily unavailable.', {
+        extensions: { code: 'SERVICE_UNAVAILABLE' },
+      });
+    }
 
     const stripe = getStripeClient();
     const userId = ctx.isAuthenticated ? ctx.userId : null;
@@ -188,7 +193,7 @@ export const supportMutations = {
     const [row] = await db
       .update(dbSchema.stripeSupporters)
       .set({ showPublicly, updatedAt: new Date() })
-      .where(eq(dbSchema.stripeSupporters.userId, ctx.userId!))
+      .where(and(eq(dbSchema.stripeSupporters.userId, ctx.userId!), isNotNull(dbSchema.stripeSupporters.supportedAt)))
       .returning();
     if (!row?.supportedAt) {
       throw new GraphQLError('No completed linked Stripe support was found.', { extensions: { code: 'NOT_FOUND' } });
@@ -202,6 +207,12 @@ export const supportMutations = {
     ctx: ConnectionContext,
   ) => {
     requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 10, 'createSupportBillingPortalSession');
+    if (!isStripeSupportConfigured()) {
+      throw new GraphQLError('Stripe support is temporarily unavailable.', {
+        extensions: { code: 'SERVICE_UNAVAILABLE' },
+      });
+    }
     const row = await loadSupporter(ctx.userId!);
     if (!row?.stripeCustomerId) {
       throw new GraphQLError('No linked Stripe billing account was found.', { extensions: { code: 'NOT_FOUND' } });
