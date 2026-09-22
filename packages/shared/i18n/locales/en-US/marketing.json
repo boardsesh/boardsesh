@@ -136,7 +136,7 @@
       "eyebrow": "Free, and staying that way",
       "title": "Boardsesh runs on climbers chipping in",
       "p1": "No ads, no locked screens, no second tier. Every part of Boardsesh stays open to everyone, sponsor or not — self-hosting included.",
-      "p2": "Hosting, the database and the bills behind them are paid by the people who use it.",
+      "p2": "Hosting, the database, and the bills behind them are paid by climbers.",
       "chipIn": "Chip in",
       "source": "Read the source",
       "otherWays": "Not got money spare?"
@@ -212,7 +212,7 @@
     },
     "otherWays": {
       "title": "Other ways to help",
-      "body": "Money is the slowest of these. Any of the four moves the app along.",
+      "body": "Money is the slowest of these. Any of them moves the app along.",
       "bug": {
         "title": "Report a bug",
         "body": "Tell us what broke, on which board, and what you expected instead.",
