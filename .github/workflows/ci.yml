@@ -308,6 +308,7 @@ jobs:
               - 'packages/location-sync/**'
               - 'packages/moonboard-ocr/**'
               - 'packages/shared-schema/**'
+              - 'packages/shared/acknowledgements/**'
               - 'packages/shared/analytics/**'
               - 'packages/shared/ble-protocol/**'
               - 'packages/shared/board-config/**'
