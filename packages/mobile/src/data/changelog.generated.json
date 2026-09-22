@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-09-21T23:48:11.616Z",
+  "generatedAt": "2026-09-22T08:09:26.080Z",
   "entries": [
+    {
+      "prNumber": 5231,
+      "category": "fixed",
+      "title": "Link your board account with clearer instructions and correctly spelled board names.",
+      "mergedAt": "2026-09-22T08:07:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5231"
+    },
+    {
+      "prNumber": 5649,
+      "category": "new",
+      "title": "Infrastructure DNS for the disaster-recovery standby. No user-facing change.",
+      "mergedAt": "2026-09-22T07:36:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5649"
+    },
+    {
+      "prNumber": 3466,
+      "category": "new",
+      "title": "This separate Garmin app is not shipped through the mobile app's release notes and still requires Connect IQ Store preparation.",
+      "mergedAt": "2026-09-22T07:33:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/3466"
+    },
     {
       "prNumber": 5634,
       "category": "fixed",
