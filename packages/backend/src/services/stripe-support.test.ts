@@ -25,12 +25,12 @@ describe('isLiveStripeSubscription', () => {
   it('treats chargeable and recoverable subscriptions as live', () => {
     expect(isLiveStripeSubscription('active')).toBe(true);
     expect(isLiveStripeSubscription('past_due')).toBe(true);
-    expect(isLiveStripeSubscription('unpaid')).toBe(true);
   });
 
   it('excludes terminal or absent subscriptions', () => {
     expect(isLiveStripeSubscription('canceled')).toBe(false);
     expect(isLiveStripeSubscription('incomplete_expired')).toBe(false);
+    expect(isLiveStripeSubscription('unpaid')).toBe(false);
     expect(isLiveStripeSubscription(null)).toBe(false);
   });
 });

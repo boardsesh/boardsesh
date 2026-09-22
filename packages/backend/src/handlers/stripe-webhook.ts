@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import type Stripe from 'stripe';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
@@ -15,7 +15,7 @@ import { logger } from '../utils/logger';
 
 const MAX_WEBHOOK_BYTES = 256 * 1024;
 
-async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
+export async function acceptCheckout(session: Stripe.Checkout.Session, eventCreated: number): Promise<void> {
   const claimId = session.client_reference_id;
   if (!claimId || session.payment_status !== 'paid') return;
   if (
@@ -27,6 +27,12 @@ async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
     logger.warn('[stripe-webhook] rejected checkout with unexpected amount or currency', { sessionId: session.id });
     return;
   }
+
+  const stripeSubscriptionId =
+    typeof session.subscription === 'string' ? session.subscription : (session.subscription?.id ?? null);
+  const subscription = stripeSubscriptionId
+    ? await getStripeClient().subscriptions.retrieve(stripeSubscriptionId)
+    : null;
 
   await db.transaction(async (tx) => {
     const [claim] = await tx
@@ -42,17 +48,19 @@ async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
     if (!claim || claim.completedAt) return;
 
     const stripeCustomerId = stripeId(session.customer);
-    const stripeSubscriptionId =
-      typeof session.subscription === 'string' ? session.subscription : (session.subscription?.id ?? null);
     const [existingSupporter] = await tx
       .select()
       .from(dbSchema.stripeSupporters)
       .where(eq(dbSchema.stripeSupporters.userId, claim.userId))
       .limit(1);
     const retainedSubscriptionId = stripeSubscriptionId ?? existingSupporter?.stripeSubscriptionId ?? null;
-    const retainedSubscriptionStatus = stripeSubscriptionId
-      ? 'active'
-      : (existingSupporter?.subscriptionStatus ?? null);
+    const retainedSubscriptionStatus = subscription?.status ?? existingSupporter?.subscriptionStatus ?? null;
+    const eventCreatedAt = new Date(eventCreated * 1000);
+    const retainedEventCreatedAt = subscription
+      ? existingSupporter?.stripeEventCreatedAt && existingSupporter.stripeEventCreatedAt > eventCreatedAt
+        ? existingSupporter.stripeEventCreatedAt
+        : eventCreatedAt
+      : (existingSupporter?.stripeEventCreatedAt ?? null);
     const now = new Date();
     await tx
       .insert(dbSchema.stripeSupporters)
@@ -61,6 +69,8 @@ async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
         stripeCustomerId,
         stripeSubscriptionId: retainedSubscriptionId,
         subscriptionStatus: retainedSubscriptionStatus,
+        stripeEventCreatedAt: retainedEventCreatedAt,
+        cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? existingSupporter?.cancelAtPeriodEnd ?? false,
         showPublicly: claim.showPublicly,
         supportedAt: now,
         updatedAt: now,
@@ -71,6 +81,8 @@ async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
           stripeCustomerId,
           stripeSubscriptionId: retainedSubscriptionId,
           subscriptionStatus: retainedSubscriptionStatus,
+          stripeEventCreatedAt: retainedEventCreatedAt,
+          cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? existingSupporter?.cancelAtPeriodEnd ?? false,
           showPublicly: claim.showPublicly,
           supportedAt: now,
           updatedAt: now,
@@ -83,16 +95,33 @@ async function acceptCheckout(session: Stripe.Checkout.Session): Promise<void> {
   });
 }
 
-async function updateSubscription(subscription: Stripe.Subscription): Promise<void> {
+export async function updateSubscription(subscription: Stripe.Subscription, eventCreated: number): Promise<void> {
+  const eventCreatedAt = new Date(eventCreated * 1000);
+  const [current] = await db
+    .select({ stripeEventCreatedAt: dbSchema.stripeSupporters.stripeEventCreatedAt })
+    .from(dbSchema.stripeSupporters)
+    .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id))
+    .limit(1);
+  if (current?.stripeEventCreatedAt && current.stripeEventCreatedAt >= eventCreatedAt) return;
+
   await db
     .update(dbSchema.stripeSupporters)
     .set({
       subscriptionStatus: subscription.status,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       stripeCustomerId: stripeId(subscription.customer),
+      stripeEventCreatedAt: eventCreatedAt,
       updatedAt: new Date(),
     })
-    .where(eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id));
+    .where(
+      and(
+        eq(dbSchema.stripeSupporters.stripeSubscriptionId, subscription.id),
+        or(
+          isNull(dbSchema.stripeSupporters.stripeEventCreatedAt),
+          lt(dbSchema.stripeSupporters.stripeEventCreatedAt, eventCreatedAt),
+        ),
+      ),
+    );
 }
 
 export async function handleStripeWebhook(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -120,11 +149,11 @@ export async function handleStripeWebhook(req: IncomingMessage, res: ServerRespo
   switch (event.type) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
-      await acceptCheckout(event.data.object);
+      await acceptCheckout(event.data.object, event.created);
       break;
     case 'customer.subscription.updated':
     case 'customer.subscription.deleted':
-      await updateSubscription(event.data.object);
+      await updateSubscription(event.data.object, event.created);
       break;
     default:
       break;

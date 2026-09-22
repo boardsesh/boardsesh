@@ -9,6 +9,8 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_SUPPORT_PAGE, type GetSupportPageResponse } from '@boardsesh/graphql/operations/support';
 import { resolveStripeDonateUrl } from './stripe-donate-url';
 
+export const dynamic = 'force-dynamic';
+
 export async function generateMetadata() {
   const { t, locale } = await getServerTranslation('marketing');
   return createPageMetadata({
