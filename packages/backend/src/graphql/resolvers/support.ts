@@ -164,6 +164,7 @@ export const supportMutations = {
     const returnUrl = supportReturnUrl(input.locale);
     const session = await stripe.checkout.sessions.create({
       mode: input.cadence === 'MONTHLY' ? 'subscription' : 'payment',
+      customer_creation: input.cadence === 'ONE_TIME' && !existing?.stripeCustomerId ? 'always' : undefined,
       client_reference_id: claimId ?? undefined,
       customer: existing?.stripeCustomerId || undefined,
       customer_email: existing?.stripeCustomerId ? undefined : account?.email,

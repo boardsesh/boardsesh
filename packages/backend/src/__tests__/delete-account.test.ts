@@ -78,6 +78,13 @@ function setupTransactionMock(options?: {
   supporter?: { subscriptionId: string; subscriptionStatus: string; cancelAtPeriodEnd: boolean };
 }) {
   txCalls.length = 0;
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(options?.supporter ? [options.supporter] : []),
+      }),
+    }),
+  });
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
     const tx = {
@@ -210,6 +217,43 @@ describe('deleteAccount mutation', () => {
     await expect(
       userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
     ).rejects.toThrow('Your account was not deleted');
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('aborts if a different live subscription appears after cancellation', async () => {
+    setupTransactionMock({
+      supporter: { subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false },
+    });
+    mockStripeSubscriptionUpdate.mockResolvedValue({});
+    mockDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi
+            .fn()
+            .mockResolvedValue([{ subscriptionId: 'sub_1', subscriptionStatus: 'active', cancelAtPeriodEnd: false }]),
+        }),
+      }),
+    });
+    mockDb.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<void>) => {
+      const tx = {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi
+                .fn()
+                .mockResolvedValue([
+                  { subscriptionId: 'sub_2', subscriptionStatus: 'active', cancelAtPeriodEnd: false },
+                ]),
+            }),
+          }),
+        }),
+      };
+      await callback(tx);
+    });
+
+    await expect(
+      userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'STRIPE_SUBSCRIPTION_CHANGED' } });
   });
 
   it('should propagate transaction errors (rollback)', async () => {
