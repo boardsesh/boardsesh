@@ -35,7 +35,7 @@ There are two routes to the LEDs. The app chooses between them with a `bluetooth
 phone ──HTTPS/WebSocket──▶ Azure SignalR hub "updater" ──▶ wall controller (always online)
 ```
 
-- The hub is at `https://problemswebapi20220905155830.azurewebsites.net/updater`. It is ASP.NET Core SignalR with the negotiate step (`/updater/negotiate?negotiateVersion=0`). **[binary]**
+- The hub is at `https://problemswebapi20220905155830.azurewebsites.net/updater`. It is ASP.NET Core SignalR with the negotiate step (`/updater/negotiate?negotiateVersion=0`). **[binary]** Version 0 negotiation has no connection token; a Boardsesh client should try `negotiateVersion=1` first.
   - Version 1 used the .NET SignalR client.
   - Version 2 implements the SignalR JSON protocol by hand over `web_socket_channel`. The binary contains the WebSocket accept GUID `258EAFA5-…`.
 - Hub methods named in version 1 (`ClientServices.dll`), all **[binary]**:
@@ -159,8 +159,8 @@ The binaries embed third-party credentials: a Dropbox app key and refresh flow, 
 | Connection etiquette | Aurora keeps the connection; iOS has no auto-reconnect | DTB expects you to disconnect after a cast. Add an idle-disconnect option to `use-board-bluetooth.ts`. |
 | Board identity | Fixed catalogue (`PRODUCT_SIZES`, `board_layouts`) | Poor fit: every DTB wall is unique. |
 | Per-wall layouts | **Spray walls** (`docs/spray-walls.md`): runtime-created layouts under one `board_type`, holds as photo x/y | **Best fit.** One `board_type = 'dtb'`, one layout per DTB wall folder, holds from `holdlist.csv` + `dicholdlist.txt`, background from `wall.png`. |
-| Climb catalogue | Woods/MoonBoard one-off import scripts (`packages/db/scripts/import-woods-catalog.ts`, `docs/moonboard-catalog-import.md`); Aurora sync daemons | DTB climbs grow every day (about 50 per wall in the first week, per the site), so a one-off import goes stale. The long-term path is a linked-account sync like `packages/aurora-sync` / `packages/kilter-sync`, living in `packages/backend`. |
-| Capabilities | `CAPABILITIES_BY_BOARD` in `shared/board-config/src/board-capabilities.ts` | New `dtb` row. Needs new flags `cloudCast` and `perWallLayouts`. |
+| Climb catalogue | Woods/MoonBoard one-off import scripts (`packages/db/scripts/import-woods-catalog.ts`, `docs/moonboard-catalog-import.md`); Aurora sync daemons | DTB climbs grow every day (about 50 per wall in the first week, per the site), so a one-off import goes stale. The long-term path is a linked-account sync daemon mirroring the standalone `packages/aurora-sync` / `packages/kilter-sync` packages (a new `packages/dtb-sync`). |
+| Capabilities | `CAPABILITIES_BY_BOARD` in `shared/board-config/src/board-capabilities.ts` | New `dtb` row using existing flags. Per-wall layouts come from the spray identity model (`isSizeScopedBoard`), so no new flag. A `cloudCast` flag waits for Phase 3. |
 | Offline | Nightly per-(boardType, layout) SQLite snapshots | Works once `board_climbs` rows exist. Fine for about 108 walls. |
 
 Woods (`git show --stat 500988337`, #3306) is the closest reference diff for adding a non-Aurora board type end to end.
@@ -173,7 +173,7 @@ Woods (`git show --stat 500988337`, #3306) is the closest reference diff for add
    - board-config: `board-capabilities.ts`, `board-data.ts`, `board-name.ts`.
 3. `packages/shared/ble-protocol/src/dtb.ts`, `transport.ts` (UUIDs), `web-transport.ts`; mobile `lib/ble/` (scan filter, adapter, send branch, idle disconnect).
 4. Swift `BoardBleEncoding.swift` / `BoardBleManager.swift`, or set `nativeBoardControl: false` at first so no native change is needed. Mandatory BLE review by Fable or Astra (CLAUDE.md).
-5. DB import / sync in `packages/backend` or `packages/db/scripts`, with layout rows per wall and wall photos stored the same way as spray photos.
+5. DB import script in `packages/db/scripts` (Phase 2) or a `packages/dtb-sync` daemon (Phase 3), with layout rows per wall and wall photos stored the same way as spray photos.
 6. i18n for board labels in all four locales.
 
 ## 6. Phased plan
@@ -210,6 +210,8 @@ Pick one of these:
 1. **Decompile the Dart AOT snapshot** with blutter (github.com/worawit/blutter) against `lib/arm64-v8a/libapp.so` from 2.0.0. Read `BleCastService`'s write call. This takes about 30 minutes, but blutter builds a matching Dart VM from source.
 2. **HCI snoop log.** Enable Android's Bluetooth HCI snoop log, cast three known problems at a DTB wall, and read the ATT writes to the `…def1` characteristic in Wireshark. Needs a phone and a DTB wall; it is the most reliable ground truth.
 3. **Ask DTB** (§7 question 2).
+
+See also `docs/LED_BOX_BLE_CONNECTION_PROTOCOL.md` (earlier blutter use in this repo) and `docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md` (the closest existing role-coded protocol).
 
 ## Appendix: artefacts
 
