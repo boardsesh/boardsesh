@@ -19,7 +19,6 @@ import { getServerTranslation } from './lib/i18n/server';
 import { LOCALE_HTML_LANG, LOCALE_OG } from './lib/i18n/config';
 import { SITE_URL } from './lib/seo/base-url';
 import { themeTokens } from './theme/theme-config';
-import { resolveShellStaticAssetUrl } from './lib/shell-static-asset-url';
 import { classifyMarketingBrowser } from './lib/marketing-platform';
 import { MarketingPreviewProvider } from './components/marketing/marketing-preview-provider';
 import './components/index.css';
@@ -42,12 +41,21 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: 'summary_large_image',
     },
+    // Same-origin, and no CDN copy of anything Next already serves itself.
+    //
+    // Next always emits `app/favicon.ico` on its own (the favicon slot is
+    // unshifted unconditionally, unlike the rest of the file convention, which
+    // this block suppresses). Pointing the other entries at assets.boardsesh.com
+    // therefore left four competing `rel="icon"` declarations, three of them on
+    // a DNS-only Tigris host with no robots.txt, no edge cache and a 614 ms
+    // TTFB. A crawler picks one favicon per site; the cheapest thing we can do
+    // is stop giving it a choice between four, on two hosts, for a 28 KB file.
+    //
+    // `sizes` are the real ones: favicon.ico's largest entry is 48×48 (Next
+    // reads that itself), icon.png is 512², apple-touch is 180².
     icons: {
-      icon: [
-        { url: resolveShellStaticAssetUrl('/favicon.ico'), sizes: '32x32' },
-        { url: resolveShellStaticAssetUrl('/icon.png'), type: 'image/png' },
-      ],
-      apple: resolveShellStaticAssetUrl('/icons/apple-touch-icon.png'),
+      icon: [{ url: '/icon.png', type: 'image/png', sizes: '512x512' }],
+      apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }],
     },
   };
 }
