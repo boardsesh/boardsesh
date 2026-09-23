@@ -7,6 +7,7 @@ import type { RenderMode } from '@boardsesh/board-render/render-config';
 import {
   MAX_CARD_NAME_CODEPOINTS,
   MAX_CARD_SETTER_CODEPOINTS,
+  OG_CARD_GRADE_PATTERN,
   normalizeOgCardText,
 } from '@boardsesh/board-render/validation';
 // Leaf subpath, not the package barrel: this module compiles into the client
@@ -324,6 +325,11 @@ export type OgClimbCardIdentity = {
   angle?: number | null;
 };
 
+const toCardGrade = (grade: string | null | undefined): string | undefined => {
+  const trimmed = grade?.trim();
+  return trimmed && OG_CARD_GRADE_PATTERN.test(trimmed) ? trimmed : undefined;
+};
+
 export const buildOgBoardRenderUrl = (
   boardDetails: BoardDetails,
   frames: string,
@@ -354,7 +360,10 @@ export const buildOgBoardRenderUrl = (
     // still change the URL, and the URL is the cache key.
     const identityParams: [string, string | undefined][] = [
       ['n', normalizeOgCardText(identity.name ?? '', MAX_CARD_NAME_CODEPOINTS)],
-      ['g', identity.grade?.trim() || undefined],
+      // Matched against the server's own pattern, not just trimmed. A grade the
+      // schema rejects is a 400, and a 400 is no card at all — so an
+      // unrecognised grade costs the grade, never the image.
+      ['g', toCardGrade(identity.grade)],
       ['s', normalizeOgCardText(identity.setter ?? '', MAX_CARD_SETTER_CODEPOINTS)],
       ['angle', identity.angle === null || identity.angle === undefined ? undefined : String(identity.angle)],
     ];

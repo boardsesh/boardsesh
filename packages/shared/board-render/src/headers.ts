@@ -80,9 +80,15 @@ export const OG_CARD_BOARD_BOX = {
  * frame drifting apart.
  */
 export function placeOgBoard(boardWidth: number, boardHeight: number): { left: number; top: number } {
+  // Clamped, because the scale that sizes the board and the subtraction that
+  // places it round independently: a board a fraction wider than its box would
+  // otherwise get a negative offset, which sharp clips without complaining.
   return {
-    left: OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width - boardWidth,
-    top: OG_CARD_BOARD_BOX.top + Math.round((OG_CARD_BOARD_BOX.height - boardHeight) / 2),
+    left: Math.max(OG_CARD_BOARD_BOX.left, OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width - boardWidth),
+    top: Math.max(
+      OG_CARD_BOARD_BOX.top,
+      OG_CARD_BOARD_BOX.top + Math.round((OG_CARD_BOARD_BOX.height - boardHeight) / 2),
+    ),
   };
 }
 

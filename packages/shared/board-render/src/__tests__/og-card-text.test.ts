@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import { escapePangoMarkup, MAX_CARD_NAME_CODEPOINTS, normalizeOgCardText, ogClimbQuerySchema } from '../validation';
 import { renderOgCardLayers } from '../og-card';
+import { OG_CARD_BOARD_BOX, placeOgBoard } from '../headers';
 
 const validQuery = {
   board_name: 'kilter',
@@ -175,5 +176,31 @@ describe('renderOgCardLayers', () => {
       expect(layer.top).toBeLessThan(630);
       expect(layer.left).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe('card geometry and direction', () => {
+  it('still draws a card that only knows the wall angle', async () => {
+    // The early return used to swallow this before the angle-only row could
+    // draw it, so a card with an angle and nothing else came back empty.
+    expect(await renderOgCardLayers({ angle: 40 })).not.toHaveLength(0);
+  });
+
+  it('anchors the wordmark to the same edge as the text', async () => {
+    const ltr = await renderOgCardLayers({ name: 'BING BANG BOSH', grade: 'V7' });
+    const rtl = await renderOgCardLayers({ name: 'تسلق الصخور', grade: 'V7' });
+
+    // The wordmark is always the last layer, and is never dropped.
+    expect(rtl.at(-1)?.left).toBeGreaterThan(ltr.at(-1)?.left ?? 0);
+  });
+
+  it('never places the board outside its box', () => {
+    // The scale that sizes the board and the subtraction that places it round
+    // independently, so a board a fraction wider than its box must clamp rather
+    // than take a negative offset that sharp clips in silence.
+    const overshoot = placeOgBoard(OG_CARD_BOARD_BOX.width + 1, OG_CARD_BOARD_BOX.height + 1);
+
+    expect(overshoot.left).toBeGreaterThanOrEqual(OG_CARD_BOARD_BOX.left);
+    expect(overshoot.top).toBeGreaterThanOrEqual(OG_CARD_BOARD_BOX.top);
   });
 });

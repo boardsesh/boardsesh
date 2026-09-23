@@ -148,7 +148,10 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
   const grade = content.grade?.trim() ?? '';
   const setter = content.setter?.trim() ?? '';
   const boardLine = content.boardLine?.trim() ?? '';
-  if (!name && !grade && !setter && !boardLine) return [];
+  // `angle` counts: a card carrying only a wall angle still has something to
+  // say, and the early return used to swallow it before the angle-only row
+  // below could draw it.
+  if (!name && !grade && !setter && !boardLine && content.angle === undefined) return [];
 
   const { fontFamily } = content;
   // Whichever line the card actually leads with. Deciding from `name` alone
@@ -228,7 +231,7 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
     `<span size="15pt" weight="700" letter_spacing="3000" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
     { fontFamily },
   );
-  layers.push({ input: wordmark.buffer, left: COLUMN_LEFT, top: WORDMARK_TOP });
+  layers.push({ input: wordmark.buffer, left: anchor(wordmark.width), top: WORDMARK_TOP });
 
   return layers.filter((layer) => layer.top >= 0 && layer.top < OG_IMAGE_HEIGHT);
 }

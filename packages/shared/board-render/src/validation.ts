@@ -141,6 +141,15 @@ export const boardseshRenderQuerySchema = z.object({
 
 export type BoardseshRenderQuery = z.infer<typeof boardseshRenderQuerySchema>;
 
+/**
+ * The grade vocabulary a card will draw: `V7`, `7B+`, `6c+`, `5.12a`, `V8/7B`.
+ *
+ * Exported because the URL builder has to apply it too. A grade that fails here
+ * is a 400, and a 400 is no card at all — so a caller that cannot match it must
+ * drop the grade rather than send it and lose the whole image.
+ */
+export const OG_CARD_GRADE_PATTERN = /^[A-Za-z0-9+/. -]{1,16}$/;
+
 /** Raw query-string bounds, applied before any per-codepoint work. */
 export const MAX_CARD_NAME_PARAM_LENGTH = 512;
 export const MAX_CARD_SETTER_PARAM_LENGTH = 256;
@@ -246,7 +255,7 @@ export const ogClimbQuerySchema = z
     // than the free-text treatment.
     g: z
       .string()
-      .regex(/^[A-Za-z0-9+/. -]{1,16}$/, 'g must be a grade label')
+      .regex(OG_CARD_GRADE_PATTERN, 'g must be a grade label')
       // The charset admits spaces, so `g=%20%20` passes the regex, renders
       // nothing, and still hashes to its own byte-cache entry. Trim first and
       // require something left, so a blank grade keys as no grade.
