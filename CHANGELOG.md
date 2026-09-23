@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Sharing a climb now gets the preview picture ready before the link leaves your phone, so it shows up straight away instead of after a few seconds of blank. ([#5749](https://github.com/boardsesh/boardsesh/pull/5749))
 - Decoy climbs now show the board in link previews instead of a broken image ([#5693](https://github.com/boardsesh/boardsesh/pull/5693))
 - Swipe through every compatible climb in your playlist again. ([#5689](https://github.com/boardsesh/boardsesh/pull/5689))
 

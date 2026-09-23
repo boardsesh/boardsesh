@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-23T09:53:24.494Z",
+  "generatedAt": "2026-09-23T13:29:51.950Z",
   "entries": [
+    {
+      "prNumber": 5749,
+      "category": "fixed",
+      "title": "Sharing a climb now gets the preview picture ready before the link leaves your phone, so it shows up straight away instead of after a few seconds of blank.",
+      "mergedAt": "2026-09-23T13:27:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5749"
+    },
     {
       "prNumber": 5693,
       "category": "fixed",
