@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import { escapePangoMarkup, MAX_CARD_NAME_CODEPOINTS, normalizeOgCardText, ogClimbQuerySchema } from '../validation';
+import { renderOgCardLayers } from '../og-card';
 
 const validQuery = {
   board_name: 'kilter',
@@ -117,5 +118,41 @@ describe('ogClimbQuerySchema card params', () => {
     expect(ogClimbQuerySchema.parse({ ...validQuery, angle: '40' }).angle).toBe(40);
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '91' }).success).toBe(false);
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '-1' }).success).toBe(false);
+  });
+});
+
+describe('renderOgCardLayers', () => {
+  it('draws nothing when there is nothing to say', async () => {
+    // A card built by an already-shipped client that sends no text params gets
+    // the board and no empty furniture.
+    expect(await renderOgCardLayers({})).toEqual([]);
+  });
+
+  it('takes its direction from whichever line the card leads with', async () => {
+    // Deciding from the name alone left-anchored a card whose only words were
+    // an Arabic setter.
+    const ltr = await renderOgCardLayers({ grade: 'V7', setter: 'someone' });
+    const rtl = await renderOgCardLayers({ grade: 'V7', setter: 'تسلق' });
+
+    expect(ltr).not.toHaveLength(0);
+    expect(rtl).not.toHaveLength(0);
+    // The grade anchors to the opposite edge, so its left offset moves right.
+    expect(rtl[0].left).toBeGreaterThan(ltr[0].left);
+  });
+
+  it('keeps every layer on the canvas for a name long enough to truncate', async () => {
+    const layers = await renderOgCardLayers({
+      name: 'A Preposterously Long Climb Name That Nobody Would Ever Actually Set On A Board',
+      grade: '8a/V11',
+      setter: 'verbosesetter',
+      angle: 50,
+      boardLine: 'Kilter · Original · 12 x 12 Square',
+    });
+
+    for (const layer of layers) {
+      expect(layer.top).toBeGreaterThanOrEqual(0);
+      expect(layer.top).toBeLessThan(630);
+      expect(layer.left).toBeGreaterThanOrEqual(0);
+    }
   });
 });

@@ -1,12 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
+  MAX_CARD_NAME_PARAM_LENGTH,
+  MAX_CARD_SETTER_PARAM_LENGTH,
   MAX_SET_IDS_LENGTH,
   createOgImageHeaders,
   normalizeOutputFormat,
   ogClimbQuerySchema,
   type OutputFormat,
 } from '@boardsesh/board-render';
-import { MAX_CARD_NAME_PARAM_LENGTH, MAX_CARD_SETTER_PARAM_LENGTH } from '@boardsesh/board-render';
 import { applyCorsHeaders } from './cors';
 import { describeBoardConfig } from '../services/og-card-board-line';
 import { getPublicClientIp } from '../utils/client-ip';

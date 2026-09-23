@@ -149,7 +149,9 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
   if (!name && !grade && !setter && !boardLine) return [];
 
   const { fontFamily } = content;
-  const rightToLeft = isRightToLeft(name);
+  // Whichever line the card actually leads with. Deciding from `name` alone
+  // left-anchored a card that had only a grade and an Arabic setter.
+  const rightToLeft = isRightToLeft(name || setter || boardLine);
   const align = rightToLeft ? 'right' : 'left';
   const anchor = (width: number) => (rightToLeft ? COLUMN_RIGHT - width : COLUMN_LEFT);
 
