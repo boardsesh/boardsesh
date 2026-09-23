@@ -78,15 +78,27 @@ bool parseIntegerSegment(const char* value, int& output) {
     return true;
 }
 
+// Matches MAX_SET_IDS in packages/shared/board-render/src/validation.ts. The
+// widest shipped config is Decoy layout 2 / size 1 at 19 hold sets; at the old
+// 16 this function parsed the first 16, sorted those, and wrote them back —
+// silently dropping three sets and rendering a Decoy board missing its art.
+static const int MAX_SET_IDS = 24;
+
 void sortSetIds(char* setIds) {
     if (!setIds || setIds[0] == '\0') return;
 
-    static const int MAX_SET_IDS = 16;
     int parsedSetIds[MAX_SET_IDS];
     int parsedSetCount = 0;
 
     const char* cursor = setIds;
-    while (*cursor && parsedSetCount < MAX_SET_IDS) {
+    while (*cursor) {
+        // Leave the string alone rather than truncate it. Sorting here only
+        // aligns the request with the server's cache key; the server
+        // canonicalises set ids itself, so an unsorted list still renders the
+        // right board, while a short one does not.
+        if (parsedSetCount >= MAX_SET_IDS) {
+            return;
+        }
         char* end = nullptr;
         long parsed = strtol(cursor, &end, 10);
         if (end == cursor) {

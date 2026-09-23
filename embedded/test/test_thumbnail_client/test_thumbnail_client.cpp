@@ -104,6 +104,32 @@ void test_parse_board_render_route_sorts_set_ids_and_ignores_angle(void) {
     TEST_ASSERT_EQUAL_STRING("1,20", route.setIds);
 }
 
+void test_parse_board_render_route_keeps_every_set_id_on_the_widest_board(void) {
+    // Decoy layout 2 / size 1 carries 19 hold sets, the widest shipped config.
+    // At the old 16-id cap this parsed the first 16, sorted those, and wrote
+    // them back over the route — the device then asked for a Decoy board with
+    // three of its hold sets missing.
+    BoardRenderRoute route;
+    bool parsed = parseBoardRenderRoute(
+        "decoy/2/1/20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2/40", route);
+
+    TEST_ASSERT_TRUE(parsed);
+    TEST_ASSERT_EQUAL_STRING("decoy", route.boardName);
+    TEST_ASSERT_EQUAL_STRING("2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20", route.setIds);
+}
+
+void test_parse_board_render_route_rejects_a_set_list_past_the_buffer(void) {
+    // `route.setIds` is 64 bytes, which holds at most 24 comma-separated ids —
+    // the same number `sortSetIds` will parse. The two agreeing is what makes
+    // "past the cap" unreachable rather than silently truncating: a longer
+    // segment is refused by `copySegment` and the whole route is rejected.
+    BoardRenderRoute route;
+    bool parsed = parseBoardRenderRoute(
+        "decoy/2/1/25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1/40", route);
+
+    TEST_ASSERT_FALSE(parsed);
+}
+
 void test_parse_board_render_route_accepts_locale_prefixed_path(void) {
     BoardRenderRoute route;
     bool parsed = parseBoardRenderRoute("/es/tension/2/10/3,1/list", route);
@@ -229,6 +255,8 @@ int main(int argc, char** argv) {
 
     UNITY_BEGIN();
     RUN_TEST(test_parse_board_render_route_sorts_set_ids_and_ignores_angle);
+    RUN_TEST(test_parse_board_render_route_keeps_every_set_id_on_the_widest_board);
+    RUN_TEST(test_parse_board_render_route_rejects_a_set_list_past_the_buffer);
     RUN_TEST(test_parse_board_render_route_accepts_locale_prefixed_path);
     RUN_TEST(test_parse_board_render_route_rejects_missing_segments);
     RUN_TEST(test_normalize_render_base_url_handles_ws_and_trailing_slashes);
