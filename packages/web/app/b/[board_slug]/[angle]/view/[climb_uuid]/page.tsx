@@ -13,6 +13,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
 import SprayViewPage, { buildSprayViewMetadata } from './spray-view';
 
 /**
@@ -83,8 +84,6 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     const setter = currentClimb.setter_username || 'Unknown Setter';
     const quality = currentClimb.quality_average || 0;
     const ascents = currentClimb.ascensionist_count || 0;
-    const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
-
     // Unlisted is link-only by design, and a private board is readable to a
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
@@ -112,6 +111,16 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     const canonicalPath = shouldNoindex
       ? undefined
       : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
+
+    // The same name, grade and setter the title and description already use, so
+    // the card and the snippet can never disagree about the climb they describe.
+    // The canonical angle, not the requested one: the card is cached for a year
+    // under its own URL, and every angle of a climb should share one card.
+    const ogImagePath = buildOgBoardRenderUrl(
+      boardDetails,
+      currentClimb.frames,
+      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+    );
 
     return createBoardContentPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
@@ -174,7 +183,11 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       angleStats,
     });
 
-    scheduleOgImageWarming({ boardDetails, climb: currentClimb });
+    scheduleOgImageWarming({
+      boardDetails,
+      climb: currentClimb,
+      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+    });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
 
     return (

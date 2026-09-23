@@ -15,7 +15,53 @@ GET https://ws.boardsesh.com/og/climb
   &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema
   &frames=p1080r15p1202r12    # fully determines the image — no DB involved
   &format=jpeg                # optional; jpeg (default) | png | webp
+  &n=BING+BANG+BOSH           # optional; climb name, <=64 code points after normalising
+  &g=7a/V6                    # optional; grade label, [A-Za-z0-9+/. -]{1,16}
+  &s=Patrick+Gosling          # optional; setter, <=32 code points after normalising
+  &angle=40                   # optional; 0-90
 ```
+
+### The climb-identity column
+
+The card is 1200x630: the board art right-aligned in a 720x602 box on the left,
+and the climb's identity in a 392px column on the right. Both halves matter for
+different consumers — a social unfurl shows the whole card, while a search engine
+crops it to a square from the centre and keeps only `x` in [285, 915]. Right-
+aligning the board is what puts a portrait board fully inside that crop;
+`og-geometry.test.ts` walks the catalogue and fails if a board ever renders
+smaller than the old full-width layout or spills into the column.
+
+`n`, `g`, `s` and `angle` are all **optional**, so a URL built by an
+already-shipped mobile binary still renders — it just gets the board on its own.
+The board line under the name (`Kilter · Original · 12 x 12 Square`) is derived
+from `board_name`/`layout_id`/`size_id`, not taken as a param: those already
+determine the board that gets drawn, so a caller-supplied label would be a
+second, forgeable source for the same fact.
+
+Ascents and quality are deliberately **not** on the card. They tick constantly,
+and the response is immutable for a year, so every tick would mint a fresh cache
+entry and leave the old one at the edge.
+
+**Two things to know before touching the text path.**
+
+1. **Every string must be escaped for Pango markup.** libvips calls
+   `pango_parse_markup` unconditionally — there is no plain-text mode — so an
+   unescaped `&` throws `text: invalid markup in text` rather than rendering
+   literally. A climb called "Rock & Roll" would be a 500. `escapePangoMarkup`
+   in `validation.ts` is the only safe way in.
+2. **The image needs fonts installed.** `Dockerfile.backend` is `node:22-alpine`,
+   which ships none, and Pango does not degrade gracefully without them: a 40pt
+   request renders 12px tall, Cyrillic comes back blank, and CJK throws. The
+   image installs `fontconfig font-noto font-noto-emoji font-noto-hebrew
+   font-wqy-zenhei` — sized against what real climb names contain, which includes
+   Japanese katakana, Chinese and emoji. `font-wqy-zenhei` covers CJK for 27 MB
+   where `font-noto-cjk` costs 90 MB for a visually identical result.
+
+`n` and `s` are the only caller-supplied free text on the endpoint, which is
+unauthenticated. They are NFC-normalised, stripped of control characters and of
+the invisible/bidi-override set, whitespace-collapsed, and truncated by code
+point. `OG_CARD_TEXT_DISABLED=1` drops both without a deploy; the board, grade
+and angle keep rendering.
 
 Responses are immutable (`Cache-Control: … immutable`, 1 year): the query
 fully determines the bytes. Invalid params are rejected with 400 before any

@@ -40,8 +40,51 @@ export type UnversionedCacheTier = 'short' | 'daily';
  * render worker — `background.ts` reaches `@boardsesh/board-config` for MoonBoard's
  * layout art, which is a whole board catalogue to carry for two integers.
  */
-export const OG_BOARD_PADDING_X = 48;
-export const OG_BOARD_PADDING_Y = 48;
+export const OG_BOARD_PADDING_X = 24;
+export const OG_BOARD_PADDING_Y = 14;
+
+/**
+ * Width of the climb-identity column on the right of the OG card, and the gap
+ * between it and the board art.
+ *
+ * A fixed column is safe because every shipped board is height-bound at OG size:
+ * the narrowest horizontal gutter in the whole catalogue is Tension 1461×1144 at
+ * 518 px, the widest Kilter 1080×2498 at 924 px. `og-geometry.test.ts` walks the
+ * catalogue and fails if a board ever arrives that the column would squeeze.
+ */
+export const OG_CARD_TEXT_COLUMN_WIDTH = 392;
+export const OG_CARD_COLUMN_GAP = 24;
+
+/**
+ * The box the board art is fitted into, right-aligned inside it.
+ *
+ * Right-aligned rather than centred because search engines crop a 1200×630 card
+ * to a square from the centre, keeping x ∈ [285, 915]. Pushing the board towards
+ * the text column puts a portrait board entirely inside that window — MoonBoard
+ * and Kilter 1080×2498 both land at 100 % coverage, against 83 % and 64 %
+ * centred.
+ */
+export const OG_CARD_BOARD_BOX = {
+  left: OG_BOARD_PADDING_X,
+  top: OG_BOARD_PADDING_Y,
+  width: OG_IMAGE_WIDTH - OG_BOARD_PADDING_X * 2 - OG_CARD_TEXT_COLUMN_WIDTH - OG_CARD_COLUMN_GAP,
+  height: OG_IMAGE_HEIGHT - OG_BOARD_PADDING_Y * 2,
+} as const;
+
+/**
+ * Where a rendered board of this size sits on the OG canvas.
+ *
+ * One definition, because two code paths place it: `composeOgBaseBuffer` for the
+ * backend's `/og/climb`, and `renderBoardImageBuffer`'s `variant=og` branch for
+ * the web fallback. A disagreement between them would show as the board and its
+ * frame drifting apart.
+ */
+export function placeOgBoard(boardWidth: number, boardHeight: number): { left: number; top: number } {
+  return {
+    left: OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width - boardWidth,
+    top: OG_CARD_BOARD_BOX.top + Math.round((OG_CARD_BOARD_BOX.height - boardHeight) / 2),
+  };
+}
 
 export function createOgImageHeaders({
   contentType,

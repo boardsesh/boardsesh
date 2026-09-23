@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import {
   BoundedLru,
@@ -212,6 +214,8 @@ export type BoardImageRenderParams = {
   includeBackground: boolean;
   dimBackground: number;
   isOgVariant: boolean;
+  /** Climb identity drawn in an OG card's right-hand column; OG renders only. */
+  card?: OgCardContent;
 };
 
 export type BoardImageRenderResult = {
@@ -234,7 +238,10 @@ export type OgClimbRenderParams = Pick<
   | 'glowFalloff'
   | 'glyphs'
   | 'fieldColor'
->;
+> & {
+  /** Climb identity drawn in the card's right-hand column. */
+  card?: OgCardContent;
+};
 
 export type OgClimbRenderResult = {
   buffer: Buffer;
@@ -274,6 +281,27 @@ function renderOptionsCacheKeySuffix(options: {
   return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${fieldColor}`;
 }
 
+/**
+ * Digest of the climb-identity text drawn on an OG card, for the byte cache key.
+ *
+ * A digest rather than the raw fields because the key is `':'`-joined and a
+ * climb name may contain a colon — `"7a: the sequel"` with no setter would
+ * otherwise key identically to a different name/setter split. Hashing the
+ * NORMALISED values also collapses the slightly different URLs web and mobile
+ * build for the same climb onto one entry, the way `set_ids` canonicalisation
+ * and `fieldColor` normalisation already do.
+ *
+ * `'none'` for every non-OG render, so `/render/board` keys stay byte-identical
+ * to what they were before cards carried text.
+ */
+function cardTextCacheKeySuffix(params: BoardImageRenderParams): string {
+  const card = params.card;
+  if (!params.isOgVariant || !card) return 'none';
+  const fields = [card.name ?? '', card.grade ?? '', card.setter ?? '', card.boardLine ?? '', card.angle ?? ''];
+  if (fields.every((field) => field === '')) return 'none';
+  return createHash('sha1').update(JSON.stringify(fields)).digest('base64url').slice(0, 16);
+}
+
 export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): string {
   // `v` intentionally is not a render param: one process has one renderer, so
   // cache-version aliases name identical bytes during a rolling deployment.
@@ -290,6 +318,7 @@ export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): st
     params.format,
     renderOptionsCacheKeySuffix(params),
     params.colorScheme ?? 'light',
+    `card:${cardTextCacheKeySuffix(params)}`,
   ].join(':');
 }
 
@@ -409,8 +438,10 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
       const overlay = await renderer.render(JSON.stringify(prepared.config));
       const wasmMs = performance.now() - wasmT0;
       const overlayBuffer = Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength);
+      const cardLayers = params.isOgVariant && params.card ? await renderOgCardLayers(params.card) : undefined;
       const rendered = await renderBoardImageBuffer({
         overlayBuffer,
+        cardLayers,
         width: overlay.width,
         height: overlay.height,
         isOgVariant: params.isOgVariant,

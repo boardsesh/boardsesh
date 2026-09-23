@@ -1,6 +1,14 @@
 import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/hold-states';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { RenderMode } from '@boardsesh/board-render/render-config';
+// Leaf subpath for the same reason as the version constant below: `validation`
+// carries zod and nothing else, while the barrel would drag the sharp pipeline
+// into the client bundle.
+import {
+  MAX_CARD_NAME_CODEPOINTS,
+  MAX_CARD_SETTER_CODEPOINTS,
+  normalizeOgCardText,
+} from '@boardsesh/board-render/validation';
 // Leaf subpath, not the package barrel: this module compiles into the client
 // bundle, and the barrel pulls in the render pipeline. The generated constant
 // has no imports at all.
@@ -305,7 +313,22 @@ export const buildOverlayPreloadUrls = (
  * "helpfully" add `v` here. The fallback branch goes through
  * `buildBoardRenderUrl` and is versioned like every other web producer.
  */
-export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string) => {
+export type OgClimbCardIdentity = {
+  /** Climb name as displayed. */
+  name?: string | null;
+  /** Grade label, e.g. `7a/V6`. */
+  grade?: string | null;
+  /** Setter's display name. */
+  setter?: string | null;
+  /** Wall angle in degrees. */
+  angle?: number | null;
+};
+
+export const buildOgBoardRenderUrl = (
+  boardDetails: BoardDetails,
+  frames: string,
+  identity: OgClimbCardIdentity = {},
+) => {
   const flatFrames = toFlatFrames(frames, boardDetails.board_name);
   const backendOrigin = getPublicBackendHttpUrl();
 
@@ -324,6 +347,21 @@ export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string
       render_mode: 'aura',
       field_color: AURA_FIELD_COLOR,
     });
+
+    // The climb's identity, drawn in the card's right-hand column. Normalised
+    // here as well as on the server so the URL and the pixels agree, and an
+    // empty field is omitted rather than sent as `s=` — an empty param would
+    // still change the URL, and the URL is the cache key.
+    const identityParams: [string, string | undefined][] = [
+      ['n', normalizeOgCardText(identity.name ?? '', MAX_CARD_NAME_CODEPOINTS)],
+      ['g', identity.grade?.trim() || undefined],
+      ['s', normalizeOgCardText(identity.setter ?? '', MAX_CARD_SETTER_CODEPOINTS)],
+      ['angle', identity.angle === null || identity.angle === undefined ? undefined : String(identity.angle)],
+    ];
+    for (const [key, value] of identityParams) {
+      if (value) backendParams.set(key, value);
+    }
+
     return `${backendOrigin}/og/climb?${backendParams}`;
   }
 

@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/board-constants/hold-states';
 // Straight from `headers`, not `background`: this module is in the browser's
 // render-worker bundle, and `background` reaches the board catalogue.
-import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { OG_CARD_BOARD_BOX } from './headers';
 import type {
   GlowFalloff,
   HoldRole,
@@ -169,11 +169,12 @@ export function buildRenderConfig({
   holdGeometry,
   spillNeighbourOutlines = false,
 }: BuildRenderConfigParams): RenderConfigResult {
+  // One geometry, whether or not the card carries text. A second box for the
+  // textless case would mint a second overlay size and a second cached OG base
+  // for every board, to save an empty column nobody sees once the callers ship
+  // the params.
   const ogScale = isOgVariant
-    ? Math.min(
-        (OG_IMAGE_WIDTH - OG_BOARD_PADDING_X * 2) / boardDetails.boardWidth,
-        (OG_IMAGE_HEIGHT - OG_BOARD_PADDING_Y * 2) / boardDetails.boardHeight,
-      )
+    ? Math.min(OG_CARD_BOARD_BOX.width / boardDetails.boardWidth, OG_CARD_BOARD_BOX.height / boardDetails.boardHeight)
     : null;
 
   const computeOutputWidth = () => {

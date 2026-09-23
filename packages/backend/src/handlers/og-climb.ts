@@ -6,7 +6,9 @@ import {
   ogClimbQuerySchema,
   type OutputFormat,
 } from '@boardsesh/board-render';
+import { MAX_CARD_NAME_PARAM_LENGTH, MAX_CARD_SETTER_PARAM_LENGTH } from '@boardsesh/board-render';
 import { applyCorsHeaders } from './cors';
+import { describeBoardConfig } from '../services/og-card-board-line';
 import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
@@ -33,12 +35,45 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
  * runs before any CPU-heavy work; the render is served from in-memory caches
  * when possible. Returns an immutably cacheable JPEG (default), PNG, or WebP.
  */
+/**
+ * Family handed to Pango. The Alpine image installs Noto plus WenQuanYi Zen Hei,
+ * so fontconfig's fallback chain covers the scripts the catalogue actually
+ * contains — Japanese, Chinese, Hebrew, Arabic and emoji all appear in real
+ * climb names. Unset elsewhere, where fontconfig picks whatever the host has.
+ */
+const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || undefined;
+
+/**
+ * Kill switch for the caller-supplied text on a card, without a deploy.
+ *
+ * `/og/climb` is unauthenticated, so `n` and `s` let anyone put a short string
+ * on an image served from our hostname. The caps and normalisation in
+ * `ogClimbQuerySchema` are the bound; this is the lever if that ever proves not
+ * to be enough. The board, the grade and the angle are not caller free text and
+ * keep rendering either way.
+ */
+const cardTextEnabled = process.env.OG_CARD_TEXT_DISABLED !== '1';
+
 export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 
   const rawSetIds = url.searchParams.get('set_ids');
   if (rawSetIds !== null && rawSetIds.length > MAX_SET_IDS_LENGTH) {
     sendJson(res, 400, { error: 'Invalid parameters', details: ['set_ids is too large'] });
+    return;
+  }
+
+  // Byte-sized bounds on the two free-text params before zod does any
+  // per-codepoint work, same reason as `set_ids` above: a hostile query string
+  // must not make validation scale with its own length.
+  const rawName = url.searchParams.get('n');
+  const rawSetter = url.searchParams.get('s');
+  if (rawName !== null && rawName.length > MAX_CARD_NAME_PARAM_LENGTH) {
+    sendJson(res, 400, { error: 'Invalid parameters', details: ['n is too large'] });
+    return;
+  }
+  if (rawSetter !== null && rawSetter.length > MAX_CARD_SETTER_PARAM_LENGTH) {
+    sendJson(res, 400, { error: 'Invalid parameters', details: ['s is too large'] });
     return;
   }
 
@@ -57,6 +92,12 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
     glyphs: url.searchParams.get('glyphs') ?? undefined,
     field_color: url.searchParams.get('field_color') ?? undefined,
+    // Climb identity for the card's right-hand column. All optional: a URL from
+    // an already-shipped mobile binary renders the board on its own.
+    n: cardTextEnabled ? (rawName ?? undefined) : undefined,
+    s: cardTextEnabled ? (rawSetter ?? undefined) : undefined,
+    g: cardTextEnabled ? (url.searchParams.get('g') ?? undefined) : undefined,
+    angle: url.searchParams.get('angle') ?? undefined,
   });
   if (!parsed.success) {
     sendJson(res, 400, { error: 'Invalid parameters', details: parsed.error.issues.map((issue) => issue.message) });
@@ -118,6 +159,17 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       glowFalloff: query.glow_falloff,
       glyphs: query.glyphs,
       fieldColor: query.field_color,
+      card: {
+        name: query.n,
+        grade: query.g,
+        setter: query.s,
+        angle: query.angle,
+        // Derived here, not taken from the caller: the board and size are
+        // already fully determined by the config params, so a `board_label`
+        // param would be a second, forgeable source for the same fact.
+        boardLine: describeBoardConfig(query.board_name, query.layout_id, query.size_id),
+        fontFamily: OG_CARD_FONT_FAMILY,
+      },
     });
     const totalMs = performance.now() - totalT0;
     const totalEncodeMs = (timings.composeMs ?? 0) + timings.encodeMs;

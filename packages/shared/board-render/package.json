@@ -15,6 +15,16 @@
       "import": "./src/render-config.ts",
       "default": "./src/render-config.ts"
     },
+    "./validation": {
+      "types": "./src/validation.ts",
+      "import": "./src/validation.ts",
+      "default": "./src/validation.ts"
+    },
+    "./og-card": {
+      "types": "./src/og-card.ts",
+      "import": "./src/og-card.ts",
+      "default": "./src/og-card.ts"
+    },
     "./pipeline": {
       "types": "./src/pipeline.ts",
       "import": "./src/pipeline.ts",

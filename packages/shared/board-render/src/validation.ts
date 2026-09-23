@@ -141,6 +141,67 @@ export const boardseshRenderQuerySchema = z.object({
 
 export type BoardseshRenderQuery = z.infer<typeof boardseshRenderQuerySchema>;
 
+/** Raw query-string bounds, applied before any per-codepoint work. */
+export const MAX_CARD_NAME_PARAM_LENGTH = 512;
+export const MAX_CARD_SETTER_PARAM_LENGTH = 256;
+
+/** What survives normalisation and actually reaches the card. */
+export const MAX_CARD_NAME_CODEPOINTS = 64;
+export const MAX_CARD_SETTER_CODEPOINTS = 32;
+
+/**
+ * Invisible characters that are not in `\p{C}` but would still let a crafted URL
+ * render something other than what it says: zero-width joiners and spaces, the
+ * bidi overrides and isolates, and the byte-order mark.
+ */
+const INVISIBLE_CHARACTERS = /[\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/gu;
+
+/**
+ * Bound a caller-supplied string before it is drawn onto a share card.
+ *
+ * `/og/climb` is unauthenticated and its responses are immutable for a year, so
+ * whatever text a URL carries is what that URL renders for as long as anyone
+ * holds it. This is a deny-list rather than an allow-list of scripts on purpose:
+ * real climb names in the catalogue include Japanese katakana, Chinese, Hebrew
+ * and emoji, and a script allow-list would blank them.
+ *
+ * Truncation counts code points via `Array.from`, so an emoji costs one
+ * character rather than being cut in half into a lone surrogate.
+ */
+export function normalizeOgCardText(raw: string, maxCodePoints: number): string {
+  const stripped = raw
+    .normalize('NFC')
+    // Whitespace becomes a space BEFORE control characters are stripped: a tab
+    // and a newline are both `\p{C}`, so stripping first would silently join
+    // the words either side of them.
+    .replaceAll(/\s/gu, ' ')
+    .replaceAll(INVISIBLE_CHARACTERS, '')
+    .replaceAll(/\p{C}/gu, '')
+    .replaceAll(/ {2,}/gu, ' ')
+    .trim();
+
+  const codePoints = Array.from(stripped);
+  return codePoints.length <= maxCodePoints ? stripped : codePoints.slice(0, maxCodePoints).join('').trim();
+}
+
+/**
+ * Escape text for Pango markup.
+ *
+ * libvips calls `pango_parse_markup` on every string it typesets, unconditionally
+ * — there is no plain-text mode. An unescaped `&` or `<` does not render
+ * literally, it throws `text: invalid markup in text`, so a climb called
+ * "Rock & Roll" would 500 the endpoint rather than look wrong. Verified against
+ * sharp 0.34.5 on both macOS and node:22-alpine.
+ */
+export function escapePangoMarkup(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 /**
  * Strict query validation for the public `GET /og/climb` endpoint. Runs before
  * any CPU-heavy work: rejects bad input cheaply with a 400 so a crawler can't
@@ -166,6 +227,28 @@ export const ogClimbQuerySchema = z
       .max(MAX_FRAMES_LENGTH, 'frames string is too large')
       .refine(isValidFramesString, 'frames contains invalid syntax'),
     format: z.enum(['webp', 'png', 'jpeg', 'jpg']).optional(),
+    // Climb identity drawn on the card. All optional, so a URL built by an
+    // already-shipped mobile binary still renders — it just gets the board on
+    // its own. Deliberately NOT ascents or quality: those tick constantly, and
+    // every tick would mint a new URL against a year-long immutable cache.
+    n: z
+      .string()
+      .max(MAX_CARD_NAME_PARAM_LENGTH, 'n is too large')
+      .transform((name) => normalizeOgCardText(name, MAX_CARD_NAME_CODEPOINTS))
+      .optional(),
+    s: z
+      .string()
+      .max(MAX_CARD_SETTER_PARAM_LENGTH, 's is too large')
+      .transform((setter) => normalizeOgCardText(setter, MAX_CARD_SETTER_CODEPOINTS))
+      .optional(),
+    // Grades are a closed vocabulary across every board we render — `V7`,
+    // `7B+`, `6c+`, `5.12a`, `V8/7B` — so this one gets an allow-list rather
+    // than the free-text treatment.
+    g: z
+      .string()
+      .regex(/^[A-Za-z0-9+/. -]{1,16}$/, 'g must be a grade label')
+      .optional(),
+    angle: z.coerce.number().int().min(0).max(90).optional(),
   })
   .extend(boardseshRenderQuerySchema.shape);
 

@@ -12,9 +12,16 @@ import {
   WOODS_SETS,
   WOODS_SIZES,
 } from '@boardsesh/board-config';
-import { getBackgroundRelPaths, OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
+import { getBackgroundRelPaths } from './background';
 import { getBoardDetailsForBoard } from './board-details';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import {
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  OG_BOARD_PADDING_X,
+  OG_BOARD_PADDING_Y,
+  OG_CARD_COLUMN_GAP,
+  OG_CARD_TEXT_COLUMN_WIDTH,
+} from './headers';
 import { buildRenderConfig } from './render-config';
 
 /**
@@ -205,7 +212,9 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     // Pixel geometry the sharp half applies around the board photo. Implied by
     // `og_scale`, but that is a rounded ratio, so record the terms as well.
     og_canvas: [OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT],
-    og_padding: [OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y],
+    // The text column is part of the board box, so it belongs in the version
+    // terms too: widening it moves every board's OG scale.
+    og_padding: [OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_CARD_TEXT_COLUMN_WIDTH, OG_CARD_COLUMN_GAP],
     // Which photos get composited, in order, for both the full and thumb paths.
     backgrounds_full: getBackgroundRelPaths(boardDetails, false),
     backgrounds_thumbnail: getBackgroundRelPaths(boardDetails, true),

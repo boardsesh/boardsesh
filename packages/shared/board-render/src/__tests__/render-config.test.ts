@@ -28,10 +28,12 @@ describe('buildRenderConfig', () => {
   it('renders the OG variant with the thumbnail stroke treatment at OG scale', () => {
     const { config, ogScale } = buildRenderConfig({ ...baseParams, thumbnail: false, isOgVariant: true });
     expect(config.thumbnail).toBe(true);
-    // Kilter 12x12 (1080x1170 board units) fitted into the padded 1200x630
-    // canvas: height-limited to scale (630-96)/1170, so 1080 * 0.4564… = 493.
-    expect(ogScale).toBeCloseTo(0.4564, 4);
-    expect(config.output_width).toBe(493);
+    // Kilter 12x12 (1080x1170 board units) fitted into the card's board box —
+    // 1200 minus the side padding, the 392px identity column and its gap, by
+    // 630 minus the vertical padding. Height-limited: 602/1170 = 0.5145…, so
+    // 1080 * 0.5145… = 556.
+    expect(ogScale).toBeCloseTo(602 / 1170, 4);
+    expect(config.output_width).toBe(556);
   });
 
   it('renders plain thumbnails at THUMBNAIL_WIDTH', () => {
