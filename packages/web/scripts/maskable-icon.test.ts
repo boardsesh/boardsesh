@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  BRAND_MASTER_PATH,
   ICON_GROUND_RGB,
   MASKABLE_ICON_SIZE,
   MASKABLE_SAFE_ZONE_RATIO,
@@ -11,7 +12,6 @@ import {
 const webRoot = resolve(import.meta.dirname, '..');
 const maskableIcon = resolve(webRoot, 'public/icons/icon-maskable-512.png');
 const plainIcon = resolve(webRoot, 'public/icons/icon-512.png');
-const generatorPath = resolve(webRoot, 'scripts/generate-maskable-icon.ts');
 
 /**
  * A launcher crops a maskable icon to whatever shape the platform wants, so only
@@ -43,16 +43,12 @@ describe('maskable app icon', () => {
   it('reads a master that still exists', () => {
     // Everything above checks the committed OUTPUT, which keeps passing long
     // after the script that produces it stops running. The brand mark became a
-    // `.webp` and the generator kept naming the deleted `.png`: nothing failed
-    // until someone tried to regenerate, and the message they would have got is
-    // a bare ENOENT.
-    const generator = readFileSync(generatorPath, 'utf8');
-    const master = /const masterPath = resolve\(webRoot, '([^']+)'\)/.exec(generator);
-
-    expect(master, 'generate-maskable-icon.ts no longer resolves its master the way this test reads it').not.toBeNull();
-    expect(existsSync(resolve(webRoot, master?.[1] ?? '')), `${master?.[1]} is gone; regenerating would fail`).toBe(
-      true,
-    );
+    // `.webp` while the generator still named the deleted `.png`: nothing failed
+    // until someone tried to regenerate, and all they would have got is ENOENT.
+    //
+    // Asserted on the constant the generator itself resolves, so this cannot
+    // drift from what the generator actually opens.
+    expect(existsSync(BRAND_MASTER_PATH), `${BRAND_MASTER_PATH} is gone; regenerating would fail`).toBe(true);
   });
 
   it('is the size the manifest declares', async () => {
