@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-23T13:29:51.950Z",
+  "generatedAt": "2026-09-23T23:03:07.094Z",
   "entries": [
+    {
+      "prNumber": 5667,
+      "category": "fixed",
+      "title": "Woods lists now show climbs for the angle you're on. Flip on \"Other angles\" in filters to see the rest.",
+      "mergedAt": "2026-09-23T22:46:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5667"
+    },
     {
       "prNumber": 5749,
       "category": "fixed",
