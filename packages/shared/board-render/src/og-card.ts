@@ -50,11 +50,15 @@ const MAX_NAME_HEIGHT = 156;
 const NAME_TRUNCATION_ATTEMPTS = 4;
 
 export type OgCardContent = {
-  /** Climb name, already normalised by `normalizeOgCardText`. */
+  /**
+   * Climb name. Normalising it is the caller's job (`normalizeOgCardText`);
+   * the trim here is belt and braces for a caller that skipped it, not a second
+   * normalisation pass.
+   */
   name?: string;
   /** Grade label, e.g. `7a/V6`. */
   grade?: string;
-  /** Setter's display name, already normalised. */
+  /** Setter's display name. Same contract as `name`. */
   setter?: string;
   /** Board wall angle in degrees. */
   angle?: number;

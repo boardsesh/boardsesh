@@ -160,10 +160,16 @@ export const MAX_CARD_SETTER_CODEPOINTS = 32;
 
 /**
  * Invisible characters that are not in `\p{C}` but would still let a crafted URL
- * render something other than what it says: zero-width joiners and spaces, the
- * bidi overrides and isolates, and the byte-order mark.
+ * render something other than what it says: the zero-width space, the
+ * left/right marks, the bidi overrides and isolates, and the byte-order mark.
+ *
+ * U+200C and U+200D are deliberately NOT in that list. Both are text, not
+ * decoration: the joiner is what holds a compound emoji together, so stripping
+ * it turns a climber emoji into two glyphs, and the non-joiner is semantic in
+ * Persian and Arabic. Climb names contain emoji — the catalogue has one whose
+ * whole name is an emoji.
  */
-const INVISIBLE_CHARACTERS = /[\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/gu;
+const INVISIBLE_CHARACTERS = /[\u200B\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/gu;
 
 /**
  * Bound a caller-supplied string before it is drawn onto a share card.
@@ -185,7 +191,11 @@ export function normalizeOgCardText(raw: string, maxCodePoints: number): string 
     // the words either side of them.
     .replaceAll(/\s/gu, ' ')
     .replaceAll(INVISIBLE_CHARACTERS, '')
-    .replaceAll(/\p{C}/gu, '')
+    // `\p{C}` minus the format category, which is handled by the explicit list
+    // above instead. `\p{Cf}` holds the bidi overrides AND the joiners, and the
+    // joiners are text: stripping the whole category takes a compound emoji
+    // apart.
+    .replaceAll(/[\p{Cc}\p{Co}\p{Cs}\p{Cn}]/gu, '')
     .replaceAll(/ {2,}/gu, ' ')
     .trim();
 

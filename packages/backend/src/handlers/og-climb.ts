@@ -32,11 +32,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 /**
- * GET /og/climb — render a climb's Open Graph share card. Strict validation
- * runs before any CPU-heavy work; the render is served from in-memory caches
- * when possible. Returns an immutably cacheable JPEG (default), PNG, or WebP.
- */
-/**
  * Family handed to Pango.
  *
  * Named, not left to Pango's default `sans`. The image installs WenQuanYi Zen
@@ -66,6 +61,11 @@ const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto San
  */
 const cardTextEnabled = process.env.OG_CARD_TEXT_DISABLED !== '1';
 
+/**
+ * GET /og/climb — render a climb's Open Graph share card. Strict validation
+ * runs before any CPU-heavy work; the render is served from in-memory caches
+ * when possible. Returns an immutably cacheable JPEG (default), PNG, or WebP.
+ */
 export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
 

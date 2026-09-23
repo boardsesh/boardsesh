@@ -48,6 +48,15 @@ describe('normalizeOgCardText', () => {
     expect(normalizeOgCardText('\u{1F92E}', 64)).toBe('\u{1F92E}');
   });
 
+  it('keeps the joiner that holds a compound emoji together', () => {
+    // U+200D is text, not decoration: strip it and a climber emoji becomes two
+    // glyphs. U+200C is semantic in Persian and Arabic for the same reason.
+    const climber = '\u{1F9D7}\u200D\u2640\uFE0F';
+
+    expect(normalizeOgCardText(climber, 64)).toBe(climber);
+    expect(normalizeOgCardText('\u0645\u06CC\u200C\u0631\u0648\u062F', 64)).toContain('\u200C');
+  });
+
   it('returns an empty string when nothing survives', () => {
     expect(normalizeOgCardText('\u200B\u202E  ', 64)).toBe('');
   });
