@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-09-22T10:13:24.673Z",
+  "generatedAt": "2026-09-23T06:34:02.036Z",
   "entries": [
+    {
+      "prNumber": 5689,
+      "category": "fixed",
+      "title": "Swipe through every compatible climb in your playlist again.",
+      "mergedAt": "2026-09-23T06:30:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5689"
+    },
+    {
+      "prNumber": 5651,
+      "category": "new",
+      "title": "Infrastructure monitoring for the DR standby's trust path. No user-facing change.",
+      "mergedAt": "2026-09-23T06:28:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5651"
+    },
+    {
+      "prNumber": 5648,
+      "category": "new",
+      "title": "Internal infrastructure: a DR backup sidecar image. No user-facing change.",
+      "mergedAt": "2026-09-23T06:28:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5648"
+    },
     {
       "prNumber": 5684,
       "category": "fixed",

@@ -4,6 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-23
+
+### New
+
+- Infrastructure monitoring for the DR standby's trust path. No user-facing change. ([#5651](https://github.com/boardsesh/boardsesh/pull/5651))
+- Internal infrastructure: a DR backup sidecar image. No user-facing change. ([#5648](https://github.com/boardsesh/boardsesh/pull/5648))
+
+### Fixed
+
+- Swipe through every compatible climb in your playlist again. ([#5689](https://github.com/boardsesh/boardsesh/pull/5689))
+
 ## 2026-09-22
 
 ### App update
