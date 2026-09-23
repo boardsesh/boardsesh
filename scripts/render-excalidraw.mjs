@@ -31,12 +31,26 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const EXCALIDRAW_VERSION = '0.18.0';
+const EXCALIDRAW_MODULE_URL = `https://esm.sh/@excalidraw/excalidraw@${EXCALIDRAW_VERSION}?bundle-deps`;
 const PNG_SCALE = 2;
 const EXPORT_PADDING = 24;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const requireFromWeb = createRequire(join(repoRoot, 'packages/web/package.json'));
-const { chromium } = requireFromWeb('@playwright/test');
+// Playwright is resolved from packages/web on purpose: it is the one workspace
+// package that already depends on @playwright/test (for the e2e suite), and the
+// root package.json deliberately carries no dev tooling of its own. If the e2e
+// suite ever moves, point this at the package that owns Playwright then.
+const PLAYWRIGHT_OWNER_MANIFEST = join(repoRoot, 'packages/web/package.json');
+let chromium;
+try {
+  ({ chromium } = createRequire(PLAYWRIGHT_OWNER_MANIFEST)('@playwright/test'));
+} catch (error) {
+  console.error(
+    `could not resolve @playwright/test from ${PLAYWRIGHT_OWNER_MANIFEST}: ${error instanceof Error ? error.message : String(error)}\n` +
+      'Run `vp install`; if the e2e suite moved out of packages/web, update PLAYWRIGHT_OWNER_MANIFEST.',
+  );
+  process.exit(1);
+}
 
 const [targetDirArg, namePrefix = ''] = process.argv.slice(2);
 if (!targetDirArg) {
@@ -59,10 +73,32 @@ const PAGE_URL = 'http://excalidraw-render.local/';
 const PAGE_HTML = `<!doctype html><html><head><meta charset="utf-8"></head><body>
 <script type="module">
   window.EXCALIDRAW_ASSET_PATH = 'https://esm.sh/@excalidraw/excalidraw@${EXCALIDRAW_VERSION}/dist/prod/';
-  import('https://esm.sh/@excalidraw/excalidraw@${EXCALIDRAW_VERSION}?bundle-deps')
+  import(${JSON.stringify(EXCALIDRAW_MODULE_URL)})
     .then((lib) => { window.__excalidraw = lib; window.__ready = true; })
     .catch((error) => { window.__loadError = String(error && error.stack || error); });
 </script></body></html>`;
+
+// The exporter is loaded from esm.sh at run time rather than installed as a
+// workspace dependency: this script is run by hand when a diagram changes, never
+// in CI, and @excalidraw/excalidraw drags React and a large asset tree into the
+// lockfile that nothing else in the repo needs. The trade-off is a network
+// dependency, so check it up front and fail with a clear message instead of
+// letting the page import hang.
+const CDN_PREFLIGHT_TIMEOUT_MS = 10_000;
+const CDN_IMPORT_TIMEOUT_MS = 60_000;
+try {
+  const response = await fetch(EXCALIDRAW_MODULE_URL, {
+    method: 'HEAD',
+    signal: AbortSignal.timeout(CDN_PREFLIGHT_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+} catch (error) {
+  console.error(
+    `cannot reach ${EXCALIDRAW_MODULE_URL} (${error instanceof Error ? error.message : String(error)}).\n` +
+      'The renderer needs outbound access to esm.sh; it is a manual, dev-only step and is not run in CI.',
+  );
+  process.exit(1);
+}
 
 const browser = await chromium.launch({ headless: true });
 let failures = 0;
@@ -71,9 +107,13 @@ try {
   page.on('pageerror', (error) => console.error('[page]', error.message));
   await page.route(PAGE_URL, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: PAGE_HTML }));
   await page.goto(PAGE_URL);
-  await page.waitForFunction(() => window.__ready || window.__loadError, null, { timeout: 120_000 });
+  try {
+    await page.waitForFunction(() => window.__ready || window.__loadError, null, { timeout: CDN_IMPORT_TIMEOUT_MS });
+  } catch {
+    throw new Error(`Excalidraw did not finish loading from esm.sh within ${CDN_IMPORT_TIMEOUT_MS / 1000}s`);
+  }
   const loadError = await page.evaluate(() => window.__loadError);
-  if (loadError) throw new Error(`could not load Excalidraw: ${loadError}`);
+  if (loadError) throw new Error(`could not load Excalidraw from esm.sh: ${loadError}`);
 
   for (const sceneFile of sceneFiles) {
     const baseName = sceneFile.replace(/\.excalidraw$/, '');
