@@ -28,12 +28,21 @@ export function isSupportedBoardName(boardName: string): boardName is BoardName 
 /** Hard cap on the encoded frames string, to bound WASM work per request. */
 export const MAX_FRAMES_LENGTH = 16_384;
 
-export const MAX_SET_IDS = 10;
+/**
+ * Hard cap on how many hold sets one render may composite.
+ *
+ * Sized against the real catalogue, not guessed: the widest shipped config is
+ * Decoy layout 2 / size 1, which carries 19 sets. `set-ids-catalogue.test.ts`
+ * walks every entry in `SETS` and fails if one outgrows this number, because
+ * the previous cap of 10 silently 400'd every Decoy climb — both its share card
+ * and the board image on the page itself.
+ */
+export const MAX_SET_IDS = 24;
 
 /**
- * Ten comma-separated safe integers. Apply this byte-sized bound before regex
- * or split work so hostile query strings cannot make validation scale with an
- * arbitrary input length.
+ * `MAX_SET_IDS` comma-separated safe integers. Apply this byte-sized bound
+ * before regex or split work so hostile query strings cannot make validation
+ * scale with an arbitrary input length.
  */
 export const MAX_SET_IDS_LENGTH = MAX_SET_IDS * String(Number.MAX_SAFE_INTEGER).length + (MAX_SET_IDS - 1);
 
