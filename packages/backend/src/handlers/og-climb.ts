@@ -59,6 +59,10 @@ const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto San
  * `ogClimbQuerySchema` are the bound; this is the lever if that ever proves not
  * to be enough. The board, the grade and the angle are not caller free text and
  * keep rendering either way.
+ *
+ * Read once at module load, so flipping it takes a restart — a redeploy or a
+ * Railway restart, not an env edit alone. Still faster than shipping a code
+ * change, which is the point, but do not reach for it expecting it to be live.
  */
 const cardTextEnabled = process.env.OG_CARD_TEXT_DISABLED !== '1';
 

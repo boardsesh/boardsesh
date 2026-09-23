@@ -438,7 +438,11 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
       const overlay = await renderer.render(JSON.stringify(prepared.config));
       const wasmMs = performance.now() - wasmT0;
       const overlayBuffer = Buffer.from(overlay.rgba.buffer, overlay.rgba.byteOffset, overlay.rgba.byteLength);
-      const cardLayers = params.isOgVariant && params.card ? await renderOgCardLayers(params.card) : undefined;
+      // Degrade to the textless board rather than fail the render. Before the
+      // identity column existed this endpoint had no text path at all, so a
+      // Pango failure — a font missing on a non-Alpine host, a pathological
+      // string — must cost the words, not the card.
+      const cardLayers = params.isOgVariant && params.card ? await renderOgCardLayersOrNone(params.card) : undefined;
       const rendered = await renderBoardImageBuffer({
         overlayBuffer,
         cardLayers,
@@ -493,6 +497,17 @@ export function runOnRenderSemaphore<T>(fn: () => Promise<T>): Promise<T> {
     throw new RenderQueueSaturatedError();
   }
   return renderSemaphore.run(fn);
+}
+
+async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.OverlayOptions[] | undefined> {
+  try {
+    return await renderOgCardLayers(card);
+  } catch (error) {
+    logger.warn('[BoardRender] Card text failed to render; serving the board alone', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
 }
 
 /** `/og/climb` compatibility wrapper over the canonical renderer. */

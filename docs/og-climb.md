@@ -66,8 +66,9 @@ entry and leave the old one at the edge.
 `n` and `s` are the only caller-supplied free text on the endpoint, which is
 unauthenticated. They are NFC-normalised, stripped of control characters and of
 the invisible/bidi-override set, whitespace-collapsed, and truncated by code
-point. `OG_CARD_TEXT_DISABLED=1` drops both without a deploy; the board, grade
-and angle keep rendering.
+point. `OG_CARD_TEXT_DISABLED=1` drops both; the board, grade and angle keep
+rendering. It is read once at module load, so it takes a restart to apply —
+faster than shipping a code change, but not a live toggle.
 
 Responses are immutable (`Cache-Control: … immutable`, 1 year): the query
 fully determines the bytes. Invalid params are rejected with 400 before any

@@ -247,6 +247,11 @@ export const ogClimbQuerySchema = z
     g: z
       .string()
       .regex(/^[A-Za-z0-9+/. -]{1,16}$/, 'g must be a grade label')
+      // The charset admits spaces, so `g=%20%20` passes the regex, renders
+      // nothing, and still hashes to its own byte-cache entry. Trim first and
+      // require something left, so a blank grade keys as no grade.
+      .transform((grade) => grade.trim())
+      .refine((grade) => grade.length > 0, 'g must be a grade label')
       .optional(),
     angle: z.coerce.number().int().min(0).max(90).optional(),
   })

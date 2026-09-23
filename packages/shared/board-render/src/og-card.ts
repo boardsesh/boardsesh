@@ -206,7 +206,14 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
     [setter, 17, SETTER_COLOR, 0],
   ] as const) {
     if (!text) continue;
-    const rendered = await renderText(span(text, { size, weight: 500, color }), { fontFamily });
+    // Width-bounded like the name. A long board line — "Touchstone · Dungeon
+    // Trainer · Full Size" — otherwise runs past the column and is clipped at
+    // the canvas edge instead of wrapping.
+    const rendered = await renderText(span(text, { size, weight: 500, color }), {
+      fontFamily,
+      width: COLUMN_WIDTH,
+      align,
+    });
     if (cursor + rendered.height > COLUMN_FLOOR - COLUMN_TOP) break;
     rows.push({ input: rendered.buffer, left: anchor(rendered.width), offset: cursor });
     cursor += rendered.height + gap;

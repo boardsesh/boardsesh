@@ -114,6 +114,12 @@ describe('ogClimbQuerySchema card params', () => {
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, g: 'カチ' }).success).toBe(false);
   });
 
+  it('keys a blank grade as no grade at all', () => {
+    // The charset admits spaces, so this passed the regex, rendered nothing,
+    // and still minted its own byte-cache entry.
+    expect(ogClimbQuerySchema.safeParse({ ...validQuery, g: '   ' }).success).toBe(false);
+  });
+
   it('bounds the angle', () => {
     expect(ogClimbQuerySchema.parse({ ...validQuery, angle: '40' }).angle).toBe(40);
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '91' }).success).toBe(false);
@@ -138,6 +144,21 @@ describe('renderOgCardLayers', () => {
     expect(rtl).not.toHaveLength(0);
     // The grade anchors to the opposite edge, so its left offset moves right.
     expect(rtl[0].left).toBeGreaterThan(ltr[0].left);
+  });
+
+  it('keeps a long board line inside the column', async () => {
+    // Unbounded, a line like this ran past the column and was clipped at the
+    // canvas edge rather than wrapping.
+    const layers = await renderOgCardLayers({
+      grade: 'V4',
+      boardLine: 'Touchstone \u00B7 Dungeon Trainer \u00B7 Full Size Commercial',
+      setter: 'someone with quite a long name indeed',
+    });
+
+    for (const layer of layers) {
+      const { width } = await sharp(layer.input).metadata();
+      expect(layer.left + (width ?? 0), 'layer runs past the canvas').toBeLessThanOrEqual(1200);
+    }
   });
 
   it('keeps every layer on the canvas for a name long enough to truncate', async () => {
