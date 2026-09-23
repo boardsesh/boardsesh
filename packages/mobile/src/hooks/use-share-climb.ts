@@ -33,6 +33,23 @@ type ShareClimbArgs = {
  * so this only trims and drops blanks. An empty `s=` would still change the URL,
  * and the URL is the cache key.
  */
+/**
+ * Mirrors `OG_CARD_GRADE_PATTERN` in
+ * `packages/shared/board-render/src/validation.ts`.
+ *
+ * Copied rather than imported because this module is in the app bundle, and
+ * `@boardsesh/board-render`'s graph drags the WASM renderer and sharp in with
+ * it — the same reason the note above gives for hand-building this query
+ * string. `util.test.ts` on the web side reads this file and fails if the two
+ * stop matching.
+ */
+const OG_CARD_GRADE_PATTERN = /^[A-Za-z0-9+/. -]{1,16}$/;
+
+function toCardGrade(grade: string | null | undefined): string | undefined {
+  const trimmed = grade?.trim();
+  return trimmed && OG_CARD_GRADE_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
 function identityParams(identity: {
   name: string | null | undefined;
   grade: string | null | undefined;
@@ -41,7 +58,10 @@ function identityParams(identity: {
 }): string[] {
   const entries: [string, string | undefined][] = [
     ['n', identity.name?.trim()],
-    ['g', identity.grade?.trim()],
+    // Matched, not just trimmed: a grade the backend rejects is a 400, so
+    // sending one warms nothing AND warms a different URL than the card a
+    // crawler will actually fetch.
+    ['g', toCardGrade(identity.grade)],
     ['s', identity.setter?.trim()],
     ['angle', String(identity.angle)],
   ];

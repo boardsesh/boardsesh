@@ -16,6 +16,7 @@ import {
   buildOgBoardRenderUrl,
 } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
+import { OG_CARD_GRADE_PATTERN } from '@boardsesh/board-render/validation';
 
 describe('getImageUrl', () => {
   afterEach(() => {
@@ -449,6 +450,24 @@ describe('buildOgBoardRenderUrl grade guard', () => {
 
     expect(url).toContain('n=Boulder');
     expect(url).not.toContain('g=');
+  });
+
+  it('agrees with the app about which grades a card can draw', async () => {
+    // The app cannot import `OG_CARD_GRADE_PATTERN` — `@boardsesh/board-render`
+    // drags the WASM renderer and sharp into its bundle — so it carries a copy.
+    // Two copies of a validation rule is how the set_ids cap ended up wrong in
+    // three places at once, so pin them together here rather than trusting the
+    // comment that says they match.
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    // From the vitest root (the repo), not from this module: the web project
+    // runs in a browser-ish environment where `import.meta.url` is not a file
+    // URL.
+    const shareClimb = readFileSync(resolve(process.cwd(), 'packages/mobile/src/hooks/use-share-climb.ts'), 'utf8');
+    const appPattern = /const OG_CARD_GRADE_PATTERN = (\/.+\/);/.exec(shareClimb);
+
+    expect(appPattern, 'the app no longer declares OG_CARD_GRADE_PATTERN').not.toBeNull();
+    expect(appPattern?.[1]).toBe(String(OG_CARD_GRADE_PATTERN));
   });
 
   it('keeps every grade vocabulary we actually render', () => {
