@@ -81,41 +81,32 @@ you already know what the board is for.
 
 Apple allows up to 10; the current generated set uploads 10 screenshots. Google Play caps phones at 8, so its set drops playlist detail and logbook (see the Play metadata).
 
-### iPad — seven framed slots
+### iPad — six framed slots
 
 The iPad slot does not auto-scale from iPhone, and an iPad is used differently: it
-gets mounted by the wall. So it leads with the kiosk, then the boards it works
-with, then the live wall column beside the browse list — the shell no phone
-screenshot can show.
+gets mounted by the wall. So it leads with the kiosk, then shows the browse screen
+twice — once whole, once with its trailing "Now on the wall" column lifted out and
+enlarged beside it. That column is the shell no phone screenshot can show.
 
 | Output | What the image shows |
 | --- | --- |
 | `00-wall-kiosk.png` | The wall kiosk: the lit climb, readable from the mat. |
-| `01-board-family.png` | Kilter, Tension and MoonBoard 2016, captured on the same iPad. |
-| `02-wall-status.png` | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
-| `03-home.png` | The crew's activity feed. |
-| `04-discover.png` | The playlist library. |
-| `05-workout-generator.png` | The Record tab's workout generator. |
-| `06-profile.png` | Sends and progress across every board. |
+| `01-wall-status.png` | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
+| `02-home.png` | The crew's activity feed. |
+| `03-discover.png` | The playlist library. |
+| `04-workout-generator.png` | The Record tab's workout generator. |
+| `05-profile.png` | Sends and progress across every board. |
 
-Maestro captures nine raw PNGs for this set: the six shell screens the sidebar flow
-already took, plus three per-board views. The raw Climbs capture feeds
-`02-wall-status.png`; the raw `01-home` and `04-discover` captures each take a slot
-of their own. Board switching runs through the real UI — the iPad cannot use the
-`screenshot*` deep links the Android flow relies on, because the simulator's
-scheme-confirm dialog swallows them.
+It runs on the same six captures the sidebar flow already takes — the raw Climbs
+capture feeds two frames — so it needs no board switching and no extra fixtures.
 
-**No live-queue frame, and it is not an oversight.** Android reaches the shared
-session with `://join/<id>`. The iPad has no deep links, and its only in-app route
-is the home live rail, which the pinned fixture leaves empty
-(`followedLiveSessions` is `[]`, `BoardLiveSessions` is `null`) and which nothing in
-screenshot mode seeds — `screenshot-wall-seed.ts` covers the wall kiosk only. Adding
-that frame needs a seeded rail first.
-
-iPad frames are landscape, so the copy sits in a left column beside the capture
-rather than in a band above it: a 4:3 canvas has no room for both. A single screen
-therefore renders about 80% of the size it would at full width, and the side gutters
-that used to take a quarter of the canvas are gone.
+**No board-family frame yet, and it is not an oversight.** Switching boards
+mid-flow works (the picker is a horizontal carousel; scroll right and tap the card
+by its title, not by a `.*name.*` regex, which also matches the card's "Make
+<name> available offline" glyph and raises a native Alert). What does not work is
+the wall seed: `screenshot-wall-seed.ts` republishes for the new board, but its
+now-playing event keeps the boot board's climb, so the second board renders the
+previous board's climb with no holds lit. Fix that before adding the frame.
 
 Every board in the set is drawn with **Aura**, the app's default look. Both the
 drawing and which wall each shot sits on are pinned by the screenshots build

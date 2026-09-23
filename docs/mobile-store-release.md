@@ -132,9 +132,10 @@ of the width it would otherwise get; the gain is that the quarter of the canvas 
 used to be empty side gutters is now doing work. Panels are never bled off the
 canvas edge.
 
-The iPad set is its own campaign rather than the phone set in landscape — seven
-frames leading with the wall kiosk, the boards, and the trailing wall column
-lifted out of the browse screen and enlarged beside it. The
+The iPad set is its own campaign rather than the phone set in landscape — six
+frames leading with the wall kiosk, then the trailing wall column lifted out of
+the browse screen and enlarged beside it. It runs on the six captures the sidebar
+flow already takes, so it needs no board switching and no extra fixtures. The
 frame table lives in `app-stores/apple/app-store-metadata.md`. The wall-column crop
 is derived, not hardcoded: the shell's column is `WALL_COLUMN_WIDTH` (300pt,
 `packages/mobile/src/theme/size-class.ts`) and every iPad capture is @2x, so the

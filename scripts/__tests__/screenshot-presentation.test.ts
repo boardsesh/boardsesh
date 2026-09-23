@@ -651,37 +651,28 @@ describe('store screenshot presentation', () => {
     expect(() => parseFrameArguments(['--unsafe', 'true'])).toThrow('Invalid');
   });
 
-  it('resolves the iPad campaign and still frames a legacy landscape capture set', () => {
-    const legacy = Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'));
-    expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', legacy).map(({ output }) => output)).toEqual(
-      [...legacy].sort(),
-    );
-    const names = [...legacy, '06-kilter-board-view.png', '07-tension-board-view.png', '08-moonboard-board-view.png'];
+  it('resolves the iPad campaign from the six shell captures', () => {
+    const names = Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'));
     const recipes = resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-11-inch-m5', names)).toEqual(recipes);
     expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', [...names].reverse())).toEqual(recipes);
     expect(recipes.map(({ output }) => output)).toEqual([
       '00-wall-kiosk.png',
-      '01-board-family.png',
-      '02-wall-status.png',
-      '03-home.png',
-      '04-discover.png',
-      '05-workout-generator.png',
-      '06-profile.png',
+      '01-wall-status.png',
+      '02-home.png',
+      '03-discover.png',
+      '04-workout-generator.png',
+      '05-profile.png',
     ]);
+    // The browse capture carries the wall column; nothing else stands in for it,
+    // and it is the only capture that feeds two frames.
     expect(recipes[1]).toEqual({
-      output: '01-board-family.png',
-      caption: 'boardFamily',
-      layout: 'board-family',
-      sources: ['06-kilter-board-view.png', '07-tension-board-view.png', '08-moonboard-board-view.png'],
-    });
-    // The browse capture carries the wall column; nothing else stands in for it.
-    expect(recipes[2]).toEqual({
-      output: '02-wall-status.png',
+      output: '01-wall-status.png',
       caption: 'wallStatus',
       layout: 'wall-column',
       sources: ['02-climbs.png'],
     });
+    expect(recipes.filter((recipe) => recipe.sources.includes('02-climbs.png'))).toHaveLength(1);
     for (const missing of names) {
       expect(() =>
         resolveScreenshotRecipes(
@@ -705,12 +696,7 @@ describe('store screenshot presentation', () => {
       expect(recipe.sources).toEqual([recipe.output]);
     }
     // The iPad capture set is not a phone capture set, on either platform.
-    const ipad = [
-      ...Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5')),
-      '06-kilter-board-view.png',
-      '07-tension-board-view.png',
-      '08-moonboard-board-view.png',
-    ];
+    const ipad = Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'));
     expect(() => resolveScreenshotRecipes('ios', 'iphone-16-pro-max', ipad)).toThrow('Incomplete or unknown');
     expect(() => resolveScreenshotRecipes('android', 'pixel-2', ipad)).toThrow('Incomplete or unknown');
   });

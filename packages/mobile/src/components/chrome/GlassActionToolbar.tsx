@@ -52,16 +52,12 @@ export function GlassToolbarAction({
   onLongPress,
   accessibilityLabel,
   accessibilityHint,
-  testID,
   children,
 }: {
   onPress: () => void;
   onLongPress?: () => void;
   accessibilityLabel: string;
   accessibilityHint?: string;
-  /** Locale-independent handle for the Maestro store-screenshot flows. Most
-   *  actions need none; the board glyph does (its label is the board name). */
-  testID?: string;
   children: ReactNode;
 }) {
   return (
@@ -73,7 +69,6 @@ export function GlassToolbarAction({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      testID={testID}
       style={styles.action}
     >
       {children}

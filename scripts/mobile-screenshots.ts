@@ -1708,14 +1708,6 @@ function captureIosDevice(
         `SCREENSHOT_USER_EMAIL=${email}`,
         '-e',
         `SCREENSHOT_USER_PASSWORD=${password}`,
-        // The iPad campaign captures (board family + the shared crew session) are
-        // gated on this inside app-store-ipad.yaml, exactly as the Android flow
-        // gates its own. Always pass it — Maestro resolves `${VAR}` only from the
-        // `-e` params it was given, so an omitted one is an undefined identifier
-        // in the `when:` expression, not an empty string. Empty (a legacy or
-        // record run with no manifest) keeps the six-capture set.
-        '-e',
-        `SCREENSHOT_SHARED_SESSION_ID=${backendSession?.capture?.sharedSessionId ?? ''}`,
       ],
       process.env,
       captureDir,
