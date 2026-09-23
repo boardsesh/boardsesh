@@ -253,6 +253,16 @@ describe('handleOgClimb', () => {
       expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('Rock & Roll');
     });
 
+    it('names a font family rather than leaving Pango on its default', async () => {
+      // On the Alpine image `fc-match sans` resolves to the CJK font, which
+      // renders Latin in its own weaker glyphs and ignores weight="700" — the
+      // grade and the climb name would ship un-bold. Nothing in PR CI builds
+      // the backend image, so this assertion is the guard.
+      await run({ ...validParams, n: 'BING BANG BOSH', g: '7a/V6' });
+
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.fontFamily).toBe('Noto Sans');
+    });
+
     it('drops only the free-text fields when the kill switch is set', async () => {
       // A grade is matched by an allow-list, not free text, so the switch that
       // exists to turn off caller-supplied words must leave it alone.
