@@ -2,7 +2,7 @@
 
 Status: research draft (2026-09-23). No product code yet.
 
-Scope: this came from static reading of the public Android app (strings, .NET metadata and a blutter decompile of the Dart snapshot; no app code was run and no traffic was sent to DTB's servers), for interoperability. Anything we build past Phase 1 waits for DTB's agreement (§7).
+Scope: this came from static reading of the public Android app (strings, .NET metadata and a blutter decompile of the Dart snapshot; no app code was run and no traffic was sent to DTB's servers), for interoperability: so Boardsesh can light holds on DTB walls that climbers already use. It records only what that needs, and leaves out every credential found in the app. Anything we build past Phase 1 waits for DTB's agreement (§7).
 
 This covers what DTB is, what its app sends to a wall, how that compares with the boards we already support, and a phased plan for adding it. Claims taken from the app binaries are marked **[binary]**. Claims taken from DTB's website are marked **[site]**. Anything guessed is marked **[inferred]** or **[unverified]**.
 
