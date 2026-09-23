@@ -141,7 +141,9 @@ export async function frameComposition(
   // iPad ships landscape. A 4:3 canvas has no room for a copy band above a 4:3
   // capture, so the copy moves into a left column beside it.
   if (width > height) return frameLandscape(sources, caption, layout, width, height);
-  const light = layout === 'live-climb' || layout === 'wall-status' || layout === 'wall-column';
+  // `wall-column` is not listed: it is the iPad's layout, and the landscape path
+  // above has already returned by the time this runs.
+  const light = layout === 'live-climb' || layout === 'wall-status';
   const colors = light ? materialSurfaces.light : COLORS;
   const tint = light ? brandColors.tint : brandColorsDark.tint;
   const unit = Math.min(width, height * 0.8);
