@@ -2,7 +2,7 @@
 
 Status: research draft (2026-09-23). No product code yet.
 
-Scope: this came from static reading of the public Android app (strings and metadata only, no code execution, no traffic to DTB's servers), for interoperability. Anything we build past Phase 1 waits for DTB's agreement (§7).
+Scope: this came from static reading of the public Android app (strings, .NET metadata and a blutter decompile of the Dart snapshot; no app code was run and no traffic was sent to DTB's servers), for interoperability. Anything we build past Phase 1 waits for DTB's agreement (§7).
 
 This covers what DTB is, what its app sends to a wall, how that compares with the boards we already support, and a phased plan for adding it. Claims taken from the app binaries are marked **[binary]**. Claims taken from DTB's website are marked **[site]**. Anything guessed is marked **[inferred]** or **[unverified]**.
 
@@ -43,7 +43,7 @@ phone ──HTTPS/WebSocket──▶ Azure SignalR hub "updater" ──▶ wall 
 - Hub methods named in version 1 (`ClientServices.dll`), all **[binary]**:
   - Client to server: `JoinBoard` (log line: "`<user>` joining `<wall>`") and `UpdateProblem` (problem plus `mirrored` flag).
   - Server to client: `BoardJoined` ("Board joined successfully current problem: …") and `ProblemUpdated`.
-- Version 2 message names: `cast_problem` and `preview_problem`. **[binary]** Their exact JSON is **[unverified]**; see §8.
+- Version 2 connects to `wss://…/updater?id=<connectionId>`, sends the SignalR JSON handshake, then sends SignalR invocations `{"type":1,"target":"UpdateProblem","arguments":[…]}` (`websocket_service.dart`). **[binary]** The argument contents are **[unverified]**; the Bluetooth messages in §2c are the likely payload.
 - **Geofence.** Every wall row carries a latitude, a longitude and an activation distance in metres (`ActivationDistanceMeters`). The distance is 500 m for most walls; one test wall uses 100,000 km, which switches the check off. The app checks the phone's GPS position against this before it will cast (`CalculateDistanceFrom`, `geolocator`). **[binary]** Whether the server enforces the geofence as well is **[unverified]**. The answer decides whether a Boardsesh backend could relay casts without a phone at the wall.
 - Walls can have a passcode (`WallPasscode`, `GetPasscodeForWall`, `passcode/` endpoint). **[binary]**
 
@@ -68,9 +68,44 @@ Connection policy is a user setting **[binary]**:
 - "Disconnect 30 seconds after the last cast."
 - "Auto Cast to Board" sends the problem while you swipe through problem details.
 
-**Packet bytes: [unverified].** The Dart AOT snapshot keeps strings but not code structure. Recovering the exact frame needs one of the options in §8.
+### 2c. The Bluetooth message (decompiled)
 
-We do know what the frame has to carry. The app's model is `hold(\d+)` hold numbers with roles start, hand, foot-marker and finish, plus a mirror flag. **[binary]** Colours are fixed per role: green = start, blue = hand, red = finish. **[site]** So the frame is almost certainly an ordered list of LED numbers with a role each, and the controller picks the colour. That is the same shape as Woods (`packages/shared/ble-protocol/src/woods.ts`), not Aurora's RGB-per-LED frames.
+Everything below comes from a blutter decompile of 2.0.0 `libapp.so` (Dart 3.12.2, snapshot `ace654289f5abc240509fc941453ebc5`). **[binary]** Function names are cited so each claim can be checked.
+
+**Framing.** There is none. `BleCastService.sendMessage(map, deviceName)` calls `jsonEncode(map)`, UTF-8 encodes the result and makes one `BluetoothCharacteristic.write(bytes)` call with flutter_blue_plus defaults: write-with-response, no long write. On Android, flutter_blue_plus requests an MTU of 512 on connect, so a whole message fits in one ATT write. There is no header, no checksum and no chunking. A static flag drops a second write while one is still in flight ("BLE write already running, ignoring duplicate").
+
+**Finding the board.** The app scans and picks the device whose `platformName.trim()` equals `"DTB Board " + wallId` (`_getCastCharacteristic`, the scan-result closure). It then looks up the service `…def0` and characteristic `…def1`. Every wall has its own name, so the phone connects to the right wall even when two DTB walls are within range.
+
+**Messages.** The `castMethod` preference picks `"bluetooth"` or `"websocket"`. The maps below are the Bluetooth payloads; the WebSocket path sends `UpdateProblem` instead (§2a).
+
+| `type` | Sent from | Fields |
+| --- | --- | --- |
+| `cast_problem` | `_ProblemDetailPageState._sendToBoard` | `user`, `problem`, `wallId`, `mirrored` |
+| `preview_problem` | `_CreateProblemPageState._sendPreviewToWall`, hold filter page | `wallId`, `problem`, `holds`, `mirrored` |
+| `test` | settings page | `problem: "test"` (device name is plain `"DTB Board"`) |
+
+```json
+{"type":"cast_problem","user":"eli","problem":"roll up 6b+","wallId":"<wall key>","mirrored":false}
+{"type":"preview_problem","wallId":"<wall key>","problem":"New problem being created by …","holds":["K2","N15","Q8"],"mirrored":false}
+```
+
+What the fields mean:
+
+- `problem` in `cast_problem` is the problem's **name**, not its holds. The message carries no LED data. The controller must already hold that wall's problem list and look the name up itself. This is the most important constraint for Boardsesh: we cannot cast a Boardsesh-created climb with `cast_problem`.
+- `holds` in `preview_problem` is a list of grid labels. `HoldUtils.labelForWs(n, columns)` turns hold number `n` into a label: `i = n - 1`, column letter = `chr(65 + i % columns)`, row = `i ~/ columns + 1`. So on a 21-column wall `hold1` → `A1`, `hold2` → `B1` and `hold22` → `A2`, which matches `holdlist.csv`. The message has no roles, so a preview cannot say which holds are start or finish. This is the only message Boardsesh can use for arbitrary climbs.
+- `user` is the logged-in username, or `"guest"`.
+- `mirrored` is a bool. It is always `false` for previews.
+- `wallId` is the value read from the wall object's first field. It is probably the folder key, such as `ManDepot50` **[inferred]**; confirm on a real wall.
+
+**After a write** (`_handleDisconnectMode`, the `bluetoothMode` preference):
+
+| Mode | Behaviour |
+| --- | --- |
+| `exclusive` | Keeps the connection open. |
+| `shared` | Disconnects 5 s after each cast. |
+| `auto` | Disconnects 30 s after the last cast. |
+
+Compared with our existing boards, DTB is simpler than Aurora (no RGB, no framing) and closer to Woods, since the controller picks the colours. The difference is that DTB speaks JSON with grid labels, where Woods sends `index,role,…!`.
 
 ## 3. Data model
 
@@ -156,7 +191,7 @@ The binaries embed third-party credentials: a Dropbox app key and refresh flow, 
 
 | Concern | Existing pattern | Fit for DTB |
 | --- | --- | --- |
-| BLE encoder | `ble-protocol/src/{aurora,moonboard,woods}.ts`, mirrored in Swift `BoardBleEncoding.swift` | New `dtb.ts` encoder shaped like Woods (LED number + role, controller colours). Needs the §8 packet capture first. |
+| BLE encoder | `ble-protocol/src/{aurora,moonboard,woods}.ts`, mirrored in Swift `BoardBleEncoding.swift` | New `dtb.ts` encoder: JSON `preview_problem` with grid labels (§2c). Simpler than Woods; there are no roles. |
 | BLE transport | UART family (`6e400001`) or Aurora family, see `transport.ts`, `BoardScanFamily` in `mobile/src/lib/ble/types.ts` | Neither fits: DTB uses its own service UUID. Either add a third `BoardScanFamily` (`types.ts` says to review adapter options before doing this) or a per-board service/characteristic override in `adapter.ts`. |
 | Connection etiquette | Aurora keeps the connection; iOS has no auto-reconnect | DTB expects you to disconnect after a cast. Add an idle-disconnect option to `use-board-bluetooth.ts`. |
 | Board identity | Fixed catalogue (`PRODUCT_SIZES`, `board_layouts`) | Poor fit: every DTB wall is unique. |
@@ -180,10 +215,10 @@ Woods (`git show --stat 50098833707716d8235b8f78624b3cb930ee0bda`, #3306) is the
 
 ## 6. Phased plan
 
-**Phase 0: capture the protocol (blocking).** Do §8 before writing any code. Contact DTB in parallel (§7).
+**Phase 0: confirm on a wall.** The frame is decoded (§2c). Before writing code, check the open items in §8 on one real wall. Contact DTB in parallel (§7).
 
 **Phase 1: Bluetooth casting of Boardsesh-created climbs on DTB walls.**
-- A climber picks their DTB wall, draws a climb on the wall photo and casts it over Bluetooth.
+- A climber picks their DTB wall, draws a climb on the wall photo and casts it over Bluetooth as a `preview_problem`. Hold roles are not carried, so start and finish show only in the app.
 - Needs the wall geometry: the per-wall folder files.
 - No DTB account and no DTB climb data are involved.
 - Risk 5/5 (BLE). Ships as a native change on `release/next` only if a new native module is needed; `react-native-ble-plx` can already talk to a custom GATT service, so this is probably JS-only.
@@ -200,20 +235,23 @@ Risks:
 ## 7. Questions for DTB
 
 1. Would they give Boardsesh a partner API, or a data export for problems, walls and hold maps?
-2. Is the Bluetooth frame format stable, and can they document it?
+2. Will they keep the JSON Bluetooth messages stable, and add hold roles to `preview_problem`?
 3. Does the server enforce the geofence for cloud casts?
 4. How many walls run BLE-capable controller firmware? Older boxes are probably cloud-only.
 5. Is the controller ESP32-based, and does it accept more than one central at a time?
 
-## 8. Recovering the exact BLE frame
+## 8. How the BLE frame was recovered, and what is still open
 
-Pick one of these:
+The frame in §2c came from blutter (github.com/worawit/blutter, commit `4a60ac6`) run on `lib/arm64-v8a/libapp.so`. blutter writes Dart-annotated arm64 assembly, one file per Dart source file. The most useful files are `asm/dtb2/services/ble_cast_service.dart`, `asm/dtb2/hold_utils.dart`, `asm/dtb2/create_problem_page.dart` and `asm/dtb2/features/problem_detail/presentation/problem_detail_page.dart`.
 
-1. **Decompile the Dart AOT snapshot** with blutter (github.com/worawit/blutter) against `lib/arm64-v8a/libapp.so` from 2.0.0. Read `BleCastService`'s write call. This takes about 30 minutes, but blutter builds a matching Dart VM from source.
-2. **HCI snoop log.** Enable Android's Bluetooth HCI snoop log, cast three known problems at a DTB wall, and read the ATT writes to the `…def1` characteristic in Wireshark. Needs a phone and a DTB wall; it is the most reliable ground truth.
-3. **Ask DTB** (§7 question 2).
+Still to confirm on a real wall, with an Android HCI snoop log while casting:
 
-See also `docs/LED_BOX_BLE_CONNECTION_PROTOCOL.md` (earlier blutter use in this repo) and `docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md` (the closest existing role-coded protocol).
+1. The `wallId` string format and the advertised name.
+2. Whether a `preview_problem` lights every hold one colour, or colours the first and last holds as start and finish.
+3. How the controller gets its problem list for `cast_problem`, and whether it keeps it in sync through the cloud.
+4. Whether older controllers without BLE firmware exist in the field.
+
+See also `docs/LED_BOX_BLE_CONNECTION_PROTOCOL.md` and `docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md`.
 
 ## Appendix: artefacts
 
