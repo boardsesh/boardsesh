@@ -157,6 +157,7 @@ jobs:
             scripts/mobile-publish.ts \
             scripts/lib/eoas.ts \
             scripts/lib/mobile-publish-retry.ts \
+            scripts/lib/ota-branch-probe.ts \
             scripts/mobile-upload-sourcemaps.ts
           do
             echo "Snapshotting trusted OTA tooling: $source_path"
@@ -232,8 +233,9 @@ jobs:
           cp "$tooling_root/scripts/mobile-publish.ts" scripts/mobile-publish.ts
           cp "$tooling_root/scripts/lib/eoas.ts" scripts/lib/eoas.ts
           cp "$tooling_root/scripts/lib/mobile-publish-retry.ts" scripts/lib/mobile-publish-retry.ts
+          cp "$tooling_root/scripts/lib/ota-branch-probe.ts" scripts/lib/ota-branch-probe.ts
           cp "$tooling_root/scripts/mobile-upload-sourcemaps.ts" scripts/mobile-upload-sourcemaps.ts
-          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/mobile-upload-sourcemaps.ts
+          git add scripts/mobile-publish.ts scripts/lib/eoas.ts scripts/lib/mobile-publish-retry.ts scripts/lib/ota-branch-probe.ts scripts/mobile-upload-sourcemaps.ts
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"

@@ -81,11 +81,22 @@ afterEach(() => {
 });
 
 describe('NativeIosBleAdapter scan timeout', () => {
-  it('rejects the picker promise when no devices are discovered within 30s', async () => {
-    // Picker callback that subscribes but never resolves — simulates a user
-    // staring at an empty picker.
-    const adapter = new NativeIosBleAdapter(() => new Promise(() => {}));
-    const connectPromise = adapter.requestAndConnect().catch((error: Error) => error);
+  it('keeps an empty picker open with the scan stopped when nothing is discovered within 30s', async () => {
+    // Picker that subscribes and stays open until the climber cancels it.
+    const onScanStopped = vi.fn();
+    let cancelPicker: (error: Error) => void = () => {};
+    const adapter = new NativeIosBleAdapter(
+      (subscribe) =>
+        new Promise<string>((_resolve, reject) => {
+          subscribe(() => {}, onScanStopped);
+          cancelPicker = reject;
+        }),
+    );
+    let settledWith: unknown = 'pending';
+    const connectPromise = adapter.requestAndConnect().then(
+      (connection) => (settledWith = connection),
+      (error: unknown) => (settledWith = error),
+    );
     // Let microtasks settle (startScan is async).
     await Promise.resolve();
     await Promise.resolve();
@@ -94,10 +105,16 @@ describe('NativeIosBleAdapter scan timeout', () => {
     // Advance past any chained promise resolutions in the timeout handler.
     await vi.runAllTimersAsync();
 
-    const result = await connectPromise;
-    expect(result).toBeInstanceOf(Error);
-    expect((result as Error).message).toMatch(/no boards found/i);
+    // The scan window closed empty: the picker drops its spinner for the empty
+    // state (tips, Scan again) instead of the connect failing under it (#5654).
     expect(nativeMock.stopScan).toHaveBeenCalled();
+    expect(onScanStopped).toHaveBeenCalledOnce();
+    expect(settledWith).toBe('pending');
+
+    cancelPicker(new Error('Device selection cancelled'));
+    await connectPromise;
+    expect((settledWith as Error).message).toBe('Device selection cancelled');
+    expect(nativeMock.connect).not.toHaveBeenCalled();
   });
 
   it("does NOT reject the picker when devices have been discovered (user just hasn't picked yet)", async () => {
@@ -133,12 +150,18 @@ describe('NativeIosBleAdapter scan timeout', () => {
 
   it('falls back to the picker (not a hard reject) when targetSerial never advertises', async () => {
     let pickerOpened = false;
+    const onScanStopped = vi.fn();
     // Picker that stays open once shown (never resolves on its own).
-    const adapter = new NativeIosBleAdapter(() => {
+    const adapter = new NativeIosBleAdapter((subscribe) => {
       pickerOpened = true;
+      subscribe(() => {}, onScanStopped);
       return new Promise<string>(() => {});
     });
-    const connectPromise = adapter.requestAndConnect('NEEDLE-SERIAL').catch((error: Error) => error);
+    let settledWith: unknown = 'pending';
+    void adapter.requestAndConnect('NEEDLE-SERIAL').then(
+      (connection) => (settledWith = connection),
+      (error: unknown) => (settledWith = error),
+    );
     await Promise.resolve();
 
     // Before the grace window the auto-select is still silent — no picker.
@@ -152,13 +175,12 @@ describe('NativeIosBleAdapter scan timeout', () => {
     await Promise.resolve();
     expect(pickerOpened).toBe(true);
 
-    // ...and with nothing ever discovered, the scan timeout rejects so the
-    // sheet doesn't spin forever.
+    // ...and with nothing ever discovered, the scan timeout stops the spinner
+    // and leaves the picker up for its empty state, rather than failing (#5654).
     vi.advanceTimersByTime(30_000);
     await vi.runAllTimersAsync();
-    const result = await connectPromise;
-    expect(result).toBeInstanceOf(Error);
-    expect((result as Error).message).toMatch(/no boards found/i);
+    expect(onScanStopped).toHaveBeenCalledOnce();
+    expect(settledWith).toBe('pending');
   });
 
   it('lets the user pick the stored board after the grace window opens the picker', async () => {

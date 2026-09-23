@@ -466,7 +466,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     before the live \`boardNowPlaying\` subscription takes over.
     """
     boardRecentClimbs(boardId: Int!): [BoardPresenceClimb!]!
-    "Merged native and imported recent history; never represents current wall state."
+    "Merged native and imported recent displays, used to infer the current climb by display time."
     boardRecentHistory(boardId: Int!): [BoardPresenceClimb!]!
     "Chronological durable history with an opaque, board-scoped pagination cursor."
     boardHistoryPage(boardId: Int!, limit: Int, before: String): BoardHistoryPage!
@@ -635,6 +635,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     Search public gyms.
     """
     searchGyms(input: SearchGymsInput!): GymConnection!
+    "City/town suggestions; query must contain 3–80 characters. At most five results."
+    searchPlaces(query: String!): [PlaceSuggestion!]!
 
     """
     Live gyms that resemble one the user is about to create, so they can view or

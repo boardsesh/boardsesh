@@ -145,7 +145,16 @@ export function BoardRouteRedirect({ status }: { status: BoardRouteStatus }) {
  * Drive `target` to its destination and render the redirector while it happens.
  * `target` is `null` when the URL didn't parse, which renders the not-found.
  */
-export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget | null; mode?: BoardRouteMode }) {
+export function BoardRouteHandoff({
+  target,
+  mode,
+  activationIntent,
+}: {
+  target: BoardRouteTarget | null;
+  mode?: BoardRouteMode;
+  /** Opaque id for a pending internal tick handoff; URL flags alone cannot activate. */
+  activationIntent?: string | string[];
+}) {
   const report = useBoardRouteHandoffReporter(target, mode);
   const onHandedOff = useCallback(() => report('resolved'), [report]);
   // Read unconditionally, applied only where the gate already relaxes: on native
@@ -154,6 +163,7 @@ export function BoardRouteHandoff({ target, mode }: { target: BoardRouteTarget |
   const anonymousClimbEnabled = useAnonymousClimbViewEnabled();
   const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
     mode,
+    activationIntent,
     onHandedOff,
     anonymousClimbEnabled,
   });

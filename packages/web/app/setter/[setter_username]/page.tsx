@@ -13,7 +13,7 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
-import { createBoardContentPageMetadata, createNoIndexMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import {
   frontDoorPagePath,
@@ -143,12 +143,19 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     // is_draft = false` on `board_climbs` — as the `has_visible_climb` EXISTS
     // in `getSetterOgSummary` and as `visibleSetterClimbsWhere` in
     // `server-setter-data.ts`. Change one and change the other.
+    //
+    // Through the board-content helper, not `createNoIndexMetadata`: that one
+    // delegates to `createPageMetadata` and so ships a self-canonical plus the
+    // full four-locale `alternates.languages` map. On a surface of ~32,000
+    // setter URLs that republishes exactly the hreflang cluster this page
+    // exists to collapse, on the branch a crawler is most likely to hit.
     if (!summary) {
-      return createNoIndexMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.setter.fallbackTitle'),
         description: t('metadata.setter.fallbackDescription'),
         path: cleanPath,
         locale,
+        robots: NOINDEX_FOLLOW,
         imagePath: null,
       });
     }
@@ -180,12 +187,14 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     });
   } catch {
     // The lookup failing is not evidence the setter exists, so keep the error
-    // page out of the index — it previously emitted no canonical at all.
-    return createNoIndexMetadata({
+    // page out of the index — it previously emitted no canonical at all. Same
+    // helper as the branch above, for the same hreflang reason.
+    return createBoardContentPageMetadata({
       title: t('metadata.setter.fallbackTitle'),
       description: t('metadata.setter.fallbackDescription'),
       path: cleanPath,
       locale,
+      robots: NOINDEX_FOLLOW,
       imagePath: null,
     });
   }
@@ -256,7 +265,6 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
           boardDetailsByClimb={links.boardDetailsByClimb}
           unlinkedClimbUuids={links.unlinkedClimbUuids}
           page={page}
-          locale={locale}
         />
 
         <Box sx={actionsSx}>

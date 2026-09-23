@@ -21,6 +21,12 @@ vi.mock('../../providers/auth-provider', () => ({
 
 const trackMock = vi.fn();
 vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+// Login Succeeded goes through useTrackLoginSucceeded, which waits for the
+// profile before tracking (covered in login-analytics.test.tsx). Here it tracks
+// straight away so every assertion reads one event stream.
+vi.mock('../../lib/login-analytics', () => ({
+  useTrackLoginSucceeded: () => (properties: Record<string, unknown>) => trackMock('Login Succeeded', properties),
+}));
 
 const reportErrorMock = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({ reportError: (...args: unknown[]) => reportErrorMock(...args) }));
@@ -560,5 +566,61 @@ describe('useNativeOAuthSignIn — Android Google config-class fallback (#3100)'
     expect(signInWithAppleWebMock).not.toHaveBeenCalled();
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     expect(setError).toHaveBeenLastCalledWith('nativeStart.oauthError');
+  });
+});
+
+describe('useNativeOAuthSignIn — Login Succeeded names its screen', () => {
+  // Login Succeeded fires after a wait for the profile, by which time PostHog's
+  // session `$screen_name` has usually moved on, so the screen rides as a prop.
+  beforeEach(() => {
+    platform.OS = 'ios';
+    trackMock.mockReset();
+    reportErrorMock.mockReset();
+    signInWithAppleMock.mockReset();
+    signInWithGoogleMock.mockReset();
+    signInWithAppleWebMock.mockReset();
+    signInWithGoogleWebMock.mockReset();
+    consumeWebOAuthReturnMock.mockReset();
+    consumeWebOAuthReturnMock.mockReturnValue(null);
+  });
+
+  it('tags a sign-in from the login screen as login', async () => {
+    signInWithGoogleMock.mockResolvedValue({ success: true });
+
+    await runSignIn('google');
+
+    expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
+      auth_method: 'google',
+      flow: 'native',
+      screen: 'login',
+    });
+  });
+
+  it('tags a sign-up from the register screen as register', async () => {
+    signInWithAppleMock.mockResolvedValue({ success: true });
+
+    await runSignIn('apple', vi.fn(), true);
+
+    expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
+      auth_method: 'apple',
+      flow: 'native',
+      screen: 'register',
+      is_registration: true,
+    });
+  });
+
+  it('keeps the screen when the browser fallback completes the sign-up', async () => {
+    signInWithAppleMock.mockRejectedValue(Object.assign(new Error('unknown'), { code: 1000 }));
+    signInWithAppleWebMock.mockResolvedValue({ success: true });
+
+    await runSignIn('apple', vi.fn(), true);
+
+    expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
+      auth_method: 'apple',
+      flow: 'web_fallback',
+      fallback_mechanism: 'browser_deeplink',
+      screen: 'register',
+      is_registration: true,
+    });
   });
 });

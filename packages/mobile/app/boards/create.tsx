@@ -1,13 +1,14 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
+import type { BoardName, CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 import {
   useCreateBoard,
   useFollowBoard,
   useProfile,
+  usePopularBoardConfigs,
   fetchBoardByUuid,
   fetchBoardsBySerialNumbers,
 } from '../../src/lib/graphql/hooks';
@@ -24,6 +25,8 @@ import { track } from '../../src/lib/analytics';
 import { useAuth } from '../../src/providers/auth-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import { BUILDER_PRESET_PARAM_VALUE, NO_BOARD_PICKER_SOURCE } from '../../src/lib/boards/first-board-mode';
+import { presetBoardConfig } from '../../src/lib/boards/board-config-preset';
 import {
   selectForeignSerialBoards,
   boardConfigMatches,
@@ -50,6 +53,15 @@ type CreateOverrides = {
   allowDuplicateSerial?: boolean;
   allowDuplicateConfig?: boolean;
 };
+
+/** Which picker path opened the builder, on `Board Builder Abandoned`. */
+type BuilderOpenedFrom = 'onboarding' | 'no_board' | 'board_picker';
+
+function builderOpenedFrom(pickerSource: string | undefined): BuilderOpenedFrom {
+  if (pickerSource === 'onboarding') return 'onboarding';
+  if (pickerSource === NO_BOARD_PICKER_SOURCE) return 'no_board';
+  return 'board_picker';
+}
 
 /** Analytics properties describing a create attempt. Never carries free text or coordinates. */
 function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratch') {
@@ -91,6 +103,8 @@ export default function CreateBoard() {
     seedLayoutId?: string;
     seedSizeId?: string;
     seedSetIds?: string;
+    /** `'1'` when "My own board" opened the builder: open with a setup chosen. */
+    preset?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
   // Threaded through the picker from the first-run flow. Creating a board is one
@@ -118,7 +132,21 @@ export default function CreateBoard() {
   }, [params.seedBoardName, params.seedLayoutId, params.seedSizeId, params.seedSetIds]);
 
   const source = seed ? 'popular_seed' : 'scratch';
-  const builder = useBoardBuilder(seed);
+
+  // "My own board" in the first-board picker (#5654): open with the board
+  // type's most used setup already chosen, so the preview renders and Save
+  // works from the first frame. The popular list is the picker's own query
+  // (same key), so it is usually already cached; when it lands late the builder
+  // fills its still-empty cascade then. A type the list does not carry (every
+  // MoonBoard today) opens with nothing chosen rather than a guess.
+  const presetRequested = params.preset === BUILDER_PRESET_PARAM_VALUE && seed === null;
+  const { data: popularConfigs } = usePopularBoardConfigs({ limit: 12 }, { enabled: presetRequested });
+  const popularConfigList = popularConfigs?.configs;
+  const presetForBoard = useCallback(
+    (boardName: BoardName) => presetBoardConfig(boardName, popularConfigList),
+    [popularConfigList],
+  );
+  const builder = useBoardBuilder(seed, presetRequested ? { preset: presetForBoard } : undefined);
 
   // Auto-generated default name, e.g. "Marco's Kilter Original 12×12", from the
   // user's display name + config. Used as the placeholder and the create-time
@@ -159,6 +187,42 @@ export default function CreateBoard() {
   // set synchronously and is the real in-flight lock.
   const inFlightRef = useRef(false);
 
+  // `Board Builder Abandoned` (#5654): of the newcomers who reached Climbs and
+  // never opened a climb, 41% opened the builder and 10% created a board, with
+  // nothing to say where the rest stopped. Fired when the
+  // screen goes away without a board: back, swipe, or the picker dismissed
+  // under it. `boardSecuredRef` is set the moment a board exists or is chosen
+  // (created, reused, or followed), before the bind navigates, so a success
+  // never reads as a quit. The snapshot is refreshed after every render so the
+  // unmount reports what was on screen at the end, not at the start.
+  const boardSecuredRef = useRef(false);
+  const submitAttemptedRef = useRef(false);
+  const builderSnapshotRef = useRef({ boardType: builder.boardName, hadLayout: false, hadSize: false });
+  useEffect(() => {
+    builderSnapshotRef.current = {
+      boardType: builder.boardName,
+      hadLayout: builder.layoutId != null,
+      hadSize: builder.sizeId != null,
+    };
+  });
+  const openedFrom = builderOpenedFrom(params.source);
+  useEffect(() => {
+    const openedAtMs = Date.now();
+    return () => {
+      if (boardSecuredRef.current) return;
+      track(SHARED_EVENTS.BoardBuilderAbandoned, {
+        ...builderSnapshotRef.current,
+        source,
+        preset: presetRequested,
+        openedFrom,
+        submitAttempted: submitAttemptedRef.current,
+        secondsOpen: Math.round((Date.now() - openedAtMs) / 1000),
+      });
+    };
+    // Once per screen: the route's params cannot change while it is mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // A board the climber just built is theirs by construction, so there is
   // nothing to adopt — `isLocalOnly` skips the follow-and-download pass.
   //
@@ -192,6 +256,7 @@ export default function CreateBoard() {
         allowDuplicateConfig: overrides?.allowDuplicateConfig || undefined,
       };
       inFlightRef.current = true;
+      submitAttemptedRef.current = true;
       setSubmitting(true);
       setCreateError(null);
       hapticSelection();
@@ -230,10 +295,13 @@ export default function CreateBoard() {
 
       try {
         const board = await createBoard.mutateAsync({ ...input, ...granted });
+        boardSecuredRef.current = true;
         track(SHARED_EVENTS.BoardCreated, {
           ...describeInput(input, source),
           allowedDuplicate: !!granted.allowDuplicateConfig,
           allowedDuplicateSerial: !!granted.allowDuplicateSerial,
+          preset: presetRequested,
+          presetKept: builder.presetKept,
         });
         await finish(board);
         // Navigated away on success — no need to clear `submitting` (unmounting).
@@ -285,7 +353,7 @@ export default function CreateBoard() {
         setSubmitting(false);
       }
     },
-    [builder, defaultName, createBoard, finish, source, t],
+    [builder, defaultName, createBoard, finish, source, presetRequested, t],
   );
 
   const handleUseExistingDuplicate = useCallback(async () => {
@@ -295,7 +363,13 @@ export default function CreateBoard() {
     try {
       const board = await fetchBoardByUuid(duplicate.error.boardUuid);
       if (!board) throw new Error('Board not found');
-      track(SHARED_EVENTS.BoardCreateReusedExisting, { boardType: builder.boardName, source });
+      track(SHARED_EVENTS.BoardCreateReusedExisting, {
+        boardType: builder.boardName,
+        source,
+        preset: presetRequested,
+        presetKept: builder.presetKept,
+      });
+      boardSecuredRef.current = true;
       setDuplicate(null);
       await finish(board);
     } catch {
@@ -304,7 +378,7 @@ export default function CreateBoard() {
       inFlightRef.current = false;
       setSubmitting(false);
     }
-  }, [duplicate, builder.boardName, source, finish, t]);
+  }, [duplicate, builder.boardName, builder.presetKept, source, presetRequested, finish, t]);
 
   const handleAddAnother = useCallback(() => {
     const granted = duplicate?.granted;
@@ -333,6 +407,7 @@ export default function CreateBoard() {
     setSubmitting(true);
     try {
       await followBoard.mutateAsync(board);
+      boardSecuredRef.current = true;
       await finish(board);
     } catch {
       setCreateError(t('mobile.create.createError'));

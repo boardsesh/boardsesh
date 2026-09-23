@@ -50,7 +50,7 @@ import { OAuthProviderButtons, useOAuthProviders } from '../OAuthProviderButtons
 
 function ProviderHarness({ onSignIn = vi.fn() }: { onSignIn?: (provider: 'apple' | 'google') => void }) {
   const providers = useOAuthProviders();
-  return <OAuthProviderButtons disabled={false} isRegistration={false} providers={providers} onSignIn={onSignIn} />;
+  return <OAuthProviderButtons disabled={false} providers={providers} onSignIn={onSignIn} />;
 }
 
 describe('OAuthProviderButtons on web', () => {
@@ -161,7 +161,6 @@ describe('OAuthProviderButtons on web', () => {
     render(
       <OAuthProviderButtons
         disabled
-        isRegistration
         providers={{ apple: true, google: true, loading: false, error: false, retry: vi.fn() }}
         onSignIn={onSignIn}
       />,

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIT developer fields for a Boardsesh climbing session. Field `id`s match the
+  createField() ids in source/recording/ActivityController.mc. LAP fields become
+  one row per logged effort in Garmin Connect's lap table; SESSION fields are the
+  activity summary. The `Fit*` labels live in resources/strings/strings.xml.
+-->
+<resources>
+    <fitContributions>
+        <!-- LAP scope: one lap per logged attempt/send/flash. -->
+        <fitField id="0"  sortOrder="0" dataLabel="@Strings.FitGrade"    unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivityLaps="true" />
+        <fitField id="1"  sortOrder="1" dataLabel="@Strings.FitResult"   unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivityLaps="true" />
+        <fitField id="2"  sortOrder="2" dataLabel="@Strings.FitAttempt"  unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivityLaps="true" />
+        <fitField id="3"  sortOrder="3" dataLabel="@Strings.FitAngle"    unitLabel="@Strings.DegreeSuffix"
+                  displayInChart="false" displayInActivityLaps="true" />
+
+        <!-- SESSION scope: activity summary. -->
+        <fitField id="10" sortOrder="4" dataLabel="@Strings.FitSends"    unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivitySummary="true" />
+        <fitField id="11" sortOrder="5" dataLabel="@Strings.FitAttempts" unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivitySummary="true" />
+        <fitField id="12" sortOrder="6" dataLabel="@Strings.FitProblems" unitLabel="@Strings.FitUnitNone"
+                  displayInChart="false" displayInActivitySummary="true" />
+    </fitContributions>
+</resources>

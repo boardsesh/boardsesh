@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { OnboardingBoardStep } from './OnboardingBoardStep';
@@ -14,6 +14,7 @@ import { useBoardOfflineState } from '../board-discovery/use-board-offline-state
 import { trackNudgeAccepted, trackNudgeDismissed, trackNudgeShown } from '../../lib/offline-nudges/nudge-analytics';
 import type { NudgeEventContext } from '../../lib/offline-nudges/nudge-analytics';
 import { offlineBoardKeyForBoard } from '../../settings';
+import { reportError } from '../../lib/error-reporting';
 
 // Module-level so an absent board list keeps a stable identity — a fresh `[]`
 // per render would rebuild the carousel's items on every commit.
@@ -96,6 +97,8 @@ export function OnboardingBoardRoute({
     router.replace('/(tabs)/climbs');
   }, []);
 
+  const bindingRef = useRef(false);
+
   const activateBoard = useActivateBoard({
     source: 'onboarding',
     returnTo: '/(tabs)/climbs',
@@ -103,7 +106,19 @@ export function OnboardingBoardRoute({
     onBound: offerDownload,
   });
 
-  const onSelect = useCallback((board: UserBoard) => void activateBoard(board), [activateBoard]);
+  // Keep the selected board stable until its bind and download offer finish.
+  const onSelect = useCallback(
+    (board: UserBoard) => {
+      if (bindingRef.current) return;
+      bindingRef.current = true;
+      void activateBoard(board)
+        .catch(reportError)
+        .finally(() => {
+          bindingRef.current = false;
+        });
+    },
+    [activateBoard],
+  );
 
   /**
    * The card glyph: download a board WITHOUT binding it.

@@ -197,6 +197,12 @@
     "namePlaceholder": "Nombre del bloque",
     "descriptionPlaceholder": "Añade beta o notas sobre tu bloque...",
     "dismiss": "Descartar",
+    "cannotOpen": {
+      "boardCannotAuthor": "Todavía no puedes montar bloques en este plafón.",
+      "boardConfigIncomplete": "Los datos del plafón faltan o no son válidos. Vuelve a elegir el plafón para montar tu bloque.",
+      "noUsableBoard": "Elige un plafón primero y luego monta tu bloque.",
+      "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón."
+    },
     "alerts": {
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
@@ -354,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Sigue tu muro",
-        "subtitle": "Elige el plafón donde escalas para explorar sus bloques y ver lo que está encendido ahora mismo.",
+        "title": "Elige tu plafón",
+        "subtitle": "Escoge el plafón donde escalas para explorar sus bloques e iluminarlos.",
         "cta": "Buscar mi plafón"
       },
       "noClimbs": {
@@ -385,6 +391,10 @@
       "offlineCatalogQueued": {
         "title": "En cola para descargar",
         "subtitle": "{{name}} se descarga en cuanto vuelvas a tener conexión y sus bloques aparecerán en la búsqueda."
+      },
+      "boardRestoreFailed": {
+        "title": "No se pudo recuperar tu plafón",
+        "description": "Inténtalo de nuevo para volver a tus bloques."
       }
     },
     "detail": {
@@ -453,7 +463,6 @@
         "sort": "Orden"
       },
       "popularity": "Popularidad",
-      "shape": "Forma",
       "collection": {
         "label": "Colección",
         "any": "Cualquiera"
@@ -511,9 +520,11 @@
       "tall": "Solo vías altas",
       "tallClimbs": "Vías altas",
       "tallDescription": "Alcanzar el techo",
+      "tallLockedHint": "Bloqueado. Mantén pulsado el filtro \"Altas\" para desbloquearlo.",
       "wide": "Solo vías anchas",
       "wideClimbs": "Vías anchas",
       "wideDescription": "Usan la extensión 10x10",
+      "wideLockedHint": "Bloqueado. Mantén pulsado el filtro \"Anchas\" para desbloquearlo.",
       "betaVideos": "Solo con vídeos de beta",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Solo vías con un vídeo de beta",
@@ -551,7 +562,9 @@
       "chips": {
         "filtersWithCount": "Filtros · {{count}}",
         "tall": "Altas",
-        "wide": "Anchas"
+        "wide": "Anchas",
+        "lock": "Bloquear",
+        "unlock": "Desbloquear"
       },
       "removeFilterAria": "Quitar {{filter}}"
     },
@@ -642,6 +655,7 @@
     },
     "climbActions": {
       "preview": "Vista previa",
+      "playNext": "Poner a continuación",
       "copyLink": "Copiar enlace",
       "linkCopied": "Enlace copiado",
       "nameCopied": "Nombre copiado",
@@ -654,7 +668,8 @@
       "edit": "Editar vía",
       "editEntry": "Editar registro",
       "report": "Reportar bloque",
-      "closeOverlay": "Cerrar acciones de la vía"
+      "closeOverlay": "Cerrar acciones de la vía",
+      "openQueue": "Abrir la cola"
     },
     "create": {
       "brush": {

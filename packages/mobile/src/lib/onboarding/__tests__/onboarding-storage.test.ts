@@ -19,6 +19,7 @@ import {
 } from '@boardsesh/key-value-storage';
 import {
   clearBoardRevealTipPending,
+  clearLinkEmptyPromptDismissal,
   clearOnboardingSeen,
   hasBoardRevealTipPending,
   hasSeenOnboarding,
@@ -26,7 +27,10 @@ import {
   markOnboardingSeen,
   markTipSeen,
   replayOnboarding,
+  resumeLinkEmptyDismissalWrites,
   setBoardRevealTipPending,
+  suspendLinkEmptyDismissalWrites,
+  dismissLinkEmptyPrompt,
 } from '../onboarding-storage';
 
 describe('onboarding storage', () => {
@@ -40,6 +44,47 @@ describe('onboarding storage', () => {
     getMock.mockResolvedValue(null);
     await expect(hasSeenOnboarding()).resolves.toBe(false);
     expect(getMock).toHaveBeenCalledWith(ONBOARDING_SEEN_KEY);
+  });
+
+  it('drains an in-flight A dismissal before clearing it, then lets B dismiss', async () => {
+    let beginOldWrite!: () => void;
+    let finishOldWrite!: () => void;
+    const oldWriteStarted = new Promise<void>((resolve) => {
+      beginOldWrite = resolve;
+    });
+    setMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          beginOldWrite();
+          finishOldWrite = resolve;
+        }),
+    );
+
+    const oldWrite = dismissLinkEmptyPrompt();
+    await oldWriteStarted;
+    suspendLinkEmptyDismissalWrites();
+    let cleanupSettled = false;
+    const cleanup = clearLinkEmptyPromptDismissal().finally(() => {
+      cleanupSettled = true;
+    });
+    try {
+      await Promise.resolve();
+      expect(cleanupSettled).toBe(false);
+      expect(removeMock).not.toHaveBeenCalled();
+
+      finishOldWrite();
+      await Promise.all([oldWrite, cleanup]);
+      expect(removeMock).toHaveBeenCalledWith('onboarding_link_empty_dismissed');
+      expect(setMock.mock.invocationCallOrder[0]).toBeLessThan(removeMock.mock.invocationCallOrder[0]!);
+    } finally {
+      finishOldWrite();
+      await Promise.allSettled([oldWrite, cleanup]);
+      resumeLinkEmptyDismissalWrites();
+    }
+
+    setMock.mockResolvedValue(undefined);
+    await dismissLinkEmptyPrompt();
+    expect(setMock).toHaveBeenLastCalledWith('onboarding_link_empty_dismissed', true);
   });
 
   it('reports seen once the flag is true', async () => {

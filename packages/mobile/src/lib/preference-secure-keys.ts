@@ -17,7 +17,7 @@
 //   graph to load for one string.
 //
 // preference-secure-keys.test.ts guards the two ways an entry here can go wrong:
-// it pins the seventeen literals so a rename shows up as a diff, and it reads this
+// it pins the eighteen literals so a rename shows up as a diff, and it reads this
 // file's imports and fails if any of them names a module with a `.web` sibling —
 // the fork hazard above, which no value assertion can see because Vitest and tsc
 // both resolve to the native file.
@@ -44,8 +44,10 @@
 import {
   CHANGELOG_LAST_SEEN_KEY,
   ONBOARDING_BOARD_TIP_KEY,
+  ONBOARDING_LINK_EMPTY_DISMISSED_KEY,
   ONBOARDING_SEEN_KEY,
   ONBOARDING_TIP_ACCESSORY_KEY,
+  ONBOARDING_TIP_CLIMBS_TAB_KEY,
   ONBOARDING_TIP_CREW_KEY,
   ONBOARDING_TIP_QUICKACTIONS_KEY,
   ONBOARDING_TIP_RECORD_KEY,
@@ -72,9 +74,11 @@ export const PREFERENCE_SECURE_KEYS: readonly string[] = [
   CHANGELOG_LAST_SEEN_KEY,
   ONBOARDING_SEEN_KEY,
   ONBOARDING_BOARD_TIP_KEY,
+  ONBOARDING_LINK_EMPTY_DISMISSED_KEY,
   ONBOARDING_TIP_WORKOUT_KEY,
   ONBOARDING_TIP_CREW_KEY,
   ONBOARDING_TIP_RECORD_KEY,
   ONBOARDING_TIP_ACCESSORY_KEY,
   ONBOARDING_TIP_QUICKACTIONS_KEY,
+  ONBOARDING_TIP_CLIMBS_TAB_KEY,
 ];

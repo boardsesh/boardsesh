@@ -24,6 +24,8 @@ import {
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_PATH_SEGMENT,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  DR_PRIMARY_CNAME_TARGET,
+  DR_PRIMARY_HOSTNAME,
   DYNAMIC_REDIRECT_RULE_PHASE,
   LIST_PAGE_PATH_SUFFIX,
   RATE_LIMIT_RULE_PHASE,
@@ -87,6 +89,7 @@ const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
 const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
+const drPrimaryDnsRecord = requiredFullyManagedDnsRecord(DR_PRIMARY_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -142,6 +145,19 @@ function liveAssetsDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRec
     ttl: assetsDnsRecord.ttl,
     proxied: assetsDnsRecord.proxied,
     settings: assetsDnsRecord.settings,
+    ...overrides,
+  };
+}
+
+function liveDrPrimaryDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'dr-primary-dns-record-id',
+    name: drPrimaryDnsRecord.name,
+    type: drPrimaryDnsRecord.type,
+    content: drPrimaryDnsRecord.content,
+    ttl: drPrimaryDnsRecord.ttl,
+    proxied: drPrimaryDnsRecord.proxied,
+    settings: drPrimaryDnsRecord.settings,
     ...overrides,
   };
 }
@@ -234,6 +250,7 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     [wwwDnsRecord.name]: liveWwwDnsRecord(),
     [apexDnsRecord.name]: liveApexDnsRecord(),
+    [drPrimaryDnsRecord.name]: liveDrPrimaryDnsRecord(),
   };
 }
 
@@ -472,6 +489,31 @@ describe('buildPlan', () => {
     expect(dnsChange?.blocked).toBeUndefined();
   });
 
+  // The first apply after this record is declared is a create, and the DR standby
+  // cannot verify a certificate for a name that does not resolve -- so the create
+  // must be planned, and must not be held back behind the zone-wide SSL change the
+  // way a proxied record is.
+  it('creates the DR primary record when the zone does not have it yet', () => {
+    const drifted: LiveState = {
+      ...inSyncLiveState(),
+      dnsRecords: { ...inSyncDnsRecords(), [drPrimaryDnsRecord.name]: null },
+      sslMode: 'full',
+    };
+    const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+    const dnsChanges = changes.filter((change) => change.resource === 'dns');
+
+    expect(dnsChanges.map((change) => change.dnsName)).toEqual([DR_PRIMARY_HOSTNAME]);
+    expect(dnsChanges[0]?.blocked).toBeUndefined();
+    expect(dnsChanges[0]?.summary).toContain('missing — will create');
+    // What the apply would actually create, read off the plan rather than off the
+    // constant it was built from. Orange-clouding this record would break
+    // replication outright: Cloudflare's proxy carries neither raw TCP nor a
+    // non-HTTP port.
+    expect(dnsChanges[0]?.detail).toContain(`CNAME ${DR_PRIMARY_HOSTNAME} → ${DR_PRIMARY_CNAME_TARGET}`);
+    expect(dnsChanges[0]?.detail).toContain('proxied false');
+    expect(dnsChanges[0]?.detail).toContain('CNAME flattening disabled');
+  });
+
   it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
     const drifted: LiveState = {
       ...inSyncLiveState(),
@@ -494,6 +536,22 @@ describe('buildPlan', () => {
     const flattenedZone: LiveState = { ...inSyncLiveState(), flattenAllCnames: true };
 
     expect(() => buildPlan(desired, flattenedZone, { allowZoneSsl: false })).toThrow('Disable "Flatten all CNAMEs"');
+  });
+});
+
+describe('pgdr.boardsesh.com desired state', () => {
+  it('declares the exact DNS-only CNAME to the Railway TCP proxy', () => {
+    expect(drPrimaryDnsRecord).toEqual({
+      management: 'full',
+      name: 'pgdr.boardsesh.com',
+      type: 'CNAME',
+      content: 'iriguchi.proxy.rlwy.net',
+      ttl: 1,
+      proxied: false,
+      settings: {
+        flatten_cname: false,
+      },
+    });
   });
 });
 
@@ -1504,6 +1562,7 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
       [WS_HOSTNAME]: [liveDnsRecord()],
       [ASSETS_HOSTNAME]: [liveAssetsDnsRecord()],
       [WWW_HOSTNAME]: [liveWwwDnsRecord()],
+      [DR_PRIMARY_HOSTNAME]: [liveDrPrimaryDnsRecord()],
       // The apex carries the mail and verification records every zone has.
       // Cloudflare returns them from the same by-name lookup, and they must not
       // make the address record look ambiguous and fail the whole run.

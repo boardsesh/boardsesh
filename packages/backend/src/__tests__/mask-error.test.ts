@@ -8,8 +8,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { GraphQLError } from 'graphql';
-import { isDatabaseLeakError, isDatabaseUnavailableCode, maskDatabaseError } from '../graphql/mask-error';
+import { GraphQLError, Kind, parse, type FieldNode } from 'graphql';
+import {
+  databaseErrorFingerprint,
+  isDatabaseLeakError,
+  isDatabaseUnavailableCode,
+  maskDatabaseError,
+} from '../graphql/mask-error';
 import { markErrorReported, wasErrorReported } from '../utils/sentry-dedupe';
 
 const { sentryCaptureMock } = vi.hoisted(() => ({ sentryCaptureMock: vi.fn() }));
@@ -173,13 +178,13 @@ describe('maskDatabaseError diagnostic context (#4105)', () => {
     };
   }
 
-  it('tags the GraphQL field path so the offending resolver is named', () => {
+  it('tags the response path so the exact failing position is locatable', () => {
     const drizzle = makeDrizzleError(makePgError('53100'));
     const located = new GraphQLError(drizzle.message, { originalError: drizzle, path: ['searchClimbs', 'totalCount'] });
 
     maskDatabaseError(located);
 
-    expect(captureOptions().tags?.graphqlPath).toBe('searchClimbs.totalCount');
+    expect(captureOptions().tags?.graphqlResponsePath).toBe('searchClimbs.totalCount');
   });
 
   it('attaches the drizzle SQL that unwrapCause drops', () => {
@@ -191,9 +196,10 @@ describe('maskDatabaseError diagnostic context (#4105)', () => {
     expect(captureOptions().extra?.failedQuery).toBe(drizzle.message);
   });
 
-  it('still reports the pg cause itself, so the existing issue grouping is unchanged', () => {
-    // Sentry fingerprints on the captured exception, not on tags/extra. Capturing
-    // the cause (not the wrapper) is what keeps BOARDSESH-AK's history continuous.
+  it('still reports the pg cause itself, not the drizzle wrapper', () => {
+    // The event must carry the real PostgresError so its type, code and message
+    // are the pg ones. Grouping no longer rides on that choice — an explicit
+    // fingerprint decides it now (see the #4737 block below).
     const pgError = makePgError('53100');
     const located = new GraphQLError('boom', { originalError: makeDrizzleError(pgError), path: ['trendingFeed'] });
 
@@ -223,9 +229,182 @@ describe('maskDatabaseError diagnostic context (#4105)', () => {
     expect((captureOptions().extra?.failedQuery as string).length).toBe(2000);
   });
 
-  it('omits the path tag for an error that never reached graphql-js', () => {
+  it('omits both field tags for an error that never reached graphql-js', () => {
     maskDatabaseError(makeDrizzleError(makePgError('53100')));
 
-    expect(captureOptions().tags).not.toHaveProperty('graphqlPath');
+    expect(captureOptions().tags).not.toHaveProperty('graphqlResponsePath');
+    expect(captureOptions().tags).not.toHaveProperty('graphqlField');
+  });
+});
+
+/**
+ * #4737: with no explicit fingerprint, Sentry grouped on the captured exception —
+ * always a PostgresError from the same two postgres.js frames — so every database
+ * failure in the service landed in one issue (BOARDSESH-AK). Measured on that
+ * issue over 90d it held 34 distinct (pgCode, field) pairs: 585 events of 53100
+ * (disk-full) beside 6 of 42703 (undefined column). Sentry titled the whole
+ * bucket from a 42703 sample, so the issue read as "presence_seq column missing,
+ * 32 users" when the 32 users were the disk-full failures and the six 42703
+ * events were one developer's local backend leaking as `environment: production`.
+ *
+ * The grouping key must split on cause, stay stable per cause, AND be bounded by
+ * things the server controls. That last one is why these build their errors from
+ * REAL parsed AST nodes: `GraphQLError.path` is made of response keys, so it
+ * carries the client's alias, and a fingerprint keyed on it would let anyone mint
+ * unlimited Sentry issues by rotating aliases — strictly worse than the single
+ * bucket this replaces.
+ */
+describe('maskDatabaseError issue grouping (#4737)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function pgErrorWith(code: string, message: string): Error {
+    return Object.assign(new Error(message), { code });
+  }
+
+  /**
+   * The FieldNode graphql-js itself produces for `query`, so these tests exercise
+   * the real AST shape rather than a hand-rolled stand-in. `{ zzAlias: gym }`
+   * yields a node whose `name.value` is `gym` and whose `alias.value` is
+   * `zzAlias` — the distinction the fingerprint depends on.
+   */
+  function fieldNodeFor(query: string): FieldNode {
+    const [operation] = parse(query).definitions;
+    if (operation.kind !== Kind.OPERATION_DEFINITION) throw new Error('expected an operation');
+    const [selection] = operation.selectionSet.selections;
+    if (selection.kind !== Kind.FIELD) throw new Error('expected a field selection');
+    return selection;
+  }
+
+  type LocatedCase = { code: string; query: string; path?: (string | number)[]; message?: string };
+
+  function fingerprintFor({ code, query, path, message = 'boom' }: LocatedCase): string[] {
+    sentryCaptureMock.mockClear();
+    const drizzle = makeDrizzleError(pgErrorWith(code, message));
+    const node = fieldNodeFor(query);
+    maskDatabaseError(
+      new GraphQLError(drizzle.message, {
+        originalError: drizzle,
+        nodes: [node],
+        path: path ?? [node.alias?.value ?? node.name.value],
+      }),
+    );
+    const { fingerprint } = sentryCaptureMock.mock.calls[0][1] as { fingerprint?: string[] };
+    expect(fingerprint).toBeDefined();
+    return fingerprint as string[];
+  }
+
+  it('gives one resolver ONE key however the client aliases it', () => {
+    // The regression that matters: response keys are client-chosen, so a
+    // path-derived key would open a separate Sentry issue per alias and let a
+    // client fragment the project without limit.
+    const plain = fingerprintFor({ code: '53100', query: '{ similarClimbs { id } }' });
+    const aliased = fingerprintFor({ code: '53100', query: '{ zzArbitraryAlias: similarClimbs { id } }' });
+    const otherAlias = fingerprintFor({ code: '53100', query: '{ another_one_42: similarClimbs { id } }' });
+
+    expect(aliased).toEqual(plain);
+    expect(otherAlias).toEqual(plain);
+    // And the key names the schema field, not whatever the client typed.
+    expect(plain).toEqual(['graphql-yoga-mask', '53100', 'similarClimbs']);
+  });
+
+  it('is not fooled by an alias that impersonates another resolver', () => {
+    // `{ mySmartPlaylistCounts: similarClimbs }` is a legal query. A path-derived
+    // key would file it against the wrong resolver's issue.
+    const impersonating = fingerprintFor({ code: '53100', query: '{ mySmartPlaylistCounts: similarClimbs { id } }' });
+    const genuine = fingerprintFor({ code: '53100', query: '{ mySmartPlaylistCounts { id } }' });
+
+    expect(impersonating).not.toEqual(genuine);
+    expect(impersonating).toEqual(['graphql-yoga-mask', '53100', 'similarClimbs']);
+  });
+
+  it('tags the schema field and the alias-bearing path separately', () => {
+    sentryCaptureMock.mockClear();
+    const drizzle = makeDrizzleError(pgErrorWith('53100', 'boom'));
+    maskDatabaseError(
+      new GraphQLError(drizzle.message, {
+        originalError: drizzle,
+        nodes: [fieldNodeFor('{ zzArbitraryAlias: similarClimbs { id } }')],
+        path: ['zzArbitraryAlias'],
+      }),
+    );
+    const { tags } = sentryCaptureMock.mock.calls[0][1] as { tags?: Record<string, string> };
+
+    // Resolver identity is the schema name; the response path keeps the alias so
+    // one event can still be traced back to the exact query that sent it.
+    expect(tags?.graphqlField).toBe('similarClimbs');
+    expect(tags?.graphqlResponsePath).toBe('zzArbitraryAlias');
+  });
+
+  it('separates the undefined-column failure from the disk-full one that shared its issue', () => {
+    // The exact pairing that produced #4737's false P2.
+    const undefinedColumn = fingerprintFor({
+      code: '42703',
+      query: '{ board { id } }',
+      message: 'column "presence_seq" does not exist',
+    });
+    const diskFull = fingerprintFor({
+      code: '53100',
+      query: '{ userGroupedAscentsFeed { id } }',
+      message:
+        'could not resize shared memory segment "/PostgreSQL.523119486" to 1048576 bytes: No space left on device',
+    });
+
+    expect(undefinedColumn).not.toEqual(diskFull);
+  });
+
+  it('separates one code across resolvers, so a broken field cannot hide behind a busy one', () => {
+    expect(fingerprintFor({ code: '53100', query: '{ similarClimbs { id } }' })).not.toEqual(
+      fingerprintFor({ code: '53100', query: '{ mySmartPlaylistCounts { id } }' }),
+    );
+  });
+
+  it('separates codes within one resolver', () => {
+    expect(fingerprintFor({ code: '57P01', query: '{ board { id } }' })).not.toEqual(
+      fingerprintFor({ code: '42703', query: '{ board { id } }' }),
+    );
+  });
+
+  it('keeps one cause in one issue even though the message carries a fresh id every time', () => {
+    // The shared-memory segment id and byte count differ on every occurrence. A
+    // message-derived key would turn 585 disk-full events into 585 issues.
+    const first = fingerprintFor({
+      code: '53100',
+      query: '{ similarClimbs { id } }',
+      message:
+        'could not resize shared memory segment "/PostgreSQL.523119486" to 1048576 bytes: No space left on device',
+    });
+    const second = fingerprintFor({
+      code: '53100',
+      query: '{ similarClimbs { id } }',
+      message:
+        'could not resize shared memory segment "/PostgreSQL.1376362192" to 4194304 bytes: No space left on device',
+    });
+
+    expect(first).toEqual(second);
+  });
+
+  it('ignores list position, so one bad row cannot mint an issue per array index', () => {
+    const thirdRow = fingerprintFor({ code: '53100', query: '{ climb { id } }', path: ['userTicks', 3, 'climb'] });
+    const ninetiethRow = fingerprintFor({ code: '53100', query: '{ climb { id } }', path: ['userTicks', 90, 'climb'] });
+
+    expect(thirdRow).toEqual(ninetiethRow);
+    expect(thirdRow).not.toContain('3');
+    expect(thirdRow).not.toContain('90');
+  });
+
+  it('gives an error that never reached graphql-js a stable key instead of an undefined one', () => {
+    sentryCaptureMock.mockClear();
+    maskDatabaseError(makeDrizzleError(makePgError('53100')));
+    const { fingerprint } = sentryCaptureMock.mock.calls[0][1] as { fingerprint?: string[] };
+
+    expect(fingerprint).toEqual(['graphql-yoga-mask', '53100', 'unknown']);
+  });
+
+  it('falls back to an explicit unknown code rather than a hole in the key', () => {
+    expect(databaseErrorFingerprint(undefined, 'board')).toEqual(['graphql-yoga-mask', 'unknown', 'board']);
+    expect(databaseErrorFingerprint('53100', undefined)).toEqual(['graphql-yoga-mask', '53100', 'unknown']);
+    expect(databaseErrorFingerprint('53100', '')).toEqual(['graphql-yoga-mask', '53100', 'unknown']);
   });
 });

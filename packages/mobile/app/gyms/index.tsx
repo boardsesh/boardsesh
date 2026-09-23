@@ -5,15 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
-import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
-import { useAdoptFoundBoard } from '../../src/lib/board-discovery/use-adopt-found-board';
+import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation, type Coords } from '../../src/lib/use-device-location';
 import { useGeocodePlace } from '../../src/lib/use-place-search';
-import { useToast } from '../../src/providers/toast-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
+import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
@@ -67,15 +68,37 @@ function movedEnough(a: Coords, b: Coords): boolean {
 export default function GymDiscovery() {
   const router = useRouter();
   const { t } = useTranslation('boards');
-  const { showToast } = useToast();
   const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const location = useDeviceLocation();
   const { geocode, isGeocoding } = useGeocodePlace();
-  const setActiveBoard = useSetActiveBoard();
-  const adoptFoundBoard = useAdoptFoundBoard();
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const { returnTo, source, from } = useLocalSearchParams<{ returnTo?: string; source?: string; from?: string }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
+  // Pushed from the onboarding picker, which forwards its `source`: a gym pick
+  // there is the activation bind, same as a pick on `/boards` itself.
+  const fromOnboarding = source === 'onboarding';
+  const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
+  // `from=picker` means the picker pushed this screen and already counted the
+  // opening. Home and My gyms push it bare, so those entries count their own
+  // opening under `source: 'gym_finder'`.
+  const trackBoardSelection = useBoardPickerAnalytics({
+    activeBoard,
+    restoreFailed: boardRestoreFailed,
+    returnTo: boardReturnTo,
+    fromOnboarding,
+    surface: from === 'picker' ? 'gym_finder_from_picker' : 'gym_finder',
+    // Climbs' "Pick your board" picker forwards `source=no_board`; its gym picks
+    // count under that source, as the picker's own picks do.
+    fromNoBoard: isNoBoardEntry({ source }),
+  });
+  // The same bind as every other picker: write first, then the pick event, then
+  // leave, then follow the board so it lands in Your boards (and offer it
+  // offline). Its own copy used to skip the event and the first-run close-out.
+  const activateBoard = useActivateBoard({
+    source: fromOnboarding ? 'onboarding' : undefined,
+    returnTo: boardReturnTo,
+    onBound: trackBoardSelection,
+  });
   const [expandedGymUuid, setExpandedGymUuid] = useState<string | null>(null);
   // The selected gym/board mirrors the map pin and drives the row accent. Set by a
   // row tap (→ recenter the map) or a pin tap (→ scroll the row into view).
@@ -252,22 +275,10 @@ export default function GymDiscovery() {
   }, []);
 
   const activate = useCallback(
-    async (board: UserBoard) => {
-      hapticSelection();
-      try {
-        await setActiveBoard(board);
-        router.dismissTo(boardReturnTo);
-        // Follow the board (so it lands in My Boards) and offer to make it available
-        // offline. Fire-and-forget after navigating — the follow is idempotent and the
-        // offline confirm rides the root dialog, which survives the dismiss. Its own
-        // errors are handled inside (follow onError toast); they intentionally don't
-        // reach this catch, which is only for the board-switch write above.
-        void adoptFoundBoard(board);
-      } catch {
-        showToast(t('mobile.boardSwitchError'), 'error');
-      }
+    (board: UserBoard) => {
+      void activateBoard(board, { pickSource: 'gym_finder' });
     },
-    [setActiveBoard, adoptFoundBoard, router, boardReturnTo, showToast, t],
+    [activateBoard],
   );
 
   // Edit a board / gym the viewer can edit (the row only renders the pencil when

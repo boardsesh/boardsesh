@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Aperçus",
+        "promptOnLaunchTitle": "Afficher les aperçus au démarrage",
+        "promptOnLaunchSubtitle": "S'applique au prochain démarrage de Boardsesh",
         "pickTitle": "Tester un aperçu de PR",
         "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
         "testPlanTitle": "Plan de test #{{prNumber}}",
@@ -471,7 +473,16 @@
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",
         "record": "Tes croix s'affichent ici dans Progression : éventail de cotations et ta plus grosse croix. Importe ton carnet Kilter et Tension depuis Aurora pour partir avec ton historique.",
-        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là."
+        "accessory": "La barre du bas montre toujours ce qui est sur le mur. Change de voie depuis là.",
+        "climbsTab": "Pour revenir à tes blocs, touche la loupe dans la barre d'onglets."
+      },
+      "link": {
+        "title": "Emporte tes croix {{boardName}} avec toi",
+        "body": "Ton compte {{boardName}} et Boardsesh sont distincts, même si tu utilises le même e-mail. Lie ton compte pour synchroniser les croix disponibles avec ton carnet. Le délai de synchronisation et l’historique disponible varient.",
+        "footnote": "Pour lier ton compte, utilise ton identifiant {{boardName}}, pas ton e-mail.",
+        "continue": "Lier mon compte {{boardName}}",
+        "skip": "Pas maintenant",
+        "skipHint": "Tu peux le faire à tout moment dans Réglages › Apps connectées."
       }
     },
     "nav": {
@@ -611,7 +622,7 @@
     "statistics": "Statistiques",
     "sessions": "Sessions",
     "createdClimbs": "Blocs créés",
-    "auroraMigration": "Migration Aurora",
+    "auroraMigration": "Récupérer votre carnet",
     "startClimbing": "Commencer à grimper",
     "signIn": "Se connecter",
     "nav": {
@@ -874,7 +885,7 @@
       "help": "Aide",
       "docs": "Doc développeur",
       "playlists": "Playlists",
-      "auroraMigration": "Migration Aurora",
+      "auroraMigration": "Récupérer ton carnet",
       "legal": "Mentions légales",
       "privacy": "Confidentialité",
       "gymsKilter": "Salles avec une board Kilter",

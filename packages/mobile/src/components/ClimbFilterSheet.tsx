@@ -71,6 +71,7 @@ import { spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
+import { NO_LOCKED_DIMENSIONS, withLockedDimensions, type LockedDimensions } from '../lib/dimension-chips';
 
 export type { ClimbFilters };
 export { DEFAULT_FILTERS };
@@ -97,6 +98,13 @@ type ClimbFilterSheetProps = {
    *  for the same reason as `onNameChange`: without it, clearing would blank the
    *  field while the committed search term quietly survived. */
   onClearName: () => void;
+  /**
+   * Tall/Wide dimensions whose chip-row lock is in force (iOS only; see
+   * lib/dimension-chips.ts). Their switch shows on and is disabled, and the
+   * draft keeps them set (seeded and through Reset), so the "Show N" count
+   * matches the list the lock will enforce after Apply.
+   */
+  lockedDimensions?: LockedDimensions;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -178,6 +186,7 @@ export function ClimbFilterSheet({
   onApply,
   onNameChange,
   onClearName,
+  lockedDimensions = NO_LOCKED_DIMENSIONS,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
@@ -219,7 +228,7 @@ export function ClimbFilterSheet({
   const showCountNote = boardName === 'kilter';
 
   const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
-    statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+    withLockedDimensions(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), lockedDimensions),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
   // The name field's own draft — seeded from the committed `searchName` prop.
@@ -264,6 +273,13 @@ export function ClimbFilterSheet({
   // its native host each present; this just makes the code path uniform).
   const [presentEpoch, setPresentEpoch] = useState(0);
 
+  // Read through a ref, NOT listed as a dep of the sync below: after Reset clears
+  // hasLocalDraftEditsRef, any re-run of that sync re-seeds the draft from the
+  // committed filters and so undoes the Reset. A lock that changes while the
+  // sheet is open still shows, because each switch reads `lockedDimensions`.
+  const lockedDimensionsRef = useRef(lockedDimensions);
+  lockedDimensionsRef.current = lockedDimensions;
+
   // Sync committed parent filters only until the user starts editing. After that,
   // local edits are draft-only until Apply and must not be overwritten by parent
   // ref churn while the sheet is open.
@@ -271,7 +287,12 @@ export function ClimbFilterSheet({
     if (hasLocalDraftEditsRef.current) return;
     // These direct setters intentionally bypass the draft-guard wrappers:
     // parent prop sync should not mark committed state as an in-flight edit.
-    setLocalFilters(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated));
+    setLocalFilters(
+      withLockedDimensions(
+        statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+        lockedDimensionsRef.current,
+      ),
+    );
     setLocalBoardFilters(currentBoardFilters);
   }, [currentFilters, currentBoardFilters, isAuthenticated]);
 
@@ -302,7 +323,7 @@ export function ClimbFilterSheet({
   // Tall/Wide apply on any board whose active size has a shorter/narrower sibling
   // in its family (getTallWideScope — the shared source of truth the chip row and
   // server filter use), not just Kilter. Each toggle renders only where it applies,
-  // so the sheet control stays reachable even when the Shape chip is unpinned.
+  // so the sheet control stays reachable even when its chip is unpinned.
   const { hasShorter: showTallControl, hasNarrower: showWideControl } = boardConfig
     ? getTallWideScope(boardConfig.boardName as BoardName, boardConfig.layoutId, boardConfig.sizeId)
     : { hasShorter: false, hasNarrower: false };
@@ -634,7 +655,8 @@ export function ClimbFilterSheet({
 
   const handleReset = useCallback(() => {
     hapticSelection();
-    updateLocalFilters(DEFAULT_FILTERS);
+    // A locked Tall/Wide survives Reset here just as it does on the chip row.
+    updateLocalFilters(withLockedDimensions(DEFAULT_FILTERS, lockedDimensions));
     updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
     // Clear the name field too (#3606) — CALLS handleClearNameField rather than
     // repeating its two lines, so Reset and the inline × are two callers of one
@@ -642,7 +664,7 @@ export function ClimbFilterSheet({
     // logic grows.
     handleClearNameField();
     hasLocalDraftEditsRef.current = false;
-  }, [updateLocalBoardFilters, updateLocalFilters, handleClearNameField]);
+  }, [updateLocalBoardFilters, updateLocalFilters, handleClearNameField, lockedDimensions]);
 
   // The Holds row is always visible now (no Refine accordion to expand), so
   // prewarm the create-board hold geometry as soon as the sheet is visible with
@@ -1127,35 +1149,52 @@ export function ClimbFilterSheet({
                 trackColor={trackColor}
               />
 
-              {/* Shape — shown wherever a shorter/narrower sibling size exists (Kilter
-                  homewall, Tension Board 2, Decoy, Grasshopper); each toggle only where
-                  it applies. Matches the chip row so Tall/Wide stays reachable here even
-                  when the Shape chip is unpinned. */}
-              {showTallControl || showWideControl ? (
+              {/* Tall / Wide — shown wherever a shorter/narrower sibling size exists
+                  (Kilter homewall, Tension Board 2, Decoy, Grasshopper); each only
+                  where it applies. Matches the chip row so the filter stays
+                  reachable here even when its chip is unpinned. They're separate
+                  chips, so each gets a header naming its chip with the pin (the
+                  Beta videos layout), keeping the switches aligned with the rest. */}
+              {showTallControl ? (
                 <>
                   <View style={styles.subsectionGap} />
                   <View style={styles.pinnableLabelRow}>
                     <Text variant="footnote" style={styles.subsectionLabel}>
-                      {t('mobile.filter.shape')}
+                      {t('mobile.search.chips.tall')}
                     </Text>
-                    <PinToggle kind="shape" />
+                    <PinToggle kind="tall" />
                   </View>
-                  {showTallControl ? (
-                    <SwitchRow
-                      label={t('mobile.filter.tall')}
-                      description={t('mobile.filter.tallDescription')}
-                      value={!!localFilters.onlyTallClimbs}
-                      onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                    />
-                  ) : null}
-                  {showWideControl ? (
-                    <SwitchRow
-                      label={t('mobile.filter.wide')}
-                      description={t('mobile.filter.wideDescription')}
-                      value={!!localFilters.onlyWideClimbs}
-                      onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                    />
-                  ) : null}
+                  {/* A locked Tall (iOS chip-row lock) reads on and can't be switched
+                      off here; its hint says how to unlock it from the chip. */}
+                  <SwitchRow
+                    label={t('mobile.filter.tall')}
+                    description={
+                      lockedDimensions.tall ? t('mobile.filter.tallLockedHint') : t('mobile.filter.tallDescription')
+                    }
+                    value={lockedDimensions.tall || !!localFilters.onlyTallClimbs}
+                    disabled={lockedDimensions.tall}
+                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                  />
+                </>
+              ) : null}
+              {showWideControl ? (
+                <>
+                  <View style={styles.subsectionGap} />
+                  <View style={styles.pinnableLabelRow}>
+                    <Text variant="footnote" style={styles.subsectionLabel}>
+                      {t('mobile.search.chips.wide')}
+                    </Text>
+                    <PinToggle kind="wide" />
+                  </View>
+                  <SwitchRow
+                    label={t('mobile.filter.wide')}
+                    description={
+                      lockedDimensions.wide ? t('mobile.filter.wideLockedHint') : t('mobile.filter.wideDescription')
+                    }
+                    value={lockedDimensions.wide || !!localFilters.onlyWideClimbs}
+                    disabled={lockedDimensions.wide}
+                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                  />
                 </>
               ) : null}
 

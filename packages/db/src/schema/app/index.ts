@@ -1,4 +1,5 @@
 export * from './gyms';
+export * from './places';
 export * from './gym-activity-stats';
 export * from './gym-kiosks';
 export * from './gym-merge-audit';

@@ -203,6 +203,12 @@
     "namePlaceholder": "Climb name",
     "descriptionPlaceholder": "Add beta or notes about your climb...",
     "dismiss": "Dismiss",
+    "cannotOpen": {
+      "boardCannotAuthor": "You can't set climbs on this board yet.",
+      "boardConfigIncomplete": "The board details are missing or invalid. Pick the board again to set your climb.",
+      "noUsableBoard": "Pick a board first, then set your climb.",
+      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board."
+    },
     "alerts": {
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
@@ -354,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Follow your wall",
-        "subtitle": "Pick the board you climb on to browse its problems and see what's lit on it right now.",
+        "title": "Pick your board",
+        "subtitle": "Choose the wall you climb on to browse its climbs and light them up.",
         "cta": "Find my board"
       },
       "noClimbs": {
@@ -385,6 +391,10 @@
       "offlineCatalogQueued": {
         "title": "Queued for download",
         "subtitle": "{{name}} downloads the moment you're back online, and these climbs turn up in search."
+      },
+      "boardRestoreFailed": {
+        "title": "Couldn’t restore your board",
+        "description": "Try again to get back to your climbs."
       }
     },
     "detail": {
@@ -453,7 +463,6 @@
         "sort": "Sort"
       },
       "popularity": "Popularity",
-      "shape": "Shape",
       "collection": {
         "label": "Collection",
         "any": "Any"
@@ -511,9 +520,11 @@
       "tall": "Tall climbs only",
       "tallClimbs": "Tall climbs",
       "tallDescription": "Reach the top of the wall",
+      "tallLockedHint": "Locked. Long-press the Tall chip to unlock.",
       "wide": "Wide climbs only",
       "wideClimbs": "Wide climbs",
       "wideDescription": "Use the 10x10 side expansion",
+      "wideLockedHint": "Locked. Long-press the Wide chip to unlock.",
       "betaVideos": "Beta videos only",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Only climbs with a beta video",
@@ -551,7 +562,9 @@
       "chips": {
         "filtersWithCount": "Filters · {{count}}",
         "tall": "Tall",
-        "wide": "Wide"
+        "wide": "Wide",
+        "lock": "Lock",
+        "unlock": "Unlock"
       },
       "removeFilterAria": "Remove {{filter}}"
     },
@@ -642,6 +655,7 @@
     },
     "climbActions": {
       "preview": "Preview",
+      "playNext": "Play next",
       "copyLink": "Copy link",
       "linkCopied": "Link copied",
       "nameCopied": "Name copied",
@@ -654,7 +668,8 @@
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
-      "closeOverlay": "Close climb actions"
+      "closeOverlay": "Close climb actions",
+      "openQueue": "Open the queue"
     },
     "create": {
       "brush": {

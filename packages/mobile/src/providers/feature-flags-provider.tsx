@@ -70,6 +70,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
   },
   {
+    key: 'board-link-onboarding-step',
+    label: 'Onboarding board-account link step',
+    description:
+      'Offer to link a supported board account after the first-run board pick. Off or unresolved skips the extra step.',
+  },
+  {
     key: 'kilter-oauth-linking',
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
@@ -158,6 +164,49 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Emergency kill switch: hides the Report climb action, the More-tab Moderation row and the community moderation status. Unresolved reads as enabled (kill switches invert the default; see docs/feature-flags.md).',
   },
+  {
+    key: 'active-board-follow-heal-kill',
+    label: 'Disable the active-board follow heal',
+    description:
+      'Emergency kill switch: stops the app silently following the board it launched on when that board is neither yours nor followed (#5654). The heal waits for flags to resolve before it runs, so turning this on takes effect on the next launch without an OTA. Unresolved reads as enabled.',
+  },
+  {
+    key: 'connectivity-banner-kill',
+    label: 'Disable the connectivity banner',
+    description:
+      'Emergency kill switch for the bottom "No signal / server trouble / Back online" banner, which never painted from 2.2.0 until #5654 woke it up. Hides the banner only: outage detection and the fail-fast path keep running (that is backend-outage-detection). Unresolved reads as enabled.',
+  },
+  {
+    key: 'qa-tester-gate-kill',
+    label: 'Disable the QA launch prompt',
+    description:
+      'Emergency kill switch for the tester-only launch prompt that offers a PR preview or shows the brief for the running one. Dormant from 2.2.0 until #5654. The More-tab QA rows stay. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'send-recovery-gate-kill',
+    label: 'Disable the recovered-sends notice',
+    description:
+      'Emergency kill switch for the one-time "sends we lost are on their way" notice (#5335), dormant from 2.2.0 until #5654. The sends themselves are requeued by the schema migration either way, and the notice stays owed in the database while this is on. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'first-board-picker-kill',
+    label: 'Disable the first-board picker',
+    description:
+      'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
+  },
+  {
+    key: 'first-connect-cta-kill',
+    label: 'Disable the connect step',
+    description:
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+  },
+  {
+    key: 'first-connect-cta-arm',
+    label: 'Force the connect-step arm (QA)',
+    description:
+      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+    variants: ['treatment', 'control'],
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -222,9 +271,18 @@ export const FEATURE_FLAG_RESOLUTION_TIMEOUT_MS = 2000;
 
 export function FeatureFlagsProvider({
   flags = DEFAULT_FEATURE_FLAGS,
+  staticFlagsAreFinal = true,
   children,
 }: {
   flags?: FeatureFlags;
+  /**
+   * Whether a supplied `flags` bag is the whole answer. True for a test, which
+   * hands over every value it cares about. False for the root layout's env
+   * override, which pins one or two keys while PostHog still answers for every
+   * other flag, kill switches included: reading that bag as final would let a
+   * gate act before a switch flipped in PostHog could reach it.
+   */
+  staticFlagsAreFinal?: boolean;
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
@@ -256,9 +314,10 @@ export function FeatureFlagsProvider({
     };
   }, []);
 
-  // A statically supplied bag — the env override, and every test — is already
-  // final: there is nothing on its way that could change it.
-  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS;
+  // A statically supplied bag that is the whole answer (every test) is already
+  // final: there is nothing on its way that could change it. A partial one (the
+  // env override) still waits for PostHog like an empty bag does.
+  const hasStaticFlags = flags !== DEFAULT_FEATURE_FLAGS && staticFlagsAreFinal;
 
   const value = useMemo<FeatureFlags>(() => {
     // Policy-controlled flags lose their override outside a dev build, so this
@@ -354,6 +413,67 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useClimbModerationEnabled(): boolean {
   return useFeatureFlag('climb-moderation-kill') !== true;
+}
+
+/**
+ * Kill switch for the active-board follow heal (#5654): the silent `followBoard`
+ * the app sends at launch for a board that is bound on this phone but missing
+ * from Your boards.
+ *
+ * A KILL switch because the heal is a silent server write that reaches the whole
+ * store fleet by OTA, and this is the only way to stop it without shipping
+ * another one. Missing/undefined reads as "not killed". The heal itself waits for
+ * `useFeatureFlagsResolved()` before it acts, so an unresolved first frame never
+ * slips a follow past a flag that is set.
+ */
+export function useActiveBoardFollowHealEnabled(): boolean {
+  return useFeatureFlag('active-board-follow-heal-kill') !== true;
+}
+
+/**
+ * Kill switches for the three launch surfaces #5654 woke up. All three sat
+ * behind a `ready` prop frozen at false from 2.2.0 on, so the OTA that fixed the
+ * wiring turned on features the fleet had never run. Each gets its own switch so
+ * one misbehaving surface can go without the others.
+ *
+ * KILL switches, for the usual reason (see `useAnonymousClimbViewEnabled`):
+ * missing/undefined reads as "not killed". All three surfaces also wait for
+ * `useFeatureFlagsResolved()` before they act, so a switch flipped in PostHog
+ * lands before the push (`QaTesterGate`, `SendRecoveryGate`) or the first paint
+ * (`ConnectivityBanner`) it is meant to stop, not after.
+ */
+export function useConnectivityBannerEnabled(): boolean {
+  return useFeatureFlag('connectivity-banner-kill') !== true;
+}
+
+export function useQaTesterGateEnabled(): boolean {
+  return useFeatureFlag('qa-tester-gate-kill') !== true;
+}
+
+export function useSendRecoveryGateEnabled(): boolean {
+  return useFeatureFlag('send-recovery-gate-kill') !== true;
+}
+
+/**
+ * Kill switch for the picker `OnboardingGate` opens by itself for a new account
+ * with no board (#5654). It ships to every new account with no experiment, so
+ * this is the only way to take it back without a release. Unresolved reads as
+ * "not killed", and the gate waits for `useFeatureFlagsResolved()` before it
+ * pushes, so a switch flipped in PostHog lands before the push.
+ */
+export function useFirstBoardPickerEnabled(): boolean {
+  return useFeatureFlag('first-board-picker-kill') !== true;
+}
+
+/**
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
+ * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Unresolved reads as "not killed". The gate waits for
+ * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
+ * the value lands, so flipping it in PostHog takes the whole test down.
+ */
+export function useFirstConnectCtaEnabled(): boolean {
+  return useFeatureFlag('first-connect-cta-kill') !== true;
 }
 
 /**

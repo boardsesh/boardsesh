@@ -54,8 +54,21 @@ function shardLiteral(source: string, id: string): string {
   return source.slice(start, next < 0 ? source.length : next);
 }
 
-/** `createPageMetadata` as a call or import, but not as part of the longer name. */
-const BARE_METADATA_HELPER = /(?<!BoardContent)\bcreatePageMetadata\b/;
+/**
+ * Every metadata helper on these routes that self-canonicalises, as a call or an
+ * import: the bare `createPageMetadata` (but not the longer board-content name
+ * that ends in it), and `createNoIndexMetadata`, which delegates to it.
+ *
+ * `createNoIndexMetadata` was the hole this guard shipped with. It reads as the
+ * safe choice — the page is noindexed either way — but `robots` is not the
+ * signal at stake: it still emits a self-canonical and the full four-locale
+ * `alternates.languages` map, and Google needs a cluster's members to
+ * self-canonicalise, so a noindexed twin advertising three more twins is the
+ * same contradiction. The setter page’s two fallback branches did exactly that
+ * across ~32,000 URLs. The board-content helper takes a `robots` option, so
+ * there is nothing those branches need that it does not give.
+ */
+const BARE_METADATA_HELPER = /(?<!BoardContent)\bcreatePageMetadata\b|\bcreateNoIndexMetadata\b/;
 
 function readRoute(relativePath: string): string {
   return readFileSync(join(WEB_ROOT, relativePath), 'utf8');
@@ -92,8 +105,11 @@ describe('board-content metadata guard', () => {
   it.each(BOARD_CONTENT_ROUTE_FILES)('%s never reaches for the plain helper', (relativePath) => {
     // The failure this catches: a new metadata call added later that defaults
     // back to self-canonicalising, re-splitting the page across four URLs.
+    // `createNoIndexMetadata` counts — noindex does not suppress `hreflang`.
     const source = withoutComments(readRoute(relativePath));
-    expect(BARE_METADATA_HELPER.test(source), `${relativePath} still calls createPageMetadata`).toBe(false);
+    expect(BARE_METADATA_HELPER.test(source), `${relativePath} still calls a self-canonicalising metadata helper`).toBe(
+      false,
+    );
   });
 
   it('keeps the sitemap in step: shards for these pages list one locale only', () => {

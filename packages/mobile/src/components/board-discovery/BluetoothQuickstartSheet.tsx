@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -7,6 +7,8 @@ import { boardRowSubtitle } from '@boardsesh/board-config';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { useBoardScan } from '../../lib/ble/use-board-scan';
 import { useAndroidScanLocationHint } from '../../lib/ble/use-android-scan-location-hint';
+import { bluetoothBlockedBody } from '../../lib/ble/bluetooth-unavailable-alert';
+import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -32,8 +34,9 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
   function BluetoothQuickstartSheet({ active, onClose, onSelect }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
+    const { t: tSettings } = useTranslation('settings');
     const labelOptions = useSprayLabelOptions();
-    const { status, serials, advertisedTypes, start, reset } = useBoardScan();
+    const { status, unavailableReason, serials, advertisedTypes, start, reset } = useBoardScan();
     // Scoped to what each controller announced. Aurora reuses a serial across
     // board apps, so unscoped this sheet would offer a stranger's Kilter board
     // for an in-range Tension controller and let the user make it active.
@@ -66,6 +69,15 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       });
     }, [promptEnableLocationServices, reset]);
 
+    // reset() drops the scan back to 'idle' and the open effect below starts a
+    // fresh one, the same restart the location grant uses.
+    const handleScanAgain = useCallback(() => {
+      reset();
+    }, [reset]);
+    const handleOpenSettings = useCallback(() => {
+      void openAppSettings();
+    }, []);
+
     // Start scanning when the sheet opens; reset back to idle when it closes so
     // the next open re-scans from scratch.
     useEffect(() => {
@@ -78,12 +90,60 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 
     const renderBody = () => {
       if (status === 'unavailable') {
+        const scanAgainButton = (
+          <Button
+            title={tSettings('ble.scanAgain')}
+            onPress={handleScanAgain}
+            variant="text"
+            size="medium"
+            icon="refresh"
+          />
+        );
+        // Blocked (a denied iOS prompt, or Android no longer asking) used to read
+        // "Turn on Bluetooth to scan", which a climber with Bluetooth on can't act
+        // on. Only the Settings app can fix it, so point there.
+        if (unavailableReason === 'unauthorized') {
+          return (
+            <View style={[styles.state, styles.blockedState]}>
+              <Icon name="bluetooth" size={40} color={systemColors.tertiaryLabel} />
+              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
+                {tSettings('ble.blockedTitle')}
+              </Text>
+              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                {bluetoothBlockedBody(tSettings)}
+              </Text>
+              {canOpenAppSettings() && (
+                <Button
+                  title={tSettings('ble.openSettings')}
+                  onPress={handleOpenSettings}
+                  variant="tonal"
+                  size="medium"
+                />
+              )}
+              {/* Android only. On iOS nothing but the Settings switch can change
+                  this state, and iOS relaunches the app when that switch moves,
+                  so the tap would only spin for 2.5 s and land back here. An
+                  Android grant in Settings leaves the app running, so this is how
+                  that climber starts the scan again. */}
+              {Platform.OS === 'android' && scanAgainButton}
+            </View>
+          );
+        }
+        // An Android "Don't allow" isn't a radio problem either, and scanning
+        // again brings the system dialog back. No Scan again for a phone with no
+        // Bluetooth LE, or in any browser: the web BLE manager always reads the
+        // radio as off, even where Web Bluetooth works, so the next scan can only
+        // end here again.
+        const scanAgainCanHelp = unavailableReason !== 'unsupported' && Platform.OS !== 'web';
         return (
           <View style={styles.state}>
             <Icon name="warning" size={40} color={systemColors.tertiaryLabel} />
             <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
-              {t('mobile.bluetooth.unavailable')}
+              {unavailableReason === 'permission_denied'
+                ? tSettings('ble.errorPermissionDenied')
+                : t('mobile.bluetooth.unavailable')}
             </Text>
+            {scanAgainCanHelp && scanAgainButton}
           </View>
         );
       }
@@ -161,6 +221,16 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 {t('settings:ble.troubleshootTips')}
               </Text>
             )}
+            {/* A board that was asleep or out of range a moment ago is the usual
+                reason for an empty scan; the tips above say to fix that, this
+                runs the scan again once they have. */}
+            <Button
+              title={tSettings('ble.scanAgain')}
+              onPress={handleScanAgain}
+              variant="text"
+              size="medium"
+              icon="refresh"
+            />
           </View>
         );
       }
@@ -176,11 +246,22 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
       );
     };
 
+    // Scrollable: the footnote sits above every state, and the Android empty
+    // scan (hint title, body and a grant button under "No boards in range")
+    // runs past a 55% sheet on a 667 pt phone at large text. Without a scroll
+    // the recovery buttons at the bottom were the part that got cut off.
     return (
-      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose}>
+      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose} scrollable contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}
+          </Text>
+          {/* On screen for the whole scan, not only once it comes up empty
+              (#5654): the scan cannot see MoonBoards or Kilter boxes that don't
+              put a serial in their name, and a climber standing at one should
+              know before waiting 15 seconds for "No boards in range". */}
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.firstBoard.scanFootnote')}
           </Text>
           {renderBody()}
         </View>
@@ -190,6 +271,11 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 );
 
 const styles = StyleSheet.create({
+  // At least the sheet's height, so a short state still centres in it; taller
+  // content grows past it and scrolls.
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
     padding: spacing[4],
@@ -203,6 +289,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing[3],
     paddingVertical: spacing[8],
+  },
+  // The blocked state stacks icon, title, a two or three line body and up to two
+  // buttons. The default 32 pt top and bottom padding would push the last button
+  // past a 55% sheet on a 667 pt phone, and further at large text sizes.
+  blockedState: {
+    paddingVertical: spacing[2],
   },
   stateText: {
     textAlign: 'center',
@@ -220,5 +312,8 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+  },
+  footnote: {
+    marginBottom: spacing[3],
   },
 });

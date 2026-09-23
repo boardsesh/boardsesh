@@ -570,6 +570,11 @@ jobs:
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
+      - name: Initialize local place search
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+        run: vp run db:import-places -- --if-empty
+
   deploy-production-backend:
     needs: [detect-changes, build-backend, migrate]
     if: always() && needs.detect-changes.outputs.backend_changed == 'true' && needs.build-backend.result == 'success' && needs.migrate.result == 'success'

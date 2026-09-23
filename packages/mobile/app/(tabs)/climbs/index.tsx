@@ -5,6 +5,7 @@ import {
   RefreshControl,
   Keyboard,
   InteractionManager,
+  Platform,
   Pressable,
   type ColorValue,
 } from 'react-native';
@@ -54,6 +55,15 @@ import {
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
+import { useDimensionLockUpkeep, useDimensionLocks } from '../../../src/lib/dimension-lock-store';
+import {
+  buildDimensionChip,
+  isDimensionChipLocked,
+  isDimensionLockEnforced,
+  type DimensionLockState,
+  type LockedDimensions,
+} from '../../../src/lib/dimension-chips';
+import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
@@ -93,9 +103,11 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
+import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
 import {
   clearBoardRevealTipPending,
   hasBoardRevealTipPending,
@@ -135,6 +147,10 @@ const FOOTER_SKELETON_ROW_COUNT = 6;
 // thrash secure-store.
 const SAVE_DEBOUNCE_MS = 600;
 const PREWARM_BOARD_HOLDS_DELAY_MS = 1200;
+// The Tall/Wide long-press Lock / Unlock exists only on the iOS chip row (a
+// SwiftUI Menu with a primary action). Android and web chips just toggle, and a
+// lock stored there never acts (see lib/dimension-chips.ts).
+const DIMENSION_LOCK_SUPPORTED = Platform.OS === 'ios';
 
 // Filters that have a dedicated facet chip in the persistent chip row. They are
 // excluded from the removable token row so an active filter is never worded
@@ -258,7 +274,7 @@ function ClimbListInner() {
   // The user's pinned chips: which filter controls appear in the persistent chip
   // row (defaults reproduce today's set). Drives both the chip row and the token
   // "receipt" dedup below.
-  const { pinned: pinnedChips } = usePinnedChips();
+  const { pinned: pinnedChips, loaded: pinnedChipsLoaded } = usePinnedChips();
   const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
   const { getLogbook } = useBoardActions();
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
@@ -428,7 +444,14 @@ function ClimbListInner() {
       .catch(() => {});
   }, [isAuthenticated]);
 
-  const { data: activeBoard, isLoading: isBoardLoading } = useActiveBoard();
+  const {
+    data: activeBoard,
+    isPending: isBoardPending,
+    isSuccess: isBoardResolved,
+    isError: isBoardRestoreError,
+    isFetching: isBoardFetching,
+    refetch: refetchActiveBoard,
+  } = useActiveBoard();
 
   // One-time board-history reveal banner: armed when the user binds a board from
   // the onboarding hand-off (app/boards/index.tsx) and consumed on focus so it
@@ -449,7 +472,12 @@ function ClimbListInner() {
     }, []),
   );
   const dismissRevealTip = useCallback(() => setRevealTipVisible(false), []);
-  const showRevealTip = revealTipVisible && !!activeBoard;
+  // The connect-step card (#5654, treatment only) goes first: one card at a
+  // time, and both one-shot tips below wait until it is gone. Read from the
+  // card's own store, so for everyone outside the treatment this is false.
+  const connectCardBoardHasLights = activeBoard != null && activeBoard.hasLeds !== false;
+  const connectCardVisible = useFirstConnectCardExpected(connectCardBoardHasLights);
+  const showRevealTip = revealTipVisible && !!activeBoard && !connectCardVisible;
 
   // One-shot tip teaching the quick-actions menu (long-press or the ⋯ button).
   // Armed on focus if unseen; held back until the board-reveal banner is gone so
@@ -467,7 +495,7 @@ function ClimbListInner() {
     }, []),
   );
   const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
-  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip;
+  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip && !connectCardVisible;
   useEffect(() => {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
@@ -1195,16 +1223,16 @@ function ClimbListInner() {
   const showRecentPills = useNativeSearch && isSearchFocused && searchTextEmpty && recentFilters.length > 0;
   // Show the spinner (not a premature "no climbs" empty state) while a board is
   // resolving or its per-board restore hasn't landed yet.
-  const isBoardResolving = isBoardLoading || (hasBoardConfig && !searchReady);
+  const isBoardResolving = isBoardPending || (hasBoardConfig && !searchReady);
   // A placeholder with no rows (the previous search came up empty) is still a
   // load in progress, so it shows skeletons rather than the old empty state.
   //
   // Board resolution counts too. Switching board renames the screen the instant
   // the choice commits, so anything left over from the board before it reads as
   // the new board's climbs — the one thing a one-tap switcher must never do.
-  // With no board bound `isBoardResolving` collapses to `isBoardLoading`, and
-  // the no-board empty state returns before the list either way, so this cannot
-  // strand anyone on a permanent skeleton.
+  // An unresolved read keeps the skeleton even when a retry is paused. Only a
+  // successful null result reaches the no-board state; failed restoration has
+  // its own retry state below.
   const showInitialSkeletons = (isClimbsLoading || isPlaceholderData || isBoardResolving) && visibleClimbs.length === 0;
 
   const gradeBound = useMemo<GradeBound>(
@@ -1335,35 +1363,111 @@ function ClimbListInner() {
   // Tall/Wide chips appear on any board whose active size has a shorter/narrower
   // size in its product family — Kilter Homewall & Original, Tension Board 2,
   // Decoy, Grasshopper (getTallWideScope is the shared source of truth, matching
-  // the server filter). Tap toggles the filter.
+  // the server filter). Tap toggles the filter. On iOS a long-press locks it
+  // (persisted) so it survives clears; the upkeep hooks below re-apply a locked
+  // filter whenever it's cleared. Every rule lives in lib/dimension-chips.ts.
+  const { locks: dimensionLocks, setLock: setDimensionLock } = useDimensionLocks();
   const { hasShorter: showTallChip, hasNarrower: showWideChip } = getTallWideScope(
     boardName as BoardName,
     layoutId,
     sizeId,
   );
+  const tallLockState = useMemo<DimensionLockState>(
+    () => ({
+      lockSupported: DIMENSION_LOCK_SUPPORTED,
+      locked: dimensionLocks.tall,
+      inScope: showTallChip,
+      pinned: pinnedChips.includes('tall'),
+      pinsLoaded: pinnedChipsLoaded,
+    }),
+    [dimensionLocks.tall, showTallChip, pinnedChips, pinnedChipsLoaded],
+  );
+  const wideLockState = useMemo<DimensionLockState>(
+    () => ({
+      lockSupported: DIMENSION_LOCK_SUPPORTED,
+      locked: dimensionLocks.wide,
+      inScope: showWideChip,
+      pinned: pinnedChips.includes('wide'),
+      pinsLoaded: pinnedChipsLoaded,
+    }),
+    [dimensionLocks.wide, showWideChip, pinnedChips, pinnedChipsLoaded],
+  );
   const dimensionChips = useMemo<DimensionChip[]>(() => {
     const chips: DimensionChip[] = [];
     if (showTallChip) {
-      chips.push({
-        key: 'tall',
-        active: !!filters.onlyTallClimbs,
-        onToggle: () => patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true }),
-      });
+      chips.push(
+        buildDimensionChip({
+          key: 'tall',
+          locked: isDimensionChipLocked(tallLockState),
+          filterActive: !!filters.onlyTallClimbs,
+          setFilter: (on) => patchFilters({ onlyTallClimbs: on || undefined }),
+          setLock: (locked) => {
+            hapticMedium();
+            setDimensionLock('tall', locked);
+          },
+        }),
+      );
     }
     if (showWideChip) {
-      chips.push({
-        key: 'wide',
-        active: !!filters.onlyWideClimbs,
-        onToggle: () => patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true }),
-      });
+      chips.push(
+        buildDimensionChip({
+          key: 'wide',
+          locked: isDimensionChipLocked(wideLockState),
+          filterActive: !!filters.onlyWideClimbs,
+          setFilter: (on) => patchFilters({ onlyWideClimbs: on || undefined }),
+          setLock: (locked) => {
+            hapticMedium();
+            setDimensionLock('wide', locked);
+          },
+        }),
+      );
     }
     return chips;
-  }, [showTallChip, showWideChip, filters.onlyTallClimbs, filters.onlyWideClimbs, patchFilters]);
+  }, [
+    showTallChip,
+    showWideChip,
+    tallLockState,
+    wideLockState,
+    filters.onlyTallClimbs,
+    filters.onlyWideClimbs,
+    patchFilters,
+    setDimensionLock,
+  ]);
+  // An enforced lock (iOS, in scope, pinned, pins loaded) puts its filter back
+  // after any clear (sheet Reset, FAB clear, recent re-apply), but only once this
+  // board's saved search has been restored (`searchReady`), since the restore
+  // replaces the whole search. Unpinning a chip drops its lock.
+  const pinTall = useCallback(() => patchFilters({ onlyTallClimbs: true }), [patchFilters]);
+  const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
+  useDimensionLockUpkeep({
+    key: 'tall',
+    state: tallLockState,
+    filterActive: !!filters.onlyTallClimbs,
+    searchReady,
+    pin: pinTall,
+  });
+  useDimensionLockUpkeep({
+    key: 'wide',
+    state: wideLockState,
+    filterActive: !!filters.onlyWideClimbs,
+    searchReady,
+    pin: pinWide,
+  });
+  // The filter sheet holds an enforced lock's switch on (disabled) and keeps it
+  // set through its Reset, so its "Show N" count matches what Apply will list.
+  // Built from the two flags, so its identity only changes when a lock does (a
+  // pin toggle rebuilds the lock states but rarely changes either flag).
+  const tallLockEnforced = isDimensionLockEnforced(tallLockState);
+  const wideLockEnforced = isDimensionLockEnforced(wideLockState);
+  const lockedDimensions = useMemo<LockedDimensions>(
+    () => ({ tall: tallLockEnforced, wide: wideLockEnforced }),
+    [tallLockEnforced, wideLockEnforced],
+  );
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it
   // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
   // filter as a removable token (and re-pinning removes the token). Tall/Wide are
-  // chip-backed only when Shape is pinned AND the homewall size shows their chip.
+  // chip-backed only when their own chip is pinned AND the board size shows it.
   const chipBackedTokenKeys = useMemo(
     () => new Set<string>(pinnedChips.flatMap((kind) => chipKindToTokenKeys(kind))),
     [pinnedChips],
@@ -1457,9 +1561,15 @@ function ClimbListInner() {
 
   // Memoized so FlashList doesn't re-measure/re-render the header on every
   // ClimbListInner render — only when the title, pills, or filters change.
+  const connectCardBoardName = (activeBoard?.name ?? '').trim() || null;
   const listHeader = useMemo(
     () => (
       <>
+        <FirstConnectCard
+          boardName={connectCardBoardName}
+          boardHasLights={connectCardBoardHasLights}
+          style={styles.revealBanner}
+        />
         {showRevealTip ? (
           <OnboardingTipBanner
             text={tCommon('mobile.onboarding.boardRevealTip')}
@@ -1494,6 +1604,8 @@ function ClimbListInner() {
       </>
     ),
     [
+      connectCardBoardName,
+      connectCardBoardHasLights,
       showRevealTip,
       handleOpenBoardDetail,
       dismissRevealTip,
@@ -1594,7 +1706,33 @@ function ClimbListInner() {
     [filterInTopChrome, searchBarHeight],
   );
 
-  if (!hasBoardConfig && !isBoardLoading) {
+  if (!hasBoardConfig && isBoardRestoreError) {
+    return (
+      <>
+        <Stack.Screen options={stackOptions} />
+        <View style={styles.emptyContainer}>
+          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Text variant="headline" style={styles.emptyTitle}>
+            {t('mobile.emptyState.boardRestoreFailed.title')}
+          </Text>
+          <Text variant="subheadline" style={styles.emptySubtitle}>
+            {t('mobile.emptyState.boardRestoreFailed.description')}
+          </Text>
+          <Button
+            title={tCommon('actions.retry')}
+            onPress={() => void refetchActiveBoard()}
+            loading={isBoardFetching}
+            disabled={isBoardFetching}
+            variant="filled"
+            size="large"
+            style={styles.emptyCta}
+          />
+        </View>
+      </>
+    );
+  }
+
+  if (isBoardResolved && activeBoard === null) {
     return (
       <>
         <Stack.Screen options={stackOptions} />
@@ -1611,11 +1749,13 @@ function ClimbListInner() {
               the climb list with no extra wiring here. */}
           <Button
             title={t('mobile.emptyState.noBoard.cta')}
-            // Plain board picker — this empty state is reachable any time the user
-            // has no active board, not just first-run, so it must NOT tag the bind
-            // as onboarding (which would fire the activation event + arm the
-            // reveal banner outside the first-run hand-off).
-            onPress={() => router.push('/boards')}
+            // The picker's no-board entry (#5654): a climber with no boards at all
+            // gets "Where do you climb?" there, with the gym search, the builder
+            // and the Bluetooth scan; one whose active board was only cleared gets
+            // their list. Deliberately NOT tagged as onboarding: this empty state
+            // shows any time no board is bound, not just first-run, so a bind from
+            // it must not fire the activation event or arm the reveal banner.
+            onPress={() => router.push(NO_BOARD_PICKER_HREF)}
             variant="filled"
             size="large"
             style={styles.emptyCta}
@@ -1891,6 +2031,7 @@ function ClimbListInner() {
           onApply={handleApplyFilters}
           onNameChange={handleSheetNameChange}
           onClearName={handleClearName}
+          lockedDimensions={lockedDimensions}
         />
       ) : null}
     </View>

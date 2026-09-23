@@ -83,6 +83,46 @@
     "errorRetry": "Reintentar",
     "boardSwitchError": "No se pudo guardar ese plafón. Inténtalo de nuevo.",
     "onboardingPrompt": "Sigue el muro donde escalas: eso es lo que activa su historial.",
+    "firstBoard": {
+      "title": "¿Dónde escalas?",
+      "body": "Elige tu plafón para cargar sus bloques. Cuando te conectes, tocar un bloque lo ilumina en el muro.",
+      "gym": "En un rocódromo",
+      "gymHint": "Elige el plafón de tu rocódromo",
+      "own": "Mi propio plafón",
+      "ownHint": "Configura el plafón que tienes en casa",
+      "sprayWall": "Añadir mi muro de spray",
+      "scan": "Buscar el plafón que tengo delante",
+      "scanFootnote": "Los MoonBoard y algunas cajas de Kilter aún no aparecen aquí.",
+      "searching": "Buscando plafones cerca de ti…",
+      "nearbyEmpty": "Nada a menos de 20 km",
+      "nearbyError": "No se pudieron cargar los plafones cerca de ti",
+      "findGymOnMap": "Busca tu rocódromo en el mapa",
+      "locationOff": "La ubicación está desactivada",
+      "openSettings": "Abrir Ajustes",
+      "notNow": "Ahora no"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "Ilumina bloques en {{board}}",
+        "titleNoName": "Ilumina bloques en tu plafón",
+        "body": "Conecta este teléfono al plafón y luego toca cualquier bloque para iluminarlo.",
+        "connect": "Conecta el plafón",
+        "tryAgain": "Reintentar",
+        "noLights": "Este muro no tiene luces",
+        "notNow": "Ahora no",
+        "connecting": "Conectando con {{board}}…",
+        "connectingNoName": "Conectando con tu plafón…",
+        "failed": "Todavía no hay conexión con {{board}}. Inténtalo de nuevo cuando quieras.",
+        "failedNoName": "Todavía no hay conexión con tu plafón. Inténtalo de nuevo cuando quieras."
+      },
+      "pill": "Iluminar en el plafón",
+      "confirm": {
+        "title": "Conectado a {{board}}",
+        "titleNoName": "Conectado a tu plafón",
+        "body": "Ahora, al tocar un bloque de la lista, se ilumina en el muro.",
+        "gotIt": "Entendido"
+      }
+    },
     "discovery": {
       "findNearby": "Buscar cerca",
       "bluetooth": "Bluetooth",

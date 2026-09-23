@@ -44,8 +44,10 @@ vi.mock('../../../../src/components/ActivityIndicator', () => ({
 }));
 
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({ data: activeBoard.current }),
+  useActiveBoard: () => ({ data: activeBoard.current, isPending: activeBoard.current === undefined }),
 }));
+
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../../src/lib/routing/use-unsupported-board-exit', () => ({
   useUnsupportedBoardExit: () => {},

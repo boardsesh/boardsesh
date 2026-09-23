@@ -362,6 +362,7 @@
     },
     "queueSnackbar": {
       "added": "Boulder in die Warteschlange gelegt",
+      "playingNext": "Boulder kommt als Nächstes dran",
       "open": "Öffnen",
       "openAria": "Warteschlange öffnen"
     },
@@ -470,7 +471,7 @@
       "renameNotAllowed": "Nur wer die Session erstellt hat, kann sie umbenennen.",
       "editTitleAria": "Session-Namen bearbeiten",
       "minimize": "Session minimieren",
-      "recordTab": "Aufnehmen",
+      "recordTab": "Session",
       "returnToSession": "Zurück zur Session",
       "preBoardLabel": "Board",
       "preGeneratorLabel": "Workout",
@@ -514,7 +515,6 @@
       "preGeneratorTuning": "Feinabstimmung",
       "preStart": "Starten",
       "preStarting": "Startet…",
-      "preNoBoard": "Wähl ein Board zum Starten",
       "preStartError": "Session konnte nicht gestartet werden. Versuch es nochmal.",
       "preWorkoutPreviewTitle": "Workout-Vorschau",
       "preWorkoutPreviewGenerating": "Dein Workout wird gebaut…",
@@ -554,7 +554,11 @@
       "inviteCopied": "Link kopiert",
       "inviteShare": "Teilen",
       "inStatsHardestEach": "Schwerste Begehungen",
-      "inviteAction": "Einladen"
+      "inviteAction": "Einladen",
+      "browseClimbs": "Boulder durchsuchen",
+      "changeBoard": "Board wechseln",
+      "chooseBoard": "Board auswählen",
+      "noBoardSelected": "Kein Board ausgewählt"
     }
   },
   "playView": {

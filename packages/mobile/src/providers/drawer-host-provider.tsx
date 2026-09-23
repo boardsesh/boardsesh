@@ -63,6 +63,10 @@ export type BoardConfig = {
 };
 
 export type OpenClimbActionsOptions = {
+  /** The queue slot the menu was opened for, when the source is a queue row.
+   *  "Play next" uses it to move that exact item rather than guessing which copy
+   *  of a twice-queued climb was long-pressed. */
+  queueItemUuid?: string;
   /** When set, the climb actions sheet shows an "Edit entry" row wired to this
    *  callback (logbook rows pass it to open the tick editor). */
   onEditEntry?: () => void;
@@ -83,6 +87,10 @@ export type OpenClimbActionsOptions = {
    *  stacks above the `/play` fullScreenModal (a root-tree sheet can't — see
    *  #3505). It receives the climb/board snapshot the menu was opened for. */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When set, the menu offers an "Open the queue" action that runs this after
+   *  the menu closes. The play drawer passes its own queue opener while the
+   *  connect-step pill (#5654) has taken the queue button's place. */
+  onOpenQueue?: () => void;
   /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
    * actions overlay. Omitted when the source is an inline iPad pane. */
   dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
@@ -432,10 +440,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const [climbActions, setClimbActions] = useState<{
     climb: Climb;
     boardConfig: BoardConfig;
+    queueItemUuid?: string;
     onEditEntry?: () => void;
     onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
     onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
     onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+    onOpenQueue?: () => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
@@ -446,6 +456,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const {
     visible: snackbarVisible,
     nonce: snackbarNonce,
+    queueAdded: snackbarQueueAdded,
     dismissSnackbar,
     undoWallChangeVisible,
     undoWallChangeNonce,
@@ -662,10 +673,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       setClimbActions({
         climb,
         boardConfig,
+        queueItemUuid: options?.queueItemUuid,
         onEditEntry: options?.onEditEntry,
         onAddBetaVideo: options?.onAddBetaVideo,
         onTick: options?.onTick,
         onReportClimb: options?.onReportClimb,
+        onOpenQueue: options?.onOpenQueue,
         dismissSourceSheet: options?.dismissSourceSheet,
         dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
@@ -1217,12 +1230,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               key={climbActions.climb.uuid}
               climb={climbActions.climb}
               boardConfig={climbActions.boardConfig}
+              queueItemUuid={climbActions.queueItemUuid}
               currentUserId={profile?.id ?? null}
               isAuthenticated={isAuthenticated}
               onEditEntry={climbActions.onEditEntry}
               onAddBetaVideo={climbActions.onAddBetaVideo}
               onTick={climbActions.onTick}
               onReportClimb={climbActions.onReportClimb}
+              onOpenQueue={climbActions.onOpenQueue}
               dismissSourceSheet={climbActions.dismissSourceSheet}
               dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
               reduceMotion={reduceMotion}
@@ -1232,6 +1247,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           <QueueAddedSnackbar
             visible={snackbarVisible}
             nonce={snackbarNonce}
+            queueAdded={snackbarQueueAdded}
             onDismiss={dismissSnackbar}
             onOpen={handleSnackbarOpen}
           />

@@ -87,6 +87,12 @@ export type AppSettings = {
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
   /**
+   * Crowdsourced QA: automatically offer the PR picker or current preview's
+   * brief on a cold start. Opt-in because the manual Previews entry stays
+   * available without interrupting every launch.
+   */
+  qaPromptOnLaunch: boolean;
+  /**
    * Crowdsourced QA: the `<branch>:<updateId>` whose test plan has already been
    * shown on launch. Keyed on the bundle, not the branch, so the author's next
    * push to the same PR shows the brief again — that is a different thing to

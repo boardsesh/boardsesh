@@ -279,23 +279,22 @@ function FilterChipRowComponent({
           </MenuChip>
         ) : null}
 
-        {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
-            can be both). The menu stays open so both can be toggled. Shown only
-            when the board size has the expansion. */}
-        {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
-          <MenuChip label={t('mobile.filter.shape')} selected={dimensionChips.some((dimension) => dimension.active)}>
-            {() =>
-              dimensionChips.map((dimension) => (
-                <Menu.Item
-                  key={dimension.key}
-                  title={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                  leadingIcon={dimension.active ? 'check' : undefined}
-                  onPress={dimension.onToggle}
-                />
-              ))
-            }
-          </MenuChip>
-        ) : null}
+        {/* Tall / Wide — board-shape toggle chips, each pinned on its own and
+            present only on sizes with a shorter/narrower sibling. Tap flips the
+            filter; the long-press lock is iOS-only. */}
+        {dimensionChips
+          .filter((dimension) => pinnedChips.includes(dimension.key))
+          .map((dimension) => (
+            <Chip
+              key={dimension.key}
+              mode="outlined"
+              selected={dimension.active}
+              onPress={dimension.onToggle}
+              style={styles.chip}
+            >
+              {dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+            </Chip>
+          ))}
 
         {/* Beta videos — a plain on/off toggle chip. Opt-in. */}
         {pinnedChips.includes('beta') ? (

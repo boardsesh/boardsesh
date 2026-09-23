@@ -10,7 +10,6 @@ export type OAuthProviderAvailability = {
 
 export type OAuthProviderButtonsProps = {
   disabled: boolean;
-  isRegistration: boolean;
   onSignIn: (provider: OAuthProvider) => void;
   providers: OAuthProviderAvailability;
 };

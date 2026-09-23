@@ -11,18 +11,14 @@ import type { PinnableChipKind } from '../../lib/pinnable-chips';
 import type { CollectionFilter } from '../../lib/collection-filter';
 import type { ClimbTypeFilter } from './FilterChipRow.logic';
 import type { ClimbFilters } from '../ClimbFilterSheet';
+import type { DimensionChip } from '../../lib/dimension-chips';
 
-/**
- * Board-shape toggle chips, present only on the sizes where they apply (a shorter
- * or narrower size exists in the same product family; the caller derives this via
- * @boardsesh/board-constants). Grouped under the single "Shape" menu chip, where
- * Tall and Wide are independent toggles — tap either to flip its filter.
- */
-export type DimensionChip = {
-  key: 'tall' | 'wide';
-  active: boolean;
-  onToggle: () => void;
-};
+// Board-shape toggle chips (Tall / Wide), present only on the sizes where they
+// apply (a shorter or narrower size exists in the same product family; the caller
+// derives this via @boardsesh/board-constants), each pinnable on its own. The
+// shape and its tap / lock rules live in lib/dimension-chips.ts. Every platform
+// taps to toggle; only the iOS row offers the long-press Lock / Unlock.
+export type { DimensionChip } from '../../lib/dimension-chips';
 
 export type FilterChipRowProps = {
   /**
@@ -52,7 +48,10 @@ export type FilterChipRowProps = {
   gradeRailOpen: boolean;
   onCloseGrade: () => void;
 
-  /** Tall/Wide chips for the current Kilter homewall size (empty otherwise). */
+  /**
+   * Tall/Wide chips the current board size supports (empty otherwise). Each one
+   * still renders only when its own kind ('tall' / 'wide') is pinned.
+   */
   dimensionChips: DimensionChip[];
 
   minAscents: number | undefined;

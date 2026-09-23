@@ -110,6 +110,12 @@ describe('decideQaGate — reasons to stay quiet', () => {
     expect(decideQaGate(productionTester({ topSegment: segment }))).toBe('none');
   });
 
+  // The recovered-sends gate reads SQLite and can push its notice before this
+  // gate's network read answers. Two stacked modals on one launch is the bug.
+  it('never stacks the prompt on the recovered-sends notice', () => {
+    expect(decideQaGate(productionTester({ topSegment: 'send-recovery' }))).toBe('none');
+  });
+
   it('prompts on an unknown top segment', () => {
     // The block list is an allowlist inversion on purpose: a new tab group
     // should get the prompt, not silently opt out of QA.

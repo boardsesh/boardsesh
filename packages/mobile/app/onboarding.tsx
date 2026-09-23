@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { OnboardingPrompt } from '../src/components/onboarding/OnboardingPrompt';
 import { OnboardingBoardRoute } from '../src/components/onboarding/OnboardingBoardRoute';
+import { OnboardingLinkRoute } from '../src/components/onboarding/OnboardingLinkRoute';
 import { BoardLookStep } from '../src/components/board-look/BoardLookStep';
 import { useTheme } from '../src/providers/theme-provider';
 import { useVariantValue } from '../src/theme/variants';
@@ -11,13 +12,16 @@ import { useBoardPreviewClimb } from '../src/hooks/use-board-preview-climb';
 import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-render';
 
 /**
- * The onboarding route, which hosts the mandatory first-run flow (issue #4961).
- * Nobody reaches the app without a board bound and a board look chosen.
+ * The onboarding route, which hosts the walkthrough (issue #4961). Since #5654
+ * the launch gate no longer opens it: a new account with no board gets the
+ * board picker in first-board mode instead (`/boards?firstBoard=1`), and this
+ * route is what the More tab's "Replay" rows open.
  *
- * Three steps, none of them skippable:
+ * Three mandatory steps, with optional account linking after the board pick:
  *
  *   `/onboarding`                  the framing card — why a named board matters
  *   `/onboarding?step=board`       pick one, and take it offline while you're here
+ *   `/onboarding?step=link`        optionally link that board account; Back declines
  *   `/onboarding?step=board-look`  the 2.4 "which drawing?" question
  *
  * They live behind one route so the app keeps a single launch-time interruption
@@ -29,10 +33,14 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * what makes a step with no exit safe, and chaining past the gate would throw it
  * away. So the board step leaves to Climbs and the gate takes over from there.
  *
- * Presented as a full-screen cover over the Climbs tab (see app/_layout.tsx) with
- * the swipe-to-dismiss gesture disabled; each step swallows Android hardware back
- * as well. The steps are variant-agnostic — this route resolves the palette from
- * the active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
+ * Presented as a `transparentModal` over the live tabs (see app/_layout.tsx),
+ * with the swipe-to-dismiss gesture disabled. The mandatory steps swallow Android
+ * hardware back; optional linking treats Back as a decline. Transparent so UIKit
+ * never snapshots the iOS 26 tab bar (hard rule 2 in docs/mobile-sheets-vs-routes.md),
+ * which is why one `OnboardingBacking` paints an opaque page under every step: the
+ * live tabs must not show through.
+ * The steps are variant-agnostic — this route resolves the palette from the
+ * active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
  */
 export default function OnboardingScreen() {
   const { step } = useLocalSearchParams<{ step?: string }>();
@@ -65,23 +73,49 @@ export default function OnboardingScreen() {
     router.replace({ pathname: '/onboarding', params: { step: 'board' } });
   }, []);
 
+  // Every step goes inside the ONE backing below. A new step is a branch here,
+  // never an early `return`, which would put it on screen without the backing
+  // and let the live Climbs tabs show through whatever it leaves unpainted.
+  let stepContent: ReactNode;
   if (step === 'board-look') {
-    return <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+    stepContent = <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+  } else if (step === 'link') {
+    stepContent = (
+      <OnboardingLinkRoute
+        accentColor={accentColor}
+        iconColor={iconColor}
+        bodyColor={bodyColor}
+        backgroundColor={backgroundColor}
+      />
+    );
+  } else if (step === 'board') {
+    stepContent = (
+      <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
+    );
+  } else {
+    stepContent = (
+      <OnboardingPrompt
+        accentColor={accentColor}
+        iconColor={iconColor}
+        bodyColor={bodyColor}
+        backgroundColor={backgroundColor}
+        onContinue={goToBoardStep}
+      />
+    );
   }
 
-  if (step === 'board') {
-    return <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
-  }
+  return <OnboardingBacking backgroundColor={backgroundColor}>{stepContent}</OnboardingBacking>;
+}
 
-  return (
-    <OnboardingPrompt
-      accentColor={accentColor}
-      iconColor={iconColor}
-      bodyColor={bodyColor}
-      backgroundColor={backgroundColor}
-      onContinue={goToBoardStep}
-    />
-  );
+/**
+ * The opaque page under every step. The route is a `transparentModal`, so the
+ * live tabs screen sits right behind it; a step that leaves any part of the
+ * screen unpainted (a glass footer, a frame before its data lands) would
+ * otherwise show the Climbs list through it. Same job as the player's backstop
+ * in app/play.tsx.
+ */
+function OnboardingBacking({ backgroundColor, children }: { backgroundColor: string; children: ReactNode }) {
+  return <View style={[styles.backing, { backgroundColor }]}>{children}</View>;
 }
 
 /**
@@ -137,3 +171,9 @@ function BoardLookRoute({
     />
   );
 }
+
+const styles = StyleSheet.create({
+  backing: {
+    flex: 1,
+  },
+});

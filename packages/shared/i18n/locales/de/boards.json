@@ -83,6 +83,46 @@
     "errorRetry": "Nochmal versuchen",
     "boardSwitchError": "Dieses Board ließ sich nicht speichern. Versuch es nochmal.",
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
+    "firstBoard": {
+      "title": "Wo kletterst du?",
+      "body": "Wähl dein Board, um seine Boulder zu laden. Sobald du verbunden bist, tippst du einen Boulder an und er wird am Board beleuchtet.",
+      "gym": "In der Halle",
+      "gymHint": "Wähl das Board deiner Halle",
+      "own": "Mein eigenes Board",
+      "ownHint": "Richte das Board ein, das du zu Hause hast",
+      "sprayWall": "Meine Spraywand hinzufügen",
+      "scan": "Nach dem Board vor mir suchen",
+      "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
+      "searching": "Suche Boards in deiner Nähe…",
+      "nearbyEmpty": "Nichts im Umkreis von 20 km",
+      "nearbyError": "Boards in deiner Nähe konnten nicht geladen werden",
+      "findGymOnMap": "Finde deine Halle auf der Karte",
+      "locationOff": "Standort ist aus",
+      "openSettings": "Einstellungen öffnen",
+      "notNow": "Nicht jetzt"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "{{board}}: Boulder beleuchten",
+        "titleNoName": "Boulder am Board beleuchten",
+        "body": "Verbinde dieses Handy mit dem Board und tippe dann einen Boulder an, um ihn zu beleuchten.",
+        "connect": "Verbinde das Board",
+        "tryAgain": "Nochmal versuchen",
+        "noLights": "Diese Wand hat kein Licht",
+        "notNow": "Nicht jetzt",
+        "connecting": "Verbinde mit {{board}}…",
+        "connectingNoName": "Verbinde mit deinem Board…",
+        "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
+        "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
+      },
+      "pill": "Am Board beleuchten",
+      "confirm": {
+        "title": "Mit {{board}} verbunden",
+        "titleNoName": "Mit deinem Board verbunden",
+        "body": "Tippst du jetzt einen Boulder in der Liste an, wird er am Board beleuchtet.",
+        "gotIt": "Verstanden"
+      }
+    },
     "discovery": {
       "findNearby": "In der Nähe suchen",
       "bluetooth": "Bluetooth",

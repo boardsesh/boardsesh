@@ -7,6 +7,7 @@ import { ActionButton } from '../../drawer-action-bar/DrawerActionBar';
 import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provider';
 import { useTheme } from '../../../providers/theme-provider';
 import { hapticSelection } from '../../../lib/haptics';
+import { trackBoardConnectTapped } from '../../../lib/analytics-board-connect';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallPreviewState } from './useWallPreview';
 
@@ -69,6 +70,12 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
   const handleTakeWall = useCallback(() => {
     takeVirtualWall?.();
   }, [takeVirtualWall]);
+
+  const handleConnect = useCallback(() => {
+    if (!bluetooth) return;
+    trackBoardConnectTapped({ surface: 'wall_kiosk', boardName: bluetooth.boardName, reconnect: false });
+    void bluetooth.connect();
+  }, [bluetooth]);
 
   // Live/idle: only backward navigation is meaningful (nothing is newer than the
   // live wall), so show a single labeled "Browse history" affordance — not a row of
@@ -187,7 +194,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     </View>
   ) : lightBlockedReason === 'not-driver' ? (
     <Pressable
-      onPress={withHaptic(() => void bluetooth?.connect())}
+      onPress={withHaptic(handleConnect)}
       disabled={!bluetooth}
       style={({ pressed }) => [
         styles.filledButton,

@@ -23,6 +23,7 @@ import {
   type ClimbStatLite,
   type HoldLite,
 } from '../src/queries/hold-features/index.js';
+import { DEFAULT_ECHO_FRACTION } from '../src/queries/grade-model/index.js';
 
 const DEFAULT_OUT = 'ml/climb2vec/data/kilter-train.jsonl';
 const DEFAULT_MIN_ASCENTS = 20;
@@ -71,7 +72,8 @@ async function loadStats(db: Db, options: Options): Promise<ClimbStatLite[]> {
   });
   return (await db.execute(sql`
     SELECT st.climb_uuid AS climb_uuid, st.angle AS angle, COALESCE(st.difficulty_average, 0) AS label,
-           COALESCE(st.ascensionist_count, 0) AS n, c.layout_id AS layout_id, c.hold_fingerprint AS fingerprint
+           COALESCE(st.ascensionist_count, 0) AS n, c.layout_id AS layout_id, c.hold_fingerprint AS fingerprint,
+           st.display_difficulty AS display, st.benchmark_difficulty AS benchmark
     FROM board_climb_stats st
     JOIN board_climbs c ON c.uuid = st.climb_uuid
     WHERE st.board_type = ${options.board}
@@ -83,6 +85,43 @@ async function loadStats(db: Db, options: Options): Promise<ClimbStatLite[]> {
     ORDER BY st.climb_uuid, st.angle
     ${limitClause}
   `)) as unknown as ClimbStatLite[];
+}
+
+/**
+ * The board's quick-log echo share (λ) from the freshest coefficient set, so the
+ * extract de-herds crowd labels exactly as the grade pipeline does. Mirrors the
+ * freshest-coeff_version subquery in `loadFrozenCoefficients` (refresh-climb-grades.ts),
+ * scoped to this board's echo_fraction row; falls back to the model default when
+ * no coefficients are stored yet. Unlike the grade pipeline it skips the
+ * COEFF_MAX_AGE_DAYS staleness guard — the extract runs right after the nightly
+ * refresh, and a slightly stale λ beats refitting from ticks here.
+ */
+async function loadEchoFraction(db: Db, board: string): Promise<{ lambda: number; ageDays: number | null }> {
+  const rows = (await db.execute(sql`
+    SELECT payload, created_at
+    FROM board_grade_coefficients
+    WHERE kind = 'echo_fraction'
+      AND key = ${board}
+      AND coeff_version = (
+        SELECT coeff_version
+        FROM board_grade_coefficients
+        WHERE kind <> 'gate_results'
+        GROUP BY coeff_version
+        ORDER BY MAX(created_at) DESC
+        LIMIT 1
+      )
+    LIMIT 1
+  `)) as unknown as Array<{ payload: { lambda?: number } | null; created_at: string | Date | null }>;
+  const lambda = rows[0]?.payload?.lambda;
+  if (typeof lambda !== 'number' || !Number.isFinite(lambda)) {
+    return { lambda: DEFAULT_ECHO_FRACTION, ageDays: null };
+  }
+  const createdAt = rows[0]?.created_at ? new Date(rows[0].created_at) : null;
+  const ageDays =
+    createdAt && Number.isFinite(createdAt.getTime())
+      ? Math.round((Date.now() - createdAt.getTime()) / 86_400_000)
+      : null;
+  return { lambda, ageDays };
 }
 
 async function loadHoldsByClimb(db: Db, options: Options): Promise<Map<string, HoldLite[]>> {
@@ -155,14 +194,18 @@ async function main(): Promise<void> {
     // segments so a big sort can't exhaust the server's /dev/shm (matches the
     // grade pipeline's guard). Session-scoped on the single script connection.
     await db.execute(sql`SET max_parallel_workers_per_gather = 0`);
-    const [features, stats, holdsByClimb] = await Promise.all([
+    const [features, stats, holdsByClimb, echo] = await Promise.all([
       loadFeatures(db, options.board),
       loadStats(db, options),
       loadHoldsByClimb(db, options),
+      loadEchoFraction(db, options.board),
     ]);
     if (features.size === 0) {
       throw new Error(`board_hold_features is empty for ${options.board} — run refresh-hold-features.ts first.`);
     }
+    const echoFraction = echo.lambda;
+    const echoAge = echo.ageDays === null ? 'model default (no frozen row)' : `${echo.ageDays}d old`;
+    console.log(`[extract] echo fraction λ=${echoFraction.toFixed(3)} for ${options.board} (${echoAge})`);
 
     mkdirSync(dirname(options.out), { recursive: true });
     const stream = createWriteStream(options.out, { encoding: 'utf8' });
@@ -171,7 +214,7 @@ async function main(): Promise<void> {
     for (const stat of stats) {
       const holds = holdsByClimb.get(stat.climb_uuid);
       if (!holds || holds.length === 0) continue;
-      const row = buildTrainingRow(stat, holds, features);
+      const row = buildTrainingRow(stat, holds, features, options.board, echoFraction);
       if (row.holds.length === 0) continue;
       stream.write(`${JSON.stringify(row)}\n`);
       written++;

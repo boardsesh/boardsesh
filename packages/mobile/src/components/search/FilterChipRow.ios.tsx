@@ -5,17 +5,18 @@
 // Material default — see its header). Mounted by the caller; never on search focus.
 //
 // Chips render in the fixed catalog order (lib/pinnable-chips.ts), gated on the
-// user's pinned set. Tier-1 chips (Grade, progress, Collection, shape, popularity,
-// min-rating) are pinned by default; Tier-2 chips (grade accuracy, climb type,
-// beta, sort) are opt-in and only appear once pinned in the sheet. An unpinned but
-// non-default control still surfaces as a removable token instead.
+// user's pinned set. Tier-1 chips (Grade, progress, Collection, Tall, Wide,
+// popularity, min-rating) are pinned by default; Tier-2 chips (grade accuracy,
+// climb type, beta, sort) are opt-in and only appear once pinned in the sheet. An
+// unpinned but non-default control still surfaces as a removable token instead.
 //
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
 //   Recent ▾    → native Menu of saved filters + Clear (hidden when none)
 //   Grade       → opens the GradeRangeRail overlay (Button, no menu)   [PRIMARY #1]
 //   Your progress ▾ → native Menu + Picker (single-select, auth-gated) [PRIMARY #2]
-//   Benchmarks  → toggle chip (Button, tap flips it)                   [PRIMARY #3]
+//   Collection ▾→ native Menu + Picker (Any / Benchmarks / My drafts)  [PRIMARY #3]
+//   Tall / Wide → tap toggles, long-press Lock / Unlock (iOS-only lock)
 //   Popularity ▾→ native Menu + Picker (min-ascents buckets)           [PRIMARY #4]
 //   Min rating ▾→ native Menu + Picker (star buckets)                  [PRIMARY #5]
 //
@@ -273,24 +274,31 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Shape — one chip grouping the Tall + Wide toggles. They're independent
-              (a climb can be both), so the menu carries two checkable toggles rather
-              than a single-select. Shown only when the board size has the expansion. */}
-          {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
-            <Menu
-              label={t('mobile.filter.shape')}
-              modifiers={chipModifiers(dimensionChips.some((dimension) => dimension.active))}
-            >
-              {dimensionChips.map((dimension) => (
+          {/* Tall / Wide — board-shape chips, each pinned on its own and present
+              only on sizes with a shorter/narrower sibling. A Menu with
+              onPrimaryAction: TAP toggles the filter, LONG-PRESS opens a Lock/Unlock
+              menu. (A Button + onLongPressGesture doesn't work: the button's own tap
+              gesture swallows the long-press, especially inside the scroll row.)
+              Locked = a lock glyph + the filter kept on through clears; a locked
+              chip ignores tap until unlocked. The lock is iOS-only: the Android and
+              web rows just toggle (rules in lib/dimension-chips.ts). */}
+          {dimensionChips
+            .filter((dimension) => pinnedChips.includes(dimension.key))
+            .map((dimension) => (
+              <Menu
+                key={dimension.key}
+                label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                systemImage={dimension.locked ? 'lock.fill' : undefined}
+                onPrimaryAction={dimension.onToggle}
+                modifiers={chipModifiers(dimension.active)}
+              >
                 <Button
-                  key={dimension.key}
-                  label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                  systemImage={dimension.active ? 'checkmark' : undefined}
-                  onPress={dimension.onToggle}
+                  label={dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock')}
+                  systemImage={dimension.locked ? 'lock.open' : 'lock'}
+                  onPress={dimension.onToggleLock}
                 />
-              ))}
-            </Menu>
-          ) : null}
+              </Menu>
+            ))}
 
           {/* Beta videos — a plain on/off toggle (a content property, not a level).
               A Button that flips on tap, like the old Benchmarks chip. Opt-in. */}

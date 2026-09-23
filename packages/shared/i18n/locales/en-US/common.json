@@ -384,6 +384,8 @@
       },
       "previews": {
         "title": "Previews",
+        "promptOnLaunchTitle": "Show previews on launch",
+        "promptOnLaunchSubtitle": "Applies the next time you launch Boardsesh",
         "pickTitle": "Test a PR preview",
         "pickSubtitle": "Try a change before it ships and tell us how it went",
         "testPlanTitle": "Test plan #{{prNumber}}",
@@ -471,7 +473,16 @@
         "workout": "Build a workout: Volume, Pyramid, Ladder or Grade Focus. Set a grade, preview the burns, send them one at a time.",
         "crew": "Climbing with people? Start a session and share one queue. Anyone sends the next burn, no passing the phone.",
         "record": "Your sends chart out here on Progress: grade spread and hardest send. Import your Kilter and Tension logbook from Aurora to start with your history.",
-        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there."
+        "accessory": "The bar at the bottom is always what's on the board. Flip climbs from there.",
+        "climbsTab": "To get back to your climbs, tap the magnifier in the tab bar."
+      },
+      "link": {
+        "title": "Bring your {{boardName}} sends with you",
+        "body": "Your {{boardName}} account and Boardsesh are separate, even if you use the same email. Link your account to sync available sends into your logbook. Sync timing and history vary.",
+        "footnote": "Linking asks for your {{boardName}} username, not your email.",
+        "continue": "Link my {{boardName}} account",
+        "skip": "Not now",
+        "skipHint": "You can do this any time in Settings › Connected apps."
       }
     },
     "nav": {
@@ -611,7 +622,7 @@
     "statistics": "Statistics",
     "sessions": "Sessions",
     "createdClimbs": "Created Climbs",
-    "auroraMigration": "Aurora Migration",
+    "auroraMigration": "Bring your logbook",
     "startClimbing": "Start climbing",
     "signIn": "Sign in",
     "nav": {
@@ -874,7 +885,7 @@
       "help": "Help",
       "docs": "Developer docs",
       "playlists": "Playlists",
-      "auroraMigration": "Aurora migration",
+      "auroraMigration": "Bring your logbook",
       "legal": "Legal",
       "privacy": "Privacy",
       "gymsKilter": "Gyms with a Kilter board",

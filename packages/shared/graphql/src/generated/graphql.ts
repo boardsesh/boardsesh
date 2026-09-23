@@ -5277,6 +5277,18 @@ export type PinPlaylistInput = {
   playlistUuid: Scalars['ID']['input'];
 };
 
+/** A city or town from the locally hosted GeoNames gazetteer. */
+export type PlaceSuggestion = {
+  __typename?: 'PlaceSuggestion';
+  country: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  id: Scalars['Int']['output'];
+  latitude: Scalars['Float']['output'];
+  longitude: Scalars['Float']['output'];
+  name: Scalars['String']['output'];
+  region: Scalars['String']['output'];
+};
+
 /** One placement's traced hold silhouette, as a flat implicitly-closed ring. */
 export type PlacementOutline = {
   __typename?: 'PlacementOutline';
@@ -5809,7 +5821,7 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
-  /** Merged native and imported recent history; never represents current wall state. */
+  /** Merged native and imported recent displays, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
@@ -6197,6 +6209,8 @@ export type Query = {
   searchClimbs: ClimbSearchResult;
   /** Search public gyms. */
   searchGyms: GymConnection;
+  /** City/town suggestions; query must contain 3–80 characters. At most five results. */
+  searchPlaces: Array<PlaceSuggestion>;
   /** Search public playlists globally by name. */
   searchPlaylists: SearchPlaylistsResult;
   /** Search for users by name or email. */
@@ -6913,6 +6927,11 @@ export type QuerySearchClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySearchGymsArgs = {
   input: SearchGymsInput;
+};
+
+/** Root query type for all read operations. */
+export type QuerySearchPlacesArgs = {
+  query: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -11814,6 +11833,24 @@ export type MarkGroupNotificationsReadMutation = { __typename?: 'Mutation'; mark
 export type MarkAllNotificationsReadMutationVariables = Exact<{ [key: string]: never }>;
 
 export type MarkAllNotificationsReadMutation = { __typename?: 'Mutation'; markAllNotificationsRead: boolean };
+
+export type SearchPlacesQueryVariables = Exact<{
+  query: Scalars['String']['input'];
+}>;
+
+export type SearchPlacesQuery = {
+  __typename?: 'Query';
+  searchPlaces: Array<{
+    __typename?: 'PlaceSuggestion';
+    id: number;
+    name: string;
+    region: string;
+    country: string;
+    countryCode: string;
+    latitude: number;
+    longitude: number;
+  }>;
+};
 
 export type PlaylistFieldsFragment = {
   __typename?: 'Playlist';
@@ -18075,6 +18112,51 @@ export const MarkAllNotificationsReadDocument = {
     },
   ],
 } as unknown as DocumentNode<MarkAllNotificationsReadMutation, MarkAllNotificationsReadMutationVariables>;
+export const SearchPlacesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SearchPlaces' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'query' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'searchPlaces' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'query' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'query' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'region' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'country' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'countryCode' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'latitude' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'longitude' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SearchPlacesQuery, SearchPlacesQueryVariables>;
 export const GetUserPlaylistsDocument = {
   kind: 'Document',
   definitions: [

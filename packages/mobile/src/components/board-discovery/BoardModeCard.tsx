@@ -9,14 +9,17 @@ import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
 
-export type ModeCardState = 'idle' | 'loading' | 'done' | 'denied' | 'unavailable';
+// No disabled state: a denied or failed location used to dim the Find nearby
+// tile and make it untappable, a dead end with no way to Settings. The picker
+// now keeps it tappable and says what happened underneath it (#5654).
+export type ModeCardState = 'idle' | 'loading' | 'done';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type BoardModeCardProps = {
   icon: IconName;
   label: string;
-  /** Small status line under the label (e.g. "Scanning…", "Allow location"). */
+  /** Small status line under the label (e.g. "Showing nearby", "Allow location"). */
   sublabel?: string;
   state?: ModeCardState;
   onPress: () => void;
@@ -25,23 +28,16 @@ type BoardModeCardProps = {
 /**
  * Entry card for a discovery mode (Find Nearby / Bluetooth / Custom / Search).
  * Mirrors the web home's mode cards: an icon + label with per-state styling —
- * idle is tappable, loading shows a spinner, denied/unavailable dim and disable.
+ * idle is tappable, loading shows a spinner, done shows a tick.
  */
 export function BoardModeCard({ icon, label, sublabel, state = 'idle', onPress }: BoardModeCardProps) {
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-  // 'done' is non-interactive (its results are already shown below) but, unlike
-  // denied/unavailable, it's a success state — not dimmed.
-  const nonInteractive = state === 'denied' || state === 'unavailable' || state === 'loading' || state === 'done';
-  const dimmed = state === 'denied' || state === 'unavailable';
-  const tint =
-    state === 'denied' || state === 'unavailable'
-      ? systemColors.tertiaryLabel
-      : state === 'done'
-        ? brandColors.success
-        : brandColors.primary;
+  // 'done' is non-interactive: its results are already shown below.
+  const nonInteractive = state === 'loading' || state === 'done';
+  const tint = state === 'done' ? brandColors.success : brandColors.primary;
 
   return (
     <AnimatedPressable
@@ -62,7 +58,6 @@ export function BoardModeCard({ icon, label, sublabel, state = 'idle', onPress }
         animatedStyle,
         styles.card,
         { backgroundColor: systemColors.secondaryBackground, borderColor: systemColors.separator },
-        dimmed ? styles.dimmed : null,
       ]}
     >
       {state === 'loading' ? (
@@ -95,9 +90,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[1],
-  },
-  dimmed: {
-    opacity: 0.55,
   },
   label: {
     fontWeight: '600',

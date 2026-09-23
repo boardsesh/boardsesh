@@ -60,6 +60,7 @@ vi.mock('../../../src/components/auth/OAuthProviderButtons', () => ({
 }));
 vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn(), setPersonProperties: vi.fn() }));
 vi.mock('../../../src/lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../../src/lib/login-analytics', () => ({ useTrackLoginSucceeded: () => vi.fn() }));
 vi.mock('../../../src/lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../src/lib/discord', () => ({ openDiscordInvite: vi.fn() }));
 vi.mock('../../../src/lib/routing/anonymous-auth-gate', () => ({

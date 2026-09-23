@@ -98,6 +98,15 @@ class ConfigInfo:
     family: str
     resolution: int
     score_threshold: float
+    long_side: int
+    # Whether the export carries a third, mask tensor. Read straight from
+    # configs.json rather than through common.py, which would drag torch in.
+    produces_masks: bool = False
+    mask_source: str = "none"
+    tile_rows: int = 1
+    tile_cols: int = 1
+    tile_overlap: float = 0.0
+    nms_iou: float = 0.5
 
 
 def load_config_info(name: str, path: Path = DEFAULT_CONFIGS_PATH) -> ConfigInfo:
@@ -111,6 +120,13 @@ def load_config_info(name: str, path: Path = DEFAULT_CONFIGS_PATH) -> ConfigInfo
         family=str(entry["family"]),
         resolution=int(entry["resolution"]),
         score_threshold=float(entry.get("score_threshold", 0.3)),
+        produces_masks=bool(entry.get("produces_masks", False)),
+        mask_source=str(entry.get("mask_source", "none")),
+        long_side=int(entry.get("long_side", entry["resolution"])),
+        tile_rows=int(entry.get("tiles", {}).get("rows", 1)),
+        tile_cols=int(entry.get("tiles", {}).get("cols", 1)),
+        tile_overlap=float(entry.get("tiles", {}).get("overlap", 0.0)),
+        nms_iou=float(entry.get("nms_iou", 0.5)),
     )
 
 
@@ -265,11 +281,26 @@ def build_manifest(
             "boxes": {"name": None, "format": "cxcywh-normalized"},
             "logits": {"name": None, "activation": "sigmoid", "classes": 1},
         },
+        "inference": {
+            "longSide": config.long_side,
+            "tiles": {"rows": config.tile_rows, "cols": config.tile_cols, "overlap": config.tile_overlap},
+            "nmsIou": config.nms_iou,
+        },
         "thresholds": {"default": threshold, "sweep": sweep},
         "files": files,
         "training": training,
         "licence": "Apache-2.0",
     }
+    if config.produces_masks and config.mask_source == "model":
+        # A segmentation export carries a third tensor. Without this entry a
+        # consumer reading the manifest sees two outputs and silently falls back
+        # to circles, which is the whole thing the seg model exists to avoid.
+        manifest["outputs"]["masks"] = {
+            "name": None,
+            "activation": "sigmoid",
+            "layout": "queries-hw",
+            "decode": "interpolate-then-threshold",
+        }
     if eval_metrics:
         manifest["eval"] = eval_metrics
     return manifest
@@ -279,7 +310,10 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     import jsonschema
 
     schema = json.loads(SCHEMA_PATH.read_text())
-    jsonschema.validate(instance=manifest, schema=schema)
+    # Keep schema-v1 readers compatible with legacy manifests. New exports
+    # always need an explicit plan, including an untiled full-frame pass.
+    publication_schema = {**schema, "required": sorted({*schema["required"], "inference"})}
+    jsonschema.validate(instance=manifest, schema=publication_schema)
 
 
 def resolve_training(args: argparse.Namespace) -> dict[str, Any]:

@@ -139,7 +139,7 @@ export default async function StaticListFrontDoor({
 
   return (
     <Box component="main" sx={containerSx}>
-      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} locale={locale} />
+      <ClimbListJsonLd climbs={climbs} boardDetails={boardDetails} page={page} />
 
       <FrontDoorBreadcrumb
         boardName={boardName}

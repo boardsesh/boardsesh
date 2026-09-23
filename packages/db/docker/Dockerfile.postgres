@@ -14,6 +14,17 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# TLS material arrives as PG_TLS_SERVER_CERT / PG_TLS_SERVER_KEY and is written
+# to the volume, outside PGDATA, by this wrapper. It is a no-op when those are
+# unset, so local dev, CI and the homelab DR standby boot unchanged.
+#
+# ENTRYPOINT resets an inherited CMD, so the upstream default is restated here.
+COPY postgres-entrypoint.sh /usr/local/bin/boardsesh-postgres-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/boardsesh-postgres-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/boardsesh-postgres-entrypoint.sh"]
+CMD ["postgres"]
+
 LABEL org.boardsesh.postgresql.version="18.6" \
       org.boardsesh.postgis.version="3.6.4" \
       org.boardsesh.postgresql.base-digest="sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"

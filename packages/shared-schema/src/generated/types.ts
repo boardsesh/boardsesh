@@ -5280,6 +5280,18 @@ export type PinPlaylistInput = {
   playlistUuid: Scalars['ID']['input'];
 };
 
+/** A city or town from the locally hosted GeoNames gazetteer. */
+export type PlaceSuggestion = {
+  __typename?: 'PlaceSuggestion';
+  country: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  id: Scalars['Int']['output'];
+  latitude: Scalars['Float']['output'];
+  longitude: Scalars['Float']['output'];
+  name: Scalars['String']['output'];
+  region: Scalars['String']['output'];
+};
+
 /** One placement's traced hold silhouette, as a flat implicitly-closed ring. */
 export type PlacementOutline = {
   __typename?: 'PlacementOutline';
@@ -5812,7 +5824,7 @@ export type Query = {
    * before the live `boardNowPlaying` subscription takes over.
    */
   boardRecentClimbs: Array<BoardPresenceClimb>;
-  /** Merged native and imported recent history; never represents current wall state. */
+  /** Merged native and imported recent displays, used to infer the current climb by display time. */
   boardRecentHistory: Array<BoardPresenceClimb>;
   /**
    * Look up boards by controller serial numbers.
@@ -6200,6 +6212,8 @@ export type Query = {
   searchClimbs: ClimbSearchResult;
   /** Search public gyms. */
   searchGyms: GymConnection;
+  /** City/town suggestions; query must contain 3–80 characters. At most five results. */
+  searchPlaces: Array<PlaceSuggestion>;
   /** Search public playlists globally by name. */
   searchPlaylists: SearchPlaylistsResult;
   /** Search for users by name or email. */
@@ -6916,6 +6930,11 @@ export type QuerySearchClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySearchGymsArgs = {
   input: SearchGymsInput;
+};
+
+/** Root query type for all read operations. */
+export type QuerySearchPlacesArgs = {
+  query: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -10403,6 +10422,7 @@ export type ResolversTypes = ResolversObject<{
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinBoardInput: PinBoardInput;
   PinPlaylistInput: PinPlaylistInput;
+  PlaceSuggestion: ResolverTypeWrapper<PlaceSuggestion>;
   PlacementOutline: ResolverTypeWrapper<PlacementOutline>;
   PlaybackStateChanged: ResolverTypeWrapper<PlaybackStateChanged>;
   PlaybackStateInput: PlaybackStateInput;
@@ -10842,6 +10862,7 @@ export type ResolversParentTypes = ResolversObject<{
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinBoardInput: PinBoardInput;
   PinPlaylistInput: PinPlaylistInput;
+  PlaceSuggestion: PlaceSuggestion;
   PlacementOutline: PlacementOutline;
   PlaybackStateChanged: PlaybackStateChanged;
   PlaybackStateInput: PlaybackStateInput;
@@ -13825,6 +13846,20 @@ export type OutlierAnalysisResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type PlaceSuggestionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PlaceSuggestion'] = ResolversParentTypes['PlaceSuggestion'],
+> = ResolversObject<{
+  country?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  countryCode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  latitude?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  longitude?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  region?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type PlacementOutlineResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['PlacementOutline'] = ResolversParentTypes['PlacementOutline'],
@@ -14588,6 +14623,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySearchGymsArgs, 'input'>
+  >;
+  searchPlaces?: Resolver<
+    Array<ResolversTypes['PlaceSuggestion']>,
+    ParentType,
+    ContextType,
+    RequireFields<QuerySearchPlacesArgs, 'query'>
   >;
   searchPlaylists?: Resolver<
     ResolversTypes['SearchPlaylistsResult'],
@@ -16346,6 +16387,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
+  PlaceSuggestion?: PlaceSuggestionResolvers<ContextType>;
   PlacementOutline?: PlacementOutlineResolvers<ContextType>;
   PlaybackStateChanged?: PlaybackStateChangedResolvers<ContextType>;
   Playlist?: PlaylistResolvers<ContextType>;

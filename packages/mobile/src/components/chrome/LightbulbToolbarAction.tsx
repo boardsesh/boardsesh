@@ -25,7 +25,7 @@ export function LightbulbToolbarAction() {
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
   const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
-    useLightbulbControl({ onOpenControls: openControls });
+    useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls });
   const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
 
   const handlePress = useCallback(() => {

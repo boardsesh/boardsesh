@@ -212,6 +212,7 @@ describe('production OTA workflow reliability', () => {
     for (const implementationPath of [
       'scripts/mobile-publish.ts',
       'scripts/lib/mobile-publish-retry.ts',
+      'scripts/lib/ota-branch-probe.ts',
       'scripts/lib/eoas.ts',
     ]) {
       expect(production).toContain(`- '${implementationPath}'`);
@@ -224,7 +225,7 @@ describe('production OTA workflow reliability', () => {
   it('gives the preview publish job enough time for bounded platform retries', () => {
     const timeout = Number(jobBlock(preview, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
     // Same shape as production: one job publishes both platforms sequentially.
-    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, true));
   });
 });
 
@@ -267,6 +268,7 @@ describe('backport OTA workflow upload pressure', () => {
       'scripts/mobile-publish.ts',
       'scripts/lib/eoas.ts',
       'scripts/lib/mobile-publish-retry.ts',
+      'scripts/lib/ota-branch-probe.ts',
       'scripts/mobile-upload-sourcemaps.ts',
     ]) {
       expect(snapshot).toContain(implementationPath);
@@ -274,4 +276,22 @@ describe('backport OTA workflow upload pressure', () => {
       expect(gitAddLine).toContain(implementationPath);
     }
   });
+});
+
+describe('publisher helper preview routing', () => {
+  it.each(['mobile-ota-preview.yml', 'mobile-ota-preview-prompt.yml', 'pr-test-plan.yml'])(
+    '%s treats a probe-only diff as a mobile preview change',
+    (filename) => {
+      const workflow = readFileSync(resolve(WORKFLOW_DIR, filename), 'utf8');
+      const declaration = /const affectsMobilePreview = \(path\) =>[\s\S]*?;\n/.exec(workflow);
+      if (!declaration) throw new Error(`${filename} has no preview predicate`);
+      // Execute the workflow's own predicate so this cannot pass against a copied test implementation.
+      // oxlint-disable-next-line no-implied-eval
+      const affectsPreview = new Function('path', `${declaration[0]} return affectsMobilePreview(path);`) as (
+        path: string,
+      ) => boolean;
+      expect(affectsPreview('scripts/lib/ota-branch-probe.ts')).toBe(true);
+      expect(affectsPreview('docs/unrelated.md')).toBe(false);
+    },
+  );
 });

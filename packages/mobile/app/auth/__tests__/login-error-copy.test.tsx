@@ -25,6 +25,7 @@ vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ signInWithCredentials: auth.signInWithCredentials }),
 }));
 vi.mock('../../../src/lib/error-reporting', () => ({ reportError: reporting.reportError }));
+vi.mock('../../../src/lib/login-analytics', () => ({ useTrackLoginSucceeded: () => vi.fn() }));
 vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
   useNativeOAuthSignIn: () => ({ signIn: vi.fn(), inProgress: false }),
 }));

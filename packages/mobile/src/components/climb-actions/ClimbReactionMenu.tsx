@@ -50,6 +50,9 @@ const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share
 type ClimbReactionMenuProps = {
   climb: Climb;
   boardConfig: BoardConfig;
+  /** Set only when the menu was opened from a queue row — names the exact slot
+   *  "Play next" should move, which matters when a climb is queued twice. */
+  queueItemUuid?: string;
   currentUserId?: string | null;
   isAuthenticated: boolean;
   onEditEntry?: () => void;
@@ -69,6 +72,9 @@ type ClimbReactionMenuProps = {
    *  sheet stacks above the `/play` modal (#3505). Receives the climb/board
    *  snapshot the menu was opened for. */
   onReportClimb?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** When provided, adds "Open the queue" (the play drawer, while the
+   *  connect-step pill has the queue button's place; #5654). */
+  onOpenQueue?: () => void;
   /** Native sheet underneath this custom overlay, if any. */
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
@@ -146,12 +152,14 @@ function OverlayPortal({ children, onRequestClose }: { children: React.ReactNode
 export function ClimbReactionMenu({
   climb,
   boardConfig,
+  queueItemUuid,
   currentUserId,
   isAuthenticated,
   onEditEntry,
   onAddBetaVideo,
   onTick,
   onReportClimb,
+  onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
   reduceMotion,
@@ -243,6 +251,7 @@ export function ClimbReactionMenu({
   const actions = useClimbActions({
     climb,
     boardConfig,
+    queueItemUuid,
     currentUserId,
     isAuthenticated,
     onEditEntry,
@@ -251,6 +260,7 @@ export function ClimbReactionMenu({
     onAddBetaVideo,
     onTick,
     onReportClimb,
+    onOpenQueue,
     dismissSourceSheet,
     dismissPlayerAndWait,
   });

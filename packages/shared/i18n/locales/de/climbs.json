@@ -203,6 +203,12 @@
     "namePlaceholder": "Boulder-Name",
     "descriptionPlaceholder": "Beta oder Notizen zu deinem Boulder…",
     "dismiss": "Ausblenden",
+    "cannotOpen": {
+      "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
+      "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
+      "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+    },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
@@ -354,8 +360,8 @@
     },
     "emptyState": {
       "noBoard": {
-        "title": "Folge deiner Wand",
-        "subtitle": "Wähl das Board, an dem du kletterst, um seine Boulder zu durchstöbern und zu sehen, was gerade beleuchtet ist.",
+        "title": "Wähl dein Board",
+        "subtitle": "Such dir das Board aus, an dem du kletterst, um seine Boulder zu durchstöbern und sie am Board zu beleuchten.",
         "cta": "Mein Board finden"
       },
       "noClimbs": {
@@ -385,6 +391,10 @@
       "offlineCatalogQueued": {
         "title": "Steht in der Warteschlange",
         "subtitle": "{{name}} lädt, sobald du wieder online bist, danach tauchen die Boulder in der Suche auf."
+      },
+      "boardRestoreFailed": {
+        "title": "Dein Board konnte nicht wiederhergestellt werden",
+        "description": "Versuch es erneut, um zu deinen Bouldern zurückzukehren."
       }
     },
     "detail": {
@@ -453,7 +463,6 @@
         "sort": "Sortierung"
       },
       "popularity": "Beliebtheit",
-      "shape": "Form",
       "collection": {
         "label": "Sammlung",
         "any": "Beliebig"
@@ -511,9 +520,11 @@
       "tall": "Nur hohe Boulder",
       "tallClimbs": "Hohe Boulder",
       "tallDescription": "Reichen bis nach oben",
+      "tallLockedHint": "Gesperrt. Halte den Filter „Hoch“ gedrückt, um ihn zu entsperren.",
       "wide": "Nur breite Boulder",
       "wideClimbs": "Breite Boulder",
       "wideDescription": "Nutzen die 10x10-Seitenerweiterung",
+      "wideLockedHint": "Gesperrt. Halte den Filter „Breit“ gedrückt, um ihn zu entsperren.",
       "betaVideos": "Nur mit Beta-Video",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Nur Boulder mit Beta-Video",
@@ -551,7 +562,9 @@
       "chips": {
         "filtersWithCount": "Filter · {{count}}",
         "tall": "Hoch",
-        "wide": "Breit"
+        "wide": "Breit",
+        "lock": "Sperren",
+        "unlock": "Entsperren"
       },
       "removeFilterAria": "{{filter}} entfernen"
     },
@@ -642,6 +655,7 @@
     },
     "climbActions": {
       "preview": "Vorschau",
+      "playNext": "Als Nächstes dran",
       "copyLink": "Link kopieren",
       "linkCopied": "Link kopiert",
       "nameCopied": "Name kopiert",
@@ -654,7 +668,8 @@
       "edit": "Boulder bearbeiten",
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
-      "closeOverlay": "Boulder-Aktionen schließen"
+      "closeOverlay": "Boulder-Aktionen schließen",
+      "openQueue": "Warteschlange öffnen"
     },
     "create": {
       "brush": {

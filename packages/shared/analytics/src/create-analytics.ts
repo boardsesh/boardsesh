@@ -1,4 +1,4 @@
-import type { AnalyticsPropertyValue, PostHogClient } from './client';
+import type { AnalyticsCaptureOptions, AnalyticsPropertyValue, PostHogClient } from './client';
 import { sanitizeForPosthog } from './sanitize';
 
 // Properties as call sites pass them: optional fields may be `undefined` and are
@@ -8,7 +8,9 @@ export type AnalyticsEventProperties = Record<string, AnalyticsPropertyValue | u
 export type AnalyticsApi = {
   // Fire-and-forget event. Returns void to match the web call-site ergonomics
   // (the existing ~94 sites ignore the return). Skipped silently when gated.
-  track(name: string, properties?: AnalyticsEventProperties): void;
+  // `options.timestamp` backdates the event to when it happened; see
+  // AnalyticsCaptureOptions.
+  track(name: string, properties?: AnalyticsEventProperties, options?: AnalyticsCaptureOptions): void;
   // The capture/identity methods return whether a client was present and the
   // call was forwarded — preserves the boolean contract the web wrapper exposes.
   capture(name: string, properties?: AnalyticsEventProperties): boolean;
@@ -45,12 +47,18 @@ export function createAnalytics(
   }
 
   return {
-    track(name, properties) {
+    track(name, properties, options) {
       if (shouldSkip?.()) return;
       onDebug?.(name, properties);
       const client = getClient();
       if (!client) return;
-      client.capture(name, sanitizeForPosthog(properties));
+      // Only forward options when there are some, so every existing call still
+      // reaches the SDK as the same two-argument capture.
+      if (options) {
+        client.capture(name, sanitizeForPosthog(properties), options);
+      } else {
+        client.capture(name, sanitizeForPosthog(properties));
+      }
     },
     capture(name, properties) {
       const client = resolveClient();

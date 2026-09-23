@@ -6,9 +6,9 @@ Protocol: [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md). Related: [Kilter sync](kil
 
 ## Scope
 
-A signed-in viewer with a linked Kilter account starts polling when they subscribe to a public Kilter board's `boardNowPlaying` topic. Other viewers receive the merged board history through the same topic. Kilter activity is history, never evidence of a current occupant or the climb currently lit by Boardsesh.
+A signed-in viewer with a linked Kilter account starts polling when they subscribe to a public Kilter board's `boardNowPlaying` topic. Other viewers receive the merged board history through the same topic. The displayed current climb follows the newest display timestamp across Boardsesh and Kilter, including during active Boardsesh sessions. This is an inference about what is on the wall, not a Bluetooth confirmation or evidence of a current occupant.
 
-Imports preserve Boardsesh history, current climb, holder, queue, and tick-derived statistics. No `/add`, report, or other upstream activity write is made. Existing native reports and upstream displays remain separate occurrences even if climb, angle, and time are similar.
+Imports preserve Boardsesh history, holder, queue, and tick-derived statistics. A newer Kilter display updates the presence current-climb display without sending an LED command. No `/add`, report, or other upstream activity write is made. Existing native reports and upstream displays remain separate occurrences even if climb, angle, and time are similar.
 
 ## Exact physical wall identity
 
@@ -36,7 +36,7 @@ The occurrence key hashes the complete wall selection, upstream display ID, and 
 
 Partial indexes for external occurrence keys and imported chronological reads are deferred to [#5551](https://github.com/boardsesh/boardsesh/issues/5551).
 
-Imported recent history has its own Redis cache (`board:<id>:kilter-history`), retaining the newest 50 displays from seven days. The native history list is unchanged. Queries merge the two sources chronologically. A missing cache falls back to Postgres; subsequent polls rebuild it, including when every occurrence already exists. `BoardHistoryUpdated` changes client history only. Imported events are excluded from native display-count activity aggregates.
+Imported recent history has its own Redis cache (`board:<id>:kilter-history`), retaining the newest 50 displays from seven days. The native history list is unchanged. Queries merge the two sources chronologically. A missing cache falls back to Postgres; subsequent polls rebuild it, including when every occurrence already exists. `BoardHistoryUpdated` merges client history and selects the current climb by display time, never import arrival sequence. Native reports win exact timestamp ties; microsecond precision is preserved. Native sequence ordering remains separate, so a late import cannot suppress a subsequent native report or clear. An observed clear blocks imported displays at or before its timestamp, including on replay; a display after that clear can become current. Initial loads and reconnect backfills use the same rule. Native entries in mixed backfill advance the native sequence cursor, just as native-only backfill does; duplicate live delivery is then a no-op, while older missing events still merge into history. Older clients that only merge history remain compatible. Imported events are excluded from native display-count activity aggregates.
 
 Cached entries validate every supported field: nullable strings, integer angles, positive safe-integer sequences, and timestamp strings that parse as valid dates. Invalid cached entries trigger a warning and a durable-history read. Malformed timestamps in the merged history are excluded with a warning count, separately from normal retention expiry.
 
@@ -44,7 +44,7 @@ Durable event retention follows existing board history. Unlinking stops new read
 
 ## Durable presence-sheet history
 
-`boardHistoryPage` orders by `(confirmed_at DESC, seq DESC)` with an opaque, board-bound cursor. This separates event time from import arrival order. The legacy sequence-based `boardHistory` query and native `boardRecentClimbs` stay native-only for older clients, whose backfill path may update current-wall state. Clients that display Kilter imports use `boardRecentHistory` and `boardHistoryPage`; the legacy source filter must remain until those older clients are retired.
+`boardHistoryPage` orders by `(confirmed_at DESC, seq DESC)` with an opaque, board-bound cursor. This separates event time from import arrival order. The legacy sequence-based `boardHistory` query and native `boardRecentClimbs` stay native-only for older clients, whose backfill path may update current-wall state. Clients that display Kilter imports use `boardRecentHistory` and `boardHistoryPage`; the legacy source filter must remain until those older clients are retired. Updated clients infer the current climb from mixed history in the shared presence reducer; native-only endpoints remain unchanged.
 
 The shared pagination hook automatically loads exactly one first page when the sheet mounts or changes boards. Its cursor starts independently of the sparse Redis window. A failed page remains retryable without advancing the cursor. Pull-to-refresh and reconnect reload the first durable page. The sheet merges durable and live entries chronologically, retains richer live copies, labels Kilter entries, and offers a load/retry button for lists too short to scroll.
 
@@ -53,9 +53,9 @@ The shared pagination hook automatically loads exactly one first page when the s
 1. Apply migration `0233_kilter_live_history` before deploying the backend and sync daemon.
 2. Run the normal Kilter reference/location sync to populate exact source selectors.
 3. Enable `KILTER_LIVE_SYNC_ENABLED=1` on backend instances and restart them.
-4. Open an exact imported public Kilter board with a linked account; confirm history gains labeled entries while current wall state stays unchanged.
+4. Open an exact imported public Kilter board with a linked account; confirm history gains labeled entries and the newest display becomes current without changing the queue or LEDs.
 5. Close the last linked viewer and verify polling stops. Disable the flag and restart to stop all polling without deleting history.
 
-Automated coverage exercises repeated responses, native/imported coexistence, cache recovery, unknown climbs, binding changes and merge tombstones, chronological cursors, multiple backend instances, unsubscribe/unlink cancellation, token rotation under concurrency, history-only reducers, first-page loading, retry, and refresh.
+Automated coverage exercises repeated responses, native/imported coexistence, cache recovery, unknown climbs, binding changes and merge tombstones, chronological cursors, multiple backend instances, unsubscribe/unlink cancellation, token rotation under concurrency, cross-source current-climb ordering, observed-clear protection, first-page loading, retry, and refresh.
 
 The September 18, 2026 authorized REST probe confirmed the three-selector read shape and timestamp/angle fields. It does not establish server quotas, retention guarantees, custom-wall visibility, or permission to publish upstream. No production database writes were used during implementation.

@@ -4,6 +4,7 @@ import {
   DEFAULT_PINNED_CHIPS,
   isValidChipKind,
   normalizePinnedChips,
+  toStoredPinnedChips,
   chipKindToTokenKeys,
   type PinnableChipKind,
 } from '../pinnable-chips';
@@ -16,7 +17,8 @@ describe('pinnable-chips catalog', () => {
       'progress',
       'collection',
       'climbType',
-      'shape',
+      'tall',
+      'wide',
       'beta',
       'popularity',
       'rating',
@@ -25,7 +27,15 @@ describe('pinnable-chips catalog', () => {
   });
 
   it('defaults to only the Tier-1 chips (reproduces today’s chip row; Tier-2 is opt-in)', () => {
-    expect([...DEFAULT_PINNED_CHIPS]).toEqual(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']);
+    expect([...DEFAULT_PINNED_CHIPS]).toEqual([
+      'grade',
+      'progress',
+      'collection',
+      'tall',
+      'wide',
+      'popularity',
+      'rating',
+    ]);
     // Tier-2 controls are in the catalog but not pinned by default.
     for (const optIn of ['accuracy', 'climbType', 'beta', 'sort'] as const) {
       expect(PINNABLE_CHIP_CATALOG).toContain(optIn);
@@ -36,6 +46,8 @@ describe('pinnable-chips catalog', () => {
   it('isValidChipKind accepts known kinds and rejects everything else', () => {
     for (const kind of PINNABLE_CHIP_CATALOG) expect(isValidChipKind(kind)).toBe(true);
     expect(isValidChipKind('setters')).toBe(false);
+    // The retired Shape menu chip is no longer a kind (its pins migrate instead).
+    expect(isValidChipKind('shape')).toBe(false);
     expect(isValidChipKind('')).toBe(false);
     expect(isValidChipKind(null)).toBe(false);
     expect(isValidChipKind(42)).toBe(false);
@@ -48,11 +60,42 @@ describe('normalizePinnedChips', () => {
   });
 
   it('drops unknown kinds (incl. the retired "benchmarks") and de-dupes', () => {
-    expect(normalizePinnedChips(['grade', 'benchmarks', 'grade', 'shape'])).toEqual(['grade', 'shape']);
+    expect(normalizePinnedChips(['grade', 'benchmarks', 'grade', 'wide'])).toEqual(['grade', 'wide']);
+  });
+
+  it('migrates a stored "shape" pin to separate Tall + Wide pins in catalog order', () => {
+    expect(normalizePinnedChips(['grade', 'shape', 'rating'])).toEqual(['grade', 'tall', 'wide', 'rating']);
+    // The pre-split default set keeps every chip it had.
+    expect(normalizePinnedChips(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating'])).toEqual([
+      ...DEFAULT_PINNED_CHIPS,
+    ]);
+    // A "shape" alongside an explicit tall/wide doesn't duplicate them.
+    expect(normalizePinnedChips(['tall', 'shape'])).toEqual(['tall', 'wide']);
   });
 
   it('returns an empty array when nothing valid is left', () => {
     expect(normalizePinnedChips(['nope', 123, null])).toEqual([]);
+  });
+});
+
+describe('toStoredPinnedChips', () => {
+  it('adds the retired "shape" kind after Wide only when Tall AND Wide are pinned', () => {
+    expect(toStoredPinnedChips(['grade', 'tall', 'wide', 'rating'])).toEqual([
+      'grade',
+      'tall',
+      'wide',
+      'shape',
+      'rating',
+    ]);
+    expect(toStoredPinnedChips(['grade', 'tall', 'rating'])).toEqual(['grade', 'tall', 'rating']);
+    expect(toStoredPinnedChips(['wide'])).toEqual(['wide']);
+    expect(toStoredPinnedChips([])).toEqual([]);
+  });
+
+  it('normalizes back to the same set (the alias is folded into Tall + Wide)', () => {
+    for (const kinds of [[...DEFAULT_PINNED_CHIPS], ['tall', 'wide'], ['grade', 'wide'], ['sort']] as const) {
+      expect(normalizePinnedChips(toStoredPinnedChips(kinds))).toEqual([...kinds]);
+    }
   });
 });
 
@@ -64,7 +107,8 @@ describe('chipKindToTokenKeys', () => {
       progress: ['progress'],
       collection: ['benchmark'],
       climbType: ['climbType'],
-      shape: ['tall', 'wide'],
+      tall: ['tall'],
+      wide: ['wide'],
       beta: ['beta'],
       popularity: ['minAscents'],
       rating: ['minRating'],

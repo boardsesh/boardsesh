@@ -11,12 +11,11 @@ import {
 
 // A valid base for register cases — override one field per test so each
 // assertion isolates a single rule.
-function register(overrides: Partial<{ name: string; email: string; password: string; confirmPassword: string }> = {}) {
+function register(overrides: Partial<{ name: string; email: string; password: string }> = {}) {
   return validateRegisterFields({
     name: '',
     email: 'climber@example.com',
     password: 'longenough',
-    confirmPassword: 'longenough',
     ...overrides,
   });
 }
@@ -65,30 +64,27 @@ describe('validateRegisterFields', () => {
   });
 
   it('requires a password and enforces the min length', () => {
-    expect(register({ password: '', confirmPassword: '' }).password).toBe('login.validation.passwordRequiredCreate');
+    expect(register({ password: '' }).password).toBe('login.validation.passwordRequiredCreate');
     const tooShort = 'a'.repeat(PASSWORD_MIN_LENGTH - 1);
-    expect(register({ password: tooShort, confirmPassword: tooShort }).password).toBe(
-      'login.validation.passwordTooShort',
-    );
+    expect(register({ password: tooShort }).password).toBe('login.validation.passwordTooShort');
   });
 
   it('enforces the max length (matches the backend 128-char bound)', () => {
     const atMax = 'a'.repeat(PASSWORD_MAX_LENGTH);
-    expect(register({ password: atMax, confirmPassword: atMax }).password).toBeUndefined();
+    expect(register({ password: atMax }).password).toBeUndefined();
     const tooLong = 'a'.repeat(PASSWORD_MAX_LENGTH + 1);
-    expect(register({ password: tooLong, confirmPassword: tooLong }).password).toBe('login.validation.passwordTooLong');
+    expect(register({ password: tooLong }).password).toBe('login.validation.passwordTooLong');
   });
 
   it('accepts the exact min length', () => {
     const atMin = 'a'.repeat(PASSWORD_MIN_LENGTH);
-    expect(register({ password: atMin, confirmPassword: atMin }).password).toBeUndefined();
+    expect(register({ password: atMin }).password).toBeUndefined();
   });
 
-  it('requires confirmation and flags a mismatch', () => {
-    expect(register({ confirmPassword: '' }).confirmPassword).toBe('login.validation.confirmPasswordRequired');
-    expect(register({ password: 'longenough', confirmPassword: 'different1' }).confirmPassword).toBe(
-      'login.validation.passwordsMismatch',
-    );
+  it('asks for the password once: a valid password alone passes, with no confirmation rule', () => {
+    const errors = register({ password: 'longenough' });
+    expect(isValid(errors)).toBe(true);
+    expect(Object.keys(errors)).toEqual([]);
   });
 
   it('allows a name up to the boundary and flags one past it', () => {

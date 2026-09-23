@@ -101,6 +101,7 @@ async function runOnBound(board: UserBoard = BOARD) {
 describe('OnboardingBoardRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    activateBoardMock.mockReset().mockResolvedValue(undefined);
     confirmAndDownloadMock.mockResolvedValue(true);
     boardsCtrl.boards = [BOARD];
     boardsCtrl.isLoading = false;
@@ -117,8 +118,26 @@ describe('OnboardingBoardRoute', () => {
     renderRoute();
 
     expect(activateOptionsCtrl.last?.source).toBe('onboarding');
-    (activateOptionsCtrl.last?.navigate as () => void)();
+    (activateOptionsCtrl.last!.navigate as () => void)();
     expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+  });
+
+  it('keeps the pending selection until activation completes', async () => {
+    let finishBinding!: () => void;
+    activateBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishBinding = resolve;
+        }),
+    );
+    renderRoute();
+    stepCtrl.props?.onSelect(BOARD);
+    stepCtrl.props?.onSelect({ ...BOARD, uuid: 'board-2', boardType: 'tension' } as UserBoard);
+    expect(activateBoardMock).toHaveBeenCalledExactlyOnceWith(BOARD);
+    finishBinding();
+    await waitFor(() => expect(activateBoardMock).toHaveBeenCalledTimes(1));
+    stepCtrl.props?.onSelect(BOARD);
+    expect(activateBoardMock).toHaveBeenCalledTimes(2);
   });
 
   describe('the download offer', () => {

@@ -56,7 +56,7 @@ export function BoardControlIndicator({
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
-  const { onPress: lightbulbPress } = useLightbulbControl();
+  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator' });
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {

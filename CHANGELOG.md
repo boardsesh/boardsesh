@@ -4,6 +4,67 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-22
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing. ([#5235](https://github.com/boardsesh/boardsesh/pull/5235))
+- Infrastructure: lets the database image serve a real certificate. Nothing deployed here. ([#5650](https://github.com/boardsesh/boardsesh/pull/5650))
+- Infrastructure DNS for the disaster-recovery standby. No user-facing change. ([#5649](https://github.com/boardsesh/boardsesh/pull/5649))
+- This separate Garmin app is not shipped through the mobile app's release notes and still requires Connect IQ Store preparation. ([#3466](https://github.com/boardsesh/boardsesh/pull/3466))
+
+### Fixed
+
+- Choose whether PR previews open when Boardsesh starts. ([#5684](https://github.com/boardsesh/boardsesh/pull/5684))
+- Link your board account with clearer instructions and correctly spelled board names. ([#5231](https://github.com/boardsesh/boardsesh/pull/5231))
+
+## 2026-09-21
+
+### New
+
+- No board yet? Climbs now takes you straight to yours with Find my board. ([#5678](https://github.com/boardsesh/boardsesh/pull/5678))
+  Setting up your own Kilter or Tension board starts with the most-used layout and size picked.
+  Finding boards near you says when location is off or nothing is within 20 km, and what to do next.
+  The Bluetooth scan tells you up front that MoonBoards don't show up there yet.
+  New on iOS 26? A one-time tip shows you how to get back to your climbs.
+- New here? Boardsesh now asks where you climb right after sign-up, then takes you to your board's climbs ([#5677](https://github.com/boardsesh/boardsesh/pull/5677))
+  Pick your gym's board nearby or on the map, set up your home wall, or scan for the board in front of you
+- Sign in with Apple or Google right from the top of the screen ([#5674](https://github.com/boardsesh/boardsesh/pull/5674))
+  Signing up asks for your password once
+- Long-press any climb and hit "Play next" to slot it right behind the one on the wall — no more waiting out the whole queue while the crew rests. ([#4712](https://github.com/boardsesh/boardsesh/pull/4712))
+
+### Fixed
+
+- Session climbs that need to load their hold details now become current after loading when you're climbing solo. Preview actions and browsing with your crew still leave the current climb alone. ([#5634](https://github.com/boardsesh/boardsesh/pull/5634))
+- Find gyms around a town, including nearby suburbs, without sharing your location. ([#5629](https://github.com/boardsesh/boardsesh/pull/5629))
+- Lose signal or hit server trouble and a banner now tells you, with how many changes are waiting to go out ([#5675](https://github.com/boardsesh/boardsesh/pull/5675))
+  If some of your sends got stuck in an earlier outage, you get one note saying they're on their way
+- Bluetooth blocked for Boardsesh? The app now says so and takes you straight to Settings. ([#5676](https://github.com/boardsesh/boardsesh/pull/5676))
+  No boards in the picker? Tap Scan again instead of starting over.
+  Android now asks about notifications after your board connects, not before you scan.
+- Boards you pick nearby or on the gym map now stay in Your boards, so you won't have to find them again. ([#5673](https://github.com/boardsesh/boardsesh/pull/5673))
+  If the board you climb on was missing from Your boards, it's back the next time you open the app.
+- Open a climb's actions with VoiceOver or TalkBack even when its quick-actions button is hidden. ([#5218](https://github.com/boardsesh/boardsesh/pull/5218))
+  Hear the climb row's existing grade and status labels alongside its name.
+- Fixed: the Profile, Discover, and Climbs tabs no longer get stuck on a screen you opened from another tab (Settings, My Playlists, a setter's profile) — tapping back always returns you to that tab's own home. ([#5670](https://github.com/boardsesh/boardsesh/pull/5670))
+- Tall and Wide are back as their own one-tap filter chips on the Climbs screen ([#5661](https://github.com/boardsesh/boardsesh/pull/5661))
+  On iPhone, long-press Tall or Wide to lock it, so Reset keeps it on
+- Open a playlist link that was deleted or made private and you now get a proper "not found" page instead of an empty one. ([#5639](https://github.com/boardsesh/boardsesh/pull/5639))
+  Playlists you share now show their name and board in the link preview, rather than the same generic line every playlist had.
+- Get a clear explanation when your board cannot open the climb creator. ([#5632](https://github.com/boardsesh/boardsesh/pull/5632))
+- Favorites and follows now stick. A single unlucky moment of database contention used to strand one for good — the heart stayed filled while the server never heard about it. ([#4567](https://github.com/boardsesh/boardsesh/pull/4567))
+  Anything already stuck from that bug is sent on the next launch.
+- Sessions you log on your own board now show up under that board on Home, instead of vanishing into a feed shared with every other wall like it. ([#5239](https://github.com/boardsesh/boardsesh/pull/5239))
+- See the latest climb displayed through Kilter in Now on the Wall. ([#5669](https://github.com/boardsesh/boardsesh/pull/5669))
+- Return to your board’s climbs without choosing it again. ([#5644](https://github.com/boardsesh/boardsesh/pull/5644))
+  Open straight into your last board’s climbs, with Session controls a tap away.
+  Tap Start to begin your session and jump straight into climbs without a settings flash.
+- App Store 2.5.0 can receive compatible previews and app updates again. ([#5646](https://github.com/boardsesh/boardsesh/pull/5646))
+
 ## 2026-09-20
 
 ### New
