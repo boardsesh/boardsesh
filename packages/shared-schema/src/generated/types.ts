@@ -7780,6 +7780,8 @@ export type SearchBoardsInput = {
 
 /** Input for searching gyms. */
 export type SearchGymsInput = {
+  /** Filter to gyms that have a board set to one of these angles in degrees (OR). Combined with boardTypes/layoutIds/sizeIds, all must match the same board: a gym asking for a Kilter Homewall at 40 degrees is not matched by one owning a Homewall at 25 plus, separately, something else at 40. */
+  angles?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Filter to gyms that have a board of one of these types (OR) */
   boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */

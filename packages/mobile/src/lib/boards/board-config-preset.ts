@@ -15,8 +15,12 @@
 // picks their layout and size.
 
 import type { BoardName, PopularBoardConfig } from '@boardsesh/shared-schema';
-import { toBoardName } from '@boardsesh/board-config';
-import { getBoardLayouts, getBoardSetsForLayoutAndSize, getBoardSizesForLayoutId } from '../custom-board-options';
+import {
+  toBoardName,
+  getBoardLayouts,
+  getBoardSetsForLayoutAndSize,
+  getBoardSizesForLayoutId,
+} from '@boardsesh/board-config';
 
 export type BoardConfigPreset = {
   layoutId: number;

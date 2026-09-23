@@ -230,6 +230,12 @@ export const SearchGymsInputSchema = z.object({
   boardTypes: z.array(BoardNameSchema).max(10).optional(),
   layoutIds: z.array(z.number().int().nonnegative()).max(50).optional(),
   sizeIds: z.array(z.number().int().nonnegative()).max(50).optional(),
+  // `min(-90)` rather than the `.nonnegative()` its siblings use: Grasshopper's
+  // angle ladder starts at -5 (`ANGLES.grasshopper`), so a non-negative bound
+  // would throw on a legal filter. No `.default()`, for the same reason spelled
+  // out on `requireSlug` below — an omitted field must leave the emitted SQL
+  // byte-identical for every existing caller.
+  angles: z.array(z.number().int().min(-90).max(90)).max(50).optional(),
   multiBoardTypeOnly: z.boolean().optional(),
   // Deliberately no `.default(false)`: a default would make the resolver emit the
   // slug predicate decision for every existing caller (mobile's useNearbyGyms,

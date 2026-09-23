@@ -173,6 +173,7 @@ export default defineConfig({
       './packages/shared/session-inference/vite.config.ts',
       './packages/shared/playlist-generator/vite.config.ts',
       './packages/shared/climb-filters/vite.config.ts',
+      './packages/shared/gym-filters/vite.config.ts',
       './packages/shared/community-roles/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
@@ -851,6 +852,10 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/climb-filters run typecheck',
         dependsOn: ['codegen'],
       },
+      'typecheck:gym-filters': {
+        command: 'pnpm --filter @boardsesh/gym-filters run typecheck',
+        dependsOn: ['codegen'],
+      },
       'typecheck:community-roles': {
         command: 'pnpm --filter @boardsesh/community-roles run typecheck',
       },
@@ -967,6 +972,7 @@ export default defineConfig({
           'typecheck:profile-stats',
           'typecheck:playlist-generator',
           'typecheck:climb-filters',
+          'typecheck:gym-filters',
           'typecheck:community-roles',
           'typecheck:kiosk',
           'typecheck:i18n',
