@@ -36,6 +36,7 @@ import {
   OG_PATH_PREFIX,
   BOARD_CONTENT_CHALLENGE_EXPRESSION,
   CLIMB_VIEW_RATE_LIMIT_EXPRESSION,
+  WWW_OG_CACHE_RULE_DESCRIPTION,
   WWW_HTML_CACHE_EXCLUDED_BOARDS,
   WWW_HTML_CACHE_LOCALE_PREFIXES,
   WWW_HTML_CACHE_ROOT_SEGMENTS,
@@ -1997,6 +1998,28 @@ describe('origin rules', () => {
     expect(originRule.action_parameters.host_header).toBe(WS_HOSTNAME);
     expect(originRule.expression).toContain(WWW_HOSTNAME);
     expect(originRule.expression).toContain(OG_PATH_PREFIX);
+  });
+
+  it('caches exactly what it routes', () => {
+    // The two rules share one private expression on purpose: whatever the edge
+    // sends to the backend is exactly what has to be cacheable there, and a
+    // card cached on one path but routed on another would serve the www URL
+    // uncached forever. This is the assertion that makes the shared source safe
+    // — split them into independent literals and they drift instead.
+    const [originRule] = desiredCloudflareState.originRules;
+    const wwwOgCacheRule = desiredCloudflareState.cacheRules.find(
+      (rule) => rule.description === WWW_OG_CACHE_RULE_DESCRIPTION,
+    );
+
+    expect(wwwOgCacheRule).toBeDefined();
+    expect(originRule.expression).toBe(wwwOgCacheRule?.expression);
+  });
+
+  it('is printed in the token-scope hint an operator builds a token from', () => {
+    // A token created from the printed list alone must not silently fail on
+    // origin-rule writes — the phase is `optional: true`, so it would be
+    // skipped with a notice rather than erroring.
+    expect(readFileSync(new URL('./cloudflare-apply.ts', import.meta.url), 'utf8')).toContain('Zone.Origin Rules Edit');
   });
 
   it('does not challenge or rate-limit the share-card path on www', () => {

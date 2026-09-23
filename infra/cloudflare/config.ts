@@ -454,9 +454,11 @@ export const OG_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and starts_wi
 /**
  * The same cards, reached on www.
  *
- * Host-scoped separately rather than folded into the expression above, so the
- * two hosts' cache behaviour can never drift apart silently: a change meant for
- * one is visibly a change to only one.
+ * Host-scoped separately from `OG_CACHE_EXPRESSION` so the two HOSTS can be
+ * reasoned about apart — but deliberately sharing one expression with the
+ * origin rule below, because whatever the edge routes to the backend is exactly
+ * what has to be cacheable there. Two independent literals would let those
+ * drift; `cloudflare-apply.test.ts` asserts they stay equal.
  */
 const WWW_OG_PATH_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${OG_PATH_PREFIX}"))`;
 
@@ -468,6 +470,7 @@ export const WWW_OG_CACHE_EXPRESSION = WWW_OG_PATH_EXPRESSION;
  * Built from the same private expression as the cache rule rather than aliased
  * to its exported name: the two must cover the same paths, and a future edit to
  * one exported constant should not silently redefine what the other routes.
+ * The test that pins them equal is what makes that shared source safe.
  *
  * Every image signal on a climb page — `og:image`, the JSON-LD `image`, the
  * in-page `<img>` — pointed at a different hostname from the page itself. Some
