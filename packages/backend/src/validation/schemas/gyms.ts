@@ -232,9 +232,19 @@ export const SearchGymsInputSchema = z.object({
   sizeIds: z.array(z.number().int().nonnegative()).max(50).optional(),
   // `min(-90)` rather than the `.nonnegative()` its siblings use: Grasshopper's
   // angle ladder starts at -5 (`ANGLES.grasshopper`), so a non-negative bound
-  // would throw on a legal filter. No `.default()`, for the same reason spelled
-  // out on `requireSlug` below — an omitted field must leave the emitted SQL
-  // byte-identical for every existing caller.
+  // would throw on a legal filter.
+  //
+  // Deliberately a SANITY range, not a catalogue check. The real legal set is
+  // per board and lives in `ANGLES`; asserting it here would duplicate the
+  // catalogue in the validation layer and make adding a board a two-file change
+  // — and a value no board offers is an empty result set, not an attack. The
+  // callers that build these URLs validate against `ANGLES` before sending
+  // (`buildAngleOptions` in @boardsesh/gym-filters), which is where the
+  // vocabulary belongs.
+  //
+  // No `.default()`, for the same reason spelled out on `requireSlug` below — an
+  // omitted field must leave the emitted SQL byte-identical for every existing
+  // caller.
   angles: z.array(z.number().int().min(-90).max(90)).max(50).optional(),
   multiBoardTypeOnly: z.boolean().optional(),
   // Deliberately no `.default(false)`: a default would make the resolver emit the

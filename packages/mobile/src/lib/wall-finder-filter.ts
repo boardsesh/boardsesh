@@ -54,4 +54,5 @@ export {
 export type {
   LayoutFilterOption as WallFinderLayoutOption,
   SizeFilterOption as WallFinderSizeOption,
+  AngleFilterOption as WallFinderAngleOption,
 } from '@boardsesh/gym-filters';

@@ -160,11 +160,6 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
     facet === 'all' ? {} : { lockedBoardTypes: [facet as BoardName] },
   );
 
-  // Enumerated rather than a boolean `?multiBoard=true`: `2plus` says what it
-  // means in the URL, and leaves room for another gym-level value later without
-  // minting a second param.
-  const multiBoardTypeOnly = firstValue(searchParams.boards) === '2plus' ? true : undefined;
-
   const latitude = parseFiniteNumber(firstValue(searchParams.lat));
   const longitude = parseFiniteNumber(firstValue(searchParams.lng));
   const hasValidOrigin =
@@ -191,7 +186,6 @@ export function parseDirectoryQuery(facet: DirectoryFacet, searchParams: Directo
       ? { place: firstValue(searchParams.place)!.trim().slice(0, 200) }
       : {}),
     ...boardFilter,
-    ...(multiBoardTypeOnly ? { multiBoardTypeOnly } : {}),
     query,
     boardTypes: [...(boardFilter.boardTypes ?? [])],
     // Rounded to the same precision near-me mode already uses client-side
@@ -224,9 +218,6 @@ export function buildDirectoryHref(facet: DirectoryFacet, query: DirectoryQuery,
   // their board type in the path, never in the query; layout, size and angle are
   // query-borne on every route, because a facet route pins the TYPE, not the wall.
   appendGymBoardFilterParams(params, query, { omitBoardTypes: facet !== 'all' });
-  if (query.multiBoardTypeOnly) {
-    params.set('boards', '2plus');
-  }
   if (query.latitude !== null && query.longitude !== null) {
     if (query.place) params.set('place', query.place);
     params.set('lat', String(query.latitude));

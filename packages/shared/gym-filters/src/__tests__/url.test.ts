@@ -155,3 +155,28 @@ describe('toGymBoardFilterInput', () => {
     });
   });
 });
+
+describe('the gym-level predicate travels with the rest', () => {
+  it('round-trips through the shared helpers, not just the web layer', () => {
+    // It is part of GymBoardFilter, so a consumer using only these helpers must
+    // not silently drop it — the Wall Finder will be exactly that consumer.
+    expect(roundTrip({ multiBoardTypeOnly: true }).multiBoardTypeOnly).toBe(true);
+    expect(roundTrip({ boardTypes: ['kilter'], multiBoardTypeOnly: true })).toMatchObject({
+      boardTypes: ['kilter'],
+      multiBoardTypeOnly: true,
+    });
+  });
+
+  it('is enumerated — only the one value counts', () => {
+    expect(parseGymBoardFilter({ boards: '2plus' }).multiBoardTypeOnly).toBe(true);
+    for (const bad of ['true', '1', '3plus', '', 'yes']) {
+      expect(parseGymBoardFilter({ boards: bad }).multiBoardTypeOnly).toBeUndefined();
+    }
+  });
+
+  it('emits nothing when it is off', () => {
+    const params = new URLSearchParams();
+    appendGymBoardFilterParams(params, { boardTypes: ['kilter'] });
+    expect(params.has('boards')).toBe(false);
+  });
+});

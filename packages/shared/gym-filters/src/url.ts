@@ -14,7 +14,16 @@ export const GYM_FILTER_PARAMS = {
   layout: 'layout',
   size: 'size',
   angle: 'angle',
+  /**
+   * The gym-level predicate, enumerated rather than a boolean `?multiBoard=true`:
+   * `boards=2plus` says what it means in a URL someone pastes to a friend, and it
+   * leaves room for another gym-level value without minting a second param.
+   */
+  boards: 'boards',
 } as const;
+
+/** The only value `?boards=` takes today. Anything else is dropped. */
+const MULTI_BOARD_TYPE_VALUE = '2plus';
 
 /** Next.js' `searchParams` shape: a repeated param arrives as an array. */
 export type GymFilterSearchParams = Record<string, string | string[] | undefined>;
@@ -117,7 +126,12 @@ export function parseGymBoardFilter(
     ),
   );
 
-  return { ...withLayouts, sizeIds, angles };
+  // Gym-level, so it hangs off no tier and nothing above it can invalidate it.
+  const rawMultiBoard = params[GYM_FILTER_PARAMS.boards];
+  const multiBoardValue = Array.isArray(rawMultiBoard) ? rawMultiBoard[0] : rawMultiBoard;
+  const multiBoardTypeOnly = multiBoardValue === MULTI_BOARD_TYPE_VALUE ? true : undefined;
+
+  return { ...withLayouts, sizeIds, angles, multiBoardTypeOnly };
 }
 
 /**
@@ -148,6 +162,9 @@ export function appendGymBoardFilterParams(
   }
   for (const angle of filter.angles ?? []) {
     target.append(GYM_FILTER_PARAMS.angle, String(angle));
+  }
+  if (filter.multiBoardTypeOnly) {
+    target.set(GYM_FILTER_PARAMS.boards, MULTI_BOARD_TYPE_VALUE);
   }
 }
 
