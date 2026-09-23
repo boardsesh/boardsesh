@@ -18,7 +18,7 @@ GET https://ws.boardsesh.com/og/climb
   &n=BING+BANG+BOSH           # optional; climb name, <=64 code points after normalising
   &g=7a/V6                    # optional; grade label, [A-Za-z0-9+/. -]{1,16}
   &s=Patrick+Gosling          # optional; setter, <=32 code points after normalising
-  &angle=40                   # optional; 0-90
+  &angle=40                   # optional; -90 to 90 (Grasshopper's list starts at -5)
 ```
 
 ### The climb-identity column
