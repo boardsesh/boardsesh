@@ -253,6 +253,25 @@ describe('handleOgClimb', () => {
       expect(vi.mocked(renderOgClimb).mock.calls[0][0].card?.name).toBe('Rock & Roll');
     });
 
+    it('drops only the free-text fields when the kill switch is set', async () => {
+      // A grade is matched by an allow-list, not free text, so the switch that
+      // exists to turn off caller-supplied words must leave it alone.
+      vi.stubEnv('OG_CARD_TEXT_DISABLED', '1');
+      vi.resetModules();
+      const { handleOgClimb: gated } = await import('../handlers/og-climb');
+      const { req, url } = makeRequest({ ...validParams, n: 'BING BANG BOSH', s: 'someone', g: '7a/V6', angle: '40' });
+      const res = makeResponse();
+      await gated(req, res as unknown as ServerResponse, url);
+
+      const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
+      expect(callArgs.card?.name).toBeUndefined();
+      expect(callArgs.card?.setter).toBeUndefined();
+      expect(callArgs.card?.grade).toBe('7a/V6');
+      expect(callArgs.card?.angle).toBe(40);
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    });
+
     it('keeps the non-Latin names the catalogue contains', async () => {
       await run({ ...validParams, n: '\u30AB\u30C1\u30AB\u30C1' });
 

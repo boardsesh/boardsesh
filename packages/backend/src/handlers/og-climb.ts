@@ -96,7 +96,10 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     // an already-shipped mobile binary renders the board on its own.
     n: cardTextEnabled ? (rawName ?? undefined) : undefined,
     s: cardTextEnabled ? (rawSetter ?? undefined) : undefined,
-    g: cardTextEnabled ? (url.searchParams.get('g') ?? undefined) : undefined,
+    // Not gated by the kill switch: a grade is a closed vocabulary matched by
+    // an allow-list, not caller free text, so it is not what the switch exists
+    // to turn off.
+    g: url.searchParams.get('g') ?? undefined,
     angle: url.searchParams.get('angle') ?? undefined,
   });
   if (!parsed.success) {

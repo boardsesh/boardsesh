@@ -180,6 +180,15 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
     }
 
     cursor += hero.height + 26;
+  } else if (content.angle !== undefined) {
+    // A climb with no recorded difficulty still has a wall angle, and the chip
+    // is only laid out beside the grade because that is where it looks right —
+    // not because it depends on one.
+    const chip = await renderText(span(`${content.angle}\u00B0`, { size: 21, weight: 600, color: ANGLE_COLOR }), {
+      fontFamily,
+    });
+    rows.push({ input: chip.buffer, left: anchor(chip.width), offset: cursor });
+    cursor += chip.height + 18;
   }
 
   if (name) {
