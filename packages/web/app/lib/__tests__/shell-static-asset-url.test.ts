@@ -4,7 +4,7 @@ import { resolveShellStaticAssetUrl } from '../shell-static-asset-url';
 
 describe('resolveShellStaticAssetUrl', () => {
   it('keeps shell images local outside production', () => {
-    expect(resolveShellStaticAssetUrl('/brand/boardsesh-mark.png', '')).toBe('/brand/boardsesh-mark.png');
+    expect(resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp', '')).toBe('/brand/boardsesh-mark.webp');
   });
 
   it('uses the tiny shell catalog in production', () => {

@@ -5,11 +5,11 @@ import { resolveStaticAssetUrl } from '../static-asset-url';
 
 describe('resolveStaticAssetUrl', () => {
   it('keeps logical paths local when no production asset origin is configured', () => {
-    expect(resolveStaticAssetUrl('brand/boardsesh-mark.png', '')).toBe('/brand/boardsesh-mark.png');
+    expect(resolveStaticAssetUrl('brand/boardsesh-mark.webp', '')).toBe('/brand/boardsesh-mark.webp');
   });
 
   it('resolves catalog entries to immutable CDN keys', () => {
-    const logicalPath = '/brand/boardsesh-mark.png';
+    const logicalPath = '/brand/boardsesh-mark.webp';
     expect(resolveStaticAssetUrl(logicalPath, 'https://assets.boardsesh.com/')).toBe(
       `https://assets.boardsesh.com/${STATIC_ASSET_OBJECT_KEYS[logicalPath]}`,
     );

@@ -28,7 +28,7 @@ const IMAGE_EXTENSIONS = ['.webp'] as const;
 const VIDEO_EXTENSIONS = ['.mp4', '.webm'] as const;
 
 const PUBLIC_RUNTIME_IMAGES = [
-  'brand/boardsesh-mark.png',
+  'brand/boardsesh-mark.webp',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
   'icons/icon-512.png',

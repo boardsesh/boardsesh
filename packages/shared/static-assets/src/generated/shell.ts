@@ -4,7 +4,7 @@ import type { StaticAssetObjectKeyCatalog } from '../types';
 // This deliberately excludes board art so root chrome can render without
 // pulling the complete board-image catalog into every browser route.
 export const STATIC_SHELL_ASSET_OBJECT_KEYS = {
-  '/brand/boardsesh-mark.png': 'static/v1/c566685d48462b53ffd2cbab88e26d35af6be3a790d543c516e00bbaa530fdfb.png',
+  '/brand/boardsesh-mark.webp': 'static/v1/b88f046bcbd0a7828b6e18dd863a2a81368554e4bfba346e67b02ccf8838d76b.webp',
   '/favicon.ico': 'static/v1/122336fb8a8fb4541e39c8cefc166f0f9c6213d9e9410a9d7125b3c9a0cbaac2.ico',
   '/icon.png': 'static/v1/1b08c8998458466de87799bbf5f24270c2aed634f49569924487e0e45bda9f22.png',
   '/icons/apple-touch-icon.png': 'static/v1/1075fcbb63bc80daf91b36c4dd1a75716deea06b329dd405c6eb1e1ec23981c1.png',

@@ -42,7 +42,7 @@ export default function SupportContent({ stripeDonateUrl }: SupportContentProps)
       width="wide"
       headerAlign="center"
       headerClassName={styles.hero}
-      eyebrow={<Image src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')} width={52} height={52} alt="" />}
+      eyebrow={<Image src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')} width={52} height={52} alt="" />}
       headerActions={
         <Box className={styles.heroActions}>
           <Button

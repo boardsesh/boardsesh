@@ -1,0 +1,41 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * The backend image carries the board photos because `GET /og/climb` composites
+ * them onto the share card. Every photo is committed twice — a `.png` and the
+ * `.webp` that `packages/web/scripts/convert-to-webp.sh` makes from it — and the
+ * renderer only ever opens the WebP, so the PNGs were 52 MB of a 74 MB tree
+ * pulled on every deploy and never read.
+ *
+ * `board-art-is-webp.test.ts` guards the other half: that no catalogue path ever
+ * asks for a raster this exclusion leaves behind.
+ */
+describe('backend Docker context', () => {
+  const script = readFileSync(resolve(process.cwd(), 'scripts/create-service-docker-context.mjs'), 'utf8');
+  const backendBlock = script.slice(script.indexOf('  backend: {'), script.indexOf('  web: {'));
+
+  it('still ships the board images tree', () => {
+    expect(backendBlock).toContain("extraSourceDirs: ['packages/web/public/images']");
+  });
+
+  it('leaves the PNG originals out of it', () => {
+    expect(backendBlock).toContain("extraSourceDirExcludeExtensions: ['.png']");
+  });
+
+  it('keeps the exclusion scoped to the service that asked for it', () => {
+    // Declared once, by the backend. A second service opting in — the web image
+    // serves icon PNGs — would be a silent 404 rather than a build failure.
+    const declarations = script.match(/extraSourceDirExcludeExtensions:/g) ?? [];
+
+    expect(declarations).toHaveLength(1);
+    expect(backendBlock).toContain('extraSourceDirExcludeExtensions:');
+  });
+
+  it('applies the filter to nested directories, not just the top level', () => {
+    // The tree is `images/<board>/<layout>/…`, so a filter that only ran on the
+    // first level would exclude nothing at all.
+    expect(script).toMatch(/copyDirectory\([\s\S]{0,200}excludeExtensions\)/);
+  });
+});
