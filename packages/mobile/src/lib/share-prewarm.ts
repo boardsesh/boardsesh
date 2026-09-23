@@ -4,7 +4,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { BACKEND_URL } from './env';
 
 // Fallback builder for the backend og:image URL, used only when the page will
-// not tell us its own card (see `readAdvertisedOgImageUrl`).
+// not tell us its own card (see `readAdvertisedCard`).
 //
 // Kept local rather than pulling in @boardsesh/board-render, whose graph drags
 // the WASM renderer + sharp into the mobile bundle — far heavier than assembling
@@ -71,8 +71,11 @@ export function buildOgImageUrl(args: {
 // old prewarm was heating a URL nobody ever requests, leaving the real card to
 // be rendered cold while the reader waited on it.
 //
-// Reading the body costs about 69 KB gzipped on the wire, and the tag sits ~1.5%
-// into the document, so only the head is scanned.
+// Reading the body costs about 69 KB gzipped on the wire. All of it: `text()`
+// buffers the whole response, and the limit below bounds the regex walk, not the
+// download — React Native's fetch has no usable streaming body to stop early on.
+// The tag sits ~1.5% into the document, so the walk stops almost immediately,
+// but the bytes are already paid for by then.
 const OG_IMAGE_SCAN_LIMIT = 64 * 1024;
 const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
 const OG_IMAGE_PROPERTY_PATTERN = /property=["']og:image["']/i;

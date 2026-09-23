@@ -18,9 +18,7 @@ describe('extractOgImageUrl', () => {
     '<meta property="og:image" content="https://ws.boardsesh.com/og/climb?board_name=moonboard&amp;layout_id=2&amp;size_id=1&amp;set_ids=2%2C3%2C4&amp;frames=p50r42p107r43p104r43p141r43p194r44p159r43p88r43&amp;format=jpeg&amp;render_mode=aura&amp;field_color=%23181225&amp;n=Feather+Feet&amp;g=6b%2B%2FV4&amp;s=Jamesmcca826&amp;angle=40"/>';
 
   it('reads the card off the markup the site really serves', () => {
-    const url = extractOgImageUrl(
-      `<html><head>$<meta property="og:image" content="https://ws.boardsesh.com/og/climb?board_name=moonboard&amp;layout_id=2&amp;size_id=1&amp;set_ids=2%2C3%2C4&amp;frames=p50r42p107r43p104r43p141r43p194r44p159r43p88r43&amp;format=jpeg&amp;render_mode=aura&amp;field_color=%23181225&amp;n=Feather+Feet&amp;g=6b%2B%2FV4&amp;s=Jamesmcca826&amp;angle=40"/></head><body></body></html>`,
-    );
+    const url = extractOgImageUrl(`<html><head>${REAL_TAG}</head><body></body></html>`);
 
     expect(url).toContain('https://ws.boardsesh.com/og/climb?');
     // The identity params are the whole point: without them this is a different
@@ -30,9 +28,7 @@ describe('extractOgImageUrl', () => {
   });
 
   it('decodes the entities, so the URL is the one the page meant', () => {
-    const url = extractOgImageUrl(
-      `<head>$<meta property="og:image" content="https://ws.boardsesh.com/og/climb?board_name=moonboard&amp;layout_id=2&amp;size_id=1&amp;set_ids=2%2C3%2C4&amp;frames=p50r42p107r43p104r43p141r43p194r44p159r43p88r43&amp;format=jpeg&amp;render_mode=aura&amp;field_color=%23181225&amp;n=Feather+Feet&amp;g=6b%2B%2FV4&amp;s=Jamesmcca826&amp;angle=40"/></head>`,
-    );
+    const url = extractOgImageUrl(`<head>${REAL_TAG}</head>`);
 
     expect(url).not.toContain('&amp;');
     expect(new URL(url ?? '').searchParams.get('g')).toBe('6b+/V4');
