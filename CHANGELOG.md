@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Shared climb links now show the board, the grade, the name and the setter instead of a dark empty card ([#5695](https://github.com/boardsesh/boardsesh/pull/5695))
 - Infrastructure monitoring for the DR standby's trust path. No user-facing change. ([#5651](https://github.com/boardsesh/boardsesh/pull/5651))
 - Internal infrastructure: a DR backup sidecar image. No user-facing change. ([#5648](https://github.com/boardsesh/boardsesh/pull/5648))
 

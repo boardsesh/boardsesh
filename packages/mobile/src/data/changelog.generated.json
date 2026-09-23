@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-23T06:34:02.036Z",
+  "generatedAt": "2026-09-23T09:15:42.820Z",
   "entries": [
+    {
+      "prNumber": 5695,
+      "category": "new",
+      "title": "Shared climb links now show the board, the grade, the name and the setter instead of a dark empty card",
+      "mergedAt": "2026-09-23T09:11:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5695"
+    },
     {
       "prNumber": 5689,
       "category": "fixed",
