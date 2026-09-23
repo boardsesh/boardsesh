@@ -219,7 +219,7 @@ Woods (`git show --stat 50098833707716d8235b8f78624b3cb930ee0bda`, #3306) is the
 
 **Phase 1: Bluetooth casting of Boardsesh-created climbs on DTB walls.**
 - A climber picks their DTB wall, draws a climb on the wall photo and casts it over Bluetooth as a `preview_problem`. Hold roles are not carried, so start and finish show only in the app.
-- Needs the wall geometry: the per-wall folder files.
+- Needs the wall geometry: the per-wall folder files. **Gate:** we can't take these from DTB's Dropbox (see Risks), so Phase 1 starts only once DTB or a partner gym provides the files for at least one wall.
 - No DTB account and no DTB climb data are involved.
 - Risk 5/5 (BLE). Ships as a native change on `release/next` only if a new native module is needed; `react-native-ble-plx` can already talk to a custom GATT service, so this is probably JS-only.
 
