@@ -129,20 +129,33 @@ String extractConfigKey(const char* boardPath) {
         setIdsPart = bp.substring(slash3 + 1);
     }
 
-    // Parse and sort set IDs (max 8 sets per board config in practice)
-    static const int MAX_SET_IDS = 16;
+    // Parse and sort set IDs. The cap matches MAX_SET_IDS in
+    // packages/shared/board-render/src/validation.ts and MAX_ROUTE_SEGMENT in
+    // the thumbnail client: the widest shipped config is Decoy layout 2 / size 1
+    // at 19 sets. At 16 this dropped the last three and built a config key that
+    // two different Decoy configs could share.
+    static const int MAX_SET_IDS = 24;
     int setIds[MAX_SET_IDS];
     int setCount = 0;
     int start = 0;
+    bool tooManySetIds = false;
     for (int i = 0; i <= (int)setIdsPart.length(); i++) {
         if (i == (int)setIdsPart.length() || setIdsPart[i] == ',') {
-            if (i > start && setCount < MAX_SET_IDS) {
+            if (i > start) {
+                if (setCount >= MAX_SET_IDS) {
+                    tooManySetIds = true;
+                    break;
+                }
                 setIds[setCount++] = setIdsPart.substring(start, i).toInt();
             }
             start = i + 1;
         }
     }
     if (setCount == 0) return "";
+    // Past the cap, key on the list exactly as it arrived. Sorting only makes
+    // two spellings of one config agree; a TRUNCATED key makes two different
+    // configs agree, which is worse than an unsorted one.
+    if (tooManySetIds) return bp.substring(0, slash3 + 1) + setIdsPart;
 
     // Simple insertion sort
     for (int i = 1; i < setCount; i++) {
