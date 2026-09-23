@@ -14,6 +14,7 @@ import {
   useSmartPlaylistCounts,
   usePlaylistMutations,
 } from '@boardsesh/playlists-react';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import type { DiscoverablePlaylist, Playlist, SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
 import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
@@ -139,6 +140,9 @@ export default function DiscoverLibrary() {
       setIds: activeBoard?.setIds ?? '',
       angle: activeBoard?.angle ?? 0,
       onlyFollowedAuthors: true,
+      // A row opens the setter's page, which lists every angle on an angle-bound
+      // board (`setterPlaylistInput`, #5642), so the count beside it has to as well.
+      ...(activeBoard && getBoardCapabilities(activeBoard.boardType).angleBoundClimbs ? { crossAngleStats: true } : {}),
     }),
     [activeBoard],
   );

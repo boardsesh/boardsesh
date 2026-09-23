@@ -528,6 +528,8 @@
       "betaVideos": "Avec vidéo de beta uniquement",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
+      "otherAngles": "Autres angles",
+      "otherAnglesDescription": "Affiche les blocs ouverts à un autre angle",
       "searchSetters": "Rechercher des ouvreurs",
       "noSetters": "Aucun ouvreur",
       "clearAll": "Tout effacer",

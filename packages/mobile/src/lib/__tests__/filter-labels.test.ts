@@ -88,6 +88,10 @@ describe('buildFilterLabels', () => {
     expect(labels.betaOnly()).toBe('mobile.filter.betaVideosShort');
   });
 
+  it('otherAngles reuses the switch label mobile.filter.otherAngles', () => {
+    expect(labels.otherAngles()).toBe('mobile.filter.otherAngles');
+  });
+
   it('status appends the kind suffix, but community projects reads as "Unrepeated"', () => {
     expect(labels.status('drafts')).toBe('mobile.filter.status.drafts');
     expect(labels.status('established')).toBe('mobile.filter.status.established');
@@ -118,6 +122,7 @@ describe('buildFilterLabels', () => {
       'tallOnly',
       'wideOnly',
       'betaOnly',
+      'otherAngles',
       'status',
       'progress',
     ];

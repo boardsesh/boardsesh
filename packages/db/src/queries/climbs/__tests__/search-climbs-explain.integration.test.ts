@@ -6,7 +6,7 @@ import { and, sql } from 'drizzle-orm';
 import { searchClimbs } from '../search-climbs';
 import { createClimbFilters } from '../create-climb-filters';
 import { boardClimbs, boardClimbStats } from '../../../schema/index';
-import { boardClimbStatsAtSetAngle, resolveCrossAngleStats } from '../effective-stats';
+import { boardClimbStatsAtSetAngle, resolveBrowsedAngleRestriction, resolveCrossAngleStats } from '../effective-stats';
 import type { DbInstance } from '../../../client/postgres';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
 
@@ -119,6 +119,7 @@ if (!EXPLAIN_DB_URL) {
   ): { text: string; params: unknown[] } {
     const filters = createClimbFilters(params, searchParams, undefined, {
       crossAngleStats: resolveCrossAngleStats(params, searchParams),
+      restrictToBrowsedAngle: resolveBrowsedAngleRestriction(params, searchParams),
     });
     const isDraftsQuery = filters.isOnlyDrafts;
     const whereConditions = [
@@ -407,8 +408,10 @@ if (!EXPLAIN_DB_URL) {
         crossAngleStats: true,
       };
 
-      // The two boards that get cross-angle from their capability, with no flag to
-      // turn it off. Their plans are the ones that must actually be affordable.
+      // Woods opts in from the climber's toggle (issue #5642), and a by-name Woods
+      // search goes cross-angle by itself; MoonBoard has the same angle-bound shape
+      // and would be the next board to open it to. Their plans are the ones that
+      // must actually be affordable.
       const WOODS: BoardRouteParams = { board_name: 'woods', layout_id: 1, size_id: 2, set_ids: [1], angle: 30 };
       const MOONBOARD: BoardRouteParams = {
         board_name: 'moonboard',
@@ -425,22 +428,49 @@ if (!EXPLAIN_DB_URL) {
       }
 
       void it('keeps Woods serial and off a sequential scan', async () => {
-        const { capture, nodes } = await explainOnlySelect(
-          { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' },
-          WOODS,
-        );
+        const { capture, nodes } = await explainOnlySelect(CROSS_ANGLE, WOODS);
         assert.equal(hasSeqScanOnBoardTable(nodes), false, 'Woods must not seq-scan a board table');
         assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the Woods plan serial');
-        await logTiming('woods layout 1 @30 page 0 (default on)', capture);
+        await logTiming('woods layout 1 @30 page 0 (opted in)', capture);
+      });
+
+      void it('keeps a by-name Woods search on the cross-angle path, serial', async () => {
+        const { capture, nodes } = await explainOnlySelect(
+          { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc', name: 'a' },
+          WOODS,
+        );
+        assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the by-name plan serial');
+        await logTiming('woods layout 1 @30 page 0 (by name, cross-angle)', capture);
       });
 
       void it('keeps MoonBoard serial on its largest layout at its quiet angle', async () => {
-        const { capture, nodes } = await explainOnlySelect(
-          { page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' },
-          MOONBOARD,
-        );
+        const { capture, nodes } = await explainOnlySelect(CROSS_ANGLE, MOONBOARD);
         assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the MoonBoard plan serial');
-        await logTiming('moonboard layout 2 @25 page 0 (default on, 92k climbs)', capture);
+        await logTiming('moonboard layout 2 @25 page 0 (opted in, 92k climbs)', capture);
+      });
+
+      // Issue #5642: Woods without the opt-in. The browsed-angle restriction is a WHERE
+      // predicate, so the search keeps the stats-driven INNER JOIN as its first SELECT
+      // (the restriction's stats arm is always true there) and the count keeps its
+      // one browsed-angle stats join.
+      void it('keeps a default Woods search on the stats-driven path, restricted and serial', async () => {
+        const selects = tableSelects(
+          await runSearch({ page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' }, WOODS),
+        );
+        assert.ok(selects.length >= 1);
+        assert.match(selects[0].query, /from "board_climb_stats"/i, 'the first SELECT is the stats-driven pass');
+        for (const capture of selects) {
+          assert.match(capture.query, /"board_climbs"\."angle" is null/i, 'every SELECT carries the restriction');
+          assert.doesNotMatch(capture.query, /stats_set_angle/);
+        }
+        const nodes = await explainNodes(selects[0].query, selects[0].params, GUARD);
+        assert.equal(hasGatherNode(nodes), false, 'the SET LOCAL guard must keep the restricted plan serial');
+        await logTiming('woods layout 1 @30 page 0 (default, restricted)', selects[0]);
+
+        const { text, params } = buildCountSql({ page: 0, pageSize: 20, sortBy: 'ascents', sortOrder: 'desc' }, WOODS);
+        assert.match(text, /"board_climbs"\."angle" is null/i, 'the count carries the same restriction');
+        const countNodes = await explainNodes(text, params, GUARD);
+        assert.equal(hasGatherNode(countNodes), false, 'the countClimbs guard must hold on a restricted count');
       });
 
       // Aurora is the expensive case and the reason the flag exists. Measured on the

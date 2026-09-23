@@ -184,7 +184,7 @@ function ownedTicks(alias: string): string {
 /**
  * Cross-angle stats resolution, mirroring
  * packages/db/src/queries/climbs/effective-stats.ts. The server decides this per
- * request; the local mirror has to reach the same answer from the same two inputs,
+ * request; the local mirror has to reach the same answer from the same inputs,
  * or a downloaded board would show a different list than the network does.
  */
 export type StatsColumn =
@@ -195,8 +195,46 @@ export type StatsColumn =
   | 'benchmark_difficulty'
   | 'angle';
 
-export function isCrossAngleStats(input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats'>): boolean {
-  return getBoardCapabilities(input.boardName).angleBoundClimbs || input.crossAngleStats === true;
+/**
+ * Whether this search is an explicit by-name lookup — the same test as the
+ * server's `hasNameQuery` (packages/db/src/queries/climbs/types.ts). Two rules
+ * below key on it, as they do there: the community-hidden filter and the
+ * angle-bound cross-angle exception.
+ */
+function hasNameQuery(input: Pick<ClimbSearchInput, 'name'>): boolean {
+  return typeof input.name === 'string' && input.name.length > 0;
+}
+
+/**
+ * Mirrors `resolveCrossAngleStats`: on when the search opts in on any board, or
+ * when an angle-bound board (Woods) is searched by name. Omitted means off
+ * everywhere (issue #5642).
+ */
+export function isCrossAngleStats(input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats' | 'name'>): boolean {
+  if (input.crossAngleStats === true) return true;
+  return getBoardCapabilities(input.boardName).angleBoundClimbs && hasNameQuery(input);
+}
+
+/**
+ * Mirrors `resolveBrowsedAngleRestriction`: an angle-bound search that is not
+ * cross-angle keeps only the climbs that belong to the browsed angle (issue
+ * #5642). The server also exempts a user's own drafts list; that query never
+ * runs here — `isOfflineSearchSupported` declines `onlyDrafts`, and the local
+ * base predicate is `is_draft = 0` regardless — so there is nothing to exempt.
+ */
+export function isBrowsedAngleRestricted(
+  input: Pick<ClimbSearchInput, 'boardName' | 'crossAngleStats' | 'name'>,
+): boolean {
+  return getBoardCapabilities(input.boardName).angleBoundClimbs && !isCrossAngleStats(input);
+}
+
+/**
+ * Mirrors `resolveDetailCrossAngleStats`: the climb detail read resolves stats
+ * cross-angle on an angle-bound board whatever the list did, so a Woods climb
+ * opened at an angle it was not set at shows its set-angle grade.
+ */
+export function isDetailCrossAngleStats(boardName: ClimbSearchInput['boardName']): boolean {
+  return getBoardCapabilities(boardName).angleBoundClimbs;
 }
 
 /**
@@ -278,7 +316,19 @@ function buildJoinAndWhere(
   // schema at migration v5 and rows pulled before the server started sending it
   // are NULL — an unknown flag reads as visible, which is the safe direction for
   // a column the sync will refresh.
-  if (!input.name) push('COALESCE(c.is_hidden, 0) = 0');
+  if (!hasNameQuery(input)) push('COALESCE(c.is_hidden, 0) = 0');
+
+  // The browsed-angle restriction, mirroring `browsedAngleRestrictionSql` in
+  // packages/db/src/queries/climbs/effective-stats.ts arm for arm (issue #5642):
+  // on Woods without the opt-in, keep a climb set at this angle, one with no set
+  // angle recorded, or one with a stats row here. `s` is the browsed-angle stats
+  // join in both join shapes above, and its climb_uuid is part of the primary key,
+  // so NULL means exactly "no row at this angle" — the same probe
+  // `effectiveStatsSql` uses. `countClimbsLocal` shares this builder, so the badge
+  // counts what the list shows.
+  if (isBrowsedAngleRestricted(input)) {
+    push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
+  }
 
   // Spray-wall hold integrity, mirroring `holdIntegrityCondition` in
   // packages/db/src/queries/climbs/create-climb-filters.ts character for

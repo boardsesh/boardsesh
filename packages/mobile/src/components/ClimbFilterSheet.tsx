@@ -52,6 +52,7 @@ import { useSheetDetentProbe } from './sheet-detent-probe';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
@@ -327,6 +328,10 @@ export function ClimbFilterSheet({
   const { hasShorter: showTallControl, hasNarrower: showWideControl } = boardConfig
     ? getTallWideScope(boardConfig.boardName as BoardName, boardConfig.layoutId, boardConfig.sizeId)
     : { hasShorter: false, hasNarrower: false };
+  // Other angles — only where a climb belongs to the angle it was set at (Woods).
+  // There the list keeps to the browsed angle unless the climber asks for the
+  // rest; elsewhere a climb is not tied to one angle, so there is nothing to widen.
+  const showOtherAnglesControl = getBoardCapabilities(boardName).angleBoundClimbs;
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
   // Debounced so rapid chip/toggle taps — and now keystrokes in the name field —
@@ -1129,7 +1134,7 @@ export function ClimbFilterSheet({
               </View>
             </View>
 
-            {/* 5 · THE CLIMB — type, shape, setters, holds, zones, beta. */}
+            {/* 5 · THE CLIMB — type, angle, shape, setters, holds, zones, beta. */}
             <View style={styles.section}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.theClimb')}
@@ -1148,6 +1153,18 @@ export function ClimbFilterSheet({
                 textVariant="footnote"
                 trackColor={trackColor}
               />
+
+              {showOtherAnglesControl ? (
+                <>
+                  <View style={styles.subsectionGap} />
+                  <SwitchRow
+                    label={t('mobile.filter.otherAngles')}
+                    description={t('mobile.filter.otherAnglesDescription')}
+                    value={!!localFilters.includeOtherAngles}
+                    onValueChange={(value) => setFiltersPatch({ includeOtherAngles: value || undefined })}
+                  />
+                </>
+              ) : null}
 
               {/* Tall / Wide — shown wherever a shorter/narrower sibling size exists
                   (Kilter homewall, Tension Board 2, Decoy, Grasshopper); each only

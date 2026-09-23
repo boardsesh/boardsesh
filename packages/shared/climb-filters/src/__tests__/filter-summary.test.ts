@@ -91,6 +91,7 @@ describe('getBaseFilterParts — extended fields', () => {
     gradeAccuracy: (value) => `±${value}`,
     tallOnly: () => 'Tall only',
     wideOnly: () => 'Wide only',
+    otherAngles: () => 'Other angles',
     status: (kind) => `Status: ${kind}`,
     hideAttempted: () => 'Hide attempted',
     hideCompleted: () => 'Hide completed',
@@ -115,6 +116,11 @@ describe('getBaseFilterParts — extended fields', () => {
       'Tall only',
       'Wide only',
     ]);
+  });
+
+  it('emits an otherAngles part only when the switch is on', () => {
+    expect(getBaseFilterParts({ includeOtherAngles: true }, mockGrades, extendedLabels)).toEqual(['Other angles']);
+    expect(getBaseFilterParts({ includeOtherAngles: false }, mockGrades, extendedLabels)).toEqual([]);
   });
 
   it('emits status part only for drafts/projects', () => {
@@ -151,6 +157,7 @@ describe('getBaseFilterParts — extended fields', () => {
           gradeAccuracy: '0.1',
           onlyTallClimbs: true,
           onlyWideClimbs: true,
+          includeOtherAngles: true,
           status: 'drafts',
           hideAttempted: true,
           hideCompleted: true,

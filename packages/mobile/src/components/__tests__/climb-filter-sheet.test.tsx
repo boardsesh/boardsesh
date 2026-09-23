@@ -1036,6 +1036,58 @@ describe('ClimbFilterSheet hold + zone rows by board', () => {
   });
 });
 
+// A Woods climb belongs to the angle it was set at, so its list keeps to the
+// browsed angle unless the climber turns on Other angles (#5642). Only an
+// angle-bound board offers the switch; elsewhere every climb lists at every angle.
+describe('ClimbFilterSheet Other angles switch', () => {
+  const woodsBoardConfig = { ...boardConfig, boardName: 'woods' };
+  const otherAnglesSwitchId = 'switch-mobile.filter.otherAngles';
+
+  it('offers the switch on Woods, off by default', () => {
+    const { getByTestId } = renderFilterSheet({ boardConfig: woodsBoardConfig });
+
+    expect(getByTestId(otherAnglesSwitchId).getAttribute('data-value')).toBe('false');
+  });
+
+  it.each([
+    ['Kilter', boardConfig],
+    ['MoonBoard', { ...boardConfig, boardName: 'moonboard' }],
+    ['no board config', null],
+  ])('does not offer the switch on %s', (_label, sheetBoardConfig) => {
+    const { queryByTestId } = renderFilterSheet({ boardConfig: sheetBoardConfig });
+
+    expect(queryByTestId(otherAnglesSwitchId)).toBeNull();
+  });
+
+  it('applies includeOtherAngles when turned on', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ boardConfig: woodsBoardConfig, onApply });
+
+    fireEvent.click(getByTestId(otherAnglesSwitchId));
+    applyAndClose(getByText('mobile.filter.showCount12'));
+
+    const appliedFilters = onApply.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
+    expect(appliedFilters?.includeOtherAngles).toBe(true);
+  });
+
+  it('clears it back to undefined when turned off, so the filter reads as inactive', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      boardConfig: woodsBoardConfig,
+      currentFilters: { ...currentFilters, includeOtherAngles: true },
+      onApply,
+    });
+
+    expect(getByTestId(otherAnglesSwitchId).getAttribute('data-value')).toBe('true');
+    fireEvent.click(getByTestId(otherAnglesSwitchId));
+    applyAndClose(getByText('mobile.filter.showCount12'));
+
+    const appliedFilters = onApply.mock.calls.at(-1)?.[0] as ClimbFilters | undefined;
+    expect(appliedFilters).toBeDefined();
+    expect(appliedFilters?.includeOtherAngles).toBeUndefined();
+  });
+});
+
 // Kilter's app counts a climb once per angle, so its totals run about double
 // ours. The note under Show explains that, and only where the comparison exists.
 describe('ClimbFilterSheet climb-count note', () => {

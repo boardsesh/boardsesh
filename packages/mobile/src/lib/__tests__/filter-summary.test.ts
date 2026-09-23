@@ -116,6 +116,11 @@ describe('getFilterSummary', () => {
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('mobile.filter.betaVideosShort');
   });
 
+  it('names the other-angles switch so its recent pill is not a bare "Filters"', () => {
+    const filters: ClimbFilters = { ...DEFAULT_FILTERS, includeOtherAngles: true };
+    expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('mobile.filter.otherAngles');
+  });
+
   it('shows the translated setter name when exactly one setter is selected', () => {
     const filters: ClimbFilters = { ...DEFAULT_FILTERS, setter: ['marco'] };
     expect(getFilterSummary(filters, '', mockGrades, mockT)).toBe('By marco');

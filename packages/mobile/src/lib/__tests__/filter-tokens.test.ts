@@ -32,6 +32,7 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.filter.status.drafts') return 'Drafts';
   if (key === 'mobile.filter.popularityUnrepeated') return 'Unrepeated';
   if (key === 'mobile.filter.tallClimbs') return 'Tall climbs';
+  if (key === 'mobile.filter.otherAngles') return 'Other angles';
   if (key === 'mobile.holdFilter.summaryCount') return `${text(options?.count)} holds`;
   if (key === 'mobile.zoneFilter.title') return 'Board region';
   return key;
@@ -152,6 +153,14 @@ describe('getActiveFilterTokens', () => {
     expect(zone?.label).toBe('Board region');
     zone?.clear();
     expect(patchBoardFilters).toHaveBeenCalledWith({ zoneBox: null, zoneMode: undefined });
+  });
+
+  it('builds an other-angles token and clears it back to browsed-angle only', () => {
+    const { tokens, patchFilters } = build({ ...DEFAULT_FILTERS, includeOtherAngles: true });
+    const otherAngles = tokens.find((token) => token.key === 'otherAngles');
+    expect(otherAngles?.label).toBe('Other angles');
+    otherAngles?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ includeOtherAngles: undefined });
   });
 
   it('labels the community projects status token as "Unrepeated"', () => {

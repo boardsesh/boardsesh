@@ -19,6 +19,7 @@ export function countActiveFiltersBeyondGrade(filters: ClimbFilterState, boardFi
   if (filters.onlyTallClimbs) count += 1;
   if (filters.onlyWideClimbs) count += 1;
   if (filters.onlyWithBetaVideos) count += 1;
+  if (filters.includeOtherAngles) count += 1;
   // The four tick flags are one conceptual axis (the "Your progress" selector),
   // so they contribute at most one — "Not tried" sets two flags but is one choice.
   if (isProgressFilterActive(filters)) count += 1;

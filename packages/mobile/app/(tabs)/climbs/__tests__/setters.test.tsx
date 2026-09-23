@@ -251,6 +251,8 @@ beforeEach(() => {
   countQuery.state.count = 42;
   countQuery.state.isPlaceholderData = false;
   focus.cleanup = null;
+  params.value.boardName = 'kilter';
+  params.value.sizeId = '10';
   params.value.setters = undefined;
   params.value.countInput = JSON.stringify(sheetCountInput);
 });
@@ -487,6 +489,64 @@ describe('SettersFilterScreen', () => {
 
       expect(emitMock).toHaveBeenCalledTimes(1);
       expect(navMock.goBack).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // Issue #5642: a Woods list keeps only the browsed angle's climbs unless the
+  // draft's "Other angles" switch is on, so the picker has to count the same
+  // climbs — or it offers a setter whose climbs the list cannot show.
+  describe('Other angles', () => {
+    const woodsCountInput = { ...sheetCountInput, boardName: 'woods', sizeId: 1 };
+
+    beforeEach(() => {
+      params.value.boardName = 'woods';
+      params.value.sizeId = '1';
+    });
+
+    it('asks for every angle on Woods when the draft has the switch on', () => {
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)?.crossAngleStats).toBe(true);
+      // The footer counts the same opted-in search the sheet would apply.
+      expect(lastCountCall().input.crossAngleStats).toBe(true);
+    });
+
+    it('leaves it out on Woods while the switch is off, so the picker counts this angle only', () => {
+      params.value.countInput = JSON.stringify(woodsCountInput);
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)).not.toHaveProperty('crossAngleStats');
+    });
+
+    it('keeps the switch when the picker narrows to followed setters', () => {
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      const { getByText } = render(<SettersFilterScreen />);
+
+      fireEvent.click(getByText('authors.following'));
+
+      expect(setterStats.inputs.at(-1)).toMatchObject({ onlyFollowedAuthors: true, crossAngleStats: true });
+    });
+
+    it('makes a flipped switch a different setter query', () => {
+      params.value.countInput = JSON.stringify(woodsCountInput);
+      const { rerender } = render(<SettersFilterScreen />);
+      const switchedOff = setterStats.inputs.at(-1);
+
+      params.value.countInput = JSON.stringify({ ...woodsCountInput, crossAngleStats: true });
+      rerender(<SettersFilterScreen />);
+
+      // The input object is the query key, so a differing input is a refetch.
+      expect(setterStats.inputs.at(-1)).toEqual({ ...switchedOff, crossAngleStats: true });
+    });
+
+    it('never sends it off an angle-bound board, so a Kilter query key is unchanged', () => {
+      params.value.boardName = 'kilter';
+      params.value.sizeId = '10';
+      params.value.countInput = JSON.stringify({ ...sheetCountInput, crossAngleStats: true });
+      render(<SettersFilterScreen />);
+
+      expect(setterStats.inputs.at(-1)).not.toHaveProperty('crossAngleStats');
     });
   });
 });

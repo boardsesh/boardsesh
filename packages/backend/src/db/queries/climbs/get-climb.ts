@@ -9,7 +9,7 @@ import {
   boardClimbStatsAtSetAngle,
   effectiveStatsColumn,
   gradeJoinAngleSql,
-  resolveCrossAngleStats,
+  resolveDetailCrossAngleStats,
   resolvedStatsAngleSql,
   setAngleStatsJoinConditions,
   type StatsColumnKey,
@@ -37,13 +37,14 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
     // not render an empty husk.
     const climbUuid = await resolveCanonicalClimbUuid(db, params.board_name, params.climb_uuid);
 
-    // The detail path resolves stats the same way search does (issue #5405): the
-    // row at the browsed angle, else the row at the climb's own set angle. It has
-    // no search input to opt in with, so the only door here is the board being
-    // angle-bound by nature — which is exactly what `resolveCrossAngleStats`
-    // answers for an empty search. Sharing the helper is what stops a Woods climb
-    // showing a grade in the list and a blank one once it is opened.
-    const crossAngle = resolveCrossAngleStats(params, {});
+    // The detail path resolves stats cross-angle (issue #5405): the row at the
+    // browsed angle, else the row at the climb's own set angle. It has no search
+    // input to opt in with, so the only door here is the board being angle-bound
+    // by nature. Unlike search, which on Woods is restricted to the browsed angle
+    // unless it opts in (issue #5642), the detail read stays on for Woods: a climb
+    // reached at another angle — a by-name search, an opted-in list, a playlist —
+    // must open with its set-angle grade rather than a blank one.
+    const crossAngle = resolveDetailCrossAngleStats(params);
     const statsColumn = (columnKey: StatsColumnKey) => effectiveStatsColumn(columnKey, crossAngle);
 
     // Direct-by-UUID lookups intentionally do NOT filter `framesCount = 1`.

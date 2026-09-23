@@ -11,10 +11,11 @@ import {
   boardHoles,
   boardBetaLinks,
 } from '../../schema/index';
-import type { BoardRouteParams, ClimbSearchParams } from './types';
+import { hasNameQuery, type BoardRouteParams, type ClimbSearchParams } from './types';
 import { followedAuthorCondition } from './followed-authors';
 import { climbHoldPlacementMatchSql } from './placement-match';
 import {
+  browsedAngleRestrictionSql,
   effectiveStatsColumn,
   setAngleStatsJoinConditions,
   gradeJoinAngleSql,
@@ -55,10 +56,13 @@ function intArrayLiteral(values: readonly number[]): SQL {
  * The offline mirror of this rule lives in
  * packages/mobile/src/db/queries/search-climbs-local.ts and must agree, or an
  * offline search shows what the online one hides.
+ *
+ * `hasNameQuery` is shared with the angle-bound browse restriction
+ * (`resolveCrossAngleStats` in ./effective-stats), which makes the same exception
+ * for the same reason: a named climb is findable at any angle too.
  */
 export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
-  const hasNameQuery = typeof searchParams.name === 'string' && searchParams.name.length > 0;
-  return hasNameQuery ? [] : [eq(boardClimbs.isHidden, false)];
+  return hasNameQuery(searchParams) ? [] : [eq(boardClimbs.isHidden, false)];
 }
 
 /**
@@ -124,12 +128,20 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
  *   `board_climbs` in its FROM at all. A set-angle reference baked in on the
  *   board's behalf would make that query fail to plan on exactly the boards the
  *   fix is for. The heatmap passes nothing and its SQL is unchanged.
+ * @param options.restrictToBrowsedAngle Keep only the climbs that belong to the
+ *   browsed angle (issue #5642) — see `browsedAngleRestrictionSql` in
+ *   ./effective-stats. Opt-in for the same reason as `crossAngleStats`: the
+ *   predicate probes the browsed-angle `board_climb_stats` join and names
+ *   `board_climbs.angle`, and the heatmap's FROM has neither. Callers pass
+ *   `resolveBrowsedAngleRestriction`; this builder then drops it for a drafts
+ *   query and under cross-angle, and reports the outcome as
+ *   `isBrowsedAngleRestricted`.
  */
 export const createClimbFilters = (
   params: BoardRouteParams,
   searchParams: ClimbSearchParams,
   userId?: string,
-  options?: { crossAngleStats?: boolean },
+  options?: { crossAngleStats?: boolean; restrictToBrowsedAngle?: boolean },
 ) => {
   const crossAngle = options?.crossAngleStats === true;
   // Reads one stats column from the effective row. Every call shares one
@@ -189,6 +201,20 @@ export const createClimbFilters = (
 
   // When showing only drafts, skip the isListed filter (drafts are never listed)
   const isListedCondition: SQL | null = isOnlyDrafts ? null : eq(boardClimbs.isListed, true);
+
+  // Angle-bound boards keep only the climbs that belong to the browsed angle
+  // (issue #5642). Two exemptions are decided here rather than in
+  // `resolveBrowsedAngleRestriction`, because only this builder knows them:
+  //   - a user's own drafts list shows every draft, whatever angle it was saved
+  //     at — the same list-everything-I-own reading that skips the size and stats
+  //     filters for drafts in searchClimbs / countClimbs;
+  //   - under cross-angle the search wants every angle, so a caller passing both
+  //     options gets cross-angle rather than a contradiction.
+  // Both searchClimbs and countClimbs build their WHERE from
+  // `getClimbWhereConditions`, which is where this lands, so the list and the
+  // count badge above it cannot disagree about it.
+  const isBrowsedAngleRestricted = options?.restrictToBrowsedAngle === true && !isOnlyDrafts && !crossAngle;
+  const browsedAngleConditions: SQL[] = isBrowsedAngleRestricted ? [browsedAngleRestrictionSql(params.angle)] : [];
 
   // Boulders / routes filter. Both selected (or both falsy — treated as "no
   // preference") → omit the frames_count constraint entirely. Boulders only →
@@ -767,8 +793,13 @@ export const createClimbFilters = (
     // size/stats filters and force creation sort while the filters still required
     // listed non-drafts. See searchClimbs / countClimbs.
     isOnlyDrafts: Boolean(isOnlyDrafts),
+    /** Whether the WHERE below carries the browsed-angle restriction (issue
+     *  #5642) — `restrictToBrowsedAngle` after the drafts and cross-angle
+     *  exemptions. Read it back rather than re-deriving it. */
+    isBrowsedAngleRestricted,
     getClimbWhereConditions: () => [
       ...baseConditions,
+      ...browsedAngleConditions,
       ...nameCondition,
       ...setterNameCondition,
       ...(searchParams.onlyFollowedAuthors ? [followedAuthorCondition(userId)] : []),
@@ -832,6 +863,7 @@ export const createClimbFilters = (
     getHoldUserLogbookSelects,
     // Raw parts
     baseConditions,
+    browsedAngleConditions,
     climbStatsConditions,
     gradeRangeConditions,
     nameCondition,

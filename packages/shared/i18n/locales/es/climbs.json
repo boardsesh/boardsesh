@@ -528,6 +528,8 @@
       "betaVideos": "Solo con vídeos de beta",
       "betaVideosShort": "🎥 Beta",
       "betaVideosDescription": "Solo vías con un vídeo de beta",
+      "otherAngles": "Otros ángulos",
+      "otherAnglesDescription": "Muestra bloques montados en otro ángulo",
       "searchSetters": "Buscar equipadores",
       "noSetters": "Sin equipadores",
       "clearAll": "Borrar todo",

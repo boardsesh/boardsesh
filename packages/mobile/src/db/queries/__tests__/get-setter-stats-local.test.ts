@@ -28,14 +28,16 @@ type ClimbFixture = {
   compatibleSizeIds?: number[] | null;
   requiredSetIds?: number[] | null;
   setterUsername?: string | null;
+  /** The climb's own set angle; NULL (the default) when none was recorded. */
+  angle?: number | null;
 };
 
 async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
       (uuid, board_type, layout_id, name, is_listed, is_draft, is_hidden,
-       compatible_size_ids, required_set_ids, setter_username, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       compatible_size_ids, required_set_ids, setter_username, angle, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.uuid,
       fixture.boardType ?? 'kilter',
@@ -55,9 +57,21 @@ async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<voi
           ? null
           : JSON.stringify(fixture.requiredSetIds),
       fixture.setterUsername ?? 'setter',
+      fixture.angle ?? null,
       '2026-01-01T00:00:00Z',
       '2026-01-01T00:00:00Z',
     ],
+  );
+}
+
+// Presence is all the setter query reads from a stats row, so the numbers are
+// placeholders.
+async function insertStats(db: TestSqliteDb, boardType: string, climbUuid: string, angle: number): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO board_climb_stats
+      (board_type, climb_uuid, angle, display_difficulty, difficulty_average, quality_average, benchmark_difficulty, ascensionist_count, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [boardType, climbUuid, angle, 16, 16, 3, 0, 1, '2026-01-01T00:00:00Z'],
   );
 }
 
@@ -116,14 +130,32 @@ describe('getSetterStatsLocal', () => {
     expect(result).toEqual([]);
   });
 
-  it('is angle-blind: the same setter counts the same regardless of the queried angle', async () => {
-    await insertClimb(db, { uuid: 'c1', setterUsername: 'woodsSetter' });
-    await insertClimb(db, { uuid: 'c2', setterUsername: 'woodsSetter' });
+  it('is angle-blind on Kilter: the same setter counts the same regardless of the queried angle', async () => {
+    // Set at 20° and 70° with stats only there — which on Woods would restrict
+    // both away at 45°. Kilter climbs are not angle-bound, so the restriction
+    // never applies, opted in or not.
+    await insertClimb(db, { uuid: 'c1', setterUsername: 'kilterSetter', angle: 20 });
+    await insertStats(db, 'kilter', 'c1', 20);
+    await insertClimb(db, { uuid: 'c2', setterUsername: 'kilterSetter', angle: 70 });
+    await insertStats(db, 'kilter', 'c2', 70);
+
+    const atTwenty = await getSetterStatsLocal(db, makeInput({ angle: 20 }));
+    const atFortyFive = await getSetterStatsLocal(db, makeInput({ angle: 45 }));
+    const optedIn = await getSetterStatsLocal(db, makeInput({ angle: 45, crossAngleStats: true }));
+
+    expect(atTwenty).toEqual([{ setterUsername: 'kilterSetter', climbCount: 2 }]);
+    expect(atFortyFive).toEqual(atTwenty);
+    expect(optedIn).toEqual(atTwenty);
+  });
+
+  it('is angle-blind on Kilter for climbs with no set angle recorded, too', async () => {
+    await insertClimb(db, { uuid: 'c1', setterUsername: 'unangledSetter' });
+    await insertClimb(db, { uuid: 'c2', setterUsername: 'unangledSetter' });
 
     const atTwenty = await getSetterStatsLocal(db, makeInput({ angle: 20 }));
     const atSeventy = await getSetterStatsLocal(db, makeInput({ angle: 70 }));
 
-    expect(atTwenty).toEqual([{ setterUsername: 'woodsSetter', climbCount: 2 }]);
+    expect(atTwenty).toEqual([{ setterUsername: 'unangledSetter', climbCount: 2 }]);
     expect(atSeventy).toEqual(atTwenty);
   });
 
@@ -174,6 +206,86 @@ describe('getSetterStatsLocal', () => {
       { setterUsername: 'aaa', climbCount: 2 },
       { setterUsername: 'zzz', climbCount: 2 },
       { setterUsername: 'bbb', climbCount: 1 },
+    ]);
+  });
+});
+
+// Issue #5642: on Woods the list keeps only the climbs for the browsed angle
+// unless the search opts in, so the picker has to count the same climbs or it
+// offers a setter whose climbs the list cannot show. Mirrors the server suite in
+// packages/backend/src/__tests__/setter-stats-moonboard.test.ts.
+describe('getSetterStatsLocal on Woods: the browsed-angle restriction', () => {
+  let db: TestSqliteDb;
+  const woodsInput = (overrides: Partial<SetterStatsInput> = {}) =>
+    makeInput({ boardName: 'woods', sizeId: 1, angle: 25, ...overrides });
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+
+    // The reporter's shape: a prolific setter with nothing at 25°.
+    await insertClimb(db, {
+      uuid: 'w20',
+      boardType: 'woods',
+      compatibleSizeIds: [1],
+      setterUsername: 'prolific',
+      angle: 20,
+    });
+    await insertStats(db, 'woods', 'w20', 20);
+    await insertClimb(db, {
+      uuid: 'w70',
+      boardType: 'woods',
+      compatibleSizeIds: [1],
+      setterUsername: 'prolific',
+      angle: 70,
+    });
+    await insertStats(db, 'woods', 'w70', 70);
+    // Set at 40° but climbed at 25° too: the stats-here arm keeps it.
+    await insertClimb(db, {
+      uuid: 'w40',
+      boardType: 'woods',
+      compatibleSizeIds: [1],
+      setterUsername: 'crossover',
+      angle: 40,
+    });
+    await insertStats(db, 'woods', 'w40', 40);
+    await insertStats(db, 'woods', 'w40', 25);
+    // No set angle recorded: it belongs nowhere else, so it counts at every angle.
+    await insertClimb(db, { uuid: 'wnull', boardType: 'woods', compatibleSizeIds: [1], setterUsername: 'unangled' });
+  });
+
+  it('drops a setter with no climb for the browsed angle, by default and with an explicit false', async () => {
+    const expected = [
+      { setterUsername: 'crossover', climbCount: 1 },
+      { setterUsername: 'unangled', climbCount: 1 },
+    ];
+
+    expect(await getSetterStatsLocal(db, woodsInput())).toEqual(expected);
+    expect(await getSetterStatsLocal(db, woodsInput({ crossAngleStats: false }))).toEqual(expected);
+  });
+
+  it('counts a climb set at the browsed angle, and only for that angle', async () => {
+    expect(await getSetterStatsLocal(db, woodsInput({ angle: 20 }))).toEqual([
+      { setterUsername: 'prolific', climbCount: 1 },
+      { setterUsername: 'unangled', climbCount: 1 },
+    ]);
+  });
+
+  it('counts every angle with the opt-in, one row per climb whatever it joins', async () => {
+    expect(await getSetterStatsLocal(db, woodsInput({ crossAngleStats: true }))).toEqual([
+      { setterUsername: 'prolific', climbCount: 2 },
+      { setterUsername: 'crossover', climbCount: 1 },
+      { setterUsername: 'unangled', climbCount: 1 },
+    ]);
+  });
+
+  it('does not treat the setter search as a climb-name search', async () => {
+    // A by-name climb search on Woods is cross-angle; a setter-username search
+    // is not a name search, so the restriction still holds.
+    expect(await getSetterStatsLocal(db, woodsInput({ search: 'prol' }))).toEqual([]);
+    expect(await getSetterStatsLocal(db, woodsInput({ search: 'prol', crossAngleStats: true }))).toEqual([
+      { setterUsername: 'prolific', climbCount: 2 },
     ]);
   });
 });

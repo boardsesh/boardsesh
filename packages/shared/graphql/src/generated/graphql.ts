@@ -1109,7 +1109,7 @@ export type Climb = {
   setter_username: Scalars['String']['output'];
   /** Star rating (0-5), rounded from quality_average */
   stars: Scalars['Float']['output'];
-  /** The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them, which is always the case on Woods and MoonBoard and opt-in elsewhere via ClimbSearchInput.crossAngleStats (issue #5405). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that. */
+  /** The angle the grade, ascents and quality on this climb were actually read from. Equals angle normally; differs when the browsed angle had no stats row and the climb own set angle supplied them: in a search that set ClimbSearchInput.crossAngleStats (issue #5405), in a by-name search on Woods, and on the Woods climb detail read (issue #5642). Null when the climb has no stats at any angle, i.e. a genuine project. Display only: show it beside the grade when it differs, never key on it. Deliberately absent from ClimbInput, so a queued climb carries no set-angle marker, because adding a field there means changing four lists at once (see queue-climb-field-contract.test.ts) and the marker is not worth that. */
   statsAngle?: Maybe<Scalars['Int']['output']>;
   /** Number of times the current user has sent this climb */
   userAscents?: Maybe<Scalars['Int']['output']>;
@@ -1259,7 +1259,7 @@ export type ClimbSearchInput = {
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only. */
   boulders?: InputMaybe<Scalars['Boolean']['input']>;
-  /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Ignored — always on — for boards whose climbs are angle-bound by nature, Woods and MoonBoard. Elsewhere it is opt-in, because an Aurora catalogue grades every angle independently and the browsed angle is usually the right one to read. */
+  /** Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle. */
   crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
@@ -8438,7 +8438,8 @@ export type SetterSearchResult = {
 
 /**
  * A setter username paired with the number of climbs they've authored
- * for a given board configuration. Angle-independent.
+ * for a given board configuration. Angle-independent everywhere but Woods,
+ * where it follows SetterStatsInput.crossAngleStats.
  */
 export type SetterStat = {
   __typename?: 'SetterStat';
@@ -8453,10 +8454,12 @@ export type SetterStat = {
  * Used to power the setter filter autocomplete in the search drawer.
  */
 export type SetterStatsInput = {
-  /** Board angle in degrees. Accepted and ignored: the setter list is the same at every angle (#5404). */
+  /** Board angle in degrees. Ignored on every board whose climbs are not bound to one angle: the setter list is the same at every angle there (#5404). On Woods it is the browsed angle, and the counts cover only the climbs for it unless crossAngleStats is set (#5642). */
   angle: Scalars['Int']['input'];
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
+  /** Count every climb whatever angle it was set at. Mirrors ClimbSearchInput.crossAngleStats, and only changes anything on Woods, whose climbs are bound to the angle they were set at: omitted or false, a setter is counted only for the climbs the default list shows at this angle (set there, with no set angle recorded, or with stats there), so the picker never offers a setter whose climbs the list cannot show (#5642). Send true when the search it filters has the Other angles switch on. */
+  crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
   /** Restrict counts and usernames to followed authors. Requires authentication. */

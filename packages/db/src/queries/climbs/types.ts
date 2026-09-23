@@ -81,8 +81,11 @@ export type ClimbSearchParams = {
    */
   holdIntegrity?: 'any' | 'intact' | 'broken';
   // Resolve each climb's stats through its own set angle when the browsed angle
-  // has no row (issue #5405). Ignored — always on — for boards whose climbs are
-  // angle-bound; see `resolveCrossAngleStats` in ./effective-stats.
+  // has no row (issue #5405). Opt-in on every board: omitted means off. On an
+  // angle-bound board (Woods) off also restricts the list to the climbs that
+  // belong to the browsed angle, and a by-name search turns it on by itself; see
+  // `resolveCrossAngleStats` and `resolveBrowsedAngleRestriction` in
+  // ./effective-stats (issue #5642).
   crossAngleStats?: boolean;
   // Climb-type toggles. Default to undefined (treated as both selected → no
   // SQL filter on frames_count). Set boulders=true to constrain to single-
@@ -152,6 +155,23 @@ const SEARCH_SORT_ALIASES: Record<string, NonNullable<ClimbSearchParams['sortBy'
   created_at: 'creation',
   published_at: 'creation',
 };
+
+/**
+ * Whether this search is an explicit by-name lookup.
+ *
+ * Two rules key on it and must agree on what counts: the community-hidden filter
+ * (`hiddenClimbCondition` in ./create-climb-filters — a named climb is findable
+ * even when hidden) and the angle-bound browse restriction
+ * (`resolveCrossAngleStats` in ./effective-stats — a named climb is findable at
+ * any angle). It lives here rather than beside either of them because
+ * create-climb-filters already imports effective-stats, and each needs it.
+ *
+ * The offline mirror reads `input.name` the same way in
+ * packages/mobile/src/db/queries/search-climbs-local.ts (`hasNameQuery`).
+ */
+export function hasNameQuery(searchParams: Pick<ClimbSearchParams, 'name'>): boolean {
+  return typeof searchParams.name === 'string' && searchParams.name.length > 0;
+}
 
 /**
  * Map a wire `holdIntegrity` value onto the param.
@@ -262,8 +282,8 @@ export type ClimbRow = {
   angle: number;
   /** The angle the grade, ascents and quality on this row were actually read from.
    *  Equals `angle` normally; differs when the browsed angle had no stats row and
-   *  the climb's own set angle supplied them (Woods and MoonBoard always, Aurora
-   *  behind `crossAngleStats`). Null when the climb has no stats at any angle — a
+   *  the climb's own set angle supplied them (a search that set `crossAngleStats`,
+   *  or a by-name search on Woods). Null when the climb has no stats at any angle — a
    *  genuine project. Display only: `angle` stays the BROWSED angle, which is what
    *  ticks, the queue and the BLE spill guard key on. See ./effective-stats. */
   statsAngle: number | null;
