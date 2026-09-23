@@ -10,5 +10,5 @@ export const STATIC_SHELL_ASSET_OBJECT_KEYS = {
   '/icons/apple-touch-icon.png': 'static/v1/1075fcbb63bc80daf91b36c4dd1a75716deea06b329dd405c6eb1e1ec23981c1.png',
   '/icons/icon-192.png': 'static/v1/1902d24c27ae995abc30e156dd10640f47a4e6b2759ad790e1b05e76a8660005.png',
   '/icons/icon-512.png': 'static/v1/1b08c8998458466de87799bbf5f24270c2aed634f49569924487e0e45bda9f22.png',
-  '/icons/icon-maskable-512.png': 'static/v1/12fc5ab0250ec93aa315b8518513959a8322764b1a9b2dee59ee4a2f1a0cc3f2.png',
+  '/icons/icon-maskable-512.png': 'static/v1/9d48b5b435fd48a08073f287da31273d59b71784cbad283af2b005479b952fbe.png',
 } as const satisfies StaticAssetObjectKeyCatalog;
