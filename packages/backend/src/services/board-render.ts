@@ -300,7 +300,10 @@ function cardTextCacheKeySuffix(params: BoardImageRenderParams): string {
   // `boardLine` is deliberately absent: it is derived from board_name/layout_id/
   // size_id, which the outer key already carries, so hashing it adds no
   // collision resistance and would mint a new entry for a pure label edit.
-  const fields = [card.name ?? '', card.grade ?? '', card.setter ?? '', card.angle ?? ''];
+  // `fontFamily` is in the digest: it changes the pixels, and during a rolling
+  // deploy that moves `OG_CARD_FONT_FAMILY` the two versions would otherwise
+  // serve each other's entries.
+  const fields = [card.name ?? '', card.grade ?? '', card.setter ?? '', card.angle ?? '', card.fontFamily ?? ''];
   if (fields.every((field) => field === '')) return 'none';
   return createHash('sha1').update(JSON.stringify(fields)).digest('base64url').slice(0, 16);
 }
@@ -508,6 +511,13 @@ async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.Over
   } catch (error) {
     logger.warn('[BoardRender] Card text failed to render; serving the board alone', {
       error: error instanceof Error ? error.message : String(error),
+      // Enough to find the climb again. A silent fallback with no identity
+      // gives no way to tell one broken card from a broken font.
+      name: card.name,
+      grade: card.grade,
+      setter: card.setter,
+      angle: card.angle,
+      fontFamily: card.fontFamily,
     });
     return undefined;
   }

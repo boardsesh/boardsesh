@@ -160,6 +160,8 @@ repeats, ~700ms worst-case first render of a never-seen board config.
 | Var                        | Default               | Meaning                                                                                                                                                                            |
 | -------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BOARD_IMAGES_ROOT`        | `<cwd>/../web/public` | Directory containing `images/` (board photos). The backend Docker context ships `packages/web/public/images` via `extraSourceDirs` in `scripts/create-service-docker-context.mjs`. |
+| `OG_CARD_FONT_FAMILY` | `Noto Sans` | the family handed to Pango; see the font note above |
+| `OG_CARD_TEXT_DISABLED` | unset | `1` drops the caller-supplied `n`/`s`; read at module load, so it needs a restart |
 | `BOARD_RENDER_CONCURRENCY` | `2`                   | Shared concurrency cap for OG and board-image misses, including low-priority boot warmups.                                                                                         |
 | `BOARD_RENDER_MAX_QUEUE`   | `40`                  | Maximum unique render misses waiting behind the shared semaphore before a `503` with `Retry-After: 5`.                                                                             |
 

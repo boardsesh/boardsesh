@@ -26,61 +26,25 @@ type ShareClimbArgs = {
 // card a crawler actually fetches is the one in www's og:image — so if the two
 // disagree on the drawing, the prewarm heats an entry nobody asks for and the
 // reader waits on a cold render instead.
-/**
- * The card's text params, omitting anything empty.
- *
- * Normalisation is the backend's job — it has to redo it for any caller anyway —
- * so this only trims and drops blanks. An empty `s=` would still change the URL,
- * and the URL is the cache key.
- */
-/**
- * Mirrors `OG_CARD_GRADE_PATTERN` in
- * `packages/shared/board-render/src/validation.ts`.
- *
- * Copied rather than imported because this module is in the app bundle, and
- * `@boardsesh/board-render`'s graph drags the WASM renderer and sharp in with
- * it — the same reason the note above gives for hand-building this query
- * string. `util.test.ts` on the web side reads this file and fails if the two
- * stop matching.
- */
-const OG_CARD_GRADE_PATTERN = /^[A-Za-z0-9+/. -]{1,16}$/;
-
-function toCardGrade(grade: string | null | undefined): string | undefined {
-  const trimmed = grade?.trim();
-  return trimmed && OG_CARD_GRADE_PATTERN.test(trimmed) ? trimmed : undefined;
-}
-
-function identityParams(identity: {
-  name: string | null | undefined;
-  grade: string | null | undefined;
-  setter: string | null | undefined;
-  angle: number;
-}): string[] {
-  const entries: [string, string | undefined][] = [
-    ['n', identity.name?.trim()],
-    // Matched, not just trimmed: a grade the backend rejects is a 400, so
-    // sending one warms nothing AND warms a different URL than the card a
-    // crawler will actually fetch.
-    ['g', toCardGrade(identity.grade)],
-    ['s', identity.setter?.trim()],
-    ['angle', String(identity.angle)],
-  ];
-
-  return entries
-    .filter((entry): entry is [string, string] => Boolean(entry[1]))
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`);
-}
-
+//
+// It deliberately carries NO climb identity (`n`/`g`/`s`/`angle`), even though
+// the card draws it. The app cannot reproduce the URL www advertises: the angle
+// there is `selectCanonicalClimbAngle`, chosen from every angle's ascent counts,
+// and the name and setter are normalised by a helper that lives behind the same
+// dependency this comment is about. Sending a near-miss would warm a second
+// entry, not the right one.
+//
+// What it still buys is the expensive half. The per-board `ogBase` — the
+// backdrop with the board photos composited — is keyed on the board config and
+// its render size, NOT on the climb, so warming any climb on this board warms it
+// for every other. What is left cold is the cheap per-climb overlay and text
+// composite.
 function buildOgImageUrl(args: {
   boardName: string;
   layoutId: number;
   sizeId: number;
   setIds: string;
   frames: string | null | undefined;
-  name: string | null | undefined;
-  grade: string | null | undefined;
-  setter: string | null | undefined;
-  angle: number;
 }): string | null {
   // A spray wall's holds and photo live in `spray_wall_holds` and the private
   // bucket, and the backend's OG renderer only knows the bundled catalogue
@@ -110,11 +74,6 @@ function buildOgImageUrl(args: {
     // climber just looked at are quieted by the same wash.
     'render_mode=aura',
     `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
-    // The climb identity drawn in the card's right column. Part of the URL and
-    // therefore part of the cache key, so warming without it would heat a card
-    // that no unfurler is about to ask for — exactly the failure the note above
-    // describes for the render params.
-    ...identityParams({ name: args.name, grade: args.grade, setter: args.setter, angle: args.angle }),
   ].join('&');
   return `${BACKEND_URL}/og/climb?${query}`;
 }
@@ -148,17 +107,7 @@ export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angl
       climbName: climb.name,
     })}`;
 
-    const ogImageUrl = buildOgImageUrl({
-      boardName,
-      layoutId,
-      sizeId,
-      setIds,
-      frames: climb.frames,
-      name: climb.name,
-      grade: climb.difficulty,
-      setter: climb.setter_username,
-      angle,
-    });
+    const ogImageUrl = buildOgImageUrl({ boardName, layoutId, sizeId, setIds, frames: climb.frames });
     prewarmShareCaches(ogImageUrl ? [url, ogImageUrl] : [url]);
 
     await Share.share(Platform.OS === 'ios' ? { message: climb.name, url } : { message: `${climb.name}\n${url}` });

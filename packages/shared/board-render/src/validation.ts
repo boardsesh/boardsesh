@@ -272,7 +272,11 @@ export const ogClimbQuerySchema = z
       .transform((grade) => grade.trim())
       .refine((grade) => grade.length > 0, 'g must be a grade label')
       .optional(),
-    angle: z.coerce.number().int().min(0).max(90).optional(),
+    // Wide on purpose. Grasshopper's angle list starts at -5, and a bound that
+    // clipped it would 400 — which is not a missing angle on the card, it is no
+    // card at all. `og-card-angles.test.ts` walks every board's angle list and
+    // fails if one ever falls outside this.
+    angle: z.coerce.number().int().min(-90).max(90).optional(),
   })
   .extend(boardseshRenderQuerySchema.shape);
 

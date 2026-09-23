@@ -119,7 +119,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     const ogImagePath = buildOgBoardRenderUrl(
       boardDetails,
       currentClimb.frames,
-      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     );
 
     return createBoardContentPageMetadata({
@@ -186,7 +186,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     scheduleOgImageWarming({
       boardDetails,
       climb: currentClimb,
-      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
 

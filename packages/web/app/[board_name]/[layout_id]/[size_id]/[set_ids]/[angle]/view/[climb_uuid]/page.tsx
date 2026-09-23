@@ -63,7 +63,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     const ogImagePath = buildOgBoardRenderUrl(
       boardDetails,
       currentClimb.frames,
-      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     );
 
     // A climb hidden by an approved report keeps resolving — existing links and
@@ -196,7 +196,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     scheduleOgImageWarming({
       boardDetails,
       climb: currentClimb,
-      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle),
+      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     });
 
     return (

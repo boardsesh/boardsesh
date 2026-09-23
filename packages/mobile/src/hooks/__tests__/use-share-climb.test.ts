@@ -63,11 +63,12 @@ const climbWithFrames = {
 // og:image — so a disagreement about the drawing warms an entry nobody asks for
 // and leaves the reader on a cold render.
 //
-// The climb identity params are part of the URL and therefore part of the cache
-// key, so they are load-bearing for the same reason: warming without them heats
-// a textless card that no unfurler is about to ask for.
+// No climb identity here on purpose: the app cannot reproduce the canonical
+// angle or the text normalisation www uses, so a near-miss would warm a second
+// entry rather than the right one. See the note in the hook — what this still
+// warms is the per-board base, which is the expensive half.
 const expectedOgImageUrl =
-  'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225&n=Test%20Climb&angle=40';
+  'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225';
 
 describe('useShareClimb', () => {
   beforeEach(() => {

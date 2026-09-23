@@ -130,10 +130,13 @@ describe('ogClimbQuerySchema card params', () => {
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, g: '   ' }).success).toBe(false);
   });
 
-  it('bounds the angle', () => {
+  it('bounds the angle without clipping a real board', () => {
     expect(ogClimbQuerySchema.parse({ ...validQuery, angle: '40' }).angle).toBe(40);
+    // Grasshopper's list starts at -5, so a negative angle has to survive;
+    // `og-card-angles.test.ts` walks every board's list.
+    expect(ogClimbQuerySchema.parse({ ...validQuery, angle: '-5' }).angle).toBe(-5);
     expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '91' }).success).toBe(false);
-    expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '-1' }).success).toBe(false);
+    expect(ogClimbQuerySchema.safeParse({ ...validQuery, angle: '-91' }).success).toBe(false);
   });
 });
 
