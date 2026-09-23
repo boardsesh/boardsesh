@@ -324,6 +324,7 @@ jobs:
               - 'packages/shared/graphql/**'
               - 'packages/shared/graphql-client/**'
               - 'packages/shared/gym-claim/**'
+              - 'packages/shared/gym-filters/**'
               - 'packages/shared/i18n/**'
               - 'packages/shared/kiosk/**'
               - 'packages/shared/logbook/**'
