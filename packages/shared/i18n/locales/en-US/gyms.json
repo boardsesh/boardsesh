@@ -55,6 +55,23 @@
     "tension": "Tension · {{formattedCount}}",
     "countHint": "The numbers count gyms, not boards: a gym with three Kilter walls counts once."
   },
+  "filters": {
+    "boardHeading": "Board",
+    "moreLabel": "Narrow it down",
+    "moreLabelActive": "Narrow it down · {{count}}",
+    "layoutHeading": "Layout",
+    "layoutLocked": "Pick one board above and its layouts show up.",
+    "sizeHeading": "Size",
+    "sizeLocked": "Pick one layout and the sizes show up.",
+    "angleHeading": "Angle",
+    "angleLocked": "Pick one board above and its angles show up.",
+    "angleOption": "{{angle}}°",
+    "angleHint": "The angle each gym has on file. Most walls tilt, so read it as where it was last set.",
+    "multiBoardLabel": "Only gyms with two or more different boards",
+    "submit": "Show gyms",
+    "activeHeading": "Filtering by",
+    "clearAll": "Clear all filters"
+  },
   "search": {
     "geoHint": "Location off? Type a town instead. No permission needed.",
     "label": "Search gyms",

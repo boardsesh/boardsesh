@@ -43,6 +43,7 @@ import {
 import { fetchDirectoryPage, fetchFacetCounts } from './directory-data';
 import GymDirectoryCard from './gym-directory-card';
 import GymDirectoryClaimLink from './gym-directory-claim-link';
+import GymDirectoryFilters from './gym-directory-filters';
 import GymDirectoryNearMe from './gym-directory-near-me';
 import GymDirectoryPagination from './gym-directory-pagination';
 import GymDirectorySearchForm from './gym-directory-search-form';
@@ -210,7 +211,12 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
             scrollMarginTop: 'calc(var(--global-header-height) + var(--spacing-4))',
           }}
         >
-          <GymDirectorySearchForm facet={facet} query={query} locale={locale} />
+          <GymDirectorySearchForm facet={facet} query={query} locale={locale}>
+            {/* Inside the form on purpose: layout, size and angle are
+                checkboxes, and a closed <details> still submits them, so one
+                "Show gyms" applies the text, the place and the wall together. */}
+            <GymDirectoryFilters facet={facet} query={query} t={t} />
+          </GymDirectorySearchForm>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             {t('search.geoHint')}
           </Typography>
@@ -253,7 +259,7 @@ export async function renderGymDirectory(facet: DirectoryFacet, props: Directory
         <GymDirectoryNearMe
           key={buildFacetSwitchHref(facet, query)}
           selectedArea={origin ? { facet, query } : undefined}
-          boardTypes={query.boardTypes}
+          boardFilter={query}
           // Threaded through, not dropped: the search box keeps rendering what
           // was typed, so near-me has to keep applying it.
           searchQuery={query.query}

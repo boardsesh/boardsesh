@@ -24,10 +24,21 @@ export default function GymPlaceSearch({
   facet,
   query,
   locale,
+  children,
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
+  /**
+   * The board filter panel, rendered INSIDE this form.
+   *
+   * It is a server component passed through as children rather than imported
+   * here, which keeps the filter chips off the client bundle. Inside the form
+   * because its checkboxes have to submit with the text and the place: one
+   * "Show gyms" for the whole search, rather than a filter that silently
+   * survives or dies depending on which button the visitor reached for.
+   */
+  children?: React.ReactNode;
 }) {
   const { t } = useTranslation('gyms');
   const router = useRouter();
@@ -143,8 +154,20 @@ export default function GymPlaceSearch({
           {t('places.attribution')}
         </MuiLink>
       </Box>
+      {/* The board filter rides the text search as hidden inputs, or typing a
+          town would wipe the wall the visitor just picked. Facet routes carry
+          their board type in the path, so only the deeper tiers go along there. */}
       {facet === 'all' &&
         query.boardTypes.map((boardType) => <input key={boardType} type="hidden" name="boardType" value={boardType} />)}
+      {(query.layoutIds ?? []).map((layoutId) => (
+        <input key={`layout-${layoutId}`} type="hidden" name="layout" value={String(layoutId)} />
+      ))}
+      {(query.sizeIds ?? []).map((sizeId) => (
+        <input key={`size-${sizeId}`} type="hidden" name="size" value={String(sizeId)} />
+      ))}
+      {(query.angles ?? []).map((angle) => (
+        <input key={`angle-${angle}`} type="hidden" name="angle" value={String(angle)} />
+      ))}
       {keepOrigin && (
         <>
           <input type="hidden" name="lat" value={String(query.latitude)} />
@@ -156,6 +179,9 @@ export default function GymPlaceSearch({
       <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
         {t('search.submit')}
       </Button>
+      {/* Full-width below the search row, so the filter tiers get the measure
+          they need while the text field and its button stay on one line. */}
+      <Box sx={{ flexBasis: '100%' }}>{children}</Box>
     </Box>
   );
 }

@@ -93,7 +93,7 @@ function setGeolocation(state: {
 function renderNearMe(searchQuery = '') {
   return render(
     <GymDirectoryNearMe
-      boardTypes={['kilter']}
+      boardFilter={{ boardTypes: ['kilter'] }}
       searchQuery={searchQuery}
       locale="en-US"
       browsePins={[]}
@@ -140,7 +140,7 @@ describe('browse mode', () => {
   it('uses server-rendered place results and radius links without requesting device location', () => {
     render(
       <GymDirectoryNearMe
-        boardTypes={['kilter']}
+        boardFilter={{ boardTypes: ['kilter'] }}
         searchQuery=""
         locale="en-US"
         browsePins={[]}
@@ -415,7 +415,16 @@ describe('the proximity query itself', () => {
     renderNearMe();
     fireEvent.click(screen.getByRole('button', { name: 'Use my location' }));
 
-    expect(lastQueryOptions?.queryKey).toEqual(['gym-directory-near-me', 'kilter', '', 51.455, -2.588, 25]);
+    // The board half is one serialised object now, so a new filter joins the key
+    // without anyone remembering to add a slot for it.
+    expect(lastQueryOptions?.queryKey).toEqual([
+      'gym-directory-near-me',
+      '{"boardTypes":["kilter"]}',
+      '',
+      51.455,
+      -2.588,
+      25,
+    ]);
   });
 
   it('re-queries at the radius the climber picked', () => {

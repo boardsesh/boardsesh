@@ -9,6 +9,9 @@ import {
   paginationWindow,
   parseDirectoryQuery,
   FILTERABLE_BOARD_TYPES,
+  buildBoardTypeToggleHref,
+  buildClearFiltersHref,
+  countNarrowFilters,
 } from '../directory-facets';
 
 describe('facet routes', () => {
@@ -242,5 +245,116 @@ describe('the filterable board-type vocabulary', () => {
 
   it('drops spray from a requested boardType filter', () => {
     expect(parseDirectoryQuery('all', { boardType: 'spray' }).boardTypes).toEqual([]);
+  });
+});
+
+/**
+ * The narrow filters — layout, size, angle and the gym-level "two or more
+ * boards" toggle — as the directory's URL sees them.
+ *
+ * The cascade rules themselves are the shared package's to prove
+ * (`@boardsesh/gym-filters`); what belongs here is the wiring: that a facet
+ * route unlocks the layout tier from its PATH, that the params survive a
+ * round trip in a stable order, and that the href builders clear what a
+ * narrower search can no longer mean.
+ */
+describe('narrow filters in the directory URL', () => {
+  it('parses layout, size and angle under one board type', () => {
+    const query = parseDirectoryQuery('all', {
+      boardType: 'kilter',
+      layout: '8',
+      size: '23',
+      angle: '40',
+    });
+    expect(query.layoutIds).toEqual([8]);
+    expect(query.sizeIds).toEqual([23]);
+    expect(query.angles).toEqual([40]);
+  });
+
+  it('unlocks the layout tier on a facet route with no ?boardType at all', () => {
+    const query = parseDirectoryQuery('kilter', { layout: '8' });
+    expect(query.boardTypes).toEqual(['kilter']);
+    expect(query.layoutIds).toEqual([8]);
+  });
+
+  it('drops a layout that has no single board type to scope it', () => {
+    expect(parseDirectoryQuery('all', { layout: '8' }).layoutIds).toBeUndefined();
+    expect(parseDirectoryQuery('all', { boardType: ['kilter', 'tension'], layout: '1' }).layoutIds).toBeUndefined();
+  });
+
+  it('round-trips the whole board block through buildDirectoryHref', () => {
+    const query = parseDirectoryQuery('all', {
+      boardType: 'kilter',
+      layout: '8',
+      size: '23',
+      angle: '40',
+      boards: '2plus',
+    });
+    const href = buildDirectoryHref('all', query, 1);
+    expect(href).toBe('/gyms?boardType=kilter&layout=8&size=23&angle=40&boards=2plus');
+
+    const [, search] = href.split('?');
+    const reparsed = parseDirectoryQuery('all', Object.fromEntries(new URLSearchParams(search)));
+    expect(reparsed.layoutIds).toEqual([8]);
+    expect(reparsed.angles).toEqual([40]);
+    expect(reparsed.multiBoardTypeOnly).toBe(true);
+  });
+
+  it('keeps the board type in the path on a facet route, never in the query', () => {
+    const query = parseDirectoryQuery('kilter', { layout: '8', angle: '40' });
+    expect(buildDirectoryHref('kilter', query, 1)).toBe('/gyms/kilter?layout=8&angle=40');
+  });
+
+  it('drops the deeper tiers when a facet chip switches board', () => {
+    // A Kilter layout must not ride onto /gyms/moonboard, where layout 8 is
+    // nothing at all.
+    const query = parseDirectoryQuery('all', { boardType: 'kilter', layout: '8', q: 'bristol' });
+    const href = buildFacetSwitchHref('moonboard', query);
+    expect(href).toBe('/gyms/moonboard?q=bristol');
+  });
+
+  it('toggles a board type rather than replacing it', () => {
+    const query = parseDirectoryQuery('all', { boardType: 'kilter' });
+    // Adding a second type widens, and lands on the unfaceted route.
+    expect(buildBoardTypeToggleHref('all', query, 'tension')).toBe('/gyms?boardType=kilter&boardType=tension');
+    // Removing the only one clears the filter.
+    expect(buildBoardTypeToggleHref('all', query, 'kilter')).toBe('/gyms');
+    // A lone facet board type lands on its own SEO route rather than a twin.
+    expect(buildBoardTypeToggleHref('all', parseDirectoryQuery('all', {}), 'kilter')).toBe('/gyms/kilter');
+  });
+
+  it('counts selections, not tiers, for the disclosure label', () => {
+    expect(countNarrowFilters(parseDirectoryQuery('all', {}))).toBe(0);
+    expect(
+      countNarrowFilters(parseDirectoryQuery('all', { boardType: 'kilter', angle: ['40', '45'], layout: '8' })),
+    ).toBe(3);
+  });
+
+  it('clears the narrow filters but keeps the board, text and place', () => {
+    const query = parseDirectoryQuery('kilter', {
+      layout: '8',
+      angle: '40',
+      q: 'bristol',
+      lat: '51.4545',
+      lng: '-2.5879',
+      radius: '25',
+    });
+    expect(buildClearFiltersHref('kilter', query)).toBe('/gyms/kilter?q=bristol&lat=51.455&lng=-2.588&radius=25');
+  });
+
+  it('counts a deep filter as a search on a facet route', () => {
+    // A bare facet pageview is not a search — the board type IS the route.
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', {}))).toBe(false);
+    // Picking a layout on that same route is.
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { layout: '8' }))).toBe(true);
+    // Pagination still is not, on any filter.
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { layout: '8', page: '2' }))).toBe(false);
+  });
+
+  it('rounds coordinates so one search is one cache key', () => {
+    const query = parseDirectoryQuery('all', { lat: '51.4545678', lng: '-2.5879123', radius: '25' });
+    expect(query.latitude).toBe(51.455);
+    expect(query.longitude).toBe(-2.588);
+    expect(buildDirectoryHref('all', query, 1)).toBe('/gyms?lat=51.455&lng=-2.588&radius=25');
   });
 });
