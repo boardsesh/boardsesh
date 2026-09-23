@@ -14,6 +14,10 @@ import { listCatalogueEntries } from '../render-version-projection';
  * checkout, and 404 only inside the built image.
  */
 describe('board art resolves to WebP only', () => {
+  // The catalogue is walked ONCE and every assertion reads this. A second walk
+  // would need its own failure handling, and the one that was here skipped
+  // unresolvable entries silently — so a board that stopped resolving vanished
+  // from the dark-variant check while the light one still guarded it.
   const entries = listCatalogueEntries().map((entry) => {
     const label = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
     try {
@@ -27,13 +31,20 @@ describe('board art resolves to WebP only', () => {
         boardName: entry.boardName,
         label,
         relPaths: [false, true].flatMap((thumbnail) => getBackgroundRelPaths(details, thumbnail)),
+        darkRelPaths: getBackgroundRelPaths(details, false, 'dark'),
         // Recorded rather than swallowed: a board that stops resolving would
         // otherwise drop out of this walk silently, and a lower-bound count is
         // far too loose to notice a whole board type going missing.
         failed: false,
       };
     } catch {
-      return { boardName: entry.boardName, label, relPaths: [] as string[], failed: true };
+      return {
+        boardName: entry.boardName,
+        label,
+        relPaths: [] as string[],
+        darkRelPaths: [] as string[],
+        failed: true,
+      };
     }
   });
 
@@ -65,21 +76,13 @@ describe('board art resolves to WebP only', () => {
   });
 
   it('asks for the dark variants as WebP too', () => {
-    const darkPaths = listCatalogueEntries().flatMap((entry) => {
-      try {
-        const details = getBoardDetailsForBoard({
-          board_name: entry.boardName,
-          layout_id: entry.layoutId,
-          size_id: entry.sizeId,
-          set_ids: entry.setIds,
-        });
-        return getBackgroundRelPaths(details, false, 'dark');
-      } catch {
-        return [];
-      }
-    });
+    const darkPaths = entries.flatMap(({ label, darkRelPaths }) => darkRelPaths.map((relPath) => ({ label, relPath })));
 
     expect(darkPaths.length).toBeGreaterThan(0);
-    expect(darkPaths.filter((relPath) => !relPath.endsWith('.webp'))).toEqual([]);
+    expect(
+      darkPaths
+        .filter(({ relPath }) => !relPath.endsWith('.webp'))
+        .map(({ label, relPath }) => `${label} → ${relPath}`),
+    ).toEqual([]);
   });
 });

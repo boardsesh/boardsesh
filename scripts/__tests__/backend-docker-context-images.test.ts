@@ -14,7 +14,19 @@ import { describe, expect, it } from 'vitest';
  */
 describe('backend Docker context', () => {
   const script = readFileSync(resolve(process.cwd(), 'scripts/create-service-docker-context.mjs'), 'utf8');
-  const backendBlock = script.slice(script.indexOf('  backend: {'), script.indexOf('  web: {'));
+  const backendStart = script.indexOf('  backend: {');
+  const backendEnd = script.indexOf('  web: {', backendStart);
+  const backendBlock = script.slice(backendStart, backendEnd);
+
+  // Asserted before anything reads the slice. Both ends are located by an
+  // indexOf on literal source text, so a rename or a reindent of the SERVICES
+  // map makes the slice empty — and every `toContain` below would then fail
+  // with "expected '' to contain ...", which reads as the exclusion having been
+  // deleted rather than as this test having lost its footing.
+  it('finds the backend service block it reads', () => {
+    expect(backendStart, 'the SERVICES map no longer spells the backend entry this way').toBeGreaterThan(-1);
+    expect(backendEnd, 'the web entry no longer follows the backend entry').toBeGreaterThan(backendStart);
+  });
 
   it('still ships the board images tree', () => {
     expect(backendBlock).toContain("extraSourceDirs: ['packages/web/public/images']");
