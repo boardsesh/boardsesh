@@ -49,7 +49,13 @@ entry and leave the old one at the edge.
    unescaped `&` throws `text: invalid markup in text` rather than rendering
    literally. A climb called "Rock & Roll" would be a 500. `escapePangoMarkup`
    in `validation.ts` is the only safe way in.
-2. **The image needs fonts installed.** `Dockerfile.backend` is `node:22-alpine`,
+2. **The card names its font family, and that is load-bearing.** On Alpine
+   `fc-match sans` resolves to WenQuanYi Zen Hei — the CJK font — which renders
+   Latin in its own weaker glyphs and does not honour `weight="700"`, so the
+   grade and the climb name come out un-bold. `OG_CARD_FONT_FAMILY` defaults to
+   `Noto Sans`; fontconfig still falls back to Zen Hei per character for CJK.
+   Invisible in dev, because macOS resolves whatever the host has.
+3. **The image needs fonts installed.** `Dockerfile.backend` is `node:22-alpine`,
    which ships none, and Pango does not degrade gracefully without them: a 40pt
    request renders 12px tall, Cyrillic comes back blank, and CJK throws. The
    image installs `fontconfig font-noto font-noto-emoji font-noto-hebrew

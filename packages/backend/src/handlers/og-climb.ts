@@ -37,12 +37,19 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
  * when possible. Returns an immutably cacheable JPEG (default), PNG, or WebP.
  */
 /**
- * Family handed to Pango. The Alpine image installs Noto plus WenQuanYi Zen Hei,
- * so fontconfig's fallback chain covers the scripts the catalogue actually
- * contains — Japanese, Chinese, Hebrew, Arabic and emoji all appear in real
- * climb names. Unset elsewhere, where fontconfig picks whatever the host has.
+ * Family handed to Pango.
+ *
+ * Named, not left to Pango's default `sans`. The image installs WenQuanYi Zen
+ * Hei for CJK, and on Alpine `fc-match sans` resolves to it — which renders
+ * Latin in its own weaker Latin glyphs and does not honour `weight="700"`, so
+ * the grade and the climb name come out un-bold. Naming Noto Sans keeps Latin
+ * in the face it was designed for while fontconfig still falls back to Zen Hei
+ * per character for Japanese, Chinese and Korean.
+ *
+ * Measured in the image, because it is invisible in dev: macOS ignores the
+ * vendored-font path entirely and resolves whatever the host has.
  */
-const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || undefined;
+const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto Sans';
 
 /**
  * Kill switch for the caller-supplied text on a card, without a deploy.
