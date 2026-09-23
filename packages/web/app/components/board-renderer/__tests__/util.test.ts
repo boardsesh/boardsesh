@@ -435,3 +435,27 @@ describe('board-render cache version', () => {
     expect(url.endsWith(`&v=${BOARD_RENDER_VERSION}`)).toBe(true);
   });
 });
+
+describe('buildOgBoardRenderUrl grade guard', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+  });
+
+  it('drops a grade the card renderer would reject', () => {
+    // A grade that fails the server's pattern is a 400, and a 400 is no card at
+    // all. An unrecognised grade has to cost the grade, never the image.
+    const boardDetails = { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] } as never;
+    const url = buildOgBoardRenderUrl(boardDetails, 'p1080r15', { name: 'Boulder 9', grade: 'カチ' });
+
+    expect(url).toContain('n=Boulder');
+    expect(url).not.toContain('g=');
+  });
+
+  it('keeps every grade vocabulary we actually render', () => {
+    const boardDetails = { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] } as never;
+
+    for (const grade of ['V7', '7B+', '6c+', '5.12a', 'V8/7B', '7a/V6']) {
+      expect(buildOgBoardRenderUrl(boardDetails, 'p1080r15', { grade }), grade).toContain('g=');
+    }
+  });
+});

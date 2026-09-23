@@ -12,9 +12,16 @@ import {
   WOODS_SETS,
   WOODS_SIZES,
 } from '@boardsesh/board-config';
-import { getBackgroundRelPaths, OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
+import { getBackgroundRelPaths } from './background';
 import { getBoardDetailsForBoard } from './board-details';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import {
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  OG_BOARD_PADDING_X,
+  OG_BOARD_PADDING_Y,
+  OG_CARD_COLUMN_GAP,
+  OG_CARD_TEXT_COLUMN_WIDTH,
+} from './headers';
 import { buildRenderConfig } from './render-config';
 
 /**
@@ -189,6 +196,21 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     boardStates,
     renderMode: 'aura',
   });
+  // The Aura drawing AS A CARD, which is not the same config: a card emphasises
+  // its lit holds (`OG_HOLD_SHAPE_EMPHASIS` and friends) because it is consumed
+  // at roughly 110px, not at the 1200x630 it is authored at. Probed because the
+  // note below used to be true and no longer is — the OG variant now changes
+  // more than its output width, and without this a change to that emphasis
+  // would move no version while Cloudflare served the old drawing immutably.
+  const auraCard = buildRenderConfig({
+    boardName: entry.boardName,
+    boardDetails,
+    frames: FRAMES_PROBE,
+    thumbnail: false,
+    isOgVariant: true,
+    boardStates,
+    renderMode: 'aura',
+  });
 
   return {
     ...identity,
@@ -198,14 +220,16 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     // The same, for the Aura drawing — a different palette and a different set of
     // config fields, both of which change pixels.
     wasm_config_aura: aura.config,
-    // The other two output widths, which is all the variants change in the config.
+    wasm_config_aura_card: auraCard.config,
     output_width_thumbnail: thumbnail.outputWidth,
     output_width_og: ogCard.outputWidth,
     og_scale: ogCard.ogScale,
     // Pixel geometry the sharp half applies around the board photo. Implied by
     // `og_scale`, but that is a rounded ratio, so record the terms as well.
     og_canvas: [OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT],
-    og_padding: [OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y],
+    // The text column is part of the board box, so it belongs in the version
+    // terms too: widening it moves every board's OG scale.
+    og_padding: [OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_CARD_TEXT_COLUMN_WIDTH, OG_CARD_COLUMN_GAP],
     // Which photos get composited, in order, for both the full and thumb paths.
     backgrounds_full: getBackgroundRelPaths(boardDetails, false),
     backgrounds_thumbnail: getBackgroundRelPaths(boardDetails, true),

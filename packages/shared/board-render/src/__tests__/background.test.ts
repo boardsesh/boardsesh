@@ -112,16 +112,36 @@ describe('dark art', () => {
 });
 
 describe('createOgBackgroundBuffer', () => {
-  it('emits a deterministic 1200x630 SVG for the same board dimensions', () => {
-    const first = createOgBackgroundBuffer(900, 500).toString('utf8');
-    const second = createOgBackgroundBuffer(900, 500).toString('utf8');
+  const board = { left: 200, top: 65, width: 500, height: 500 };
+
+  it('emits a deterministic 1200x630 SVG for the same board rect', () => {
+    const first = createOgBackgroundBuffer(board).toString('utf8');
+    const second = createOgBackgroundBuffer(board).toString('utf8');
+
     expect(first).toBe(second);
     expect(first).toContain('width="1200" height="630"');
   });
 
-  it('centres the framed board region', () => {
-    const svg = createOgBackgroundBuffer(800, 400).toString('utf8');
-    // board 800 wide on a 1200 canvas → boardX = 200, frameX = 184.
-    expect(svg).toContain('x="184"');
+  it('frames the board where the board actually is', () => {
+    const svg = createOgBackgroundBuffer(board).toString('utf8');
+
+    // frame inset 14px around the rect: 200-14 = 186, 65-14 = 51.
+    expect(svg).toContain('x="186" y="51"');
+  });
+
+  it('keeps the frame inside the canvas for a full-height board', () => {
+    const svg = createOgBackgroundBuffer({ left: 24, top: 14, width: 720, height: 602 }).toString('utf8');
+    const frame = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="20"/.exec(svg);
+
+    expect(frame).not.toBeNull();
+    const [, x, y, width, height] = (frame ?? []).map(Number);
+    expect(x + width).toBeLessThanOrEqual(1200);
+    expect(y + height).toBeLessThanOrEqual(630);
+  });
+
+  it('carries no text, so the composited base stays cacheable per board', () => {
+    // A per-climb string in the backdrop would turn the per-board `ogBase`
+    // cache into a per-climb one. The climb identity is composited separately.
+    expect(createOgBackgroundBuffer(board).toString('utf8')).not.toContain('<text');
   });
 });

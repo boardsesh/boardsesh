@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
+import { buildOgBoardRenderUrl, type OgClimbCardIdentity } from '@/app/components/board-renderer/util';
 import { isCrawlerUserAgent } from '@/app/lib/is-crawler';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 
@@ -9,6 +9,14 @@ const WARM_FETCH_TIMEOUT_MS = 5000;
 type WarmOgImageOptions = {
   boardDetails: BoardDetails;
   climb: Pick<Climb, 'frames'>;
+  /**
+   * The climb identity the page's `og:image` carries.
+   *
+   * Load-bearing, not decoration: the identity is part of the URL and therefore
+   * part of the cache key, so warming without it would prime a card nobody is
+   * about to ask for and leave the real one cold.
+   */
+  identity?: OgClimbCardIdentity;
 };
 
 /**
@@ -46,9 +54,9 @@ async function warmUnlessCrawler(
 }
 
 // Exported for tests; `scheduleOgImageWarming` is the production entry point.
-export async function warmOgImage({ boardDetails, climb }: WarmOgImageOptions): Promise<void> {
+export async function warmOgImage({ boardDetails, climb, identity }: WarmOgImageOptions): Promise<void> {
   try {
-    const ogUrl = buildOgBoardRenderUrl(boardDetails, climb.frames);
+    const ogUrl = buildOgBoardRenderUrl(boardDetails, climb.frames, identity);
     if (!ogUrl.startsWith('http')) return;
 
     await fetch(ogUrl, { signal: AbortSignal.timeout(WARM_FETCH_TIMEOUT_MS) })

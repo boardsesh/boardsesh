@@ -10,6 +10,18 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# Fonts for the OG share card, which typesets the climb name through libvips'
+# Pango backend. The base image ships none, and without them Pango does not
+# degrade gracefully: a 40pt request renders 12px tall, Cyrillic comes back
+# blank, and CJK throws outright — measured on node:22-alpine with sharp 0.34.5.
+#
+# The set is sized against what real climb names contain, not against a guess.
+# Sampling the live catalogue found Japanese katakana, Chinese, emoji and
+# symbol-only names among the 157-in-40,000 whose slug transliterates to
+# nothing. font-noto covers Latin, Cyrillic, Greek and Arabic; wqy-zenhei covers
+# CJK at 27 MB where font-noto-cjk costs 90 MB for a visually identical result.
+RUN apk add --no-cache fontconfig font-noto font-noto-emoji font-noto-hebrew font-wqy-zenhei
+
 # pnpm, pinned to package.json's `packageManager` field. npm is already in the
 # base image; avoiding corepack also avoids its independently pinned signing
 # keys becoming a build-time dependency.

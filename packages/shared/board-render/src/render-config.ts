@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/board-constants/hold-states';
 // Straight from `headers`, not `background`: this module is in the browser's
 // render-worker bundle, and `background` reaches the board catalogue.
-import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { OG_CARD_BOARD_BOX } from './headers';
 import type {
   GlowFalloff,
   HoldRole,
@@ -152,6 +152,25 @@ function litHoldIdsFromFirstFrame(frames: string): Set<number> {
  * (OG-scaled, thumbnail, or native), builds the hold-state colour map, and
  * emits the config object the overlay renderer consumes. Pure — no I/O.
  */
+/**
+ * How much bigger the lit-hold marks are drawn on an OG card than in the app.
+ *
+ * The card is authored at 1200x630, but almost nobody sees it at that size: a
+ * search engine crops it square and renders it at about 110px, which leaves the
+ * board roughly 68px wide and an individual hold about two pixels. At that scale
+ * the app's own drawing disappears — measured on a Kilter climb, the lit holds
+ * covered 68 vivid pixels of the thumbnail before this and 160 after, so more
+ * than doubling how much of the picture says "this is a climb, and these are the
+ * holds".
+ *
+ * This is the same trade the `thumbnail` stroke treatment below already makes,
+ * pushed to the size the card is actually consumed at rather than the size it is
+ * drawn at. The Rust renderer clamps both multipliers to 0.5-2.0.
+ */
+const OG_HOLD_SHAPE_EMPHASIS = 1.6;
+const OG_HOLD_STROKE_EMPHASIS = 1.3;
+const OG_GLOW_REACH_EMPHASIS = 1.4;
+
 export function buildRenderConfig({
   boardName,
   boardDetails,
@@ -169,11 +188,12 @@ export function buildRenderConfig({
   holdGeometry,
   spillNeighbourOutlines = false,
 }: BuildRenderConfigParams): RenderConfigResult {
+  // One geometry, whether or not the card carries text. A second box for the
+  // textless case would mint a second overlay size and a second cached OG base
+  // for every board, to save an empty column nobody sees once the callers ship
+  // the params.
   const ogScale = isOgVariant
-    ? Math.min(
-        (OG_IMAGE_WIDTH - OG_BOARD_PADDING_X * 2) / boardDetails.boardWidth,
-        (OG_IMAGE_HEIGHT - OG_BOARD_PADDING_Y * 2) / boardDetails.boardHeight,
-      )
+    ? Math.min(OG_CARD_BOARD_BOX.width / boardDetails.boardWidth, OG_CARD_BOARD_BOX.height / boardDetails.boardHeight)
     : null;
 
   const computeOutputWidth = () => {
@@ -186,11 +206,16 @@ export function buildRenderConfig({
   const isAura = renderMode === 'aura';
   // The shipped look, with the caller's overrides on top. `glyphs` stays a
   // separate param because it is a query param on both render endpoints.
-  const auraLook: BoardseshRenderSettings = {
+  const baseAuraLook: BoardseshRenderSettings = {
     ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
     ...auraSettings,
     ...(glyphs === undefined ? {} : { roleGlyphs: glyphs }),
   };
+  // Multiplied, not replaced, for the same reason the board's own reach
+  // correction is: whatever reach the look asks for, an OG card gets more of it.
+  const auraLook: BoardseshRenderSettings = isOgVariant
+    ? { ...baseAuraLook, glowReach: baseAuraLook.glowReach * OG_GLOW_REACH_EMPHASIS }
+    : baseAuraLook;
 
   // Prefer each role's calibrated on-screen displayColor over its raw LED
   // color — the LED color is only correct for driving physical board
@@ -293,12 +318,13 @@ export function buildRenderConfig({
     // OG cards get the thumbnail stroke treatment (thicker rings, larger
     // markers) so holds stay readable at chat-preview sizes.
     thumbnail: thumbnail || isOgVariant,
-    stroke_width_multiplier: getBoardStrokeWidthMultiplier(boardName as BoardName),
+    stroke_width_multiplier:
+      getBoardStrokeWidthMultiplier(boardName as BoardName) * (isOgVariant ? OG_HOLD_STROKE_EMPHASIS : 1),
     // Matches mobile's DEFAULT_HOLD_SHAPE_SIZE (packages/mobile/src/lib/hold-color-overrides.ts) —
     // web/OG previously omitted this and silently rode the renderer's own
     // default, which happens to also be 1 today but drifted from mobile's
     // explicit knob (issue #2202).
-    shape_size_multiplier: 1,
+    shape_size_multiplier: isOgVariant ? OG_HOLD_SHAPE_EMPHASIS : 1,
     holds,
     hold_state_map: holdStateMap,
     ...(isAura

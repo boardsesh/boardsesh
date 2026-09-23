@@ -26,6 +26,19 @@ type ShareClimbArgs = {
 // card a crawler actually fetches is the one in www's og:image — so if the two
 // disagree on the drawing, the prewarm heats an entry nobody asks for and the
 // reader waits on a cold render instead.
+//
+// It deliberately carries NO climb identity (`n`/`g`/`s`/`angle`), even though
+// the card draws it. The app cannot reproduce the URL www advertises: the angle
+// there is `selectCanonicalClimbAngle`, chosen from every angle's ascent counts,
+// and the name and setter are normalised by a helper that lives behind the same
+// dependency this comment is about. Sending a near-miss would warm a second
+// entry, not the right one.
+//
+// What it still buys is the expensive half. The per-board `ogBase` — the
+// backdrop with the board photos composited — is keyed on the board config and
+// its render size, NOT on the climb, so warming any climb on this board warms it
+// for every other. What is left cold is the cheap per-climb overlay and text
+// composite.
 function buildOgImageUrl(args: {
   boardName: string;
   layoutId: number;

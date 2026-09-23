@@ -20,6 +20,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
+import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
 
 export async function generateMetadata(props: { params: Promise<BoardRouteParametersWithUuid> }): Promise<Metadata> {
   const params = await props.params;
@@ -55,7 +56,15 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     });
     const climbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
 
-    const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
+    // The same name, grade and setter the title and description already use, so
+    // the card and the snippet can never disagree about the climb they describe.
+    // The canonical angle, not the requested one: the card is cached for a year
+    // under its own URL, and every angle of a climb should share one card.
+    const ogImagePath = buildOgBoardRenderUrl(
+      boardDetails,
+      currentClimb.frames,
+      buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
+    );
 
     // A climb hidden by an approved report keeps resolving — existing links and
     // logbook entries must not start 404ing — but it leaves the index. The
@@ -166,9 +175,6 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       getFrontDoorBetaLinks({ boardType: parsedParams.board_name, climbUuid: parsedParams.climb_uuid }),
     ]);
 
-    // The board overlay is preloaded below and fetched directly from Railway.
-    // Keep only the single OG warm so a later share-card unfurl is a byte hit.
-    scheduleOgImageWarming({ boardDetails, climb: currentClimb });
     const preloadUrls = buildOverlayPreloadUrls(boardDetails, currentClimb.frames, false);
     // Same name fallback `generateMetadata` used. An unnamed climb would
     // otherwise get the `-{board} Climb-` slug in its canonical and the bare
@@ -183,6 +189,14 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       boardName: parsedParams.board_name,
       catalogAngle: currentClimb.catalogAngle,
       angleStats,
+    });
+
+    // The board overlay is preloaded below and fetched directly from Railway.
+    // Keep only the single OG warm so a later share-card unfurl is a byte hit.
+    scheduleOgImageWarming({
+      boardDetails,
+      climb: currentClimb,
+      identity: buildOgClimbCardIdentity(currentClimb, boardDetails.board_name, canonicalAngle, angleStats),
     });
 
     return (

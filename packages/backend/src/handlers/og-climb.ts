@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
+  MAX_CARD_NAME_PARAM_LENGTH,
+  MAX_CARD_SETTER_PARAM_LENGTH,
   MAX_SET_IDS_LENGTH,
   createOgImageHeaders,
   normalizeOutputFormat,
@@ -7,6 +9,7 @@ import {
   type OutputFormat,
 } from '@boardsesh/board-render';
 import { applyCorsHeaders } from './cors';
+import { describeBoardConfig } from '../services/og-card-board-line';
 import { getPublicClientIp } from '../utils/client-ip';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
@@ -29,6 +32,36 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 /**
+ * Family handed to Pango.
+ *
+ * Named, not left to Pango's default `sans`. The image installs WenQuanYi Zen
+ * Hei for CJK, and on Alpine `fc-match sans` resolves to it — which renders
+ * Latin in its own weaker Latin glyphs and does not honour `weight="700"`, so
+ * the grade and the climb name come out un-bold. Naming Noto Sans keeps Latin
+ * in the face it was designed for while fontconfig still falls back to Zen Hei
+ * per character for Japanese, Chinese and Korean.
+ *
+ * Measured in the image, because it is invisible in dev: macOS ignores the
+ * vendored-font path entirely and resolves whatever the host has.
+ */
+const OG_CARD_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto Sans';
+
+/**
+ * Kill switch for the caller-supplied text on a card, without a deploy.
+ *
+ * `/og/climb` is unauthenticated, so `n` and `s` let anyone put a short string
+ * on an image served from our hostname. The caps and normalisation in
+ * `ogClimbQuerySchema` are the bound; this is the lever if that ever proves not
+ * to be enough. The board, the grade and the angle are not caller free text and
+ * keep rendering either way.
+ *
+ * Read once at module load, so flipping it takes a restart — a redeploy or a
+ * Railway restart, not an env edit alone. Still faster than shipping a code
+ * change, which is the point, but do not reach for it expecting it to be live.
+ */
+const cardTextEnabled = process.env.OG_CARD_TEXT_DISABLED !== '1';
+
+/**
  * GET /og/climb — render a climb's Open Graph share card. Strict validation
  * runs before any CPU-heavy work; the render is served from in-memory caches
  * when possible. Returns an immutably cacheable JPEG (default), PNG, or WebP.
@@ -39,6 +72,20 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
   const rawSetIds = url.searchParams.get('set_ids');
   if (rawSetIds !== null && rawSetIds.length > MAX_SET_IDS_LENGTH) {
     sendJson(res, 400, { error: 'Invalid parameters', details: ['set_ids is too large'] });
+    return;
+  }
+
+  // Byte-sized bounds on the two free-text params before zod does any
+  // per-codepoint work, same reason as `set_ids` above: a hostile query string
+  // must not make validation scale with its own length.
+  const rawName = url.searchParams.get('n');
+  const rawSetter = url.searchParams.get('s');
+  if (rawName !== null && rawName.length > MAX_CARD_NAME_PARAM_LENGTH) {
+    sendJson(res, 400, { error: 'Invalid parameters', details: ['n is too large'] });
+    return;
+  }
+  if (rawSetter !== null && rawSetter.length > MAX_CARD_SETTER_PARAM_LENGTH) {
+    sendJson(res, 400, { error: 'Invalid parameters', details: ['s is too large'] });
     return;
   }
 
@@ -57,6 +104,15 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
     glyphs: url.searchParams.get('glyphs') ?? undefined,
     field_color: url.searchParams.get('field_color') ?? undefined,
+    // Climb identity for the card's right-hand column. All optional: a URL from
+    // an already-shipped mobile binary renders the board on its own.
+    n: cardTextEnabled ? (rawName ?? undefined) : undefined,
+    s: cardTextEnabled ? (rawSetter ?? undefined) : undefined,
+    // Not gated by the kill switch: a grade is a closed vocabulary matched by
+    // an allow-list, not caller free text, so it is not what the switch exists
+    // to turn off.
+    g: url.searchParams.get('g') ?? undefined,
+    angle: url.searchParams.get('angle') ?? undefined,
   });
   if (!parsed.success) {
     sendJson(res, 400, { error: 'Invalid parameters', details: parsed.error.issues.map((issue) => issue.message) });
@@ -118,6 +174,17 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       glowFalloff: query.glow_falloff,
       glyphs: query.glyphs,
       fieldColor: query.field_color,
+      card: {
+        name: query.n,
+        grade: query.g,
+        setter: query.s,
+        angle: query.angle,
+        // Derived here, not taken from the caller: the board and size are
+        // already fully determined by the config params, so a `board_label`
+        // param would be a second, forgeable source for the same fact.
+        boardLine: describeBoardConfig(query.board_name, query.layout_id, query.size_id),
+        fontFamily: OG_CARD_FONT_FAMILY,
+      },
     });
     const totalMs = performance.now() - totalT0;
     const totalEncodeMs = (timings.composeMs ?? 0) + timings.encodeMs;

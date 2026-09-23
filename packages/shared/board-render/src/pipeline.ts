@@ -5,7 +5,7 @@ import {
   resolveArtPath,
   type BoardArtColorScheme,
 } from './background';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, placeOgBoard } from './headers';
 import type { BoundedLru } from './lru';
 import type { OutputFormat, RenderableBoardDetails } from './types';
 
@@ -98,6 +98,14 @@ export type RenderBoardImageParams = {
   colorScheme?: BoardArtColorScheme;
   /** Optional background caches. Omitted = every render composes its own base. */
   caches?: RenderBoardImageCaches;
+  /**
+   * Climb-identity text layers for the OG card, composited above the overlay.
+   *
+   * Per climb, unlike the cached base — which is why they are passed in here
+   * rather than drawn into the backdrop: a per-climb string in the backdrop
+   * would turn the per-board `ogBase` cache into a per-climb one.
+   */
+  cardLayers?: readonly sharp.OverlayOptions[];
 };
 
 export type RenderTimings = {
@@ -244,6 +252,7 @@ export async function renderBoardImageBuffer({
   resolveImagePath,
   colorScheme,
   caches,
+  cardLayers,
 }: RenderBoardImageParams): Promise<RenderBoardImageResult> {
   const sharpT0 = performance.now();
   const rawPlane = { width, height, channels: 4 as const };
@@ -296,6 +305,7 @@ export async function renderBoardImageBuffer({
       base: ogBase.base,
       overlay: { buffer: overlayBuffer, width, height, left: ogBase.left, top: ogBase.top },
       format,
+      cardLayers,
     });
     outputBuffer = encoded.buffer;
     outputContentType = encoded.contentType;
@@ -409,13 +419,9 @@ export async function renderBoardImageBuffer({
   const encodeT0 = performance.now();
 
   if (outputBuffer === null && isOgVariant && imageBuffer) {
-    const ogImage = sharp(createOgBackgroundBuffer(width, height)).composite([
-      {
-        input: imageBuffer,
-        left: Math.round((OG_IMAGE_WIDTH - width) / 2),
-        top: Math.round((OG_IMAGE_HEIGHT - height) / 2),
-        blend: 'over',
-      },
+    const ogPlacement = placeOgBoard(width, height);
+    const ogImage = sharp(createOgBackgroundBuffer({ ...ogPlacement, width, height })).composite([
+      { input: imageBuffer, left: ogPlacement.left, top: ogPlacement.top, blend: 'over' },
     ]);
     if (format === 'jpeg') {
       outputBuffer = await ogImage.jpeg(getJpegOptions(thumbnail)).toBuffer();
@@ -470,8 +476,10 @@ export async function composeOgBaseBuffer(params: {
   colorScheme?: BoardArtColorScheme;
 }): Promise<OgBaseResult> {
   const { boardDetails, boardWidth, boardHeight, resolveImagePath, colorScheme } = params;
-  const left = Math.round((OG_IMAGE_WIDTH - boardWidth) / 2);
-  const top = Math.round((OG_IMAGE_HEIGHT - boardHeight) / 2);
+  // Right-aligned in the board box, vertically centred: the climb-identity
+  // column owns the right of the canvas, and pushing the art towards it is what
+  // keeps a portrait board inside a search engine's square centre crop.
+  const { left, top } = placeOgBoard(boardWidth, boardHeight);
 
   const bgRelPaths = getBackgroundRelPaths(boardDetails, false, colorScheme);
   const bgFsPaths = bgRelPaths
@@ -485,7 +493,7 @@ export async function composeOgBaseBuffer(params: {
     .filter((result): result is PromiseFulfilledResult<Buffer> => result.status === 'fulfilled')
     .map((result) => result.value);
 
-  const backdrop = sharp(createOgBackgroundBuffer(boardWidth, boardHeight)).composite(
+  const backdrop = sharp(createOgBackgroundBuffer({ left, top, width: boardWidth, height: boardHeight })).composite(
     resizedBoardPhotos.map((buf) => ({ input: buf, left, top, blend: 'over' as const })),
   );
 
@@ -501,8 +509,10 @@ export async function encodeOgImage(params: {
   base: Buffer;
   overlay: { buffer: Buffer; width: number; height: number; left: number; top: number };
   format: OutputFormat;
+  /** Climb-identity text layers, composited above the overlay. */
+  cardLayers?: readonly sharp.OverlayOptions[];
 }): Promise<{ buffer: Buffer; contentType: string }> {
-  const { base, overlay, format } = params;
+  const { base, overlay, format, cardLayers = [] } = params;
   const composited = sharp(base, {
     raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
   }).composite([
@@ -513,6 +523,10 @@ export async function encodeOgImage(params: {
       top: overlay.top,
       blend: 'over',
     },
+    // Above the holds: the column never overlaps the board art, but a text layer
+    // that lost to the overlay would be a silent regression rather than a
+    // visible one.
+    ...cardLayers,
   ]);
 
   if (format === 'png') {
