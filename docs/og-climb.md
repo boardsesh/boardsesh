@@ -38,6 +38,26 @@ from `board_name`/`layout_id`/`size_id`, not taken as a param: those already
 determine the board that gets drawn, so a caller-supplied label would be a
 second, forgeable source for the same fact.
 
+### Why a card's holds look bolder than the app's
+
+A card is authored at 1200x630 and almost nobody sees it at that size. Cropped
+square and rendered at ~110px, the board is roughly 68px wide and an individual
+hold about two pixels, at which point the app's drawing of a lit hold disappears
+into the board art. So `isOgVariant` draws its marks bigger —
+`OG_HOLD_SHAPE_EMPHASIS` x1.6, stroke x1.3, glow reach x1.4, all in
+`render-config.ts`. Measured on a Kilter climb (sparse lit holds on a busy grey
+board), the lit holds go from 68 to 160 vivid pixels in that thumbnail.
+
+Switching the card to the thumbnail mark style (`glow-fill`) looks like the
+obvious lever and is not: it measured +5.8% on Kilter and slightly negative on
+MoonBoard, because the problem at 110px is the marks' size, not their style.
+
+The card's Aura config is one of the terms in `BOARD_RENDER_VERSION`
+(`wasm_config_aura_card`). Before that it was not, and the projection asserted
+that output width was "all the variants change in the config" — true until the
+emphasis existed. Without the probe, a change here would move no version and
+Cloudflare would serve the old drawing `immutable` for a year.
+
 Ascents and quality are deliberately **not** on the card. They tick constantly,
 and the response is immutable for a year, so every tick would mint a fresh cache
 entry and leave the old one at the edge.
