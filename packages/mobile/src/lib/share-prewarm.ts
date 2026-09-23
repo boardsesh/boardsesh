@@ -19,9 +19,10 @@ import { BACKEND_URL } from './env';
 //
 // So this warms the per-board `ogBase` (the backdrop with the board photos
 // composited, keyed on board config and render size, NOT on the climb) and not
-// the card an unfurler actually asks for. That is worth something on a board
-// nobody has rendered lately and nothing at all otherwise, which is why the
-// page's own og:image is tried first.
+// the card an unfurler actually asks for. It is still issued first, because the
+// backdrop is shared and the real card's render turns from a `miss` into a
+// `base-hit` once it lands — but the page's own og:image is what actually gets
+// the reader a picture, and `prewarmShareCaches` goes after both.
 export function buildOgImageUrl(args: {
   boardName: string;
   layoutId: number;
@@ -111,27 +112,54 @@ export function extractOgImageUrl(html: string): string | null {
   return null;
 }
 
+// How long to wait on the page before giving up on reading its card.
+//
+// The share sheet is already open by now and the reader is picking a recipient,
+// so this is not a UI deadline — it is the point past which a stalled request
+// would go on holding up the warm behind it.
+export const PAGE_READ_TIMEOUT_MS = 4000;
+
+async function warm(url: string): Promise<void> {
+  try {
+    const response = await fetch(url);
+    await response.body?.cancel();
+  } catch {
+    // Priming is best-effort; a warm miss must never affect the share sheet.
+  }
+}
+
+async function readAdvertisedCard(pageUrl: string): Promise<string | null> {
+  const abort = new AbortController();
+  const expiry = setTimeout(() => abort.abort(), PAGE_READ_TIMEOUT_MS);
+  try {
+    // Warming the page is half the win on its own: an unfurler fetches it
+    // before it ever looks for an image.
+    const page = await fetch(pageUrl, { signal: abort.signal });
+    return extractOgImageUrl(await page.text());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(expiry);
+  }
+}
+
 // Fire-and-forget priming before the native share sheet opens — the same
 // warm-the-CDN-and-og-caches trick web does. Never blocks or breaks sharing:
 // every failure (async rejection, or a synchronous throw when fetch is
 // unavailable) is swallowed, and the caller does not await it.
 export async function prewarmShareCaches(pageUrl: string, fallbackOgImageUrl: string | null): Promise<void> {
-  let advertised: string | null = null;
-  try {
-    const page = await fetch(pageUrl);
-    // Warming the page is half the win on its own: an unfurler fetches it
-    // before it ever looks for an image.
-    advertised = extractOgImageUrl(await page.text());
-  } catch {
-    // Priming is best-effort; a warm miss must never affect the share sheet.
-  }
+  // Started first, and deliberately not awaited before the page read.
+  //
+  // Reading the advertised card costs a page fetch and its body, so gating all
+  // warming on that would leave the backend idle for the whole download — and
+  // the sheet is open the entire time, so the reader can send before any of it
+  // lands. This request shares the per-board `ogBase` with the real card (the
+  // backdrop with the board photos composited, keyed on board config, not on
+  // the climb), so it turns the real card's render from a `miss` into a
+  // `base-hit` whoever asks for it first.
+  const backdrop = fallbackOgImageUrl ? warm(fallbackOgImageUrl) : Promise.resolve();
 
-  const cardUrl = advertised ?? fallbackOgImageUrl;
-  if (!cardUrl) return;
-  try {
-    const card = await fetch(cardUrl);
-    await card.body?.cancel();
-  } catch {
-    // As above.
-  }
+  const advertised = await readAdvertisedCard(pageUrl);
+  if (advertised) await warm(advertised);
+  await backdrop;
 }

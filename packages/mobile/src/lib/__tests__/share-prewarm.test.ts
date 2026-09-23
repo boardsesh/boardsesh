@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
+import { PAGE_READ_TIMEOUT_MS, extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
 
 /**
  * The app cannot compute the card URL www advertises — that angle comes from
@@ -97,11 +97,11 @@ describe('prewarmShareCaches', () => {
   const ADVERTISED = 'https://ws.boardsesh.com/og/climb?advertised=1';
   const FALLBACK = 'https://ws.boardsesh.com/og/climb?fallback=1';
 
-  function stubFetch(handler: (url: string) => Promise<Response> | Response) {
+  function stubFetch(handler: (url: string, init?: { signal?: AbortSignal }) => Promise<Response> | Response) {
     const fetched: string[] = [];
-    const spy = vi.fn(async (url: string) => {
+    const spy = vi.fn(async (url: string, init?: { signal?: AbortSignal }) => {
       fetched.push(url);
-      return handler(url);
+      return handler(url, init);
     });
     vi.stubGlobal('fetch', spy);
     return fetched;
@@ -111,15 +111,57 @@ describe('prewarmShareCaches', () => {
     return { text: async () => `<head><meta property="og:image" content="${url}"/></head>` } as Response;
   }
 
-  it('warms the card the page advertises, not the one the app guessed', async () => {
+  it('warms the card the page advertises, not just the one the app guessed', async () => {
     // The whole point. The guess is a different cache key at both layers, so
-    // warming it leaves the reader waiting on a cold render of the real card.
+    // warming only it leaves the reader waiting on a cold render of the real
+    // card.
     const fetched = stubFetch((url) => (url === PAGE ? htmlAdvertising(ADVERTISED) : ({} as Response)));
 
     await prewarmShareCaches(PAGE, FALLBACK);
 
-    expect(fetched).toEqual([PAGE, ADVERTISED]);
-    expect(fetched).not.toContain(FALLBACK);
+    expect(fetched).toContain(ADVERTISED);
+  });
+
+  it('starts the backdrop warm before it has read the page', async () => {
+    // The sheet is open while the page downloads, so the reader can send before
+    // any of this lands. The fallback shares the per-board `ogBase` with the
+    // real card, so issuing it first turns the real render into a `base-hit`
+    // for whoever asks first — gating it on the page read would leave the
+    // backend idle for the whole download.
+    const fetched = stubFetch(async (url) => {
+      if (url !== PAGE) return {} as Response;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return htmlAdvertising(ADVERTISED);
+    });
+
+    await prewarmShareCaches(PAGE, FALLBACK);
+
+    expect(fetched.indexOf(FALLBACK)).toBeLessThan(fetched.indexOf(ADVERTISED));
+  });
+
+  it('gives up on a page that never answers, instead of hanging forever', async () => {
+    // A stalled page request used to strand the whole prewarm behind it. The
+    // stub rejects on abort the way a real fetch does, so this exercises the
+    // timeout rather than asserting it exists.
+    const fetched = stubFetch((url, init) =>
+      url === PAGE
+        ? new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          })
+        : ({} as Response),
+    );
+
+    vi.useFakeTimers();
+    try {
+      const pending = prewarmShareCaches(PAGE, FALLBACK);
+      await vi.advanceTimersByTimeAsync(PAGE_READ_TIMEOUT_MS + 1);
+      await expect(pending).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The backdrop went out first and was never gated on the page.
+    expect(fetched).toContain(FALLBACK);
   });
 
   it('falls back to the built URL when the page advertises no card', async () => {
@@ -129,7 +171,7 @@ describe('prewarmShareCaches', () => {
 
     await prewarmShareCaches(PAGE, FALLBACK);
 
-    expect(fetched).toEqual([PAGE, FALLBACK]);
+    expect(fetched.filter((url) => url !== PAGE)).toEqual([FALLBACK]);
   });
 
   it('still warms the fallback when the page fetch fails outright', async () => {
@@ -140,7 +182,7 @@ describe('prewarmShareCaches', () => {
 
     await prewarmShareCaches(PAGE, FALLBACK);
 
-    expect(fetched).toEqual([PAGE, FALLBACK]);
+    expect(fetched.filter((url) => url !== PAGE)).toEqual([FALLBACK]);
   });
 
   it('never rejects, whatever fetch does', async () => {
