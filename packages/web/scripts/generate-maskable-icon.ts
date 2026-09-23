@@ -25,7 +25,12 @@ import {
 } from './maskable-icon-geometry';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const masterPath = resolve(webRoot, 'public/brand/boardsesh-mark.png');
+// The WebP the site itself ships. It replaced a PNG twin of the same artwork,
+// and its alpha channel survived that conversion byte for byte — which is the
+// half that matters here, since `measureContentRadiusRatio` fits the inset from
+// alpha alone. Reading the shipped asset also means the launcher icon cannot
+// drift away from the mark on the page.
+const masterPath = resolve(webRoot, 'public/brand/boardsesh-mark.webp');
 const outputPath = resolve(webRoot, 'public/icons/icon-maskable-512.png');
 
 async function main(): Promise<void> {

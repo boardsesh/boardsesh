@@ -85,7 +85,7 @@ function isStaticAssetsAffecting(filePath) {
   return (
     (filePath.startsWith('packages/web/public/images/') && filePath.endsWith('.webp')) ||
     (filePath.startsWith('packages/web/public/videos/') && (filePath.endsWith('.mp4') || filePath.endsWith('.webm'))) ||
-    filePath === 'packages/web/public/brand/boardsesh-mark.png' ||
+    filePath === 'packages/web/public/brand/boardsesh-mark.webp' ||
     (filePath.startsWith('packages/web/public/icons/') && filePath.endsWith('.png')) ||
     filePath === 'packages/web/app/favicon.ico' ||
     filePath === 'packages/web/app/icon.png' ||
