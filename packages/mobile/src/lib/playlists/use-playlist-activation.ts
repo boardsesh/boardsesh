@@ -461,13 +461,12 @@ export function usePlaylistActivation({
           });
         }
         // Canary. A board-scoped fetch that comes back empty for a playlist the
-        // detail list has already rendered climbable rows for degrades into a
-        // perfectly plausible one-item queue (buildPlaylistQueue appends the
-        // tapped climb), with no error anywhere — which is exactly how #3891's
-        // MoonBoard size filter stayed invisible for months. Sentry-only, once
-        // per playlist per session, so the next instance of that class pages us
-        // instead of a user. Gated on climbs this board CAN render, so a playlist
-        // full of off-board climbs (legitimately empty here) stays silent.
+        // detail list has already rendered climbable rows for used to degrade
+        // into a plausible one-item queue with no error anywhere — exactly how
+        // #3891's MoonBoard size filter stayed invisible for months. Report it
+        // Sentry-only, once per playlist per session, and gate on climbs this
+        // board CAN render so an off-board playlist stays silent. The fresh list
+        // remains authoritative: a shorter result may reflect a real removal.
         if (
           climbs.length === 0 &&
           // A capped or repeating drain is a different, already-reported fault.
@@ -660,8 +659,24 @@ export function usePlaylistActivation({
           }
           const item = climbToQueueItem(schemaClimb);
           setQueue([item], item);
-          // Same as the full replacement below: the queue is the list from here.
-          setPlaylistSuggestionSource(null);
+          // The detail screen already has an ordered playlist window in memory.
+          // Seed it as the player's swipe track before opening the drawer, so
+          // previous/next and board swipes work on its first frame without
+          // pretending those browsable neighbours are queued climbs.
+          //
+          // A one-item queue with a null track made navigation depend entirely on
+          // the follow-up network drain. A slow, cancelled, or stuck refresh
+          // therefore left both arrow buttons disabled indefinitely even though
+          // the adjacent rows were already visible on the playlist screen.
+          setPlaylistSuggestionSource(
+            createPlaylistSuggestionSource({
+              playlistUuid: sourceId,
+              activatedClimb: climb,
+              climbs: loadedClimbsRef.current,
+              boardKey: target.boardKey,
+              isClimbable: target.isClimbable,
+            }),
+          );
           openPlayDrawer(schemaClimb, { committedExternally: true });
           return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
         }
