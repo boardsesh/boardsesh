@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-23T09:15:42.820Z",
+  "generatedAt": "2026-09-23T09:53:24.494Z",
   "entries": [
+    {
+      "prNumber": 5693,
+      "category": "fixed",
+      "title": "Decoy climbs now show the board in link previews instead of a broken image",
+      "mergedAt": "2026-09-23T09:50:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5693"
+    },
     {
       "prNumber": 5695,
       "category": "new",

@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Decoy climbs now show the board in link previews instead of a broken image ([#5693](https://github.com/boardsesh/boardsesh/pull/5693))
 - Swipe through every compatible climb in your playlist again. ([#5689](https://github.com/boardsesh/boardsesh/pull/5689))
 
 ## 2026-09-22
