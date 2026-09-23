@@ -20,6 +20,9 @@ on:
     paths:
       - 'infra/railway/**'
       - 'scripts/railway-apply.ts'
+      - 'scripts/check-primary-tls.ts'
+      - 'scripts/check-primary-tls.test.ts'
+      - 'docs/pg-primary-tls.json'
       - '.github/workflows/railway-drift.yml'
 
 concurrency:
@@ -78,6 +81,43 @@ jobs:
           fi
 
           vp run railway:apply
+
+  # The primary's certificate is declared state too: the image's entrypoint installs
+  # it from Railway variables, so a deploy that loses those variables, or a rollback
+  # to an image without the entrypoint, silently reverts it. This probes the live
+  # endpoint and compares it with docs/pg-primary-tls.json.
+  #
+  # Its own job, and not a step in `drift`, for two reasons: it needs no credential,
+  # so it can run on pull requests where the Production environment is unreachable;
+  # and a Railway API failure must not stop it from running.
+  #
+  # Why this matters more than a nightly config diff: the DR standby is the only
+  # client that verifies this certificate, WAL accrues at ~7.3 GiB/day against a
+  # 16 GiB slot cap, so an expiry or a reverted certificate invalidates the slot in
+  # about two days and costs a full re-bootstrap over the WAN. Nothing else notices,
+  # because every application pool connects with ssl: 'require' and does not verify.
+  primary-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Test the comparison layer
+        run: vp test run scripts/check-primary-tls.test.ts --reporter=agent
+
+      # Speaks the PostgreSQL SSLRequest handshake directly rather than shelling out
+      # to `openssl s_client`, which reports a verification failure and still exits 0.
+      - name: Probe the primary's certificate
+        run: vp exec tsx scripts/check-primary-tls.ts
 
   # No Railway credentials are reachable from a PR, so assert what does not need
   # them: the plan layer's unit tests and the script's types. This does NOT catch a
