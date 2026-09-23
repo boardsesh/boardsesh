@@ -2,6 +2,7 @@ import { CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {
   appendGymBoardFilterParams,
+  countSelectedSizeGroups,
   parseGymBoardFilter,
   setBoardTypesFilter,
   toggleBoardTypeFilter,
@@ -290,7 +291,10 @@ export function buildBoardTypeToggleHref(facet: DirectoryFacet, query: Directory
 export function countNarrowFilters(query: DirectoryQuery): number {
   return (
     (query.layoutIds?.length ?? 0) +
-    (query.sizeIds?.length ?? 0) +
+    // Size CHIPS, not Aurora ids: one click on the Homewall's "10x10" selects
+    // three ids, and reporting three would contradict the one chip the row
+    // shows and the one entry the summary lists.
+    countSelectedSizeGroups(query) +
     (query.angles?.length ?? 0) +
     (query.multiBoardTypeOnly ? 1 : 0)
   );
@@ -340,7 +344,15 @@ export function isSearchApplication(facet: DirectoryFacet, query: DirectoryQuery
   // where the bare `/gyms/kilter` below is just a pageview. Deliberately its own
   // clause rather than folded into the `facet === 'all'` one, which would lose
   // every deep search made from a facet route.
-  if ((query.layoutIds?.length ?? 0) > 0 || (query.sizeIds?.length ?? 0) > 0 || (query.angles?.length ?? 0) > 0) {
+  if (
+    (query.layoutIds?.length ?? 0) > 0 ||
+    (query.sizeIds?.length ?? 0) > 0 ||
+    (query.angles?.length ?? 0) > 0 ||
+    // The gym-level toggle is a filter application too. It is the only one a
+    // visitor can apply with nothing else set, so leaving it out made
+    // `?boards=2plus` on its own invisible to the funnel.
+    query.multiBoardTypeOnly === true
+  ) {
     return true;
   }
   return facet === 'all' && query.boardTypes.length > 0;

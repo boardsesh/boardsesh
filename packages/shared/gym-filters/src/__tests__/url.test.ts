@@ -180,3 +180,33 @@ describe('the gym-level predicate travels with the rest', () => {
     expect(params.has('boards')).toBe(false);
   });
 });
+
+/**
+ * A size chip stands for a GROUP of Aurora ids, and an HTML `<label>` binds to
+ * exactly one control — so the group has to survive as one param, not N.
+ */
+describe('grouped size ids travel as one value', () => {
+  it('parses a comma-joined group', () => {
+    const parsed = parseGymBoardFilter({ boardType: 'kilter', layout: '8', size: '23,24' });
+    expect(parsed.sizeIds).toEqual([23, 24]);
+  });
+
+  it('emits one param per group rather than one per id', () => {
+    const filter = parseGymBoardFilter({ boardType: 'kilter', layout: '8', size: '23,24' });
+    const params = new URLSearchParams();
+    appendGymBoardFilterParams(params, filter);
+    expect(params.getAll('size')).toEqual(['23,24']);
+  });
+
+  it('round-trips a grouped selection', () => {
+    const filter = parseGymBoardFilter({ boardType: 'kilter', layout: '8', size: '23,24' });
+    expect(roundTrip(filter).sizeIds).toEqual([23, 24]);
+  });
+
+  it('still accepts repeated params, and still rejects junk inside a group', () => {
+    expect(parseGymBoardFilter({ boardType: 'kilter', layout: '8', size: ['23', '24'] }).sizeIds).toEqual([23, 24]);
+    // The legal half of a half-legal group survives; the rest is dropped, the
+    // same as any other unplaceable id.
+    expect(parseGymBoardFilter({ boardType: 'kilter', layout: '8', size: '23,abc,999999' }).sizeIds).toEqual([23]);
+  });
+});

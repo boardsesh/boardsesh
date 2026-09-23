@@ -12,6 +12,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   ),
 }));
 
+import { buildSizeOptions } from '@boardsesh/gym-filters';
 import type { DirectoryFacet, DirectorySearchParams } from '../directory-facets';
 
 const { default: GymDirectoryFilters } = await import('../gym-directory-filters');
@@ -75,6 +76,15 @@ describe('the cascade, as rendered', () => {
     expect(submittedPairs()).toContain('layout=8');
   });
 
+  it('checks a grouped size chip as a whole, or not at all', () => {
+    const grouped = buildSizeOptions({ boardTypes: ['kilter'], layoutIds: [8] }).find(
+      (option) => option.sizeIds.length > 1,
+    );
+    expect(grouped).toBeDefined();
+    renderFilters('all', { boardType: 'kilter', layout: '8', size: grouped!.sizeIds.join(',') });
+    expect(submittedPairs()).toContain(`size=${grouped!.sizeIds.join(',')}`);
+  });
+
   it('opens the layout tier on a facet route with no ?boardType at all', () => {
     renderFilters('kilter', {});
     expect(screen.queryByText('Pick one board above and its layouts show up.')).toBeNull();
@@ -94,15 +104,21 @@ describe('what each board really offers', () => {
     expect(screen.getByText('-5°')).toBeTruthy();
   });
 
-  it('carries every Aurora id behind one size chip', () => {
+  it('carries every Aurora id behind ONE control per size chip', () => {
     renderFilters('all', { boardType: 'kilter', layout: '8' });
-    const sizeValues = [...document.querySelectorAll<HTMLInputElement>('input[name="size"]')].map(
-      (input) => input.value,
-    );
-    // The Homewall ships LED-kit variants under shared dimensions, so there are
-    // more submitted ids than visible chips.
-    expect(sizeValues.length).toBeGreaterThan(0);
-    expect(new Set(sizeValues).size).toBe(sizeValues.length);
+    const sizeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="size"]')];
+    expect(sizeInputs.length).toBeGreaterThan(0);
+
+    // One input per visible chip, never one per Aurora id: a `<label>` binds to
+    // its first labelable descendant, so a second checkbox would be unreachable
+    // by a click on the chip and a grouped size would submit a third of itself.
+    for (const chip of document.querySelectorAll('label')) {
+      expect(chip.querySelectorAll('input').length).toBeLessThanOrEqual(1);
+    }
+
+    // The Homewall ships LED-kit variants under shared dimensions, so at least
+    // one chip carries a comma-joined group.
+    expect(sizeInputs.some((input) => input.value.includes(','))).toBe(true);
   });
 });
 

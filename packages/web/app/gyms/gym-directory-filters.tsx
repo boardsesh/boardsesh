@@ -114,7 +114,7 @@ export default function GymDirectoryFilters({
             options={layoutOptions.map((option) => ({
               key: String(option.id),
               label: option.label,
-              values: [String(option.id)],
+              value: String(option.id),
               selected: (query.layoutIds ?? []).includes(option.id),
             }))}
           />
@@ -126,10 +126,11 @@ export default function GymDirectoryFilters({
             options={sizeOptions.map((option) => ({
               key: option.label,
               label: option.label,
-              values: option.sizeIds.map(String),
-              // A size chip carries several Aurora ids under one label; it reads
-              // as selected only when the whole group is on, which is the only
-              // state `toggleSizeFilter` can produce.
+              // ONE value carrying the whole group, comma-joined. A chip has to
+              // be one control: an HTML `<label>` binds to exactly one input, so
+              // several checkboxes under one label would let a click toggle only
+              // the first and submit a third of the size the visitor picked.
+              value: option.sizeIds.join(','),
               selected: option.sizeIds.every((sizeId) => (query.sizeIds ?? []).includes(sizeId)),
             }))}
           />
@@ -142,7 +143,7 @@ export default function GymDirectoryFilters({
             options={angleOptions.map((option) => ({
               key: String(option.angle),
               label: t('filters.angleOption', { angle: option.angle }),
-              values: [String(option.angle)],
+              value: String(option.angle),
               selected: (query.angles ?? []).includes(option.angle),
             }))}
           />
@@ -189,7 +190,7 @@ export default function GymDirectoryFilters({
   );
 }
 
-type ChipOption = { key: string; label: string; values: string[]; selected: boolean };
+type ChipOption = { key: string; label: string; value: string; selected: boolean };
 
 /**
  * One tier of the cascade: a heading, then either its chips or the one line
@@ -238,36 +239,46 @@ function CheckboxChipGroup({
                 key={option.key}
                 component="label"
                 sx={{
-                  ...filterChipSx({ selected: option.selected }),
+                  ...filterChipSx({ selected: false }),
                   display: 'inline-flex',
                   alignItems: 'center',
                   px: 2,
                   border: '1px solid',
                   cursor: 'pointer',
                   fontSize: themeTokens.typography.fontSize.sm,
+                  // The chip follows its own checkbox rather than the state the
+                  // server rendered. Without this a click changes an invisible
+                  // control and the chip keeps its old look until submit, so
+                  // nobody can see which filters they are about to apply.
+                  '&:has(input:checked)': filterChipSx({ selected: true }),
+                  // Keyboard users get the same ring the mouse gets, since the
+                  // control itself is visually hidden.
+                  '&:has(input:focus-visible)': {
+                    outline: '2px solid var(--color-primary)',
+                    outlineOffset: 2,
+                  },
                 }}
               >
-                {/* One checkbox per id, so a size chip carrying several Aurora
-                    ids submits all of them under one visible control. */}
-                {option.values.map((value) => (
-                  <Box
-                    key={value}
-                    component="input"
-                    type="checkbox"
-                    name={name}
-                    value={value}
-                    defaultChecked={option.selected}
-                    sx={{
-                      // Visually hidden, not `display: none` — a hidden input is
-                      // still submitted, but it must stay focusable for keyboard
-                      // and screen-reader users.
-                      position: 'absolute',
-                      width: 1,
-                      height: 1,
-                      opacity: 0,
-                    }}
-                  />
-                ))}
+                {/* Exactly one control per chip. A `<label>` binds to its FIRST
+                    labelable descendant, so a second checkbox here would never
+                    be toggled by a click on the chip — which for a grouped size
+                    means submitting one Aurora id out of three. The group rides
+                    in the value instead. */}
+                <Box
+                  component="input"
+                  type="checkbox"
+                  name={name}
+                  value={option.value}
+                  defaultChecked={option.selected}
+                  sx={{
+                    // Visually hidden, not `display: none` — a `none` control is
+                    // neither submitted nor focusable, and this one must be both.
+                    position: 'absolute',
+                    width: 1,
+                    height: 1,
+                    opacity: 0,
+                  }}
+                />
                 {option.label}
               </Box>
             ))}

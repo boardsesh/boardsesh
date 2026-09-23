@@ -358,3 +358,26 @@ describe('narrow filters in the directory URL', () => {
     expect(buildDirectoryHref('all', query, 1)).toBe('/gyms?lat=51.455&lng=-2.588&radius=25');
   });
 });
+
+describe('Codex review follow-ups', () => {
+  it('counts a grouped size chip as one filter, matching what the row shows', () => {
+    // Selecting one Homewall dimension picks up several Aurora ids; reporting
+    // three next to a row showing one chip is a contradiction on screen.
+    const query = parseDirectoryQuery('all', { boardType: 'kilter', layout: '8', size: '23,24' });
+    expect(query.sizeIds).toEqual([23, 24]);
+    expect(countNarrowFilters(query)).toBe(2); // one layout + one size chip
+  });
+
+  it('emits a grouped size as one param', () => {
+    const query = parseDirectoryQuery('all', { boardType: 'kilter', layout: '8', size: '23,24' });
+    expect(buildDirectoryHref('all', query, 1)).toBe('/gyms?boardType=kilter&layout=8&size=23%2C24');
+  });
+
+  it('counts the multi-board toggle as a search on its own', () => {
+    // It is the only filter a visitor can apply with nothing else set, so
+    // omitting it made `?boards=2plus` invisible to the funnel.
+    expect(isSearchApplication('all', parseDirectoryQuery('all', { boards: '2plus' }))).toBe(true);
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', { boards: '2plus' }))).toBe(true);
+    expect(isSearchApplication('kilter', parseDirectoryQuery('kilter', {}))).toBe(false);
+  });
+});

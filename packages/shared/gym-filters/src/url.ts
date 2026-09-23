@@ -63,6 +63,27 @@ function parseStrictInts(raw: string | string[] | undefined): number[] {
   return parsed;
 }
 
+/**
+ * The same, but each param may carry a comma-separated GROUP of ids.
+ *
+ * Only sizes need this. One visible size chip can stand for several Aurora ids —
+ * the Kilter Homewall ships "10x10" as a Full Ride, a Mainline and an Auxiliary
+ * LED kit — and a chip has to be ONE form control, because an HTML `<label>`
+ * binds to exactly one. So the group travels as one value, `size=21,22,29`, and
+ * splits here. Repeated `?size=` params still work; each is split the same way.
+ */
+function parseStrictIntGroups(raw: string | string[] | undefined): number[] {
+  const parsed: number[] = [];
+  for (const value of allValues(raw).slice(0, MAX_IDS_PER_PARAM)) {
+    for (const part of value.split(',').slice(0, MAX_IDS_PER_PARAM)) {
+      const candidate = Number(part);
+      if (!Number.isInteger(candidate) || String(candidate) !== part) continue;
+      parsed.push(candidate);
+    }
+  }
+  return parsed;
+}
+
 /** Dedupe + ascending sort: one selection must always spell one URL, and so one cache key. */
 function normaliseIds(ids: number[]): number[] | undefined {
   if (ids.length === 0) return undefined;
@@ -112,7 +133,7 @@ export function parseGymBoardFilter(
 
   const sizeOptions = buildSizeOptions(withLayouts);
   const sizeIds = normaliseIds(
-    parseStrictInts(params[GYM_FILTER_PARAMS.size]).filter((id) =>
+    parseStrictIntGroups(params[GYM_FILTER_PARAMS.size]).filter((id) =>
       sizeOptions.some((option) => option.sizeIds.includes(id)),
     ),
   );
@@ -157,8 +178,21 @@ export function appendGymBoardFilterParams(
   for (const layoutId of filter.layoutIds ?? []) {
     target.append(GYM_FILTER_PARAMS.layout, String(layoutId));
   }
-  for (const sizeId of filter.sizeIds ?? []) {
-    target.append(GYM_FILTER_PARAMS.size, String(sizeId));
+  // One param per selected GROUP, so the URL says what the visitor clicked and
+  // `countSelectedSizeGroups` and the chip row agree with it. An id the current
+  // option tree cannot place (a stale link, or a board whose catalogue moved)
+  // still travels on its own rather than being dropped here — validation on the
+  // way back in is what decides whether it survives.
+  const selectedSizeIds = new Set(filter.sizeIds ?? []);
+  if (selectedSizeIds.size > 0) {
+    for (const option of buildSizeOptions(filter)) {
+      if (!option.sizeIds.every((sizeId) => selectedSizeIds.has(sizeId))) continue;
+      target.append(GYM_FILTER_PARAMS.size, option.sizeIds.join(','));
+      for (const sizeId of option.sizeIds) selectedSizeIds.delete(sizeId);
+    }
+    for (const sizeId of [...selectedSizeIds].sort((left, right) => left - right)) {
+      target.append(GYM_FILTER_PARAMS.size, String(sizeId));
+    }
   }
   for (const angle of filter.angles ?? []) {
     target.append(GYM_FILTER_PARAMS.angle, String(angle));

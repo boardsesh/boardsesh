@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ANGLES, MOONBOARD_LAYOUTS, MOONBOARD_SIZE, WOODS_LAYOUTS, WOODS_SIZES } from '@boardsesh/board-config';
 import { CATALOGUE_BOARD_TYPES } from '@boardsesh/board-constants';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { buildAngleOptions, buildLayoutOptions, buildSizeOptions } from '../filter-options';
+import { buildAngleOptions, buildLayoutOptions, buildSizeOptions, countSelectedSizeGroups } from '../filter-options';
 
 describe('buildLayoutOptions', () => {
   it('is empty unless exactly one board type is selected', () => {
@@ -99,5 +99,28 @@ describe('buildAngleOptions', () => {
     for (const boardType of CATALOGUE_BOARD_TYPES) {
       expect(buildAngleOptions({ boardTypes: [boardType as BoardName] }).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('countSelectedSizeGroups', () => {
+  it('counts one click as one, however many Aurora ids it carries', () => {
+    const grouped = buildSizeOptions({ boardTypes: ['kilter'], layoutIds: [8] }).find(
+      (option) => option.sizeIds.length > 1,
+    );
+    expect(grouped).toBeDefined();
+    expect(countSelectedSizeGroups({ boardTypes: ['kilter'], layoutIds: [8], sizeIds: grouped!.sizeIds })).toBe(1);
+  });
+
+  it('counts two chips as two', () => {
+    const options = buildSizeOptions({ boardTypes: ['kilter'], layoutIds: [8] });
+    const sizeIds = [...options[0].sizeIds, ...options[1].sizeIds];
+    expect(countSelectedSizeGroups({ boardTypes: ['kilter'], layoutIds: [8], sizeIds })).toBe(2);
+  });
+
+  it('is zero with nothing selected, and never zero while filtering', () => {
+    expect(countSelectedSizeGroups({ boardTypes: ['kilter'], layoutIds: [8] })).toBe(0);
+    // An id the current option tree cannot place still counts as a decision, or
+    // a stale link would claim no active filters while narrowing the list.
+    expect(countSelectedSizeGroups({ boardTypes: ['kilter'], layoutIds: [8], sizeIds: [999999] })).toBe(1);
   });
 });

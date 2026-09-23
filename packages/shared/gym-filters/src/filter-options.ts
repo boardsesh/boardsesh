@@ -75,3 +75,26 @@ export function buildAngleOptions(filter: GymBoardFilter): AngleFilterOption[] {
   if (!boardType) return [];
   return ANGLES[boardType].map((angle) => ({ angle }));
 }
+
+/**
+ * How many size CHIPS are selected, not how many Aurora ids are.
+ *
+ * One chip can carry several ids, so counting `sizeIds.length` reports three for
+ * a single click on the Homewall's "10x10" — a number that contradicts the chip
+ * row and the active-filter summary sitting next to it. A filter count is a
+ * count of decisions the visitor made.
+ */
+export function countSelectedSizeGroups(filter: GymBoardFilter): number {
+  const selected = new Set(filter.sizeIds ?? []);
+  if (selected.size === 0) return 0;
+  const options = buildSizeOptions(filter);
+  let groups = 0;
+  for (const option of options) {
+    if (!option.sizeIds.every((sizeId) => selected.has(sizeId))) continue;
+    groups += 1;
+    for (const sizeId of option.sizeIds) selected.delete(sizeId);
+  }
+  // Anything the current option tree cannot place still counts as one choice
+  // each, so a stale link never reports zero active filters while filtering.
+  return groups + selected.size;
+}
