@@ -23,7 +23,7 @@ GET https://ws.boardsesh.com/og/climb
 
 ### The climb-identity column
 
-The card is 1200x630: the board art right-aligned in a 720x602 box on the left,
+The card is 1200x630: the board art right-aligned in a 736x602 box on the left,
 and the climb's identity in a 392px column on the right. Both halves matter for
 different consumers — a social unfurl shows the whole card, while a search engine
 crops it to a square from the centre and keeps only `x` in [285, 915]. Right-
@@ -42,7 +42,7 @@ Ascents and quality are deliberately **not** on the card. They tick constantly,
 and the response is immutable for a year, so every tick would mint a fresh cache
 entry and leave the old one at the edge.
 
-**Two things to know before touching the text path.**
+**Three things to know before touching the text path.**
 
 1. **Every string must be escaped for Pango markup.** libvips calls
    `pango_parse_markup` unconditionally — there is no plain-text mode — so an

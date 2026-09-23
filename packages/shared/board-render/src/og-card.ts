@@ -18,7 +18,9 @@ import { OG_CARD_BOARD_BOX, OG_CARD_COLUMN_GAP, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH 
 
 /** Left edge of the text column. */
 const COLUMN_LEFT = OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width + OG_CARD_COLUMN_GAP;
-const COLUMN_RIGHT = OG_IMAGE_WIDTH - OG_CARD_BOARD_BOX.left - 16;
+// Mirrors the board's outer inset, so the column is the `OG_CARD_TEXT_COLUMN_WIDTH`
+// the board box was sized against rather than 16px narrower than it.
+const COLUMN_RIGHT = OG_IMAGE_WIDTH - OG_CARD_BOARD_BOX.left;
 const COLUMN_WIDTH = COLUMN_RIGHT - COLUMN_LEFT;
 
 /** Rows are laid out downward from here and must not pass `COLUMN_FLOOR`. */

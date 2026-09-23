@@ -297,7 +297,10 @@ function renderOptionsCacheKeySuffix(options: {
 function cardTextCacheKeySuffix(params: BoardImageRenderParams): string {
   const card = params.card;
   if (!params.isOgVariant || !card) return 'none';
-  const fields = [card.name ?? '', card.grade ?? '', card.setter ?? '', card.boardLine ?? '', card.angle ?? ''];
+  // `boardLine` is deliberately absent: it is derived from board_name/layout_id/
+  // size_id, which the outer key already carries, so hashing it adds no
+  // collision resistance and would mint a new entry for a pure label edit.
+  const fields = [card.name ?? '', card.grade ?? '', card.setter ?? '', card.angle ?? ''];
   if (fields.every((field) => field === '')) return 'none';
   return createHash('sha1').update(JSON.stringify(fields)).digest('base64url').slice(0, 16);
 }
