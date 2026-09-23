@@ -4,19 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
 
 /**
- * Tripwire for the render routes' hold-set ceiling.
- *
- * A board's `set_ids` are not a request parameter a caller chooses — they are
- * the whole hold-set list for that config, handed to us by the catalogue. So a
- * cap below the widest shipped config is not a safety bound, it is an outage
- * for that board: `MAX_SET_IDS = 10` against Decoy's 19 sets 400'd every Decoy
- * climb's share card and its server-rendered board image, and did so quietly,
- * because both the app's browser workers and the mobile app render the overlay
- * locally and never touch the HTTP endpoint.
- *
- * If a future board outgrows the cap, that must surface here.
- */
-/**
  * Read `MAX_ROUTE_SEGMENT` out of the firmware header rather than restating it.
  *
  * The number is the board display's real constraint on `set_ids`, and a copy of
@@ -33,6 +20,34 @@ function readFirmwareRouteSegmentBytes(): number {
   return Number(declaration[1]);
 }
 
+/**
+ * Read a `MAX_SET_IDS` declaration out of one of the firmware translation units.
+ *
+ * There are two, in separate binaries with no `#include` between them, and this
+ * exact constant already drifted once: the server said 10, both C++ copies said
+ * 16, and the catalogue needed 19. Nothing in any language failed until a Decoy
+ * climb rendered short.
+ */
+function readFirmwareMaxSetIds(relativePath: string): number {
+  const source = readFileSync(new URL(`../../../../../${relativePath}`, import.meta.url), 'utf8');
+  const declaration = /MAX_SET_IDS\s*=\s*(\d+)/.exec(source);
+  if (!declaration) throw new Error(`MAX_SET_IDS is no longer declared in ${relativePath}`);
+  return Number(declaration[1]);
+}
+
+/**
+ * Tripwire for the render routes' hold-set ceiling.
+ *
+ * A board's `set_ids` are not a request parameter a caller chooses — they are
+ * the whole hold-set list for that config, handed to us by the catalogue. So a
+ * cap below the widest shipped config is not a safety bound, it is an outage
+ * for that board: `MAX_SET_IDS = 10` against Decoy's 19 sets 400'd every Decoy
+ * climb's share card and its server-rendered board image, and did so quietly,
+ * because both the app's browser workers and the mobile app render the overlay
+ * locally and never touch the HTTP endpoint.
+ *
+ * If a future board outgrows the cap, that must surface here.
+ */
 describe('every catalogue config fits under MAX_SET_IDS', () => {
   // `SETS` is keyed `"<layoutId>-<sizeId>"`. Split it here rather than inside the
   // schema assertion so a key that stops matching that shape fails as a key
@@ -106,6 +121,17 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
       `${widest.label} encodes to ${encoded.length} characters, past what the firmware route buffer holds. ` +
         'Raise MAX_ROUTE_SEGMENT in embedded/libs/thumbnail-client/src/thumbnail_client.h to match.',
     ).toBeLessThan(FIRMWARE_ROUTE_SEGMENT_BYTES);
+  });
+
+  it('agrees with both firmware copies of the cap', () => {
+    // Two C++ translation units declare this independently, in separate
+    // binaries with no `#include` between them. A future edit to one is
+    // otherwise invisible until a board renders short on the wall.
+    const thumbnailClient = readFirmwareMaxSetIds('embedded/libs/thumbnail-client/src/thumbnail_client.cpp');
+    const boardController = readFirmwareMaxSetIds('embedded/projects/board-controller/src/main.cpp');
+
+    expect(thumbnailClient).toBe(MAX_SET_IDS);
+    expect(boardController).toBe(MAX_SET_IDS);
   });
 
   it('accepts every config through the og:climb query schema', () => {
