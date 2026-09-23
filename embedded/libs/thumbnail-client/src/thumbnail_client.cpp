@@ -125,7 +125,7 @@ void sortSetIds(char* setIds) {
         parsedSetIds[sortIndex + 1] = currentSetId;
     }
 
-    char sortedSetIds[64];
+    char sortedSetIds[MAX_ROUTE_SEGMENT];
     sortedSetIds[0] = '\0';
     size_t used = 0;
     for (int i = 0; i < parsedSetCount; i++) {
@@ -137,8 +137,8 @@ void sortSetIds(char* setIds) {
         used += static_cast<size_t>(written);
     }
 
-    strncpy(setIds, sortedSetIds, 63);
-    setIds[63] = '\0';
+    strncpy(setIds, sortedSetIds, sizeof(sortedSetIds) - 1);
+    setIds[sizeof(sortedSetIds) - 1] = '\0';
 }
 
 bool isQuerySafe(char value) {
@@ -212,7 +212,7 @@ bool parseBoardRenderRoute(const char* boardPath, BoardRenderRoute& route) {
         cursor++;
     }
 
-    char segments[5][64];
+    char segments[5][MAX_ROUTE_SEGMENT];
     memset(segments, 0, sizeof(segments));
     int segmentCount = 0;
     const char* segmentStart = cursor;

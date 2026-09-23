@@ -69,6 +69,27 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     expect(malformed.map((config) => config.label)).toEqual([]);
   });
 
+  it('leaves the widest config inside the firmware route buffer', () => {
+    // The board display firmware carries `set_ids` through fixed buffers sized
+    // `MAX_ROUTE_SEGMENT` (96) in embedded/libs/thumbnail-client. A longer list
+    // is not truncated — `copySegment` refuses it and the whole route is
+    // dropped, which shows as a blank thumbnail on the wall. A set count inside
+    // MAX_SET_IDS can still overflow it if the ids themselves get long enough,
+    // so assert the characters and not just the count.
+    const FIRMWARE_ROUTE_SEGMENT_BYTES = 96;
+    const widest = configs.reduce((worst, config) => {
+      const length = config.setIds.join(',').length;
+      return length > worst.setIds.join(',').length ? config : worst;
+    });
+    const encoded = widest.setIds.join(',');
+
+    expect(
+      encoded.length,
+      `${widest.label} encodes to ${encoded.length} characters, past what the firmware route buffer holds. ` +
+        'Raise MAX_ROUTE_SEGMENT in embedded/libs/thumbnail-client/src/thumbnail_client.h to match.',
+    ).toBeLessThan(FIRMWARE_ROUTE_SEGMENT_BYTES);
+  });
+
   it('accepts every config through the og:climb query schema', () => {
     const rejected = configs.map((config) => ({
       label: config.label,
