@@ -475,3 +475,41 @@ describe('buildRenderConfig — the Woods reach correction', () => {
     }
   });
 });
+
+describe('OG hold emphasis', () => {
+  it('draws lit holds larger on a card than in the app', () => {
+    // Nobody sees a card at 1200x630: a search engine crops it square and
+    // renders it at ~110px, which leaves an individual hold about two pixels.
+    const aura = { ...baseParams, renderMode: 'aura' as const, thumbnail: false };
+    const { config: card } = buildRenderConfig({ ...aura, isOgVariant: true });
+    const { config: app } = buildRenderConfig({ ...aura, isOgVariant: false });
+
+    expect(card.shape_size_multiplier ?? 1).toBeGreaterThan(app.shape_size_multiplier ?? 1);
+    expect(card.stroke_width_multiplier ?? 1).toBeGreaterThan(app.stroke_width_multiplier ?? 1);
+    expect(card.glow?.reach_scale ?? 0).toBeGreaterThan(app.glow?.reach_scale ?? 0);
+  });
+
+  it(`stays inside the renderer's multiplier clamp`, () => {
+    // The Rust core clamps both to 0.5-2.0; a value outside it is silently
+    // pulled back, so the constant would stop meaning what it says.
+    const { config } = buildRenderConfig({
+      ...baseParams,
+      renderMode: 'aura' as const,
+      thumbnail: false,
+      isOgVariant: true,
+    });
+
+    for (const multiplier of [config.shape_size_multiplier ?? 1, config.stroke_width_multiplier ?? 1]) {
+      expect(multiplier).toBeGreaterThanOrEqual(0.5);
+      expect(multiplier).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it(`multiplies the look's reach rather than replacing it`, () => {
+    const aura = { ...baseParams, renderMode: 'aura' as const, thumbnail: false, isOgVariant: true };
+    const { config: standard } = buildRenderConfig(aura);
+    const { config: reachy } = buildRenderConfig({ ...aura, auraSettings: { glowReach: 1.5 } });
+
+    expect(reachy.glow?.reach_scale ?? 0).toBeGreaterThan(standard.glow?.reach_scale ?? 0);
+  });
+});

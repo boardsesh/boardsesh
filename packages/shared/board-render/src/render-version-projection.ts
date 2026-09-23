@@ -196,6 +196,21 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     boardStates,
     renderMode: 'aura',
   });
+  // The Aura drawing AS A CARD, which is not the same config: a card emphasises
+  // its lit holds (`OG_HOLD_SHAPE_EMPHASIS` and friends) because it is consumed
+  // at roughly 110px, not at the 1200x630 it is authored at. Probed because the
+  // note below used to be true and no longer is — the OG variant now changes
+  // more than its output width, and without this a change to that emphasis
+  // would move no version while Cloudflare served the old drawing immutably.
+  const auraCard = buildRenderConfig({
+    boardName: entry.boardName,
+    boardDetails,
+    frames: FRAMES_PROBE,
+    thumbnail: false,
+    isOgVariant: true,
+    boardStates,
+    renderMode: 'aura',
+  });
 
   return {
     ...identity,
@@ -205,7 +220,7 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     // The same, for the Aura drawing — a different palette and a different set of
     // config fields, both of which change pixels.
     wasm_config_aura: aura.config,
-    // The other two output widths, which is all the variants change in the config.
+    wasm_config_aura_card: auraCard.config,
     output_width_thumbnail: thumbnail.outputWidth,
     output_width_og: ogCard.outputWidth,
     og_scale: ogCard.ogScale,
