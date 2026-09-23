@@ -35,10 +35,45 @@ R2 is **account**-scoped, unlike everything else here, so managing it needs two 
   shape as the WAF and rate-limit phases. **Editing a token replaces all of its
   policies, so re-add every existing scope in the same edit.**
 - `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
+- `Zone.Origin Rules Edit` on `CLOUDFLARE_API_TOKEN`, for the rule that serves
+  `www.boardsesh.com/og/*` from the backend. Same "skip and say so" shape, and
+  the same reason it has to be: `cf:apply --apply` runs on every production
+  deploy, so a phase added before its scope exists would take www off the deploy
+  train. **The web side must not be pointed at www until a dry run shows this
+  rule live** — `og:image` would 404 for every climb until the scope lands.
 
 Both degrade to "skip and say so" rather than failing, so the secret and the scope can be added in either order without a window where production deploys break. Attaching a custom domain needs **both** the R2 scope and zone access, because the call takes a `zoneId`: an R2-only token can create the bucket but cannot resolve the zone.
 
 > **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
+
+## Share cards on www
+
+`og:image` on a climb page, the JSON-LD `image` and the in-page `<img>` all
+point at `ws.boardsesh.com`, a different hostname from the page itself. Some
+crawlers are less willing to attribute a cross-host image to a page, and the one
+competitor whose thumbnail Brave does show serves its image same-host.
+
+An **Origin Rule** (`http_request_origin`) makes `www.boardsesh.com/og/*` serve
+from the backend with the URL unchanged. Two things it overrides, and both are
+load-bearing:
+
+- `origin.host` — which DNS record in this zone answers. Picks the machine.
+- `host_header` — what that machine is told the request was for. Railway routes
+  by Host, so a DNS override alone would reach the right machine and be handed
+  to the **web** service, which 404s `/og/climb`.
+
+A matching cache rule mirrors the `ws` one for the www host; `OG_CACHE_EXPRESSION`
+is host-scoped and does not cover the new path. The www WAF challenge is scoped
+to `/list` and `/setter/`, and the rate limit to `/view/`, so neither touches a
+card — `cloudflare-apply.test.ts` asserts that rather than leaving it to a
+reading.
+
+**Rollout order.** Land and apply this rule first, confirm
+`curl -I https://www.boardsesh.com/og/climb?...` returns the image, and only
+then point the web builders at www. The phase is `optional: true` until
+`Zone.Origin Rules Edit` is confirmed on the production token, which means a
+missing scope is skipped with a notice rather than failing the deploy — so "the
+apply ran" is not on its own evidence that the rule exists.
 
 ## assets.boardsesh.com DNS-only Tigris domain
 

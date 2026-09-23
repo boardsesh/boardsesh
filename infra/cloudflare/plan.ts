@@ -10,6 +10,7 @@ import {
   CACHE_RULE_PHASE,
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
+  ORIGIN_RULE_PHASE,
   RESPONSE_HEADER_RULE_PHASE,
   SSL_MODE_STRENGTH,
   WAF_RULE_PHASE,
@@ -26,6 +27,7 @@ import type {
   SslDesired,
   SslMode,
   WafRuleDesired,
+  OriginRuleDesired,
 } from './config';
 
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
@@ -34,7 +36,8 @@ export type ManagedRuleDesired =
   | WafRuleDesired
   | RateLimitRuleDesired
   | RedirectRuleDesired
-  | ResponseHeaderRuleDesired;
+  | ResponseHeaderRuleDesired
+  | OriginRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -109,7 +112,8 @@ export type ManagedRuleResource =
   | 'waf-rule'
   | 'rate-limit-rule'
   | 'redirect-rule'
-  | 'response-header-rule';
+  | 'response-header-rule'
+  | 'origin-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -150,6 +154,7 @@ export interface DesiredRuleSets {
   rateLimitRules: RateLimitRuleDesired[];
   redirectRules: RedirectRuleDesired[];
   responseHeaderRules: ResponseHeaderRuleDesired[];
+  originRules: OriginRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -197,6 +202,18 @@ export const MANAGED_RULE_PHASES = [
     selectDesired: (desired) => desired.responseHeaderRules,
     // Remove once Zone.Transform Rules Edit is confirmed on the production
     // token. Until then this phase must not be able to fail a deploy.
+    optional: true,
+  },
+  {
+    resource: 'origin-rule',
+    phase: ORIGIN_RULE_PHASE,
+    label: 'Origin rule',
+    selectLive: (live) => live.rules['origin-rule'],
+    selectDesired: (desired) => desired.originRules,
+    // New scope. `cf:apply --apply` runs on every production deploy, so a phase
+    // added before its token scope exists would take www off the deploy train —
+    // the same concession the response-header phase makes, for the same reason.
+    // Remove once Zone.Origin Rules Edit is confirmed on the production token.
     optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];

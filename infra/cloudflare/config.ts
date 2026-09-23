@@ -167,6 +167,12 @@ export const CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION =
 /** Marker for the apex → www redirect rule. Same never-rename contract as above. */
 export const APEX_REDIRECT_RULE_DESCRIPTION = 'boardsesh:apex-to-www (managed by scripts/cloudflare-apply.ts)';
 
+/** Marker for the cache rule covering those same cards on www. */
+export const WWW_OG_CACHE_RULE_DESCRIPTION = 'boardsesh:www-og-cache (managed by scripts/cloudflare-apply.ts)';
+
+/** Marker for the www -> ws origin rule that serves share cards same-origin. */
+export const OG_ORIGIN_RULE_DESCRIPTION = 'boardsesh:www-og-origin (managed by scripts/cloudflare-apply.ts)';
+
 /** The rulesets phase that holds cache-eligibility rules. */
 export const CACHE_RULE_PHASE = 'http_request_cache_settings';
 
@@ -190,6 +196,15 @@ export const RATE_LIMIT_RULE_PHASE = 'http_ratelimit';
  * empty phase and the first apply creates it.
  */
 export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
+
+/**
+ * The rulesets phase that holds Origin Rules.
+ *
+ * Like the rate-limit and redirect phases, a zone that has never carried one has
+ * no entrypoint ruleset here; `fetchPhaseRules` reads that 404 as an empty phase
+ * and the first apply creates it.
+ */
+export const ORIGIN_RULE_PHASE = 'http_request_origin';
 
 /**
  * The rulesets phase that holds Response Header Transform Rules.
@@ -376,6 +391,25 @@ export interface RedirectRuleDesired {
 }
 
 /**
+ * An Origin Rule: serve a path from a different origin without a redirect.
+ *
+ * `origin.host` names a DNS record in THIS zone, and `host_header` is sent to
+ * it. Both are load-bearing together: Railway routes by Host, so overriding the
+ * DNS record alone would reach the right machine and be handed to the wrong
+ * service.
+ */
+export interface OriginRuleDesired {
+  description: string;
+  expression: string;
+  action: 'route';
+  action_parameters: {
+    host_header: string;
+    origin: { host: string };
+  };
+  enabled: boolean;
+}
+
+/**
  * A Response Header Transform rule. `set` overwrites whatever the origin sent
  * (or did not send), which is the point — see RESPONSE_HEADER_RULE_PHASE.
  */
@@ -409,11 +443,35 @@ export interface CloudflareDesiredState {
   redirectRules: RedirectRuleDesired[];
   /** Order is not significant: matched by expression, like cache rules. */
   responseHeaderRules: ResponseHeaderRuleDesired[];
+  /** Origin Rules: which origin serves a path, without a redirect. */
+  originRules: OriginRuleDesired[];
   ssl: SslDesired;
 }
 
 /** The Cloudflare Rules-language expression matching og share-card requests on the ws host. */
 export const OG_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and starts_with(http.request.uri.path, "${OG_PATH_PREFIX}"))`;
+
+/**
+ * The same cards, reached on www.
+ *
+ * Host-scoped separately rather than folded into the expression above, so the
+ * two hosts' cache behaviour can never drift apart silently: a change meant for
+ * one is visibly a change to only one.
+ */
+export const WWW_OG_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${OG_PATH_PREFIX}"))`;
+
+/**
+ * Serve `/og/*` from the backend while the URL stays on www.
+ *
+ * Every image signal on a climb page — `og:image`, the JSON-LD `image`, the
+ * in-page `<img>` — pointed at a different hostname from the page itself. Some
+ * crawlers are less willing to attribute a cross-host image to a page, and the
+ * one competitor whose thumbnail does show in Brave serves its image same-host.
+ * This is the cheapest way to stop guessing: same origin, resolved at the edge,
+ * with no redirect for a crawler to decline to follow and no Next compute added
+ * to a path crawlers hit hard.
+ */
+export const WWW_OG_ORIGIN_EXPRESSION = WWW_OG_CACHE_EXPRESSION;
 
 /** Board-image renders on www. Host-scoped so a future origin on another hostname can't inherit it silently. */
 export const BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${BOARD_RENDER_PATH_PREFIX}"))`;
@@ -1099,6 +1157,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     // single Railway replica. See WWW_HTML_CACHE_EXPRESSION for what each gate
     // in the expression is holding back.
     {
+      description: WWW_OG_CACHE_RULE_DESCRIPTION,
+      expression: WWW_OG_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    {
       description: WWW_HTML_CACHE_RULE_DESCRIPTION,
       expression: WWW_HTML_CACHE_EXPRESSION,
       action: 'set_cache_settings',
@@ -1203,6 +1272,21 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // 10s is the Free-plan ceiling (Pro allows up to 60s). Raise to 60
         // once the zone's plan is confirmed Pro or above.
         mitigation_timeout: 10,
+      },
+      enabled: true,
+    },
+  ],
+  originRules: [
+    {
+      description: OG_ORIGIN_RULE_DESCRIPTION,
+      expression: WWW_OG_ORIGIN_EXPRESSION,
+      action: 'route',
+      action_parameters: {
+        // Both, together. The DNS override picks the machine; the host header
+        // is what Railway routes on, so without it the request lands on the web
+        // service and 404s.
+        host_header: WS_HOSTNAME,
+        origin: { host: WS_HOSTNAME },
       },
       enabled: true,
     },
