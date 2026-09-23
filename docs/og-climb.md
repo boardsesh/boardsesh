@@ -176,9 +176,29 @@ repeats, ~700ms worst-case first render of a never-seen board config.
 
 Crawlers scrape seconds after a share, so clients prime the caches ahead of
 them: climb view SSR fire-and-forgets one OG render per page view (via
-`scheduleOgImageWarming`), and the Share button on web and mobile fetches both
-the share page URL and the og image URL before opening the share sheet. All
-best-effort — failures are swallowed and never delay sharing.
+`scheduleOgImageWarming`), and the Share button fetches ahead of the unfurler
+before opening the share sheet. All best-effort — failures are swallowed and
+never delay sharing.
+
+**Mobile warms the card the page advertises, not one it builds.** The app cannot
+reproduce the URL www puts in `og:image`: that angle is `selectCanonicalClimbAngle`,
+chosen from every angle's ascent counts, so the same climb served at `/25/`,
+`/40/` and `/50/` all advertise `angle=40`. A URL without the identity params is
+a different key at Cloudflare *and* in `byteCache` — measured against production,
+the app-shaped URL came back `MISS` while www's came back `HIT`, so the old
+prewarm was heating something nobody requests.
+
+So `prewarmShareCaches` (`packages/mobile/src/lib/share-prewarm.ts`) does two
+things at once. It issues the identity-free URL immediately, which shares the
+per-board `ogBase` with the real card and turns its render from `miss` into
+`base-hit`. In parallel it fetches the share page, reads `og:image` out of the
+head, and warms that exact URL. The page read is bounded (4s) so a request that
+never answers cannot strand the rest, and only `BACKEND_URL` is ever followed —
+a prewarm that chased any `og:image` it was handed would be a request forwarder.
+
+This only warms the colo nearest the sharer. iMessage builds its preview
+on-device so that is the right one; Slack and Discord fetch from their own
+datacenters and still land cold.
 
 ## Operational notes
 

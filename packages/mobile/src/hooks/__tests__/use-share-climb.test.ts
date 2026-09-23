@@ -13,7 +13,13 @@ const shareMock = vi.fn<(payload: SharePayload) => Promise<{ action: string }>>(
 }));
 
 // Fire-and-forget prewarm fetches hit this mock; never a real network.
-const fetchMock = vi.fn<(input: string) => Promise<{ ok: boolean }>>(async () => ({ ok: true }));
+// `text()` is here because the prewarm reads the page to find the card an
+// unfurler will actually ask for, rather than guessing at its URL.
+type PrewarmResponse = { ok: boolean; text: () => Promise<string> };
+const fetchMock = vi.fn<(input: string, init?: { signal?: AbortSignal }) => Promise<PrewarmResponse>>(async () => ({
+  ok: true,
+  text: async () => '',
+}));
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -65,8 +71,11 @@ const climbWithFrames = {
 //
 // No climb identity here on purpose: the app cannot reproduce the canonical
 // angle or the text normalisation www uses, so a near-miss would warm a second
-// entry rather than the right one. See the note in the hook — what this still
-// warms is the per-board base, which is the expensive half.
+// entry rather than the right one — verified against production, where the same
+// climb at /25/, /40/ and /50/ all advertise `angle=40`.
+//
+// What it warms is the per-board base, shared with the card an unfurler asks
+// for. The card itself is read off the page; see `share-prewarm.test.ts`.
 const expectedOgImageUrl =
   'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225';
 
@@ -74,7 +83,7 @@ describe('useShareClimb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ctrl.os = 'ios';
-    fetchMock.mockResolvedValue({ ok: true });
+    fetchMock.mockResolvedValue({ ok: true, text: async () => '' });
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -97,8 +106,8 @@ describe('useShareClimb', () => {
       await act(async () => {
         await result.current();
       });
-      expect(fetchMock).toHaveBeenCalledWith(expectedReadableShareUrl);
-      // Exactly one warm: the no-frames climb must not fire an og request.
+      expect(fetchMock).toHaveBeenCalledWith(expectedReadableShareUrl, expect.anything());
+      // Exactly one warm: the no-frames climb has no backdrop url to warm.
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(shareMock).toHaveBeenCalledTimes(1);
     });
@@ -108,8 +117,35 @@ describe('useShareClimb', () => {
       await act(async () => {
         await result.current();
       });
-      expect(fetchMock).toHaveBeenNthCalledWith(1, expectedReadableShareUrl);
-      expect(fetchMock).toHaveBeenNthCalledWith(2, expectedOgImageUrl);
+      // Backdrop first, then the page. Reading the page costs a whole body
+      // download, and gating the backdrop on that leaves the backend idle for
+      // all of it while the share sheet is already open.
+      expect(fetchMock).toHaveBeenNthCalledWith(1, expectedOgImageUrl);
+      expect(fetchMock).toHaveBeenNthCalledWith(2, expectedReadableShareUrl, expect.anything());
+    });
+
+    it('warms the card the page advertises, which is the one an unfurler fetches', async () => {
+      const advertised = `${expectedOgImageUrl}&n=Test+Climb&g=V4&s=someone&angle=40`;
+      fetchMock.mockImplementation(async (input: string) => ({
+        ok: true,
+        text: async () =>
+          input === expectedReadableShareUrl
+            ? `<head><meta property="og:image" content="${advertised.replaceAll('&', '&amp;')}"/></head>`
+            : '',
+      }));
+
+      const { result } = renderHook(() => useShareClimb({ climb: climbWithFrames, ...baseArgs }));
+      await act(async () => {
+        await result.current();
+      });
+
+      // Polled rather than asserted straight after `act`. The prewarm is
+      // deliberately not awaited by the hook, so whether its microtask chain has
+      // drained by the time `act` returns is not something this test should be
+      // betting on — it would fail intermittently rather than wrongly pass.
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(advertised);
+      });
     });
 
     it('sorts unsorted set_ids in the warmed og url', async () => {
@@ -117,7 +153,7 @@ describe('useShareClimb', () => {
       await act(async () => {
         await result.current();
       });
-      expect(fetchMock).toHaveBeenNthCalledWith(2, expectedOgImageUrl);
+      expect(fetchMock).toHaveBeenNthCalledWith(1, expectedOgImageUrl);
     });
 
     it('still opens the share sheet when a prewarm fetch rejects', async () => {
