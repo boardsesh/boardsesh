@@ -14,24 +14,41 @@ import { listCatalogueEntries } from '../render-version-projection';
  * checkout, and 404 only inside the built image.
  */
 describe('board art resolves to WebP only', () => {
-  const paths = listCatalogueEntries().flatMap((entry) => {
-    let details;
+  const entries = listCatalogueEntries().map((entry) => {
+    const label = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
     try {
-      details = getBoardDetailsForBoard({
+      const details = getBoardDetailsForBoard({
         board_name: entry.boardName,
         layout_id: entry.layoutId,
         size_id: entry.sizeId,
         set_ids: entry.setIds,
       });
+      return {
+        boardName: entry.boardName,
+        label,
+        relPaths: [false, true].flatMap((thumbnail) => getBackgroundRelPaths(details, thumbnail)),
+        // Recorded rather than swallowed: a board that stops resolving would
+        // otherwise drop out of this walk silently, and a lower-bound count is
+        // far too loose to notice a whole board type going missing.
+        failed: false,
+      };
     } catch {
-      return [];
+      return { boardName: entry.boardName, label, relPaths: [] as string[], failed: true };
     }
-    return [false, true].flatMap((thumbnail) =>
-      getBackgroundRelPaths(details, thumbnail).map((relPath) => ({
-        label: `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`,
-        relPath,
-      })),
+  });
+
+  const paths = entries.flatMap(({ label, relPaths }) => relPaths.map((relPath) => ({ label, relPath })));
+
+  it('resolves every catalogue entry', () => {
+    expect(entries.filter((entry) => entry.failed).map((entry) => entry.label)).toEqual([]);
+  });
+
+  it('produces art for every board in the catalogue', () => {
+    const boardsWithoutArt = [...new Set(entries.map((entry) => entry.boardName))].filter(
+      (boardName) => !entries.some((entry) => entry.boardName === boardName && entry.relPaths.length > 0),
     );
+
+    expect(boardsWithoutArt).toEqual([]);
   });
 
   it('covers the whole catalogue, full size and thumbnail', () => {

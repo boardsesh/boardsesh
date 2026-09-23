@@ -33,9 +33,22 @@ describe('backend Docker context', () => {
     expect(backendBlock).toContain('extraSourceDirExcludeExtensions:');
   });
 
-  it('applies the filter to nested directories, not just the top level', () => {
+  it('threads the filter through the recursive descent', () => {
     // The tree is `images/<board>/<layout>/…`, so a filter that only ran on the
     // first level would exclude nothing at all.
-    expect(script).toMatch(/copyDirectory\([\s\S]{0,200}excludeExtensions\)/);
+    //
+    // Asserted on the RECURSIVE CALL specifically, inside the function body: a
+    // looser match is satisfied by the parameter list of the definition itself,
+    // and would pass while the recursion quietly dropped the argument — the
+    // exact failure this is here to catch.
+    const body = script.slice(script.indexOf('function copyDirectory('));
+    const recursiveCall = /copyDirectory\(sourcePath,[^)]*\)/.exec(body.slice(body.indexOf('{')));
+
+    expect(recursiveCall, 'copyDirectory no longer recurses the way this test reads it').not.toBeNull();
+    expect(recursiveCall?.[0]).toContain('excludeExtensions');
+  });
+
+  it('passes the filter to the skip predicate rather than only accepting it', () => {
+    expect(script).toMatch(/shouldSkipSourceEntry\([^)]*excludeExtensions/);
   });
 });
