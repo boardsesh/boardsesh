@@ -36,6 +36,17 @@ import {
   type ScreenshotLayout,
 } from './lib/screenshot-presentation';
 
+type MaterialSurface = (typeof materialSurfaces)[keyof typeof materialSurfaces];
+
+/**
+ * The iPad shell's trailing "Now on the wall" column is 300 points wide
+ * (`WALL_COLUMN_WIDTH`, packages/mobile/src/theme/size-class.ts) and every iPad
+ * capture is @2x, so its share of a capture is 600px / capture width: 21.8% on
+ * the 13" slot, 24.8% on the 11". One expression covers both devices — unlike
+ * the Android rail crop, which is pinned to a single resolution.
+ */
+const IPAD_WALL_COLUMN_PIXELS = 300 * 2;
+
 const LOG = '[screenshot:frame]';
 const COLORS = materialSurfaces.dark;
 const MIN_RAW_BYTES = 61_440;
@@ -71,23 +82,32 @@ interface NativePanel {
   left: number;
   top: number;
   width: number;
-  /** A full-width detail from the real capture, kept as a separate panel. */
-  crop?: { top: number; height: number };
+  /**
+   * A detail from the real capture, kept as a separate panel. Fractions of the
+   * source, so one recipe serves every capture size. `top`/`height` alone take a
+   * full-width band (the Android wall rail); adding `left`/`width` takes a
+   * vertical slice instead (the iPad wall column on the trailing edge).
+   */
+  crop?: { top: number; height: number; left?: number; width?: number };
 }
 
 async function renderNativePanel(panel: NativePanel, unit: number): Promise<Buffer> {
   const dimensions = readPngDimensions(panel.raw);
   const sourceTop = panel.crop ? Math.round(dimensions.height * panel.crop.top) : 0;
   const sourceHeight = panel.crop ? Math.round(dimensions.height * panel.crop.height) : dimensions.height;
+  const sourceLeft = panel.crop?.left ? Math.round(dimensions.width * panel.crop.left) : 0;
+  const sourceWidth = panel.crop?.width
+    ? Math.min(Math.round(dimensions.width * panel.crop.width), dimensions.width - sourceLeft)
+    : dimensions.width;
   const width = Math.round(panel.width);
-  const height = Math.round((width * sourceHeight) / dimensions.width);
+  const height = Math.round((width * sourceHeight) / sourceWidth);
   const radius = Math.round(unit * 0.025);
   const border = Math.max(2, Math.round(unit * 0.002));
   const mask = Buffer.from(
     `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" rx="${radius}" fill="white"/></svg>`,
   );
   const capture = await sharp(panel.raw)
-    .extract({ left: 0, top: sourceTop, width: dimensions.width, height: sourceHeight })
+    .extract({ left: sourceLeft, top: sourceTop, width: sourceWidth, height: sourceHeight })
     .resize(width, height, { kernel: 'lanczos3' })
     .composite([{ input: mask, blend: 'dest-in' }])
     .png()
@@ -110,7 +130,7 @@ export async function frameComposition(
   layout: ScreenshotLayout,
 ): Promise<Buffer> {
   if (
-    ((layout === 'screen' || layout === 'wall-status') && sources.length !== 1) ||
+    ((layout === 'screen' || layout === 'wall-status' || layout === 'wall-column') && sources.length !== 1) ||
     (layout === 'board-family' && sources.length !== 2 && sources.length !== 3) ||
     ((layout === 'more-boards' || layout === 'cross-board-logbook') && sources.length !== 3) ||
     (layout === 'live-climb' && sources.length !== 2)
@@ -118,6 +138,11 @@ export async function frameComposition(
     throw new Error(`Invalid native source count for ${layout}: ${sources.length}`);
   }
   const { width, height } = readPngDimensions(sources[0]);
+  // iPad ships landscape. A 4:3 canvas has no room for a copy band above a 4:3
+  // capture, so the copy moves into a left column beside it.
+  if (width > height) return frameLandscape(sources, caption, layout, width, height);
+  // `wall-column` is not listed: it is the iPad's layout, and the landscape path
+  // above has already returned by the time this runs.
   const light = layout === 'live-climb' || layout === 'wall-status';
   const colors = light ? materialSurfaces.light : COLORS;
   const tint = light ? brandColors.tint : brandColorsDark.tint;
@@ -126,19 +151,8 @@ export async function frameComposition(
   const textWidth = width - margin * 2;
   const top = Math.round(height * 0.035);
   const wordmark = await renderText('Boardsesh', Math.round(unit * 0.026), textWidth, tint, true);
-  const headline = await renderText(
-    caption.headline,
-    Math.round(unit * (width > height ? 0.067 : 0.078)),
-    textWidth,
-    colors.label,
-    true,
-  );
-  const description = await renderText(
-    caption.description,
-    Math.round(unit * (width > height ? 0.031 : 0.036)),
-    textWidth,
-    colors.secondaryLabel,
-  );
+  const headline = await renderText(caption.headline, Math.round(unit * 0.078), textWidth, colors.label, true);
+  const description = await renderText(caption.description, Math.round(unit * 0.036), textWidth, colors.secondaryLabel);
   const headlineTop = top + wordmark.info.height + Math.round(height * 0.018);
   const descriptionTop = headlineTop + headline.info.height + Math.round(height * 0.013);
   const descriptionBottom = descriptionTop + description.info.height;
@@ -206,16 +220,171 @@ export async function frameComposition(
       { raw: sources[1], left: width * 0.405, top: screenshotTop + height * 0.13, width: width * 0.565 },
     );
   }
-  const background = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <defs><linearGradient id="background" x2="0" y2="1"><stop stop-color="${colors.secondaryBackground}"/><stop offset="1" stop-color="${colors.background}"/></linearGradient></defs>
-    <rect width="100%" height="100%" fill="url(#background)"/>
-  </svg>`);
   const layers: sharp.OverlayOptions[] = [
     { input: wordmark.data, left: margin, top },
     { input: headline.data, left: margin, top: headlineTop },
     { input: description.data, left: margin, top: descriptionTop },
   ];
   if (boardNames) layers.push({ input: boardNames.data, left: margin, top: boardNamesTop });
+  return paintFrame({ width, height, colors, layers, panels, unit });
+}
+
+/**
+ * The landscape (iPad) arrangement: copy in a left column, capture(s) filling the
+ * right. Portrait keeps its own geometry in `frameComposition` — the two must not
+ * be merged, because every phone frame in the published baseline depends on the
+ * portrait arithmetic staying exactly as it is.
+ */
+async function frameLandscape(
+  sources: readonly Buffer[],
+  caption: ScreenshotCaption,
+  layout: ScreenshotLayout,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const colors: MaterialSurface = COLORS;
+  const tint = brandColorsDark.tint;
+  const unit = Math.min(width, height * 0.8);
+  const margin = Math.round(width * 0.045);
+  const columnWidth = Math.round(width * 0.34);
+  const textWidth = columnWidth - margin;
+  const gutter = Math.round(width * 0.015);
+  const captureLeft = columnWidth + gutter;
+  const captureRight = width - margin;
+  const regionWidth = captureRight - captureLeft;
+  const regionTop = Math.round(height * 0.08);
+  // `renderNativePanel` draws a border on every side and offsets a shadow 8px
+  // down, so a panel occupies more than its capture. Fit to that, not to the raw
+  // aspect, or the clip in `paintFrame` eats the shadow at the stage bottom.
+  const panelBleed = Math.max(2, Math.round(unit * 0.002)) * 2 + 8;
+  const regionHeight = height - regionTop * 2 - panelBleed;
+
+  const wordmark = await renderText('Boardsesh', Math.round(unit * 0.022), textWidth, tint, true);
+  const headline = await renderText(caption.headline, Math.round(unit * 0.058), textWidth, colors.label, true);
+  const description = await renderText(caption.description, Math.round(unit * 0.028), textWidth, colors.secondaryLabel);
+  // Brand product names stay untranslated. Only name hardware represented by a real source capture.
+  const boardNames =
+    layout === 'board-family'
+      ? await renderText(
+          sources.length === 3 ? 'Kilter · Tension · MoonBoard 2016' : 'Kilter · Tension',
+          Math.round(unit * 0.024),
+          textWidth,
+          tint,
+          true,
+        )
+      : undefined;
+
+  const headlineGap = Math.round(height * 0.024);
+  const descriptionGap = Math.round(height * 0.018);
+  const boardNamesGap = Math.round(height * 0.024);
+  const copyHeight =
+    wordmark.info.height +
+    headlineGap +
+    headline.info.height +
+    descriptionGap +
+    description.info.height +
+    (boardNames ? boardNamesGap + boardNames.info.height : 0);
+  if (
+    headline.info.width > textWidth ||
+    description.info.width > textWidth ||
+    (boardNames && boardNames.info.width > textWidth) ||
+    copyHeight > height * 0.86
+  ) {
+    throw new Error(`Caption overflows the ${width}x${height} copy column: ${caption.headline}`);
+  }
+  // Centre the column against the capture beside it rather than hanging it off the top.
+  const copyTop = Math.round((height - copyHeight) / 2);
+  const headlineTop = copyTop + wordmark.info.height + headlineGap;
+  const descriptionTop = headlineTop + headline.info.height + descriptionGap;
+  const layers: sharp.OverlayOptions[] = [
+    { input: wordmark.data, left: margin, top: copyTop },
+    { input: headline.data, left: margin, top: headlineTop },
+    { input: description.data, left: margin, top: descriptionTop },
+  ];
+  if (boardNames) {
+    layers.push({
+      input: boardNames.data,
+      left: margin,
+      top: descriptionTop + description.info.height + boardNamesGap,
+    });
+  }
+
+  const panels: NativePanel[] = [];
+  if (layout === 'wall-column') {
+    // The trailing wall column, enlarged beside the very screen it came from —
+    // the iPad-only surface that shows what is lit while you browse your next one.
+    // Only its top runs: the "on the wall" header and the first climbs, which is
+    // what the caption is about. Taking the full-height column instead would
+    // tower over the screen rather than read as a detail of it.
+    const columnFraction = IPAD_WALL_COLUMN_PIXELS / width;
+    const columnCrop = 0.62;
+    // The strip overhangs the screen's trailing edge, so the screen keeps most of
+    // the region and the pair still reads as one object: the shell, with its wall
+    // column lifted out of it. The overlap stops short of the column's leading
+    // edge, so the column stays visible in context underneath.
+    const screenWidth = Math.floor(Math.min(regionWidth * 0.8, (regionHeight * width) / height));
+    const screenHeight = (screenWidth * height) / width;
+    const stripHeight = Math.round(screenHeight * 1.18);
+    const stripWidth = Math.round((stripHeight * IPAD_WALL_COLUMN_PIXELS) / (height * columnCrop));
+    panels.push(
+      { raw: sources[0], left: captureLeft, top: Math.round((height - screenHeight) / 2), width: screenWidth },
+      {
+        raw: sources[0],
+        left: captureRight - stripWidth,
+        top: Math.round((height - stripHeight) / 2),
+        width: stripWidth,
+        crop: { top: 0, height: columnCrop, left: 1 - columnFraction, width: columnFraction },
+      },
+    );
+  } else if (layout === 'board-family') {
+    // A cascade down and to the right: every screen keeps its top-left corner
+    // visible, which on a board view is the climb name and grade.
+    const panelWidth = Math.round(regionWidth * 0.72);
+    const panelHeight = (panelWidth * height) / width;
+    const steps = sources.length === 3 ? [0, 0.14, 0.28] : [0, 0.28];
+    const drops = sources.length === 3 ? [0, 0.19, 0.38] : [0, 0.38];
+    // Centre the whole cascade, not its first panel, or the deck hangs high and
+    // leaves all the slack under the front screen.
+    const cascadeHeight = regionHeight * drops[drops.length - 1] + panelHeight;
+    const cascadeTop = Math.round((height - cascadeHeight) / 2);
+    sources.forEach((raw, index) => {
+      panels.push({
+        raw,
+        left: captureLeft + regionWidth * steps[index],
+        top: cascadeTop + regionHeight * drops[index],
+        width: panelWidth,
+      });
+    });
+  } else if (layout === 'screen') {
+    const panelWidth = Math.floor(Math.min(regionWidth, (regionHeight * width) / height));
+    panels.push({
+      raw: sources[0],
+      left: captureLeft + (regionWidth - panelWidth) / 2,
+      top: Math.round((height - (panelWidth * height) / width) / 2),
+      width: panelWidth,
+    });
+  } else {
+    throw new Error(`No landscape arrangement for ${layout}; it is a portrait-only composition.`);
+  }
+  return paintFrame({ width, height, colors, layers, panels, unit });
+}
+
+interface FramePaint {
+  width: number;
+  height: number;
+  colors: MaterialSurface;
+  /** Copy layers, already positioned. Panels are composited over them in order. */
+  layers: sharp.OverlayOptions[];
+  panels: readonly NativePanel[];
+  unit: number;
+}
+
+/** The gradient ground plus every native panel, clipped to the canvas. */
+async function paintFrame({ width, height, colors, layers, panels, unit }: FramePaint): Promise<Buffer> {
+  const background = Buffer.from(`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="background" x2="0" y2="1"><stop stop-color="${colors.secondaryBackground}"/><stop offset="1" stop-color="${colors.background}"/></linearGradient></defs>
+    <rect width="100%" height="100%" fill="url(#background)"/>
+  </svg>`);
   for (const panel of panels) {
     const rendered = await renderNativePanel(panel, unit);
     const metadata = await sharp(rendered).metadata();

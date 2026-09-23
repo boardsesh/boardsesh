@@ -19,6 +19,7 @@ export const CAPTION_IDS = [
   'logbook',
   'profile',
   'wall',
+  'wallKiosk',
   'boardFamily',
   'liveQueue',
   'liveClimb',
@@ -63,7 +64,7 @@ const PHONE_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '09-profile.png': 'profile',
 };
 const IPAD_CAPTIONS: Readonly<Record<string, CaptionId>> = {
-  '00-wall.png': 'wall',
+  '00-wall.png': 'wallKiosk',
   '01-home.png': 'home',
   '02-climbs.png': 'climbs',
   '03-workout-generator.png': 'workout',
@@ -94,6 +95,7 @@ export type ScreenshotLayout =
   | 'more-boards'
   | 'live-climb'
   | 'wall-status'
+  | 'wall-column'
   | 'cross-board-logbook';
 export interface ScreenshotRecipe {
   output: string;
@@ -114,7 +116,6 @@ const MORE_BOARD_CAPTURES = [
   '13-moonboard-2024-view.png',
 ] as const;
 const PROFILE_HISTORY_CAPTURES = ['14-logbook.png', '15-session-detail.png'] as const;
-
 /** Keep old capture flows usable; the new opening requires the complete live capture set. */
 export function resolveScreenshotRecipes(
   platform: 'ios' | 'android',
@@ -126,6 +127,34 @@ export function resolveScreenshotRecipes(
   const actualNames = [...captureNames].sort();
   // Sorting copies ignores capture order while retaining duplicate-name rejection.
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
+  // The iPad listing is its own campaign, not the phone set in landscape: the
+  // wall kiosk leads, and the browse screen is shown twice — once whole, once
+  // with its trailing "Now on the wall" column lifted out and enlarged beside it.
+  // It runs on the same six captures the sidebar flow already takes, so it needs
+  // no board switching and no extra fixtures.
+  //
+  // There is deliberately no board-family frame yet. Switching boards mid-flow
+  // works, but the screenshot wall seed's now-playing event does not follow the
+  // new board, so the second board renders with the previous board's climb and
+  // no holds lit. That is harness plumbing in `screenshot-wall-seed.ts`, and the
+  // frame is not worth shipping until it is fixed.
+  if (platform === 'ios' && device.startsWith('ipad-') && matches(legacyNames)) {
+    return [
+      { output: '00-wall-kiosk.png', caption: 'wallKiosk', layout: 'screen', sources: ['00-wall.png'] },
+      // The wall column is part of this very capture, enlarged beside the screen
+      // it came from — never a second screen standing in for it.
+      { output: '01-wall-status.png', caption: 'wallStatus', layout: 'wall-column', sources: ['02-climbs.png'] },
+      { output: '02-home.png', caption: 'home', layout: 'screen', sources: ['01-home.png'] },
+      { output: '03-discover.png', caption: 'discover', layout: 'screen', sources: ['04-discover.png'] },
+      {
+        output: '04-workout-generator.png',
+        caption: 'workout',
+        layout: 'screen',
+        sources: ['03-workout-generator.png'],
+      },
+      { output: '05-profile.png', caption: 'profile', layout: 'screen', sources: ['05-profile.png'] },
+    ];
+  }
   if (matches(legacyNames)) {
     return legacyNames.map((name) => ({ output: name, caption: mapping[name], layout: 'screen', sources: [name] }));
   }
