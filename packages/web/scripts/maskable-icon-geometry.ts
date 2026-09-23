@@ -15,6 +15,13 @@ export const MASKABLE_ICON_SIZE = 512;
  */
 export const MASKABLE_RENDER_MARGIN = 0.99;
 
+/**
+ * The ground every flattened icon is composited onto. Matches
+ * `adaptiveIcon.backgroundColor` in `packages/mobile/app.config.ts` — web and
+ * Android must not disagree about what shows around the mark after a crop.
+ */
+export const ICON_GROUND_RGB = [0, 0, 0] as const;
+
 /** Alpha below this is background, not artwork — the master's edges are antialiased. */
 const ALPHA_FLOOR = 16;
 
@@ -44,21 +51,28 @@ export async function measureContentRadiusRatio(imagePath: string): Promise<numb
 /**
  * Same measurement for an opaque icon: the farthest pixel that is not the ground
  * colour. Maskable icons ship flattened, so there is no alpha to read.
+ *
+ * Pass `ground` when the caller knows it. The default reads the top-left pixel,
+ * which is correct for any icon with an inset mark but would silently measure
+ * nothing if artwork ever reached the corner.
  */
-export async function measureOpaqueContentRadiusRatio(imagePath: string, groundTolerance = 12): Promise<number> {
+export async function measureOpaqueContentRadiusRatio(
+  imagePath: string,
+  { ground, groundTolerance = 12 }: { ground?: readonly [number, number, number]; groundTolerance?: number } = {},
+): Promise<number> {
   const { data, info } = await sharp(imagePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const centreX = (info.width - 1) / 2;
   const centreY = (info.height - 1) / 2;
-  const ground = [data[0], data[1], data[2]];
+  const groundPixel = ground ?? [data[0], data[1], data[2]];
   let maxRadius = 0;
 
   for (let y = 0; y < info.height; y++) {
     for (let x = 0; x < info.width; x++) {
       const pixel = (y * info.width + x) * info.channels;
       const distanceFromGround = Math.max(
-        Math.abs(data[pixel] - ground[0]),
-        Math.abs(data[pixel + 1] - ground[1]),
-        Math.abs(data[pixel + 2] - ground[2]),
+        Math.abs(data[pixel] - groundPixel[0]),
+        Math.abs(data[pixel + 1] - groundPixel[1]),
+        Math.abs(data[pixel + 2] - groundPixel[2]),
       );
       if (distanceFromGround <= groundTolerance) continue;
       const radius = Math.hypot(x - centreX, y - centreY);
