@@ -2,6 +2,8 @@
 
 Status: research draft (2026-09-23). No product code yet.
 
+Scope: this came from static reading of the public Android app (strings and metadata only, no code execution, no traffic to DTB's servers), for interoperability. Anything we build past Phase 1 waits for DTB's agreement (§7).
+
 This covers what DTB is, what its app sends to a wall, how that compares with the boards we already support, and a phased plan for adding it. Claims taken from the app binaries are marked **[binary]**. Claims taken from DTB's website are marked **[site]**. Anything guessed is marked **[inferred]** or **[unverified]**.
 
 ## 1. What DTB is
@@ -163,7 +165,7 @@ The binaries embed third-party credentials: a Dropbox app key and refresh flow, 
 | Capabilities | `CAPABILITIES_BY_BOARD` in `shared/board-config/src/board-capabilities.ts` | New `dtb` row using existing flags. Per-wall layouts come from the spray identity model (`isSizeScopedBoard`), so no new flag. A `cloudCast` flag waits for Phase 3. |
 | Offline | Nightly per-(boardType, layout) SQLite snapshots | Works once `board_climbs` rows exist. Fine for about 108 walls. |
 
-Woods (`git show --stat 500988337`, #3306) is the closest reference diff for adding a non-Aurora board type end to end.
+Woods (`git show --stat 50098833707716d8235b8f78624b3cb930ee0bda`, #3306) is the closest reference diff for adding a non-Aurora board type end to end.
 
 ## 5. Touch points for a `dtb` board type
 
