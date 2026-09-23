@@ -81,16 +81,30 @@ const META_TAG_PATTERN = /<meta\b[^>]*>/gi;
 const OG_IMAGE_PROPERTY_PATTERN = /property=["']og:image["']/i;
 const META_CONTENT_PATTERN = /content=["']([^"']*)["']/i;
 
+function decodeNumericEntity(code: number): string {
+  // Out of range or a surrogate half would throw, and a card URL is not worth
+  // taking the share path down for. Leave anything like that as it arrived —
+  // the URL then fails the BACKEND_URL check rather than being half-decoded.
+  if (!Number.isFinite(code) || code < 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '';
+  return String.fromCodePoint(code);
+}
+
 function decodeHtmlAttribute(value: string): string {
   // `&amp;` is the one that matters — a card URL carries six query separators —
-  // but the others cost nothing and a half-decoded URL warms the wrong entry.
+  // but a half-decoded URL warms the wrong entry, so the numeric forms are
+  // handled generically rather than as the two that happened to come up.
+  //
+  // `&amp;` goes LAST on purpose. Source text of `&amp;#39;` means the literal
+  // characters `&#39;`, so decoding the ampersand first would turn it into an
+  // apostrophe that was never there.
   return value
-    .replaceAll('&amp;', '&')
+    .replaceAll(/&#x([0-9a-fA-F]+);/g, (whole, hex: string) => decodeNumericEntity(Number.parseInt(hex, 16)) || whole)
+    .replaceAll(/&#(\d+);/g, (whole, decimal: string) => decodeNumericEntity(Number(decimal)) || whole)
     .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&#x27;', "'")
+    .replaceAll('&apos;', "'")
     .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>');
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
 }
 
 export function extractOgImageUrl(html: string): string | null {
@@ -138,6 +152,9 @@ async function readAdvertisedCard(pageUrl: string): Promise<string | null> {
     // Warming the page is half the win on its own: an unfurler fetches it
     // before it ever looks for an image.
     const page = await fetch(pageUrl, { signal: abort.signal });
+    // An error page carries no card, and reading it would spend the same ~69 KB
+    // to learn that. The fetch has already warmed what it was going to warm.
+    if (!page.ok) return null;
     return extractOgImageUrl(await page.text());
   } catch {
     return null;

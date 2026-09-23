@@ -139,7 +139,13 @@ describe('useShareClimb', () => {
         await result.current();
       });
 
-      expect(fetchMock).toHaveBeenLastCalledWith(advertised);
+      // Polled rather than asserted straight after `act`. The prewarm is
+      // deliberately not awaited by the hook, so whether its microtask chain has
+      // drained by the time `act` returns is not something this test should be
+      // betting on — it would fail intermittently rather than wrongly pass.
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(advertised);
+      });
     });
 
     it('sorts unsorted set_ids in the warmed og url', async () => {

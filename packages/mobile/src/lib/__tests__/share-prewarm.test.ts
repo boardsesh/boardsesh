@@ -35,6 +35,26 @@ describe('extractOgImageUrl', () => {
     expect(new URL(url ?? '').searchParams.get('s')).toBe('Jamesmcca826');
   });
 
+  it('decodes numeric entities generically, not just the two that came up', () => {
+    // Next escapes what it needs to; the decoder should not be a list of the
+    // forms one production page happened to contain.
+    const url = extractOgImageUrl(
+      `<head><meta property="og:image" content="https://ws.boardsesh.com/og/climb?n=A&#38;g=B&#x26;s=C"/></head>`,
+    );
+
+    expect(url).toBe('https://ws.boardsesh.com/og/climb?n=A&g=B&s=C');
+  });
+
+  it('does not turn a literal &#39; into an apostrophe', () => {
+    // `&amp;#39;` is the escaping of the TEXT `&#39;`. Decoding the ampersand
+    // before the numeric form would invent a character the page never had.
+    const url = extractOgImageUrl(
+      `<head><meta property="og:image" content="https://ws.boardsesh.com/og/climb?n=&amp;#39;"/></head>`,
+    );
+
+    expect(url).toBe('https://ws.boardsesh.com/og/climb?n=&#39;');
+  });
+
   it('reads a tag whose attributes come in the other order', () => {
     const url = extractOgImageUrl(
       `<head><meta content="https://ws.boardsesh.com/og/climb?x=1" property="og:image"/></head>`,
@@ -104,14 +124,17 @@ describe('prewarmShareCaches', () => {
   }
 
   function htmlAdvertising(url: string): Response {
-    return { text: async () => `<head><meta property="og:image" content="${url}"/></head>` } as Response;
+    return {
+      ok: true,
+      text: async () => `<head><meta property="og:image" content="${url}"/></head>`,
+    } as Response;
   }
 
   it('warms the card the page advertises, not just the one the app guessed', async () => {
     // The whole point. The guess is a different cache key at both layers, so
     // warming only it leaves the reader waiting on a cold render of the real
     // card.
-    const fetched = stubFetch((url) => (url === PAGE ? htmlAdvertising(ADVERTISED) : ({} as Response)));
+    const fetched = stubFetch((url) => (url === PAGE ? htmlAdvertising(ADVERTISED) : ({ ok: true } as Response)));
 
     await prewarmShareCaches(PAGE, FALLBACK);
 
@@ -125,7 +148,7 @@ describe('prewarmShareCaches', () => {
     // for whoever asks first — gating it on the page read would leave the
     // backend idle for the whole download.
     const fetched = stubFetch(async (url) => {
-      if (url !== PAGE) return {} as Response;
+      if (url !== PAGE) return { ok: true } as Response;
       await new Promise((resolve) => setTimeout(resolve, 5));
       return htmlAdvertising(ADVERTISED);
     });
@@ -144,7 +167,7 @@ describe('prewarmShareCaches', () => {
         ? new Promise<Response>((_, reject) => {
             init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
           })
-        : ({} as Response),
+        : ({ ok: true } as Response),
     );
 
     vi.useFakeTimers();
@@ -162,7 +185,9 @@ describe('prewarmShareCaches', () => {
 
   it('falls back to the built URL when the page advertises no card', async () => {
     const fetched = stubFetch((url) =>
-      url === PAGE ? ({ text: async () => '<head><title>no card</title></head>' } as Response) : ({} as Response),
+      url === PAGE
+        ? ({ ok: true, text: async () => '<head><title>no card</title></head>' } as Response)
+        : ({ ok: true } as Response),
     );
 
     await prewarmShareCaches(PAGE, FALLBACK);
@@ -173,12 +198,34 @@ describe('prewarmShareCaches', () => {
   it('still warms the fallback when the page fetch fails outright', async () => {
     const fetched = stubFetch((url) => {
       if (url === PAGE) throw new Error('offline');
-      return {} as Response;
+      return { ok: true } as Response;
     });
 
     await prewarmShareCaches(PAGE, FALLBACK);
 
     expect(fetched.filter((url) => url !== PAGE)).toEqual([FALLBACK]);
+  });
+
+  it('does not read the body of an error page', async () => {
+    // A 5xx carries no card, and reading it spends the same ~69 KB to find that
+    // out. The fetch itself has already warmed whatever it was going to.
+    let bodyRead = false;
+    const fetched = stubFetch((url) =>
+      url === PAGE
+        ? ({
+            ok: false,
+            text: async () => {
+              bodyRead = true;
+              return '';
+            },
+          } as Response)
+        : ({ ok: true } as Response),
+    );
+
+    await prewarmShareCaches(PAGE, FALLBACK);
+
+    expect(bodyRead).toBe(false);
+    expect(fetched).toContain(FALLBACK);
   });
 
   it('never rejects, whatever fetch does', async () => {
@@ -197,7 +244,7 @@ describe('prewarmShareCaches', () => {
   it('does nothing further when there is no card to warm at all', async () => {
     // Spray walls: the renderer cannot draw one, so buildOgImageUrl returns
     // null and there is nothing to fall back to.
-    const fetched = stubFetch(() => ({ text: async () => '<head></head>' }) as Response);
+    const fetched = stubFetch(() => ({ ok: true, text: async () => '<head></head>' }) as Response);
 
     await prewarmShareCaches(PAGE, null);
 
