@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { SETS } from '@boardsesh/board-constants';
 import { describe, expect, it } from 'vitest';
 import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
@@ -15,6 +16,23 @@ import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
  *
  * If a future board outgrows the cap, that must surface here.
  */
+/**
+ * Read `MAX_ROUTE_SEGMENT` out of the firmware header rather than restating it.
+ *
+ * The number is the board display's real constraint on `set_ids`, and a copy of
+ * it here would keep passing against a stale bound the day the C side moves —
+ * which is exactly the failure this test exists to prevent, one level up.
+ */
+function readFirmwareRouteSegmentBytes(): number {
+  const header = readFileSync(
+    new URL('../../../../../embedded/libs/thumbnail-client/src/thumbnail_client.h', import.meta.url),
+    'utf8',
+  );
+  const declaration = /MAX_ROUTE_SEGMENT\s*=\s*(\d+)/.exec(header);
+  if (!declaration) throw new Error('MAX_ROUTE_SEGMENT is no longer declared in thumbnail_client.h');
+  return Number(declaration[1]);
+}
+
 describe('every catalogue config fits under MAX_SET_IDS', () => {
   // `SETS` is keyed `"<layoutId>-<sizeId>"`. Split it here rather than inside the
   // schema assertion so a key that stops matching that shape fails as a key
@@ -76,7 +94,7 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     // dropped, which shows as a blank thumbnail on the wall. A set count inside
     // MAX_SET_IDS can still overflow it if the ids themselves get long enough,
     // so assert the characters and not just the count.
-    const FIRMWARE_ROUTE_SEGMENT_BYTES = 96;
+    const FIRMWARE_ROUTE_SEGMENT_BYTES = readFirmwareRouteSegmentBytes();
     const widest = configs.reduce((worst, config) => {
       const length = config.setIds.join(',').length;
       return length > worst.setIds.join(',').length ? config : worst;
