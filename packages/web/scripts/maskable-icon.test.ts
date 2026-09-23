@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  BRAND_MASTER_PATH,
   ICON_GROUND_RGB,
   MASKABLE_ICON_SIZE,
   MASKABLE_SAFE_ZONE_RATIO,
@@ -36,6 +38,17 @@ describe('maskable app icon', () => {
     const plainRadius = await measureOpaqueContentRadiusRatio(plainIcon, { ground: ICON_GROUND_RGB });
 
     expect(maskableRadius).toBeLessThan(plainRadius);
+  });
+
+  it('reads a master that still exists', () => {
+    // Everything above checks the committed OUTPUT, which keeps passing long
+    // after the script that produces it stops running. The brand mark became a
+    // `.webp` while the generator still named the deleted `.png`: nothing failed
+    // until someone tried to regenerate, and all they would have got is ENOENT.
+    //
+    // Asserted on the constant the generator itself resolves, so this cannot
+    // drift from what the generator actually opens.
+    expect(existsSync(BRAND_MASTER_PATH), `${BRAND_MASTER_PATH} is gone; regenerating would fail`).toBe(true);
   });
 
   it('is the size the manifest declares', async () => {

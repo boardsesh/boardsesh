@@ -1,4 +1,25 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+
+/**
+ * The brand master every icon is cut from: the WebP the site itself ships.
+ *
+ * It replaced a PNG twin of the same artwork, and the conversion left the alpha
+ * channel byte for byte identical — the half that matters, since the fit below
+ * measures alpha alone. Reading the shipped asset also stops the launcher icon
+ * drifting away from the mark on the page.
+ *
+ * Declared here rather than in the generator so the generator and its guard
+ * test name the same file by importing it. They used to agree by way of a regex
+ * over the generator's source, which cannot fail the one way that matters: a
+ * reworded declaration stops matching and the guard quietly passes.
+ */
+export const BRAND_MASTER_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'public/brand/boardsesh-mark.webp',
+);
 
 /** Every launcher crop is guaranteed to keep at least this centred circle. */
 export const MASKABLE_SAFE_ZONE_RATIO = 0.4;

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import sharp from 'sharp';
 import {
+  BRAND_MASTER_PATH,
   ICON_GROUND_RGB,
   MASKABLE_ICON_SIZE,
   MASKABLE_RENDER_MARGIN,
@@ -25,17 +26,16 @@ import {
 } from './maskable-icon-geometry';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const masterPath = resolve(webRoot, 'public/brand/boardsesh-mark.png');
 const outputPath = resolve(webRoot, 'public/icons/icon-maskable-512.png');
 
 async function main(): Promise<void> {
-  const radiusRatio = await measureContentRadiusRatio(masterPath);
+  const radiusRatio = await measureContentRadiusRatio(BRAND_MASTER_PATH);
   // Even, so centring on an even canvas is exact rather than rounded.
   const markSize =
     2 * Math.floor((MASKABLE_RENDER_MARGIN * MASKABLE_SAFE_ZONE_RATIO * MASKABLE_ICON_SIZE) / radiusRatio / 2);
   const offset = (MASKABLE_ICON_SIZE - markSize) / 2;
 
-  const mark = await sharp(masterPath).resize(markSize, markSize, { fit: 'contain' }).png().toBuffer();
+  const mark = await sharp(BRAND_MASTER_PATH).resize(markSize, markSize, { fit: 'contain' }).png().toBuffer();
   await sharp({
     create: {
       width: MASKABLE_ICON_SIZE,

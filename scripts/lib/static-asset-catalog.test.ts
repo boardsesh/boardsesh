@@ -122,7 +122,7 @@ describe('static asset catalog generation', () => {
  * to carry them or discovery throws before it reaches what the test is about.
  */
 const RUNTIME_IMAGE_PATHS = [
-  'packages/web/public/brand/boardsesh-mark.png',
+  'packages/web/public/brand/boardsesh-mark.webp',
   'packages/web/public/icons/apple-touch-icon.png',
   'packages/web/public/icons/icon-192.png',
   'packages/web/public/icons/icon-512.png',

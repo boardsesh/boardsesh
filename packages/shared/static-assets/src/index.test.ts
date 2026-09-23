@@ -3,7 +3,7 @@ import { STATIC_ASSET_OBJECT_KEYS, getStaticAssetObjectKey } from './index';
 
 describe('static asset catalog', () => {
   it('exposes compact content-addressed object keys', () => {
-    expect(getStaticAssetObjectKey('/brand/boardsesh-mark.png')).toMatch(/^static\/v1\/[a-f0-9]{64}\.png$/);
+    expect(getStaticAssetObjectKey('/brand/boardsesh-mark.webp')).toMatch(/^static\/v1\/[a-f0-9]{64}\.webp$/);
   });
 
   it('contains only immutable object keys', () => {

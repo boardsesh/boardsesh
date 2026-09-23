@@ -8,7 +8,7 @@ export default function BrandLockup({ eager = false }: { eager?: boolean }) {
   return (
     <Box component="span" className={styles.lockup}>
       <Image
-        src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.png')}
+        src={resolveShellStaticAssetUrl('/brand/boardsesh-mark.webp')}
         alt=""
         width={40}
         height={40}
