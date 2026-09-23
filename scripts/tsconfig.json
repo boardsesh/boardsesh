@@ -20,6 +20,7 @@
     "lib/static-asset-catalog.ts",
     "lib/static-asset-catalog.test.ts",
     "generate-static-assets.ts",
+    "create-service-docker-context.d.ts",
     "__tests__/backend-docker-context-images.test.ts",
     "publish-help-shots.ts",
     "convert-help-shots.ts",

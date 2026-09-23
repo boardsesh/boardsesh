@@ -558,6 +558,7 @@ if (process.argv[1] === scriptPath) {
 }
 
 export {
+  copyDirectory,
   createServiceDockerContext,
   expandWorkspacePattern,
   getPatchedDependencies,

@@ -14,11 +14,75 @@ import { listCatalogueEntries } from '../render-version-projection';
  * checkout, and 404 only inside the built image.
  */
 describe('board art resolves to WebP only', () => {
-  // The catalogue is walked ONCE and every assertion reads this. A second walk
-  // would need its own failure handling, and the one that was here skipped
-  // unresolvable entries silently — so a board that stopped resolving vanished
-  // from the dark-variant check while the light one still guarded it.
-  const entries = listCatalogueEntries().map((entry) => {
+  // Walked ONCE, lazily, and every assertion reads the result.
+  //
+  // Once, because the second walk that used to be here carried its own
+  // `catch {}` — so a board that stopped resolving vanished from the
+  // dark-variant check while the light one still guarded it.
+  //
+  // Lazily, because at describe level a throw out of the catalogue takes the
+  // whole file down as a collection error, with no test name attached to say
+  // what broke.
+  let walked: CatalogueWalk | undefined;
+  const walkCatalogue = (): CatalogueWalk => (walked ??= collectCatalogueArt());
+
+  it('resolves every catalogue entry', () => {
+    const { entries } = walkCatalogue();
+
+    expect(entries.filter((entry) => entry.failed).map((entry) => entry.label)).toEqual([]);
+  });
+
+  it('produces art for every board in the catalogue', () => {
+    const { entries } = walkCatalogue();
+    const boardsWithoutArt = [...new Set(entries.map((entry) => entry.boardName))].filter(
+      (boardName) => !entries.some((entry) => entry.boardName === boardName && entry.relPaths.length > 0),
+    );
+
+    expect(boardsWithoutArt).toEqual([]);
+  });
+
+  it('covers the whole catalogue, full size and thumbnail', () => {
+    expect(walkCatalogue().paths.length).toBeGreaterThan(100);
+  });
+
+  it('never asks for a raster the runtime image does not ship', () => {
+    const notWebp = walkCatalogue().paths.filter(({ relPath }) => !relPath.endsWith('.webp'));
+
+    expect(
+      notWebp.map(({ label, relPath }) => `${label} → ${relPath}`),
+      'the backend Docker context excludes .png; a non-WebP path here 404s only inside the image',
+    ).toEqual([]);
+  });
+
+  it('asks for the dark variants as WebP too', () => {
+    const darkPaths = walkCatalogue().entries.flatMap(({ label, darkRelPaths }) =>
+      darkRelPaths.map((relPath) => ({ label, relPath })),
+    );
+
+    expect(darkPaths.length).toBeGreaterThan(0);
+    expect(
+      darkPaths
+        .filter(({ relPath }) => !relPath.endsWith('.webp'))
+        .map(({ label, relPath }) => `${label} → ${relPath}`),
+    ).toEqual([]);
+  });
+});
+
+type CatalogueEntryArt = {
+  boardName: string;
+  label: string;
+  relPaths: string[];
+  darkRelPaths: string[];
+  failed: boolean;
+};
+
+type CatalogueWalk = {
+  entries: CatalogueEntryArt[];
+  paths: { label: string; relPath: string }[];
+};
+
+function collectCatalogueArt(): CatalogueWalk {
+  const entries = listCatalogueEntries().map((entry): CatalogueEntryArt => {
     const label = `${entry.boardName}/${entry.layoutId}-${entry.sizeId}`;
     try {
       const details = getBoardDetailsForBoard({
@@ -38,51 +102,12 @@ describe('board art resolves to WebP only', () => {
         failed: false,
       };
     } catch {
-      return {
-        boardName: entry.boardName,
-        label,
-        relPaths: [] as string[],
-        darkRelPaths: [] as string[],
-        failed: true,
-      };
+      return { boardName: entry.boardName, label, relPaths: [], darkRelPaths: [], failed: true };
     }
   });
 
-  const paths = entries.flatMap(({ label, relPaths }) => relPaths.map((relPath) => ({ label, relPath })));
-
-  it('resolves every catalogue entry', () => {
-    expect(entries.filter((entry) => entry.failed).map((entry) => entry.label)).toEqual([]);
-  });
-
-  it('produces art for every board in the catalogue', () => {
-    const boardsWithoutArt = [...new Set(entries.map((entry) => entry.boardName))].filter(
-      (boardName) => !entries.some((entry) => entry.boardName === boardName && entry.relPaths.length > 0),
-    );
-
-    expect(boardsWithoutArt).toEqual([]);
-  });
-
-  it('covers the whole catalogue, full size and thumbnail', () => {
-    expect(paths.length).toBeGreaterThan(100);
-  });
-
-  it('never asks for a raster the runtime image does not ship', () => {
-    const notWebp = paths.filter(({ relPath }) => !relPath.endsWith('.webp'));
-
-    expect(
-      notWebp.map(({ label, relPath }) => `${label} → ${relPath}`),
-      'the backend Docker context excludes .png; a non-WebP path here 404s only inside the image',
-    ).toEqual([]);
-  });
-
-  it('asks for the dark variants as WebP too', () => {
-    const darkPaths = entries.flatMap(({ label, darkRelPaths }) => darkRelPaths.map((relPath) => ({ label, relPath })));
-
-    expect(darkPaths.length).toBeGreaterThan(0);
-    expect(
-      darkPaths
-        .filter(({ relPath }) => !relPath.endsWith('.webp'))
-        .map(({ label, relPath }) => `${label} → ${relPath}`),
-    ).toEqual([]);
-  });
-});
+  return {
+    entries,
+    paths: entries.flatMap(({ label, relPaths }) => relPaths.map((relPath) => ({ label, relPath }))),
+  };
+}

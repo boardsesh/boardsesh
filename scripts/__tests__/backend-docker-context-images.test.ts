@@ -1,6 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative, sep } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
+import { copyDirectory, services } from '../create-service-docker-context.mjs';
 
 /**
  * The backend image carries the board photos because `GET /og/climb` composites
@@ -13,54 +15,75 @@ import { describe, expect, it } from 'vitest';
  * asks for a raster this exclusion leaves behind.
  */
 describe('backend Docker context', () => {
-  const script = readFileSync(resolve(process.cwd(), 'scripts/create-service-docker-context.mjs'), 'utf8');
-  const backendStart = script.indexOf('  backend: {');
-  const backendEnd = script.indexOf('  web: {', backendStart);
-  const backendBlock = script.slice(backendStart, backendEnd);
+  const scratchDirs: string[] = [];
 
-  // Asserted before anything reads the slice. Both ends are located by an
-  // indexOf on literal source text, so a rename or a reindent of the SERVICES
-  // map makes the slice empty — and every `toContain` below would then fail
-  // with "expected '' to contain ...", which reads as the exclusion having been
-  // deleted rather than as this test having lost its footing.
-  it('finds the backend service block it reads', () => {
-    expect(backendStart, 'the SERVICES map no longer spells the backend entry this way').toBeGreaterThan(-1);
-    expect(backendEnd, 'the web entry no longer follows the backend entry').toBeGreaterThan(backendStart);
+  afterAll(() => {
+    for (const directory of scratchDirs) rmSync(directory, { recursive: true, force: true });
   });
 
   it('still ships the board images tree', () => {
-    expect(backendBlock).toContain("extraSourceDirs: ['packages/web/public/images']");
+    expect(services.backend.extraSourceDirs).toEqual(['packages/web/public/images']);
   });
 
   it('leaves the PNG originals out of it', () => {
-    expect(backendBlock).toContain("extraSourceDirExcludeExtensions: ['.png']");
+    expect(services.backend.extraSourceDirExcludeExtensions).toEqual(['.png']);
   });
 
   it('keeps the exclusion scoped to the service that asked for it', () => {
     // Declared once, by the backend. A second service opting in — the web image
     // serves icon PNGs — would be a silent 404 rather than a build failure.
-    const declarations = script.match(/extraSourceDirExcludeExtensions:/g) ?? [];
+    const optedIn = Object.entries(services)
+      .filter(([, config]) => config.extraSourceDirExcludeExtensions !== undefined)
+      .map(([serviceName]) => serviceName);
 
-    expect(declarations).toHaveLength(1);
-    expect(backendBlock).toContain('extraSourceDirExcludeExtensions:');
+    expect(optedIn).toEqual(['backend']);
   });
 
-  it('threads the filter through the recursive descent', () => {
-    // The tree is `images/<board>/<layout>/…`, so a filter that only ran on the
-    // first level would exclude nothing at all.
-    //
-    // Asserted on the RECURSIVE CALL specifically, inside the function body: a
-    // looser match is satisfied by the parameter list of the definition itself,
-    // and would pass while the recursion quietly dropped the argument — the
-    // exact failure this is here to catch.
-    const body = script.slice(script.indexOf('function copyDirectory('));
-    const recursiveCall = /copyDirectory\(sourcePath,[^)]*\)/.exec(body.slice(body.indexOf('{')));
+  it('drops the excluded extension at every depth, and keeps everything else', () => {
+    // Exercised rather than read off the source. The tree is
+    // `images/<board>/<layout>/…`, so a filter that ran only on the first level
+    // would exclude nothing at all — and asserting that by matching the text of
+    // the recursive call breaks on a reformat while passing on a real bug.
+    const source = mkdtempSync(join(tmpdir(), 'docker-context-source-'));
+    const destination = mkdtempSync(join(tmpdir(), 'docker-context-out-'));
+    scratchDirs.push(source, destination);
 
-    expect(recursiveCall, 'copyDirectory no longer recurses the way this test reads it').not.toBeNull();
-    expect(recursiveCall?.[0]).toContain('excludeExtensions');
+    mkdirSync(join(source, 'kilter', 'layout-1'), { recursive: true });
+    writeFileSync(join(source, 'top.png'), 'png');
+    writeFileSync(join(source, 'top.webp'), 'webp');
+    writeFileSync(join(source, 'kilter', 'mid.png'), 'png');
+    writeFileSync(join(source, 'kilter', 'mid.webp'), 'webp');
+    writeFileSync(join(source, 'kilter', 'layout-1', 'deep.png'), 'png');
+    writeFileSync(join(source, 'kilter', 'layout-1', 'deep.webp'), 'webp');
+
+    copyDirectory(source, destination, source, source, ['.png']);
+
+    const copied = walk(destination).sort();
+
+    expect(copied).toEqual(['kilter/layout-1/deep.webp', 'kilter/mid.webp', 'top.webp']);
   });
 
-  it('passes the filter to the skip predicate rather than only accepting it', () => {
-    expect(script).toMatch(/shouldSkipSourceEntry\([^)]*excludeExtensions/);
+  it('copies the whole tree when no extension is excluded', () => {
+    // The exclusion has to be the only thing removing files: a recursion that
+    // dropped directories would otherwise read as a working filter above.
+    const source = mkdtempSync(join(tmpdir(), 'docker-context-source-'));
+    const destination = mkdtempSync(join(tmpdir(), 'docker-context-out-'));
+    scratchDirs.push(source, destination);
+
+    mkdirSync(join(source, 'kilter', 'layout-1'), { recursive: true });
+    writeFileSync(join(source, 'top.png'), 'png');
+    writeFileSync(join(source, 'kilter', 'layout-1', 'deep.png'), 'png');
+
+    copyDirectory(source, destination, source);
+
+    expect(walk(destination).sort()).toEqual(['kilter/layout-1/deep.png', 'top.png']);
   });
 });
+
+function walk(directory: string, root = directory): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) return walk(entryPath, root);
+    return [relative(root, entryPath).split(sep).join('/')];
+  });
+}
