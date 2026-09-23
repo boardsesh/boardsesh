@@ -16,13 +16,22 @@ import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
  * If a future board outgrows the cap, that must surface here.
  */
 describe('every catalogue config fits under MAX_SET_IDS', () => {
+  // `SETS` is keyed `"<layoutId>-<sizeId>"`. Split it here rather than inside the
+  // schema assertion so a key that stops matching that shape fails as a key
+  // problem, instead of surfacing as a set_ids rejection and sending the next
+  // reader after the wrong constant.
   const configs = Object.entries(SETS).flatMap(([boardName, byLayoutAndSize]) =>
-    Object.entries(byLayoutAndSize).map(([layoutAndSize, sets]) => ({
-      label: `${boardName}/${layoutAndSize}`,
-      boardName,
-      layoutAndSize,
-      setIds: sets.map((set) => set.id),
-    })),
+    Object.entries(byLayoutAndSize).map(([layoutAndSize, sets]) => {
+      const [layoutId, sizeId, ...rest] = layoutAndSize.split('-');
+      return {
+        label: `${boardName}/${layoutAndSize}`,
+        boardName,
+        layoutId,
+        sizeId,
+        hasWellFormedKey: rest.length === 0 && /^\d+$/.test(layoutId) && /^\d+$/.test(sizeId ?? ''),
+        setIds: sets.map((set) => set.id),
+      };
+    }),
   );
 
   it('covers the whole catalogue', () => {
@@ -40,18 +49,28 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     ).toBeLessThanOrEqual(MAX_SET_IDS);
   });
 
+  it('keys every config as layoutId-sizeId', () => {
+    const malformed = configs.filter((config) => !config.hasWellFormedKey);
+
+    expect(malformed.map((config) => config.label)).toEqual([]);
+  });
+
   it('accepts every config through the og:climb query schema', () => {
-    const rejected = configs.filter(
-      (config) =>
-        !ogClimbQuerySchema.safeParse({
+    const rejected = configs.map((config) => ({
+      label: config.label,
+      issues: ogClimbQuerySchema
+        .safeParse({
           board_name: config.boardName,
-          layout_id: config.layoutAndSize.split('-')[0],
-          size_id: config.layoutAndSize.split('-')[1],
+          layout_id: config.layoutId,
+          size_id: config.sizeId,
           set_ids: config.setIds.join(','),
           frames: 'p1r1',
-        }).success,
-    );
+        })
+        .error?.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+    }));
 
-    expect(rejected.map((config) => config.label)).toEqual([]);
+    // Report the schema's own message, so a rejection names the field it came
+    // from rather than leaving the reader to guess it was set_ids.
+    expect(rejected.filter((config) => config.issues)).toEqual([]);
   });
 });
