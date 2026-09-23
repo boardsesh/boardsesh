@@ -1156,12 +1156,9 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
-    // The www HTML pages the middleware already marks CDN-cacheable (#4652).
-    // Without this rule those headers are inert — Cloudflare caches by file
-    // extension by default, so a page route measured `cf-cache-status: DYNAMIC`
-    // while sending `s-maxage=86400`, and every crawler hit re-rendered at the
-    // single Railway replica. See WWW_HTML_CACHE_EXPRESSION for what each gate
-    // in the expression is holding back.
+    // Share cards reached on www via the origin rule. `OG_CACHE_EXPRESSION` is
+    // host-scoped to ws and does not cover this path, so without its own rule
+    // the same bytes would be edge-cached on one hostname and not the other.
     {
       description: WWW_OG_CACHE_RULE_DESCRIPTION,
       expression: WWW_OG_CACHE_EXPRESSION,
@@ -1173,6 +1170,12 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       },
       enabled: true,
     },
+    // The www HTML pages the middleware already marks CDN-cacheable (#4652).
+    // Without this rule those headers are inert — Cloudflare caches by file
+    // extension by default, so a page route measured `cf-cache-status: DYNAMIC`
+    // while sending `s-maxage=86400`, and every crawler hit re-rendered at the
+    // single Railway replica. See WWW_HTML_CACHE_EXPRESSION for what each gate
+    // in the expression is holding back.
     {
       description: WWW_HTML_CACHE_RULE_DESCRIPTION,
       expression: WWW_HTML_CACHE_EXPRESSION,

@@ -1975,6 +1975,18 @@ describe('a rule phase this token cannot read', () => {
     expect(changes.some((change) => change.resource === 'cache-rule')).toBe(true);
   });
 
+  it('marks only the newly-added phase optional', () => {
+    // A phase that predates the scope it needs must still fail loudly when the
+    // scope is lost; only the one being rolled out is allowed to degrade.
+    const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
+    // Both are mid-rollout: Zone.Transform Rules Edit and Zone.Origin Rules
+    // Edit. Each entry comes off this list the moment its scope is confirmed on
+    // the production token — the list is not a place for a phase to settle.
+    expect(optional).toEqual(['response-header-rule', 'origin-rule']);
+  });
+});
+
+describe('origin rules', () => {
   it('serves share cards from the backend without a redirect, on www', () => {
     const [originRule] = desiredCloudflareState.originRules;
 
@@ -2000,16 +2012,6 @@ describe('a rule phase this token cannot read', () => {
     expect(cardPath.endsWith('/list')).toBe(false);
     expect(cardPath.includes('/setter/')).toBe(false);
     expect(cardPath.includes('/view/')).toBe(false);
-  });
-
-  it('marks only the newly-added phase optional', () => {
-    // A phase that predates the scope it needs must still fail loudly when the
-    // scope is lost; only the one being rolled out is allowed to degrade.
-    const optional = MANAGED_RULE_PHASES.filter((phase) => phase.optional).map((phase) => phase.resource);
-    // Both are mid-rollout: Zone.Transform Rules Edit and Zone.Origin Rules
-    // Edit. Each entry comes off this list the moment its scope is confirmed on
-    // the production token — the list is not a place for a phase to settle.
-    expect(optional).toEqual(['response-header-rule', 'origin-rule']);
   });
 });
 
