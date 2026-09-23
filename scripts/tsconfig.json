@@ -73,6 +73,7 @@
     "__tests__/screenshot-probe-scope.test.ts",
     "__tests__/assert-screenshot-content.test.ts",
     "__tests__/mobile-screenshots-workflows.test.ts",
+    "__tests__/garmin-workflows.test.ts",
     "../infra/railway/config.ts",
     "../infra/railway/plan.ts",
     "mobile-profile-capture.ts",
