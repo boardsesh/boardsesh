@@ -96,6 +96,12 @@ void sortSetIds(char* setIds) {
         // aligns the request with the server's cache key; the server
         // canonicalises set ids itself, so an unsorted list still renders the
         // right board, while a short one does not.
+        //
+        // `extractConfigKey` in embedded/projects/board-controller takes the
+        // same way out past its own cap. The two are separate binaries with no
+        // include between them, so the shared reasoning only survives by being
+        // written down in both places — and a truncating "fix" to either one
+        // reads as a tidy-up until a wide board renders wrong.
         if (parsedSetCount >= MAX_SET_IDS) {
             return;
         }

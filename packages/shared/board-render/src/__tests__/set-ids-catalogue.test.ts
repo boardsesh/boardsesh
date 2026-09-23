@@ -1,37 +1,47 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SETS } from '@boardsesh/board-constants';
 import { describe, expect, it } from 'vitest';
 import { MAX_SET_IDS, ogClimbQuerySchema } from '../validation';
 
 /**
- * Read `MAX_ROUTE_SEGMENT` out of the firmware header rather than restating it.
+ * Anchor the firmware reads on the workspace root, not on this file's depth.
  *
- * The number is the board display's real constraint on `set_ids`, and a copy of
- * it here would keep passing against a stale bound the day the C side moves —
- * which is exactly the failure this test exists to prevent, one level up.
+ * These paths leave the package, and a `../../../../../` prefix is only correct
+ * while this test sits exactly five directories down. Moving the file — or the
+ * package — would turn a tripwire into a read error at the one moment nobody is
+ * thinking about firmware.
  */
-function readFirmwareRouteSegmentBytes(): number {
-  const header = readFileSync(
-    new URL('../../../../../embedded/libs/thumbnail-client/src/thumbnail_client.h', import.meta.url),
-    'utf8',
-  );
-  const declaration = /MAX_ROUTE_SEGMENT\s*=\s*(\d+)/.exec(header);
-  if (!declaration) throw new Error('MAX_ROUTE_SEGMENT is no longer declared in thumbnail_client.h');
-  return Number(declaration[1]);
+function findWorkspaceRoot(): string {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  while (!existsSync(join(directory, 'pnpm-workspace.yaml'))) {
+    const parent = dirname(directory);
+    if (parent === directory) {
+      throw new Error('no pnpm-workspace.yaml above this test, so the firmware sources cannot be located');
+    }
+    directory = parent;
+  }
+  return directory;
 }
 
+const WORKSPACE_ROOT = findWorkspaceRoot();
+
 /**
- * Read a `MAX_SET_IDS` declaration out of one of the firmware translation units.
+ * Read one `static const` declaration out of a firmware source file.
  *
- * There are two, in separate binaries with no `#include` between them, and this
- * exact constant already drifted once: the server said 10, both C++ copies said
- * 16, and the catalogue needed 19. Nothing in any language failed until a Decoy
- * climb rendered short.
+ * The constants below live in C++ that no TypeScript build ever sees, so the
+ * only way to hold them to the server's number is to read the source. The
+ * symbol is named explicitly rather than matched loosely: a second constant
+ * whose name merely ends the same way must not be able to satisfy the check.
  */
-function readFirmwareMaxSetIds(relativePath: string): number {
-  const source = readFileSync(new URL(`../../../../../${relativePath}`, import.meta.url), 'utf8');
-  const declaration = /MAX_SET_IDS\s*=\s*(\d+)/.exec(source);
-  if (!declaration) throw new Error(`MAX_SET_IDS is no longer declared in ${relativePath}`);
+function readFirmwareConstant(relativePath: string, symbol: string): number {
+  const absolutePath = join(WORKSPACE_ROOT, relativePath);
+  if (!existsSync(absolutePath)) {
+    throw new Error(`${relativePath} is gone; this test no longer guards the firmware it names`);
+  }
+  const declaration = new RegExp(String.raw`\b${symbol}\s*=\s*(\d+)`).exec(readFileSync(absolutePath, 'utf8'));
+  if (!declaration) throw new Error(`${symbol} is no longer declared in ${relativePath}`);
   return Number(declaration[1]);
 }
 
@@ -109,7 +119,10 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     // dropped, which shows as a blank thumbnail on the wall. A set count inside
     // MAX_SET_IDS can still overflow it if the ids themselves get long enough,
     // so assert the characters and not just the count.
-    const FIRMWARE_ROUTE_SEGMENT_BYTES = readFirmwareRouteSegmentBytes();
+    const FIRMWARE_ROUTE_SEGMENT_BYTES = readFirmwareConstant(
+      'embedded/libs/thumbnail-client/src/thumbnail_client.h',
+      'MAX_ROUTE_SEGMENT',
+    );
     const widest = configs.reduce((worst, config) => {
       const length = config.setIds.join(',').length;
       return length > worst.setIds.join(',').length ? config : worst;
@@ -127,8 +140,14 @@ describe('every catalogue config fits under MAX_SET_IDS', () => {
     // Two C++ translation units declare this independently, in separate
     // binaries with no `#include` between them. A future edit to one is
     // otherwise invisible until a board renders short on the wall.
-    const thumbnailClient = readFirmwareMaxSetIds('embedded/libs/thumbnail-client/src/thumbnail_client.cpp');
-    const boardController = readFirmwareMaxSetIds('embedded/projects/board-controller/src/main.cpp');
+    const thumbnailClient = readFirmwareConstant(
+      'embedded/libs/thumbnail-client/src/thumbnail_client.cpp',
+      'MAX_SET_IDS',
+    );
+    const boardController = readFirmwareConstant(
+      'embedded/projects/board-controller/src/board_config_key.h',
+      'BOARD_CONFIG_MAX_SET_IDS',
+    );
 
     expect(thumbnailClient).toBe(MAX_SET_IDS);
     expect(boardController).toBe(MAX_SET_IDS);
