@@ -12,7 +12,7 @@ GET https://ws.boardsesh.com/og/climb
   ?board_name=kilter          # enum: kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods
   &layout_id=1
   &size_id=10
-  &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema
+  &set_ids=1,20               # canonicalised (sorted + deduped) by the zod schema; max 24 ids
   &frames=p1080r15p1202r12    # fully determines the image — no DB involved
   &format=jpeg                # optional; jpeg (default) | png | webp
   &n=BING+BANG+BOSH           # optional; climb name, <=64 code points after normalising
@@ -20,6 +20,13 @@ GET https://ws.boardsesh.com/og/climb
   &s=Patrick+Gosling          # optional; setter, <=32 code points after normalising
   &angle=40                   # optional; -90 to 90 (Grasshopper's list starts at -5)
 ```
+
+The `set_ids` cap is 24 (`MAX_SET_IDS`), sized against the catalogue rather
+than guessed: the widest shipped config is Decoy layout 2 / size 1 at 19 hold
+sets. `set-ids-catalogue.test.ts` walks every entry in `SETS` and fails if one
+outgrows the cap — when it was 10, every Decoy climb's card and board image was
+a 400, and nothing caught it because both apps render the overlay locally and
+never call this endpoint.
 
 ### The climb-identity column
 

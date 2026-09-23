@@ -11,11 +11,21 @@
 #define THUMBNAIL_MAX_JPEG_BYTES 65536
 #define THUMBNAIL_HTTP_TIMEOUT_MS 4000
 
+// Longest path segment the route parser will carry, and therefore the longest
+// set-ids list a device can ask for.
+//
+// 24 ids (MAX_SET_IDS, matching the server) at three digits each plus their
+// separators is 95 characters. Every buffer the list passes through is sized
+// from this one constant, because they have to agree: while the path splitter
+// held 64, a 24-id list was refused before `setIds` ever saw it and the whole
+// route was dropped — which reads as a blank thumbnail, not a short one.
+static const size_t MAX_ROUTE_SEGMENT = 96;
+
 struct BoardRenderRoute {
     char boardName[24];
     int layoutId;
     int sizeId;
-    char setIds[64];
+    char setIds[MAX_ROUTE_SEGMENT];
 };
 
 struct ThumbnailUrlOptions {
