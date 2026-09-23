@@ -146,3 +146,38 @@ describe('crawl surface', () => {
     expect(within(disclosure as HTMLElement).queryAllByRole('checkbox').length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The panel and the search form share one `<form>`, and that is exactly where a
+ * filter can go wrong in a way neither piece shows on its own.
+ *
+ * A hidden `<input name="layout">` next to a real checkbox of the same name is
+ * submitted whatever the box says — so unticking a layout would leave it
+ * applied, with no way to remove it short of "Clear all filters". The panel owns
+ * the controls for every tier it renders; only the board-type row, which is
+ * anchors and has no control in the form, gets a hidden input.
+ */
+describe('no control is submitted twice', () => {
+  it('gives each narrow filter exactly one input', () => {
+    renderFilters('all', { boardType: 'kilter', layout: '8', angle: '40' });
+
+    for (const name of ['layout', 'size', 'angle', 'boards']) {
+      const inputs = [...document.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`)];
+      expect(inputs.every((input) => input.type === 'checkbox')).toBe(true);
+      // One input per value — a hidden twin of a checked box is what makes a
+      // filter unremovable.
+      const values = inputs.map((input) => input.value);
+      expect(new Set(values).size).toBe(values.length);
+    }
+  });
+
+  it('leaves an unchecked box carrying nothing', () => {
+    renderFilters('all', { boardType: 'kilter', layout: '8' });
+    const unchecked = [...document.querySelectorAll<HTMLInputElement>('input[name="layout"]')].filter(
+      (input) => !input.defaultChecked,
+    );
+    expect(unchecked.length).toBeGreaterThan(0);
+    // Nothing hidden re-asserts the value the visitor just turned off.
+    expect(document.querySelector('input[type="hidden"][name="layout"]')).toBeNull();
+  });
+});

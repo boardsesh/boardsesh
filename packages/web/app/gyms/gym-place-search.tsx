@@ -154,20 +154,16 @@ export default function GymPlaceSearch({
           {t('places.attribution')}
         </MuiLink>
       </Box>
-      {/* The board filter rides the text search as hidden inputs, or typing a
-          town would wipe the wall the visitor just picked. Facet routes carry
-          their board type in the path, so only the deeper tiers go along there. */}
+      {/* The board TYPE rides the text search as hidden inputs, or typing a town
+          would wipe the board the visitor just picked. It needs them because the
+          board-type row is anchors, so the form has no control of its own for it.
+
+          Layout, size and angle deliberately get NO hidden inputs: the filter
+          panel renders them as real checkboxes inside this same form, so a
+          hidden twin would submit alongside an UNCHECKED box and make the filter
+          impossible to remove. Facet routes carry their board type in the path. */}
       {facet === 'all' &&
         query.boardTypes.map((boardType) => <input key={boardType} type="hidden" name="boardType" value={boardType} />)}
-      {(query.layoutIds ?? []).map((layoutId) => (
-        <input key={`layout-${layoutId}`} type="hidden" name="layout" value={String(layoutId)} />
-      ))}
-      {(query.sizeIds ?? []).map((sizeId) => (
-        <input key={`size-${sizeId}`} type="hidden" name="size" value={String(sizeId)} />
-      ))}
-      {(query.angles ?? []).map((angle) => (
-        <input key={`angle-${angle}`} type="hidden" name="angle" value={String(angle)} />
-      ))}
       {keepOrigin && (
         <>
           <input type="hidden" name="lat" value={String(query.latitude)} />
