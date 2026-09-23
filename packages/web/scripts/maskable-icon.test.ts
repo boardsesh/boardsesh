@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import {
+  ICON_GROUND_RGB,
   MASKABLE_ICON_SIZE,
   MASKABLE_SAFE_ZONE_RATIO,
   measureOpaqueContentRadiusRatio,
@@ -20,7 +21,7 @@ const plainIcon = resolve(webRoot, 'public/icons/icon-512.png');
  */
 describe('maskable app icon', () => {
   it('keeps the mark inside the maskable safe zone', async () => {
-    const radiusRatio = await measureOpaqueContentRadiusRatio(maskableIcon);
+    const radiusRatio = await measureOpaqueContentRadiusRatio(maskableIcon, { ground: ICON_GROUND_RGB });
 
     expect(
       radiusRatio,
@@ -31,8 +32,8 @@ describe('maskable app icon', () => {
   });
 
   it('is not just a copy of the plain icon', async () => {
-    const maskableRadius = await measureOpaqueContentRadiusRatio(maskableIcon);
-    const plainRadius = await measureOpaqueContentRadiusRatio(plainIcon);
+    const maskableRadius = await measureOpaqueContentRadiusRatio(maskableIcon, { ground: ICON_GROUND_RGB });
+    const plainRadius = await measureOpaqueContentRadiusRatio(plainIcon, { ground: ICON_GROUND_RGB });
 
     expect(maskableRadius).toBeLessThan(plainRadius);
   });

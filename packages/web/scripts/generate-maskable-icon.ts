@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import sharp from 'sharp';
 import {
+  ICON_GROUND_RGB,
   MASKABLE_ICON_SIZE,
   MASKABLE_RENDER_MARGIN,
   MASKABLE_SAFE_ZONE_RATIO,
@@ -27,13 +28,6 @@ const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const masterPath = resolve(webRoot, 'public/brand/boardsesh-mark.png');
 const outputPath = resolve(webRoot, 'public/icons/icon-maskable-512.png');
 
-/**
- * Matches `adaptiveIcon.backgroundColor` in `packages/mobile/app.config.ts`. The
- * ground is what shows around the mark once the launcher crops it, so web and
- * Android must not disagree about it.
- */
-const GROUND = '#000000';
-
 async function main(): Promise<void> {
   const radiusRatio = await measureContentRadiusRatio(masterPath);
   // Even, so centring on an even canvas is exact rather than rounded.
@@ -43,7 +37,12 @@ async function main(): Promise<void> {
 
   const mark = await sharp(masterPath).resize(markSize, markSize, { fit: 'contain' }).png().toBuffer();
   await sharp({
-    create: { width: MASKABLE_ICON_SIZE, height: MASKABLE_ICON_SIZE, channels: 4, background: GROUND },
+    create: {
+      width: MASKABLE_ICON_SIZE,
+      height: MASKABLE_ICON_SIZE,
+      channels: 4,
+      background: { r: ICON_GROUND_RGB[0], g: ICON_GROUND_RGB[1], b: ICON_GROUND_RGB[2], alpha: 1 },
+    },
   })
     .composite([{ input: mark, left: offset, top: offset }])
     .removeAlpha()
