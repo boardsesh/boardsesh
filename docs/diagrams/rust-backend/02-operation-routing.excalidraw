@@ -430,6 +430,10 @@
         },
         {
           "type": "arrow",
+          "id": "a-realtime-table"
+        },
+        {
+          "type": "arrow",
           "id": "a-table-m-relay"
         },
         {
@@ -938,6 +942,131 @@
       "lineHeight": 1.25
     },
     {
+      "id": "realtime-set",
+      "type": "rectangle",
+      "x": 1080,
+      "y": 12,
+      "width": 610,
+      "height": 64,
+      "angle": 0,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#fff9db",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 3
+      },
+      "seed": 1836515915,
+      "version": 1,
+      "versionNonce": 35998767,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "realtime-set-label"
+        },
+        {
+          "type": "arrow",
+          "id": "a-realtime-table"
+        }
+      ],
+      "updated": 1,
+      "link": null,
+      "locked": false
+    },
+    {
+      "id": "realtime-set-label",
+      "type": "text",
+      "x": 1164,
+      "y": 26.5,
+      "width": 442,
+      "height": 35,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 1673163998,
+      "version": 1,
+      "versionNonce": 838780505,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "text": "Realtime (sessions, queue, board presence, controller) flips as ONE\ndomain set; rb:routes rejects a partial realtime flip.",
+      "originalText": "Realtime (sessions, queue, board presence, controller) flips as ONE\ndomain set; rb:routes rejects a partial realtime flip.",
+      "fontSize": 14,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "realtime-set",
+      "autoResize": true,
+      "lineHeight": 1.25
+    },
+    {
+      "id": "a-realtime-table",
+      "type": "arrow",
+      "x": 1155,
+      "y": 80,
+      "width": 0,
+      "height": 41,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1.5,
+      "strokeStyle": "dashed",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 356570696,
+      "version": 1,
+      "versionNonce": 1162504874,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          41
+        ]
+      ],
+      "lastCommittedPoint": null,
+      "startBinding": {
+        "elementId": "realtime-set",
+        "focus": 0,
+        "gap": 4
+      },
+      "endBinding": {
+        "elementId": "table",
+        "focus": 0,
+        "gap": 4
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
+    },
+    {
       "id": "native-rest",
       "type": "rectangle",
       "x": 225,
@@ -1269,7 +1398,7 @@
       "x": 760,
       "y": 330,
       "width": 210,
-      "height": 110,
+      "height": 135,
       "angle": 0,
       "strokeColor": "#c2410c",
       "backgroundColor": "#ffd8a8",
@@ -1308,10 +1437,10 @@
     {
       "id": "m-relay-label",
       "type": "text",
-      "x": 819.5,
-      "y": 367.5,
-      "width": 91,
-      "height": 35,
+      "x": 774,
+      "y": 340.5,
+      "width": 182,
+      "height": 114,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -1331,9 +1460,9 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "relay\nproxy to Node",
-      "originalText": "relay\nproxy to Node",
-      "fontSize": 14,
+      "text": "relay\nproxy to Node; only for ops on\nthe relay-eligible allowlist\n(no ctx.connectionId /\ntransport / sessionId use);\nnever forwards a bearer\nequal to CRON_SECRET",
+      "originalText": "relay\nproxy to Node; only for ops on\nthe relay-eligible allowlist\n(no ctx.connectionId /\ntransport / sessionId use);\nnever forwards a bearer\nequal to CRON_SECRET",
+      "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
@@ -1398,7 +1527,7 @@
       "x": 990,
       "y": 330,
       "width": 210,
-      "height": 110,
+      "height": 135,
       "angle": 0,
       "strokeColor": "#c2410c",
       "backgroundColor": "#ffd8a8",
@@ -1438,7 +1567,7 @@
       "id": "m-relayws-label",
       "type": "text",
       "x": 1024,
-      "y": 350,
+      "y": 362.5,
       "width": 142,
       "height": 70,
       "angle": 0,
@@ -1527,7 +1656,7 @@
       "x": 1220,
       "y": 330,
       "width": 210,
-      "height": 110,
+      "height": 135,
       "angle": 0,
       "strokeColor": "#c2410c",
       "backgroundColor": "#ffd8a8",
@@ -1571,7 +1700,7 @@
       "id": "m-shadow-label",
       "type": "text",
       "x": 1251.5,
-      "y": 350,
+      "y": 362.5,
       "width": 147,
       "height": 70,
       "angle": 0,
@@ -1660,7 +1789,7 @@
       "x": 1450,
       "y": 330,
       "width": 210,
-      "height": 110,
+      "height": 135,
       "angle": 0,
       "strokeColor": "#c2410c",
       "backgroundColor": "#ffd8a8",
@@ -1700,7 +1829,7 @@
       "id": "m-native-label",
       "type": "text",
       "x": 1472.5,
-      "y": 350,
+      "y": 362.5,
       "width": 165,
       "height": 70,
       "angle": 0,
@@ -1873,9 +2002,9 @@
       "id": "a-relay-node",
       "type": "arrow",
       "x": 865,
-      "y": 444,
+      "y": 469,
       "width": 0,
-      "height": 92,
+      "height": 67,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -1902,7 +2031,7 @@
         ],
         [
           0,
-          92
+          67
         ]
       ],
       "lastCommittedPoint": null,
@@ -1924,9 +2053,9 @@
       "id": "a-relayws-node",
       "type": "arrow",
       "x": 1095,
-      "y": 444,
+      "y": 469,
       "width": 0,
-      "height": 92,
+      "height": 67,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -1953,7 +2082,7 @@
         ],
         [
           0,
-          92
+          67
         ]
       ],
       "lastCommittedPoint": null,
@@ -1975,9 +2104,9 @@
       "id": "a-shadow-node",
       "type": "arrow",
       "x": 1265,
-      "y": 444,
+      "y": 469,
       "width": 51,
-      "height": 136,
+      "height": 111,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2004,11 +2133,11 @@
         ],
         [
           0,
-          136
+          111
         ],
         [
           -51,
-          136
+          111
         ]
       ],
       "lastCommittedPoint": null,
@@ -2191,9 +2320,9 @@
       "id": "a-shadow-diff",
       "type": "arrow",
       "x": 1385,
-      "y": 444,
+      "y": 469,
       "width": 60,
-      "height": 212,
+      "height": 187,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2220,7 +2349,7 @@
         ],
         [
           -60,
-          212
+          187
         ]
       ],
       "lastCommittedPoint": null,
@@ -2241,8 +2370,8 @@
     {
       "id": "a-shadow-diff-label",
       "type": "text",
-      "x": 1396,
-      "y": 581,
+      "x": 1383,
+      "y": 611,
       "width": 58,
       "height": 18,
       "angle": 0,
@@ -2352,9 +2481,9 @@
       "id": "a-native-local",
       "type": "arrow",
       "x": 1595,
-      "y": 444,
+      "y": 469,
       "width": 20,
-      "height": 72,
+      "height": 47,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2381,7 +2510,7 @@
         ],
         [
           -20,
-          72
+          47
         ]
       ],
       "lastCommittedPoint": null,
@@ -3457,10 +3586,10 @@
     {
       "id": "r1",
       "type": "rectangle",
-      "x": 840,
-      "y": 855,
-      "width": 260,
-      "height": 120,
+      "x": 835,
+      "y": 850,
+      "width": 320,
+      "height": 130,
       "angle": 0,
       "strokeColor": "#c92a2a",
       "backgroundColor": "#ffe3e3",
@@ -3495,10 +3624,10 @@
     {
       "id": "r1-label",
       "type": "text",
-      "x": 884,
-      "y": 877.5,
-      "width": 172,
-      "height": 75,
+      "x": 870,
+      "y": 871,
+      "width": 250,
+      "height": 88,
       "angle": 0,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -3518,9 +3647,9 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "text": "Rung 1 · seconds\nflip rb:routes to all relay\n(Rust becomes a\ntransparent proxy)",
-      "originalText": "Rung 1 · seconds\nflip rb:routes to all relay\n(Rust becomes a\ntransparent proxy)",
-      "fontSize": 15,
+      "text": "Rung 1 · seconds for HTTP domains /\nminutes for realtime: flip rb:routes\nto relay, then pace-close every socket\nwith 1000 so clients rejoin\nthrough the new path.",
+      "originalText": "Rung 1 · seconds for HTTP domains /\nminutes for realtime: flip rb:routes\nto relay, then pace-close every socket\nwith 1000 so clients rejoin\nthrough the new path.",
+      "fontSize": 14,
       "fontFamily": 2,
       "textAlign": "center",
       "verticalAlign": "middle",
@@ -3531,9 +3660,9 @@
     {
       "id": "r2",
       "type": "rectangle",
-      "x": 1130,
+      "x": 1180,
       "y": 855,
-      "width": 240,
+      "width": 210,
       "height": 120,
       "angle": 0,
       "strokeColor": "#c92a2a",
@@ -3573,7 +3702,7 @@
     {
       "id": "r2-label",
       "type": "text",
-      "x": 1173.5,
+      "x": 1208.5,
       "y": 886.5,
       "width": 153,
       "height": 57,
@@ -3609,9 +3738,9 @@
     {
       "id": "r3",
       "type": "rectangle",
-      "x": 1400,
+      "x": 1415,
       "y": 855,
-      "width": 270,
+      "width": 265,
       "height": 120,
       "angle": 0,
       "strokeColor": "#c92a2a",
@@ -3647,7 +3776,7 @@
     {
       "id": "r3-label",
       "type": "text",
-      "x": 1429.5,
+      "x": 1442,
       "y": 880,
       "width": 211,
       "height": 70,
@@ -3683,9 +3812,9 @@
     {
       "id": "a-r12",
       "type": "arrow",
-      "x": 1104,
+      "x": 1159,
       "y": 915,
-      "width": 22,
+      "width": 17,
       "height": 0,
       "angle": 0,
       "strokeColor": "#343a40",
@@ -3712,7 +3841,7 @@
           0
         ],
         [
-          22,
+          17,
           0
         ]
       ],
@@ -3734,9 +3863,9 @@
     {
       "id": "a-r23",
       "type": "arrow",
-      "x": 1374,
+      "x": 1394,
       "y": 915,
-      "width": 22,
+      "width": 17,
       "height": 0,
       "angle": 0,
       "strokeColor": "#343a40",
@@ -3763,7 +3892,7 @@
           0
         ],
         [
-          22,
+          17,
           0
         ]
       ],
