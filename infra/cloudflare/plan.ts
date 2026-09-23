@@ -213,7 +213,9 @@ export const MANAGED_RULE_PHASES = [
     // New scope. `cf:apply --apply` runs on every production deploy, so a phase
     // added before its token scope exists would take www off the deploy train —
     // the same concession the response-header phase makes, for the same reason.
-    // Remove once Zone.Origin Rules Edit is confirmed on the production token.
+    // Remove once Zone.Origin Rules Edit is confirmed on the production token —
+    // tracked in #5697, because an optional phase that is silently skipped
+    // forever looks exactly like one that is working.
     optional: true,
   },
 ] as const satisfies readonly ManagedRulePhase[];

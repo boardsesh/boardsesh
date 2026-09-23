@@ -458,10 +458,16 @@ export const OG_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and starts_wi
  * two hosts' cache behaviour can never drift apart silently: a change meant for
  * one is visibly a change to only one.
  */
-export const WWW_OG_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${OG_PATH_PREFIX}"))`;
+const WWW_OG_PATH_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${OG_PATH_PREFIX}"))`;
+
+export const WWW_OG_CACHE_EXPRESSION = WWW_OG_PATH_EXPRESSION;
 
 /**
  * Serve `/og/*` from the backend while the URL stays on www.
+ *
+ * Built from the same private expression as the cache rule rather than aliased
+ * to its exported name: the two must cover the same paths, and a future edit to
+ * one exported constant should not silently redefine what the other routes.
  *
  * Every image signal on a climb page — `og:image`, the JSON-LD `image`, the
  * in-page `<img>` — pointed at a different hostname from the page itself. Some
@@ -471,7 +477,7 @@ export const WWW_OG_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and star
  * with no redirect for a crawler to decline to follow and no Next compute added
  * to a path crawlers hit hard.
  */
-export const WWW_OG_ORIGIN_EXPRESSION = WWW_OG_CACHE_EXPRESSION;
+export const WWW_OG_ORIGIN_EXPRESSION = WWW_OG_PATH_EXPRESSION;
 
 /** Board-image renders on www. Host-scoped so a future origin on another hostname can't inherit it silently. */
 export const BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and starts_with(http.request.uri.path, "${BOARD_RENDER_PATH_PREFIX}"))`;

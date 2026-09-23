@@ -68,7 +68,7 @@ to `/list` and `/setter/`, and the rate limit to `/view/`, so neither touches a
 card — `cloudflare-apply.test.ts` asserts that rather than leaving it to a
 reading.
 
-**Rollout order.** Land and apply this rule first, confirm
+**Rollout order** (tracked in #5697). Land and apply this rule first, confirm
 `curl -I https://www.boardsesh.com/og/climb?...` returns the image, and only
 then point the web builders at www. The phase is `optional: true` until
 `Zone.Origin Rules Edit` is confirmed on the production token, which means a

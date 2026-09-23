@@ -454,6 +454,23 @@ describe('buildPlan', () => {
     expect(buildPlan(desired, inSyncLiveState(), { allowZoneSsl: false })).toEqual([]);
   });
 
+  it('plans the origin rule on a zone that has never carried one', () => {
+    // The phase is `optional: true` until its token scope lands, so nothing in
+    // CI exercises the apply path for it today — this does, so the logic is not
+    // first run untested on the day the scope is granted.
+    const live: LiveState = { ...inSyncLiveState(), rules: { ...inSyncRules(), 'origin-rule': [] } };
+
+    const changes = buildPlan(desired, live, { allowZoneSsl: false });
+
+    expect(changes.map((change) => change.resource)).toEqual(desired.originRules.map(() => 'origin-rule'));
+  });
+
+  it('plans no origin-rule change once it matches', () => {
+    const changes = buildPlan(desired, inSyncLiveState(), { allowZoneSsl: false });
+
+    expect(changes.filter((change) => change.resource === 'origin-rule')).toEqual([]);
+  });
+
   it('collects every drift (dns + cache + ssl) into one plan', () => {
     const drifted: LiveState = {
       ...inSyncLiveState(),
