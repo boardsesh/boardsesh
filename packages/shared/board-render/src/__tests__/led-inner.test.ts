@@ -9,7 +9,7 @@ import {
   isValidOutlineRing,
   pointInRing,
 } from '@boardsesh/board-art-geometry/ring';
-import { isSimpleRing } from '@boardsesh/board-art-geometry/segmentation';
+import { isSimpleRing } from '@boardsesh/board-art-geometry/raster';
 import { distanceOutsidePolygon, overridesForKey, shardBoardForKey, toTracerPixelsExact } from './gate-measures';
 
 /** {@link isSimpleRing} against a flat `[x0, y0, x1, y1, ...]` shard ring. */

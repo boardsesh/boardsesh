@@ -30,6 +30,8 @@ type DrawStrokeOverlayProps = {
    * value, not an in-place push.
    */
   pointsSV: SharedValue<number[]>;
+  /** Undo/discard can stop samples without rebuilding the active gesture. */
+  strokeLiveSV?: SharedValue<boolean>;
   /**
    * True when the finger-draw toggle is on. Off (the default) only an Apple
    * Pencil / stylus draws, and every finger touch falls through to the board's
@@ -93,6 +95,7 @@ type DrawStrokeOverlayProps = {
  */
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
+  strokeLiveSV,
   fingerDrawSV,
   scaleSV,
   translateXSV,
@@ -143,6 +146,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onStart((event) => {
         'worklet';
+        if (strokeLiveSV) strokeLiveSV.value = true;
         const centreX = containerWidthSV.value / 2;
         const centreY = containerHeightSV.value / 2;
         const renderX = (event.x - translateXSV.value - centreX) / scaleSV.value + centreX;
@@ -152,6 +156,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       })
       .onUpdate((event) => {
         'worklet';
+        if (strokeLiveSV?.value === false) return;
         const current = pointsSV.value;
         const count = current.length;
         if (count === 0 || count >= MAX_STROKE_NUMBERS) return;
@@ -189,6 +194,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     // captured once and read render-scoped values through callbacksRef.
   }, [
     pointsSV,
+    strokeLiveSV,
     fingerDrawSV,
     scaleSV,
     translateXSV,
