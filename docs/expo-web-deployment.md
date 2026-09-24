@@ -140,6 +140,21 @@ Metro and never pass through this script, so an install prompt in dev keeps
   content-hashed and can be cached forever (`Cache-Control: immutable`);
   `index.html` and `wasm/*` (fixed names) should not.
 
+### Static link-preview tags
+
+Link unfurlers read the exported HTML without executing JavaScript.
+`scripts/lib/patch-expo-web-social.mjs` adds Open Graph and Twitter metadata
+pointing at `packages/mobile/public/og.png`, the current route-mark artwork.
+The export fails if this asset is missing. The Node patch runs in both export
+modes and replaces its own tags on repeat runs; it preserves the shell's
+existing icons, theme and `noindex` directive. The PWA patch above continues to
+own icon URLs, including the production CDN rewrite.
+
+The image URL is absolute: `https://app.boardsesh.com/og.png` for the subdomain
+and `https://www.boardsesh.com/app/og.png` for the local static `/app` export.
+Regenerate the artwork from `packages/mobile/assets/splash-icon.png` if the
+logo changes.
+
 ### Cross-origin backend
 
 Because the app runs on `app.boardsesh.com` and the backend on

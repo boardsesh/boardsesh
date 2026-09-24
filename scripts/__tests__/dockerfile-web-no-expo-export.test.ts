@@ -77,6 +77,7 @@ describe('Dockerfile.web after the /app retirement', () => {
     const { extraSourceFiles } = services.web as { extraSourceFiles: string[] };
     if (extraSourceFiles.includes('scripts/build-expo-web-export.sh')) {
       expect(extraSourceFiles).toContain('scripts/lib/patch-expo-web-pwa-manifest.mjs');
+      expect(extraSourceFiles).toContain('scripts/lib/patch-expo-web-social.mjs');
     }
   });
 });

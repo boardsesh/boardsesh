@@ -209,6 +209,9 @@ if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
   exit 1
 fi
 
+# The existing shell/PWA patch owns icons; add only static link-preview tags.
+node "$ROOT_DIR/scripts/lib/patch-expo-web-social.mjs" "$OUTPUT_DIR" "${WEB_BASE_URL%/}"
+
 if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm_bg.wasm" ]]; then
   echo "[build-expo-web-export] missing board-renderer WASM assets in $OUTPUT_DIR" >&2
   exit 1

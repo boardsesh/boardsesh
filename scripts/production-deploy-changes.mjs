@@ -151,6 +151,7 @@ function isAppAffecting(filePath) {
     // app.boardsesh.com serves, so it has to redeploy the subdomain — and run
     // the post-deploy manifest smoke that would catch a bad patch.
     filePath === 'scripts/lib/patch-expo-web-pwa-manifest.mjs' ||
+    filePath === 'scripts/lib/patch-expo-web-social.mjs' ||
     // Everything deploy-app-web ships to the Pages project. Listed file by file
     // rather than as a `deploy/app-subdomain/` prefix because the rest of that
     // directory — README, tsconfig, vite config, __tests__ — is not deployed,

@@ -63,6 +63,7 @@ cat > "$output_dir/index.html" <<'SHELL_EOF'
 ${shell}SHELL_EOF
 cat > "$output_dir/manifest.json" <<'MANIFEST_EOF'
 ${PUBLIC_MANIFEST}MANIFEST_EOF
+printf preview > "$output_dir/og.png"
 touch "$output_dir/wasm/board_renderer_wasm.js"
 touch "$output_dir/wasm/board_renderer_wasm_bg.wasm"
 # The export script's eager-payload budget reads every <script src> in the shell
@@ -105,6 +106,10 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
     });
 
     copyFileSync(sourceExportScript, fixtureExportScript);
+    copyFileSync(
+      join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-social.mjs'),
+      join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-social.mjs'),
+    );
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
     copyFileSync(
       join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'),

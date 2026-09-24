@@ -37,3 +37,25 @@ export const BOULDER_GRADES = [
 ] as const;
 
 export type BoulderGrade = (typeof BOULDER_GRADES)[number];
+
+/** Read a case-insensitive V-number from a plain or combined grade, or return null. */
+export function vGradeNumber(gradeLabel: string): number | null {
+  const match = /V(\d+)/i.exec(gradeLabel);
+  return match ? Number(match[1]) : null;
+}
+
+/** Return supported empty V-steps below the session's lowest send, easy to hard. */
+export function gradeAxisFloorSteps(
+  minVExclusive: number,
+  supportedGrades: readonly BoulderGrade[] = BOULDER_GRADES,
+): readonly BoulderGrade[] {
+  if (!Number.isFinite(minVExclusive) || minVExclusive <= 0) return [];
+  const representatives = new Map<string, BoulderGrade>();
+  for (const grade of supportedGrades) {
+    const step = vGradeNumber(grade.v_grade);
+    if (step != null && step < minVExclusive && !representatives.has(grade.v_grade)) {
+      representatives.set(grade.v_grade, grade);
+    }
+  }
+  return [...representatives.values()];
+}

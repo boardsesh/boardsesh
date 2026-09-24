@@ -58,6 +58,7 @@ const services = {
     extraSourceFiles: [
       'scripts/build-expo-web-export.sh',
       'scripts/lib/patch-expo-web-pwa-manifest.mjs',
+      'scripts/lib/patch-expo-web-social.mjs',
       'scripts/lib/tailscale-hostname.ts',
       // The design capture script is also included by Next's type-check.
       'scripts/lib/design-previews.ts',
