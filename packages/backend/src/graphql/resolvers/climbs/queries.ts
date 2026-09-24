@@ -1,5 +1,5 @@
 import { storedWoodsSizeId } from './woods-authoring';
-import { eq, and, gte, desc, asc, inArray, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, lte, gte, desc, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
@@ -24,7 +24,7 @@ import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapability } from './spray-read-access';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
-import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import { isSupportedSimilarityHold, parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
 import {
   BoardNameSchema,
@@ -111,55 +111,63 @@ export const climbQueries = {
     let sizeId = isSizeScopedSimilarityBoard(boardType) ? (validated.sizeId ?? undefined) : undefined;
 
     if (validated.climbUuid) {
-      const targetHoldRows = await db
+      const targetRows = await db
         .select({
+          frames: dbSchema.boardClimbs.frames,
+          framesCount: dbSchema.boardClimbs.framesCount,
+          compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
           holdId: dbSchema.boardClimbHolds.holdId,
           holdState: dbSchema.boardClimbHolds.holdState,
         })
-        .from(dbSchema.boardClimbHolds)
-        .where(
+        .from(dbSchema.boardClimbs)
+        .leftJoin(
+          dbSchema.boardClimbHolds,
           and(
-            eq(dbSchema.boardClimbHolds.boardType, boardType),
-            eq(dbSchema.boardClimbHolds.climbUuid, validated.climbUuid),
+            eq(dbSchema.boardClimbHolds.boardType, dbSchema.boardClimbs.boardType),
+            eq(dbSchema.boardClimbHolds.climbUuid, dbSchema.boardClimbs.uuid),
+            // An animation's nonempty frames text is authoritative; avoid
+            // transferring materialized rows that would immediately be discarded.
+            or(
+              isNull(dbSchema.boardClimbs.framesCount),
+              lte(dbSchema.boardClimbs.framesCount, 1),
+              isNull(dbSchema.boardClimbs.frames),
+              eq(dbSchema.boardClimbs.frames, ''),
+            ),
           ),
-        );
-      holds = targetHoldRows.map((row) => ({ holdId: row.holdId, holdState: row.holdState }));
+        )
+        .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)));
 
-      // Legacy fallback: pre-existing climbs (especially MoonBoard imports)
-      // carry their hold pattern in board_climbs.frames but have no rows in
-      // board_climb_holds yet (backfill follow-up #1). Without this fallback
-      // a MoonBoard duplicate-publish that points the UI at the existing
-      // climb via `climbUuid` would surface an empty "no identical climbs"
-      // state for the exact match it just rejected.
-      //
-      // The same lookup answers "which wall is the target on?" on a size-scoped
-      // board, so it also runs when only the size is missing.
-      const needsTargetSize = isSizeScopedSimilarityBoard(boardType) && sizeId === undefined;
-      if (holds.length === 0 || needsTargetSize) {
-        const [climbRow] = await db
-          .select({
-            frames: dbSchema.boardClimbs.frames,
-            compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
-          })
-          .from(dbSchema.boardClimbs)
-          .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)))
-          .limit(1);
-        if (holds.length === 0 && climbRow?.frames) {
-          holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
-            holdId,
-            holdState,
-          }));
-        }
-        if (needsTargetSize) sizeId = storedWoodsSizeId(climbRow?.compatibleSizeIds) ?? undefined;
+      const climbRow = targetRows[0];
+      const useAuthoritativeFrames = (climbRow?.framesCount ?? 1) > 1 && Boolean(climbRow?.frames);
+      holds = [];
+      if (!useAuthoritativeFrames) {
+        holds = targetRows
+          .flatMap((row) =>
+            row.holdId === null || row.holdState === null ? [] : [{ holdId: row.holdId, holdState: row.holdState }],
+          )
+          .filter((hold) => isSupportedSimilarityHold(hold, boardType));
+      }
+
+      // Multi-frame rows may reflect only fragments of an animation, so their
+      // canonical frames text is always authoritative. For single-frame
+      // climbs this is only the legacy fallback: older MoonBoard imports can
+      // carry frames without materialized hold rows (backfill follow-up #1).
+      if (holds.length === 0 && climbRow?.frames) {
+        holds = parseFramesToHoldEntries(boardType, climbRow.frames)
+          .map(({ holdId, holdState }) => ({ holdId, holdState }))
+          .filter((hold) => isSupportedSimilarityHold(hold, boardType));
+      }
+
+      if (isSizeScopedSimilarityBoard(boardType) && sizeId === undefined) {
+        sizeId = storedWoodsSizeId(climbRow?.compatibleSizeIds) ?? undefined;
       }
 
       // Always exclude the target climb itself from its own similar list.
       excludeUuid = validated.climbUuid;
     } else {
-      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '').map(({ holdId, holdState }) => ({
-        holdId,
-        holdState,
-      }));
+      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '')
+        .map(({ holdId, holdState }) => ({ holdId, holdState }))
+        .filter((hold) => isSupportedSimilarityHold(hold, boardType));
     }
 
     if (holds.length === 0) return [];

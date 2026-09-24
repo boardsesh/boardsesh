@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   boardClimbs,
@@ -14,6 +14,7 @@ import {
   blendedQualityAverageSql,
   mergeCatalogCharacteristicsSql,
 } from '@boardsesh/db/queries';
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 
 import type { KilterTokenProvider } from '../api/token-provider';
@@ -41,6 +42,13 @@ import {
 } from './catalog-backlog';
 import { fingerprintFromHolds } from './fingerprint';
 import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
+import {
+  decideCatalogFingerprint,
+  enrichFingerprintOwnersWithLegacyCompatibility,
+  partitionLegacyFingerprintCompatibilityRows,
+  storedFingerprintsForRawCandidates,
+  type LegacyFingerprintCompatibilityRow,
+} from './catalog-fingerprint-compat';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
 import { reconcileDeletions, type DeletionReport } from './deletions';
 import { syncKilterLocations } from './locations-sync';
@@ -147,6 +155,72 @@ async function loadHoleToPlacement(db: DrizzleDb, layoutId: number): Promise<Map
     if (row.holeId != null) map.set(row.holeId, row.id);
   }
   return map;
+}
+
+/**
+ * Existing rows must reach the first-fingerprint-owner index in stable order.
+ * Duplicate stored fingerprints are legal, so UUID order is the tie-breaker
+ * shared with the compatibility preload below.
+ */
+export function existingCatalogLayoutRowsQuery(db: DrizzleDb, boardLayoutId: number) {
+  return db
+    .select({
+      uuid: boardClimbs.uuid,
+      fingerprint: boardClimbs.holdFingerprint,
+      isListed: boardClimbs.isListed,
+      userId: boardClimbs.userId,
+      isDraft: boardClimbs.isDraft,
+    })
+    .from(boardClimbs)
+    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, boardLayoutId)))
+    .orderBy(boardClimbs.uuid);
+}
+
+/**
+ * Load catalog-owned frames whose raw-event hash may differ from projection.
+ * Normal single-frame rows stay out of the preload. One query keeps this compatibility
+ * bridge out of the per-layout hot loop; rows are partitioned in memory.
+ */
+export function legacyFingerprintCompatibilityRowsQuery(db: DrizzleDb) {
+  const knownRoles = Object.keys(HOLD_STATE_MAP.kilter).join('|');
+  const canonicalSingleFrame = `^(p[1-9][0-9]*r(${knownRoles}))+$`;
+  const repeatedHold = String.raw`p([0-9]+)r[0-9]+.*p\1r`;
+  return db
+    .select({
+      layoutId: boardClimbs.layoutId,
+      uuid: boardClimbs.uuid,
+      frames: boardClimbs.frames,
+      fingerprint: boardClimbs.holdFingerprint,
+    })
+    .from(boardClimbs)
+    .where(
+      and(
+        eq(boardClimbs.boardType, KILTER),
+        isNull(boardClimbs.userId),
+        or(
+          gt(boardClimbs.framesCount, 1),
+          sql`${boardClimbs.frames} !~ ${canonicalSingleFrame}`,
+          sql`${boardClimbs.frames} ~ ${repeatedHold}`,
+        ),
+        isNotNull(boardClimbs.frames),
+        ne(boardClimbs.frames, ''),
+        isNotNull(boardClimbs.holdFingerprint),
+      ),
+    )
+    .orderBy(boardClimbs.layoutId, boardClimbs.uuid);
+}
+
+async function loadLegacyFingerprintCompatibilityRows(
+  db: DrizzleDb,
+): Promise<Map<number, LegacyFingerprintCompatibilityRow[]>> {
+  const rows = await legacyFingerprintCompatibilityRowsQuery(db);
+  return partitionLegacyFingerprintCompatibilityRows(
+    rows.flatMap((row) =>
+      row.frames && row.fingerprint
+        ? [{ layoutId: row.layoutId, uuid: row.uuid, frames: row.frames, fingerprint: row.fingerprint }]
+        : [],
+    ),
+  );
 }
 
 export type GroupResult = {
@@ -542,16 +616,17 @@ export function buildLayoutCatalogIndex(input: {
   climbRows: LayoutCatalogClimbRow[];
   selfAliasUuids: string[];
   holeToPlacement: Map<number, number>;
+  legacyFingerprintCompatibilityRows?: ReadonlyArray<LegacyFingerprintCompatibilityRow>;
 }): LayoutCatalogIndex {
   const existingByLowerUuid = new Map<string, string>();
-  const fingerprintToCanonical = new Map<string, string>();
+  const fingerprintToCanonical = enrichFingerprintOwnersWithLegacyCompatibility(
+    input.climbRows,
+    input.legacyFingerprintCompatibilityRows ?? [],
+  );
   const existingCanonicalMeta = new Map<string, ExistingClimbMeta>();
   for (const row of input.climbRows) {
     existingByLowerUuid.set(row.uuid.toLowerCase(), row.uuid);
     existingCanonicalMeta.set(row.uuid, { isListed: row.isListed, userId: row.userId, isDraft: row.isDraft });
-    if (row.fingerprint && !fingerprintToCanonical.has(row.fingerprint)) {
-      fingerprintToCanonical.set(row.fingerprint, row.uuid);
-    }
   }
   const existingSelfAliasLower = new Set<string>();
   for (const aliasUuid of input.selfAliasUuids) existingSelfAliasLower.add(aliasUuid.toLowerCase());
@@ -575,17 +650,9 @@ async function loadLayoutCatalogIndex(
   db: DrizzleDb,
   layoutId: number,
   holeToPlacement: Map<number, number>,
+  legacyFingerprintCompatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>,
 ): Promise<LayoutCatalogIndex> {
-  const climbRows = await db
-    .select({
-      uuid: boardClimbs.uuid,
-      fingerprint: boardClimbs.holdFingerprint,
-      isListed: boardClimbs.isListed,
-      userId: boardClimbs.userId,
-      isDraft: boardClimbs.isDraft,
-    })
-    .from(boardClimbs)
-    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, layoutId)));
+  const climbRows = await existingCatalogLayoutRowsQuery(db, layoutId);
 
   // Existing self-aliases (alias_uuid = canonical_uuid) for this layout, so the
   // identity path only writes the ones actually missing (~6k historical gap;
@@ -615,6 +682,7 @@ async function loadLayoutCatalogIndex(
     climbRows,
     selfAliasUuids: selfAliasRows.map((row) => row.aliasUuid),
     holeToPlacement,
+    legacyFingerprintCompatibilityRows,
   });
 }
 
@@ -754,7 +822,7 @@ export function stageCatalogClimb(
           sourceLayoutId: index.layoutId,
           sourceLayoutUuid: context.sourceLayoutUuid,
           targetLayoutId: alternateLayout.layoutId,
-          fingerprint: fingerprintFromHolds(alternateLayout.decoded.holds),
+          fingerprint: fingerprintFromHolds(alternateLayout.decoded.fingerprintEvents),
           sourceFailure: decoded,
           stats: [],
         });
@@ -773,15 +841,21 @@ export function stageCatalogClimb(
     );
     return 'skipped';
   }
-  const { frames, holds } = decoded;
-  const fingerprint = fingerprintFromHolds(holds);
+  const { frames, fingerprintEvents, holdRowsToInsert } = decoded;
+  const fingerprintDecision = decideCatalogFingerprint(
+    index.fingerprintToCanonical,
+    climb.climbUuid,
+    fingerprintEvents,
+    holdRowsToInsert,
+  );
+  const { fingerprint } = fingerprintDecision;
   const resolvedByDecode = openSkips.get(lowerUuid);
   if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
 
   // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
   //    already-seen-this-run) canonical becomes an alias, not a new row.
-  const canonicalByFingerprint = index.fingerprintToCanonical.get(fingerprint);
-  if (canonicalByFingerprint) {
+  if (fingerprintDecision.canonicalToInsert === null) {
+    const canonicalByFingerprint = fingerprintDecision.canonicalUuid;
     climbUuidToCanonical.set(lowerUuid, canonicalByFingerprint);
     batch.aliasRows.push({
       boardType: KILTER,
@@ -818,8 +892,9 @@ export function stageCatalogClimb(
     return 'folded';
   }
 
-  // 3. Genuinely new canonical.
-  index.fingerprintToCanonical.set(fingerprint, climb.climbUuid);
+  // 3. Genuinely new canonical. Empty projections keep a NULL fingerprint and
+  // stay out of the owner index: SHA256('') must not alias unrelated climbs.
+  if (fingerprint !== null) index.fingerprintToCanonical.set(fingerprint, climb.climbUuid);
   index.existingByLowerUuid.set(lowerUuid, climb.climbUuid);
   climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
   batch.newClimbInserts.push({
@@ -845,7 +920,7 @@ export function stageCatalogClimb(
     createdAt: climb.createdAt,
     holdFingerprint: fingerprint,
   });
-  for (const hold of holds) {
+  for (const hold of fingerprintDecision.holdRowsToInsert) {
     batch.newHoldRows.push({
       boardType: KILTER,
       climbUuid: climb.climbUuid,
@@ -908,6 +983,7 @@ async function relistCanonicals(db: DrizzleDb, canonicalUuids: string[]): Promis
  */
 type SyncBoardLayoutGroupArgs = {
   db: DrizzleDb;
+  legacyFingerprintCompatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>;
   state: TokenState;
   boardLayoutId: number;
   gripsLayoutUuids: string[];
@@ -928,7 +1004,12 @@ async function syncBoardLayoutGroup(args: SyncBoardLayoutGroupArgs): Promise<Gro
   // Stamped once per group so every climb in it is aged against the same clock.
   const groupStartedAt = new Date();
 
-  const index = await loadLayoutCatalogIndex(db, boardLayoutId, holeToPlacement);
+  const index = await loadLayoutCatalogIndex(
+    db,
+    boardLayoutId,
+    holeToPlacement,
+    args.legacyFingerprintCompatibilityRows,
+  );
 
   // Canonicals to re-list this group (a listed Grips climb folded onto a synced
   // unlisted canonical). Deduped across the group's Grips layouts.
@@ -1170,6 +1251,7 @@ function pushRerouteFallbackSkip(result: GroupResult, candidate: RerouteCandidat
 
 type IngestRerouteCandidatesArgs = {
   db: DrizzleDb;
+  legacyFingerprintCompatibilityRowsByLayout: ReadonlyMap<number, ReadonlyArray<LegacyFingerprintCompatibilityRow>>;
   candidates: RerouteCandidate[];
   openSkips: Map<string, string>;
   deletedLowerUuids: ReadonlySet<string> | null;
@@ -1209,6 +1291,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
       const layoutResult = await ingestRerouteCandidatesForLayout({
         db: args.db,
         targetLayoutId,
+        legacyFingerprintCompatibilityRows: args.legacyFingerprintCompatibilityRowsByLayout.get(targetLayoutId) ?? [],
         candidates: layoutCandidates,
         holeToPlacement,
         openSkips: args.openSkips,
@@ -1228,6 +1311,7 @@ async function ingestRerouteCandidates(args: IngestRerouteCandidatesArgs): Promi
 
 async function ingestRerouteCandidatesForLayout(input: {
   db: DrizzleDb;
+  legacyFingerprintCompatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>;
   targetLayoutId: number;
   candidates: RerouteCandidate[];
   holeToPlacement: Map<number, number>;
@@ -1239,6 +1323,13 @@ async function ingestRerouteCandidatesForLayout(input: {
   const result = createGroupResult();
   const candidateLowerUuids = candidates.map((candidate) => candidate.climb.climbUuid.toLowerCase());
   const candidateFingerprints = [...new Set(candidates.map((candidate) => candidate.fingerprint))];
+  // Projected hashes broaden this DB fetch only when that row's frames prove an
+  // exact candidate raw-event hash. buildLayoutCatalogIndex reconstructs the
+  // semantic owner map and never treats those projected lookup keys as identity.
+  const lookupFingerprints = storedFingerprintsForRawCandidates(
+    new Set(candidateFingerprints),
+    input.legacyFingerprintCompatibilityRows,
+  );
 
   // Two narrow loads rather than the whole target layout: the candidate uuids
   // wherever they live (one already on another layout must not be ingested a
@@ -1258,7 +1349,7 @@ async function ingestRerouteCandidatesForLayout(input: {
     .from(boardClimbs)
     .where(and(eq(boardClimbs.boardType, KILTER), inArray(sql`lower(${boardClimbs.uuid})`, candidateLowerUuids)));
   const fingerprintRows =
-    candidateFingerprints.length > 0
+    lookupFingerprints.length > 0
       ? await db
           .select(climbColumns)
           .from(boardClimbs)
@@ -1266,14 +1357,17 @@ async function ingestRerouteCandidatesForLayout(input: {
             and(
               eq(boardClimbs.boardType, KILTER),
               eq(boardClimbs.layoutId, targetLayoutId),
-              inArray(boardClimbs.holdFingerprint, candidateFingerprints),
+              inArray(boardClimbs.holdFingerprint, lookupFingerprints),
             ),
           )
+          .orderBy(boardClimbs.uuid)
       : [];
 
   const targetRowsByLowerUuid = new Map<string, LayoutCatalogClimbRow>();
   const otherLayoutByLowerUuid = new Map<string, number | null>();
-  for (const row of [...uuidRows, ...fingerprintRows]) {
+  // Relevant fingerprint owners keep the same database ordering as the main
+  // layout index. UUID-only rows supply identity metadata, not a new priority.
+  for (const row of [...fingerprintRows, ...uuidRows]) {
     const lowerUuid = row.uuid.toLowerCase();
     if (row.layoutId === targetLayoutId) {
       if (!targetRowsByLowerUuid.has(lowerUuid)) targetRowsByLowerUuid.set(lowerUuid, row);
@@ -1300,6 +1394,7 @@ async function ingestRerouteCandidatesForLayout(input: {
   const index = buildLayoutCatalogIndex({
     layoutId: targetLayoutId,
     climbRows: [...targetRowsByLowerUuid.values()],
+    legacyFingerprintCompatibilityRows: input.legacyFingerprintCompatibilityRows,
     selfAliasUuids: selfAliasRows.map((row) => row.aliasUuid),
     holeToPlacement,
   });
@@ -1483,6 +1578,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // The climbs already sitting unresolved in the backlog, so a run that finally
   // ingests one can stamp it resolved without scanning every climb it saw.
   const openSkips = await loadOpenSkips(args.db, KILTER);
+  const legacyFingerprintCompatibilityRowsByLayout = await loadLegacyFingerprintCompatibilityRows(args.db);
 
   // Kilter's deletion list, fetched ONCE for the whole run and shared by both
   // consumers: the identity re-list (which must never resurrect a climb Kilter
@@ -1508,6 +1604,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       db: args.db,
       state,
       boardLayoutId,
+      legacyFingerprintCompatibilityRows: legacyFingerprintCompatibilityRowsByLayout.get(boardLayoutId) ?? [],
       gripsLayoutUuids,
       openSkips,
       deletedLowerUuids,
@@ -1525,6 +1622,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // write below, so a successful reroute never leaves a skip row behind.
   const rerouteResult = await ingestRerouteCandidates({
     db: args.db,
+    legacyFingerprintCompatibilityRowsByLayout,
     candidates: [...rerouteCandidates.values()],
     openSkips,
     deletedLowerUuids,

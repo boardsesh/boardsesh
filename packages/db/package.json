@@ -116,6 +116,7 @@
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
     "db:refresh-moonboard-angle-estimates": "tsx scripts/refresh-moonboard-angle-estimates.ts",
     "db:refresh-moonboard-wide-angle-estimates": "tsx scripts/refresh-moonboard-wide-angle-estimates.ts",
+    "db:repair-board-climb-holds": "tsx scripts/repair-board-climb-holds.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",

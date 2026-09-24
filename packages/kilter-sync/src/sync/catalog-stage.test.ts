@@ -11,6 +11,8 @@ import {
 } from './catalog-sync';
 import { decodeGripsClimbConcat } from './catalog-parse';
 import { fingerprintFromHolds } from './fingerprint';
+import type { LegacyFingerprintCompatibilityRow } from './catalog-fingerprint-compat';
+import { legacyAuroraRawFrameHoldEvents } from '@boardsesh/board-constants/hold-states';
 import type { KilterCatalogClimb } from '../api/kilter-rest';
 
 // Two layouts with disjoint hole ids, the shape behind the eight climbs Kilter
@@ -65,7 +67,7 @@ function catalogRow(overrides: Partial<LayoutCatalogClimbRow> & Pick<LayoutCatal
 function fingerprintFor(climbConcat: string, holeToPlacement: Map<number, number>, frameCount: number): string {
   const decoded = decodeGripsClimbConcat(climbConcat, holeToPlacement, frameCount);
   if (!decoded.ok) throw new Error(`expected this concat to decode, got ${decoded.reason}`);
-  return fingerprintFromHolds(decoded.holds);
+  return fingerprintFromHolds(decoded.fingerprintEvents);
 }
 
 function rerouteContext(entries: Array<[number, Map<number, number>]>): RerouteContext {
@@ -77,6 +79,7 @@ function stagingContext(
     layoutId?: number;
     climbRows?: LayoutCatalogClimbRow[];
     selfAliasUuids?: string[];
+    legacyFingerprintCompatibilityRows?: LegacyFingerprintCompatibilityRow[];
     holeToPlacement?: Map<number, number>;
     openSkips?: Map<string, string>;
     /** Undefined means "a list exists and names nothing"; null means no list at all. */
@@ -89,6 +92,7 @@ function stagingContext(
       layoutId: options.layoutId ?? SOURCE_LAYOUT_ID,
       climbRows: options.climbRows ?? [],
       selfAliasUuids: options.selfAliasUuids ?? [],
+      legacyFingerprintCompatibilityRows: options.legacyFingerprintCompatibilityRows,
       holeToPlacement: options.holeToPlacement ?? SOURCE_REMAP,
     }),
     sourceLayoutUuid: '27',
@@ -353,5 +357,142 @@ void describe('stageCatalogClimb — reroute candidates', () => {
     expect(stageCatalogClimb(unparsable, context)).toBe('skipped');
     expect(reroute.candidates.size).toBe(0);
     expect(context.result.skips[0]).toMatchObject({ reason: 'unparsable_concat' });
+  });
+});
+
+void describe('staging canonical raw-event fingerprints', () => {
+  it.each([
+    { label: 'relight', animatedConcat: 'h10p12e1h10p14s2', simpleConcat: 'h10p12' },
+    { label: 'delayed start', animatedConcat: 'h10p13s2', simpleConcat: 'h10p13' },
+  ])('keeps a $label distinct for both stored hash generations', ({ animatedConcat, simpleConcat }) => {
+    const decoded = decodeGripsClimbConcat(animatedConcat, SOURCE_REMAP, 2);
+    if (!decoded.ok) throw new Error(`expected animated concat to decode, got ${decoded.reason}`);
+    const rawFingerprint = fingerprintFromHolds(decoded.fingerprintEvents);
+    const projectedFingerprint = fingerprintFromHolds(decoded.holdRowsToInsert);
+
+    for (const storedFingerprint of [rawFingerprint, projectedFingerprint]) {
+      const compatibilityRow = {
+        uuid: 'ANIMATED',
+        layoutId: SOURCE_LAYOUT_ID,
+        frames: decoded.frames,
+        fingerprint: storedFingerprint,
+      };
+      const animatedContext = stagingContext({
+        climbRows: [catalogRow({ uuid: 'ANIMATED', fingerprint: storedFingerprint })],
+        legacyFingerprintCompatibilityRows: [compatibilityRow],
+      });
+      expect(
+        stageCatalogClimb(
+          catalogClimb({ climbUuid: 'ANIMATED-ALIAS', climbConcat: animatedConcat, frameCount: 2 }),
+          animatedContext,
+        ),
+      ).toBe('folded');
+      expect(
+        stageCatalogClimb(
+          catalogClimb({ climbUuid: 'SIMPLE-NEW', climbConcat: simpleConcat, frameCount: 2 }),
+          animatedContext,
+        ),
+      ).toBe('inserted');
+      expect(animatedContext.batch.newClimbInserts.map((row) => row.uuid)).toEqual(['SIMPLE-NEW']);
+    }
+  });
+
+  it.each([
+    { label: 'relight', animatedConcat: 'h10p12e1h10p14s2', simpleConcat: 'h10p12' },
+    { label: 'delayed start', animatedConcat: 'h10p13s2', simpleConcat: 'h10p13' },
+  ])('does not fold a new $label onto a stored simple owner', ({ animatedConcat, simpleConcat }) => {
+    const context = stagingContext({
+      climbRows: [catalogRow({ uuid: 'SIMPLE', fingerprint: fingerprintFor(simpleConcat, SOURCE_REMAP, 2) })],
+    });
+    expect(
+      stageCatalogClimb(catalogClimb({ climbUuid: 'SIMPLE-ALIAS', climbConcat: simpleConcat, frameCount: 2 }), context),
+    ).toBe('folded');
+    expect(
+      stageCatalogClimb(
+        catalogClimb({ climbUuid: 'ANIMATED-NEW', climbConcat: animatedConcat, frameCount: 2 }),
+        context,
+      ),
+    ).toBe('inserted');
+    expect(context.batch.newClimbInserts.map((row) => row.uuid)).toEqual(['ANIMATED-NEW']);
+  });
+
+  it.each([
+    ['animated UUID first', 'A-ANIMATED', 'Z-SIMPLE'],
+    ['simple UUID first', 'Z-ANIMATED', 'A-SIMPLE'],
+  ] as const)('selects exact owners when both exist and the $label', (_label, animatedUuid, simpleUuid) => {
+    const animatedConcat = 'h10p12e1h10p14s2';
+    const simpleConcat = 'h10p12';
+    const decoded = decodeGripsClimbConcat(animatedConcat, SOURCE_REMAP, 2);
+    if (!decoded.ok) throw new Error(`expected animated concat to decode, got ${decoded.reason}`);
+    const rows = [
+      catalogRow({ uuid: animatedUuid, fingerprint: fingerprintFromHolds(decoded.holdRowsToInsert) }),
+      catalogRow({ uuid: simpleUuid, fingerprint: fingerprintFor(simpleConcat, SOURCE_REMAP, 2) }),
+    ].sort((left, right) => left.uuid.localeCompare(right.uuid));
+    const context = stagingContext({
+      climbRows: rows,
+      legacyFingerprintCompatibilityRows: [
+        {
+          uuid: animatedUuid,
+          layoutId: SOURCE_LAYOUT_ID,
+          frames: decoded.frames,
+          fingerprint: fingerprintFromHolds(decoded.holdRowsToInsert),
+        },
+      ],
+    });
+    expect(
+      stageCatalogClimb(catalogClimb({ climbUuid: 'NEW-SIMPLE', climbConcat: simpleConcat, frameCount: 2 }), context),
+    ).toBe('folded');
+    expect(context.climbUuidToCanonical.get('new-simple')).toBe(simpleUuid);
+    expect(
+      stageCatalogClimb(
+        catalogClimb({ climbUuid: 'NEW-ANIMATED', climbConcat: animatedConcat, frameCount: 2 }),
+        context,
+      ),
+    ).toBe('folded');
+    expect(context.climbUuidToCanonical.get('new-animated')).toBe(animatedUuid);
+  });
+
+  it.each([
+    ['animated first', 'h10p12e1h10p14s2', 'h10p12'],
+    ['simple first', 'h10p12', 'h10p12e1h10p14s2'],
+  ] as const)('inserts both distinct animations when staged $label in one run', (_label, first, second) => {
+    const context = stagingContext();
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'FIRST', climbConcat: first, frameCount: 2 }), context)).toBe(
+      'inserted',
+    );
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'SECOND', climbConcat: second, frameCount: 2 }), context)).toBe(
+      'inserted',
+    );
+    expect(context.batch.newClimbInserts).toHaveLength(2);
+    expect(context.batch.newHoldRows).toHaveLength(2);
+  });
+
+  it.each([
+    { frames: 'p100r12,"x100p100r13', climbConcat: 'h10p12e1h10p13s2', frameCount: 2 },
+    { frames: 'p100r12p200r999', climbConcat: 'h10p12h20p999', frameCount: 1 },
+  ])(
+    'bridges a proven legacy owner through the current staging writer ($frames)',
+    ({ frames, climbConcat, frameCount }) => {
+      const fingerprint = fingerprintFromHolds(legacyAuroraRawFrameHoldEvents(frames, 'kilter'));
+      const context = stagingContext({
+        climbRows: [catalogRow({ uuid: 'LEGACY', fingerprint })],
+        legacyFingerprintCompatibilityRows: [{ uuid: 'LEGACY', layoutId: SOURCE_LAYOUT_ID, frames, fingerprint }],
+      });
+      expect(stageCatalogClimb(catalogClimb({ climbConcat, frameCount }), context)).toBe('folded');
+      expect(context.batch.newClimbInserts).toHaveLength(0);
+      expect(context.climbUuidToCanonical.get('climb-1')).toBe('LEGACY');
+    },
+  );
+
+  it('keeps two empty projections as separate NULL-fingerprint canonicals', () => {
+    const context = stagingContext();
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'EMPTY-1', climbConcat: 'h10p999' }), context)).toBe('inserted');
+    expect(stageCatalogClimb(catalogClimb({ climbUuid: 'EMPTY-2', climbConcat: 'h20p999' }), context)).toBe('inserted');
+    expect(context.batch.newClimbInserts.map((row) => [row.uuid, row.holdFingerprint])).toEqual([
+      ['EMPTY-1', null],
+      ['EMPTY-2', null],
+    ]);
+    expect(context.index.fingerprintToCanonical.size).toBe(0);
+    expect(context.batch.newHoldRows).toHaveLength(0);
   });
 });
