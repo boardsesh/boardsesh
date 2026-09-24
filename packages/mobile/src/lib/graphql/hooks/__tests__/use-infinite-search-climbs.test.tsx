@@ -21,9 +21,12 @@ vi.mock('../../../../providers/feature-flags-provider', () => ({
 }));
 
 // The climber's "Show Boardsesh grades" preference, read with the flag above.
-const boardseshGradesPreference = vi.hoisted(() => ({ enabled: false }));
+const boardseshGradesPreference = vi.hoisted(() => ({ enabled: false, loaded: true }));
 vi.mock('../../../boardsesh-grades-preference', () => ({
-  useBoardseshGradesPreference: () => ({ enabled: boardseshGradesPreference.enabled, loaded: true }),
+  useBoardseshGradesPreference: () => ({
+    enabled: boardseshGradesPreference.enabled,
+    loaded: boardseshGradesPreference.loaded,
+  }),
 }));
 
 import { keepSameBoardSearchResults, useInfiniteSearchClimbs } from '../use-infinite-search-climbs';
@@ -70,6 +73,7 @@ describe('useInfiniteSearchClimbs', () => {
   beforeEach(() => {
     featureFlags.values = {};
     boardseshGradesPreference.enabled = false;
+    boardseshGradesPreference.loaded = true;
     requestMock.mockReset();
     requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) =>
       Promise.resolve(makeResponse(variables.input.page ?? 0)),
@@ -197,6 +201,23 @@ describe('useInfiniteSearchClimbs', () => {
 
       await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
       expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('stays on the Aurora grade until the stored preference has been read', async () => {
+      featureFlags.values = { 'boardsesh-grade': true };
+      boardseshGradesPreference.enabled = true;
+      boardseshGradesPreference.loaded = false;
+      renderHook(() => useInfiniteSearchClimbs(gradedInput), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput().gradeSource).toBeUndefined();
+    });
+
+    it('strips a gradeSource the caller already set when Boardsesh grades are off', async () => {
+      renderHook(() => useInfiniteSearchClimbs({ ...gradedInput, gradeSource: 'BOARDSESH' }), { wrapper: wrapper() });
+
+      await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+      expect(lastInput()).not.toHaveProperty('gradeSource');
     });
 
     it('sends BOARDSESH for the difficulty sort without a grade bound', async () => {
