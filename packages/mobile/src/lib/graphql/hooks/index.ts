@@ -105,6 +105,7 @@ import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generat
 import { getHttpClient } from '../client';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
+import { useGradeSourceSearchInput } from './search-grade-source';
 import {
   matchesAdvertisedType,
   sharedAdvertisedBoardType,
@@ -939,10 +940,12 @@ export function useAngles(boardName: string, layoutId: number) {
 // ============================================
 
 export function useSearchClimbs(
-  input: ClimbSearchInput,
+  requestedInput: ClimbSearchInput,
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
+  // Grade filter follows the grade the rows are labelled with — see withGradeSource.
+  const input = useGradeSourceSearchInput(requestedInput);
   const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   // Keyed on input only — offlineAwareRequest is local-first and picks the source
   // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
@@ -958,7 +961,9 @@ export function useSearchClimbs(
   });
 }
 
-export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
+export function useSearchClimbsCount(requestedInput: ClimbSearchInput, enabled = true) {
+  // Same grade source as the list it counts, so "Show N" matches what Apply shows.
+  const input = useGradeSourceSearchInput(requestedInput);
   const { userId } = useStoredUserId(!!input.onlyFollowedAuthors);
   return useQuery({
     queryKey: [...SEARCH_CLIMBS_COUNT_QUERY_KEY, input, ...(input.onlyFollowedAuthors ? [userId] : [])],

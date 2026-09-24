@@ -84,6 +84,8 @@ import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-li
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
 import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
+import { withGradeSource } from '../../../src/lib/graphql/hooks/search-grade-source';
+import { useBoardseshGradesActive } from '../../../src/hooks/use-display-grade';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
@@ -891,6 +893,8 @@ function ClimbListInner() {
   // The search the swipe track pages against, frozen at selection (issue #5402).
   // See `useFrozenSearchBasis` for why it must not follow the live filters.
   const searchBasis = useFrozenSearchBasis({ filters, boardFilters, name });
+  // The list's grade source (issue #5643), so the swipe pages the same rows.
+  const boardseshGradesActive = useBoardseshGradesActive();
 
   // Page the same search query the list uses so the play-drawer swipe can walk
   // climbs beyond what's loaded. Activation pages and search pages are both 0-based.
@@ -901,14 +905,17 @@ function ClimbListInner() {
   const fetchSearchPage = useCallback(
     async ({ page, pageSize }: { page: number; pageSize: number }) => {
       const { filters: basisFilters, boardFilters: basisBoardFilters, name: basisName } = searchBasis.read();
-      const input = mergeBoardFilters(
-        toClimbSearchInput(
-          filtersForBoard(basisFilters, boardName),
-          { boardName, layoutId, sizeId, setIds, angle },
-          { page, pageSize },
-          { name: basisName },
+      const input = withGradeSource(
+        mergeBoardFilters(
+          toClimbSearchInput(
+            filtersForBoard(basisFilters, boardName),
+            { boardName, layoutId, sizeId, setIds, angle },
+            { page, pageSize },
+            { name: basisName },
+          ),
+          basisBoardFilters,
         ),
-        basisBoardFilters,
+        boardseshGradesActive,
       );
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
@@ -918,7 +925,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [searchBasis, boardName, layoutId, sizeId, setIds, angle],
+    [searchBasis, boardName, layoutId, sizeId, setIds, angle, boardseshGradesActive],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
