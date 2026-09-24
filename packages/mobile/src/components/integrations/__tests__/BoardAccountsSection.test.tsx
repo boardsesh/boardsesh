@@ -564,7 +564,7 @@ describe('LinkBoardAccountModal host lifecycle', () => {
       target: { value: 'second-secret' },
     });
     rerender(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={onClose} />);
-    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')?.value).toBe('');
     expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
     expect(mocks.linkStarted).not.toHaveBeenCalled();
     expect(mocks.saveAurora).not.toHaveBeenCalled();

@@ -74,12 +74,14 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const [username, setUsername] = useState('');
+  // Kilter signs in with an email; other Aurora boards use a username. Named
+  // generically since this single field means different things per board.
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
 
   // A new board or a closed dialog clears credentials.
   useEffect(() => {
-    setUsername('');
+    setIdentifier('');
     setPassword('');
   }, [boardType]);
 
@@ -104,8 +106,8 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
   const handleSubmit = useCallback(() => {
     if (!boardType) return;
     trackLinkStarted({ boardType, source });
-    saveCredentialMutation.mutate({ boardType, username: username.trim(), password });
-  }, [boardType, password, saveCredentialMutation, source, username]);
+    saveCredentialMutation.mutate({ boardType, username: identifier.trim(), password });
+  }, [boardType, identifier, password, saveCredentialMutation, source]);
 
   const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
   const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
@@ -125,8 +127,8 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
             {isKilter ? t('aurora.kilterLinkDialog.description') : t('aurora.linkDialog.description', { boardName })}
           </Text>
           <TextInput
-            value={username}
-            onChangeText={setUsername}
+            value={identifier}
+            onChangeText={setIdentifier}
             placeholder={
               isKilter ? t('aurora.kilterLinkDialog.emailPlaceholder') : t('aurora.linkDialog.usernamePlaceholder')
             }
@@ -156,7 +158,7 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
               title={t('aurora.linkDialog.submit')}
               onPress={handleSubmit}
               loading={saveCredentialMutation.isPending}
-              disabled={username.trim().length === 0 || password.length === 0 || saveCredentialMutation.isPending}
+              disabled={identifier.trim().length === 0 || password.length === 0 || saveCredentialMutation.isPending}
             />
           </View>
         </View>
