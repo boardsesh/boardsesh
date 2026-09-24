@@ -7899,6 +7899,17 @@ export type SessionDetail = {
   sessionId: Scalars['ID']['output'];
   sessionName?: Maybe<Scalars['String']['output']>;
   sessionType: Scalars['String']['output'];
+  socialEntityId: Scalars['String']['output'];
+  /**
+   * The real entity behind this session's votes/comments. A `party` session
+   * votes/comments on itself (`session` + its own id); a `daily_highlight` has
+   * no session row, so it hangs its social on the day's hardest tick (`tick` +
+   * that tick's uuid) — the same resolution `SessionFeedItem` uses. Callers
+   * must post votes/comments against this pair, never `sessionId` directly:
+   * a `daily:<user>:<date>` id is a synthetic feed key that no backend table
+   * keys on, and only this field's resolution is guaranteed to exist.
+   */
+  socialEntityType: SocialEntityType;
   tickCount: Scalars['Int']['output'];
   ticks: Array<SessionDetailTick>;
   totalAttempts: Scalars['Int']['output'];
@@ -10590,6 +10601,8 @@ export type GetSessionDetailQuery = {
     __typename?: 'SessionDetail';
     sessionId: string;
     sessionType: string;
+    socialEntityType: SocialEntityType;
+    socialEntityId: string;
     sessionName?: string | null;
     ownerUserId?: string | null;
     totalSends: number;
@@ -14969,6 +14982,8 @@ export const GetSessionDetailDocument = {
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'socialEntityId' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'sessionName' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'ownerUserId' } },
                 {

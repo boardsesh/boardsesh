@@ -187,12 +187,21 @@ export async function getSessionFeed(
           FROM boardsesh_ticks t
           INNER JOIN eligible_users eu ON eu.user_id = t.user_id
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
+          LEFT JOIN board_climbs daily_climb
+            ON daily_climb.uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
+            AND daily_climb.board_type = t.board_type
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
             AND bcs.board_type = t.board_type
             AND bcs.angle = t.angle
           WHERE t.session_id IS NULL
             ${sessionBoardFilter}
+            -- Rank and aggregate the same visible ticks as sessionDetail, so a
+            -- private spray climb cannot redirect this card's votes/comments.
+            AND ${sprayClimbVisibilityCondition(
+              { boardType: sql`daily_climb.board_type`, layoutId: sql`daily_climb.layout_id` },
+              ctx?.userId,
+            )}
             AND NOT EXISTS (
               SELECT 1
               FROM boardsesh_ticks session_tick
@@ -446,7 +455,7 @@ export async function getSessionFeed(
   ] = await Promise.all([
     fetchParticipantsBatch(sessionIds, filterOptions),
     fetchGradeDistributionBatch(sessionIds, filterOptions),
-    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
+    fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions, ctx?.userId),
     fetchSessionMetaBatch(sessionIds),
     fetchBoardTypesBatch(sessionIds, filterOptions),
     fetchHardestSendsBatch(sessionIds, filterOptions, ctx?.userId),
@@ -836,9 +845,58 @@ export const sessionFeedQueries = {
       .sort((a, b) => (b.effDiff ?? 0) - (a.effDiff ?? 0));
     const hardestGrade = gradesSorted.length > 0 ? gradesSorted[0].effName : null;
 
+    // A `daily_highlight` session has no `board_sessions` row of its own, so it
+    // has nowhere to hang votes/comments. Mirror the `sessionGroupedFeed` CTE's
+    // `daily_hardest` ranking (sends first, then hardest, then most recent, then
+    // highest tick id) to pick the SAME tick that feed row's socialEntityId
+    // points at — so a vote/comment made from the feed and one made from this
+    // detail screen land on the same row instead of splitting the count.
+    const dailyHighlightTick = dailySession
+      ? [...tickRows].sort((a, b) => {
+          const aIsSend = a.tick.status === 'flash' || a.tick.status === 'send';
+          const bIsSend = b.tick.status === 'flash' || b.tick.status === 'send';
+          if (aIsSend !== bIsSend) return aIsSend ? -1 : 1;
+
+          const aDiff = a.tick.difficulty ?? (a.consensusDifficulty != null ? Math.round(a.consensusDifficulty) : -1);
+          const bDiff = b.tick.difficulty ?? (b.consensusDifficulty != null ? Math.round(b.consensusDifficulty) : -1);
+          if (aDiff !== bDiff) return bDiff - aDiff;
+
+          const aTime = new Date(a.tick.climbedAt).getTime();
+          const bTime = new Date(b.tick.climbedAt).getTime();
+          if (aTime !== bTime) return bTime - aTime;
+
+          return Number(b.tick.id) - Number(a.tick.id);
+        })[0].tick
+      : null;
+
+    // The real social target: a `party` session votes/comments on itself; a
+    // `daily_highlight` redirects to the highlight tick above. `sessionId` here
+    // may be the synthetic `daily:<user>:<date>` feed key, which no social table
+    // is ever keyed on — callers (SessionDetailScreen) must use these, not
+    // `sessionId`, when posting a vote or a comment.
+    // Never substitute a synthetic key if the daily ranking invariant changes.
+    if (dailySession && !dailyHighlightTick) return null;
+    const socialEntityType: 'session' | 'tick' = dailySession ? 'tick' : 'session';
+    const socialEntityId = dailyHighlightTick ? dailyHighlightTick.uuid : sessionId;
+
     // Vote/comment counts
     const [voteData] = dailySession
-      ? []
+      ? dailyHighlightTick
+        ? await dbRead
+            .select({
+              upvotes: sql<number>`COALESCE(upvotes, 0)`,
+              downvotes: sql<number>`COALESCE(downvotes, 0)`,
+              score: sql<number>`COALESCE(score, 0)`,
+            })
+            .from(dbSchema.voteCounts)
+            .where(
+              and(
+                sql`${dbSchema.voteCounts.entityType} = 'tick'`,
+                eq(dbSchema.voteCounts.entityId, dailyHighlightTick.uuid),
+              ),
+            )
+            .limit(1)
+        : []
       : await dbRead
           .select({
             upvotes: sql<number>`COALESCE(upvotes, 0)`,
@@ -850,7 +908,18 @@ export const sessionFeedQueries = {
           .limit(1);
 
     const [commentData] = dailySession
-      ? []
+      ? dailyHighlightTick
+        ? await dbRead
+            .select({ count: drizzleCount() })
+            .from(dbSchema.comments)
+            .where(
+              and(
+                sql`${dbSchema.comments.entityType} = 'tick'`,
+                eq(dbSchema.comments.entityId, dailyHighlightTick.uuid),
+                isNull(dbSchema.comments.deletedAt),
+              ),
+            )
+        : []
       : await dbRead
           .select({ count: drizzleCount() })
           .from(dbSchema.comments)
@@ -895,6 +964,8 @@ export const sessionFeedQueries = {
       gradeDistribution,
       boardTypes,
       hardestGrade,
+      socialEntityType,
+      socialEntityId,
       firstTickAt,
       lastTickAt,
       durationMinutes,
@@ -1428,6 +1499,7 @@ async function fetchHardestSendsBatch(
 async function fetchDailyGradeDistributionBatch(
   dailyHighlightKeys: DailyHighlightKey[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerUserId: string | null | undefined,
 ): Promise<Map<string, SessionGradeDistributionItem[]>> {
   if (dailyHighlightKeys.length === 0) return new Map();
 
@@ -1457,12 +1529,19 @@ async function fetchDailyGradeDistributionBatch(
       AND t.climbed_at::date = keys.day
       AND t.session_id IS NULL
     LEFT JOIN board_climb_aliases bca ON bca.board_type = t.board_type AND bca.alias_uuid = t.climb_uuid
+    LEFT JOIN board_climbs daily_climb
+      ON daily_climb.uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
+      AND daily_climb.board_type = t.board_type
     LEFT JOIN board_climb_stats bcs
       ON bcs.climb_uuid = COALESCE(bca.canonical_uuid, t.climb_uuid)
       AND bcs.board_type = t.board_type
       AND bcs.angle = t.angle
     WHERE COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
       ${batchTickFilter}
+      AND ${sprayClimbVisibilityCondition(
+        { boardType: sql`daily_climb.board_type`, layoutId: sql`daily_climb.layout_id` },
+        viewerUserId,
+      )}
     GROUP BY keys.session_id, diff_num
     ORDER BY diff_num DESC
   `);
