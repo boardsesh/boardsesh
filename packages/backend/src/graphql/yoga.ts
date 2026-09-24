@@ -69,7 +69,8 @@ type NodeServerContext = { req?: IncomingMessage; res?: ServerResponse };
  * own SSR data-fetch layer (`executeGraphQLInternal`) the same way
  * `CRON_SECRET` identifies the cron trigger — see `internal-service-auth.ts`
  * and issue #5291. It shares the Authorization header slot with cron and user
- * bearer tokens (checked in that order) rather than adding a new header.
+ * bearer tokens (service credentials checked independently before user tokens)
+ * rather than adding a new header.
  */
 export async function buildHttpConnectionContext({
   request,
@@ -78,9 +79,15 @@ export async function buildHttpConnectionContext({
   const authHeader = request.headers.get('authorization');
   const clientIp = resolveWebSocketClientIp(req);
 
-  const isCronAuthenticated = authenticateCronBearer(authHeader);
-  const isInternalService = !isCronAuthenticated && authenticateInternalServiceSecret(authHeader);
-  const authResult = isCronAuthenticated || isInternalService ? null : await authenticateHttpBearer(authHeader);
+  const matchesCronSecret = authenticateCronBearer(authHeader);
+  const matchesInternalServiceSecret = authenticateInternalServiceSecret(authHeader);
+  // A shared credential is ambiguous and must grant neither service role.
+  // Cron-first precedence would give every SSR request cron-only permissions.
+  const ambiguousServiceBearer = matchesCronSecret && matchesInternalServiceSecret;
+  const isCronAuthenticated = matchesCronSecret && !ambiguousServiceBearer;
+  const isInternalService = matchesInternalServiceSecret && !ambiguousServiceBearer;
+  const authResult =
+    matchesCronSecret || matchesInternalServiceSecret ? null : await authenticateHttpBearer(authHeader);
 
   return {
     connectionId: `http-${uuidv4()}`,

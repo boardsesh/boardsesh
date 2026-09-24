@@ -388,6 +388,42 @@ describe('buildPlan', () => {
     },
   );
 
+  it('reports a service secret reused as the backend cron secret without exposing it', () => {
+    const live = liveState();
+    live.variables[BACKEND_SERVICE_NAME].CRON_SECRET = BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET;
+    const changes = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        summary: `INTERNAL_SERVICE_SECRET must differ from CRON_SECRET on ${BACKEND_SERVICE_NAME}`,
+        blocked: true,
+      }),
+    ]);
+    expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
+  it('blocks writing a missing service secret when the supplied value equals the cron secret', () => {
+    const live = liveState();
+    live.variables[BACKEND_SERVICE_NAME].CRON_SECRET = BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET;
+    live.variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET = '';
+    const changes = buildPlan(desiredRailwayState, live, {
+      suppliedVars: new Set([varKey(BACKEND_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET')]),
+      suppliedValues: new Map([['INTERNAL_SERVICE_SECRET', BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET]]),
+    });
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: `${BACKEND_SERVICE_NAME}: INTERNAL_SERVICE_SECRET is absent`,
+          blocked: true,
+        }),
+        expect.objectContaining({
+          summary: `INTERNAL_SERVICE_SECRET must differ from CRON_SECRET on ${BACKEND_SERVICE_NAME}`,
+          blocked: true,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
   it('is empty when everything matches', () => {
     expect(buildPlan(desiredRailwayState, liveState(), NO_SUPPLIED)).toEqual([]);
   });

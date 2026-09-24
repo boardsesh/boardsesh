@@ -184,6 +184,8 @@ export interface RailwayDesiredState {
   services: ServiceDesired[];
   /** Credentials that must match exactly across existing services. Values stay in Railway. */
   matchingServiceVars?: { name: string; serviceNames: readonly string[] }[];
+  /** Credentials on one service that must remain distinct. Values stay in Railway. */
+  distinctServiceVars?: { serviceName: string; names: readonly [string, string] }[];
   clickhouseRetention: TableRetentionDesired[];
   /** Fail the run when the ClickHouse volume passes this much of its capacity. */
   clickhouseVolumeUsageLimitPercent: number;
@@ -343,6 +345,7 @@ export const desiredRailwayState: RailwayDesiredState = {
     },
   ],
   matchingServiceVars: [{ name: 'INTERNAL_SERVICE_SECRET', serviceNames: [WEB_SERVICE_NAME, BACKEND_SERVICE_NAME] }],
+  distinctServiceVars: [{ serviceName: BACKEND_SERVICE_NAME, names: ['INTERNAL_SERVICE_SECRET', 'CRON_SECRET'] }],
   clickhouseRetention: CLICKHOUSE_RETENTION,
   clickhouseVolumeUsageLimitPercent: CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
 };

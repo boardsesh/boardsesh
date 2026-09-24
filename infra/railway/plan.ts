@@ -343,6 +343,27 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     });
   }
 
+  for (const { serviceName, names } of desired.distinctServiceVars ?? []) {
+    if (!findService(live, serviceName)) continue;
+    const proposedValues = names.map((name) => {
+      const plannedWrite = changes.find(
+        (change) => !change.blocked && change.target?.serviceName === serviceName && change.target.varName === name,
+      );
+      return plannedWrite ? options.suppliedValues?.get(name) : live.variables[serviceName]?.[name];
+    });
+    if (proposedValues.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (proposedValues[0] !== proposedValues[1]) continue;
+    for (const change of changes) {
+      if (change.target?.serviceName === serviceName && names.includes(change.target.varName)) change.blocked = true;
+    }
+    changes.push({
+      resource: 'env-var',
+      summary: `${names[0]} must differ from ${names[1]} on ${serviceName}`,
+      detail: 'Use separate credentials for SSR service reads and cron jobs. Live values are never printed.',
+      blocked: true,
+    });
+  }
+
   // A null map means the check was skipped for want of a DSN, which must not read
   // as "retention is fine". The apply layer prints the skip separately.
   if (live.clickhouseTtl !== null) {

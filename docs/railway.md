@@ -30,7 +30,8 @@ it. A second `--apply` with nothing to do is a no-op.
   unfilled `<placeholder>`. It also checks public safe-value rules without
   printing live values: `boardsesh-web` needs SMTP credentials and
   `INTERNAL_SERVICE_SECRET` (see below). The backend needs the same secret;
-  the checker compares the two copies without printing them. `BOARDSESH_WEB`
+  the checker compares the two copies and rejects reuse of the backend's
+  `CRON_SECRET` without printing either value. `BOARDSESH_WEB`
   must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
   `https://www.boardsesh.com` origin. `PostGIS - PG18` needs
   `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY` — the certificate and key the
@@ -86,6 +87,9 @@ their own rate-limit buckets instead of the anonymous per-IP one (#5291).
   service. If the two values differ, the backend treats every SSR read as anonymous.
 - **Generate:** `openssl rand -hex 32`. Keep it distinct from `CRON_SECRET` and
   `REVALIDATE_SECRET`, which gate different routes.
+- **Reused cron secret:** the backend denies both service and cron permissions to
+  the shared bearer. Railway drift checks report this collision without printing
+  either credential.
 - **Unset (or mismatched):** nothing breaks loudly. SSR falls back to the anonymous
   path, where every climb-page render shares one 30/min `similar-climbs` bucket.
   That is the #5291 bug: the similar-climbs section becomes unavailable under load.
