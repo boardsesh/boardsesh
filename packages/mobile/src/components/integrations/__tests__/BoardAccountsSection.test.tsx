@@ -254,7 +254,7 @@ describe('BoardAccountsSection — board cards', () => {
 
     fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
 
-    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, {
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
       target: { value: 'climber' },
     });
     fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {

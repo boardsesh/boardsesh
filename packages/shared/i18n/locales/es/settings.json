@@ -146,7 +146,7 @@
       "kilterAuroraTitle": "Kilter (Aurora)",
       "kilterAuroraCopy": "¿Usabas la antigua app de Kilter hecha por Aurora? Importa una exportación JSON, o escribe a Aurora Climbing para pedir tus datos.",
       "kilterNewTitle": "Kilter (nuevo)",
-      "kilterNewCopy": "Inicia sesión con tu usuario y contraseña de Kilter para traer tus encadenes, intentos, valoraciones y circuitos a Boardsesh.",
+      "kilterNewCopy": "Inicia sesión con tu correo y contraseña de Kilter para traer tus encadenes, intentos, valoraciones y circuitos a Boardsesh.",
       "kilterSignIn": "Iniciar sesión en Kilter",
       "reconnect": "Volver a conectar",
       "notConnected": "No vinculado. Vincula tu cuenta de {{boardName}} para traer tus encadenes, o impórtalos desde un archivo JSON.",
@@ -190,7 +190,8 @@
     },
     "kilterLinkDialog": {
       "title": "Iniciar sesión en Kilter",
-      "description": "Introduce tu usuario y contraseña de Kilter. Tu contraseña se canjea por un token seguro y nunca se guarda.",
+      "description": "Introduce tu correo y contraseña de Kilter. Tu contraseña se canjea por un token seguro y nunca se guarda.",
+      "emailPlaceholder": "Introduce tu correo",
       "passwordHelp": "Funciona con tu acceso habitual de Kilter. Las cuentas con verificación en dos pasos o solo con inicio de sesión social no pueden entrar por aquí: usa Importar."
     },
     "unlinkError": "No se pudo desvincular la cuenta",

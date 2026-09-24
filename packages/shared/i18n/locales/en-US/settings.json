@@ -146,7 +146,7 @@
       "kilterAuroraTitle": "Kilter (Aurora)",
       "kilterAuroraCopy": "Used the old Kilter app built by Aurora? Import a JSON export, or email Aurora Climbing to request your data.",
       "kilterNewTitle": "Kilter (new)",
-      "kilterNewCopy": "Sign in with your Kilter username and password to pull your sends, attempts, ratings and circuits into Boardsesh.",
+      "kilterNewCopy": "Sign in with your Kilter email and password to pull your sends, attempts, ratings and circuits into Boardsesh.",
       "kilterSignIn": "Sign in to Kilter",
       "reconnect": "Reconnect",
       "notConnected": "Not connected. Link your {{boardName}} account to bring your sends across, or import from a JSON export file.",
@@ -190,7 +190,8 @@
     },
     "kilterLinkDialog": {
       "title": "Sign in to Kilter",
-      "description": "Enter your Kilter username and password. Your password is exchanged for a secure token and never stored.",
+      "description": "Enter your Kilter email and password. Your password is exchanged for a secure token and never stored.",
+      "emailPlaceholder": "Enter your email",
       "passwordHelp": "Works with your existing Kilter login. Two-factor or social-login-only accounts can't sign in this way — use Import instead."
     },
     "unlinkError": "Failed to unlink account",

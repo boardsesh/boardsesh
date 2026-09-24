@@ -127,10 +127,14 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
           <TextInput
             value={username}
             onChangeText={setUsername}
-            placeholder={t('aurora.linkDialog.usernamePlaceholder')}
+            placeholder={
+              isKilter ? t('aurora.kilterLinkDialog.emailPlaceholder') : t('aurora.linkDialog.usernamePlaceholder')
+            }
             placeholderTextColor="rgba(60, 60, 67, 0.6)"
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType={isKilter ? 'email-address' : 'default'}
+            textContentType={isKilter ? 'emailAddress' : 'username'}
             style={inputStyle}
           />
           <TextInput
