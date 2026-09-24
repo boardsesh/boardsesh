@@ -151,6 +151,13 @@ describe('similar-climbs service identity over HTTP', () => {
     expectLimited(await read('missing-secret-31'));
   });
 
+  it('falls back to anonymous limits when the service and cron secrets collide', async () => {
+    vi.stubEnv('CRON_SECRET', SERVICE_SECRET);
+    for (let index = 0; index < 30; index++) expectLoaded(await read(`colliding-secret-${index}`));
+    expectLimited(await read('colliding-secret-31'));
+    expect(redisCounts.size).toBe(0);
+  });
+
   it('shares the partition ceiling through Redis after local counters reset on another instance', async () => {
     for (let index = 0; index < 20; index++) expectLoaded(await read('shared-climb'));
     resetAllRateLimits();
@@ -212,4 +219,18 @@ describe('similar-climbs service identity over HTTP', () => {
       });
     },
   );
+
+  it('grants neither service role when the service and cron secrets collide', async () => {
+    vi.stubEnv('CRON_SECRET', SERVICE_SECRET);
+    const context = await buildHttpConnectionContext({
+      request: new Request(graphqlUrl, { headers: { Authorization: `Bearer ${SERVICE_SECRET}` } }),
+    });
+    expect(context).toMatchObject({
+      isAuthenticated: false,
+      isCronAuthenticated: false,
+      isInternalService: false,
+      userId: undefined,
+    });
+    expect(validateTokenMock).not.toHaveBeenCalled();
+  });
 });

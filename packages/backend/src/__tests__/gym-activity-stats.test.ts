@@ -127,6 +127,14 @@ describe('cron-authenticated gym activity GraphQL refresh', () => {
     expect(mocks.validateToken).not.toHaveBeenCalled();
   });
 
+  it('rejects a bearer shared with the SSR service before opening a cron transaction', async () => {
+    vi.stubEnv('INTERNAL_SERVICE_SECRET', 'test-secret');
+    const response = await refresh();
+    expect(response.status).toBe(401);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.validateToken).not.toHaveBeenCalled();
+  });
+
   it('rejects WebSocket contexts even with a cron flag', async () => {
     await expect(
       gymActivityStatsMutations.refreshGymActivityStats(
