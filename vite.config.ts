@@ -274,6 +274,16 @@ export default defineConfig({
         // flags with `vp run db:dedupe-beta-links -- --apply`.
         cache: false,
       },
+      'db:audit-legacy-timestamps': {
+        command: 'pnpm --filter @boardsesh/db run db:audit-legacy-timestamps',
+        // No db:up: a maintainer points this read-only audit at DB_URL by hand
+        // (usually a remote database), and it verifies its own transaction
+        // safety. It must target the primary, not a hot standby: its
+        // SERIALIZABLE READ ONLY DEFERRABLE snapshot is rejected there
+        // ("cannot use serializable mode in a hot standby"). Replicas are only
+        // for the plain-EXPLAIN plan review in docs/legacy-timestamp-audit.md.
+        cache: false,
+      },
       'db:refresh-climb-grades': {
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
@@ -338,6 +348,10 @@ export default defineConfig({
       'test:postgres18-dev-db-image': {
         command: 'bash scripts/dev-db-image-smoke.sh',
         cache: false,
+      },
+      // Run the database-free audit suites in the db-migrations CI job.
+      'test:db:legacy-timestamp-audit': {
+        command: 'pnpm --filter @boardsesh/db run test:legacy-timestamp-audit',
       },
       'locations:aurora': {
         command: 'pnpm --filter @boardsesh/aurora-sync run sync:locations',
