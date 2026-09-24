@@ -504,6 +504,22 @@ Tension (offset 0) but read climbs ~1 V-grade softer on Kilter (offset
 ≈ −1.2, see above) — invisible on the board where reports usually start,
 systematic everywhere else.
 
+#### Search filter and sort
+
+Climb search can filter and sort on the Boardsesh grade too. When the client
+sends `gradeSource: BOARDSESH` on `ClimbSearchInput`, the grade range and the
+difficulty sort read `universal_grade ?? local_grade` first and fall back to
+the Aurora `display_difficulty` when a climb has no grade row. A `setter_only`
+grade is skipped the same way, because the row label never shows it. Without
+the field (or with `AURORA`) both read `display_difficulty` first, exactly as
+before. The mobile app sends `BOARDSESH` when the `boardsesh-grade` flag and
+the "Show Boardsesh grades" preference are both on and the search has a grade
+bound or sorts by difficulty; otherwise the field is left off, so the search
+cache key does not change. The server helper is `gradeValueSql` in
+`packages/db/src/queries/climbs/create-climb-filters.ts`, and the on-device
+search mirrors it in `packages/mobile/src/db/queries/search-climbs-local.ts`
+([#5643](https://github.com/boardsesh/boardsesh/issues/5643)).
+
 ### Confidence tiers
 
 | Tier                   | Condition                                                                           | UI                                              |

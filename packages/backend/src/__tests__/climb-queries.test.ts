@@ -1284,5 +1284,37 @@ describe('Climb Query Functions', () => {
         expect(await countClimbs(gradeSourceParams, aurora16)).toBe(1);
       },
     );
+
+    // Effective Boardsesh grades: SETTER-ONLY 18 (its setter_only grade is skipped,
+    // so it falls back to Aurora), SPLIT 16, AURORA-16 16 (no grade row). Ties
+    // break on uuid DESC, so SPLIT sorts ahead of AURORA-16.
+    it('sorts by the Boardsesh grade under boardsesh, in the same buckets the filter uses', async () => {
+      const bySortedDifficulty = async (gradeSource?: ClimbSearchParams['gradeSource']) =>
+        (
+          await searchClimbs(gradeSourceParams, {
+            page: 0,
+            pageSize: 50,
+            sortBy: 'difficulty',
+            sortOrder: 'desc',
+            settername: [GRADE_SOURCE_SETTER],
+            gradeSource,
+          })
+        ).climbs.map((climb) => climb.uuid);
+
+      const boardseshOrder = await bySortedDifficulty('boardsesh');
+      expect(boardseshOrder).toEqual([id('setter-only'), id('split'), id('aurora-16')]);
+
+      // The sort and the filter agree: each grade bucket the filter returns is a
+      // contiguous run of the sorted list, in descending grade order.
+      const filtered = async (grade: number) =>
+        (await searchClimbs(gradeSourceParams, gradeSearch(grade, 'creation', 'boardsesh'))).climbs
+          .map((climb) => climb.uuid)
+          .sort();
+      expect(boardseshOrder.slice(0, 1).sort()).toEqual(await filtered(18));
+      expect(boardseshOrder.slice(1).sort()).toEqual(await filtered(16));
+
+      // Omitted source: the Aurora grade, SPLIT and SETTER-ONLY tied at 18.
+      expect(await bySortedDifficulty()).toEqual([id('split'), id('setter-only'), id('aurora-16')]);
+    });
   });
 });
