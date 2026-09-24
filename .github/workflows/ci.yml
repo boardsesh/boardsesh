@@ -1659,10 +1659,22 @@ jobs:
           report-reporter: java-junit
           report-fail-on-error: false
 
+  # The single roll-up. It is the context main's branch protection requires, so
+  # it must depend on every gating job in this workflow: a job missing from the
+  # list below can go red without turning this one red, and a required check
+  # that is green is the end of the conversation. `test-report` is the one
+  # deliberate omission — it posts a comment with report-fail-on-error: false,
+  # so a reporting hiccup must never be the reason a PR cannot merge.
+  # scripts/__tests__/ci-status-rollup.test.ts re-derives the job list from this
+  # file and fails if a new job forgets to join. See docs/ci-required-checks.md.
   ci-status:
     needs:
       - changes
       - lint
+      # Not gated on `changes`: a binary-only PR is exactly the shape it exists
+      # to catch, so it runs on every PR and its failure has to reach the
+      # roll-up (it did not until #4758).
+      - large-files
       - typecheck
       - db-migrations
       - codegen-drift
