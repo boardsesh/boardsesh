@@ -20,7 +20,11 @@ import postgres from 'postgres';
 import { config } from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runSerialPlanVerification, type SerialPlanClient, type SerialPlanConnection } from './serial-plan-default.js';
+import {
+  runSerialPlanVerification,
+  type SerialPlanTransactionalConnection,
+  type SerialPlanClient,
+} from './serial-plan-default.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,10 +34,17 @@ config({ path: path.resolve(__dirname, '../../../.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.local') });
 config({ path: path.resolve(__dirname, '../../web/.env.development.local') });
 
-function connectionOpener(connectionString: string): () => Promise<SerialPlanConnection> {
+function connectionOpener(connectionString: string): () => Promise<SerialPlanTransactionalConnection> {
   return async () => {
     const pool = postgres(connectionString, { max: 1 });
-    return { client: pool as unknown as SerialPlanClient, close: () => pool.end() };
+    return {
+      client: pool as unknown as SerialPlanClient,
+      transaction: <T>(use: (client: SerialPlanClient) => Promise<T>) =>
+        pool.begin((transactionClient) =>
+          use(transactionClient as unknown as SerialPlanClient),
+        ) as unknown as Promise<T>,
+      close: () => pool.end(),
+    };
   };
 }
 

@@ -67,6 +67,9 @@ export type SerialPlanClient = {
 
 export type SerialPlanReading = {
   databaseName: string;
+  serverAddress: string | null;
+  serverPort: number | null;
+  serverStartedAt: string | null;
   /**
    * What THIS session resolves the GUC to — database default, role default and
    * postgresql.conf folded together. The number that decides whether a plan can
@@ -94,7 +97,8 @@ export type SerialPlanOutcome =
    * `ADMIN_DATABASE_URL` ending in `/postgres`). No statement was issued: an
    * ALTER here would change an unrelated database and leave the real one unfixed.
    */
-  | { status: 'wrong-database'; reading: SerialPlanReading; expectedDatabaseName: string };
+  | { status: 'wrong-database'; reading: SerialPlanReading; expectedDatabaseName: string }
+  | { status: 'wrong-server'; reading: SerialPlanReading };
 
 /**
  * One statement, three facts. `current_setting` is what the session sees;
@@ -105,6 +109,9 @@ export type SerialPlanOutcome =
  */
 export const SERIAL_PLAN_READ_SQL = `
   SELECT current_database() AS "databaseName",
+         inet_server_addr()::text AS "serverAddress",
+         inet_server_port() AS "serverPort",
+         extract(epoch FROM pg_postmaster_start_time())::text AS "serverStartedAt",
          current_setting('${SERIAL_PLAN_SETTING}') AS "effectiveValue",
          (
            SELECT split_part(entry, '=', 2)
@@ -143,12 +150,15 @@ function firstRow(result: unknown): Record<string, unknown> {
 
 export async function readSerialPlanState(client: SerialPlanClient): Promise<SerialPlanReading> {
   const row = firstRow(await client.unsafe(SERIAL_PLAN_READ_SQL));
-  const { databaseName, effectiveValue, databaseDefault } = row;
+  const { databaseName, serverAddress, serverPort, serverStartedAt, effectiveValue, databaseDefault } = row;
   if (typeof databaseName !== 'string' || typeof effectiveValue !== 'string') {
     throw new Error('serial-plan probe returned an unexpected row shape');
   }
   return {
     databaseName,
+    serverAddress: typeof serverAddress === 'string' ? serverAddress : null,
+    serverPort: typeof serverPort === 'number' ? serverPort : null,
+    serverStartedAt: typeof serverStartedAt === 'string' ? serverStartedAt : null,
     effectiveValue,
     databaseDefault: typeof databaseDefault === 'string' ? databaseDefault : null,
   };
@@ -176,18 +186,32 @@ function describeError(error: unknown): string {
  * failure. Any other error propagates — misreading, say, a connection drop as
  * "the role cannot do this" is how a no-op reports success.
  *
- * `applicationDatabaseName` is the database the application's own sessions
- * connect to (`current_database()` on an application connection). The ALTER
- * targets `current_database()` of THIS session, so a connection to any other
- * database is refused before a single statement is issued.
+ * The application reading carries the database name and live PostgreSQL server
+ * identity. Both must match this connection before any DDL is issued. The
+ * address/port/start-time tuple guards accidental cross-cluster URLs during this
+ * run; it is not a durable cluster identifier. The caller must pin this client
+ * to one backend for the entire probe/ALTER/recheck sequence.
  */
 export async function applySerialPlanDatabaseDefault(
   client: SerialPlanClient,
-  applicationDatabaseName: string,
+  applicationReading: SerialPlanReading,
 ): Promise<SerialPlanOutcome> {
   const reading = await readSerialPlanState(client);
-  if (reading.databaseName !== applicationDatabaseName) {
-    return { status: 'wrong-database', reading, expectedDatabaseName: applicationDatabaseName };
+  if (reading.databaseName !== applicationReading.databaseName) {
+    return { status: 'wrong-database', reading, expectedDatabaseName: applicationReading.databaseName };
+  }
+  if (
+    !reading.serverAddress ||
+    !reading.serverPort ||
+    !reading.serverStartedAt ||
+    !applicationReading.serverAddress ||
+    !applicationReading.serverPort ||
+    !applicationReading.serverStartedAt ||
+    reading.serverAddress !== applicationReading.serverAddress ||
+    reading.serverPort !== applicationReading.serverPort ||
+    reading.serverStartedAt !== applicationReading.serverStartedAt
+  ) {
+    return { status: 'wrong-server', reading };
   }
   if (reading.databaseDefault === SERIAL_PLAN_TARGET_VALUE) {
     return { status: 'already-applied', reading };
@@ -215,8 +239,8 @@ export async function applySerialPlanDatabaseDefault(
 
 export function isSerialPlanFailure(
   outcome: SerialPlanOutcome,
-): outcome is Extract<SerialPlanOutcome, { status: 'not-permitted' | 'wrong-database' }> {
-  return outcome.status === 'not-permitted' || outcome.status === 'wrong-database';
+): outcome is Extract<SerialPlanOutcome, { status: 'not-permitted' | 'wrong-database' | 'wrong-server' }> {
+  return outcome.status === 'not-permitted' || outcome.status === 'wrong-database' || outcome.status === 'wrong-server';
 }
 
 /**
@@ -252,27 +276,31 @@ export function serialPlanRemediation(databaseName: string): string[] {
 }
 
 export type SerialPlanConnection = { client: SerialPlanClient; close: () => Promise<void> };
+export type SerialPlanTransactionalConnection = SerialPlanConnection & {
+  /** Pins probe, ALTER and catalog recheck to one backend, including behind PgBouncer. */
+  transaction: <T>(use: (client: SerialPlanClient) => Promise<T>) => Promise<T>;
+};
 
 export type SerialPlanVerificationPorts = {
   /** Opens a fresh application-credential connection. Called again after an apply. */
-  openApplicationClient: () => Promise<SerialPlanConnection>;
+  openApplicationClient: () => Promise<SerialPlanTransactionalConnection>;
   /** Opens a database-owner connection, or null when no admin credential is configured. */
-  openAdminClient: (() => Promise<SerialPlanConnection>) | null;
+  openAdminClient: (() => Promise<SerialPlanTransactionalConnection>) | null;
   log: (message: string) => void;
   warn: (message: string) => void;
 };
 
-async function withConnection<T>(
-  open: () => Promise<SerialPlanConnection>,
-  use: (client: SerialPlanClient) => Promise<T>,
+async function withConnection<T, Connection extends SerialPlanConnection>(
+  open: () => Promise<Connection>,
+  use: (connection: Connection) => Promise<T>,
   warn: (message: string) => void,
 ): Promise<T> {
-  const { client, close } = await open();
+  const connection = await open();
   try {
-    return await use(client);
+    return await use(connection);
   } finally {
     try {
-      await close();
+      await connection.close();
     } catch (error: unknown) {
       warn(`[serial-plan] connection cleanup failed: ${describeError(error)}`);
     }
@@ -289,60 +317,91 @@ async function withConnection<T>(
  * connection side effects.
  */
 export async function runSerialPlanVerification(ports: SerialPlanVerificationPorts): Promise<number> {
-  const reading = await withConnection(ports.openApplicationClient, readSerialPlanState, ports.warn);
+  return withConnection(
+    ports.openApplicationClient,
+    async ({ transaction }) =>
+      transaction(async (applicationClient) => {
+        const reading = await readSerialPlanState(applicationClient);
 
-  ports.log(
-    `[serial-plan] ${reading.databaseName}: application sessions see ${SERIAL_PLAN_SETTING}=${reading.effectiveValue} ` +
-      `(database default: ${reading.databaseDefault ?? 'unset'})`,
-  );
+        ports.log(
+          `[serial-plan] ${reading.databaseName}: application sessions see ${SERIAL_PLAN_SETTING}=${reading.effectiveValue} ` +
+            `(database default: ${reading.databaseDefault ?? 'unset'})`,
+        );
 
-  if (reading.effectiveValue === SERIAL_PLAN_TARGET_VALUE) {
-    ports.log('[serial-plan] ✅ parallel query is off for application sessions');
-    return 0;
-  }
+        if (reading.effectiveValue === SERIAL_PLAN_TARGET_VALUE) {
+          ports.log('[serial-plan] ✅ parallel query is off for application sessions');
+          return 0;
+        }
 
-  if (!SIMPLE_POSTGRES_IDENTIFIER.test(reading.databaseName) || !ports.openAdminClient) {
-    return reportSerialPlanFailure(ports, reading.databaseName);
-  }
+        if (!SIMPLE_POSTGRES_IDENTIFIER.test(reading.databaseName) || !ports.openAdminClient) {
+          return reportSerialPlanFailure(ports, reading.databaseName);
+        }
 
-  const outcome = await withConnection(
-    ports.openAdminClient,
-    (client) => applySerialPlanDatabaseDefault(client, reading.databaseName),
+        let outcome: SerialPlanOutcome;
+        try {
+          outcome = await withConnection(
+            ports.openAdminClient,
+            ({ transaction }) => transaction((client) => applySerialPlanDatabaseDefault(client, reading)),
+            ports.warn,
+          );
+        } catch (error) {
+          // postgres.js rejects the whole transaction after SQLSTATE 42501,
+          // even when the statement-level helper returned `not-permitted`.
+          if (!isInsufficientPrivilege(error)) throw error;
+          ports.warn(`[serial-plan] ADMIN_DATABASE_URL does not own ${reading.databaseName}: ${describeError(error)}`);
+          return reportSerialPlanFailure(ports, reading.databaseName);
+        }
+
+        if (outcome.status === 'wrong-database') {
+          ports.warn(
+            `[serial-plan] ADMIN_DATABASE_URL connects to database ${outcome.reading.databaseName}, but the ` +
+              `application connects to ${outcome.expectedDatabaseName}. Refusing to issue ALTER DATABASE against ` +
+              `the wrong database — point ADMIN_DATABASE_URL at ${outcome.expectedDatabaseName}.`,
+          );
+          return reportSerialPlanFailure(ports, outcome.expectedDatabaseName);
+        }
+
+        if (outcome.status === 'not-permitted') {
+          ports.warn(
+            `[serial-plan] ADMIN_DATABASE_URL does not own ${outcome.reading.databaseName}: ${outcome.detail}`,
+          );
+          return reportSerialPlanFailure(ports, outcome.reading.databaseName);
+        }
+
+        if (outcome.status === 'wrong-server') {
+          ports.warn(
+            '[serial-plan] ADMIN_DATABASE_URL does not reach the same live PostgreSQL server as DATABASE_URL, ' +
+              'or the server identity is unavailable. Refusing to issue ALTER DATABASE; use an owning connection ' +
+              'to the application database manually if the two connection paths cannot expose the same server identity.',
+          );
+          return reportSerialPlanFailure(ports, reading.databaseName);
+        }
+
+        ports.log(`[serial-plan] database default ${outcome.status} on ${outcome.reading.databaseName}`);
+
+        // Re-check on a NEW application connection: `ALTER DATABASE ... SET` changes
+        // what future sessions start with, never the session that issued it or one
+        // already open. Trusting the ALTER instead of re-reading is the same vacuous
+        // check that made 0225 look like it worked.
+        const confirmed = await withConnection(
+          ports.openApplicationClient,
+          ({ client }) => readSerialPlanState(client),
+          ports.warn,
+        );
+
+        if (confirmed.effectiveValue !== SERIAL_PLAN_TARGET_VALUE) {
+          ports.warn(
+            `[serial-plan] applied the database default but application sessions still see ` +
+              `${SERIAL_PLAN_SETTING}=${confirmed.effectiveValue}`,
+          );
+          return reportSerialPlanFailure(ports, confirmed.databaseName);
+        }
+
+        ports.log('[serial-plan] ✅ parallel query is off for application sessions');
+        return 0;
+      }),
     ports.warn,
   );
-
-  if (outcome.status === 'wrong-database') {
-    ports.warn(
-      `[serial-plan] ADMIN_DATABASE_URL connects to database ${outcome.reading.databaseName}, but the ` +
-        `application connects to ${outcome.expectedDatabaseName}. Refusing to issue ALTER DATABASE against ` +
-        `the wrong database — point ADMIN_DATABASE_URL at ${outcome.expectedDatabaseName}.`,
-    );
-    return reportSerialPlanFailure(ports, outcome.expectedDatabaseName);
-  }
-
-  if (outcome.status === 'not-permitted') {
-    ports.warn(`[serial-plan] ADMIN_DATABASE_URL does not own ${outcome.reading.databaseName}: ${outcome.detail}`);
-    return reportSerialPlanFailure(ports, outcome.reading.databaseName);
-  }
-
-  ports.log(`[serial-plan] database default ${outcome.status} on ${outcome.reading.databaseName}`);
-
-  // Re-check on a NEW application connection: `ALTER DATABASE ... SET` changes
-  // what future sessions start with, never the session that issued it or one
-  // already open. Trusting the ALTER instead of re-reading is the same vacuous
-  // check that made 0225 look like it worked.
-  const confirmed = await withConnection(ports.openApplicationClient, readSerialPlanState, ports.warn);
-
-  if (confirmed.effectiveValue !== SERIAL_PLAN_TARGET_VALUE) {
-    ports.warn(
-      `[serial-plan] applied the database default but application sessions still see ` +
-        `${SERIAL_PLAN_SETTING}=${confirmed.effectiveValue}`,
-    );
-    return reportSerialPlanFailure(ports, confirmed.databaseName);
-  }
-
-  ports.log('[serial-plan] ✅ parallel query is off for application sessions');
-  return 0;
 }
 
 function reportSerialPlanFailure(ports: SerialPlanVerificationPorts, databaseName: string): number {

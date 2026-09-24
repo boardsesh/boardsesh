@@ -32,10 +32,17 @@ import {
   serialPlanAlterStatement,
   serialPlanRemediation,
   type SerialPlanClient,
-  type SerialPlanConnection,
+  type SerialPlanTransactionalConnection,
 } from './serial-plan-default.js';
 
-type Reading = { databaseName: string; effectiveValue: string; databaseDefault: string | null };
+type Reading = {
+  databaseName: string;
+  serverAddress: string | null;
+  serverPort: number | null;
+  serverStartedAt: string | null;
+  effectiveValue: string;
+  databaseDefault: string | null;
+};
 
 /**
  * A client whose catalog state the test controls. `ALTER DATABASE` updates
@@ -63,16 +70,22 @@ function fakeClient(
   };
 }
 
-function connectionTo(client: SerialPlanClient): () => Promise<SerialPlanConnection> {
-  return () => Promise.resolve({ client, close: () => Promise.resolve() });
+function connectionTo(client: SerialPlanClient): () => Promise<SerialPlanTransactionalConnection> {
+  return () =>
+    Promise.resolve({
+      client,
+      transaction: <T>(use: (transactionClient: SerialPlanClient) => Promise<T>) => use(client),
+      close: () => Promise.resolve(),
+    });
 }
 
 function privilegeError(): Error & { code: string } {
   return Object.assign(new Error('must be owner of database railway'), { code: INSUFFICIENT_PRIVILEGE });
 }
 
-const OFF: Reading = { databaseName: 'railway', effectiveValue: '2', databaseDefault: null };
-const ON: Reading = { databaseName: 'railway', effectiveValue: '0', databaseDefault: '0' };
+const SERVER = { serverAddress: '10.0.0.1', serverPort: 5432, serverStartedAt: '2026-09-24 10:00:00+00' };
+const OFF: Reading = { databaseName: 'railway', ...SERVER, effectiveValue: '2', databaseDefault: null };
+const ON: Reading = { databaseName: 'railway', ...SERVER, effectiveValue: '0', databaseDefault: '0' };
 
 void test('the ALTER statement names the database and the target value', () => {
   assert.equal(serialPlanAlterStatement('railway'), 'ALTER DATABASE "railway" SET max_parallel_workers_per_gather = 0');
@@ -92,9 +105,10 @@ void test('rejects a database name that is not a simple identifier', () => {
 });
 
 void test('reads the session value and the database default apart', async () => {
-  const client = fakeClient({ databaseName: 'railway', effectiveValue: '2', databaseDefault: '0' });
+  const client = fakeClient({ ...OFF, databaseDefault: '0' });
   assert.deepEqual(await readSerialPlanState(client), {
     databaseName: 'railway',
+    ...SERVER,
     effectiveValue: '2',
     databaseDefault: '0',
   });
@@ -103,7 +117,7 @@ void test('reads the session value and the database default apart', async () => 
 void test('applies the database default when the session can own the database', async () => {
   const client = fakeClient(OFF);
 
-  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
+  const outcome = await applySerialPlanDatabaseDefault(client, OFF);
 
   assert.equal(outcome.status, 'applied');
   assert.equal(isSerialPlanFailure(outcome), false);
@@ -117,7 +131,7 @@ void test('applies the database default when the session can own the database', 
 void test('issues nothing when the database already carries the default', async () => {
   const client = fakeClient(ON);
 
-  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
+  const outcome = await applySerialPlanDatabaseDefault(client, OFF);
 
   assert.equal(outcome.status, 'already-applied');
   assert.equal(
@@ -131,7 +145,7 @@ void test('surfaces a privilege refusal instead of swallowing it', async () => {
   // The whole bug. 0225 caught this SQLSTATE and turned it into a warning.
   const client = fakeClient(OFF, { alterError: privilegeError() });
 
-  const outcome = await applySerialPlanDatabaseDefault(client, 'railway');
+  const outcome = await applySerialPlanDatabaseDefault(client, OFF);
 
   assert.equal(outcome.status, 'not-permitted');
   assert.equal(isSerialPlanFailure(outcome), true);
@@ -143,13 +157,13 @@ void test('does not misread an unrelated error as a privilege refusal', async ()
   // silent no-op with a different label.
   const client = fakeClient(OFF, { alterError: Object.assign(new Error('connection terminated'), { code: '57P01' }) });
 
-  await assert.rejects(() => applySerialPlanDatabaseDefault(client, 'railway'), /connection terminated/);
+  await assert.rejects(() => applySerialPlanDatabaseDefault(client, OFF), /connection terminated/);
 });
 
 void test('refuses to report success when the catalog did not change', async () => {
   const client = fakeClient(OFF, { alterIsNoOp: true });
 
-  await assert.rejects(() => applySerialPlanDatabaseDefault(client, 'railway'), /reported success but/);
+  await assert.rejects(() => applySerialPlanDatabaseDefault(client, OFF), /reported success but/);
 });
 
 void test('the remediation names the exact statement an operator must run', () => {
@@ -170,7 +184,7 @@ void test('verification passes, and touches nothing, when application sessions a
     openApplicationClient: connectionTo(application),
     openAdminClient: () => {
       adminOpened += 1;
-      return Promise.resolve({ client: fakeClient(ON), close: () => Promise.resolve() });
+      return connectionTo(fakeClient(ON))();
     },
     log: () => {},
     warn: () => {},
@@ -253,9 +267,9 @@ void test('an admin credential that does not own the database still fails the ru
 void test('refuses to ALTER a database other than the application database', async () => {
   // ADMIN_DATABASE_URL pointed at a maintenance database (`/postgres`) with a
   // superuser: the ALTER would succeed — on the wrong database.
-  const maintenance = fakeClient({ databaseName: 'postgres', effectiveValue: '2', databaseDefault: null });
+  const maintenance = fakeClient({ ...OFF, databaseName: 'postgres' });
 
-  const outcome = await applySerialPlanDatabaseDefault(maintenance, 'railway');
+  const outcome = await applySerialPlanDatabaseDefault(maintenance, OFF);
 
   assert.equal(outcome.status, 'wrong-database');
   assert.equal(isSerialPlanFailure(outcome), true);
@@ -267,7 +281,7 @@ void test('refuses to ALTER a database other than the application database', asy
 });
 
 void test('an admin credential on a different database fails the run without touching it', async () => {
-  const maintenance = fakeClient({ databaseName: 'postgres', effectiveValue: '2', databaseDefault: null });
+  const maintenance = fakeClient({ ...OFF, databaseName: 'postgres' });
   const warnings: string[] = [];
 
   const exitCode = await runSerialPlanVerification({
@@ -286,6 +300,158 @@ void test('an admin credential on a different database fails the run without tou
   );
 });
 
+void test('same database name on another PostgreSQL server never receives ALTER', async () => {
+  for (const differentIdentity of [
+    { serverAddress: '10.0.0.2' },
+    { serverPort: 5433 },
+    { serverStartedAt: '2026-09-24 11:00:00+00' },
+  ]) {
+    const otherCluster = fakeClient({ ...OFF, ...differentIdentity });
+    const warnings: string[] = [];
+
+    const exitCode = await runSerialPlanVerification({
+      openApplicationClient: connectionTo(fakeClient(OFF)),
+      openAdminClient: connectionTo(otherCluster),
+      log: () => {},
+      warn: (message) => warnings.push(message),
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(otherCluster.state.databaseDefault, null);
+    assert.equal(
+      otherCluster.statements.some((statement) => statement.startsWith('ALTER DATABASE')),
+      false,
+    );
+    assert.ok(warnings.some((message) => message.includes('same live PostgreSQL server')));
+  }
+});
+
+void test('missing server identity fails closed before ALTER', async () => {
+  for (const missingIdentity of [{ serverAddress: null }, { serverPort: null }, { serverStartedAt: null }]) {
+    const admin = fakeClient({ ...OFF, ...missingIdentity });
+    const exitCode = await runSerialPlanVerification({
+      openApplicationClient: connectionTo(fakeClient(OFF)),
+      openAdminClient: connectionTo(admin),
+      log: () => {},
+      warn: () => {},
+    });
+    assert.equal(exitCode, 1);
+    assert.equal(
+      admin.statements.some((statement) => statement.startsWith('ALTER DATABASE')),
+      false,
+    );
+
+    const adminForMissingApplication = fakeClient(OFF);
+    const missingApplicationExit = await runSerialPlanVerification({
+      openApplicationClient: connectionTo(fakeClient({ ...OFF, ...missingIdentity })),
+      openAdminClient: connectionTo(adminForMissingApplication),
+      log: () => {},
+      warn: () => {},
+    });
+    assert.equal(missingApplicationExit, 1);
+    assert.equal(
+      adminForMissingApplication.statements.some((statement) => statement.startsWith('ALTER DATABASE')),
+      false,
+    );
+  }
+});
+
+void test('the application transaction stays pinned until the admin decision is complete', async () => {
+  let applicationClosed = false;
+  let applicationTransactionActive = false;
+  const admin = fakeClient(OFF);
+  const adminClient: SerialPlanClient = {
+    unsafe(statement) {
+      if (statement.startsWith('ALTER DATABASE')) {
+        assert.equal(applicationClosed, false);
+        assert.equal(applicationTransactionActive, true);
+      }
+      return admin.unsafe(statement);
+    },
+  };
+  let applicationOpened = 0;
+  const exitCode = await runSerialPlanVerification({
+    openApplicationClient: () => {
+      const client = fakeClient(applicationOpened++ === 0 ? OFF : ON);
+      return Promise.resolve({
+        client,
+        transaction: async <T>(use: (transactionClient: SerialPlanClient) => Promise<T>) => {
+          applicationTransactionActive = true;
+          try {
+            return await use(client);
+          } finally {
+            applicationTransactionActive = false;
+          }
+        },
+        close: () => {
+          applicationClosed = true;
+          return Promise.resolve();
+        },
+      });
+    },
+    openAdminClient: connectionTo(adminClient),
+    log: () => {},
+    warn: () => {},
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(applicationClosed, true);
+});
+
+void test('admin probe and ALTER use one pinned transaction behind a routing pool', async () => {
+  const pinnedAdmin = fakeClient(OFF);
+  let transactionCalls = 0;
+  let unpinnedCalls = 0;
+  let applicationOpens = 0;
+
+  const exitCode = await runSerialPlanVerification({
+    openApplicationClient: () => connectionTo(fakeClient(applicationOpens++ === 0 ? OFF : ON))(),
+    openAdminClient: () =>
+      Promise.resolve({
+        client: {
+          unsafe() {
+            unpinnedCalls += 1;
+            return Promise.resolve([{ ...OFF, serverAddress: '10.0.0.2' }]);
+          },
+        },
+        transaction: <T>(use: (client: SerialPlanClient) => Promise<T>) => {
+          transactionCalls += 1;
+          return use(pinnedAdmin);
+        },
+        close: () => Promise.resolve(),
+      }),
+    log: () => {},
+    warn: () => {},
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(transactionCalls, 1);
+  assert.equal(unpinnedCalls, 0);
+  assert.ok(pinnedAdmin.statements.some((statement) => statement.startsWith('ALTER DATABASE')));
+});
+
+void test('a privilege failure that aborts the admin transaction reports remediation', async () => {
+  const warnings: string[] = [];
+  const admin = fakeClient(OFF, { alterError: privilegeError() });
+  const exitCode = await runSerialPlanVerification({
+    openApplicationClient: connectionTo(fakeClient(OFF)),
+    openAdminClient: () =>
+      Promise.resolve({
+        client: admin,
+        transaction: async <T>(use: (client: SerialPlanClient) => Promise<T>) => {
+          await use(admin);
+          throw privilegeError();
+        },
+        close: () => Promise.resolve(),
+      }),
+    log: () => {},
+    warn: (message) => warnings.push(message),
+  });
+
+  assert.equal(exitCode, 1);
+  assert.ok(warnings.some((message) => message.includes('ADMIN_DATABASE_URL does not own')));
+  assert.ok(warnings.some((message) => message.includes('ALTER DATABASE')));
+});
+
 void test('an owning admin credential applies the default and re-checks on a NEW session', async () => {
   // `ALTER DATABASE ... SET` never changes the session that issued it, so the
   // confirmation has to come from a connection opened afterwards.
@@ -298,7 +464,11 @@ void test('an owning admin credential applies the default and re-checks on a NEW
       // and inherits the new database default.
       const client = fakeClient(applicationSessions.length === 0 ? OFF : ON);
       applicationSessions.push(client);
-      return Promise.resolve({ client, close: () => Promise.resolve() });
+      return Promise.resolve({
+        client,
+        transaction: <T>(use: (transactionClient: SerialPlanClient) => Promise<T>) => use(client),
+        close: () => Promise.resolve(),
+      });
     },
     openAdminClient: connectionTo(admin),
     log: () => {},
@@ -334,6 +504,7 @@ void test('a cleanup warning preserves the verification exit code', async () => 
       openApplicationClient: () =>
         Promise.resolve({
           client: fakeClient(reading),
+          transaction: <T>(use: (transactionClient: SerialPlanClient) => Promise<T>) => use(fakeClient(reading)),
           close: () => Promise.reject(new Error('pool close failed')),
         }),
       openAdminClient: null,
@@ -353,6 +524,8 @@ void test('a cleanup warning preserves the original operation error', async () =
       openApplicationClient: () =>
         Promise.resolve({
           client: { unsafe: () => Promise.reject(operationError) },
+          transaction: <T>(use: (transactionClient: SerialPlanClient) => Promise<T>) =>
+            use({ unsafe: () => Promise.reject(operationError) }),
           close: () => {
             throw new Error('pool close also failed');
           },

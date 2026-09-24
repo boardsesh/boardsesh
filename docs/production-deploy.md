@@ -36,9 +36,12 @@ After a successful `migrate`, `verify-serial-plan` checks whether application
 connections resolve `max_parallel_workers_per_gather` to `0` (#5352). It uses
 `DATABASE_URL` from the `Production` environment. When the value is already `0`,
 it issues no DDL. Otherwise, an optional `ADMIN_DATABASE_URL` may apply the
-database default, provided it owns the same database as the application
-connection. A maintenance-database URL is refused before any DDL. The job then
+database default, provided it reaches the same live PostgreSQL server and
+database as the application connection. A maintenance-database or different
+server URL is refused before any DDL. The job then
 checks again through a new application connection.
+The application probe stays in an open transaction while the admin probe and
+ALTER share another, including when either URL passes through a transaction pooler.
 
 Missing privileges or a still-nonzero runtime value make this job fail and
 print the operator remediation. Existing role overrides or pooled server

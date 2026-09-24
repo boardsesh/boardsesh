@@ -32,6 +32,7 @@ import {
   readSerialPlanState,
   runSerialPlanVerification,
   type SerialPlanClient,
+  type SerialPlanTransactionalConnection,
   type SerialPlanConnection,
 } from './serial-plan-default.js';
 
@@ -93,10 +94,17 @@ function runPostgresTool(command: 'pg_dump' | 'pg_restore', args: string[], data
   return result.stdout;
 }
 
-function opener(connectionUrl: string): () => Promise<SerialPlanConnection> {
+function opener(connectionUrl: string): () => Promise<SerialPlanTransactionalConnection> {
   return async () => {
     const pool = postgres(connectionUrl, { max: 1 });
-    return { client: pool as unknown as SerialPlanClient, close: () => pool.end() };
+    return {
+      client: pool as unknown as SerialPlanClient,
+      transaction: <T>(use: (client: SerialPlanClient) => Promise<T>) =>
+        pool.begin((transactionClient) =>
+          use(transactionClient as unknown as SerialPlanClient),
+        ) as unknown as Promise<T>,
+      close: () => pool.end(),
+    };
   };
 }
 
@@ -200,13 +208,36 @@ void describe('serial-plan database default against a real Postgres', { skip: !s
 
   void it('surfaces the refusal rather than swallowing it', async () => {
     const session = await migrationShapedSession();
+    const runtime = await opener(urlFor(runtimeRole, databaseName))();
     try {
-      const outcome = await applySerialPlanDatabaseDefault(session.client, databaseName);
+      const applicationReading = await readSerialPlanState(runtime.client);
+      const outcome = await applySerialPlanDatabaseDefault(session.client, applicationReading);
       assert.equal(outcome.status, 'not-permitted');
       assert.equal(isSerialPlanFailure(outcome), true);
       assert.match(outcome.status === 'not-permitted' ? outcome.detail : '', /must be owner of database/);
     } finally {
+      await runtime.close();
       await session.close();
+    }
+  });
+
+  void it('reports privilege refusal from a transaction-pinned admin connection', async () => {
+    const warnings: string[] = [];
+    const exitCode = await runSerialPlanVerification({
+      openApplicationClient: opener(urlFor(runtimeRole, databaseName)),
+      openAdminClient: opener(urlFor(migratorRole, databaseName)),
+      log: () => {},
+      warn: (message) => warnings.push(message),
+    });
+
+    assert.equal(exitCode, 1);
+    assert.ok(warnings.some((message) => message.includes('ADMIN_DATABASE_URL does not own')));
+    assert.ok(warnings.some((message) => message.includes('ALTER DATABASE')));
+    const runtime = await opener(urlFor(runtimeRole, databaseName))();
+    try {
+      assert.equal((await readSerialPlanState(runtime.client)).databaseDefault, null);
+    } finally {
+      await runtime.close();
     }
   });
 

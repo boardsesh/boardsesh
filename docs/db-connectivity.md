@@ -513,7 +513,14 @@ after `migrate`:
    targets the admin session's `current_database()`, so the step refuses before
    any DDL unless that equals the application session's database — an
    `ADMIN_DATABASE_URL` ending in `/postgres` fails the job instead of changing
-   the maintenance database.
+   the maintenance database. It also compares the live server address, port,
+   and postmaster start time before DDL, so another cluster with a database
+   named `railway` fails closed. These values guard this run, not provide a
+   durable cluster identifier. The application probe stays in its own open
+   transaction while the admin probe, ALTER, and catalog recheck run in another.
+   Transaction pooling therefore keeps both server identities pinned through
+   the decision. If either connection path cannot expose a
+   matching identity, use the one-off owner action below instead.
 4. Otherwise **exits 1**, printing the one statement an operator runs once.
 
 The automated ALTER and generated remediation accept simple ASCII database
