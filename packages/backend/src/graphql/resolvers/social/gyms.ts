@@ -22,6 +22,7 @@ import {
   UUIDSchema,
 } from '../../../validation/schemas';
 import { distanceMeters } from '@boardsesh/db/queries';
+import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
@@ -376,6 +377,11 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
   // while looking correct in a logged-in dev session.
   const isClaimed = gym.ownerId !== SYSTEM_BOARD_OWNER_ID;
 
+  // Viewer-independent listing capability for choosing the claim form, including
+  // anonymous SSR. requestGymClaim still enforces the same website conditions
+  // and separately checks the viewer's access before accepting any claim.
+  const canClaimByDomain = computeCanClaimByDomain(gym);
+
   return {
     uuid: gym.uuid,
     slug: gym.slug,
@@ -412,6 +418,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     canGrantAccess,
     canClaim,
     isClaimed,
+    canClaimByDomain,
   };
 }
 
