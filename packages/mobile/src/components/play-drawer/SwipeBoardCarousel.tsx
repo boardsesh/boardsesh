@@ -7,7 +7,7 @@ import Animated, {
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
@@ -64,6 +64,10 @@ type SwipeBoardCarouselProps = {
    *  reset (it resets translateX once the new climb has rendered). The carousel
    *  uses it to keep the incoming peek frozen + covering centre until then. */
   swipeIsAnimating?: SharedValue<boolean>;
+  /** RNGH ref to the drawer's pull-down-to-dismiss Pan. The zoom-pan overlay
+   *  blocks it so a downward drag on a zoomed board pans the board instead of
+   *  dismissing the drawer (see use-zoom-pan-gesture). */
+  dismissRef?: React.MutableRefObject<GestureType | undefined>;
 };
 
 /** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
@@ -90,6 +94,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   scrollRef,
   swipeTranslateX,
   swipeIsAnimating,
+  dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   // Measured box the board is laid out into. The board is sized to *fit* this
@@ -119,6 +124,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
     scrollRef,
+    dismissRef,
   });
 
   const onResetZoomReadyRef = useRef(onResetZoomReady);
