@@ -1,0 +1,496 @@
+// The stream's write-through into local `board_climb_stats` (issue #5227).
+//
+// The layout-wide `climbStatsUpdated` subscription already repairs the
+// in-memory stats store, so a row that is on screen updates live. Everything
+// else on a downloaded board — a list re-read, pull-to-refresh, the grade and
+// ascent filters, sort-by-ascents, the count, the climb detail — reads SQLite,
+// and the pull deliberately skips server rows younger than
+// SYNC_STABILITY_WINDOW_SECONDS. That makes this the prompt local writer for a
+// fresh recompute, including for the tick the device itself just logged.
+//
+// Two callers, not one. The stream is the fast path; the periodic
+// reconciliation read (`climbStatsForClimbs`) routes its rows through here too,
+// because Redis PUBLISH is fail-open and a missed publish is otherwise
+// undetectable — the store would show the new value while the local row stayed
+// stale. Almost every reconciliation row is unchanged, which is exactly what
+// the pre-read below is for.
+//
+// Nothing takes a lock until it has to. `writeClimbStatsEvents` runs every
+// event's pre-read on the MAIN connection in autocommit — one LEFT JOIN that
+// answers "is this climb local, and is the local row already at least this
+// revision?" — and only the events that can still change a row reach the write.
+// A global layout channel is mostly climbs this device never downloaded, and an
+// equal-revision republish is the documented common case, so the two cheap
+// outcomes never open a connection at all.
+//
+// Three properties the SQL carries, all of them load-bearing:
+//
+//   1. `WHERE EXISTS (board_climbs …)` — the channel is global per layout, so
+//      events arrive for climbs this device never downloaded, and for climbs a
+//      scope teardown removed while the event was in flight. Teardown deletes
+//      stats rows by joining board_climbs and never sweeps orphans
+//      (sync/scope-teardown.ts), so an unguarded upsert would leave a row no
+//      later teardown can find.
+//   2. `excluded.sync_seq > COALESCE(sync_seq, -1)` — strictly greater. The
+//      publisher fires on every debounced pass while `sync_seq` only bumps on a
+//      client-visible column change, so equal-revision republishes are normal
+//      and must not rewrite a row. A local NULL (never observed in practice —
+//      the server column is NOT NULL and both the pull and the snapshot carry
+//      it) still loses to any valid revision.
+//   3. `updated_at` epoch on INSERT, untouched on UPDATE. `updated_at` is the
+//      pull cursor column, and this write does NOT advance sync state: a row
+//      stamped "now" would sit ahead of the checkpoint, so a tombstone
+//      (`updated_at <= ?`) and snapshot reconcile could never delete it again.
+//      The epoch is older than every checkpoint, so both can.
+//
+// The write runs on its OWN connection (withExclusiveTransactionAsync) with a
+// 250 ms immediate lock, ONE transaction per drain pass rather than one per
+// event: a burst of recomputes costs one native connection and one lock wait.
+// Each upsert's own `changes` decides its own applied/stale, so a row another
+// writer moved between the pre-read and the lock still reports `stale`.
+//
+// A lost lock settles the whole batch as `lock_lost` and never throws. It is not
+// a dropped event: the caller requeues the batch and stands down before
+// retrying (see `climb-stats-live-sync.ts`), because the holder is typically a
+// VACUUM or a snapshot import that keeps the file for seconds. There is
+// deliberately no retry ladder inside the lock wait — a retry would only queue
+// behind the same holder — and never a 5 s wait, which on the main connection
+// would stall every local-first read behind it.
+//
+// Because this is a SECOND writer of `board_climb_stats`, the PULL side is
+// revision-guarded for this table alone (`TABLE_CONFIGS.board_climb_stats`
+// `revisionColumn`, plus the matching clause in the snapshot import): a page
+// fetched before a recompute can commit after this write landed, and an
+// unguarded `INSERT OR REPLACE` would walk the row backwards until the next
+// cycle.
+
+import type { OfflineDatabase } from '../database';
+import { beginImmediateWrite } from '../db/pragmas';
+import { isDatabaseLockedError } from '../db/lock-errors';
+import { parseCompatibleSizeIds } from './board-scope-sql';
+import { multiRowChunkSize } from './pull-client';
+
+/**
+ * One `ClimbStatsEvent` as this module needs it. Declared structurally rather
+ * than imported: `@boardsesh/shared-schema` is only a devDependency here, and
+ * the engine takes no runtime dependencies. `ClimbStatsEvent` is assignable to
+ * it (asserted in the test) — `difficulty` is a rendering of `displayDifficulty`
+ * with no local column, and `faUsername` / `faAt` are columns this write never
+ * touches, so they are not asked for. The same shape is satisfied by a
+ * `climbStatsForClimbs` row plus the read's board and layout, which is how the
+ * reconnect repair path reuses this writer.
+ */
+export type ClimbStatsWriteThroughInput = {
+  boardType: string;
+  layoutId: number;
+  climbUuid: string;
+  angle: number;
+  ascensionistCount: number;
+  qualityAverage: number | null;
+  difficultyAverage: number | null;
+  displayDifficulty: number | null;
+  syncSeq: string;
+};
+
+/**
+ * Why a write did or did not land.
+ *
+ * `stale` covers both "the event is not newer" and "the climb vanished between
+ * the size read and the write" — both end as zero changed rows, and both mean
+ * the caller must not refresh anything.
+ */
+export type ClimbStatsWriteThroughStatus = 'applied' | 'stale' | 'climb_not_local' | 'invalid_revision' | 'lock_lost';
+
+export type ClimbStatsWriteThroughResult = {
+  status: ClimbStatsWriteThroughStatus;
+  /**
+   * The local climb's `compatible_size_ids`, so the caller can decide whether
+   * the browsed size is affected without a second read. Null when the climb is
+   * not local, or when the column is NULL / not a number array.
+   */
+  compatibleSizeIds: number[] | null;
+  /**
+   * The local climb's OWN `board_climbs.layout_id`. The caller must gate list
+   * refreshes on this, never on the layout the event or the read was labelled
+   * with: a reconciliation read stamps its rows with the layout the user is
+   * BROWSING, which is not necessarily the layout the climb belongs to. Null
+   * when the climb is not local, or when the column is NULL.
+   */
+  layoutId: number | null;
+  /**
+   * Which half of the write decided this result.
+   *
+   * `pre_read` means the autocommit read answered it: the revision was
+   * unparseable, the climb is not local, or the local row is already at or
+   * ahead of this revision. `write` means the exclusive transaction did, and a
+   * `stale` from there is NOT the same statement: the upsert's `WHERE EXISTS`
+   * can have failed because the climb vanished between the two, leaving no row
+   * at all. A caller memoizing "SQLite already holds this revision" must only
+   * trust the `pre_read` kind.
+   */
+  settledBy: 'pre_read' | 'write';
+};
+
+/** Columns this write owns. Everything else on the row is the pull's business. */
+export const CLIMB_STATS_WRITE_THROUGH_COLUMNS = [
+  'board_type',
+  'climb_uuid',
+  'angle',
+  'display_difficulty',
+  'ascensionist_count',
+  'difficulty_average',
+  'quality_average',
+  'sync_seq',
+] as const;
+
+/**
+ * Columns the write never touches on an existing row. The event carries no
+ * `benchmarkDifficulty` (the recompute never writes it), its `faAt` is raw
+ * Postgres text where the pull stores an ISO string, and `updated_at` is the
+ * sync cursor — see the epoch note above. Together with the written columns
+ * this is exactly `TABLE_CONFIGS.board_climb_stats.localColumns` (asserted).
+ */
+export const CLIMB_STATS_WRITE_THROUGH_UNTOUCHED_COLUMNS = [
+  'benchmark_difficulty',
+  'fa_username',
+  'fa_at',
+  'updated_at',
+] as const;
+
+/**
+ * How long the write waits for the single-writer lock before giving up. Short
+ * on purpose: the event is disposable (the next pull carries the same row),
+ * and a stats event must never be the reason a user-facing write waits.
+ */
+export const CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS = 250;
+
+/**
+ * The engine's "older than every checkpoint" watermark, stamped on INSERT only.
+ */
+const EPOCH_UPDATED_AT = '1970-01-01T00:00:00.000Z';
+
+const UPSERT_SQL = `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count,
+  difficulty_average, quality_average, sync_seq, updated_at)
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, '${EPOCH_UPDATED_AT}'
+WHERE EXISTS (SELECT 1 FROM board_climbs WHERE board_type = ? AND uuid = ?)
+ON CONFLICT(board_type, climb_uuid, angle) DO UPDATE SET
+  display_difficulty = excluded.display_difficulty,
+  ascensionist_count = excluded.ascensionist_count,
+  difficulty_average = excluded.difficulty_average,
+  quality_average = excluded.quality_average,
+  sync_seq = excluded.sync_seq
+WHERE excluded.sync_seq > COALESCE(board_climb_stats.sync_seq, -1)`;
+
+/**
+ * Decimal digits with no leading zero — the wire shape of a Postgres bigint.
+ * Mirrors `validRevision` in `@boardsesh/board-react`'s climb-stats-store.ts:
+ * offline-sync cannot import board-react, and the two must agree, or the store
+ * and the local row would disagree about which events count as revisions.
+ */
+const REVISION_PATTERN = /^(0|[1-9]\d*)$/;
+
+/**
+ * `syncSeq` as the number the SQLite INTEGER column can hold, or null when the
+ * string is not a revision we can compare.
+ *
+ * The wire type is decimal text because a Postgres bigint outruns a JS number.
+ * The local column is a 64-bit SQLite INTEGER, but the bind value has to pass
+ * through a JS number, so anything past `Number.MAX_SAFE_INTEGER` is rejected
+ * rather than silently rounded into the wrong revision. Real `sync_seq` values
+ * are a per-table sequence, nowhere near that bound; a value that reaches it is
+ * a bug worth dropping the event over, and the next pull writes the row anyway.
+ */
+export function parseClimbStatsRevision(syncSeq: string): number | null {
+  if (!REVISION_PATTERN.test(syncSeq)) return null;
+  const revision = Number(syncSeq);
+  return Number.isSafeInteger(revision) ? revision : null;
+}
+
+/**
+ * True for the failures that mean "another writer had the file" — contention,
+ * or a database closed underneath us by a sign-out wipe or a hot reload. Both
+ * are ordinary and silent: the event is dropped and the next pull heals.
+ */
+function isDroppableWriteFailure(error: unknown): boolean {
+  if (isDatabaseLockedError(error)) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /database is closed|access to closed resource/i.test(message);
+}
+
+/** What the autocommit pre-read decided about one event. */
+type PreparedWrite =
+  | { kind: 'settled'; result: ClimbStatsWriteThroughResult }
+  | {
+      kind: 'write';
+      revision: number;
+      compatibleSizeIds: number[] | null;
+      layoutId: number | null;
+      event: ClimbStatsWriteThroughInput;
+    };
+
+/**
+ * How many climb uuids one pre-read statement binds. One parameter is spent on
+ * `board_type`, so the uuid list gets the rest of SQLite's bind budget —
+ * `multiRowChunkSize(1)` is that budget for a one-parameter row.
+ */
+export const CLIMB_STATS_PRE_READ_CHUNK_SIZE = Math.max(1, multiRowChunkSize(1) - 1);
+
+type PreReadRow = {
+  uuid: string;
+  layout_id: number | null;
+  compatible_size_ids: string | null;
+  angle: number | null;
+  sync_seq: number | null;
+};
+
+/** What one pre-read pass learned about the climbs a batch names. */
+type PreReadIndex = {
+  /** Present iff the climb has a local `board_climbs` row. */
+  climbs: Map<string, { layoutId: number | null; compatibleSizeIds: number[] | null }>;
+  /** `board_type|uuid|angle` -> the local `board_climb_stats.sync_seq`. */
+  revisions: Map<string, number>;
+};
+
+function climbKey(boardType: string, climbUuid: string): string {
+  return `${boardType}|${climbUuid}`;
+}
+
+function revisionKey(boardType: string, climbUuid: string, angle: number): string {
+  return `${boardType}|${climbUuid}|${angle}`;
+}
+
+/**
+ * The autocommit half, for the WHOLE batch: decide, without taking any lock,
+ * which of these events can possibly change a local row.
+ *
+ * One statement per board per chunk of climb uuids, on the main connection.
+ * That matters because the reconciliation read hands over every angle row of
+ * every retained climb at once — a 50-climb pass is ~700 events — and a
+ * sequential `getFirstAsync` each would be 700 round trips through the bridge
+ * for an answer that is almost always "unchanged".
+ *
+ * Uuids are deduplicated before chunking: those ~700 events name ~50 climbs.
+ * The join is on `(board_type, climb_uuid)` only, so one row comes back per
+ * stats angle the device holds (and one NULL-angle row for a climb with no
+ * stats yet), which is what the revision map is keyed on.
+ */
+async function preReadBatch(
+  db: OfflineDatabase,
+  events: readonly ClimbStatsWriteThroughInput[],
+): Promise<PreReadIndex> {
+  const index: PreReadIndex = { climbs: new Map(), revisions: new Map() };
+  const uuidsByBoard = new Map<string, Set<string>>();
+  for (const event of events) {
+    // An unparseable revision is decided without any SQL at all, so its uuid
+    // must not widen the IN list — and a batch of nothing but those reads
+    // nothing.
+    if (parseClimbStatsRevision(event.syncSeq) === null) continue;
+    const uuids = uuidsByBoard.get(event.boardType) ?? new Set<string>();
+    uuids.add(event.climbUuid);
+    uuidsByBoard.set(event.boardType, uuids);
+  }
+
+  for (const [boardType, uuidSet] of uuidsByBoard) {
+    const uuids = [...uuidSet];
+    for (let start = 0; start < uuids.length; start += CLIMB_STATS_PRE_READ_CHUNK_SIZE) {
+      const chunk = uuids.slice(start, start + CLIMB_STATS_PRE_READ_CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const rows = await db.getAllAsync<PreReadRow>(
+        `SELECT c.uuid AS uuid, c.layout_id AS layout_id, c.compatible_size_ids AS compatible_size_ids,
+                s.angle AS angle, s.sync_seq AS sync_seq
+         FROM board_climbs c
+         LEFT JOIN board_climb_stats s
+           ON s.board_type = c.board_type AND s.climb_uuid = c.uuid
+         WHERE c.board_type = ? AND c.uuid IN (${placeholders})`,
+        [boardType, ...chunk],
+      );
+      for (const row of rows) {
+        if (!index.climbs.has(climbKey(boardType, row.uuid))) {
+          index.climbs.set(climbKey(boardType, row.uuid), {
+            layoutId: typeof row.layout_id === 'number' && Number.isFinite(row.layout_id) ? row.layout_id : null,
+            compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
+          });
+        }
+        if (row.angle === null || row.sync_seq === null) continue;
+        const localRevision = typeof row.sync_seq === 'number' ? row.sync_seq : Number(row.sync_seq);
+        if (!Number.isFinite(localRevision)) continue;
+        index.revisions.set(revisionKey(boardType, row.uuid, row.angle), localRevision);
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * Classify one event against the pre-read index. Pure — the same three outcomes
+ * the per-event read produced, in the same order of precedence.
+ */
+function classifyEvent(event: ClimbStatsWriteThroughInput, index: PreReadIndex): PreparedWrite {
+  const revision = parseClimbStatsRevision(event.syncSeq);
+  if (revision === null) {
+    return {
+      kind: 'settled',
+      result: { status: 'invalid_revision', compatibleSizeIds: null, layoutId: null, settledBy: 'pre_read' },
+    };
+  }
+
+  const climb = index.climbs.get(climbKey(event.boardType, event.climbUuid));
+  if (!climb) {
+    return {
+      kind: 'settled',
+      result: { status: 'climb_not_local', compatibleSizeIds: null, layoutId: null, settledBy: 'pre_read' },
+    };
+  }
+
+  const localRevision = index.revisions.get(revisionKey(event.boardType, event.climbUuid, event.angle));
+  if (localRevision !== undefined && localRevision >= revision) {
+    return {
+      kind: 'settled',
+      result: {
+        status: 'stale',
+        compatibleSizeIds: climb.compatibleSizeIds,
+        layoutId: climb.layoutId,
+        settledBy: 'pre_read',
+      },
+    };
+  }
+
+  return {
+    kind: 'write',
+    revision,
+    compatibleSizeIds: climb.compatibleSizeIds,
+    layoutId: climb.layoutId,
+    event,
+  };
+}
+
+function upsertBinds(event: ClimbStatsWriteThroughInput, revision: number): (string | number | null)[] {
+  return [
+    event.boardType,
+    event.climbUuid,
+    event.angle,
+    event.displayDifficulty,
+    event.ascensionistCount,
+    event.difficultyAverage,
+    event.qualityAverage,
+    revision,
+    event.boardType,
+    event.climbUuid,
+  ];
+}
+
+/**
+ * Write a batch of live stats events into local `board_climb_stats`.
+ *
+ * Every pre-read runs on the main connection in autocommit; only the events
+ * that can still change a row reach ONE exclusive transaction, so a burst of
+ * recomputes costs one native connection and one 250 ms lock wait rather than
+ * one of each per event. Each upsert's own `changes` decides its status, so a
+ * row another writer moved between the pre-read and the lock still reports
+ * `stale` rather than `applied`.
+ *
+ * Never throws for contention or a closed database — those settle the whole
+ * batch as `lock_lost`, and the next pull heals every row in it. Any other
+ * SQLite failure propagates so the caller can report it once.
+ */
+export async function writeClimbStatsEvents(
+  db: OfflineDatabase,
+  events: readonly ClimbStatsWriteThroughInput[],
+): Promise<ClimbStatsWriteThroughResult[]> {
+  const results: (ClimbStatsWriteThroughResult | undefined)[] = Array.from({ length: events.length });
+  const pendingWrites: { index: number; prepared: Extract<PreparedWrite, { kind: 'write' }> }[] = [];
+
+  // Settled by parsing alone, before any SQL: an unparseable revision needs no
+  // database at all, and a result reached without a read must survive a
+  // batch-wide contention fill below.
+  const readable: { position: number; event: ClimbStatsWriteThroughInput }[] = [];
+  for (const [position, event] of events.entries()) {
+    if (parseClimbStatsRevision(event.syncSeq) === null) {
+      results[position] = {
+        status: 'invalid_revision',
+        compatibleSizeIds: null,
+        layoutId: null,
+        settledBy: 'pre_read',
+      };
+      continue;
+    }
+    readable.push({ position, event });
+  }
+
+  try {
+    const index = await preReadBatch(
+      db,
+      readable.map(({ event }) => event),
+    );
+    for (const { position, event } of readable) {
+      const prepared = classifyEvent(event, index);
+      if (prepared.kind === 'settled') {
+        results[position] = prepared.result;
+        continue;
+      }
+      pendingWrites.push({ index: position, prepared });
+    }
+  } catch (error) {
+    // A read can hit a closed handle too (a sign-out wipe or a hot reload
+    // landing mid-batch). That is contention, not a broken database, so it
+    // must not be reported.
+    if (isDroppableWriteFailure(error)) {
+      return events.map((_event, position) => ({
+        status: 'lock_lost',
+        compatibleSizeIds: null,
+        layoutId: null,
+        settledBy: 'pre_read',
+        ...results[position],
+      }));
+    }
+    throw error;
+  }
+
+  if (pendingWrites.length > 0) {
+    const changesByIndex = new Map<number, number>();
+    try {
+      await db.withExclusiveTransactionAsync(async (txn) => {
+        await beginImmediateWrite(txn, CLIMB_STATS_WRITE_THROUGH_LOCK_TIMEOUT_MS);
+        for (const { index, prepared } of pendingWrites) {
+          const result = await txn.runAsync(UPSERT_SQL, upsertBinds(prepared.event, prepared.revision));
+          changesByIndex.set(index, result.changes);
+        }
+      });
+    } catch (error) {
+      if (!isDroppableWriteFailure(error)) throw error;
+      for (const { index, prepared } of pendingWrites) {
+        results[index] = {
+          status: 'lock_lost',
+          compatibleSizeIds: prepared.compatibleSizeIds,
+          layoutId: prepared.layoutId,
+          settledBy: 'write',
+        };
+      }
+    }
+    for (const { index, prepared } of pendingWrites) {
+      if (results[index]) continue;
+      results[index] = {
+        status: (changesByIndex.get(index) ?? 0) > 0 ? 'applied' : 'stale',
+        compatibleSizeIds: prepared.compatibleSizeIds,
+        layoutId: prepared.layoutId,
+        // A `stale` from HERE is not the pre-read's: the upsert's WHERE EXISTS
+        // can have failed because the climb vanished after the pre-read, so
+        // there may be no row at all.
+        settledBy: 'write',
+      };
+    }
+  }
+
+  return results.map(
+    (result) => result ?? { status: 'stale', compatibleSizeIds: null, layoutId: null, settledBy: 'write' },
+  );
+}
+
+/** One event, through the batched writer. */
+export async function writeClimbStatsEvent(
+  db: OfflineDatabase,
+  event: ClimbStatsWriteThroughInput,
+): Promise<ClimbStatsWriteThroughResult> {
+  const [result] = await writeClimbStatsEvents(db, [event]);
+  return result;
+}

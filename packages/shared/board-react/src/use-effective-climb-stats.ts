@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
-import type { BoardName } from '@boardsesh/shared-schema';
+import type { BoardName, ClimbStatsEvent } from '@boardsesh/shared-schema';
 import { parseRateLimitError } from '@boardsesh/graphql-client';
 import type { BoardAdapter } from './adapter';
 import { useBoardAdapter } from './adapter';
@@ -386,10 +386,38 @@ function pauseRateLimitedLane(batch: ActiveBatch, retryAfterSeconds: number | nu
   if (!ranSynchronously) pause.cancelTask = cancelTask;
 }
 
-function applyBatchRows(
+/**
+ * `persistClimbStatsEvent` is documented as "must never throw", and both call
+ * sites are places where a throw does damage far outside this hook.
+ *
+ * In the subscription's `next` handler, graphql-ws catches it, nulls
+ * `onmessage` and closes the shared singleton socket — taking kiosk presence,
+ * comments and notifications down with it.
+ *
+ * In `applyBatchRows` the damage is quieter. The batch `.then()` has a `.catch`
+ * below, so nothing is reported; what an escape actually does is abort the
+ * `for (const read of batch.reads)` loop partway. Every later read in the batch
+ * is left unapplied and never completed, and its acknowledged optimistic tokens
+ * are never retired — so a visible send count stays pinned to an outstanding
+ * floor until some later read repairs it.
+ *
+ * Enforce the contract at the boundary instead of trusting every host to
+ * honour it. Losing a local write is harmless — the next pull writes the same
+ * rows.
+ */
+function persistClimbStatsSafely(adapter: BoardAdapter, event: ClimbStatsEvent): void {
+  try {
+    adapter.persistClimbStatsEvent?.(event);
+  } catch {
+    // Deliberately silent: the store already has the value, and this package
+    // has no reporting surface of its own.
+  }
+}
+
+async function applyBatchRows(
   batch: ActiveBatch,
   rows: Awaited<ReturnType<NonNullable<BoardAdapter['fetchClimbStatsForClimbs']>>>,
-): void {
+): Promise<void> {
   const rowsByClimbUuid = new Map<string, typeof rows>();
   for (const row of rows) {
     const climbRows = rowsByClimbUuid.get(row.climbUuid) ?? [];
@@ -398,25 +426,61 @@ function applyBatchRows(
   }
 
   const now = Date.now();
-  for (const read of batch.reads) {
+  const persistenceChunk: ClimbStatsEvent[] = [];
+  const flushPersistenceChunk = async (): Promise<void> => {
+    if (persistenceChunk.length === 0) return;
+    const chunk = persistenceChunk.splice(0, persistenceChunk.length);
+    try {
+      await batch.adapter.persistClimbStatsReconciliationChunk?.(chunk);
+    } catch {
+      // Local persistence is optional. A failure must not prevent later rows
+      // from updating the canonical store or retiring their optimistic tokens.
+    }
+  };
+  for (const [readIndex, read] of batch.reads.entries()) {
     if (!readIsCurrent(read)) {
-      completeRead(read);
-      continue;
+      for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
+      return;
     }
     recordReadAt(readKey(batch.boardType, read.key.climbUuid), now);
     for (const row of rowsByClimbUuid.get(read.key.climbUuid) ?? []) {
       for (const layoutId of read.layoutIds) {
-        applyCanonicalClimbStats({
+        const canonical: ClimbStatsEvent = {
           boardType: batch.boardType,
           layoutId,
           ...row,
           ascensionistCount: row.ascensionistCount ?? 0,
-        });
+        };
+        applyCanonicalClimbStats(canonical);
+        // This read is the repair path for the case the stream cannot cover:
+        // Redis PUBLISH is fail-open, so a missed event leaves the local
+        // catalog stale while the store renders the right value — list order
+        // and a minAscents filter would still answer from the old row. The
+        // write-through's own revision gate makes an unchanged row a single
+        // autocommit read and no write, so sending every row is cheap.
+        if (batch.adapter.persistClimbStatsReconciliationChunk) {
+          persistenceChunk.push(canonical);
+          if (persistenceChunk.length === 500) {
+            await flushPersistenceChunk();
+            if (!readIsCurrent(read)) {
+              for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
+              return;
+            }
+          }
+        } else {
+          // Legacy/native-less adapters retain the synchronous event seam.
+          persistClimbStatsSafely(batch.adapter, canonical);
+        }
       }
+    }
+    if (!readIsCurrent(read)) {
+      for (const staleRead of batch.reads.slice(readIndex)) completeRead(staleRead);
+      return;
     }
     retireAcknowledgedOptimisticAscents(read.acknowledgedTokens, read.authEpoch);
     completeRead(read);
   }
+  await flushPersistenceChunk();
 }
 
 function finishFailedRateLimitRetry(batch: ActiveBatch): void {
@@ -461,7 +525,7 @@ function drainReadQueue(): void {
     .then((rows) => {
       if (generation !== coordinatorGeneration) return;
       if (batch.isRateLimitRetry) clearRateLimitPause(batch.group);
-      applyBatchRows(batch, rows);
+      return applyBatchRows(batch, rows);
     })
     .catch((error: unknown) => {
       if (generation !== coordinatorGeneration) return;
@@ -634,6 +698,10 @@ export function useClimbStatsLayoutSync(boardType: BoardName | null, layoutId: n
       next: (event) => {
         if (event.boardType !== boardType || event.layoutId !== layoutId) return;
         applyCanonicalClimbStats(event);
+        // After the store, and unconditionally: the store keeps only the keys a
+        // mounted selector retains, while the local catalog needs every event
+        // for the board the user is browsing. Mobile supplies this; web omits it.
+        persistClimbStatsSafely(adapter, event);
       },
       connected: refresh,
       // Redis-required subscription setup failures surface as operation errors.

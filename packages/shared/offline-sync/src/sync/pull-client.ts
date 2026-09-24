@@ -1,5 +1,6 @@
 import type { OfflineDatabase, QueryInvalidator, SqlExecutor, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
+import { buildRevisionGuardTail } from './revision-guard-sql';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import {
   getCheckpoint,
@@ -741,7 +742,7 @@ export function multiRowChunkSize(columnCount: number): number {
   return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
 }
 
-function buildMultiRowInsertSql(
+export function buildMultiRowInsertSql(
   tableName: string,
   columns: readonly string[],
   rowCount: number,
@@ -750,7 +751,10 @@ function buildMultiRowInsertSql(
   const columnList = columns.join(', ');
   const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
   const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
+  const guardTail = buildRevisionGuardTail({ tableName, conflictReference: tableName, columns });
+  if (guardTail) return `INSERT INTO ${tableName} (${columnList}) VALUES ${valuesClause} ${guardTail}`;
   if (!preserveNewerRows) return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+
   const { primaryKeyColumns, cursorColumn } = TABLE_CONFIGS[tableName];
   const assignments = columns
     .filter((column) => !primaryKeyColumns.includes(column))
