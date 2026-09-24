@@ -54,6 +54,7 @@ import * as sharedPlaylists from '@boardsesh/graphql/operations/playlists';
 import * as sharedProposals from '@boardsesh/graphql/operations/proposals';
 import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
+import * as sharedSupport from '@boardsesh/graphql/operations/support';
 
 import {
   BATCHED_OPERATIONS,
@@ -167,6 +168,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/proposals': sharedProposals,
   '@boardsesh/graphql/operations/qa': sharedQa,
   '@boardsesh/graphql/operations/queue-session': sharedQueueSession,
+  '@boardsesh/graphql/operations/support': sharedSupport,
 };
 
 // Build the schema inside this test's own `graphql` instance. Importing a

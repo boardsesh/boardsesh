@@ -85,6 +85,8 @@ export const userTypeDefs = /* GraphQL */ `
   type DeleteAccountInfo {
     "Number of published (non-draft) climbs the user has created"
     publishedClimbCount: Int!
+    "Whether account deletion will schedule a linked Stripe subscription to end"
+    hasActiveStripeSubscription: Boolean!
   }
 
   """

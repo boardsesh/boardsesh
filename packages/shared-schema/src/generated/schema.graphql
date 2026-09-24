@@ -1092,6 +1092,8 @@ Information needed before account deletion.
 type DeleteAccountInfo {
   "Number of published (non-draft) climbs the user has created"
   publishedClimbCount: Int!
+  "Whether account deletion will schedule a linked Stripe subscription to end"
+  hasActiveStripeSubscription: Boolean!
 }
 
 """
@@ -6061,6 +6063,49 @@ extend type Mutation {
   retrySprayWallDetection(id: ID!): SprayWallDetection!
 }
 
+enum SupportCadence {
+  MONTHLY
+  ONE_TIME
+}
+
+type SupportConfiguration {
+  enabled: Boolean!
+  currency: String!
+  minimumAmount: Int!
+  maximumAmount: Int!
+  legacyDonateUrl: String
+}
+
+type SupporterStatus {
+  linked: Boolean!
+  hasSupported: Boolean!
+  showPublicly: Boolean!
+  hasActiveSubscription: Boolean!
+  cancelAtPeriodEnd: Boolean!
+}
+
+type PublicSupporter {
+  userId: ID!
+  displayName: String!
+  avatarUrl: String
+  supportedAt: String!
+}
+
+input CreateSupportCheckoutSessionInput {
+  amount: Int!
+  cadence: SupportCadence!
+  publicCredit: Boolean!
+  locale: String
+}
+
+type SupportCheckoutSession {
+  url: String!
+}
+
+type SupportBillingPortalSession {
+  url: String!
+}
+
 """
 One hold the client found in the NEW photo, already mapped through that photo's
 homography into the wall's canonical frame.
@@ -6328,6 +6373,13 @@ type SprayWallPhotoPurgeResult {
 Root query type for all read operations.
 """
 type Query {
+  "Stripe Checkout availability and accepted amount range, in minor units."
+  supportConfiguration: SupportConfiguration!
+  "Accounts that chose public credit after a verified Stripe payment."
+  publicSupporters(limit: Int! = 100, offset: Int! = 0): [PublicSupporter!]!
+  "The signed-in user's Stripe supporter settings."
+  mySupporterStatus: SupporterStatus!
+
   """
   Get details of a specific session by ID.
   Returns null if session doesn't exist.
@@ -7409,6 +7461,13 @@ type Query {
 Root mutation type for all write operations.
 """
 type Mutation {
+  "Create a Stripe-hosted Checkout Session. Public credit requires authentication."
+  createSupportCheckoutSession(input: CreateSupportCheckoutSessionInput!): SupportCheckoutSession!
+  "Show or hide the signed-in supporter on public credit lists."
+  updateSupporterVisibility(showPublicly: Boolean!): SupporterStatus!
+  "Open Stripe's self-service billing portal for the signed-in supporter."
+  createSupportBillingPortalSession(locale: String): SupportBillingPortalSession!
+
   """
   Join an existing session or create it if it doesn't exist.
   Returns the session with current state.

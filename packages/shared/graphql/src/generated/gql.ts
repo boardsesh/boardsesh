@@ -14,7 +14,7 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-  '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n': typeof types.GetDeleteAccountInfoDocument;
+  '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n      hasActiveStripeSubscription\n    }\n  }\n': typeof types.GetDeleteAccountInfoDocument;
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n': typeof types.DeleteAccountDocument;
   '\n  query GetActivityFeed($input: ActivityFeedInput) {\n    activityFeed(input: $input) {\n      items {\n        id\n        type\n        entityType\n        entityId\n        boardUuid\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        climbName\n        climbUuid\n        boardType\n        layoutId\n        gradeName\n        status\n        angle\n        frames\n        setterUsername\n        commentBody\n        isMirror\n        isBenchmark\n        isNoMatch\n        difficulty\n        difficultyName\n        quality\n        attemptCount\n        comment\n        commentCount\n        createdAt\n      }\n      cursor\n      hasMore\n    }\n  }\n': typeof types.GetActivityFeedDocument;
   '\n  fragment SessionFeedItemFields on SessionFeedItem {\n    sessionId\n    sessionType\n    sessionName\n    ownerUserId\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    totalSends\n    totalFlashes\n    totalAttempts\n    tickCount\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    boardTypes\n    hardestGrade\n    firstTickAt\n    lastTickAt\n    durationMinutes\n    goal\n    notes\n    upvotes\n    downvotes\n    voteScore\n    commentCount\n    hardestSend {\n      uuid\n      userId\n      climbUuid\n      climbName\n      boardType\n      layoutId\n      renderBoard {\n        layoutId\n        sizeId\n        setIds\n      }\n      angle\n      status\n      attemptCount\n      difficulty\n      difficultyName\n      boardseshDifficulty\n      boardseshConfidence\n      quality\n      isMirror\n      isBenchmark\n      isNoMatch\n      comment\n      frames\n      setterUsername\n      climbedAt\n    }\n    featuredBeta {\n      tick {\n        uuid\n        userId\n        climbUuid\n        climbName\n        boardType\n        layoutId\n        renderBoard {\n          layoutId\n          sizeId\n          setIds\n        }\n        angle\n        status\n        attemptCount\n        difficulty\n        difficultyName\n        boardseshDifficulty\n        boardseshConfidence\n        quality\n        isMirror\n        isBenchmark\n        isNoMatch\n        comment\n        frames\n        setterUsername\n        climbedAt\n      }\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n        tickUuid\n        boardId\n      }\n    }\n    socialEntityType\n    socialEntityId\n  }\n': typeof types.SessionFeedItemFieldsFragmentDoc;
@@ -148,6 +148,11 @@ type Documents = {
   '\n  \n  query SprayDetection($wallUuid: ID!, $versionId: ID!) {\n    sprayWallDetectionForVersion(wallUuid: $wallUuid, versionId: $versionId) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.SprayDetectionDocument;
   '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RequestSprayDetectionDocument;
   '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RetrySprayDetectionDocument;
+  '\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n': typeof types.GetSupportPageDocument;
+  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n': typeof types.GetPublicSupportersDocument;
+  '\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n': typeof types.CreateSupportCheckoutDocument;
+  '\n  mutation UpdateSupporterVisibility($showPublicly: Boolean!) {\n    updateSupporterVisibility(showPublicly: $showPublicly) {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n': typeof types.UpdateSupporterVisibilityDocument;
+  '\n  mutation CreateSupportBillingPortal($locale: String) {\n    createSupportBillingPortalSession(locale: $locale) {\n      url\n    }\n  }\n': typeof types.CreateSupportBillingPortalDocument;
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n': typeof types.GetTicksDocument;
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n': typeof types.GetUserTicksDocument;
   '\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n': typeof types.GetUserTickCountsByBoardDocument;
@@ -161,7 +166,7 @@ type Documents = {
   '\n  mutation UpdateTick($uuid: ID!, $input: UpdateTickInput!) {\n    updateTick(uuid: $uuid, input: $input) {\n      uuid\n      status\n      attemptCount\n      quality\n      difficulty\n      isBenchmark\n      comment\n      climbedAt\n      angle\n      updatedAt\n    }\n  }\n': typeof types.UpdateTickDocument;
 };
 const documents: Documents = {
-  '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
+  '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n      hasActiveStripeSubscription\n    }\n  }\n':
     types.GetDeleteAccountInfoDocument,
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n':
     types.DeleteAccountDocument,
@@ -425,6 +430,16 @@ const documents: Documents = {
     types.RequestSprayDetectionDocument,
   '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n':
     types.RetrySprayDetectionDocument,
+  '\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n':
+    types.GetSupportPageDocument,
+  '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n':
+    types.GetPublicSupportersDocument,
+  '\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n':
+    types.CreateSupportCheckoutDocument,
+  '\n  mutation UpdateSupporterVisibility($showPublicly: Boolean!) {\n    updateSupporterVisibility(showPublicly: $showPublicly) {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n':
+    types.UpdateSupporterVisibilityDocument,
+  '\n  mutation CreateSupportBillingPortal($locale: String) {\n    createSupportBillingPortalSession(locale: $locale) {\n      url\n    }\n  }\n':
+    types.CreateSupportBillingPortalDocument,
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n':
     types.GetTicksDocument,
   '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n':
@@ -466,8 +481,8 @@ export function graphql(source: string): unknown;
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n',
-): (typeof documents)['\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n'];
+  source: '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n      hasActiveStripeSubscription\n    }\n  }\n',
+): (typeof documents)['\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n      hasActiveStripeSubscription\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -1266,6 +1281,36 @@ export function graphql(
 export function graphql(
   source: '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n',
 ): (typeof documents)['\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n',
+): (typeof documents)['\n  query GetSupportPage {\n    supportConfiguration {\n      enabled\n      currency\n      minimumAmount\n      maximumAmount\n      legacyDonateUrl\n    }\n    mySupporterStatus {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n',
+): (typeof documents)['\n  query GetPublicSupporters($limit: Int!, $offset: Int!) {\n    publicSupporters(limit: $limit, offset: $offset) {\n      userId\n      displayName\n      avatarUrl\n      supportedAt\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n',
+): (typeof documents)['\n  mutation CreateSupportCheckout($input: CreateSupportCheckoutSessionInput!) {\n    createSupportCheckoutSession(input: $input) {\n      url\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateSupporterVisibility($showPublicly: Boolean!) {\n    updateSupporterVisibility(showPublicly: $showPublicly) {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateSupporterVisibility($showPublicly: Boolean!) {\n    updateSupporterVisibility(showPublicly: $showPublicly) {\n      linked\n      hasSupported\n      showPublicly\n      hasActiveSubscription\n      cancelAtPeriodEnd\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation CreateSupportBillingPortal($locale: String) {\n    createSupportBillingPortalSession(locale: $locale) {\n      url\n    }\n  }\n',
+): (typeof documents)['\n  mutation CreateSupportBillingPortal($locale: String) {\n    createSupportBillingPortalSession(locale: $locale) {\n      url\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

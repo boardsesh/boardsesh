@@ -20,6 +20,10 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: null, isAuthenticated: false, isLoading: false, error: null }),
+}));
+
 vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) => (
     <a href={href} {...props}>
@@ -29,6 +33,29 @@ vi.mock('next/link', () => ({
 }));
 
 const STRIPE_URL = 'https://donate.stripe.com/test_link';
+const EMPTY_STATUS = {
+  linked: false,
+  hasSupported: false,
+  showPublicly: false,
+  hasActiveSubscription: false,
+  cancelAtPeriodEnd: false,
+};
+
+function supportContent(legacyDonateUrl?: string) {
+  return (
+    <SupportContent
+      configuration={{
+        enabled: false,
+        currency: 'USD',
+        minimumAmount: 100,
+        maximumAmount: 50_000,
+        legacyDonateUrl,
+      }}
+      initialStatus={EMPTY_STATUS}
+      locale="en-US"
+    />
+  );
+}
 
 function hrefs(container: HTMLElement): (string | null)[] {
   return Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
@@ -36,7 +63,7 @@ function hrefs(container: HTMLElement): (string | null)[] {
 
 describe('SupportContent', () => {
   it('renders the hero and the reason the page exists', () => {
-    render(<SupportContent stripeDonateUrl={undefined} />);
+    render(supportContent());
 
     expect(screen.getByText(tFromCatalog('marketing', 'support.hero.title'))).toBeTruthy();
     expect(screen.getByText(tFromCatalog('marketing', 'support.why.p1'))).toBeTruthy();
@@ -44,23 +71,21 @@ describe('SupportContent', () => {
 
   // The recurring rail is unconditional: GitHub Sponsors needs no env var.
   it('always offers the GitHub Sponsors rail', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
+    const { container } = render(supportContent());
 
     expect(hrefs(container)).toContain('https://github.com/sponsors/boardsesh');
   });
 
-  // Most environments have no Stripe Payment Link yet; a rendered card would be
-  // a button that goes nowhere.
-  it('hides the one-time donation rail when no Stripe link is configured', () => {
-    render(<SupportContent stripeDonateUrl={undefined} />);
+  it('keeps Stripe first even when Checkout is unavailable', () => {
+    render(supportContent());
 
-    expect(screen.queryByTestId('support-one-time-rail')).toBeNull();
+    expect(screen.getByTestId('stripe-support-rail')).toBeTruthy();
+    expect(screen.getByText(tFromCatalog('marketing', 'support.stripe.unavailable'))).toBeTruthy();
   });
 
-  it('shows the one-time donation rail pointed at the configured Stripe link', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={STRIPE_URL} />);
+  it('uses the legacy Stripe link while backend Checkout is unavailable', () => {
+    const { container } = render(supportContent(STRIPE_URL));
 
-    expect(screen.getByTestId('support-one-time-rail')).toBeTruthy();
     expect(hrefs(container)).toContain(STRIPE_URL);
   });
 
@@ -72,14 +97,14 @@ describe('SupportContent', () => {
   // all, including copy that dropped the disclosure. Every locale's wording is
   // pinned in `@boardsesh/i18n`'s `donation-disclosure.test.ts`.
   it('states that donations are not tax-deductible', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
+    const { container } = render(supportContent());
 
     expect(container.textContent).toMatch(/not tax-deductible/i);
   });
 
   // No perks, ever — a donation must never read as buying something.
   it('never promises anything in return for a donation', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={STRIPE_URL} />);
+    const { container } = render(supportContent(STRIPE_URL));
 
     expect(container.textContent).not.toMatch(/unlock|early access|priority support|perk/i);
   });
@@ -89,7 +114,7 @@ describe('SupportContent', () => {
   // heading above it (the in-page header bar that used to sit there was the
   // reason this test exists).
   it('gives the hero the only h1 on the page', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
+    const { container } = render(supportContent());
 
     const headings = Array.from(container.querySelectorAll('h1'));
     expect(headings).toHaveLength(1);
@@ -99,7 +124,7 @@ describe('SupportContent', () => {
   // The SEO rules want 2-3 crawlable internal links with descriptive anchor
   // text on every indexable page; the footer supplies the rest.
   it('links onward to /about and /docs for the internal-link rule', () => {
-    const { container } = render(<SupportContent stripeDonateUrl={undefined} />);
+    const { container } = render(supportContent());
 
     expect(hrefs(container)).toContain('/about');
     expect(hrefs(container)).toContain('/docs');

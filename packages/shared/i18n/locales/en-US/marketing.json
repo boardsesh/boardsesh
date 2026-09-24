@@ -143,6 +143,12 @@
     }
   },
   "about": {
+    "supporters": {
+      "title": "Supporters",
+      "body": "Thanks to the climbers who help pay the bills and choose to be named.",
+      "stripeTitle": "Stripe supporters",
+      "githubTitle": "GitHub Sponsors"
+    },
     "hero": {
       "title": "Made by climbers. Open to everyone.",
       "subtitle": "Built by climbers who got tired of one app per board."
@@ -187,6 +193,28 @@
     }
   },
   "support": {
+    "stripe": {
+      "title": "Support with Stripe",
+      "body": "Choose your amount and pay by card, Apple Pay, or Google Pay. No GitHub account needed.",
+      "amount": "Amount (USD)",
+      "amountError": "Choose an amount from $1 to $500.",
+      "monthly": "Monthly",
+      "oneTime": "One time",
+      "publicCredit": "Credit me on the About page",
+      "publicCreditSignIn": "Sign in to receive public credit",
+      "publicCreditHint": "Optional. We show your Boardsesh name and avatar, never your amount.",
+      "cta": "Support with Stripe",
+      "processing": "Opening Stripe…",
+      "error": "Stripe could not be opened. Try again.",
+      "thanks": "Thanks for supporting Boardsesh. Your public credit will appear after Stripe confirms the payment.",
+      "cancelled": "Checkout was cancelled. Nothing was charged.",
+      "unavailable": "Card support is temporarily unavailable. GitHub Sponsors still works below."
+    },
+    "manage": {
+      "title": "Your Stripe support",
+      "publicCredit": "Show me on the About page",
+      "billing": "Manage billing in Stripe"
+    },
     "hero": {
       "title": "Keep Boardsesh running",
       "subtitle": "Free, open source, and paid for by climbers"
@@ -204,11 +232,6 @@
       "title": "GitHub Sponsors",
       "body": "Back Boardsesh every month. Easiest if you already have a GitHub account.",
       "cta": "Sponsor on GitHub"
-    },
-    "oneTime": {
-      "title": "One-time donation",
-      "body": "Pay by card, Apple Pay, or Google Pay in your browser. No account needed.",
-      "cta": "Give once"
     },
     "otherWays": {
       "title": "Other ways to help",
@@ -878,7 +901,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdatedProductAnalytics": "Last updated: May 2026",
+    "lastUpdatedProductAnalytics": "Last updated: September 22, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
     "collect": {
@@ -912,16 +935,21 @@
       "auroraLabel": "Aurora Climbing API.",
       "auroraBody": "If you link your Aurora Climbing account (used by Kilter and Tension boards), we sync your climb data with Aurora's servers so your logbook stays consistent across apps. This sync only happens when you initiate it. See ",
       "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " for their data practices."
+      "auroraBodyEnd": " for their data practices.",
+      "stripeLabel": "Stripe.",
+      "stripeBody": "Stripe processes support payments and manages billing. Boardsesh stores only Stripe identifiers needed to link an optional public credit and manage a subscription; we do not store card details, billing addresses, or support amounts. See ",
+      "stripeLink": "Stripe's privacy policy"
     },
     "sharing": {
       "title": "Data sharing",
       "body1ProductAnalytics": "We do not sell your data. We do not run ads. We do not share your information with third-party marketers or data brokers. The only data shared externally is what is described above (Vercel hosting/analytics, PostHog product analytics, Aurora Climbing sync when you opt in).",
-      "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works."
+      "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works.",
+      "stripe": "If you opt into public supporter credit, your Boardsesh display name and avatar appear on our About and Acknowledgements pages. Your payment amount is never shown."
     },
     "retention": {
       "title": "Data retention",
-      "body": "We keep your account data and climb history for as long as your account is active. If you stop using Boardsesh, your data stays until you delete your account."
+      "body": "We keep your account data and climb history for as long as your account is active. If you stop using Boardsesh, your data stays until you delete your account.",
+      "stripe": "A verified linked payment keeps a supporter credit until you hide it or delete your account. Ending or cancelling a subscription does not remove that historical credit. Stripe retains payment records under its own policy."
     },
     "deletion": {
       "title": "Account deletion",
@@ -932,7 +960,8 @@
       "onWebBody": " Log in at ",
       "onWebLink": "app.boardsesh.com",
       "onWebBodyEnd": " and open More from your profile to find the same Delete Account button.",
-      "permanent": "Deletion is immediate and permanent. Once confirmed, we remove your email address, username, logbook entries, queue data, and party session history from our servers. This cannot be undone."
+      "permanent": "Deletion is immediate and permanent. Once confirmed, we remove your email address, username, logbook entries, queue data, and party session history from our servers. This cannot be undone.",
+      "stripe": "If a linked Stripe subscription is active, we first schedule it to end at the close of the current billing period. If Stripe cannot confirm that change, we do not delete your account. Deleting your account removes its Stripe link and public credit from Boardsesh."
     },
     "children": {
       "title": "Children",

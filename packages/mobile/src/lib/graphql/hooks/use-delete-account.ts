@@ -19,7 +19,7 @@ export function useDeleteAccountInfo(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['deleteAccountInfo'],
     queryFn: () => getHttpClient().request<GetDeleteAccountInfoQueryResponse>(GET_DELETE_ACCOUNT_INFO),
-    select: (data) => data.deleteAccountInfo.publishedClimbCount,
+    select: (data) => data.deleteAccountInfo,
     enabled: options?.enabled ?? true,
     staleTime: 0,
   });

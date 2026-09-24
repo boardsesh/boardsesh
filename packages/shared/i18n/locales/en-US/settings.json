@@ -46,6 +46,7 @@
     "dialog": {
       "warning": "This is permanent. Your profile, draft climbs, logbook entries, and all other data will be deleted and cannot be recovered.",
       "checking": "Checking your climbs...",
+      "stripeCancellation": "Your active Stripe subscription will be scheduled to end before your account is deleted.",
       "publishedClimbs_one": "You have <strong>{{count}}</strong> published climb that will be preserved after deletion.",
       "publishedClimbs_other": "You have <strong>{{count}}</strong> published climbs that will be preserved after deletion.",
       "removeSetterName": "Remove my setter name from published climbs",

@@ -46,6 +46,7 @@
     "dialog": {
       "warning": "Esto es permanente. Tu perfil, los borradores de vías, las entradas del logbook y el resto de datos se eliminarán y no se podrán recuperar.",
       "checking": "Comprobando tus vías...",
+      "stripeCancellation": "Tu suscripción activa de Stripe se cancelará al final del periodo antes de eliminar tu cuenta.",
       "publishedClimbs_one": "Tienes <strong>{{count}}</strong> vía publicada que se conservará tras la eliminación.",
       "publishedClimbs_other": "Tienes <strong>{{count}}</strong> vías publicadas que se conservarán tras la eliminación.",
       "removeSetterName": "Quitar mi nombre de aperturista de las vías publicadas",

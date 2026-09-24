@@ -34,18 +34,22 @@ beforeEach(() => {
 
 describe('useDeleteAccountInfo', () => {
   it('selects the published-climb count from the response', async () => {
-    requestMock.mockResolvedValue({ deleteAccountInfo: { publishedClimbCount: 7 } });
+    requestMock.mockResolvedValue({
+      deleteAccountInfo: { publishedClimbCount: 7, hasActiveStripeSubscription: true },
+    });
     const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useDeleteAccountInfo(), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toBe(7);
+    expect(result.current.data).toEqual({ publishedClimbCount: 7, hasActiveStripeSubscription: true });
     expect(requestMock).toHaveBeenCalledWith(GET_DELETE_ACCOUNT_INFO);
   });
 
   it('does not fetch when disabled', async () => {
-    requestMock.mockResolvedValue({ deleteAccountInfo: { publishedClimbCount: 0 } });
+    requestMock.mockResolvedValue({
+      deleteAccountInfo: { publishedClimbCount: 0, hasActiveStripeSubscription: false },
+    });
     const { Wrapper } = makeWrapper();
 
     const { result } = renderHook(() => useDeleteAccountInfo({ enabled: false }), { wrapper: Wrapper });

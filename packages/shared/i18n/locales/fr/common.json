@@ -425,6 +425,7 @@
       "contributorsBody": "Toutes les personnes qui ont apporté du code, des correctifs et des idées sur GitHub.",
       "sponsorsTitle": "Sponsors",
       "sponsorsBody": "Les grimpeurs qui font vivre le projet via GitHub Sponsors.",
+      "stripeSponsorsBody": "Les grimpeurs qui font vivre le projet via Stripe.",
       "sponsorsEmpty": "Pas encore de sponsor — envie d'être le premier ?",
       "privateSponsorsThanks": "et {{count}} de plus en privé — merci à vous aussi",
       "becomeSponsor": "Soutenir Boardsesh",

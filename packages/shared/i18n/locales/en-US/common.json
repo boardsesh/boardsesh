@@ -425,6 +425,7 @@
       "contributorsBody": "Everyone who's shipped code, fixes, and ideas on GitHub.",
       "sponsorsTitle": "Sponsors",
       "sponsorsBody": "Climbers keeping the lights on through GitHub Sponsors.",
+      "stripeSponsorsBody": "Climbers keeping the lights on through Stripe.",
       "sponsorsEmpty": "No sponsors yet — want to be the first?",
       "privateSponsorsThanks": "and {{count}} more sponsoring privately — thank you too",
       "becomeSponsor": "Support Boardsesh",
