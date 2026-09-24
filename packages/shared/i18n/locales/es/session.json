@@ -620,7 +620,7 @@
     "tickBar": {
       "attemptLabel": "intento",
       "flashSaveLabel": "Flash",
-      "sendSaveLabel": "Envío",
+      "sendSaveLabel": "Encadenado",
       "starRating_one": "{{count}} estrella",
       "starRating_other": "{{count}} estrellas"
     }
