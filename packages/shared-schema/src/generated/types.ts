@@ -1149,6 +1149,16 @@ export type ClimbCommunityStatus = {
   updatedAt?: Maybe<Scalars['String']['output']>;
 };
 
+/**
+ * Which grade the grade-range filter reads.
+ *
+ * AURORA is the default: the crowd/setter grade the board app shows, falling back
+ * to the Boardsesh grade only when a climb has no stats row at that angle. BOARDSESH
+ * reads the Boardsesh grade first and falls back to the crowd/setter grade, so a
+ * climber who sees Boardsesh grades on the list gets the rows whose label is in range.
+ */
+export type ClimbGradeSource = 'AURORA' | 'BOARDSESH';
+
 /** Input type for creating or updating a climb. */
 export type ClimbInput = {
   angle: Scalars['Int']['input'];
@@ -1266,6 +1276,8 @@ export type ClimbSearchInput = {
   crossAngleStats?: InputMaybe<Scalars['Boolean']['input']>;
   /** Grade accuracy filter ('tight', 'moderate', 'loose') */
   gradeAccuracy?: InputMaybe<Scalars['String']['input']>;
+  /** Which grade minGrade and maxGrade are compared against. Omitted means AURORA, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels. */
+  gradeSource?: InputMaybe<ClimbGradeSource>;
   /** Hide climbs the user has attempted (requires auth) */
   hideAttempted?: InputMaybe<Scalars['Boolean']['input']>;
   /** Hide climbs the user has completed (requires auth) */
@@ -10225,6 +10237,7 @@ export type ResolversTypes = ResolversObject<{
   Climb: ResolverTypeWrapper<Climb>;
   ClimbClassicStatus: ResolverTypeWrapper<ClimbClassicStatus>;
   ClimbCommunityStatus: ResolverTypeWrapper<ClimbCommunityStatus>;
+  ClimbGradeSource: ClimbGradeSource;
   ClimbInput: ClimbInput;
   ClimbMatchResult: ResolverTypeWrapper<ClimbMatchResult>;
   ClimbMirrored: ResolverTypeWrapper<ClimbMirrored>;

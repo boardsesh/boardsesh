@@ -4,7 +4,7 @@ import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { createClimbFilters, hiddenClimbCondition, holdIntegrityCondition } from '../create-climb-filters';
-import type { BoardRouteParams, ClimbSearchParams } from '../types';
+import { mapSearchInputToParams, normalizeGradeSource, type BoardRouteParams, type ClimbSearchParams } from '../types';
 
 const params: BoardRouteParams = {
   board_name: 'kilter',
@@ -715,6 +715,64 @@ void describe('createClimbFilters: grade range', () => {
     const rendered = sqlToString(f.gradeRangeConditions[0]);
     assert.match(rendered, /<=/);
     assert.doesNotMatch(rendered, /BETWEEN/);
+  });
+
+  // Issues #5643 / #5752 / #5753: which grade the range reads first.
+  void it('reads display_difficulty first by default and under aurora', () => {
+    const dialect = new PgDialect();
+    for (const gradeSource of [undefined, 'aurora'] as const) {
+      const f = createClimbFilters(params, { minGrade: 16, maxGrade: 16, gradeSource });
+      const rendered = dialect.sqlToQuery(f.gradeRangeConditions[0]).sql;
+      assert.ok(rendered.indexOf('display_difficulty') < rendered.indexOf('universal_grade'), rendered);
+      assert.match(
+        rendered,
+        /^COALESCE\(ROUND\("board_climb_stats"\."display_difficulty"::numeric, 0\), ROUND\(COALESCE/,
+      );
+    }
+  });
+
+  void it('reads the Boardsesh grade first under boardsesh, falling back to display_difficulty', () => {
+    const dialect = new PgDialect();
+    const f = createClimbFilters(params, { minGrade: 16, maxGrade: 16, gradeSource: 'boardsesh' });
+    const query = dialect.sqlToQuery(f.gradeRangeConditions[0]);
+    assert.equal(
+      query.sql,
+      `COALESCE(CASE WHEN "board_climb_grades"."confidence" = 'setter_only' THEN NULL ELSE ROUND(COALESCE("board_climb_grades"."universal_grade", "board_climb_grades"."local_grade")::numeric, 0) END, ROUND("board_climb_stats"."display_difficulty"::numeric, 0)) BETWEEN $1 AND $2`,
+    );
+    assert.deepEqual(query.params, [16, 16]);
+    // Still a grade-range condition: it must not force the stats-driven INNER JOIN.
+    assert.equal(f.hasRequiredStatsFilters(), false);
+  });
+
+  void it('normalizes the wire gradeSource: only BOARDSESH survives', () => {
+    assert.equal(normalizeGradeSource('BOARDSESH'), 'boardsesh');
+    assert.equal(normalizeGradeSource('AURORA'), undefined);
+    assert.equal(normalizeGradeSource(undefined), undefined);
+    assert.equal(normalizeGradeSource('nonsense'), undefined);
+    assert.equal(mapSearchInputToParams({ gradeSource: 'BOARDSESH', minGrade: 16 }).gradeSource, 'boardsesh');
+    assert.equal(mapSearchInputToParams({ gradeSource: 'AURORA', minGrade: 16 }).gradeSource, undefined);
+  });
+
+  void it('keeps gradeSource only when a grade bound or the difficulty sort can read it', () => {
+    const withSource = (input: Parameters<typeof mapSearchInputToParams>[0]) =>
+      mapSearchInputToParams({ gradeSource: 'BOARDSESH', ...input }).gradeSource;
+    assert.equal(withSource({ maxGrade: 20 }), 'boardsesh');
+    assert.equal(withSource({ sortBy: 'difficulty' }), 'boardsesh');
+    // Nothing reads it: dropped, so the search-cache key does not split.
+    assert.equal(withSource({}), undefined);
+    assert.equal(withSource({ sortBy: 'ascents' }), undefined);
+    // 0 is the unset grade bound.
+    assert.equal(withSource({ minGrade: 0, maxGrade: 0 }), undefined);
+  });
+
+  void it('skips a setter_only Boardsesh grade under boardsesh, and leaves aurora untouched', () => {
+    const dialect = new PgDialect();
+    const boardsesh = dialect.sqlToQuery(
+      createClimbFilters(params, { minGrade: 16, gradeSource: 'boardsesh' }).gradeRangeConditions[0],
+    ).sql;
+    assert.match(boardsesh, /CASE WHEN "board_climb_grades"\."confidence" = 'setter_only' THEN NULL ELSE/);
+    const aurora = dialect.sqlToQuery(createClimbFilters(params, { minGrade: 16 }).gradeRangeConditions[0]).sql;
+    assert.doesNotMatch(aurora, /setter_only/);
   });
 
   void it('getClimbStatsConditions() still includes the grade-range condition for the WHERE clause', () => {

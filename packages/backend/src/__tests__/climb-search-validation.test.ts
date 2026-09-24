@@ -71,6 +71,28 @@ describe('ClimbSearchInputSchema personal rating filters (#2645)', () => {
   });
 });
 
+describe('ClimbSearchInputSchema gradeSource (#5643)', () => {
+  it('accepts the two enum values and rejects anything else', () => {
+    expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'AURORA' }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'BOARDSESH' }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'boardsesh' }).success).toBe(false);
+  });
+
+  it('reaches the search params as boardsesh, and AURORA or omitted as undefined so cache keys stay put', () => {
+    const toParams = (input: object) =>
+      mapSearchInputToParams(ClimbSearchInputSchema.parse({ ...base, minGrade: 16, ...input }));
+    expect(toParams({ gradeSource: 'BOARDSESH' }).gradeSource).toBe('boardsesh');
+    expect(toParams({ gradeSource: 'AURORA' }).gradeSource).toBeUndefined();
+    expect(toParams({}).gradeSource).toBeUndefined();
+  });
+
+  it('drops gradeSource when neither a grade bound nor the difficulty sort reads it', () => {
+    const parse = (input: object) => mapSearchInputToParams(ClimbSearchInputSchema.parse({ ...base, ...input }));
+    expect(parse({ gradeSource: 'BOARDSESH' }).gradeSource).toBeUndefined();
+    expect(parse({ gradeSource: 'BOARDSESH', sortBy: 'difficulty' }).gradeSource).toBe('boardsesh');
+  });
+});
+
 describe('ClimbSearchInputSchema boulders/routes have no default (#3975)', () => {
   it('leaves omitted boulders/routes undefined after parsing, not defaulted to boulders-only', () => {
     const result = ClimbSearchInputSchema.parse(base);

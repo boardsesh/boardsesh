@@ -123,6 +123,19 @@ enum HoldIntegrityFilter {
 }
 
 """
+Which grade the grade-range filter reads.
+
+AURORA is the default: the crowd/setter grade the board app shows, falling back
+to the Boardsesh grade only when a climb has no stats row at that angle. BOARDSESH
+reads the Boardsesh grade first and falls back to the crowd/setter grade, so a
+climber who sees Boardsesh grades on the list gets the rows whose label is in range.
+"""
+enum ClimbGradeSource {
+  AURORA
+  BOARDSESH
+}
+
+"""
 Input type for creating or updating a climb.
 """
 input ClimbInput {
@@ -273,6 +286,8 @@ input ClimbSearchInput {
   holdIntegrity: HoldIntegrityFilter
   "Resolve each climb's grade and ascents through its own set angle when the browsed angle has no stats row, instead of ranking it below every climb that does have one (issue #5405). Opt-in on every board; omitted means off. On Woods, whose climbs are bound to the angle they were set at, off also narrows the list to the climbs for the browsed angle: set there, with no set angle recorded, or with stats there (issue #5642). A name search on Woods resolves across angles either way, so a climb is findable by name at any angle."
   crossAngleStats: Boolean
+  "Which grade minGrade and maxGrade are compared against. Omitted means AURORA, the grade older app builds filter on. Send BOARDSESH when the list shows Boardsesh grades, so the filter matches the labels."
+  gradeSource: ClimbGradeSource
   "Include single-frame climbs (boulders). Omitting both boulders and routes matches all climb types; set boulders=true with routes=false (or omit routes) to filter to boulders only."
   boulders: Boolean
   "Include multi-frame climbs (routes). Omitting both boulders and routes matches all climb types; set routes=true with boulders=false (or omit boulders) to filter to routes only."

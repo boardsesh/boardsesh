@@ -1,6 +1,6 @@
 export { searchClimbs, MAX_SEARCH_PAGE, clampSearchPage } from './search-climbs';
 export { mergeCatalogCharacteristicsSql } from './catalog-characteristics';
-export { createClimbFilters, hiddenClimbCondition } from './create-climb-filters';
+export { createClimbFilters, gradeValueSql, hiddenClimbCondition } from './create-climb-filters';
 export {
   boardClimbStatsAtSetAngle,
   browsedAngleRestrictionSql,

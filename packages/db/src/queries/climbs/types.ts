@@ -87,6 +87,14 @@ export type ClimbSearchParams = {
   // `resolveCrossAngleStats` and `resolveBrowsedAngleRestriction` in
   // ./effective-stats (issue #5642).
   crossAngleStats?: boolean;
+  /**
+   * Which grade minGrade/maxGrade compare against — see `gradeValueSql` in
+   * ./create-climb-filters. 'aurora' (and `undefined`, which is what the mapper
+   * turns it into so existing search-cache keys are unchanged) reads
+   * display_difficulty first; 'boardsesh' reads the Boardsesh grade first, so a
+   * climber who sees Boardsesh grades on the list filters on those labels.
+   */
+  gradeSource?: 'aurora' | 'boardsesh';
   // Climb-type toggles. Default to undefined (treated as both selected → no
   // SQL filter on frames_count). Set boulders=true to constrain to single-
   // frame climbs, routes=true to constrain to multi-frame climbs. Both true
@@ -138,6 +146,7 @@ export type ClimbSearchInputLike = {
   projectsOnly?: boolean | null;
   holdIntegrity?: string | null;
   crossAngleStats?: boolean | null;
+  gradeSource?: string | null;
   boulders?: boolean | null;
   routes?: boolean | null;
   zoneBox?: ZoneBox | null;
@@ -188,6 +197,18 @@ export function normalizeHoldIntegrity(raw: string | null | undefined): ClimbSea
   return undefined;
 }
 
+/**
+ * Map a wire `gradeSource` value onto the param. Only BOARDSESH survives: AURORA
+ * is the default, so it collapses to undefined like an omitted value — the
+ * search-cache key hashes the params, and an explicit default would split one
+ * cached page into two keys. Unknown strings collapse too, for the same reason
+ * `normalizeHoldIntegrity` gives.
+ */
+export function normalizeGradeSource(raw: string | null | undefined): ClimbSearchParams['gradeSource'] {
+  if (!raw) return undefined;
+  return raw.toLowerCase() === 'boardsesh' ? 'boardsesh' : undefined;
+}
+
 export function normalizeSearchSortBy(sortBy: string | null | undefined): NonNullable<ClimbSearchParams['sortBy']> {
   if (!sortBy) return 'ascents';
   return SEARCH_SORT_ALIASES[sortBy] ?? 'creation';
@@ -207,6 +228,11 @@ export function normalizeSearchSortBy(sortBy: string | null | undefined): NonNul
  */
 export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearchParams {
   const setter = input.settername ?? input.setter ?? undefined;
+  const sortBy = normalizeSearchSortBy(input.sortBy);
+  // The grade source only reaches SQL through the grade range and the difficulty
+  // sort. Dropped otherwise, so a search that uses neither keeps one cache key
+  // whatever the climber's grade preference is.
+  const gradeSourceMatters = !!input.minGrade || !!input.maxGrade || sortBy === 'difficulty';
   const gradeAccuracyRaw = input.gradeAccuracy;
   const gradeAccuracy =
     typeof gradeAccuracyRaw === 'string'
@@ -223,7 +249,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     maxGrade: input.maxGrade || undefined,
     minAscents: input.minAscents || undefined,
     minRating: input.minRating || undefined,
-    sortBy: normalizeSearchSortBy(input.sortBy),
+    sortBy,
     sortOrder: input.sortOrder || 'desc',
     sortSeed: input.sortSeed || undefined,
     name: input.name || undefined,
@@ -249,6 +275,7 @@ export function mapSearchInputToParams(input: ClimbSearchInputLike): ClimbSearch
     // down to `createClimbFilters` as a predicate that matches everything.
     holdIntegrity: normalizeHoldIntegrity(input.holdIntegrity),
     crossAngleStats: input.crossAngleStats ?? undefined,
+    gradeSource: gradeSourceMatters ? normalizeGradeSource(input.gradeSource) : undefined,
     boulders: input.boulders ?? undefined,
     routes: input.routes ?? undefined,
     zoneBox: input.zoneBox || undefined,

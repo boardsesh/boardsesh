@@ -1195,4 +1195,94 @@ describe('Climb Query Functions', () => {
       expect(await countClimbs(kilterAt40, browse())).toBe(1);
     });
   });
+
+  // Issues #5643 / #5752 / #5753: with Boardsesh grades on, a row is labelled with
+  // its Boardsesh grade, so the grade range under gradeSource 'boardsesh' has to key
+  // on that grade — on both search paths, and the count badge has to agree.
+  describe('grade source (#5643)', () => {
+    const PREFIX = 'GRADE-SOURCE-TEST-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const GRADE_SOURCE_SETTER = 'grade-source-setter';
+    const gradeSourceParams: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 7,
+      set_ids: [1],
+      angle: 40,
+    };
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('split')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Split', 'p700r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('setter-only')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Setter Only', 'p701r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7]),
+          (${id('aurora-16')}, 'kilter', 1, ${GRADE_SOURCE_SETTER}, 'Grade Source Aurora 16', 'p702r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[1], ARRAY[7])
+        ON CONFLICT DO NOTHING
+      `);
+      // SPLIT: Aurora 18, Boardsesh 16. SETTER-ONLY: the same numbers, but a
+      // setter_only grade the row never shows. AURORA-16: no grade row at all.
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('split')}, 40, 18.0, 30, 18.0, 4.0),
+          ('kilter', ${id('setter-only')}, 40, 18.0, 20, 18.0, 4.0),
+          ('kilter', ${id('aurora-16')}, 40, 16.0, 10, 16.0, 4.0)
+        ON CONFLICT DO NOTHING
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climb_grades (board_type, climb_uuid, angle, local_grade, universal_grade, confidence, model_version, coeff_version)
+        VALUES
+          ('kilter', ${id('split')}, 40, 16.0, 16.0, 'confirmed', 'test', 'test'),
+          ('kilter', ${id('setter-only')}, 40, 16.0, 16.0, 'setter_only', 'test', 'test')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_grades WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    const gradeSearch = (
+      grade: number,
+      sortBy: 'creation' | 'ascents',
+      gradeSource?: ClimbSearchParams['gradeSource'],
+    ): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 50,
+      sortBy,
+      sortOrder: 'desc',
+      minGrade: grade,
+      maxGrade: grade,
+      settername: [GRADE_SOURCE_SETTER],
+      gradeSource,
+    });
+
+    // 'creation' takes the standard LEFT JOIN path; 'ascents' starts on the
+    // stats-driven INNER JOIN path.
+    it.each(['creation', 'ascents'] as const)('keys the range on the Boardsesh grade (sortBy %s)', async (sortBy) => {
+      const boardsesh16 = gradeSearch(16, sortBy, 'boardsesh');
+      const listed = (await searchClimbs(gradeSourceParams, boardsesh16)).climbs.map((climb) => climb.uuid);
+      expect(listed.sort()).toEqual([id('aurora-16'), id('split')].sort());
+      expect(await countClimbs(gradeSourceParams, boardsesh16)).toBe(listed.length);
+
+      // setter_only is skipped, so that climb stays on its Aurora 18.
+      const boardsesh18 = gradeSearch(18, sortBy, 'boardsesh');
+      const listed18 = (await searchClimbs(gradeSourceParams, boardsesh18)).climbs.map((climb) => climb.uuid);
+      expect(listed18).toEqual([id('setter-only')]);
+      expect(await countClimbs(gradeSourceParams, boardsesh18)).toBe(1);
+    });
+
+    it.each(['creation', 'ascents'] as const)(
+      'keeps the Aurora grade when the source is omitted (sortBy %s)',
+      async (sortBy) => {
+        const aurora16 = gradeSearch(16, sortBy);
+        const listed = (await searchClimbs(gradeSourceParams, aurora16)).climbs.map((climb) => climb.uuid);
+        expect(listed).toEqual([id('aurora-16')]);
+        expect(await countClimbs(gradeSourceParams, aurora16)).toBe(1);
+      },
+    );
+  });
 });

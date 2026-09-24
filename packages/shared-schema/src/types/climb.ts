@@ -204,6 +204,9 @@ export type ClimbSearchInput = {
   // narrows the list to the browsed angle's climbs, and a name search resolves
   // across angles regardless (#5642).
   crossAngleStats?: boolean;
+  // Which grade minGrade/maxGrade compare against. AURORA (and an absent value)
+  // reads display_difficulty first; BOARDSESH reads the Boardsesh grade first.
+  gradeSource?: 'AURORA' | 'BOARDSESH';
   // Climb-type toggles. Both undefined / both true → no frames_count filter.
   // Boulders only → `frames_count = 1`. Routes only → `frames_count > 1`.
   boulders?: boolean;

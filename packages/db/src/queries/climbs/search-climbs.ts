@@ -2,7 +2,7 @@ import { desc, sql, and, eq } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
 import { withSerialPlan } from '../util/serial-plan';
-import { createClimbFilters } from './create-climb-filters';
+import { createClimbFilters, gradeValueSql } from './create-climb-filters';
 import {
   boardClimbStatsAtSetAngle,
   effectiveStatsColumn,
@@ -537,7 +537,13 @@ async function runStandardSearch(
     // `popular` is untouched: it already sums ascents across every angle, so it was
     // never angle-blind in the way this fix addresses.
     ascents: sql`${statsCol('ascensionistCount')}`,
-    difficulty: sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
+    // Under the Boardsesh source the sort keys on the grade the row is labelled
+    // with, the same value the grade-range filter reads (issue #5643). The Aurora
+    // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
+    difficulty:
+      searchParams.gradeSource === 'boardsesh'
+        ? gradeValueSql(statsCol('displayDifficulty'), 'boardsesh')
+        : sql`ROUND(${statsCol('displayDifficulty')}::numeric, 0)`,
     name: sql`${boardClimbs.name}`,
     quality: sql`${statsCol('qualityAverage')}`,
     creation: sql`${boardClimbs.createdAt}`,

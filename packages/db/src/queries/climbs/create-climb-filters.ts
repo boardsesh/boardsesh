@@ -114,6 +114,32 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
 }
 
 /**
+ * The rounded grade id a climb is filtered on — and, under the Boardsesh source,
+ * sorted on — for `searchParams.gradeSource` (issues #5643, #5752, #5753).
+ *
+ *   - 'aurora' (and undefined): the crowd/setter grade (display_difficulty),
+ *     falling back to the Boardsesh grade only when there is no stats row.
+ *   - 'boardsesh': the Boardsesh grade (COALESCE(universal, local), the value a
+ *     list row labels a climb with when Boardsesh grades are on), falling back to
+ *     display_difficulty when the climb has no board_climb_grades row.
+ *
+ * `displayDifficulty` must be the effective-stats reader (`statsCol`), so this
+ * composes with cross-angle. Mirrored by `gradeValueSql` in
+ * packages/mobile/src/db/queries/search-climbs-local.ts.
+ */
+export function gradeValueSql(displayDifficulty: SQL, gradeSource: ClimbSearchParams['gradeSource']): SQL {
+  const auroraGrade = sql`ROUND(${displayDifficulty}::numeric, 0)`;
+  const boardseshGrade = sql`ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0)`;
+  if (gradeSource !== 'boardsesh') return sql`COALESCE(${auroraGrade}, ${boardseshGrade})`;
+  // A `setter_only` grade is never shown on a row (the label falls back to the
+  // Aurora grade — `resolveBoardseshDifficulty` in the mobile app), so it must not
+  // be filtered or sorted on either. The Aurora branch above keeps its fallback
+  // exactly as it was.
+  const shownBoardseshGrade = sql`CASE WHEN ${boardClimbGrades.confidence} = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
+  return sql`COALESCE(${shownBoardseshGrade}, ${auroraGrade})`;
+}
+
+/**
  * Creates a shared filtering object for climb search and heatmap queries.
  * Uses unified tables (board_climbs, board_climb_stats, etc.) with board_type filtering.
  *
@@ -288,7 +314,8 @@ export const createClimbFilters = (
   // browsed angle but one at its set angle already resolves a real
   // display_difficulty there, and only a climb with NO stats row at either angle
   // falls all the way through to the Boardsesh grade.
-  const gradeRangeValue = sql`COALESCE(ROUND(${statsCol('displayDifficulty')}::numeric, 0), ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0))`;
+  // `gradeSource: 'boardsesh'` swaps the order — see `gradeValueSql`.
+  const gradeRangeValue = gradeValueSql(statsCol('displayDifficulty'), searchParams.gradeSource);
   if (searchParams.minGrade && searchParams.maxGrade) {
     gradeRangeConditions.push(sql`${gradeRangeValue} BETWEEN ${searchParams.minGrade} AND ${searchParams.maxGrade}`);
   } else if (searchParams.minGrade) {
