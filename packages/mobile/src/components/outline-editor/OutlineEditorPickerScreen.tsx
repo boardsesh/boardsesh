@@ -91,7 +91,7 @@ export function OutlineEditorPickerScreen() {
     // — the board art an override is drawn against has all of them mounted.
     const setIds = outlineEditorSetIds(boardName, layoutId, sizeId);
     router.push({
-      pathname: '/(tabs)/profile/outline-canvas',
+      pathname: '/settings/outline-canvas',
       params: { boardName, layoutId: String(layoutId), sizeId: String(sizeId), setIds },
     });
   }, [router, boardName, layoutId, sizeId]);

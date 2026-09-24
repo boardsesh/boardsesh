@@ -11,7 +11,7 @@
       "thisClimber": "dieser Person"
     },
     "more": {
-      "title": "Mehr",
+      "title": "Einstellungen",
       "library": "Bibliothek",
       "development": "Entwicklung",
       "dev": {
@@ -571,7 +571,7 @@
       "serverTitle": "Boardsesh ist gerade nicht erreichbar",
       "serverBody": "Dafür brauchen wir unseren Server. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und Begehungen eintragen, und deine Begehungen warten auf deinem Handy.",
       "offlineModeTitle": "Offline-Modus ist an",
-      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter Mehr aus, um es zu laden.",
+      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter „Einstellungen“ aus, um es zu laden.",
       "errorTitle": "Konnte nicht geladen werden",
       "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
       "retry": "Erneut versuchen"

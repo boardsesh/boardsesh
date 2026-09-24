@@ -17,7 +17,7 @@ import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 // same way as the code under test cannot catch a malformed URL. Safe to pin
 // because `NEXT_PUBLIC_APP_URL` is unset under vitest, so the origin resolves to
 // the shared prod default (same premise as middleware.test.ts:617).
-const EXPECTED_HANDOFF_HREF = 'https://app.boardsesh.com/profile/more';
+const EXPECTED_HANDOFF_HREF = 'https://app.boardsesh.com/settings';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({

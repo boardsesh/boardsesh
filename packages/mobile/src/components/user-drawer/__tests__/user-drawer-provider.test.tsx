@@ -329,7 +329,7 @@ describe('user-drawer route Discord CTA', () => {
 // dual-presentation freeze, issue #3211).
 describe('user-drawer route defers each action until the route unmounts', () => {
   it.each([
-    ['Settings', '/(tabs)/profile/more'],
+    ['Settings', '/settings'],
     ['My playlists', '/(tabs)/discover/all'],
     ["What's New", '/changelog'],
     ['About', '/about'],
@@ -395,7 +395,7 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
-    expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/profile/edit');
+    expect(routerMock.push).toHaveBeenCalledWith('/settings/edit');
   });
 
   it('Rate Boardsesh closes the drawer, then presents the feedback sheet', () => {

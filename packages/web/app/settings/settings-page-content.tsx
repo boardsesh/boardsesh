@@ -28,11 +28,12 @@ import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
  * app now — W-21 (#4440).
  *
  * The destination is named explicitly rather than mirroring this pathname: the
- * SPA has no `/settings` route, so the same-path form would hand out a 404. The
- * helper is still the right call for the origin half — it trims a trailing
- * slash off `NEXT_PUBLIC_APP_URL`, which local Expo-web work routinely sets.
+ * two `/settings` routes are the same idea on different origins, but the app's
+ * is a real SPA route and this one is the www page pointing at it. The helper is
+ * still the right call for the origin half — it trims a trailing slash off
+ * `NEXT_PUBLIC_APP_URL`, which local Expo-web work routinely sets.
  */
-const APP_MORE_URL = buildAppHandoffUrl('/profile/more');
+const APP_SETTINGS_URL = buildAppHandoffUrl('/settings');
 
 type UserProfile = {
   email: string;
@@ -172,7 +173,7 @@ export default function SettingsPageContent() {
             <Typography variant="body2" component="span" color="text.secondary" sx={{ display: 'block', mb: 3 }}>
               {t('appHandoff.subtitle')}
             </Typography>
-            <Button component="a" variant="contained" href={APP_MORE_URL} fullWidth>
+            <Button component="a" variant="contained" href={APP_SETTINGS_URL} fullWidth>
               {t('appHandoff.cta')}
             </Button>
           </CardContent>

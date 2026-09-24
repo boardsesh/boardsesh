@@ -11,7 +11,7 @@
       "thisClimber": "this climber"
     },
     "more": {
-      "title": "More",
+      "title": "Settings",
       "library": "Library",
       "development": "Development",
       "dev": {
@@ -571,7 +571,7 @@
       "serverTitle": "Can't reach Boardsesh right now",
       "serverBody": "This one needs our server. Downloaded boards still browse, search and log, and your sends wait on your phone.",
       "offlineModeTitle": "Offline mode is on",
-      "offlineModeBody": "This one needs a connection. Turn Offline mode off from the banner or in More to load it.",
+      "offlineModeBody": "This one needs a connection. Turn Offline mode off from the banner or in Settings to load it.",
       "errorTitle": "Couldn't load this",
       "errorBody": "That didn't come through. Give it another go.",
       "retry": "Try again"

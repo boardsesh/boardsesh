@@ -7,17 +7,17 @@ import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@boardsesh/i18n';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { useTheme } from '../../../src/providers/theme-provider';
-import { useOptionalBluetoothContext } from '../../../src/providers/bluetooth-provider';
-import { useLocalePreference } from '../../../src/providers/i18n-provider';
-import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
-import { openExternalUrl } from '../../../src/lib/open-url';
-import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
-import { useProfile, useMyBoards, useIsAdmin } from '../../../src/lib/graphql/hooks';
-import { useQaMenu } from '../../../src/lib/qa/use-qa-menu';
-import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
-import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
-import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
+import { useTheme } from '../../src/providers/theme-provider';
+import { useOptionalBluetoothContext } from '../../src/providers/bluetooth-provider';
+import { useLocalePreference } from '../../src/providers/i18n-provider';
+import { resolveLanguage, type LocaleOverride } from '../../src/lib/i18n/locale-preference';
+import { openExternalUrl } from '../../src/lib/open-url';
+import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
+import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
+import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
+import { useBoardDownloads } from '../../src/offline/use-board-downloads';
+import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
+import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import {
   useSetting,
   setSetting,
@@ -26,11 +26,11 @@ import {
   rememberDownloadAllTap,
   takeDownloadAllTap,
   forgetDownloadAllTap,
-} from '../../../src/settings';
-import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
-import { isOfflineModeSupported, setDevForcedUnreachable } from '../../../src/lib/connectivity/connectivity-store';
-import { notifyOutboxChanged, useOutboxSummary } from '../../../src/offline/outbox-store';
-import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
+} from '../../src/settings';
+import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
+import { isOfflineModeSupported, setDevForcedUnreachable } from '../../src/lib/connectivity/connectivity-store';
+import { notifyOutboxChanged, useOutboxSummary } from '../../src/offline/outbox-store';
+import { RECLAIMABLE_VISIBLE_BYTES } from '../../src/db/storage-usage';
 import {
   getDeadLetterCount,
   getDeadLetters,
@@ -38,36 +38,36 @@ import {
   measureReclaimableBytes,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
-import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
-import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
-import { getHttpClient } from '../../../src/lib/graphql/client';
-import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
-import { getDevMetadataSection } from '../../../src/components/dev-metadata-section';
-import { buildOfflineModeRow } from '../../../src/components/offline-mode-row';
-import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
-import { MoreForm } from '../../../src/components/MoreForm';
-import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
-import { isPreviewBuild } from '../../../src/lib/preview-build';
-import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
-import { useGradeFormat } from '../../../src/hooks/use-grade-format';
-import { useSessionRecordingPreference } from '../../../src/lib/session-recording-preference';
-import { setSessionRecordingEnabled, track } from '../../../src/lib/analytics';
+import { drainMutationQueue } from '../../src/offline/offline-sync-adapter';
+import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { getHttpClient } from '../../src/lib/graphql/client';
+import { hapticLight, hapticSelection } from '../../src/lib/haptics';
+import { getDevMetadataSection } from '../../src/components/dev-metadata-section';
+import { buildOfflineModeRow } from '../../src/components/offline-mode-row';
+import { useBottomChromeDiagnosticsEligible } from '../../src/components/BottomChromeDebugOverlay';
+import { MoreForm } from '../../src/components/MoreForm';
+import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../src/components/MoreForm.types';
+import { isPreviewBuild } from '../../src/lib/preview-build';
+import { isDevLauncherAvailable } from '../../src/lib/dev-launcher';
+import { useGradeFormat } from '../../src/hooks/use-grade-format';
+import { useSessionRecordingPreference } from '../../src/lib/session-recording-preference';
+import { setSessionRecordingEnabled, track } from '../../src/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { useShowPlaylistTagsPreference } from '../../../src/lib/show-playlist-tags-preference';
-import { useBoardseshGradesPreference } from '../../../src/lib/boardsesh-grades-preference';
-import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
-import { useToast } from '../../../src/providers/toast-provider';
+import { useShowPlaylistTagsPreference } from '../../src/lib/show-playlist-tags-preference';
+import { useBoardseshGradesPreference } from '../../src/lib/boardsesh-grades-preference';
+import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
+import { useToast } from '../../src/providers/toast-provider';
 import {
   useFeatureFlag,
   useOfflineDownloadsEnabled,
   useBoardseshGradeEnabled,
   useClimbModerationEnabled,
-} from '../../../src/providers/feature-flags-provider';
-import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
-import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
-import { reportError } from '../../../src/lib/error-reporting';
-import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
-import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
+} from '../../src/providers/feature-flags-provider';
+import { replayOnboarding } from '../../src/lib/onboarding/onboarding-storage';
+import { replayBoardLookStep } from '../../src/lib/board-render/replay-board-look-step';
+import { reportError } from '../../src/lib/error-reporting';
+import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../src/lib/ble/auto-disconnect-controller';
+import { useAutoDisconnectTimeoutLabels } from '../../src/components/ble/use-auto-disconnect-timeout-labels';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -394,7 +394,7 @@ export default function MoreScreen() {
       label: tSettings('deleteAccount.button'),
       role: 'destructive',
       emphasis: 'subtle',
-      onPress: () => router.push('/(tabs)/profile/delete-account'),
+      onPress: () => router.push('/settings/delete-account'),
     },
   ];
 
@@ -440,18 +440,28 @@ export default function MoreScreen() {
           // `(tabs)/profile/notifications` — the Home chrome's bell pushes Home's
           // own copy of the screen so Back lands on the feed. Without this row the
           // profile route ships registered but unreachable.
+          //
+          // `dismissTo`, not `push`: this screen is a ROOT destination, so a push
+          // at a tab route would stack a SECOND `(tabs)` instance over Settings
+          // (docs/mobile-sheets-vs-routes.md, the cross-navigator trap).
+          // `dismissTo` pops back to the tabs already below us — Settings drops
+          // away and Back from notifications lands on You, the tab the screen
+          // belongs to.
           kind: 'nav',
           key: 'notifications',
           label: tNotifications('title'),
           icon: 'notifications',
-          onPress: navAction(() => router.push('/(tabs)/profile/notifications')),
+          onPress: navAction(() => router.dismissTo('/(tabs)/profile/notifications')),
         },
         {
+          // Same cross-navigator rule as the row above: the playlist library is a
+          // Discover-tab screen, so `dismissTo` there rather than pushing a
+          // second copy of the tabs over Settings.
           kind: 'nav',
           key: 'allPlaylists',
           label: tPlaylists('library.allPlaylists.title'),
           icon: 'playlists',
-          onPress: navAction(() => router.push('/(tabs)/discover/all')),
+          onPress: navAction(() => router.dismissTo('/(tabs)/discover/all')),
         },
         {
           kind: 'nav',
@@ -498,7 +508,7 @@ export default function MoreScreen() {
           stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
         ),
         icon: 'integrations',
-        onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
+        onPress: navAction(() => router.push('/settings/integrations')),
       },
       ...(garminWatchEnabled
         ? [
@@ -508,7 +518,7 @@ export default function MoreScreen() {
               label: tSettings('watchPairing.title'),
               subtitle: tSettings('watchPairing.subtitle'),
               icon: 'watch' as const,
-              onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
+              onPress: navAction(() => router.push('/settings/watch-pair')),
             },
           ]
         : []),
@@ -757,7 +767,7 @@ export default function MoreScreen() {
         label: t('mobile.more.boardLook.title'),
         subtitle: t('mobile.more.boardLook.rowSubtitleShort'),
         icon: 'boardLook',
-        onPress: navAction(() => router.push('/(tabs)/profile/board-look')),
+        onPress: navAction(() => router.push('/settings/board-look')),
       },
     ],
   });
@@ -817,7 +827,7 @@ export default function MoreScreen() {
           label: t('mobile.more.storage.rowLabel'),
           subtitle: t('mobile.more.storage.rowSubtitle'),
           icon: 'storage',
-          onPress: navAction(() => router.push('/(tabs)/profile/storage')),
+          onPress: navAction(() => router.push('/settings/storage')),
         },
       ],
     });
@@ -942,7 +952,7 @@ export default function MoreScreen() {
         label: t('mobile.more.metroServersTitle'),
         subtitle: t('mobile.more.metroServersSubtitle'),
         icon: 'devServers',
-        onPress: navAction(() => router.push('/(tabs)/profile/dev-servers')),
+        onPress: navAction(() => router.push('/settings/dev-servers')),
       });
     }
     if (showFeatureFlags) {
@@ -954,7 +964,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Force feature flags on or off',
         icon: 'featureFlags',
-        onPress: navAction(() => router.push('/(tabs)/profile/feature-flags')),
+        onPress: navAction(() => router.push('/settings/feature-flags')),
       });
     }
     if (showOfflineWrites) {
@@ -966,7 +976,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Hold the SQLite write lock, inject faults, inspect the outbox',
         icon: 'featureFlags',
-        onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
+        onPress: navAction(() => router.push('/settings/dev-offline-writes')),
       });
     }
     if (__DEV__) {
@@ -992,7 +1002,7 @@ export default function MoreScreen() {
         // Board-look, not featureFlags: this row edits how the board is DRAWN,
         // and the two dev rows above it already carry the flag icon.
         icon: 'boardLook',
-        onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
+        onPress: navAction(() => router.push('/settings/outline-editor')),
       });
     }
     if (profile?.isTester) {
@@ -1004,7 +1014,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Verify handled, uncaught, and native crash reporting',
         icon: 'otaChannel',
-        onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
+        onPress: navAction(() => router.push('/settings/sentry-diagnostics')),
       });
     }
     // Pretend the server is down, so the banner, the per-surface placards and
@@ -1040,7 +1050,7 @@ export default function MoreScreen() {
           // i18n-ignore-next-line
           subtitle: 'Switch EAS Update branch',
           icon: 'branchSwitcher',
-          onPress: navAction(() => router.push('/(tabs)/profile/branch-switcher')),
+          onPress: navAction(() => router.push('/settings/branch-switcher')),
         },
       ],
     });
@@ -1060,7 +1070,7 @@ export default function MoreScreen() {
           key: 'editProfile',
           label: tSettings('profile.editAction'),
           icon: 'editProfile',
-          onPress: navAction(() => router.push('/(tabs)/profile/edit')),
+          onPress: navAction(() => router.push('/settings/edit')),
         },
       ],
     });

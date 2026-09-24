@@ -1,13 +1,13 @@
 import type { ComponentType } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SectionHeader } from '../../../src/components/SectionHeader';
-import { BoardAccountsSection } from '../../../src/components/integrations/BoardAccountsSection';
-import { AppleHealthCard } from '../../../src/components/integrations/AppleHealthCard';
-import { StravaCard } from '../../../src/components/integrations/StravaCard';
-import { getSupportedIntegrations, type IntegrationId } from '../../../src/lib/integrations';
-import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
-import { spacing } from '../../../src/theme/tokens';
+import { SectionHeader } from '../../src/components/SectionHeader';
+import { BoardAccountsSection } from '../../src/components/integrations/BoardAccountsSection';
+import { AppleHealthCard } from '../../src/components/integrations/AppleHealthCard';
+import { StravaCard } from '../../src/components/integrations/StravaCard';
+import { getSupportedIntegrations, type IntegrationId } from '../../src/lib/integrations';
+import { useFeatureFlag } from '../../src/providers/feature-flags-provider';
+import { spacing } from '../../src/theme/tokens';
 
 // One card per supported integration. The registry decides which integrations
 // are available on this platform; this lookup maps each id to its UI.

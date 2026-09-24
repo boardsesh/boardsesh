@@ -1,4 +1,4 @@
-import { BranchSwitcherScreen } from '../../../src/components/BranchSwitcherScreen';
+import { BranchSwitcherScreen } from '../../src/components/BranchSwitcherScreen';
 
 export default function BranchSwitcherRoute() {
   return <BranchSwitcherScreen />;

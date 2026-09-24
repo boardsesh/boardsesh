@@ -55,7 +55,7 @@ function BoardLinkPromptComponent({ viewerIsOwner, hasNoSends }: BoardLinkPrompt
   }, []);
 
   const openConnectedApps = useCallback(() => {
-    router.push('/(tabs)/profile/integrations');
+    router.push('/settings/integrations');
   }, []);
 
   const unlinked = hasNoLinkedBoardAccount(credentials);

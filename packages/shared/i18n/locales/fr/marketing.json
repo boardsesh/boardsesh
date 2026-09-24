@@ -927,11 +927,11 @@
       "title": "Suppression du compte",
       "intro": "Vous pouvez supprimer votre compte et toutes les données associées à tout moment. Il y a deux façons de le faire :",
       "inApp": "Dans l'app :",
-      "inAppBody": " Ouvrez Plus depuis votre profil, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
+      "inAppBody": " Touchez votre avatar, ouvrez Paramètres, descendez tout en bas et touchez Supprimer le compte. Une confirmation vous sera demandée avant toute suppression.",
       "onWeb": "Sur le web :",
       "onWebBody": " Connectez-vous sur ",
       "onWebLink": "app.boardsesh.com",
-      "onWebBodyEnd": " et ouvrez Plus depuis votre profil pour trouver le même bouton Supprimer le compte.",
+      "onWebBodyEnd": " et ouvrez Paramètres depuis le menu de votre avatar pour trouver le même bouton Supprimer le compte.",
       "permanent": "La suppression est immédiate et définitive. Une fois confirmée, nous retirons de nos serveurs votre adresse e-mail, votre nom d'utilisateur, vos entrées de carnet, vos données de file et l'historique de vos sessions party. Cela ne peut pas être annulé."
     },
     "children": {

@@ -276,7 +276,7 @@
       "thisClimber": "este escalador"
     },
     "more": {
-      "title": "Más",
+      "title": "Ajustes",
       "library": "Biblioteca",
       "development": "Desarrollo",
       "dev": {
@@ -836,7 +836,7 @@
       "serverTitle": "Ahora mismo no podemos conectar con Boardsesh",
       "serverBody": "Esto necesita nuestro servidor. Los plafones descargados se siguen explorando, buscando y registrando, y tus encadenes esperan en el móvil.",
       "offlineModeTitle": "El modo sin conexión está activado",
-      "offlineModeBody": "Esto necesita conexión. Desactiva el modo sin conexión desde el aviso o en Más para cargarlo.",
+      "offlineModeBody": "Esto necesita conexión. Desactiva el modo sin conexión desde el aviso o en Ajustes para cargarlo.",
       "errorTitle": "No hemos podido cargarlo",
       "errorBody": "No ha llegado. Vuelve a intentarlo.",
       "retry": "Reintentar"

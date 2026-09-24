@@ -49,11 +49,11 @@ Card with "Display" title and subtitle.
 
 ---
 
-### Mobile: More tab — UI Style
+### Mobile: Settings — UI Style
 
-**Screen:** `packages/mobile/app/(tabs)/profile/more.tsx`
+**Screen:** `packages/mobile/app/settings/index.tsx`
 
-The mobile More tab contains appearance and UI-style controls that have no direct web equivalent.
+The mobile Settings screen contains appearance and UI-style controls that have no direct web equivalent.
 
 **Appearance** (system / light / dark):
 
@@ -161,7 +161,7 @@ credential to `pending` so the daemon picks it up again).
 
 **Mobile Connected apps differences:**
 
-- Route: `packages/mobile/app/(tabs)/profile/integrations.tsx`.
+- Route: `packages/mobile/app/settings/integrations.tsx`.
 - Board account cards render above platform/device integration cards.
 - A **MoonBoard** card renders first, above the Aurora-board cards on web and mobile.
   MoonBoard isn't in `AURORA_BOARDS`, so the card is self-contained — no

@@ -1,4 +1,4 @@
-import { SentryDiagnosticsScreen } from '../../../src/components/SentryDiagnosticsScreen';
+import { SentryDiagnosticsScreen } from '../../src/components/SentryDiagnosticsScreen';
 
 export default function SentryDiagnosticsRoute() {
   return <SentryDiagnosticsScreen />;

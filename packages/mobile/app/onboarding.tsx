@@ -15,7 +15,7 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * The onboarding route, which hosts the walkthrough (issue #4961). Since #5654
  * the launch gate no longer opens it: a new account with no board gets the
  * board picker in first-board mode instead (`/boards?firstBoard=1`), and this
- * route is what the More tab's "Replay" rows open.
+ * route is what Settings' "Replay" rows open.
  *
  * Three mandatory steps, with optional account linking after the board pick:
  *
@@ -137,12 +137,21 @@ function BoardLookRoute({
   const { status, preview } = useBoardPreviewClimb();
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
+  // Both exits `dismissTo`, the same verb OnboardingLinkRoute uses. The replay
+  // rows that open this walkthrough live in Settings — itself a ROOT destination
+  // — so the root stack usually reads `[(tabs), settings, onboarding]`, and
+  // `dismissTo` is the only verb that reads right from both there and a cold
+  // deep link into the walkthrough: it pops back to the named route when the
+  // stack already holds it, and replaces this screen when it doesn't. A
+  // `replace` would strand Settings under a second copy of the tabs; a
+  // `navigate` would push over a still-mounted walkthrough on the deep-link
+  // path, landing Back on the card the climber just left.
   const leave = useCallback(() => {
-    router.replace('/(tabs)/climbs');
+    router.dismissTo('/(tabs)/climbs');
   }, []);
 
   const customize = useCallback(() => {
-    router.replace('/(tabs)/profile/board-look');
+    router.dismissTo('/settings/board-look');
   }, []);
 
   // Deep-linked here without a board to draw (the gate never does this, but the

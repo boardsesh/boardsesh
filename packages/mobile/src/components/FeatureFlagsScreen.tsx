@@ -120,7 +120,7 @@ export function FeatureFlagsScreen() {
       );
     }
     if (!profile?.isTester) {
-      return <Redirect href="/(tabs)/profile/more" />;
+      return <Redirect href="/settings" />;
     }
   }
 

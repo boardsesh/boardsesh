@@ -729,8 +729,8 @@ hand-marked hold — not a law. The loop to retune them:
 
 ### The editor that writes them
 
-The rows are drawn by hand in the Expo app, on two admin-only routes under the profile
-stack: `app/(tabs)/profile/outline-editor.tsx` picks a board, layout and size, and
+The rows are drawn by hand in the Expo app, on two admin-only routes under the settings
+stack: `app/settings/outline-editor.tsx` picks a board, layout and size, and
 `outline-canvas.tsx` opens the board with every placement's outline drawn over it —
 traced, overridden, missing, and a ghost of the shard outline still sitting under a
 differing override. The entry point is More → Development → Hold Outlines, gated

@@ -31,7 +31,7 @@ session_type` already accommodates inferred solo sessions for later.
 | DB tables                          | `packages/db/src/schema/auth/integration-credentials.ts`, `packages/db/src/schema/app/integration-exports.ts`        |
 | Mobile registry + orchestration    | `packages/mobile/src/lib/integrations/`                                                                              |
 | HealthKit native module            | `packages/mobile/modules/health-workouts/` (+ `plugins/with-healthkit.js`)                                           |
-| Mobile UI                          | `packages/mobile/src/components/integrations/`, `app/(tabs)/profile/integrations.tsx`                                |
+| Mobile UI                          | `packages/mobile/src/components/integrations/`, `app/settings/integrations.tsx`                                |
 | Board account REST handlers        | `packages/backend/src/handlers/aurora-{credentials,import}.ts`, `moonboard-import.ts`, `kilter-credentials-oauth.ts` |
 | Board account services             | `packages/backend/src/services/aurora-credentials.ts`, `moonboard-import.ts`, `board-credential-state.ts`            |
 | Shared import parsers              | `packages/aurora-sync/src/sync/json-import.ts`, `packages/shared-schema/src/{aurora,moonboard}-import.ts`            |

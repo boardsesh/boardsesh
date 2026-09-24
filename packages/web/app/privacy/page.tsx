@@ -90,10 +90,12 @@ export default async function PrivacyPolicyPage() {
           <strong>{t('privacy.deletion.onWeb')}</strong>
           {t('privacy.deletion.onWebBody')}
           {/* W-21 (#4440) moved account deletion off www's /settings and into the
-              app's More screen, so the policy's stated web route points at the
-              app origin now. Legally load-bearing copy — keep it matching the
-              button that actually exists. */}
-          <Link href={buildAppHandoffUrl('/profile/more')} target="_blank" rel="noopener">
+              app's settings screen, so the policy's stated web route points at
+              the app origin now. Legally load-bearing copy — keep it matching
+              the button that actually exists, and the steps around it matching
+              how a climber actually reaches it (avatar → Settings, since
+              settings left the You tab). */}
+          <Link href={buildAppHandoffUrl('/settings')} target="_blank" rel="noopener">
             {t('privacy.deletion.onWebLink')}
           </Link>
           {t('privacy.deletion.onWebBodyEnd')}

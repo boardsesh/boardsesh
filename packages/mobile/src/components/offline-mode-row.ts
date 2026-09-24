@@ -7,7 +7,7 @@ import type { MoreToggleRow } from './MoreForm.types';
  * The Offline section's first row: the climber's deliberate "use only what's on
  * this phone" switch (issue #4862).
  *
- * Extracted from `app/(tabs)/profile/more.tsx` the same way
+ * Extracted from `app/settings/index.tsx` the same way
  * `buildFeatureFlagRows` and `getDevMetadataSection` were — the More screen
  * hands its model to a platform-split native form that cannot mount under
  * Vitest, and this row's wiring (which `source` the toggle files, that it goes

@@ -146,7 +146,7 @@ describe('BoardLinkPrompt', () => {
     const { container } = render(<BoardLinkPrompt viewerIsOwner hasNoSends />);
     await waitFor(() => expect(button(container, 'mobile.boardLink.cta:Tension')).not.toBeNull());
     fireEvent.click(button(container, 'mobile.boardLink.cta:Tension')!);
-    expect(mocks.push).toHaveBeenCalledWith('/(tabs)/profile/integrations');
+    expect(mocks.push).toHaveBeenCalledWith('/settings/integrations');
   });
 
   it('dismisses immediately and persists the choice', async () => {
