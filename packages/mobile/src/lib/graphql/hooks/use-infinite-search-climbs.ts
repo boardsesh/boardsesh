@@ -8,6 +8,7 @@ import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';
+import { useGradeSourceSearchInput } from './search-grade-source';
 
 type SearchClimbsBoardScope = Pick<ClimbSearchInput, 'boardName' | 'layoutId' | 'sizeId' | 'setIds'>;
 
@@ -107,7 +108,10 @@ export function useInfiniteSearchClimbs(
   const crossAngleStats = getBoardCapabilities(boardName).angleBoundClimbs
     ? crossAngleStatsRequested
     : crossAngleStatsRequested || crossAngleStatsFlagOn;
-  const searchInput: ClimbSearchInput = { ...input, crossAngleStats };
+  // The grade source rides the input the same way, so flipping "Show Boardsesh
+  // grades" rotates the query key and refetches (issue #5643). Like the flag
+  // above it stays out of the placeholder's board scope.
+  const searchInput: ClimbSearchInput = useGradeSourceSearchInput({ ...input, crossAngleStats });
   return useInfiniteQuery({
     queryKey: [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])],
     initialPageParam: 0,

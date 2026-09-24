@@ -252,6 +252,31 @@ export function effectiveStatsSql(column: StatsColumn, crossAngle: boolean): str
   return `CASE WHEN s.climb_uuid IS NOT NULL THEN s.${column} ELSE s_set.${column} END`;
 }
 
+/**
+ * The rounded grade id a climb is filtered on (and, under the Boardsesh source,
+ * sorted on). Mirrors `gradeValueSql` in
+ * packages/db/src/queries/climbs/create-climb-filters.ts (issues #5643, #5752,
+ * #5753): AURORA (and an omitted source) reads display_difficulty first and falls
+ * back to the Boardsesh grade; BOARDSESH reads the Boardsesh grade first — the
+ * value a row is labelled with when Boardsesh grades are on — and falls back to
+ * display_difficulty.
+ *
+ * `displayDifficulty` is the effective-stats reader, so this composes with
+ * cross-angle; `g` is the grades join, which follows whichever stats row won.
+ */
+export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearchInput['gradeSource']): string {
+  const boardseshGrade = 'COALESCE(g.universal_grade, g.local_grade)';
+  // A `setter_only` grade is never shown on a row (`resolveBoardseshDifficulty`
+  // falls back to the Aurora grade), so the Boardsesh source skips it too. The
+  // Aurora branch keeps its fallback exactly as it was.
+  const shownBoardseshGrade = `CASE WHEN g.confidence = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
+  const coalesced =
+    gradeSource === 'BOARDSESH'
+      ? `COALESCE(${shownBoardseshGrade}, ${displayDifficulty})`
+      : `COALESCE(${displayDifficulty}, ${boardseshGrade})`;
+  return `CAST(ROUND(${coalesced}) AS INTEGER)`;
+}
+
 function ticksExists(negated: boolean, statusSql: string): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
@@ -401,13 +426,14 @@ function buildJoinAndWhere(
   // to match it). `eff('display_difficulty')` already resolves through the
   // set-angle fallback under cross-angle, so only a climb with NO stats row at
   // either angle falls all the way through to g.universal_grade/local_grade.
-  const roundedGrade = `CAST(ROUND(COALESCE(${eff('display_difficulty')}, COALESCE(g.universal_grade, g.local_grade))) AS INTEGER)`;
+  // `gradeSource: 'BOARDSESH'` swaps the order — see `gradeValueSql`.
+  const gradeRangeValue = gradeValueSql(eff('display_difficulty'), input.gradeSource);
   if (input.minGrade && input.maxGrade) {
-    push(`${roundedGrade} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
+    push(`${gradeRangeValue} BETWEEN ? AND ?`, input.minGrade, input.maxGrade);
   } else if (input.minGrade) {
-    push(`${roundedGrade} >= ?`, input.minGrade);
+    push(`${gradeRangeValue} >= ?`, input.minGrade);
   } else if (input.maxGrade) {
-    push(`${roundedGrade} <= ?`, input.maxGrade);
+    push(`${gradeRangeValue} <= ?`, input.maxGrade);
   }
 
   // Min rating (quality_average is canonical 1-5).
@@ -422,7 +448,12 @@ function buildJoinAndWhere(
   // malformed deep-link values.
   const gradeAccuracy = input.gradeAccuracy ? parseFloat(String(input.gradeAccuracy)) : NaN;
   if (Number.isFinite(gradeAccuracy)) {
-    push(`ABS(${roundedGrade} - ${eff('difficulty_average')}) <= ?`, gradeAccuracy);
+    // Always the Aurora-first value, whatever the grade source: accuracy measures
+    // how far the crowd average sits from the crowd/setter grade.
+    push(
+      `ABS(${gradeValueSql(eff('display_difficulty'), 'AURORA')} - ${eff('difficulty_average')}) <= ?`,
+      gradeAccuracy,
+    );
   }
 
   // Benchmarks only.
@@ -513,13 +544,17 @@ function buildJoinAndWhere(
   return { joinSql, whereSql: conditions.join(' AND '), joinBinds, whereBinds };
 }
 
-function sortColumnSql(sortBy: string, crossAngle: boolean): string {
+function sortColumnSql(sortBy: string, crossAngle: boolean, gradeSource: ClimbSearchInput['gradeSource']): string {
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
   switch (sortBy) {
     case 'ascents':
       return eff('ascensionist_count');
     case 'difficulty':
-      return `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
+      // Under the Boardsesh source the sort keys on the grade the row is labelled
+      // with, as the server's does. The Aurora sort has no fallback, unchanged.
+      return gradeSource === 'BOARDSESH'
+        ? gradeValueSql(eff('display_difficulty'), 'BOARDSESH')
+        : `CAST(ROUND(${eff('display_difficulty')}) AS INTEGER)`;
     case 'name':
       // NOCASE so 'apple' sorts before 'Zebra', matching Postgres's locale
       // collation (SQLite's default BINARY puts all uppercase first). ASCII
@@ -708,7 +743,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const randomSeedBind = input.sortSeed && Number.isFinite(seedInt) ? Math.trunc(seedInt) : 1;
   const orderBy = isRandom
     ? `${RANDOM_ORDER_EXPR} ASC, c.uuid DESC`
-    : `${sortColumnSql(sortBy, crossAngle)} ${sortOrder}, c.uuid DESC`;
+    : `${sortColumnSql(sortBy, crossAngle, input.gradeSource)} ${sortOrder}, c.uuid DESC`;
 
   const query = `
     SELECT

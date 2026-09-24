@@ -332,6 +332,68 @@ describe('searchClimbsLocal', () => {
     expect(uuids(result).sort()).toEqual(['real-stats-in-range', 'wide-angle-only']);
   });
 
+  // Issues #5643 / #5752 / #5753: with Boardsesh grades on, a row is labelled
+  // with its Boardsesh grade, so the range filter has to key on that grade.
+  describe('gradeSource', () => {
+    beforeEach(async () => {
+      // Aurora says 18, Boardsesh says 16.
+      await insertClimb(db, { uuid: 'split' });
+      await insertStat(db, { climbUuid: 'split', displayDifficulty: 18.0, ascensionistCount: 5 });
+      await insertGrade(db, { climbUuid: 'split', universalGrade: 16.0 });
+    });
+
+    async function matches(input: ClimbSearchInput): Promise<string[]> {
+      const result = await searchClimbsLocal(db, input);
+      // The count badge must describe the same list.
+      expect(await countClimbsLocal(db, input)).toBe(result.climbs.length);
+      return uuids(result);
+    }
+
+    it('keys the range on the Boardsesh grade under BOARDSESH', async () => {
+      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'BOARDSESH' }))).toEqual(['split']);
+      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'BOARDSESH' }))).toEqual([]);
+    });
+
+    it('keys the range on display_difficulty under AURORA and when omitted', async () => {
+      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'AURORA' }))).toEqual([]);
+      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'AURORA' }))).toEqual(['split']);
+      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16 }))).toEqual([]);
+      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18 }))).toEqual(['split']);
+    });
+
+    it('falls back to display_difficulty under BOARDSESH when there is no grade row', async () => {
+      await insertClimb(db, { uuid: 'aurora-only' });
+      await insertStat(db, { climbUuid: 'aurora-only', displayDifficulty: 16.0, ascensionistCount: 5 });
+
+      expect((await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'BOARDSESH' }))).sort()).toEqual([
+        'aurora-only',
+        'split',
+      ]);
+    });
+
+    it('skips a setter_only Boardsesh grade under BOARDSESH, as the row label does', async () => {
+      await insertClimb(db, { uuid: 'setter-only' });
+      await insertStat(db, { climbUuid: 'setter-only', displayDifficulty: 18.0, ascensionistCount: 5 });
+      await insertGrade(db, { climbUuid: 'setter-only', universalGrade: 16.0, confidence: 'setter_only' });
+
+      expect(await matches(makeInput({ minGrade: 18, maxGrade: 18, gradeSource: 'BOARDSESH' }))).toEqual([
+        'setter-only',
+      ]);
+      expect(await matches(makeInput({ minGrade: 16, maxGrade: 16, gradeSource: 'BOARDSESH' }))).toEqual(['split']);
+    });
+
+    it('sorts by the Boardsesh grade under BOARDSESH', async () => {
+      await insertClimb(db, { uuid: 'other' });
+      await insertStat(db, { climbUuid: 'other', displayDifficulty: 17.0, ascensionistCount: 5 });
+      await insertGrade(db, { climbUuid: 'other', universalGrade: 20.0 });
+
+      const sorted = (gradeSource: ClimbSearchInput['gradeSource']) =>
+        matches(makeInput({ sortBy: 'difficulty', sortOrder: 'desc', gradeSource }));
+      expect(await sorted('BOARDSESH')).toEqual(['other', 'split']);
+      expect(await sorted('AURORA')).toEqual(['split', 'other']);
+    });
+  });
+
   it('orders by ascents desc with a uuid tiebreak and pages with hasMore', async () => {
     await insertClimb(db, { uuid: 'a' });
     await insertClimb(db, { uuid: 'b' });
