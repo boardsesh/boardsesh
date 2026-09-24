@@ -6,7 +6,7 @@ Usage: python generate_cert.py [--host IP_ADDRESS]
 
 import argparse
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
@@ -37,8 +37,8 @@ def generate_certificate(hostname="localhost", ip_address=None):
     cert_builder = cert_builder.issuer_name(issuer)
     cert_builder = cert_builder.public_key(private_key.public_key())
     cert_builder = cert_builder.serial_number(x509.random_serial_number())
-    cert_builder = cert_builder.not_valid_before(datetime.utcnow())
-    cert_builder = cert_builder.not_valid_after(datetime.utcnow() + timedelta(days=365))
+    cert_builder = cert_builder.not_valid_before(datetime.now(timezone.utc))
+    cert_builder = cert_builder.not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
     
     # Add Subject Alternative Names
     san_list = [x509.DNSName(hostname)]

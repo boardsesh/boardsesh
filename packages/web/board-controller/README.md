@@ -15,20 +15,17 @@ A Python WebSocket server that enables persistent queue management and collabora
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+ (the Docker image uses Python 3.11)
 - Bluetooth adapter (optional, for Bluetooth functionality)
+
+The pinned `python-multipart` and `python-dotenv` releases require Python 3.10 or newer.
+`cryptography` 50 also drops the previously documented Python 3.8 support.
 
 ### Installation
 
 ```bash
-# Install Python dependencies
-pip install fastapi uvicorn aiosqlite
-
-# Or create requirements.txt:
-echo "fastapi>=0.100.0" > requirements.txt
-echo "uvicorn>=0.23.0" >> requirements.txt
-echo "aiosqlite>=0.19.0" >> requirements.txt
-pip install -r requirements.txt
+# Install the checked-in dependency pins
+python -m pip install -r requirements.txt
 ```
 
 ### Usage
