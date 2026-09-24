@@ -165,6 +165,16 @@ RUN set -e && \
       echo "ERROR: Migration count mismatch! Expected $migration_count, got $recorded" && false; \
     fi && \
     \
+    # The ledger's high-water mark must equal the journal's newest `when`, or \
+    # this image ships a database that silently skips the next migration anyone \
+    # writes (#4211). One psql call, and it makes that regression unshippable. \
+    ledger_max=$(gosu postgres psql -h /var/run/postgresql main -t -A -c "SELECT COALESCE(max(created_at), 0) FROM drizzle.\"__drizzle_migrations\"") && \
+    journal_max=$(jq -r '[.entries[].when] | max' /drizzle/meta/_journal.json) && \
+    echo "  Ledger high-water mark: $ledger_max (journal newest when: $journal_max)" && \
+    if [ "$ledger_max" != "$journal_max" ]; then \
+      echo "ERROR: ledger created_at high-water mark $ledger_max != journal newest when $journal_max — drizzle would skip later migrations" && false; \
+    fi && \
+    \
     # ── Load the board catalogue from the published snapshots ─────────── \
     echo ">>> Loading board snapshots..." && \
     cd /app && \
