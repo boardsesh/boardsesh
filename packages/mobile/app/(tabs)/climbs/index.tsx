@@ -84,8 +84,7 @@ import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-li
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
 import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
-import { withGradeSource } from '../../../src/lib/graphql/hooks/search-grade-source';
-import { useBoardseshGradesActive } from '../../../src/hooks/use-display-grade';
+import { useSearchGradeSourceActive, withGradeSource } from '../../../src/lib/graphql/hooks/search-grade-source';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
@@ -894,7 +893,7 @@ function ClimbListInner() {
   // See `useFrozenSearchBasis` for why it must not follow the live filters.
   const searchBasis = useFrozenSearchBasis({ filters, boardFilters, name });
   // The list's grade source (issue #5643), so the swipe pages the same rows.
-  const boardseshGradesActive = useBoardseshGradesActive();
+  const boardseshGradesActive = useSearchGradeSourceActive();
 
   // Page the same search query the list uses so the play-drawer swipe can walk
   // climbs beyond what's loaded. Activation pages and search pages are both 0-based.
