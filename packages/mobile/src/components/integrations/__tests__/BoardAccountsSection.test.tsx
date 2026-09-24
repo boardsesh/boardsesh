@@ -268,6 +268,26 @@ describe('BoardAccountsSection — board cards', () => {
     });
     expect(mocks.saveAurora).not.toHaveBeenCalled();
   });
+
+  it('reports invalid Kilter credentials as an email problem, not a username one', async () => {
+    mocks.flags = { 'kilter-oauth-linking': true };
+    mocks.saveKilterViaPassword.mockRejectedValue(new BoardAccountError('invalid_credentials'));
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
+      target: { value: 'climber@example.com' },
+    });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.invalidCredentialsKilter', 'error');
+    });
+    expect(mocks.showToast).not.toHaveBeenCalledWith('aurora.mobile.invalidCredentials', 'error');
+  });
 });
 
 describe('BoardAccountsSection — link funnel', () => {

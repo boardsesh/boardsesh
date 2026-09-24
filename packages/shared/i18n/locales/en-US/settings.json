@@ -319,6 +319,7 @@
       "unlinkSuccess": "{{boardName}} unlinked",
       "unlinkPartial": "{{boardName}} was removed here, but the provider session may still be live.",
       "invalidCredentials": "That username or password didn't work.",
+      "invalidCredentialsKilter": "That email or password didn't work.",
       "rateLimited": "Too many attempts. Try again later.",
       "requestFailed": "Couldn't save that link. Try again.",
       "loadFailed": "Couldn't load your board accounts.",

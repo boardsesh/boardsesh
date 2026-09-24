@@ -206,6 +206,7 @@
       "unlinkSuccess": "{{boardName}} délié",
       "unlinkPartial": "{{boardName}} a été retiré ici, mais la session du fournisseur peut rester active.",
       "invalidCredentials": "Cet identifiant ou ce mot de passe n'a pas fonctionné.",
+      "invalidCredentialsKilter": "Cet e-mail ou ce mot de passe n'a pas fonctionné.",
       "rateLimited": "Trop de tentatives. Réessaie plus tard.",
       "requestFailed": "Impossible d'enregistrer ce lien. Réessaie.",
       "loadFailed": "Impossible de charger tes comptes de board.",

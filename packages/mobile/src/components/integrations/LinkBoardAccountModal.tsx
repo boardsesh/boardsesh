@@ -37,13 +37,13 @@ function failureReasonFor(error: unknown): BoardLinkFailureReason {
   return error instanceof BoardAccountError ? error.code : 'request_failed';
 }
 
-export function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
+export function errorMessageFor(error: unknown, t: TFunction<'settings'>, isKilter = false): string {
   if (error instanceof BoardAccountError) {
     switch (error.code) {
       case 'account_already_linked':
         return t('aurora.linkDialog.accountAlreadyLinked');
       case 'invalid_credentials':
-        return t('aurora.mobile.invalidCredentials');
+        return isKilter ? t('aurora.mobile.invalidCredentialsKilter') : t('aurora.mobile.invalidCredentials');
       case 'not_allowed':
         return t('aurora.mobile.kilterNotAllowed');
       case 'rate_limited':
@@ -97,7 +97,7 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
     },
     onError: (error, variables) => {
       trackLinkFailed({ boardType: variables.boardType, source }, failureReasonFor(error));
-      showToast(errorMessageFor(error, t), 'error');
+      showToast(errorMessageFor(error, t, variables.boardType === 'kilter'), 'error');
     },
   });
 

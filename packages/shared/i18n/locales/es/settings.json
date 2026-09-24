@@ -206,6 +206,7 @@
       "unlinkSuccess": "{{boardName}} desvinculado",
       "unlinkPartial": "{{boardName}} se eliminó aquí, pero la sesión del proveedor puede seguir activa.",
       "invalidCredentials": "Ese usuario o contraseña no funcionó.",
+      "invalidCredentialsKilter": "Ese correo o contraseña no funcionó.",
       "rateLimited": "Demasiados intentos. Inténtalo más tarde.",
       "requestFailed": "No se pudo guardar el vínculo. Inténtalo de nuevo.",
       "loadFailed": "No se pudieron cargar tus cuentas de plafón.",

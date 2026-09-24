@@ -319,6 +319,7 @@
       "unlinkSuccess": "{{boardName}} getrennt",
       "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",
+      "invalidCredentialsKilter": "E-Mail oder Passwort hat nicht gepasst.",
       "rateLimited": "Zu viele Versuche. Probier es später nochmal.",
       "requestFailed": "Die Verknüpfung ließ sich nicht speichern. Versuch es nochmal.",
       "loadFailed": "Deine Board-Konten ließen sich nicht laden.",
