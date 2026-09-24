@@ -1,4 +1,19 @@
 export const ticksTypeDefs = /* GraphQL */ `
+  type TickBoardOption {
+    uuid: ID!
+    name: String!
+    boardType: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+  }
+
+  type TickBoardOptions {
+    currentBoard: TickBoardOption
+    boards: [TickBoardOption!]!
+    totalCount: Int!
+    hasMore: Boolean!
+  }
   # ============================================
   # Ticks Types (Local Ascent Tracking)
   # ============================================
@@ -69,6 +84,8 @@ export const ticksTypeDefs = /* GraphQL */ `
     layoutId: Int
     "Board entity ID if tick was associated with a board"
     boardId: Int
+    "Physical board name, populated by updateTick for immediate editor refresh."
+    boardDisplayName: String
     # Social aggregates are only populated by read queries (e.g. \`ticks\`).
     # Mutation resolvers (\`saveTick\`, \`updateTick\`) don't compute them so they
     # are nullable here; when a client needs guaranteed counts, prefer
@@ -130,6 +147,8 @@ export const ticksTypeDefs = /* GraphQL */ `
   All fields are optional — only provided fields are updated.
   """
   input UpdateTickInput {
+    "Omit to preserve attribution; null clears it; a UUID selects a compatible physical board."
+    boardUuid: String
     "Result of the attempt"
     status: TickStatus
     "Number of attempts"

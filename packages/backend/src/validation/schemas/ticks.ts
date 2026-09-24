@@ -177,6 +177,7 @@ export const AscentFeedInputSchema = z.object({
  */
 export const UpdateTickInputSchema = z
   .object({
+    boardUuid: UUIDSchema.nullable().optional(),
     status: z.enum(['flash', 'send', 'attempt']).optional(),
     attemptCount: z.number().int().min(1).max(999).optional(),
     quality: z.number().int().min(1).max(5).optional().nullable(),

@@ -9,6 +9,7 @@ import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
 import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
 import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
 import { tickQueries } from './ticks/queries';
+import { tickBoardQueries } from './ticks/board-options';
 import { tickMutations } from './ticks/mutations';
 import { climbStatsSubscriptions } from './ticks/climb-stats-subscriptions';
 import { userQueries } from './users/queries';
@@ -98,6 +99,7 @@ export const resolvers = {
     ...sprayWallModerationQueries,
     ...climbQueries,
     ...tickQueries,
+    ...tickBoardQueries,
     ...userQueries,
     ...favoriteQueries,
     ...favoriteClimbsQuery,

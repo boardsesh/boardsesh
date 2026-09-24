@@ -13,3 +13,4 @@ export * from './woods-config';
 export * from './spray-config';
 export type { Angle, SetIdList, ClimbCompatibilityInput, BoardCompatibilityTarget } from './types';
 export * from './board-mirroring';
+export * from './tick-board';

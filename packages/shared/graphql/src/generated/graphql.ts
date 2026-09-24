@@ -6368,6 +6368,8 @@ export type Query = {
   syncTicks: SyncResult;
   /** Pull the authenticated user's user-follows changed since the cursor. */
   syncUserFollows: SyncResult;
+  /** Compatible saved and recent physical boards for a tick owned by the viewer. */
+  tickBoardOptions: TickBoardOptions;
   /**
    * Get current user's ticks (recorded climb attempts).
    * Requires authentication.
@@ -7128,6 +7130,13 @@ export type QuerySyncTicksArgs = {
 export type QuerySyncUserFollowsArgs = {
   cursor?: InputMaybe<SyncCursorInput>;
   limit?: Scalars['Int']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryTickBoardOptionsArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  tickUuid: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -9377,6 +9386,8 @@ export type Tick = {
   auroraSyncedAt?: Maybe<Scalars['String']['output']>;
   /** Type of Aurora sync ('bid' or 'ascent') */
   auroraType?: Maybe<Scalars['String']['output']>;
+  /** Physical board name, populated by updateTick for immediate editor refresh. */
+  boardDisplayName?: Maybe<Scalars['String']['output']>;
   /** Board entity ID if tick was associated with a board */
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
@@ -9423,6 +9434,24 @@ export type Tick = {
   userId: Scalars['ID']['output'];
   /** Unique identifier for this tick */
   uuid: Scalars['ID']['output'];
+};
+
+export type TickBoardOption = {
+  __typename?: 'TickBoardOption';
+  boardType: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type TickBoardOptions = {
+  __typename?: 'TickBoardOptions';
+  boards: Array<TickBoardOption>;
+  currentBoard?: Maybe<TickBoardOption>;
+  hasMore: Scalars['Boolean']['output'];
+  totalCount: Scalars['Int']['output'];
 };
 
 /** Status of a climb attempt. */
@@ -9742,6 +9771,8 @@ export type UpdateTickInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
   /** Number of attempts */
   attemptCount?: InputMaybe<Scalars['Int']['input']>;
+  /** Omit to preserve attribution; null clears it; a UUID selects a compatible physical board. */
+  boardUuid?: InputMaybe<Scalars['String']['input']>;
   /** When the climb was attempted (ISO 8601) */
   climbedAt?: InputMaybe<Scalars['String']['input']>;
   /** User comment */
@@ -13791,6 +13822,8 @@ export type UpdateTickMutation = {
   updateTick: {
     __typename?: 'Tick';
     uuid: string;
+    boardId?: number | null;
+    boardDisplayName?: string | null;
     status: TickStatus;
     attemptCount: number;
     quality?: number | null;
@@ -13800,6 +13833,39 @@ export type UpdateTickMutation = {
     climbedAt: string;
     angle: number;
     updatedAt: string;
+  };
+};
+
+export type TickBoardOptionsQueryVariables = Exact<{
+  tickUuid: Scalars['ID']['input'];
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+export type TickBoardOptionsQuery = {
+  __typename?: 'Query';
+  tickBoardOptions: {
+    __typename?: 'TickBoardOptions';
+    totalCount: number;
+    hasMore: boolean;
+    currentBoard?: {
+      __typename?: 'TickBoardOption';
+      uuid: string;
+      name: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+    } | null;
+    boards: Array<{
+      __typename?: 'TickBoardOption';
+      uuid: string;
+      name: string;
+      boardType: string;
+      layoutId: number;
+      sizeId: number;
+      setIds: string;
+    }>;
   };
 };
 
@@ -22726,6 +22792,8 @@ export const UpdateTickDocument = {
               kind: 'SelectionSet',
               selections: [
                 { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardDisplayName' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'status' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'attemptCount' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
@@ -22743,3 +22811,93 @@ export const UpdateTickDocument = {
     },
   ],
 } as unknown as DocumentNode<UpdateTickMutation, UpdateTickMutationVariables>;
+export const TickBoardOptionsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'TickBoardOptions' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'tickUuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'tickBoardOptions' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'tickUuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'tickUuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'limit' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'limit' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'offset' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'offset' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'currentBoard' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                    ],
+                  },
+                },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'boards' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<TickBoardOptionsQuery, TickBoardOptionsQueryVariables>;

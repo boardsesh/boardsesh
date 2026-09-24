@@ -1151,6 +1151,21 @@ input RemoveFavoriteInput {
   angle: Int
 }
 
+type TickBoardOption {
+  uuid: ID!
+  name: String!
+  boardType: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+}
+
+type TickBoardOptions {
+  currentBoard: TickBoardOption
+  boards: [TickBoardOption!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
 # ============================================
 # Ticks Types (Local Ascent Tracking)
 # ============================================
@@ -1221,6 +1236,8 @@ type Tick {
   layoutId: Int
   "Board entity ID if tick was associated with a board"
   boardId: Int
+  "Physical board name, populated by updateTick for immediate editor refresh."
+  boardDisplayName: String
   # Social aggregates are only populated by read queries (e.g. `ticks`).
   # Mutation resolvers (`saveTick`, `updateTick`) don't compute them so they
   # are nullable here; when a client needs guaranteed counts, prefer
@@ -1282,6 +1299,8 @@ Input for updating an existing tick.
 All fields are optional — only provided fields are updated.
 """
 input UpdateTickInput {
+  "Omit to preserve attribution; null clears it; a UUID selects a compatible physical board."
+  boardUuid: String
   "Result of the attempt"
   status: TickStatus
   "Number of attempts"
@@ -6328,6 +6347,8 @@ type SprayWallPhotoPurgeResult {
 Root query type for all read operations.
 """
 type Query {
+  "Compatible saved and recent physical boards for a tick owned by the viewer."
+  tickBoardOptions(tickUuid: ID!, limit: Int, offset: Int): TickBoardOptions!
   """
   Get details of a specific session by ID.
   Returns null if session doesn't exist.
