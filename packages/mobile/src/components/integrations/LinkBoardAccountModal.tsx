@@ -74,8 +74,6 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  // Kilter signs in with an email; other Aurora boards use a username. Named
-  // generically since this single field means different things per board.
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
 

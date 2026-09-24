@@ -571,6 +571,18 @@ describe('LinkBoardAccountModal host lifecycle', () => {
     expect(mocks.saveKilterViaPassword).not.toHaveBeenCalled();
   });
 
+  it('shows the username field for a non-Kilter board, not the Kilter email field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="tension" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).toBeNull();
+  });
+
+  it('shows the Kilter email field, not the generic username field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).toBeNull();
+  });
+
   it('notifies the host after both credential caches refresh with one linked outcome', async () => {
     let releaseInvalidations: () => void = () => {
       throw new Error('Invalidation promise not initialized');
