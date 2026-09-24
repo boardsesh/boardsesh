@@ -135,6 +135,7 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
             autoCorrect={false}
             keyboardType={isKilter ? 'email-address' : 'default'}
             textContentType={isKilter ? 'emailAddress' : 'username'}
+            autoComplete={isKilter ? 'email' : 'username'}
             style={inputStyle}
           />
           <TextInput
