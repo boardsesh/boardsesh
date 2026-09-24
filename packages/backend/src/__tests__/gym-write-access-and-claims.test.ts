@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql, eq, is, SQL } from 'drizzle-orm';
+import { sql, eq, is, inArray, SQL } from 'drizzle-orm';
 import type { GraphQLError } from 'graphql';
 import { GYM_HOURS_MAX_LENGTH, type ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -15,11 +15,15 @@ import {
   hashClaimToken,
   MAX_PENDING_CLAIMS_PER_USER,
   GYM_CLAIM_LIMIT_CODE,
+  GYM_CLAIM_SUPERSEDED_CODE,
 } from '../graphql/resolvers/social/gym-claims';
+import { socialGymDuplicateMutations } from '../graphql/resolvers/social/gym-duplicates';
+import { socialGymOwnerReassignMutations } from '../graphql/resolvers/social/gym-owner-reassign';
 import {
   socialCommunitySettingsMutations,
   socialCommunitySettingsQueries,
 } from '../graphql/resolvers/social/community-settings';
+import { resetAllRateLimits } from '../utils/rate-limiter';
 
 /**
  * Real-DB coverage for the gym write-access (editor) role + grant/revoke
@@ -290,7 +294,8 @@ beforeEach(async () => {
   await db.execute(sql`
     TRUNCATE TABLE
       "community_roles", "community_settings", "gym_members", "gym_follows", "gym_claims",
-      "board_follows", "boardsesh_ticks", "user_boards", "gyms", "notifications"
+      "gym_owner_reassignments", "board_follows", "boardsesh_ticks", "user_boards", "gyms",
+      "notifications"
     RESTART IDENTITY CASCADE
   `);
 
@@ -1317,12 +1322,15 @@ describe('applyGymClaim / verifyGymClaimByToken — ownership transfer', () => {
 
     const applied = await applyGymClaim(claimRow);
     expect(applied).toEqual({
-      gymName: 'Real Gym',
-      gymUuid: claimGym.uuid,
-      gymSlug: claimGym.uuid, // insertGym seeds slug = uuid
-      claimantUserId: CLAIMANT,
-      claimEmail: 'boss@realgym.com',
-      priorOwnerId: PRIOR_OWNER,
+      outcome: 'applied',
+      applied: {
+        gymName: 'Real Gym',
+        gymUuid: claimGym.uuid,
+        gymSlug: claimGym.uuid, // insertGym seeds slug = uuid
+        claimantUserId: CLAIMANT,
+        claimEmail: 'boss@realgym.com',
+        priorOwnerId: PRIOR_OWNER,
+      },
     });
 
     expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
@@ -1873,6 +1881,47 @@ describe('requestGymClaim — auto-approval', () => {
     ]);
   });
 
+  it('keeps an old auto-approval queued after ownership moves away and back to the system', async () => {
+    resetAllRateLimits();
+    await insertUser(SYSTEM_OWNER);
+    const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Reviewed Catalog Listing' });
+    await socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: claimGym.uuid } }, authCtx(CLAIMANT));
+    const [pending] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.gymId, claimGym.id));
+
+    for (const [currentOwnerId, newOwnerId] of [
+      [SYSTEM_OWNER, PRIOR_OWNER],
+      [PRIOR_OWNER, SYSTEM_OWNER],
+    ]) {
+      await socialGymOwnerReassignMutations.reassignGymOwner(
+        null,
+        {
+          input: {
+            gymUuid: claimGym.uuid,
+            expectedCurrentOwnerId: currentOwnerId,
+            newOwnerId,
+            reason: 'Restore the catalog listing after ownership review.',
+          },
+        },
+        authCtx(GLOBAL_ADMIN),
+      );
+    }
+    await setAutoApprove(true);
+    vi.clearAllMocks();
+
+    // The system-owner guard passes again, but the newer handovers still make
+    // this older claim superseded. Re-requesting must not silently approve it.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: claimGym.uuid } }, authCtx(CLAIMANT)),
+    ).resolves.toEqual({ status: 'admin_review' });
+    const [retained] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, pending.id));
+    expect(retained).toMatchObject({ status: 'pending', createdAt: pending.createdAt, updatedAt: pending.updatedAt });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SYSTEM_OWNER);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+    expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
+  });
+
   it('survives two users racing for the same unclaimed gym — one wins, neither errors', async () => {
     await setAutoApprove(true);
     const claimGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Contested Listing' });
@@ -1972,11 +2021,16 @@ describe('requestGymClaim — auto-approval', () => {
       ),
     ]);
 
+    // Two curated messages are possible and which one the loser gets is pure
+    // timing: it either loses the guarded UPDATE (already-resolved wording), or
+    // reads the winner's approved row first and is refused as superseded. Both
+    // are written for the reviewer; neither is the internal race message.
     for (const outcome of outcomes) {
       if (outcome.status === 'rejected') {
-        expect(String(outcome.reason?.message)).toBe(
+        expect([
           'Could not approve this claim — the gym may have been removed or it was already resolved',
-        );
+          'This gym changed hands after the claim was filed.',
+        ]).toContain(String(outcome.reason?.message));
       }
     }
 
@@ -2082,7 +2136,9 @@ describe('approving a claim lands the same way whichever path approves it', () =
     const directGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Parity Direct' });
     const directClaimId = await insertClaim({ gymId: directGym.id, claimantUserId: CLAIMANT, method: 'admin' });
     const [directClaim] = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.id, directClaimId));
-    expect(await applyGymClaim(directClaim, { requireCurrentOwnerId: SYSTEM_OWNER })).not.toBeNull();
+    expect(await applyGymClaim(directClaim, { requireCurrentOwnerId: SYSTEM_OWNER })).toMatchObject({
+      outcome: 'applied',
+    });
 
     // Identical end state...
     expect(await gymOwnerId(autoGym.uuid)).toBe(CLAIMANT);
@@ -2431,5 +2487,503 @@ describe('gym community settings — admin-only', () => {
       authCtx(GLOBAL_ADMIN),
     );
     expect(asAdmin.map((setting) => setting.key).sort()).toEqual(['approval_threshold', 'gym_claim_auto_approve']);
+  });
+});
+
+// ============================================================================
+// #4525 — a claim the gym's ownership has already moved past
+// ============================================================================
+
+/**
+ * `applyGymClaim` used to decide purely from the claim row and the gym's CURRENT
+ * state, so a claim that had been sitting in the queue could still be approved
+ * long after someone settled the question a different way. Approving it moved
+ * `owner_id` back to the claimant, demoted the admin's chosen owner to a gym
+ * admin membership row, mailed that person "someone verified they manage this
+ * gym" (which is false for a handover), and re-stamped `syncFrozenAt` — the one
+ * write `reassignGymOwner` deliberately leaves out (#4520).
+ *
+ * These pin the refusal end to end: nothing at all is written, and the claim is
+ * left `pending` so the claimant still gets a real outcome from Deny.
+ */
+describe('a claim ownership has moved past cannot be approved (#4525)', () => {
+  // A gym reassigned in one test would otherwise still count as "moved" in the
+  // next: gym_owner_reassignments has no FK to gyms, so the CASCADE that clears
+  // the rest of the fixture leaves it alone (it's in the TRUNCATE list above for
+  // exactly that reason). The reassign mutation is also capped at 10 per user,
+  // and the tier-1 bucket does not reset by itself between tests.
+  beforeEach(() => {
+    resetAllRateLimits();
+  });
+
+  it.each([
+    { approvalTime: '2026-01-01 00:00:00.123456', shouldApprove: true },
+    { approvalTime: '2026-01-03 00:00:00.123456', shouldApprove: false },
+  ])(
+    'orders merged ownership history by its original approval time: $approvalTime',
+    async ({ approvalTime, shouldApprove }) => {
+      const canonical = await insertGym({ ownerId: PRIOR_OWNER, name: 'Canonical Claim Gym' });
+      const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Duplicate Claim Gym' });
+      await db.execute(
+        sql`UPDATE gyms SET latitude = 52.0, longitude = 4.0 WHERE id IN (${canonical.id}, ${duplicate.id})`,
+      );
+      const pendingClaimId = await insertClaim({ gymId: canonical.id, claimantUserId: CLAIMANT, method: 'admin' });
+      const approvedClaimId = await insertClaim({
+        gymId: duplicate.id,
+        claimantUserId: PRIOR_OWNER,
+        method: 'admin',
+        status: 'approved',
+      });
+      await db.execute(sql`
+      UPDATE gym_claims
+         SET created_at = TIMESTAMP '2026-01-02 00:00:00', updated_at = TIMESTAMP '2026-01-02 00:00:00'
+       WHERE id = ${pendingClaimId}
+    `);
+      await db.execute(sql`
+      UPDATE gym_claims
+         SET created_at = TIMESTAMP '2025-12-01 00:00:00', updated_at = ${approvalTime}::timestamp
+       WHERE id = ${approvedClaimId}
+    `);
+
+      await socialGymDuplicateMutations.mergeGyms(
+        null,
+        { input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] } },
+        authCtx(GLOBAL_ADMIN),
+      );
+
+      // Repointing history does not transfer the canonical gym or re-date approval.
+      expect(await gymOwnerId(canonical.uuid)).toBe(PRIOR_OWNER);
+      const [history] = Array.from(
+        (await db.execute(sql`
+        SELECT gym_id::int AS gym_id, status, updated_at::text AS approval_time
+          FROM gym_claims WHERE id = ${approvedClaimId}
+      `)) as Iterable<{ gym_id: number; status: string; approval_time: string }>,
+      );
+      expect(history).toEqual({ gym_id: canonical.id, status: 'approved', approval_time: approvalTime });
+
+      const review = socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: pendingClaimId, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      );
+      if (shouldApprove) {
+        await review;
+        expect(await claimStatus(pendingClaimId)).toBe('approved');
+        expect(await gymOwnerId(canonical.uuid)).toBe(CLAIMANT);
+        expect(sendGymClaimApprovedEmail).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(review).rejects.toMatchObject({ extensions: { code: GYM_CLAIM_SUPERSEDED_CODE } });
+        expect(await claimStatus(pendingClaimId)).toBe('pending');
+        expect(await gymOwnerId(canonical.uuid)).toBe(PRIOR_OWNER);
+        expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it.each([
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: true, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: true, claimAfterHandover: true, claimOnCanonical: false, currentOwner: 'neither' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: true, currentOwner: 'neither' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'source' },
+    { secondMerge: false, claimAfterHandover: false, claimOnCanonical: false, currentOwner: 'survivor' },
+  ])(
+    'expires superseded moved claims during gym merges: $secondMerge, newer claim: $claimAfterHandover, canonical origin: $claimOnCanonical, owns: $currentOwner',
+    async ({ secondMerge, claimAfterHandover, claimOnCanonical, currentOwner }) => {
+      const duplicate = await insertGym({ ownerId: PRIOR_OWNER, name: 'Reassigned Duplicate' });
+      const canonical = await insertGym({
+        ownerId: currentOwner === 'survivor' ? CLAIMANT : SECOND_TARGET,
+        name: 'Reassignment Survivor',
+      });
+      const handoverTarget = currentOwner === 'source' ? CLAIMANT : SECOND_TARGET;
+      await db
+        .update(dbSchema.gyms)
+        .set({ latitude: 52, longitude: 4 })
+        .where(inArray(dbSchema.gyms.id, [duplicate.id, canonical.id]));
+      const originalClaimGym = claimOnCanonical ? canonical : duplicate;
+      let pendingClaimId: number;
+      if (claimAfterHandover) {
+        await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
+        pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
+      } else {
+        pendingClaimId = await fileAdminClaim(originalClaimGym.uuid, CLAIMANT);
+        await reassignTo(duplicate.uuid, PRIOR_OWNER, handoverTarget);
+      }
+      const [originalHistory] = await db
+        .select()
+        .from(dbSchema.gymOwnerReassignments)
+        .where(eq(dbSchema.gymOwnerReassignments.gymUuid, duplicate.uuid));
+      expect(originalHistory).toBeDefined();
+      await socialGymDuplicateMutations.mergeGyms(
+        null,
+        {
+          input: { canonicalGymUuid: canonical.uuid, duplicateGymUuids: [duplicate.uuid] },
+        },
+        authCtx(GLOBAL_ADMIN),
+      );
+      const shouldExpire = !claimAfterHandover && !claimOnCanonical && currentOwner === 'neither';
+      const [mergeAudit] = await db
+        .select({ movedCounts: dbSchema.gymMergeAudit.movedCounts, movedRows: dbSchema.gymMergeAudit.movedRows })
+        .from(dbSchema.gymMergeAudit)
+        .where(eq(dbSchema.gymMergeAudit.duplicateGymId, duplicate.id));
+      expect(mergeAudit.movedCounts).toMatchObject({ claimsExpired: shouldExpire ? 1 : 0 });
+      expect(mergeAudit.movedRows).toMatchObject({ expiredClaimIds: shouldExpire ? [pendingClaimId] : [] });
+      let survivor = canonical;
+      if (secondMerge) {
+        survivor = await insertGym({ ownerId: SECOND_TARGET, name: 'Second Reassignment Survivor' });
+        await db.update(dbSchema.gyms).set({ latitude: 52, longitude: 4 }).where(eq(dbSchema.gyms.id, survivor.id));
+        await socialGymDuplicateMutations.mergeGyms(
+          null,
+          {
+            input: { canonicalGymUuid: survivor.uuid, duplicateGymUuids: [canonical.uuid] },
+          },
+          authCtx(GLOBAL_ADMIN),
+        );
+      }
+      const [preservedHistory] = await db
+        .select()
+        .from(dbSchema.gymOwnerReassignments)
+        .where(eq(dbSchema.gymOwnerReassignments.id, originalHistory.id));
+      expect(preservedHistory).toEqual(originalHistory);
+      const review = approveAsAdmin(pendingClaimId);
+      if (!shouldExpire) {
+        await expect(review).resolves.toBe(true);
+        expect(await gymOwnerId(survivor.uuid)).toBe(CLAIMANT);
+      } else {
+        await expect(review).rejects.toThrow('Claim not found or already resolved');
+        expect(await gymOwnerId(survivor.uuid)).toBe(SECOND_TARGET);
+        expect(await claimStatus(pendingClaimId)).toBe('expired');
+        expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+        expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  const REASSIGN_REASON = 'The wall was sold and the buyer runs it now.';
+
+  const reassignTo = (gymUuid: string, currentOwnerId: string, newOwnerId: string) =>
+    socialGymOwnerReassignMutations.reassignGymOwner(
+      null,
+      {
+        input: {
+          gymUuid,
+          expectedCurrentOwnerId: currentOwnerId,
+          newOwnerId,
+          reason: REASSIGN_REASON,
+        },
+      },
+      authCtx(GLOBAL_ADMIN),
+    );
+
+  const approveAsAdmin = (claimId: number) =>
+    socialGymClaimMutations.reviewGymClaim(null, { input: { claimId, decision: 'approve' } }, authCtx(GLOBAL_ADMIN));
+
+  const fileAdminClaim = async (gymUuid: string, claimantUserId: string): Promise<number> => {
+    await socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid } }, authCtx(claimantUserId));
+    const pending = await gymClaimFieldResolvers.myPendingClaim({ uuid: gymUuid }, {}, authCtx(claimantUserId));
+    expect(pending?.method).toBe('admin');
+    return Number(pending!.id);
+  };
+
+  // Pause the real transaction, not its SQL results. Reading the backend PID
+  // also fixes PostgreSQL's transaction-start clock before the interleaved
+  // request, reproducing the reviewed now()-versus-commit ordering bug.
+  const pauseNextTransaction = (phase: 'before-work' | 'before-commit') => {
+    let signalReached: (pid: number) => void = () => {};
+    let resume: () => void = () => {};
+    const reached = new Promise<number>((resolve) => {
+      signalReached = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const realTransaction = db.transaction.bind(db);
+    const spy = vi.spyOn(db, 'transaction');
+    spy.mockImplementationOnce(async (callback, config) =>
+      realTransaction(async (tx) => {
+        const [connection] = Array.from(
+          (await tx.execute(sql`SELECT pg_backend_pid() AS pid`)) as Iterable<{ pid: number }>,
+        );
+        if (phase === 'before-work') {
+          signalReached(connection.pid);
+          await released;
+        }
+        const result = await callback(tx);
+        if (phase === 'before-commit') {
+          signalReached(connection.pid);
+          await released;
+        }
+        return result;
+      }, config),
+    );
+    return { reached, resume, restore: () => spy.mockRestore() };
+  };
+
+  const allMembers = async (gymId: number): Promise<Array<{ user_id: string; role: string }>> => {
+    const result = await db.execute(sql`
+      SELECT user_id, role FROM gym_members WHERE gym_id = ${gymId} ORDER BY user_id
+    `);
+    return Array.from(result as Iterable<{ user_id: string; role: string }>);
+  };
+
+  it('refuses the approval after a handover, and writes nothing at all', async () => {
+    // The gym is deliberately UNFROZEN: a re-stamp here would stop location sync
+    // maintaining a listing an admin had just decided sync may keep maintaining.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Superseded Wall' });
+    const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+    const membersAfterHandover = await allMembers(claimGym.id);
+    vi.clearAllMocks();
+
+    const rejection = await approveAsAdmin(claimId).catch((error: unknown) => error);
+    expect((rejection as GraphQLError).extensions).toMatchObject({ code: GYM_CLAIM_SUPERSEDED_CODE });
+
+    // Ownership stays where the admin put it, and the freeze marker is untouched.
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+
+    // The admin's chosen owner is NOT demoted to a membership row, and the
+    // claimant's own rows are left exactly as they were.
+    expect(await allMembers(claimGym.id)).toEqual(membersAfterHandover);
+
+    // Still pending: Deny is how the claimant gets an outcome, and a denial
+    // email that says so beats being closed out with nothing.
+    expect(await claimStatus(claimId)).toBe('pending');
+
+    // Nobody is told anything — least of all the "someone verified they manage
+    // this gym" note to an owner who is still the owner.
+    expect(await claimApprovedNotifications(CLAIMANT)).toEqual([]);
+    expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+  });
+
+  it('leaves a frozen listing frozen at the exact same timestamp', async () => {
+    // The unfrozen case above goes red on "set it anyway"; this one goes red on
+    // a re-stamp that merely keeps the column non-null. Same split as #4520's
+    // freeze-preservation pair.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Frozen Wall' });
+    const frozenAt = '2026-08-01T01:02:03.000Z';
+    await db.execute(sql`UPDATE gyms SET sync_frozen_at = ${frozenAt} WHERE id = ${claimGym.id}`);
+    const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+
+    const rejection = await approveAsAdmin(claimId).catch((error: unknown) => error);
+    expect((rejection as GraphQLError).extensions).toMatchObject({ code: GYM_CLAIM_SUPERSEDED_CODE });
+
+    const stillFrozenAt = await gymSyncFrozenAt(claimGym.uuid);
+    expect(new Date(stillFrozenAt!).toISOString()).toBe(frozenAt);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+  });
+
+  it('refuses the second of two queued claims on one gym, with no handover involved', async () => {
+    // The two-admin case the issue calls out: nothing but the claim queue is in
+    // play, and the second approval would take the gym straight back off the
+    // person the first one just gave it to.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Two Reviewers' });
+    const firstClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+    const secondClaim = await insertClaim({ gymId: claimGym.id, claimantUserId: PLAIN_USER, method: 'admin' });
+
+    await expect(approveAsAdmin(firstClaim)).resolves.toBe(true);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+
+    const rejection = await approveAsAdmin(secondClaim).catch((error: unknown) => error);
+    expect((rejection as GraphQLError).extensions).toMatchObject({ code: GYM_CLAIM_SUPERSEDED_CODE });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    expect(await claimStatus(secondClaim)).toBe('pending');
+  });
+
+  it('refuses a claim filed after the handover transaction began but before ownership moved', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Handover Transaction Started First' });
+    const paused = pauseNextTransaction('before-work');
+    const handover = reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    try {
+      await paused.reached;
+      const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+      paused.resume();
+      await handover;
+
+      await expect(approveAsAdmin(claimId)).rejects.toMatchObject({
+        extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+      });
+      expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+      expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+      expect(await claimStatus(claimId)).toBe('pending');
+    } finally {
+      paused.resume();
+      await handover;
+      paused.restore();
+    }
+  });
+
+  it('refuses a claim filed after another approval began but before its transfer', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Approval Transaction Started First' });
+    const firstClaim = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+    const paused = pauseNextTransaction('before-work');
+    const firstApproval = approveAsAdmin(firstClaim);
+    try {
+      await paused.reached;
+      const secondClaim = await fileAdminClaim(claimGym.uuid, PLAIN_USER);
+      paused.resume();
+      await firstApproval;
+
+      await expect(approveAsAdmin(secondClaim)).rejects.toMatchObject({
+        extensions: { code: GYM_CLAIM_SUPERSEDED_CODE },
+      });
+      expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+      expect(await claimStatus(secondClaim)).toBe('pending');
+    } finally {
+      paused.resume();
+      await firstApproval;
+      paused.restore();
+    }
+  });
+
+  it.each(['handover', 'approval'] as const)(
+    'files a new claim only after an in-flight %s commits',
+    async (transfer) => {
+      const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Claim Waits For Handover' });
+      const ownerClaim = transfer === 'approval' ? await fileAdminClaim(claimGym.uuid, SECOND_TARGET) : null;
+      const handoverPause = pauseNextTransaction('before-commit');
+      const handover =
+        ownerClaim === null ? reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET) : approveAsAdmin(ownerClaim);
+      let filing: Promise<number> | undefined;
+      try {
+        const handoverPid = await handoverPause.reached;
+        handoverPause.restore();
+        const filingPause = pauseNextTransaction('before-work');
+        try {
+          filing = fileAdminClaim(claimGym.uuid, CLAIMANT);
+          const filingPid = await filingPause.reached;
+          filingPause.resume();
+
+          // Observe the actual PostgreSQL wait rather than assuming a particular
+          // request speed. An unlocked INSERT would finish before the handover.
+          await vi.waitFor(async () => {
+            const [waitState] = Array.from(
+              (await db.execute(
+                sql`SELECT ${handoverPid} = ANY(pg_blocking_pids(${filingPid})) AS blocked`,
+              )) as Iterable<{ blocked: boolean }>,
+            );
+            expect(waitState.blocked).toBe(true);
+          });
+
+          handoverPause.resume();
+          await handover;
+          const claimId = await filing;
+          await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+          expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+        } finally {
+          filingPause.resume();
+          filingPause.restore();
+        }
+      } finally {
+        handoverPause.resume();
+        await handover;
+        await filing;
+        handoverPause.restore();
+      }
+    },
+  );
+
+  it('still approves a claim filed AFTER the handover', async () => {
+    // The control. Without it the guard could refuse every approval and every
+    // assertion above would still pass.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Claimed After Handover' });
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+
+    await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).not.toBeNull();
+    expect(await claimStatus(claimId)).toBe('approved');
+    // The handover's owner is displaced by a decision made after it, which is
+    // the normal claim path — so he keeps gym-admin access, as always.
+    expect(await gymMemberRole(claimGym.id, SECOND_TARGET)).toBe('admin');
+  });
+
+  it('retains database timestamp precision when a claim follows a handover within the same millisecond', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Submillisecond Ownership Order' });
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    const claimId = await fileAdminClaim(claimGym.uuid, CLAIMANT);
+    await db
+      .update(dbSchema.gymOwnerReassignments)
+      .set({ createdAt: sql`timestamp '2026-09-20 01:00:00.123100'` })
+      .where(eq(dbSchema.gymOwnerReassignments.gymUuid, claimGym.uuid));
+    await db
+      .update(dbSchema.gymClaims)
+      .set({ createdAt: sql`timestamp '2026-09-20 01:00:00.123900'` })
+      .where(eq(dbSchema.gymClaims.id, claimId));
+
+    await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+  });
+
+  it('still approves when the handover gave the gym to the claimant themselves', async () => {
+    // An admin who resolves a claim with the handover panel instead of the queue
+    // leaves the row behind. Approving it moves nothing and freezes nothing —
+    // it just closes the queue entry for the person who did get the gym. Refuse
+    // that and Deny (with its "sorry, no" email) is their only way out.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Handed To The Claimant' });
+    const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, CLAIMANT);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+
+    await expect(approveAsAdmin(claimId)).resolves.toBe(true);
+    expect(await claimStatus(claimId)).toBe('approved');
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    // No transfer ran, so the freeze marker stays as the handover left it.
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+  });
+
+  it('expires a superseded domain link and lets the claimant request and verify a fresh one', async () => {
+    // The emailed link is a second, unattended way into the same transfer. It
+    // reports `superseded` rather than `used` — the link was never spent.
+    const claimGym = await insertGym({
+      ownerId: PRIOR_OWNER,
+      name: 'Domain Superseded',
+      website: 'https://www.domain-superseded.com',
+    });
+    const claimId = await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      claimEmail: 'boss@domain-superseded.com',
+      tokenHash: hashClaimToken('superseded-token'),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await reassignTo(claimGym.uuid, PRIOR_OWNER, SECOND_TARGET);
+    vi.clearAllMocks();
+
+    expect(await verifyGymClaimByToken('superseded-token')).toEqual({ ok: false, reason: 'superseded' });
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(SECOND_TARGET);
+    expect(await gymSyncFrozenAt(claimGym.uuid)).toBeNull();
+    expect(await claimStatus(claimId)).toBe('expired');
+    expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
+    expect(sendGymClaimOwnershipLostEmail).not.toHaveBeenCalled();
+    await expect(
+      gymClaimFieldResolvers.myPendingClaim({ uuid: claimGym.uuid }, {}, authCtx(CLAIMANT)),
+    ).resolves.toBeNull();
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@domain-superseded.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toMatchObject({ status: 'email_sent' });
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+    const freshToken = vi.mocked(sendGymClaimVerificationEmail).mock.calls[0][1];
+    expect(freshToken).not.toBe('superseded-token');
+    await expect(verifyGymClaimByToken(freshToken)).resolves.toMatchObject({ ok: true });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
   });
 });

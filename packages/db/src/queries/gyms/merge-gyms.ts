@@ -35,10 +35,10 @@ export type MergeCounts = {
   membersInsertedOrUpdated: number;
   membersDeleted: number;
   claimsMoved: number;
-  // Pending claims the claimant already duplicated on the canonical (or extra
-  // twins of their own): instead of being deleted, they are re-pointed to the
-  // canonical and flipped to `expired` so no content is lost — the claimant's
-  // live canonical claim still stands.
+  // Pending claims already superseded on a duplicate, or duplicated on the
+  // canonical (or extra twins): instead of being deleted, they are re-pointed to the
+  // canonical and flipped to `expired` so no content is lost. Any live claim
+  // already on the canonical remains unchanged.
   claimsExpired: number;
   kiosksMoved: number;
   commentsMoved: number;
@@ -63,7 +63,7 @@ export type MergeMovedRows = {
   // non-pending history).
   movedClaimIds: number[];
   // Claims re-pointed to the canonical AND flipped to `expired` (the collided /
-  // extra pending claims that would otherwise trip the unique-pending index).
+  // extra claims that would trip the unique-pending index, or superseded claims).
   expiredClaimIds: number[];
   kioskIds: number[];
   commentIds: number[];
@@ -295,14 +295,17 @@ async function rebuildGymVoteCounts(commandDb: MergeExecuteDb, gymUuids: string[
  * a claimant can even have pending claims on several twins in the same cluster),
  * a naive `UPDATE ... SET gym_id = canonical` would trip the unique index. So:
  *  1. Promote at most one duplicate pending claim per claimant who has no pending
- *     claim on the canonical yet — moved keeping its `pending` status.
+ *     claim on the canonical yet and no later handover superseding the claim on
+ *     its original gym — moved keeping its `pending` status. A no-op approval
+ *     for a current source/survivor owner is not superseded.
  *  2. Re-point any REMAINING pending claims on the duplicates (they collided with
- *     an existing canonical claim, or were the claimant's extra twins) to the
+ *     an existing canonical claim, were extra twins, or were superseded) to the
  *     canonical AND flip them to `expired` — never delete. Their full content
  *     (claimant, method, message, timestamps) is preserved on the survivor for
  *     audit/reversal; `expired` keeps them clear of the unique-pending index.
  * Non-pending claims (approved/denied/expired) carry no unique constraint and are
- * moved wholesale so the ownership history follows the survivor.
+ * moved wholesale so the ownership history follows the survivor. Preserve their
+ * resolution timestamps: moving an approved claim is not a new ownership event.
  */
 async function repointClaims(
   commandDb: MergeExecuteDb,
@@ -313,17 +316,28 @@ async function repointClaims(
     commandDb,
     sql`
       WITH promotable AS (
-        SELECT DISTINCT ON (claimant_user_id) id
-          FROM gym_claims
-         WHERE gym_id IN (${duplicateGymIdList})
-           AND status = 'pending'
-           AND claimant_user_id NOT IN (
+        SELECT DISTINCT ON (source_claim.claimant_user_id) source_claim.id
+          FROM gym_claims AS source_claim
+         WHERE source_claim.gym_id IN (${duplicateGymIdList})
+           AND source_claim.status = 'pending'
+           AND source_claim.claimant_user_id NOT IN (
              SELECT claimant_user_id
                FROM gym_claims
               WHERE gym_id = ${canonicalGymId}
                 AND status = 'pending'
            )
-         ORDER BY claimant_user_id, created_at DESC, id DESC
+           AND NOT EXISTS (
+             SELECT 1
+               FROM gyms AS original_gym
+               JOIN gym_owner_reassignments AS handover ON handover.gym_uuid = original_gym.uuid
+               -- Compare the selected survivor's owner independently of the source gym.
+               JOIN gyms AS survivor ON survivor.id = ${canonicalGymId}
+              WHERE original_gym.id = source_claim.gym_id
+                AND original_gym.owner_id <> source_claim.claimant_user_id
+                AND survivor.owner_id <> source_claim.claimant_user_id
+                AND handover.created_at > source_claim.created_at
+           )
+         ORDER BY source_claim.claimant_user_id, source_claim.created_at DESC, source_claim.id DESC
       ),
       moved AS (
         UPDATE gym_claims
@@ -357,8 +371,7 @@ async function repointClaims(
     sql`
       WITH moved AS (
         UPDATE gym_claims
-           SET gym_id = ${canonicalGymId},
-               updated_at = NOW()
+           SET gym_id = ${canonicalGymId}
          WHERE gym_id IN (${duplicateGymIdList})
            AND status <> 'pending'
          RETURNING id

@@ -1,4 +1,4 @@
-import { and, eq, ilike, isNull, or } from 'drizzle-orm';
+import { and, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
   ConnectionContext,
@@ -285,6 +285,9 @@ export const socialGymOwnerReassignMutations = {
         syncFrozenAtAfter: moved[0].syncFrozenAt,
         reason: validated.reason,
         performedBy,
+        // Stamp after the gym row lock: now() is the transaction's start time,
+        // which may precede a claim that committed while this handover waited.
+        createdAt: sql`clock_timestamp()`,
       });
 
       return {
