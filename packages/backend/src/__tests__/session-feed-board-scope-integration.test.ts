@@ -51,6 +51,13 @@ const BOARD_B_UUID = 'sf-board-scope-board-b';
 const PRIVATE_BOARD_UUID = 'sf-board-scope-board-private';
 const PRIVATE_DAILY_GROUP = `daily:${OWNER_USER_ID}:2026-02-11`;
 const STRANGER_USER_ID = 'sf-board-scope-stranger';
+// Spray walls take the wall's own rule instead of the anonymous mask: a PRIVATE
+// wall stays closed to a signed-in stranger, and a HIDDEN (moderated) public
+// wall is closed to everyone but its owner.
+const PRIVATE_SPRAY_UUID = 'sf-board-scope-spray-private';
+const HIDDEN_SPRAY_UUID = 'sf-board-scope-spray-hidden';
+const PRIVATE_SPRAY_DAILY_GROUP = `daily:${OWNER_USER_ID}:2026-02-12`;
+const HIDDEN_SPRAY_DAILY_GROUP = `daily:${OWNER_USER_ID}:2026-02-13`;
 const SESSION_ON_A = 'sf-board-scope-session-a';
 const SESSION_ON_B = 'sf-board-scope-session-b';
 const SESSION_NULL_BOARD = 'sf-board-scope-session-null';
@@ -58,6 +65,8 @@ const SESSION_NULL_BOARD = 'sf-board-scope-session-null';
 let boardAId: number;
 let boardBId: number;
 let privateBoardId: number;
+let privateSprayId: number;
+let hiddenSprayId: number;
 
 type SessionFeedResult = {
   sessions: Array<{ sessionId: string; sessionType: string; tickCount: number }>;
@@ -101,6 +110,24 @@ const insertBoard = async (
   return Number(rows[0].id);
 };
 
+const insertSprayWall = async (
+  uuid: string,
+  layoutId: number,
+  { isPublic, hidden }: { isPublic: boolean; hidden: boolean },
+): Promise<number> => {
+  const result = await db.execute(sql`
+    INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, is_public)
+    VALUES (${uuid}, ${uuid}, ${OWNER_USER_ID}, 'spray', ${layoutId}, ${layoutId}, '1', ${'Wall ' + uuid}, ${isPublic})
+    RETURNING id
+  `);
+  await db.execute(sql`
+    INSERT INTO spray_walls (board_uuid, layout_id, hold_count, hidden_at, created_at, updated_at)
+    VALUES (${uuid}, ${layoutId}, 0, ${hidden ? sql`now()` : sql`NULL`}, now(), now())
+  `);
+  const rows = Array.from(result as Iterable<{ id: number }>);
+  return Number(rows[0].id);
+};
+
 const insertClimb = async () => {
   await db.execute(sql`
     INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at)
@@ -139,8 +166,9 @@ const cleanup = async () => {
     sql`DELETE FROM board_sessions WHERE id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
+  await db.execute(sql`DELETE FROM spray_walls WHERE board_uuid IN (${PRIVATE_SPRAY_UUID}, ${HIDDEN_SPRAY_UUID})`);
   await db.execute(
-    sql`DELETE FROM user_boards WHERE uuid IN (${BOARD_A_UUID}, ${BOARD_B_UUID}, ${PRIVATE_BOARD_UUID})`,
+    sql`DELETE FROM user_boards WHERE uuid IN (${BOARD_A_UUID}, ${BOARD_B_UUID}, ${PRIVATE_BOARD_UUID}, ${PRIVATE_SPRAY_UUID}, ${HIDDEN_SPRAY_UUID})`,
   );
   await db.execute(
     sql`DELETE FROM "users" WHERE id IN (${OWNER_USER_ID}, ${CLIMBER_USER_ID}, ${SOLO_USER_ID}, ${STRANGER_USER_ID})`,
@@ -159,6 +187,8 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     boardAId = await insertBoard(BOARD_A_UUID, 'board-a', 10, '1,20');
     boardBId = await insertBoard(BOARD_B_UUID, 'board-b', 11, '1,21');
     privateBoardId = await insertBoard(PRIVATE_BOARD_UUID, 'board-private', 12, '1,22', false);
+    privateSprayId = await insertSprayWall(PRIVATE_SPRAY_UUID, 990_101, { isPublic: false, hidden: false });
+    hiddenSprayId = await insertSprayWall(HIDDEN_SPRAY_UUID, 990_102, { isPublic: true, hidden: true });
 
     // Session A: ticks on board A.
     await insertSession(SESSION_ON_A, boardAId);
@@ -258,6 +288,20 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       sessionId: null,
       boardId: privateBoardId,
       climbedAt: '2026-02-11 19:00:00',
+      userId: OWNER_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-owner-private-spray',
+      sessionId: null,
+      boardId: privateSprayId,
+      climbedAt: '2026-02-12 19:00:00',
+      userId: OWNER_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-owner-hidden-spray',
+      sessionId: null,
+      boardId: hiddenSprayId,
+      climbedAt: '2026-02-13 19:00:00',
       userId: OWNER_USER_ID,
     });
   });
@@ -465,6 +509,28 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
         STRANGER_USER_ID,
       );
       expect(result.sessions.map((session) => session.sessionId)).toEqual([PRIVATE_DAILY_GROUP]);
+    });
+  });
+
+  describe('spray walls', () => {
+    const feedFor = (boardUuid: string, viewerUserId?: string) =>
+      callFeed({ boardUuid, includeDailyHighlights: true, limit: 50 }, viewerUserId);
+
+    it('keeps a private wall closed to a signed-in stranger and to signed-out callers', async () => {
+      expect((await feedFor(PRIVATE_SPRAY_UUID, STRANGER_USER_ID)).sessions).toEqual([]);
+      expect((await feedFor(PRIVATE_SPRAY_UUID)).sessions).toEqual([]);
+    });
+
+    it('keeps a hidden wall closed to everyone but its owner', async () => {
+      expect((await feedFor(HIDDEN_SPRAY_UUID, STRANGER_USER_ID)).sessions).toEqual([]);
+      expect((await feedFor(HIDDEN_SPRAY_UUID)).sessions).toEqual([]);
+    });
+
+    it('shows the owner their own climbs on both walls', async () => {
+      const privateWall = await feedFor(PRIVATE_SPRAY_UUID, OWNER_USER_ID);
+      expect(privateWall.sessions.map((session) => session.sessionId)).toEqual([PRIVATE_SPRAY_DAILY_GROUP]);
+      const hiddenWall = await feedFor(HIDDEN_SPRAY_UUID, OWNER_USER_ID);
+      expect(hiddenWall.sessions.map((session) => session.sessionId)).toEqual([HIDDEN_SPRAY_DAILY_GROUP]);
     });
   });
 });
