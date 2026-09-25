@@ -93,4 +93,15 @@ describe('upsertDiscoveredDevice', () => {
     expect(upsertDiscoveredDevice(bareNamed, { deviceId: 'b', name: 'Kilter Board', rssi: -50 })).toBe(true);
     expect([...bareNamed.values()]).toEqual([{ deviceId: 'b', name: 'Kilter Board', rssi: -50 }]);
   });
+
+  it('keeps one row when one box flips between a bare name and a serial name', () => {
+    // The key moves between the id and the name as the name changes; the stale
+    // key for the same deviceId must be dropped each time.
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -50 });
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board#751737@3', rssi: -50 });
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -50 })).toBe(true);
+
+    expect([...devices.values()]).toEqual([{ deviceId: 'a', name: 'Kilter Board', rssi: -50 }]);
+  });
 });
