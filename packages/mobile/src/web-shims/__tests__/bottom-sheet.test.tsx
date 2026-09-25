@@ -82,7 +82,10 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('react-native', () => ({ Platform: { OS: 'web' } }));
+vi.mock('react-native', () => ({
+  Platform: { OS: 'web' },
+  TextInput: { State: { currentlyFocusedField: () => null } },
+}));
 
 import {
   BottomSheet,

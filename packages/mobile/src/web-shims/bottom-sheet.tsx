@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import { TextInput, type StyleProp, type ViewStyle } from 'react-native';
 import GorhomBottomSheet, {
   BottomSheetBackdrop,
   BottomSheetFlatList,
@@ -21,6 +21,11 @@ import {
   type SheetDismissalState,
 } from './bottom-sheet-dismissal';
 import { resolveGorhomDynamicSizing } from './bottom-sheet-props';
+import { installWebTextInputFocusCompat } from './text-input-focus-compat';
+
+// This shim is imported by the root layout before any screen can blur an input.
+// Install the shared RNW alias for both Gorhom and Expo Router's keyboard manager.
+installWebTextInputFocusCompat(TextInput.State);
 
 export interface BottomSheetMethods {
   snapToIndex: (index: number) => void;
