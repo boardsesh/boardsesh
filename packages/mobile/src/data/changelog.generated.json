@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-23T23:03:07.094Z",
+  "generatedAt": "2026-09-25T00:41:06.296Z",
   "entries": [
+    {
+      "prNumber": 5756,
+      "category": "fixed",
+      "title": "Search and sheet notes keep working when you tap away in the browser.",
+      "mergedAt": "2026-09-25T00:38:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5756"
+    },
     {
       "prNumber": 5667,
       "category": "fixed",
