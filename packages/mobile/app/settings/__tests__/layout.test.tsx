@@ -6,22 +6,34 @@
 // profile. These two layouts are the fix — Settings owns a root stack, and the
 // You tab keeps only the screens that are genuinely the profile's.
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type Children = { children?: ReactNode };
-type ScreenProps = { name: string; options?: { title?: string; headerShown?: boolean } };
+type HeaderLeft = (props: { tintColor?: string }) => ReactNode;
+type ScreenProps = { name: string; options?: { title?: string; headerShown?: boolean; headerLeft?: HeaderLeft } };
 
-const screens = vi.hoisted(() => ({ names: [] as string[] }));
+const screens = vi.hoisted(() => ({ names: [] as string[], options: new Map<string, unknown>() }));
+const routerMock = vi.hoisted(() => ({ back: vi.fn(), canGoBack: vi.fn(() => true), replace: vi.fn() }));
 
 vi.mock('expo-router', () => {
   const Stack = ({ children }: Children) => createElement('div', null, children);
   Stack.Screen = (props: ScreenProps) => {
     screens.names.push(props.name);
+    screens.options.set(props.name, props.options);
     return null;
   };
-  return { Stack };
+  return { Stack, router: routerMock };
 });
+vi.mock('react-native', () => ({
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: Children & { onPress: () => void; accessibilityLabel: string }) =>
+    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+}));
+vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({ useStackScreenOptions: () => ({}) }));
 vi.mock('../../../src/hooks/use-pop-to-top-on-tab-blur', () => ({ usePopToTopOnTabBlur: () => undefined }));
@@ -37,6 +49,7 @@ const { default: ProfileLayout } = await import('../../(tabs)/profile/_layout');
 
 function screenNames(layout: () => ReactNode): string[] {
   screens.names = [];
+  screens.options.clear();
   render(createElement(layout));
   return screens.names;
 }
@@ -71,5 +84,30 @@ describe('the settings stack', () => {
     // The regression guard: a settings page back in this list is the bug — the
     // You tab would carry it in its own history again.
     expect(screenNames(ProfileLayout)).toEqual(['index', 'session/[sessionId]', 'notifications']);
+  });
+
+  it('gives the first Settings screen a back button, since iOS draws none for it', () => {
+    // Settings is the only screen in its own native stack, so iOS shows no back
+    // chevron on it. Without this button the page was a dead end.
+    screenNames(SettingsLayout);
+    const options = screens.options.get('index') as ScreenProps['options'];
+    expect(options?.headerLeft).toBeTypeOf('function');
+
+    routerMock.canGoBack.mockReturnValueOnce(true);
+    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
+    fireEvent.click(screen.getByRole('button', { name: 'ariaLabels.back' }));
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(routerMock.replace).not.toHaveBeenCalled();
+  });
+
+  it('goes Home when Settings was opened with nothing underneath', () => {
+    screenNames(SettingsLayout);
+    const options = screens.options.get('index') as ScreenProps['options'];
+    routerMock.back.mockClear();
+    routerMock.canGoBack.mockReturnValueOnce(false);
+    render(createElement('div', null, options?.headerLeft?.({ tintColor: '#000' })));
+    fireEvent.click(screen.getAllByRole('button', { name: 'ariaLabels.back' }).at(-1) as HTMLElement);
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(routerMock.replace).toHaveBeenCalledWith('/(tabs)/home');
   });
 });

@@ -1,6 +1,21 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
+import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { Icon } from '../../src/components/Icon';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
+
+/**
+ * Leave Settings. It normally sits on top of the tabs, so this pops it; a cold
+ * deep link can open it with nothing underneath, and then it goes Home instead
+ * of doing nothing.
+ */
+function leaveSettings() {
+  if (router.canGoBack()) {
+    router.back();
+  } else {
+    router.replace('/(tabs)/home');
+  }
+}
 
 /**
  * Settings, as a ROOT stack rather than a branch of the You tab.
@@ -14,9 +29,10 @@ import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options'
  *
  * So Settings is a destination of its own now — pushed over the tabs like
  * `about` / `changelog`, covering the tab bar, with its sub-pages registered
- * flat in THIS stack. The first screen still shows a back chevron: the root
- * stack hands its `HeaderBackContext` down, so the nested stack's first screen
- * pops the parent.
+ * flat in THIS stack. The first screen draws its own back chevron: it is the
+ * only screen in this native stack, so iOS gives its header no back button
+ * (the root stack's `HeaderBackContext` does not reach the native bar), and
+ * without one Settings was a dead end.
  *
  * One consequence to keep in mind when adding a row: a `router.push` aimed at a
  * TAB route from here stacks a second `(tabs)` instance on top of Settings (the
@@ -31,7 +47,22 @@ export default function SettingsLayout() {
 
   return (
     <Stack screenOptions={screenOptions}>
-      <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
+      <Stack.Screen
+        name="index"
+        options={{
+          title: t('mobile.settings.title'),
+          headerLeft: ({ tintColor }) => (
+            <Pressable
+              onPress={leaveSettings}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={t('ariaLabels.back')}
+            >
+              <Icon name="back" size={22} color={tintColor} />
+            </Pressable>
+          ),
+        }}
+      />
       {/* Board look is a parent plus two leaves: the parent asks "which look?",
           and everything you can tune about one lives a tap away. Registered flat
           in this stack (no nested layout) so back-swipe and the header keep
