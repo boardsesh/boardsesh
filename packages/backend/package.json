@@ -34,6 +34,7 @@
     "@boardsesh/board-presence": "workspace:*",
     "@boardsesh/board-render": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
+    "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",
     "@boardsesh/crypto": "workspace:*",
     "@boardsesh/db": "workspace:*",

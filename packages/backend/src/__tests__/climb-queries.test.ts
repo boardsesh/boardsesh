@@ -1036,6 +1036,88 @@ describe('Climb Query Functions', () => {
     });
   });
 
+  // #5353: iOS Smart Punctuation types `’` for `'`, and the catalogue stores both
+  // forms, so a full name typed on a phone missed the climb while part of it
+  // found it. The pattern builder folds quotes and dashes; this pins the
+  // rows against real Postgres ILIKE, on a size and set no other fixture uses.
+  describe('name search folds apostrophes, quotes and dashes (#5353)', () => {
+    const PREFIX = 'name-fold-5353-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const board: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 5353,
+      set_ids: [5353],
+      angle: 40,
+    };
+    const found = async (name: string, sortBy: ClimbSearchParams['sortBy'] = 'ascents') => {
+      const result = await searchClimbs(board, { page: 0, pageSize: 100, sortBy, sortOrder: 'desc', name });
+      return result.climbs.map((climb) => climb.uuid).sort();
+    };
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('straight')}, 'kilter', 1, 'nf', ${"Joey's Gaston"}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('curly')}, 'kilter', 1, 'nf', ${'Joey’s Gaston'}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('dashed')}, 'kilter', 1, 'nf', 'Spider-Man Roof', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('plain')}, 'kilter', 1, 'nf', 'Perfect gaston', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('percent')}, 'kilter', 1, 'nf', '50% crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('fifty')}, 'kilter', 1, 'nf', '500 crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-end')}, 'kilter', 1, 'nf', 'The End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-bitter-end')}, 'kilter', 1, 'nf', 'The Bitter End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353])
+        ON CONFLICT DO NOTHING
+      `);
+      // Stats on some rows only, so the default ascents sort exercises both the
+      // stats-driven page and the stats-less fallback behind it.
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, ascensionist_count, difficulty_average, quality_average)
+        VALUES
+          ('kilter', ${id('straight')}, 40, 20.0, 12, 20.0, 3.0),
+          ('kilter', ${id('plain')}, 40, 18.0, 3, 18.0, 2.0)
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+    });
+
+    it('finds both apostrophe forms whichever one is typed', async () => {
+      expect(await found('Joey’s Gaston')).toEqual([id('curly'), id('straight')]);
+      expect(await found("Joey's Gaston")).toEqual([id('curly'), id('straight')]);
+      expect(await found('Joey’s Gaston', 'name')).toEqual([id('curly'), id('straight')]);
+    });
+
+    it('folds a dash, but keeps spaces literal so words cannot drift apart', async () => {
+      expect(await found('spider–man roof')).toEqual([id('dashed')]);
+      // #5655 review: a `%` fold let "the end" reach "The Bitter End" and pushed
+      // the climb actually named "The End" off the first page.
+      expect(await found('the end')).toEqual([id('the-end')]);
+    });
+
+    it('keeps a punctuation-only query literal instead of matching every climb', async () => {
+      expect(await found("'")).toEqual([id('straight')]);
+      expect(await found('-')).toEqual([id('dashed')]);
+      expect(await countClimbs(board, { name: '“' })).toBe(0);
+    });
+
+    it('returns exactly the old rows for a plain query', async () => {
+      expect(await found('gaston')).toEqual([id('curly'), id('plain'), id('straight')]);
+      expect(await found('GASTON', 'name')).toEqual([id('curly'), id('plain'), id('straight')]);
+    });
+
+    it("still matches the user's own % literally", async () => {
+      expect(await found('50%')).toEqual([id('percent')]);
+    });
+
+    it('counts the same rows the list returns', async () => {
+      expect(await countClimbs(board, { name: 'Joey’s Gaston' })).toBe(2);
+    });
+  });
+
   // Issue #5642. A Woods climb has stats only at the angle it was set at. Without
   // the opt-in a search at 30° keeps only the climbs that belong to 30° — set
   // there, with no set angle, or with a stats row there. With it, or by name, the

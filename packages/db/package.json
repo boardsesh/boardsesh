@@ -127,6 +127,7 @@
   "dependencies": {
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",

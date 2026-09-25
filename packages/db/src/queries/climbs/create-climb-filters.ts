@@ -1,6 +1,7 @@
 import { type SQL, eq, gt, sql, like, notLike, inArray, isNull, or, and } from 'drizzle-orm';
 import { getMoonBoardGeometryByLayoutId, woodsHoldIdsInZone } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants/product-sizes';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import {
   boardClimbs,
   boardClimbStats,
@@ -21,14 +22,6 @@ import {
   gradeJoinAngleSql,
   type StatsColumnKey,
 } from './effective-stats';
-
-// Escape LIKE/ILIKE metacharacters so user-supplied search text is matched
-// literally. Postgres' default escape character is backslash, so `\%`, `\_`,
-// and `\\` match the literal character. The value is bound as a parameter (not
-// a SQL literal), so this is the only escaping layer needed.
-function escapeLikePattern(input: string): string {
-  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
 
 // A Postgres `ARRAY[...]::int[]` literal from a number list, for the tall/wide
 // `compatible_size_ids &&` overlap predicates and the Woods zone `= ANY(...)`
@@ -349,10 +342,12 @@ export const createClimbFilters = (
     climbStatsConditions.push(sql`${statsCol('benchmarkDifficulty')} > 0`);
   }
 
-  // Name search condition. Escape LIKE metacharacters so a search for "50%" or
-  // "a_b" matches literally instead of treating %/_ as wildcards.
+  // Name search condition. The shared pattern builder escapes the user's own
+  // LIKE metacharacters (so "50%" and "a_b" match literally) and folds the
+  // punctuation and spacing that made a typed full name miss (#5353). The
+  // offline SQLite search uses the same builder.
   const nameCondition: SQL[] = searchParams.name
-    ? [sql`${boardClimbs.name} ILIKE ${`%${escapeLikePattern(searchParams.name)}%`}`]
+    ? [sql`${boardClimbs.name} ILIKE ${climbNameLikePattern(searchParams.name)}`]
     : [];
 
   // Setter name filter condition

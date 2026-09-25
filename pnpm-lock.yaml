@@ -194,6 +194,9 @@ importers:
       '@boardsesh/board-renderer-wasm':
         specifier: workspace:*
         version: link:../board-renderer/wasm
+      '@boardsesh/climb-filters':
+        specifier: workspace:*
+        version: link:../shared/climb-filters
       '@boardsesh/community-roles':
         specifier: workspace:*
         version: link:../shared/community-roles
@@ -396,6 +399,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/climb-filters':
+        specifier: workspace:*
+        version: link:../shared/climb-filters
       '@boardsesh/kiosk':
         specifier: workspace:*
         version: link:../shared/kiosk

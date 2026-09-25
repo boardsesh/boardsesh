@@ -3,6 +3,7 @@ import type { BoardName, Climb, ClimbSearchInput } from '@boardsesh/shared-schem
 import { resolveClimbNoMatch } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, isSizeScopedBoard } from '@boardsesh/board-config';
 import { getTallWideScope } from '@boardsesh/board-constants';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 import { followedAuthorsLocalCondition } from './followed-authors-local';
 
@@ -91,13 +92,6 @@ export function parseSetIds(setIds: string | null | undefined): number[] {
     .split(',')
     .map((part) => Number(part.trim()))
     .filter((value) => Number.isFinite(value));
-}
-
-// Escape LIKE metacharacters so a search for "50%" or "a_b" matches literally.
-// SQLite LIKE is case-insensitive for ASCII only (accented letters won't fold) —
-// an accepted offline limitation vs Postgres ILIKE.
-function escapeLike(input: string): string {
-  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 type HoldFilters = { anyHolds: number[]; notHolds: number[]; hasHoldState: boolean };
@@ -403,9 +397,13 @@ function buildJoinAndWhere(
     }
   }
 
-  // Name (case-insensitive ASCII LIKE).
+  // Name. The pattern comes from the same builder the backend's ILIKE uses, so
+  // punctuation and spacing fold identically online and offline (#5353). It
+  // escapes with `\`, which SQLite only honours through this explicit ESCAPE.
+  // SQLite LIKE folds case for ASCII only (accented letters won't fold), an
+  // accepted offline limitation vs Postgres ILIKE.
   if (input.name) {
-    push(`c.name LIKE ? ESCAPE '\\'`, `%${escapeLike(input.name)}%`);
+    push(`c.name LIKE ? ESCAPE '\\'`, climbNameLikePattern(input.name));
   }
 
   // Setter name(s).

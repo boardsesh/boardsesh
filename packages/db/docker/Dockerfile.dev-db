@@ -106,10 +106,12 @@ COPY packages/db/tsconfig.json /app/tsconfig.json
 #
 # Stripped and NOT copied, because nothing this build runs loads them:
 #   @boardsesh/board-config     runtime required_set_ids helpers
+#   @boardsesh/climb-filters    the climb-name LIKE pattern, read only by the
+#                               search query builder (create-climb-filters)
 #   @boardsesh/kiosk            type-only import for gym_kiosks.layout
 #   sharp                       native; only the cell-set generator uses it
 RUN cd /app && \
-    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"@boardsesh\/sync-runtime"/d' -e '/"sharp"/d' package.json && \
+    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/climb-filters"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"@boardsesh\/sync-runtime"/d' -e '/"sharp"/d' package.json && \
     npm install --global --no-fund --no-audit pnpm@11.22.0 && \
     pnpm install --ignore-workspace --ignore-scripts --no-frozen-lockfile
 COPY packages/shared-schema/ /app/node_modules/@boardsesh/shared-schema/
