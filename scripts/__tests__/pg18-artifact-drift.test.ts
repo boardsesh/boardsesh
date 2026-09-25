@@ -140,10 +140,10 @@ describe('committed patches still apply', () => {
 });
 
 /**
- * A patch only stays appliable if every file it touches is gated on the job
+ * A patch only stays appliable if every file it touches is gated on the CI step
  * that checks it. Until #4703, three of the eleven files
  * `docs/pg18-replication-rename.patch` touches were in no filter at all, so a
- * PR editing one of them invalidated the patch while `pg18-artifacts` never
+ * PR editing one of them invalidated the patch while the `pg18-artifacts` guard never
  * ran — and `main`, where the gate is hardcoded `true`, went red on push. That
  * is the same silent drift the patch check itself exists to prevent, one level
  * up. #4703 was a live instance: it edited two of the three and only got a run
@@ -154,7 +154,7 @@ describe('committed patches still apply', () => {
  * set is still the invariant for the next prepared patch, so this asserts it
  * per patch rather than trusting the list to be maintained by hand.
  */
-describe('every patched file is gated on the job that checks the patch', () => {
+describe('every patched file is gated on the step that checks the patch', () => {
   const WORKFLOW_PATH = '.github/workflows/ci.yml';
 
   /**
@@ -210,7 +210,7 @@ describe('every patched file is gated on the job that checks the patch', () => {
   });
 
   it.each(patchPaths)('%s leaves no patched file outside pg18Artifacts or rootCi', (patchPath) => {
-    // The pg18-artifacts job fires on `pg18Artifacts == 'true' || rootCi == 'true'`,
+    // The pg18-artifacts guard step fires on `pg18Artifacts == 'true' || rootCi == 'true'`,
     // so rootCi's entries (ci.yml, vite.config.ts, package.json) count as covered.
     const gated = [...pathsFilter('pg18Artifacts'), ...pathsFilter('rootCi')];
 

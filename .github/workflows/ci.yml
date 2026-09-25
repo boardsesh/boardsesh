@@ -42,7 +42,7 @@ jobs:
       # config + the export/build/deploy pipeline that produces it). None of
       # these match any other filter above, so without this a PR touching only
       # deploy/app-subdomain/_headers ran zero jobs and ci-status passed on
-      # `skipped`. Gates the `deploy-config` job (see below).
+      # `skipped`. Gates the deploy-config step of the `guards` job (see below).
       deployConfig: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.deployConfig }}
       # Store listing copy (fastlane/metadata/**/*.txt) and mobile InfoPlist
       # locale files (packages/mobile/locales/*.json). Both are validated by
@@ -50,7 +50,7 @@ jobs:
       # module-graph analysis can never relate to a diff of these files, and
       # neither path matches anyJs/rootCi/i18nCatalogs — so a PR touching only
       # them would run zero validators and fail post-merge on main. Gates the
-      # `listing-guards` job (see below).
+      # listing-guards step of the `guards` job (see below).
       storeMetadata: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.storeMetadata }}
       mobileLocales: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileLocales }}
       # The two REST-surface oracles walk packages/web/app/api/** and
@@ -60,7 +60,7 @@ jobs:
       # exist to catch. Measured on #4663: adding app/api/internal/probe-route/
       # route.ts, and separately deleting app/api/og/setter/route.tsx, each
       # selected ZERO specs under `vp test run --project web --changed`. Gates
-      # the `rest-surface` job (see below).
+      # the rest-surface step of the `guards` job (see below).
       restSurface: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.restSurface }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
@@ -72,7 +72,7 @@ jobs:
       # when the tree drifts under them. Their guard reads every input with
       # readFileSync/readdirSync, which `--changed` can never relate to a diff
       # of a workflow pin or of a file the patch's context depends on. No other
-      # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
+      # filter matches docs/** at all. Gates the pg18-artifacts step of `guards`.
       pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
       # Inputs to the www production image (Dockerfile.web). Gates the
       # `docker-web` job below — the only thing in CI that ever runs
@@ -100,9 +100,9 @@ jobs:
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
       # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
       # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
-      # the deploy-config, listing-guards, rest-surface, pg18-artifacts and
-      # renderer-rust jobs below gate on their own filters, so a PR touching
-      # only their files runs nothing else.
+      # the deploy-config, listing-guards, rest-surface and pg18-artifacts steps
+      # of the `guards` job and the renderer-rust job gate on their own filters,
+      # so a PR touching only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -221,9 +221,9 @@ jobs:
               - 'packages/backend/src/build-release.ts'
               - 'scripts/__tests__/docker-build-release-stamp.test.ts'
               - '.github/workflows/production-deploy.yml'
-              # The suites added to deploy-config below. They read the workflow
-              # with readFileSync, so a change to a SUITE has no other path into
-              # CI on a PR either.
+              # The suites the deploy-config guard step runs below. They read
+              # the workflow with readFileSync, so a change to a SUITE has no
+              # other path into CI on a PR either.
               - 'scripts/__tests__/production-deploy-web-targets.test.ts'
               - 'scripts/__tests__/production-deploy-serial-plan.test.ts'
               - 'scripts/__tests__/static-asset-deploy-origin.test.ts'
@@ -592,35 +592,301 @@ jobs:
           fi
           exit $status
 
-  large-files:
-    # Guards against committed binary churn (screenshots, build outputs, vendored
-    # binaries) re-bloating the pack after the 2026 history cleanup. Runs on every
-    # PR regardless of which file types changed — a binary-only PR is exactly the
-    # case to catch — so it is deliberately not gated on the `changes` filter.
-    # Dependency-free (bare node), so no vp install / build artifacts needed.
+  # Eleven cheap guards, one job. Each used to be its own job, and on the
+  # GitHub Free plan's 20-slot pool every job costs a slot allocation plus ~40 s
+  # of runner setup for a minute or less of work. Here they share one checkout
+  # and one `vp install`, and each former job is one step (its `id:` is the old
+  # job name) carrying the old job-level gate as a step-level `if:`.
+  #
+  # Every guard step runs even when an earlier guard failed (`!cancelled()`), so
+  # a run reports every broken guard at once, and `Guards summary` names them in
+  # its annotation. Guard steps also require a successful install: a failed
+  # install already fails the job and should not be buried under ten
+  # derivative failures.
+  #
+  # Job-level `if: !cancelled()` rather than the default `success()`:
+  # large-files and board-render-version read no `changes` output and used to
+  # run with no `needs` at all, so they must still run when `changes` fails.
+  # The path-gated steps then see empty outputs and skip; ci-status fails on
+  # `changes` regardless. Those two guards being ungated is also why this job
+  # has no path gate of its own: the OR of the eleven old job gates is `true`.
+  guards:
+    needs: [changes]
+    if: ${{ !cancelled() }}
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        id: checkout
         with:
+          # large-files and commit-lint diff against the PR base; codegen-drift
+          # reads the base's schema SDL. 50 commits covers the merge-base.
           fetch-depth: 50
       - name: Fetch base ref
+        id: fetch-base
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@v1
+        id: setup-vp
         with:
-          node-version: 22.x
-      - name: Unit-test the guard
-        run: node --test scripts/check-large-files.test.mjs
-      - name: Check for oversized new files
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - name: Install dependencies
+        id: install
+        run: vp install --frozen-lockfile
+
+      # Guards against committed binary churn (screenshots, build outputs,
+      # vendored binaries) re-bloating the pack after the 2026 history cleanup.
+      # Runs on every run regardless of which file types changed (a binary-only
+      # PR is exactly the case to catch), so it is deliberately not gated on a
+      # `changes` output. Dependency-free: bare node.
+      - name: large-files (no oversized new files)
+        id: large-files
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          node --test scripts/check-large-files.test.mjs
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             node scripts/check-large-files.mjs
           else
             node scripts/check-large-files.mjs --all
           fi
+
+      # Conventional Commit gate. The PR TITLE is the authoritative hard check:
+      # it's the merge/squash subject and the source of the changelog category.
+      # The per-commit range checks below are ADVISORY (continue-on-error, and no
+      # `id:` so Guards summary ignores them): the repo uses merge commits, so
+      # intermediate WIP/fixup commits land on main verbatim and much of the
+      # existing history is non-conventional; blocking on it would red most PRs.
+      # The local commit-msg hook nudges new commits toward the convention.
+      # Gated on mobile/mobileDeps too so the PR-title check runs whenever the
+      # release-notes guard does: a non-JS mobile/shared change still produces a
+      # changelog entry whose category comes from the (conventional) PR title.
+      - name: commit-lint (PR title, hard gate)
+        id: commit-lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' && (needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: vp run check:commit-message -- --pr-title "$PR_TITLE"
+      - name: commit-lint (PR commit subjects, advisory)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' && (needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: vp run check:commit-message -- --range "origin/$BASE_REF..HEAD"
+      - name: commit-lint (pushed commit subjects, advisory)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name != 'pull_request' && (needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
+        continue-on-error: true
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          # On a normal push, github.event.before is the previous tip; validate the
+          # newly pushed commits. On a branch's first push it can be all-zeros, so
+          # fall back to just the head commit to avoid an unbounded range.
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            vp run check:commit-message -- --range "$HEAD_SHA~1..$HEAD_SHA"
+          else
+            vp run check:commit-message -- --range "$BEFORE_SHA..$HEAD_SHA"
+          fi
+
+      # PR-only. Gated on the mobile dependency closure: those PRs ship via OTA,
+      # so they must carry user-facing Release Notes (escape hatch: the
+      # skip-changelog label, or the "No release note needed" checkbox).
+      - name: release-notes (PR has Release Notes)
+        id: release-notes
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
+        env:
+          # Write the body to a file (via env, not interpolated into the script)
+          # so a markdown body with backticks/quotes can't break the shell. The
+          # file goes under RUNNER_TEMP so it never dirties the tree the later
+          # guards diff.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
+          vp run check:release-notes -- --body-file "$RUNNER_TEMP/pr-body.txt"
+
+      # The Mobile OTA Production workflow is the SOLE writer of
+      # changelog.generated.json: it regenerates and pushes it on every publish.
+      # A PR must never hand-edit it (that would fight the OTA bot and could
+      # revert shipped entries). Fail if a PR touches the file.
+      - name: changelog-owned (no manual changelog edits)
+        id: changelog-owned
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true' }}
+        run: |
+          echo "::error::The changelog files (packages/mobile/src/data/changelog.generated.json and CHANGELOG.md) are owned by the Mobile OTA Production workflow (it regenerates and pushes them on every OTA). Revert your change — they're generated from PR Release Notes, never edited in a PR."
+          exit 1
+
+      # No path gate on purpose. The version is derived from the whole board
+      # catalogue plus the compiled renderer and every board photo the catalogue
+      # composites; a paths-filter listing those would drift from the
+      # generator's real input set, and a guard that silently stops guarding is
+      # worse than none (see the `check:db-migrations` / large-files precedents).
+      - name: board-render-version (committed version matches the tree)
+        id: board-render-version
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: vp run check:board-render-version
+
+      # `mobile` is in the gate because check:i18n:orphans scans
+      # packages/mobile/{src,app} too. #4416 shipped a raw `playView.resetZoom`
+      # label from a mobile-only commit; without it the guard would skip the
+      # exact class of PR that introduces the bug. The orphans check is two-way:
+      # orphaned catalog keys, plus keys referenced from code that exist in no
+      # catalog, and mobile files reading a namespace Metro never bundles.
+      - name: i18n (hardcoded strings, orphaned and missing keys)
+        id: i18n
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.web == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: |
+          vp run check:i18n
+          vp run check:i18n:orphans
+
+      # Deliberately not `--changed`-filtered: these suites read their inputs
+      # (_headers/_redirects, the Dockerfiles, build-expo-web-export.sh,
+      # create-service-docker-context.mjs, production-deploy.yml) via fs at run
+      # time, not a static import, so Vitest's `--changed` module-graph analysis
+      # would never mark them as related to a diff that only touches those
+      # files. On a PR, a full un-filtered run is what makes a CSP or
+      # SPA-fallback regression fail CI. (Pushes to main run these a second time
+      # inside test-default, which reads its project list off the root
+      # vite.config.ts: harmless, and no substitute for this guard on PRs.)
+      #
+      # Nothing in CI builds Dockerfile.web (branch-deploy.yml is
+      # workflow_dispatch-only), so the container build contracts are the only
+      # thing standing between #3795 and a restored /app export step (W-24 /
+      # #4438). The production-deploy suites pin production-deploy.yml's shape:
+      # the deploy-target gating and the job graph, the static-asset origin
+      # baked into the image, and the Cloudflare/web promotion wiring. Before
+      # they ran here, a PR that broke one went green and turned main red after
+      # merge: `cloudflare-apply.test.ts` once sliced a job that no longer
+      # existed (indexOf -> -1, slice(-1) -> the last character) and every
+      # assertion against it passed vacuously.
+      - name: deploy-config (app subdomain, container and production-deploy contracts)
+        id: deploy-config
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.deployConfig == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: |
+          vp test run --project deploy-app-subdomain
+          vp test run --project scripts \
+            scripts/__tests__/dockerfile-web-no-expo-export.test.ts \
+            scripts/__tests__/build-expo-web-export.test.ts \
+            scripts/__tests__/docker-build-release-stamp.test.ts
+          vp test run --project scripts \
+            scripts/__tests__/production-deploy-web-targets.test.ts \
+            scripts/__tests__/production-deploy-serial-plan.test.ts \
+            scripts/__tests__/static-asset-deploy-origin.test.ts \
+            scripts/cloudflare-apply.test.ts \
+            scripts/__tests__/ci-docker-web-workflow.test.ts \
+            scripts/__tests__/service-image-build-cache.test.ts
+
+      # Same rationale as deploy-config: these two suites read their inputs
+      # (fastlane/metadata/**/*.txt, packages/mobile/locales/*.json) via fs at
+      # run time, so `--changed` never selects them for a diff that only touches
+      # those files, and no other job's gate fires for them at all. Run both
+      # unfiltered whenever either input set changes, so an over-limit store
+      # field or a malformed InfoPlist translation fails the PR instead of the
+      # post-merge run on main.
+      - name: listing-guards (store listing copy and mobile locale parity)
+        id: listing-guards
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.storeMetadata == 'true' || needs.changes.outputs.mobileLocales == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
+
+      # Deliberately not `--changed`-filtered, same rationale as deploy-config
+      # and listing-guards: the spec reads docs/postgres-image-digests.json, any
+      # prepared patch under docs/, and each pinned consumer with
+      # readFileSync/readdirSync at run time, so Vitest's module-graph analysis
+      # never relates it to a diff that only edits a workflow pin or a file a
+      # patch's context depends on. That is exactly the diff it guards. Note
+      # `.github/workflows/ci.yml` reaches it via rootCi rather than the
+      # pg18Artifacts list.
+      - name: pg18-artifacts (image digest pins and prepared patches)
+        id: pg18-artifacts
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
+
+      # Deliberately not `--changed`-filtered, same rationale as deploy-config
+      # and listing-guards: both specs reconcile the REST surface against the
+      # filesystem at run time (readdirSync over packages/web/app/api/**,
+      # readFileSync of vercel.json, existsSync per registered OpenAPI path), so
+      # Vitest's module-graph analysis in test-default never selects them for a
+      # diff that only adds or deletes a route file. That is precisely the diff
+      # each one guards, so inside test-default they were inert on PRs and only
+      # ever reddened post-merge on main. Do not fold these into test-default
+      # and do not add `--changed` here.
+      #
+      # The last spec reads ci.yml itself, so nothing in test-default relates it
+      # to a diff that narrows this guard. It is what stops the gate above from
+      # being quietly reverted.
+      - name: rest-surface (REST inventory, OpenAPI spec and this guard's own gate)
+        id: rest-surface
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: |
+          vp test run --project web \
+            packages/web/app/__tests__/rest-surface-inventory.test.ts \
+            packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
+          vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
+
+      # Last on purpose: `vp run codegen` rewrites generated files in the
+      # working tree, and no earlier guard should see that.
+      #
+      # codegen.ts pulls GraphQL documents from packages/web/app/**/*.{ts,tsx}
+      # in addition to the schema + shared/graphql, so a web-only PR that edits
+      # a gql tag can drift the generated client. `web` is in the gate for that.
+      #
+      # Installed app builds keep sending the queries they shipped with, so a
+      # removed field, argument, type or enum value fails their requests with
+      # GRAPHQL_VALIDATION_FAILED (#5370). The breaking-change check runs after
+      # the drift check, so the committed SDL compared is the regenerated one.
+      # A deliberate removal opts out with the `schema-breaking-ok` label;
+      # adding a label does not re-trigger this workflow, so re-run the job (or
+      # push) afterwards. It reads the base SDL from the base ref fetched above.
+      - name: codegen-drift (generated GraphQL is current, no client-breaking schema change)
+        id: codegen-drift
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          SCHEMA_BREAKING_OK: ${{ contains(github.event.pull_request.labels.*.name, 'schema-breaking-ok') }}
+        run: |
+          vp run codegen
+          if ! git diff --exit-code -- \
+              packages/shared-schema/src/generated \
+              packages/shared/graphql/src/generated \
+              packages/web/app/lib/graphql/generated; then
+            echo "::error::Generated GraphQL files are out of date. Run 'vp run codegen' locally and commit the result."
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$SCHEMA_BREAKING_OK" != "true" ]; then
+            node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref "origin/$BASE_REF"
+          fi
+
+      # Every step with an `id:` above is setup or a guard; the advisory
+      # commit-lint steps have none, so their allowed failures never land here.
+      # Names each failed step in an annotation so the check run says which
+      # guard broke without opening the log.
+      - name: Guards summary
+        if: always()
+        env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
+        run: |
+          echo "$STEP_RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.outcome)"'
+          failed=$(echo "$STEP_RESULTS" | jq -r 'to_entries[] | select(.value.outcome == "failure") | .key')
+          if [ -n "$failed" ]; then
+            {
+              echo "### Failed guards"
+              echo
+              while IFS= read -r guard; do
+                echo "- \`$guard\`"
+              done <<< "$failed"
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r guard; do
+              echo "::error title=Guard failed::$guard failed. Open its step in this job's log for the details."
+            done <<< "$failed"
+            exit 1
+          fi
+          echo "All guards passed or were correctly skipped."
 
   typecheck:
     needs: [changes]
@@ -742,71 +1008,11 @@ jobs:
           scripts/serial-plan-default.test.ts
           scripts/serial-plan-default.integration.test.ts
 
-  codegen-drift:
-    needs: [changes]
-    # codegen.ts pulls GraphQL documents from packages/web/app/**/*.{ts,tsx}
-    # in addition to the schema + shared/graphql, so a web-only PR that edits
-    # a gql tag can drift the generated client. Include `web` in the gate.
-    if: needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Regenerate GraphQL types
-        run: vp run codegen
-      - name: Verify committed output matches
-        run: |
-          if ! git diff --exit-code -- \
-              packages/shared-schema/src/generated \
-              packages/shared/graphql/src/generated \
-              packages/web/app/lib/graphql/generated; then
-            echo "::error::Generated GraphQL files are out of date. Run 'vp run codegen' locally and commit the result."
-            exit 1
-          fi
-      # Installed app builds keep sending the queries they shipped with, so a
-      # removed field, argument, type or enum value fails their requests with
-      # GRAPHQL_VALIDATION_FAILED (#5370). Runs after the drift check, so the
-      # committed SDL compared here is the regenerated one. A deliberate removal
-      # opts out with the `schema-breaking-ok` label; adding a label does not
-      # re-trigger this workflow, so re-run the job (or push) afterwards.
-      - name: Block client-breaking schema changes
-        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'schema-breaking-ok')
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
-          node --import tsx packages/shared-schema/scripts/check-breaking-changes.ts --base-ref FETCH_HEAD
-
-  # No `if:` path gate and no `needs: [changes]` on purpose. The version is derived
-  # from the whole board catalogue plus the compiled renderer and every board photo
-  # the catalogue composites — a paths-filter listing those would drift from the
-  # generator's real input set, and a guard that silently stops guarding is worse
-  # than none (see the `check:db-migrations` / `large-files` precedents). Since it
-  # reads no `changes` output, waiting on that job would only add latency.
-  board-render-version:
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Verify the committed board-render version matches the tree
-        run: vp run check:board-render-version
-
-  # Same no-path-gate reasoning as board-render-version above, and the same
-  # inputs: the tracer walks the whole board catalogue and every board photo the
-  # catalogue composites, so a paths-filter listing those would drift from the
-  # generator's real input set. ~2 minutes of sharp + geometry for 49 configs.
+  # Same no-path-gate reasoning as the board-render-version step of `guards`,
+  # and the same inputs: the tracer walks the whole board catalogue and every
+  # board photo the catalogue composites, so a paths-filter listing those would
+  # drift from the generator's real input set. ~2 minutes of sharp + geometry
+  # for 49 configs, which is why it stays its own job rather than a guard step.
   board-art-geometry:
     runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
@@ -820,139 +1026,6 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Verify the committed hold silhouettes match the board art
         run: vp run check:board-art-geometry
-
-  i18n:
-    needs: [changes]
-    # `mobile` is in the filter because check:i18n:orphans scans
-    # packages/mobile/{src,app} too. #4416 shipped a raw `playView.resetZoom`
-    # label from a mobile-only commit — without this the guard would skip the
-    # exact class of PR that introduces the bug.
-    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Check hardcoded user-facing strings
-        run: vp run check:i18n
-      # Two-way: orphaned catalog keys, plus keys referenced from code that exist
-      # in no catalog (they ship as raw `playView.resetZoom` strings — #4416) and
-      # mobile files reading a namespace Metro never bundles.
-      - name: Check i18n keys (orphaned + missing)
-        run: vp run check:i18n:orphans
-
-  deploy-config:
-    needs: [changes]
-    # Deliberately not `--changed`-filtered: the tests read `_headers`/`_redirects`
-    # via fs at run time (not a static import), so Vitest's `--changed` module-graph
-    # analysis would never mark them as related to a diff that only touches those
-    # files. On a PR, a full un-filtered run of this one small project is what makes
-    # a CSP or SPA-fallback regression fail CI. (Pushes to main run the project a
-    # second time inside test-default, which reads its project list off the root
-    # vite.config.ts — harmless, and no substitute for this job on PRs.)
-    if: needs.changes.outputs.deployConfig == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
-        run: vp test run --project deploy-app-subdomain
-      # Same fs-reading blind spot, one project over: these suites read the
-      # Dockerfiles / build-expo-web-export.sh / create-service-docker-context.mjs
-      # with readFileSync, so test-default's `--changed` never relates them to a
-      # diff that only touches those files — and a Dockerfile- or .sh-only PR
-      # matches no other job's gate at all. Nothing in CI builds Dockerfile.web
-      # (branch-deploy.yml is workflow_dispatch-only), so these pins are the only
-      # thing standing between #3795 and a restored /app export step. W-24 / #4438.
-      - name: Validate container build contracts
-        run: >-
-          vp test run --project scripts
-          scripts/__tests__/dockerfile-web-no-expo-export.test.ts
-          scripts/__tests__/build-expo-web-export.test.ts
-          scripts/__tests__/docker-build-release-stamp.test.ts
-
-      # Same fs-reading blind spot again, and these three are the suites that
-      # actually pin production-deploy.yml's shape: the deploy-target gating and
-      # the job graph, the static-asset origin baked into the image, and the
-      # Cloudflare/web promotion wiring.
-      #
-      # They had NO path into PR CI at all. `test-default` is `--changed`-filtered
-      # on PRs and these read the workflow with readFileSync, so Vitest's module
-      # graph never relates them to a workflow diff; only a push to main ran them,
-      # which means a PR that broke one of these guards went green and turned main
-      # red after merge. Found the hard way while deleting the Vercel half of the
-      # deploy: `cloudflare-apply.test.ts` sliced a job that no longer existed
-      # (indexOf -> -1, slice(-1) -> the last character) and every assertion
-      # against it passed vacuously.
-      - name: Validate the production deploy workflow contracts
-        run: >-
-          vp test run --project scripts
-          scripts/__tests__/production-deploy-web-targets.test.ts
-          scripts/__tests__/production-deploy-serial-plan.test.ts
-          scripts/__tests__/static-asset-deploy-origin.test.ts
-          scripts/cloudflare-apply.test.ts
-          scripts/__tests__/ci-docker-web-workflow.test.ts
-          scripts/__tests__/service-image-build-cache.test.ts
-
-  listing-guards:
-    needs: [changes]
-    # Same rationale as deploy-config: these two suites read their inputs
-    # (fastlane/metadata/**/*.txt, packages/mobile/locales/*.json) via fs at run
-    # time, so Vitest's `--changed` module-graph analysis never selects them for
-    # a diff that only touches those files — and no other job's gate fires for
-    # them at all. Run both files unfiltered whenever either input set changes,
-    # so an over-limit store field or a malformed InfoPlist translation fails
-    # the PR instead of the post-merge run on main. (Pushes to main run the
-    # scripts project a second time inside test-default — harmless, and no
-    # substitute for this job on PRs.)
-    if: needs.changes.outputs.storeMetadata == 'true' || needs.changes.outputs.mobileLocales == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Validate store listing copy and mobile locale parity
-        run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
-
-  pg18-artifacts:
-    needs: [changes]
-    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
-    # listing-guards: the spec reads docs/postgres-image-digests.json, any
-    # prepared patch under docs/, and each pinned consumer with
-    # readFileSync/readdirSync at run time, so Vitest's module-graph analysis
-    # never relates it to a diff that only edits a workflow pin or a file a
-    # patch's context depends on. That is exactly the diff it guards. Note
-    # `.github/workflows/ci.yml` reaches it via rootCi rather than the
-    # pg18Artifacts list.
-    if: needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Validate published image digest pins and any prepared patches
-        run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
 
   renderer-rust:
     needs: [changes]
@@ -985,40 +1058,6 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --workspace
-
-  rest-surface:
-    needs: [changes]
-    # Deliberately not `--changed`-filtered, same rationale as deploy-config and
-    # listing-guards one job up: both specs reconcile the REST surface against
-    # the filesystem at run time (readdirSync over packages/web/app/api/**,
-    # readFileSync of vercel.json, existsSync per registered OpenAPI path), so
-    # Vitest's module-graph analysis in test-default never selects them for a
-    # diff that only adds or deletes a route file. That is precisely the diff
-    # each one guards, so inside test-default they were inert on PRs and only
-    # ever reddened post-merge on main. Run both unfiltered whenever the API
-    # tree, vercel.json, or the specs' own inputs change. Do not fold these into
-    # test-default and do not add `--changed` here.
-    if: needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Validate the REST surface inventory and the published OpenAPI spec
-        run: >-
-          vp test run --project web
-          packages/web/app/__tests__/rest-surface-inventory.test.ts
-          packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
-      # Same fs-reading blind spot one level up: this spec reads ci.yml itself,
-      # so nothing in test-default relates it to a diff that narrows this job.
-      # It is what stops the gate above from being quietly reverted.
-      - name: Validate this job's own gate
-        run: vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
 
   test-default:
     needs: [changes]
@@ -1550,108 +1589,6 @@ jobs:
             " "$openapi_path"
           '
 
-  commit-lint:
-    needs: [changes]
-    # Conventional Commit gate. The PR TITLE is the authoritative hard check — it's
-    # the merge/squash subject and the source of the changelog category. The
-    # per-commit range check is ADVISORY (continue-on-error): the repo uses merge
-    # commits, so intermediate WIP/fixup commits land on main verbatim and much of
-    # the existing history is non-conventional — blocking on it would red most PRs.
-    # The local commit-msg hook nudges new commits toward the convention.
-    # Also gate on mobile/mobileDeps so the PR-title check runs whenever the
-    # release-notes job does — a non-JS mobile/shared change still produces a
-    # changelog entry whose category comes from the (conventional) PR title.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 50
-      - name: Fetch base ref
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Lint PR title (hard gate)
-        if: github.event_name == 'pull_request'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          # The PR title is the merge/squash subject and the source of the changelog
-          # category, so it must be conventional. This is the blocking check.
-          vp run check:commit-message -- --pr-title "$PR_TITLE"
-      - name: Lint PR commit subjects (advisory)
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          # Surface non-conventional commits without blocking the merge (see job note).
-          vp run check:commit-message -- --range "origin/$BASE_REF..HEAD"
-      - name: Lint commit subjects (push, advisory)
-        if: github.event_name != 'pull_request'
-        continue-on-error: true
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          # On a normal push, github.event.before is the previous tip; validate the
-          # newly pushed commits. On a branch's first push it can be all-zeros — fall
-          # back to just the head commit to avoid an unbounded range.
-          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            vp run check:commit-message -- --range "$HEAD_SHA~1..$HEAD_SHA"
-          else
-            vp run check:commit-message -- --range "$BEFORE_SHA..$HEAD_SHA"
-          fi
-
-  release-notes:
-    needs: [changes]
-    # PR-only. Gated on the mobile dependency closure: those PRs ship via OTA, so they
-    # must carry user-facing Release Notes (escape hatch: the skip-changelog
-    # label, or `none` under the heading).
-    if: github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true')
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version: '22.x'
-          cache: ${{ runner.environment == 'github-hosted' }}
-      - name: Install dependencies
-        run: vp install --frozen-lockfile
-      - name: Check PR has Release Notes
-        env:
-          # Write the body to a file (via env, not interpolated into the script) so
-          # a markdown body with backticks/quotes can't break the shell.
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels) }}
-        run: |
-          printf '%s' "$PR_BODY" > pr-body.txt
-          vp run check:release-notes -- --body-file pr-body.txt
-
-  changelog-owned:
-    needs: [changes]
-    # The Mobile OTA Production workflow is the SOLE writer of
-    # changelog.generated.json — it regenerates and pushes it on every publish. A
-    # PR must never hand-edit it (that would fight the OTA bot and could revert
-    # shipped entries). Fail if a PR touches the file.
-    if: github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 2
-    steps:
-      - name: Reject manual changelog edits
-        run: |
-          echo "::error::The changelog files (packages/mobile/src/data/changelog.generated.json and CHANGELOG.md) are owned by the Mobile OTA Production workflow (it regenerates and pushes them on every OTA). Revert your change — they're generated from PR Release Notes, never edited in a PR."
-          exit 1
-
   test-report:
     needs: [test-default, test-backend, test-ocr, test-location-sync-integration]
     # Only post a report when at least one test job actually ran. If all four
@@ -1691,23 +1628,14 @@ jobs:
       - lint
       - typecheck
       - db-migrations
-      - codegen-drift
-      - board-render-version
+      - guards
       - board-art-geometry
-      - i18n
       - test-default
       - test-backend
       - test-ocr
       - test-location-sync-integration
       - mobile-bundle
       - docker-web
-      - commit-lint
-      - release-notes
-      - changelog-owned
-      - deploy-config
-      - listing-guards
-      - rest-surface
-      - pg18-artifacts
       - renderer-rust
     if: always()
     runs-on: ubuntu-latest

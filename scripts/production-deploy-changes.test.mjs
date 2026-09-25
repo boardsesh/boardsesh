@@ -168,7 +168,7 @@ void test('keeps production deploy unit tests CI-only', () => {
   for (const filePath of [
     'scripts/__tests__/docker-build-release-stamp.test.ts',
     // Reads production-deploy.yml as text to pin the verify-serial-plan wiring
-    // (#5352); runs in CI's deploy-config job and ships nothing.
+    // (#5352); runs in CI's deploy-config guard step and ships nothing.
     'scripts/__tests__/production-deploy-serial-plan.test.ts',
     'scripts/production-backend-smoke.test.mjs',
     'scripts/production-deploy-changes.test.mjs',

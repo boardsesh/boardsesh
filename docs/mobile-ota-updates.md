@@ -504,7 +504,7 @@ production, keeps sending the queries it shipped with. Two rules follow (#5370):
   only after those builds are gone: the store release that stopped querying it has been out for a
   full adoption cycle, and PostHog's `OTA Update Status` event, grouped by `runtimeVersion` (see
   [OTA observability](#ota-observability-adoption--funnel)), shows no meaningful traffic on older
-  fingerprints. After the removal, watch Sentry for `schema_mismatch:true` events naming the field. CI's `codegen-drift` job runs
+  fingerprints. After the removal, watch Sentry for `schema_mismatch:true` events naming the field. CI's `codegen-drift` guard (a step of ci.yml's `guards` job) runs
   `packages/shared-schema/scripts/check-breaking-changes.ts`, which fails a PR whose generated SDL
   removes a field, argument, type or enum value (or adds a required argument / input field)
   against the base branch. A deliberate removal opts out with the `schema-breaking-ok` label;
