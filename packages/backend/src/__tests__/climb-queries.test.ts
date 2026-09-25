@@ -1038,9 +1038,9 @@ describe('Climb Query Functions', () => {
 
   // #5353: iOS Smart Punctuation types `’` for `'`, and the catalogue stores both
   // forms, so a full name typed on a phone missed the climb while part of it
-  // found it. The pattern builder folds quotes, dashes and spacing; this pins the
+  // found it. The pattern builder folds quotes and dashes; this pins the
   // rows against real Postgres ILIKE, on a size and set no other fixture uses.
-  describe('name search folds punctuation and spacing (#5353)', () => {
+  describe('name search folds apostrophes, quotes and dashes (#5353)', () => {
     const PREFIX = 'name-fold-5353-';
     const id = (suffix: string) => PREFIX + suffix;
     const board: ParsedBoardRouteParameters = {
@@ -1061,10 +1061,12 @@ describe('Climb Query Functions', () => {
         VALUES
           (${id('straight')}, 'kilter', 1, 'nf', ${"Joey's Gaston"}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
           (${id('curly')}, 'kilter', 1, 'nf', ${'Joey’s Gaston'}, 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
-          (${id('dashed')}, 'kilter', 1, 'nf', 'Spider-Man  Roof', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('dashed')}, 'kilter', 1, 'nf', 'Spider-Man Roof', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
           (${id('plain')}, 'kilter', 1, 'nf', 'Perfect gaston', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
           (${id('percent')}, 'kilter', 1, 'nf', '50% crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
-          (${id('fifty')}, 'kilter', 1, 'nf', '500 crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353])
+          (${id('fifty')}, 'kilter', 1, 'nf', '500 crimp', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-end')}, 'kilter', 1, 'nf', 'The End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353]),
+          (${id('the-bitter-end')}, 'kilter', 1, 'nf', 'The Bitter End', 'p1r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[5353], ARRAY[5353])
         ON CONFLICT DO NOTHING
       `);
       // Stats on some rows only, so the default ascents sort exercises both the
@@ -1089,9 +1091,17 @@ describe('Climb Query Functions', () => {
       expect(await found('Joey’s Gaston', 'name')).toEqual([id('curly'), id('straight')]);
     });
 
-    it('lets a space stand in for a dropped apostrophe-s, a dash, or a double space', async () => {
-      expect(await found('joey gaston')).toEqual([id('curly'), id('straight')]);
+    it('folds a dash, but keeps spaces literal so words cannot drift apart', async () => {
       expect(await found('spider–man roof')).toEqual([id('dashed')]);
+      // #5655 review: a `%` fold let "the end" reach "The Bitter End" and pushed
+      // the climb actually named "The End" off the first page.
+      expect(await found('the end')).toEqual([id('the-end')]);
+    });
+
+    it('keeps a punctuation-only query literal instead of matching every climb', async () => {
+      expect(await found("'")).toEqual([id('straight')]);
+      expect(await found('-')).toEqual([id('dashed')]);
+      expect(await countClimbs(board, { name: '“' })).toBe(0);
     });
 
     it('returns exactly the old rows for a plain query', async () => {

@@ -34,7 +34,7 @@ const BOARDSESH_GRADE_TICK_JOIN = boardseshGradeTickJoin({
 });
 import type { z } from 'zod';
 import { GetTicksInputSchema, BoardNameSchema, AscentFeedInputSchema } from '../../../validation/schemas';
-import { escapeLikePattern } from '../../../utils/like-pattern';
+import { climbNameLikePattern } from '@boardsesh/climb-filters';
 import { extractInstagramHandle } from '../beta-videos/queries';
 
 // Benchmark resolution shared by the flat and grouped ascent feeds: a climb
@@ -164,11 +164,14 @@ function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUser
     ...(validated.layoutIds && validated.layoutIds.length > 0
       ? [inArray(dbSchema.boardClimbs.layoutId, validated.layoutIds)]
       : []),
+    // The same pattern climb search uses, so a name that finds a climb also finds
+    // it in the logbook: apostrophe/quote and dash variants fold, the user's own
+    // `%`/`_` stay literal (#5353). The comment arm shares it for the same reason.
     ...(validated.climbName
       ? [
           or(
-            ilike(dbSchema.boardClimbs.name, `%${escapeLikePattern(validated.climbName)}%`),
-            ilike(dbSchema.boardseshTicks.comment, `%${escapeLikePattern(validated.climbName)}%`),
+            ilike(dbSchema.boardClimbs.name, climbNameLikePattern(validated.climbName)),
+            ilike(dbSchema.boardseshTicks.comment, climbNameLikePattern(validated.climbName)),
           ),
         ]
       : []),

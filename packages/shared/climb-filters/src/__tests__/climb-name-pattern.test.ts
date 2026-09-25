@@ -17,7 +17,7 @@ describe('climbNameLikePattern', () => {
     expect(climbNameLikePattern('Joey‘s')).toBe('%Joey_s%');
     expect(climbNameLikePattern('Joeyʼs')).toBe('%Joey_s%');
     expect(climbNameLikePattern('Joey`s')).toBe('%Joey_s%');
-    expect(climbNameLikePattern('“Big” one')).toBe('%_Big_%one%');
+    expect(climbNameLikePattern('“Big” one')).toBe('%_Big_ one%');
     expect(climbNameLikePattern('"Big"')).toBe('%_Big_%');
   });
 
@@ -27,10 +27,12 @@ describe('climbNameLikePattern', () => {
     expect(climbNameLikePattern('Spider—Man')).toBe('%Spider_Man%');
   });
 
-  it('turns each whitespace run into one any-length wildcard', () => {
-    expect(climbNameLikePattern('Joey’s Gaston')).toBe('%Joey_s%Gaston%');
-    expect(climbNameLikePattern('joey   gaston')).toBe('%joey%gaston%');
-    expect(climbNameLikePattern('joey gaston')).toBe('%joey%gaston%');
+  // Folding spaces to `%` let `the end` match "the … end" with any words between,
+  // pushing the climb actually named "The End" off the first page (#5655 review).
+  it('keeps spaces literal, so words cannot drift apart', () => {
+    expect(climbNameLikePattern('Joey’s Gaston')).toBe('%Joey_s Gaston%');
+    expect(climbNameLikePattern('the end')).toBe('%the end%');
+    expect(climbNameLikePattern('joey  gaston')).toBe('%joey  gaston%');
   });
 
   it("still escapes the user's own LIKE metacharacters", () => {
@@ -39,10 +41,19 @@ describe('climbNameLikePattern', () => {
     expect(climbNameLikePattern('back\\slash')).toBe('%back\\\\slash%');
   });
 
-  // An all-match `%%` would leak the by-name exceptions (hidden climbs, Woods
-  // cross-angle) into an unfiltered list, so whitespace-only input stays literal.
+  // An all-wildcard `%_%` would match every climb and leak the by-name exceptions
+  // (hidden climbs, Woods cross-angle) into an unfiltered list, so a query the
+  // folds would empty keeps the old literal pattern.
   it('keeps whitespace-only input literal instead of matching every climb', () => {
     expect(climbNameLikePattern('  ')).toBe('%  %');
     expect(climbNameLikePattern('')).toBe('%%');
+  });
+
+  it('keeps punctuation-only input literal instead of matching every climb', () => {
+    expect(climbNameLikePattern("'")).toBe("%'%");
+    expect(climbNameLikePattern('-')).toBe('%-%');
+    expect(climbNameLikePattern('“')).toBe('%“%');
+    expect(climbNameLikePattern("' '")).toBe("%' '%");
+    expect(climbNameLikePattern('- -')).toBe('%- -%');
   });
 });

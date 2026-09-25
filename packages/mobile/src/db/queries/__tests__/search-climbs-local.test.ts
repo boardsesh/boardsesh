@@ -427,24 +427,29 @@ describe('searchClimbsLocal', () => {
 
   // #5353: iOS Smart Punctuation types `’`, and the catalogue stores both
   // apostrophe forms, so either form has to find either name.
-  it('finds a climb whatever apostrophe, dash or spacing the query uses', async () => {
+  it('finds a climb whatever apostrophe or dash the query uses', async () => {
     await insertClimb(db, { uuid: 'straight', name: "Joey's Gaston" });
     await insertClimb(db, { uuid: 'curly', name: 'Joey’s Gaston' });
-    await insertClimb(db, { uuid: 'dashed', name: 'Spider-Man  Roof' });
+    await insertClimb(db, { uuid: 'dashed', name: 'Spider-Man Roof' });
     await insertClimb(db, { uuid: 'plain', name: 'Perfect gaston' });
     await insertClimb(db, { uuid: 'percent', name: '50% crimp' });
     await insertClimb(db, { uuid: 'fifty', name: '500 crimp' });
+    await insertClimb(db, { uuid: 'the-end', name: 'The End' });
+    await insertClimb(db, { uuid: 'the-bitter-end', name: 'The Bitter End' });
 
     const found = async (name: string) => uuids(await searchClimbsLocal(db, makeInput({ name }))).sort();
 
     expect(await found('Joey’s Gaston')).toEqual(['curly', 'straight']);
     expect(await found("Joey's Gaston")).toEqual(['curly', 'straight']);
-    expect(await found('joey gaston')).toEqual(['curly', 'straight']);
     expect(await found('spider–man roof')).toEqual(['dashed']);
     // A plain query matches exactly what it did before the folding.
     expect(await found('gaston')).toEqual(['curly', 'plain', 'straight']);
+    // Spaces stay literal: "the end" must not reach "The Bitter End".
+    expect(await found('the end')).toEqual(['the-end']);
     // The user's own `%` still matches literally, through the explicit ESCAPE.
     expect(await found('50%')).toEqual(['percent']);
+    // A lone apostrophe keeps the old literal match instead of matching everything.
+    expect(await found("'")).toEqual(['straight']);
   });
 
   // Woods numbers its holds from 0, so hold 0 is a real hold. It used to be
