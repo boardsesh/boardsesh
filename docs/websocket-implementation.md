@@ -201,6 +201,8 @@ The web and mobile queue providers are thin wrappers around a small stack of sha
 2. **Subscriber** — dedicated to ioredis pub/sub mode (enters special subscribe-only mode)
 3. **Stream Consumer** — dedicated to EventBroker's blocking `XREADGROUP BLOCK 5000` loop, preventing it from starving the publisher connection
 
+The pub/sub adapter shares its subscriber connection with Kilter live sync. It only parses its eight event-channel prefixes; Kilter live control messages use a different channel and payload format. Invalid event-channel envelopes are dropped and counted under `subscriptions.redisMessageRejects` in the backend runtime sample. An event with no `instanceId` is delivered, while an event from this instance is skipped.
+
 `RedisClientManager.onRedisReady` runs registered recovery handlers after all three connections are ready and before request handlers see Redis as connected. A handler registered during an in-flight readiness pass joins that same barrier; one registered after Redis is connected runs immediately. Failures are isolated so Redis can still become available. Duplicate-gym report claims drain generation-stamped snapshots through the end of readiness recovery, including claims accepted while an earlier Redis write is awaiting a response. Request-path retries remain opportunistic and back off to once per minute during a persistent partition.
 
 ### Live climb-stat stream

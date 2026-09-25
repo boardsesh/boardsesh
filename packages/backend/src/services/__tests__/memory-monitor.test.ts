@@ -32,6 +32,7 @@ describe('backend memory monitoring', () => {
     expect(sample.memory.rss).toBeGreaterThan(0);
     expect(sample.memory.heapUsed).toBeGreaterThan(0);
     expect(sample.subscriptions.queue).toEqual({ channels: 0, subscribers: 0 });
+    expect(sample.subscriptions.redisMessageRejects).toEqual({ invalidJson: 0, invalidEnvelope: 0 });
     expect(sample.rooms.pendingWrites).toBe(0);
     expect(sample.caches.instagram).toEqual({ entries: 0, serializedBytes: 0 });
   });
