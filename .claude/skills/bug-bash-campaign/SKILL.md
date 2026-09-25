@@ -32,7 +32,8 @@ number in it.
   the fix already landed.
 - `find /tmp ~/projects/boardsesh -maxdepth 1 \( -name 'boardsesh-*' -o -name 'wt-*' \)`: another
   loop checked out on this issue has effectively taken it. (`find`, not `ls` with globs: zsh
-  aborts on a glob that matches nothing.)
+  aborts on a glob that matches nothing.) Adjust `~/projects/boardsesh` to wherever your checkouts
+  live.
 
 If a PR already exists but is unmerged, the job is to get **that** PR ready, not start over.
 
@@ -125,7 +126,8 @@ stop resuming it: check `git status`, validate its edits, and land them from the
   often reads `UNKNOWN`. A conflicted PR dispatches no CI at all.
 - When many stacked branches fan out CI, cancel every run except `Claude Code Review` after each
   push. One PR alone can run CI normally.
-- Codex reviews fire when a draft is marked ready. Work through them.
+- Codex reviews (from the `chatgpt-codex-connector[bot]` GitHub App) fire when a draft is marked
+  ready. Work through them.
 
 ## 7. Review gates
 

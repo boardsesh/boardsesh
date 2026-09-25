@@ -81,7 +81,7 @@ Boardsesh is a monorepo. Next.js 16 web app + React Native (Expo) mobile app for
 
 - Backend work belongs in `packages/backend` (GraphQL), not in the Next.js app. We are slowly moving REST/server logic out of `packages/web`.
 - Work autonomously end-to-end: backend + frontend + QA. Don't stop at "API is ready but UI isn't updated."
-- Use subagents (always Opus) for grunt work. Pair every implementation subagent with a QA/reviewer subagent.
+- Use subagents for grunt work: Sonnet for bounded, mechanical work (copy, i18n, docs, simple tests), Opus for anything with correctness risk (concurrency, data, sync, security, native). Pair every implementation subagent with a QA/reviewer subagent.
 - No AI-generated images. Real photos or diagrams only.
 - No buzzwords. Concrete numbers, plain language.
 - Default to action. Full autonomy except no data deletion without asking.
