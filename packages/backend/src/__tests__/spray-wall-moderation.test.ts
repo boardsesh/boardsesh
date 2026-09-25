@@ -87,6 +87,9 @@ const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/fav
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { SPRAY_WALL_PHOTO_RETENTION_DAYS } = await import('@boardsesh/board-config');
 const { socialBoardQueries } = await import('../graphql/resolvers/social/boards');
+const { boardPresenceQueries } = await import('../graphql/resolvers/board-presence/queries');
+const { boardQueuePreviewQueries } = await import('../graphql/resolvers/board-presence/queue-preview');
+const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
 const { createSprayOgCardDeps, renderSprayOgCard, resetSprayOgCardCache, SprayPhotoUnavailableError } =
   await import('../services/spray-og-card');
 
@@ -688,6 +691,105 @@ describe('a hidden wall', () => {
     }
     expect(await boardFor(OWNER)).not.toBeNull();
     expect(await searchIsRefusedFor(OWNER)).toBe(false);
+  });
+
+  it('leaves the gym board list, gym editors included, and a follower\u2019s boards', async () => {
+    const { wall } = await createPublishedWall({ isPublic: true });
+    await attachWallToGymWithMember(wall.uuid);
+    // ADMIN owns the gym, so it is a gym EDITOR here — the viewer that sees even
+    // the gym's private rows — and still not the wall's owner.
+    const [gym] = (await db.execute(
+      sql`SELECT g.uuid FROM gyms g JOIN user_boards ub ON ub.gym_id = g.id WHERE ub.uuid = ${wall.uuid}`,
+    )) as unknown as Array<{ uuid: string }>;
+    await db.execute(sql`
+      INSERT INTO board_follows (user_id, board_uuid, created_at) VALUES (${STRANGER}, ${wall.uuid}, now())
+    `);
+    const gymListFor = async (viewer: string) =>
+      ((await socialBoardQueries.gymBoards({}, { gymUuid: gym.uuid }, ctxFor(viewer))) as Array<{ uuid: string }>).map(
+        (board) => board.uuid,
+      );
+    const myBoardsFor = async (viewer: string) =>
+      (
+        (await socialBoardQueries.myBoards({}, { input: {} }, ctxFor(viewer))) as { boards: Array<{ uuid: string }> }
+      ).boards.map((board) => board.uuid);
+
+    expect(await gymListFor(ADMIN)).toContain(wall.uuid);
+    expect(await myBoardsFor(STRANGER)).toContain(wall.uuid);
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+
+    expect(await gymListFor(ADMIN)).not.toContain(wall.uuid);
+    expect(await myBoardsFor(STRANGER)).not.toContain(wall.uuid);
+    expect(await gymListFor(OWNER)).toContain(wall.uuid);
+    expect(await myBoardsFor(OWNER)).toContain(wall.uuid);
+  });
+
+  it('keeps its leaderboard, connection holder and queue preview to the owner', async () => {
+    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
+    const climbUuid = await setClimbOnWall(wall, holdIds);
+    // Through the real tick path, so this also proves a spray tick carries the
+    // wall's board_id — which is what makes the leaderboard a leak at all.
+    await tickMutations.saveTick(
+      {},
+      {
+        input: {
+          climbUuid,
+          boardType: 'spray',
+          boardUuid: wall.uuid,
+          layoutId: wall.layoutId,
+          sizeId: wall.layoutId,
+          setIds: '1',
+          angle: 40,
+          status: 'send',
+          attemptCount: 1,
+          isMirror: false,
+          isBenchmark: false,
+          comment: '',
+          climbedAt: new Date().toISOString(),
+        },
+      },
+      ctxFor(OWNER),
+    );
+    const [board] = (await db.execute(sql`
+      SELECT ub.id, (SELECT count(*) FROM boardsesh_ticks t WHERE t.board_id = ub.id)::int AS ticks
+      FROM user_boards ub WHERE ub.uuid = ${wall.uuid}
+    `)) as unknown as Array<{ id: number; ticks: number }>;
+    expect(board.ticks).toBe(1);
+    const boardId = Number(board.id);
+
+    const leaderboardFor = async (viewer: string | null) =>
+      (
+        (await socialBoardQueries.boardLeaderboard({}, { input: { boardUuid: wall.uuid } }, ctxFor(viewer))) as {
+          entries: Array<{ userId: string }>;
+        }
+      ).entries.map((entry) => entry.userId);
+
+    expect(await leaderboardFor(STRANGER)).toEqual([OWNER]);
+    expect(await boardPresenceQueries.boardConnection({}, { boardId }, ctxFor(STRANGER))).toBeNull();
+    expect(await boardQueuePreviewQueries.boardQueuePreview({}, { boardId }, ctxFor(STRANGER))).toBeNull();
+
+    await sprayWallModerationMutations.setSprayWallHidden(
+      {},
+      { input: { uuid: wall.uuid, hidden: true } },
+      ctxFor(ADMIN),
+    );
+
+    for (const viewer of [STRANGER, null]) {
+      await expect(leaderboardFor(viewer)).rejects.toThrow('Board not found');
+      await expect(boardPresenceQueries.boardConnection({}, { boardId }, ctxFor(viewer))).rejects.toThrow(
+        'Board not found',
+      );
+      await expect(boardQueuePreviewQueries.boardQueuePreview({}, { boardId }, ctxFor(viewer))).rejects.toThrow(
+        'Board not found',
+      );
+    }
+    expect(await leaderboardFor(OWNER)).toEqual([OWNER]);
+    expect(await boardPresenceQueries.boardConnection({}, { boardId }, ctxFor(OWNER))).toBeNull();
+    expect(await boardQueuePreviewQueries.boardQueuePreview({}, { boardId }, ctxFor(OWNER))).toBeNull();
   });
 });
 

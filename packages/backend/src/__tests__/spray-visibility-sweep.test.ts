@@ -691,7 +691,6 @@ const NOT_APPLICABLE: Record<string, string> = {
     'gated on session membership, which is checked as events arrive; the sweep publishes none',
   'Subscription.queueUpdates': 'same: a queue stream gated per event',
   'Subscription.commentUpdates': 'comment events for an entity id; gated at the write, and the sweep publishes none',
-  'Subscription.boardQueuePreview': 'the queue preview stream; Redis state the sweep does not create',
   'Subscription.controllerEvents': 'controller events for a session; the sweep publishes none',
 };
 

@@ -1245,7 +1245,7 @@ a notice saying what happened. A wall that quietly stopped being visible to thei
 crew with no explanation would read as data loss, and the climbs on it are their
 work.
 
-The rule lands in **ten** implementations, which is the thing to keep in step —
+The rule lands in **eleven** implementations, which is the thing to keep in step —
 they do not share a query builder:
 
 1. `viewerCanSeeSprayWall` (by uuid) and 2. `viewerCanSeeSprayWallByLayout` in
@@ -1260,8 +1260,8 @@ they do not share a query builder:
 5. `sprayBoardRowIsReadable` in
    `packages/backend/src/graphql/resolvers/climbs/spray-read-access.ts`, whose
    `'capability'` half honours an unlisted wall's uuid only while the wall is not
-   hidden. It gates `board(boardUuid)` and `searchClimbs` / `holdHeatmap` with a
-   `sprayWallUuid`, which never go through number 1;
+   hidden. It gates `board(boardUuid)`, `boardLeaderboard` and `searchClimbs` /
+   `holdHeatmap` with a `sprayWallUuid`, which never go through number 1;
 6. `listableSprayWallCondition` in
    `packages/backend/src/graphql/resolvers/board/spray-wall-listing.ts`, the
    EXISTS behind `searchBoards`, `gymBoards` and `myBoards`. Its owner escape sits
@@ -1277,7 +1277,11 @@ they do not share a query builder:
    too, since a private wall has no public URL for anybody;
 10. the climb sitemap's wall source, `buildPublicSprayWallQuery` in
     `packages/web/app/lib/seo/sitemap/spray-wall-configs.ts`. The sitemap's climb
-    query carries number 4 as well, so this one is the first gate, not the only one.
+    query carries number 4 as well, so this one is the first gate, not the only one;
+11. `assertSprayBoardIsReadable` / `assertSprayBoardIdIsReadable` in
+    `spray-read-access.ts`, the by-layout rule for the board-presence reads keyed
+    on a numeric board id: history, recent climbs, presence stats,
+    `boardConnection` and `boardQueuePreview` (query and subscription).
 
 Hiding does NOT delete the wall's `media` copy. Nothing in Boardsesh hands its URL
 out once the wall is hidden, but a URL somebody already copied keeps working for as

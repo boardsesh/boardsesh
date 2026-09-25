@@ -4,6 +4,7 @@ import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
+import { assertSprayBoardIdIsReadable } from '../climbs/spray-read-access';
 import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
 
 export const boardQueuePreviewQueries = {
@@ -36,6 +37,8 @@ export const boardQueuePreviewQueries = {
     // query gate 1 needs; pass the verification down so the snapshot doesn't
     // repeat it (logged-in viewers verified nothing — gate 1 still runs).
     const anonReadableVerified = await requireAnonReadableBoard(boardId, ctx.userId);
+    // A spray wall takes the wall's own rule (private and hidden = owner only).
+    await assertSprayBoardIdIsReadable(boardId, ctx.userId);
     return getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
   },
 };
@@ -67,6 +70,7 @@ export const boardQueuePreviewSubscriptions = {
       await applyRateLimit(ctx, 30, 'boardQueuePreview');
       // Same gate-1 dedup as the query resolver (see its comment).
       const anonReadableVerified = await requireAnonReadableBoard(boardId, ctx.userId);
+      await assertSprayBoardIdIsReadable(boardId, ctx.userId);
 
       const boardKey = String(boardId);
 
