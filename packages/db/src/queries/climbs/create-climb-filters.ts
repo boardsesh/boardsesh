@@ -148,10 +148,10 @@ export function gradeValueSql(displayDifficulty: SQL, gradeSource: ClimbSearchPa
  * @param userId Optional user ID for personal progress filters
  * @param options.crossAngleStats Resolve stats through the climb's set angle when
  *   the browsed angle has none (issue #5405). It is an explicit OPT-IN, never
- *   derived here, because the holds heatmap
- *   (packages/web/app/lib/db/queries/climbs/holds-heatmap.ts) reuses these same
- *   condition arrays from a query that drives off `board_climb_holds` and has no
- *   `board_climbs` in its FROM at all. A set-angle reference baked in on the
+ *   derived here, because a holds heatmap query (see
+ *   `getHoldHeatmapClimbStatsConditions`) reuses these same condition arrays
+ *   from a query that drives off `board_climb_holds` and has no `board_climbs`
+ *   in its FROM at all. A set-angle reference baked in on the
  *   board's behalf would make that query fail to plan on exactly the boards the
  *   fix is for. The heatmap passes nothing and its SQL is unchanged.
  * @param options.restrictToBrowsedAngle Keep only the climbs that belong to the
@@ -788,30 +788,6 @@ export const createClimbFilters = (
     };
   };
 
-  // Hold-specific user data selectors for heatmap using boardsesh_ticks
-  const getHoldUserLogbookSelects = (climbHoldsTable: typeof boardClimbHolds) => {
-    return {
-      userAscents: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${climbHoldsTable.climbUuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} IN ('flash', 'send')
-      )`,
-      userAttempts: sql<number>`(
-        SELECT COUNT(*)
-        FROM ${boardseshTicks}
-        WHERE ${boardseshTicks.climbUuid} = ${climbHoldsTable.climbUuid}
-        AND ${boardseshTicks.userId} = ${userId || ''}
-        AND ${boardseshTicks.boardType} = ${params.board_name}
-        AND ${boardseshTicks.angle} = ${params.angle}
-        AND ${boardseshTicks.status} = 'attempt'
-      )`,
-    };
-  };
-
   return {
     // True only when this is genuinely a user's drafts query (onlyDrafts AND a
     // userId to own them). Callers MUST derive their isDraftsQuery flag from this,
@@ -887,7 +863,6 @@ export const createClimbFilters = (
       eq(boardClimbHolds.boardType, params.board_name),
     ],
     getUserLogbookSelects,
-    getHoldUserLogbookSelects,
     // Raw parts
     baseConditions,
     browsedAngleConditions,

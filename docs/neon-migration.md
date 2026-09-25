@@ -533,8 +533,6 @@ To turn the homelab replica on for application reads, set `READ_REPLICA_URL` in 
 
 - `packages/web/app/lib/db/queries/climbs/search-climbs.ts` — climb-search SSR (`cachedSearchClimbs`).
 - `packages/backend/src/db/queries/climbs/search-climbs.ts` — GraphQL `searchClimbs` resolver.
-- `packages/web/app/lib/db/queries/climbs/holds-heatmap.ts` — heatmap stats.
-- `packages/web/app/api/internal/prewarm-heatmap/[board_name]/route.ts` — heatmap warm-up cron.
 - `packages/web/app/lib/seo/dynamic-og-data.ts` — OG profile/setter/session/playlist summary queries.
 - `packages/web/app/api/og/profile/route.tsx` — OG profile per-grade tick aggregation.
 - `packages/backend/src/graphql/resolvers/social/session-feed.ts` — session-grouped activity feed.

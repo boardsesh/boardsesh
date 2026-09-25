@@ -22,10 +22,10 @@ export const VERCEL_OWNED_CRON_PATHS: readonly string[] = [];
 const CLEANUP_TIMEOUT_MS = 120_000;
 
 /**
- * The heatmap prewarm and percentile routes both declare `maxDuration = 300`.
- * That number is not a measurement — it is Vercel's Pro ceiling, the largest
- * value the platform accepts, and both routes were pinned to it precisely
- * because there was nothing higher to ask for.
+ * The percentile route declares `maxDuration = 300`. That number is not a
+ * measurement — it is Vercel's Pro ceiling, the largest value the platform
+ * accepts, and the route was pinned to it precisely because there was nothing
+ * higher to ask for.
  *
  * A long-lived container has no such ceiling, so the scheduler grants the real
  * headroom the work wanted: 15 minutes. While web still serves from Vercel the
@@ -45,7 +45,7 @@ const WEEKLY_WARMUP_TIMEOUT_MS = 900_000;
  *
  * The route still exports `maxDuration = 300`, so on Vercel it would be cut off
  * first; off Vercel that export is inert and this is the only bound. 15 minutes
- * — the same headroom the weekly warm-ups get — leaves a cold, contended run
+ * — the same headroom the weekly percentile recompute gets — leaves a cold, contended run
  * room to finish rather than turning a slow refresh into a failed one, and a
  * genuinely wedged scan still cannot outlive the six-hour gap to the next tick.
  */
@@ -83,55 +83,9 @@ export const JOBS: readonly JobDefinition[] = [
     run: triggerWebCron('/api/internal/cleanup'),
   },
 
-  // The five heatmap prewarms keep the 15-minute stagger vercel.json used.
-  // They are not independent of each other: each one hammers the same Postgres
-  // with a fan-out of heatmap aggregates, and firing them together would put
-  // five boards' worth of that load on the database at once. The stagger is the
-  // rate limit.
-  {
-    name: 'prewarm-heatmap-kilter',
-    schedule: '0 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/kilter',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/kilter'),
-  },
-  {
-    name: 'prewarm-heatmap-tension',
-    schedule: '15 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/tension',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/tension'),
-  },
-  {
-    name: 'prewarm-heatmap-decoy',
-    schedule: '30 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/decoy',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/decoy'),
-  },
-  {
-    name: 'prewarm-heatmap-touchstone',
-    schedule: '45 4 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/touchstone',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/touchstone'),
-  },
-  {
-    name: 'prewarm-heatmap-grasshopper',
-    schedule: '0 5 * * 0',
-    timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/prewarm-heatmap/grasshopper',
-    run: triggerWebCron('/api/internal/prewarm-heatmap/grasshopper'),
-  },
   {
     name: 'profile-percentiles',
-    // Sunday 06:00 UTC — an hour after the last prewarm, so the recompute does
-    // not contend with the heatmap warm-up for database time.
+    // Sunday 06:00 UTC.
     schedule: '0 6 * * 0',
     timezone: 'UTC',
     timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,

@@ -244,7 +244,7 @@ describe('createScheduler', () => {
     const run = vi.fn().mockResolvedValue({ ok: true });
 
     const scheduler = createScheduler({
-      jobs: [defineJob({ run, name: 'prewarm-heatmap-decoy', schedule: '30 4 * * 0' })],
+      jobs: [defineJob({ run, name: 'profile-percentiles', schedule: '30 4 * * 0' })],
       config: baseConfig,
       cron,
       logger,
@@ -256,7 +256,7 @@ describe('createScheduler', () => {
 
     expect(calls).toEqual([
       {
-        slug: 'scheduler-prewarm-heatmap-decoy',
+        slug: 'scheduler-profile-percentiles',
         config: expect.objectContaining({
           schedule: { type: 'crontab', value: '30 4 * * 0' },
           timezone: 'UTC',
