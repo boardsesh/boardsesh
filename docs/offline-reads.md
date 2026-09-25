@@ -89,6 +89,21 @@ The read is deliberately **not** gated on `isUserDataComplete`. That marker is a
 
 The persisted cache adds its own layer on top: the blob carries a `userId` stamp validated against resolved auth on every transition, it is deleted inside the single `clearPersistedUserStores` call site rather than by a parallel delete, and `needsFullCleanup` has to fire on a logged-out cold start **when a blob exists** — the "the cache is empty" comment that justifies skipping cleanup today is only true because nothing hydrates yet.
 
+### The holds index is derived on the device, not synced
+
+`board_climb_holds` (schema v10) holds one row per hold per climb: `(board_type, climb_uuid, hold_id, hold_state)`, `WITHOUT ROWID`, plus `idx_climb_holds_by_hold` on `(board_type, hold_id, climb_uuid)`. The on-device similar-climbs and hold-heatmap queries need it. The phone builds it from the `frames` string every downloaded climb already has (`ensureHoldIndex`, `packages/shared/offline-sync/src/holds-index/hold-index.ts`), using the same rule Postgres uses: the first row per hold wins across frames, and unknown role codes are dropped (`parseFramesToHoldRows` in `@boardsesh/board-constants`). The engine takes the parser as a parameter, and mobile passes it in from `packages/mobile/src/offline/hold-index-parser.ts`.
+
+The table is not a synced table. It has no `TABLE_CONFIGS` entry, no checkpoint and no tombstones, and it never ships in a snapshot artifact (`DEVICE_ONLY_TABLES`). The rules:
+
+- **Only complete scopes.** A scope is indexed only once its `scope-complete:` marker exists. The builder checks the marker again under each chunk's write lock, so it cannot write into a scope that a teardown is removing.
+- **One watermark per scope.** Progress is stored in the `holds-index:<scopeKey>` row of `sync_meta`. The first build walks the scope in `uuid` order, so primary-key inserts append instead of scattering. At the start it records the scope's `MAX(sync_seq)`. When the walk ends, the builder switches to incremental mode at that value and from then on walks `sync_seq` order. The watermark is per scope, not per layout, because a second size of a layout brings climbs with older `sync_seq` values.
+- **Short writes.** The builder reads 500 climbs on the main connection, then writes them in one short IMMEDIATE transaction: delete the chunk's old rows, insert the new ones, and move the watermark. A killed app resumes from the last chunk that committed.
+- **Which climbs get rows.** Only listed, published, not-hidden climbs get rows. Hiding a climb bumps its `sync_seq`, and the rebuild then deletes its rows.
+- **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The local readers also call `ensureHoldIndex` before they query.
+- **Cleanup.** The rows are removed with their climbs by the `board_climbs` tombstone cascade, by scope teardown (children first, and the watermark with them), by the orphan sweep after a snapshot import, and by both sign-out wipes. Spray rows go on every sign-out; the explicit sign-out clears every table.
+
+`board_climbs` and `board_climb_holds` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
+
 ## Local-first while online, and when not to be
 
 `offlineAwareRequest` currently serves local **while online** whenever the offline engine flag is on (`if (!isOnline || isOfflineEngineEnabled())`), and that flag is at 100%. For board reference data that is right — a local query beats a round trip and the background sync keeps it fresh.

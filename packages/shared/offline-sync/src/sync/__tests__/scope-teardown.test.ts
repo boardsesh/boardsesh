@@ -247,6 +247,10 @@ describe('removeBoardScopeData — markers', () => {
       '1',
     ]);
     await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+      `holds-index:${scopeKey}`,
+      JSON.stringify({ updatedAt: '2026-06-01T00:00:00Z', syncSeq: 9 }),
+    ]);
+    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
       `bootstrap-paged-fallback:${scopeKey}`,
       '1',
     ]);
@@ -348,6 +352,9 @@ describe('removeBoardScopeData — markers', () => {
         'scope-download-started:kilter:1:5',
         'reused-import-failed:kilter:1:5',
         'grades-bootstrap-attempts:kilter:1:5',
+        // The device-derived holds index's watermark: a re-download re-imports
+        // climbs with their old sync_seq, which a surviving one would skip.
+        'holds-index:kilter:1:5',
       ]),
     );
   });

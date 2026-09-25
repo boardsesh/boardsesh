@@ -740,6 +740,43 @@ describe('sync layer — real-DDL integration', () => {
       ).toBeNull();
     });
 
+    it("a board_climbs tombstone takes the climb's derived hold rows with it, unless the guard keeps the climb", async () => {
+      // board_climb_holds is derived on the device, so nothing on the server ever
+      // tombstones its rows; the climb's tombstone has to cascade locally.
+      for (const [uuid, updatedAt] of [
+        ['gone', '2024-05-01T00:00:00Z'],
+        ['re-added', '2024-06-02T00:00:00Z'],
+      ]) {
+        await db.runAsync(
+          `INSERT INTO board_climbs (uuid, board_type, layout_id, updated_at, sync_seq) VALUES (?, 'kilter', 1, ?, 1)`,
+          [uuid, updatedAt],
+        );
+        await db.runAsync(
+          `INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES ('kilter', ?, 1, 'HAND'), ('kilter', ?, 2, 'FOOT')`,
+          [uuid, uuid],
+        );
+      }
+      await db.runAsync(
+        "INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES ('tension', 'gone', 1, 'HAND')",
+      );
+
+      const deletions: DeletionRecord[] = [
+        { tableName: 'board_climbs', recordId: 'gone', deletedAt: '2024-06-01T00:00:00Z' },
+        { tableName: 'board_climbs', recordId: 're-added', deletedAt: '2024-06-01T00:00:00Z' },
+      ];
+      await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncTicks', documents: [], deletions }));
+
+      const holdRows = await db.getAllAsync<{ board_type: string; climb_uuid: string }>(
+        'SELECT board_type, climb_uuid FROM board_climb_holds ORDER BY board_type, climb_uuid, hold_id',
+      );
+      expect(holdRows).toEqual([
+        { board_type: 'kilter', climb_uuid: 're-added' },
+        { board_type: 'kilter', climb_uuid: 're-added' },
+        // Scoped to the deleted climb's own board type.
+        { board_type: 'tension', climb_uuid: 'gone' },
+      ]);
+    });
+
     it('rolls back the whole deletion page and its checkpoint when one tombstone fails', async () => {
       await seedTick('tick-atomic-1');
       await seedTick('tick-atomic-2');
@@ -1291,5 +1328,76 @@ describe('sync layer — real-DDL integration', () => {
         expect(await readCoverage()).toBe(staleAt);
       });
     });
+  });
+});
+
+describe('the holds index at the end of a pull cycle', () => {
+  const SCOPE_KEY = 'kilter:1:12';
+  let db: TestSqliteDb;
+  const invalidateQueries = vi.fn();
+  const queryClient: QueryInvalidator = { invalidateQueries };
+  const climbDocument = {
+    uuid: 'indexed',
+    board_type: 'kilter',
+    layout_id: 1,
+    compatible_size_ids: [12],
+    frames: 'p1r13p2r13',
+    is_draft: false,
+    is_listed: true,
+    updated_at: '2024-06-01T00:00:00Z',
+    sync_seq: '5',
+  };
+  const parseHoldRows = (_boardType: string, frames: string) =>
+    [...frames.matchAll(/p(\d+)r(\d+)/g)].map((match) => ({ holdId: Number(match[1]), holdState: 'HAND' }));
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+    await ensureMutationQueueTable(db);
+    invalidateQueries.mockClear();
+    __resetDrainerStateForTests();
+  });
+
+  it('builds the index for a scope that completed this cycle, then reports idle', async () => {
+    const onProgress = vi.fn();
+    await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncClimbs', documents: [climbDocument] }), {
+      enabledBoards: [SCOPE_KEY],
+      onProgress,
+      holdIndex: { parseHoldRows },
+    });
+
+    expect(
+      await db.getAllAsync("SELECT hold_id FROM board_climb_holds WHERE climb_uuid = 'indexed' ORDER BY hold_id"),
+    ).toEqual([{ hold_id: 1 }, { hold_id: 2 }]);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'idle' }));
+  });
+
+  it('builds nothing without the option', async () => {
+    await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncClimbs', documents: [climbDocument] }), {
+      enabledBoards: [SCOPE_KEY],
+    });
+
+    expect(await db.getFirstAsync('SELECT 1 FROM board_climb_holds')).toBeNull();
+  });
+
+  it('reports a failed build and still completes the scope and the cycle', async () => {
+    const onError = vi.fn();
+    const onProgress = vi.fn();
+    await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncClimbs', documents: [climbDocument] }), {
+      enabledBoards: [SCOPE_KEY],
+      onProgress,
+      holdIndex: {
+        parseHoldRows: () => {
+          throw new Error('parser exploded');
+        },
+        onError,
+      },
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'parser exploded' }), SCOPE_KEY);
+    expect(await readCheckpoint(db, `scope-complete:${SCOPE_KEY}`)).not.toBeNull();
+    expect(onProgress).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'idle' }));
+    expect(onProgress).not.toHaveBeenCalledWith(expect.objectContaining({ interrupted: true }));
   });
 });

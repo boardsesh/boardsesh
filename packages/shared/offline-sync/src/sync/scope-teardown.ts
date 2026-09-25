@@ -62,6 +62,7 @@ import {
 } from './bootstrap-retry';
 import { BOARD_DATA_TABLES } from './table-config';
 import { schemaRefreshKey } from './schema-refresh';
+import { holdIndexKey } from '../holds-index/hold-index';
 
 /**
  * The one board type that has a `spray_walls` row. A literal rather than an
@@ -138,6 +139,10 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     // give it a clean counter, and a stale one over emptied tables would keep
     // the scope on the grades crawl for no reason.
     `${GRADES_BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
+    // The device-derived holds index's watermark. Load-bearing like a
+    // checkpoint: a re-download re-imports climbs with their OLD sync_seq, and a
+    // surviving watermark would put every one of them behind it — never indexed.
+    holdIndexKey(scopeKey),
   ];
 }
 
@@ -362,6 +367,13 @@ export async function removeBoardScopeData(params: {
       `DELETE FROM board_climb_grades WHERE board_type = ? AND climb_uuid IN (${climbUuids})`,
       [scope.boardType, ...predicateParams],
     );
+    // The derived holds index follows the same children-first, targeted rule.
+    // Not counted in the result: the rows are rebuilt from frames, never
+    // downloaded, so they are not part of what the user is reclaiming a board for.
+    await txn.runAsync(`DELETE FROM board_climb_holds WHERE board_type = ? AND climb_uuid IN (${climbUuids})`, [
+      scope.boardType,
+      ...predicateParams,
+    ]);
     const climbs = await txn.runAsync(`DELETE FROM board_climbs WHERE ${sql}`, predicateParams);
 
     // The wall itself (#5448). Guarded on the board type, NOT merely on the

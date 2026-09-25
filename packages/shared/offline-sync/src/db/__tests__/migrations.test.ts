@@ -281,6 +281,58 @@ describe('runMigrations', () => {
     expect(await primaryKeyColumns(upgradedDb, 'spray_walls')).toEqual(['layout_id']);
   });
 
+  it('v10 creates the device-derived board_climb_holds WITHOUT ROWID plus both indexes, on fresh and v9-stamped databases', async () => {
+    const assertHoldsSchema = async (database: ReturnType<typeof createTestDatabase>) => {
+      expect(await listTables(database)).toContain('board_climb_holds');
+      expect(await primaryKeyColumns(database, 'board_climb_holds')).toEqual(['board_type', 'climb_uuid', 'hold_id']);
+      expect(await tableColumns(database, 'board_climb_holds')).toEqual([
+        'board_type',
+        'climb_uuid',
+        'hold_id',
+        'hold_state',
+      ]);
+      const table = await database.getFirstAsync<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_climb_holds'",
+      );
+      expect(table?.sql).toMatch(/WITHOUT ROWID/);
+      const indexes = await database.getAllAsync<{ name: string; tbl_name: string }>(
+        "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_climb_holds_by_hold', 'idx_climbs_sync_seq') ORDER BY name",
+      );
+      expect(indexes).toEqual([
+        { name: 'idx_climb_holds_by_hold', tbl_name: 'board_climb_holds' },
+        { name: 'idx_climbs_sync_seq', tbl_name: 'board_climbs' },
+      ]);
+    };
+
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    await assertHoldsSchema(freshDb);
+
+    // Existing install stamped at v9: only the pending v10 migration applies,
+    // and the catalog rows already on disk are untouched.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync(
+      'DROP INDEX idx_climbs_sync_seq; DROP INDEX idx_climb_holds_by_hold; DROP TABLE board_climb_holds;',
+    );
+    await upgradedDb.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq) VALUES ('kept', 'kilter', 1, 'p1r12', 3)",
+    );
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 9 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    await assertHoldsSchema(upgradedDb);
+    expect(await upgradedDb.getFirstAsync("SELECT uuid FROM board_climbs WHERE uuid = 'kept'")).toEqual({
+      uuid: 'kept',
+    });
+    expect(
+      (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(10);
+  });
+
+  it('keeps the device-only holds table out of SCHEMA_STATEMENTS', () => {
+    expect(SCHEMA_STATEMENTS.some((statement) => statement.includes('board_climb_holds'))).toBe(false);
+  });
+
   it('holds every column the sync config will write, for every syncable table', async () => {
     // The manifest's whole point: `upsertDocuments` builds
     // `INSERT INTO <table> (<localColumns ∩ document keys>)`, so a localColumns
