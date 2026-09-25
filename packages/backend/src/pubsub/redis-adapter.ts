@@ -24,6 +24,16 @@ const BOARD_PRESENCE_CHANNEL_PREFIX = 'boardsesh:board:';
 // is a prefix of the other.
 const BOARD_QUEUE_CHANNEL_PREFIX = 'boardsesh:board-queue:';
 const CLIMB_STATS_CHANNEL_PREFIX = 'boardsesh:climb-stats-layout:';
+const EVENT_CHANNEL_PREFIXES = [
+  QUEUE_CHANNEL_PREFIX,
+  SESSION_CHANNEL_PREFIX,
+  NOTIFICATION_CHANNEL_PREFIX,
+  COMMENT_CHANNEL_PREFIX,
+  NEW_CLIMB_CHANNEL_PREFIX,
+  BOARD_PRESENCE_CHANNEL_PREFIX,
+  BOARD_QUEUE_CHANNEL_PREFIX,
+  CLIMB_STATS_CHANNEL_PREFIX,
+];
 
 type RedisMessage = {
   instanceId: string;
@@ -39,7 +49,15 @@ type RedisMessage = {
   timestamp: number;
 };
 
-type IncomingRedisMessage = Omit<RedisMessage, 'instanceId'> & { instanceId?: unknown };
+type IncomingRedisMessage = Pick<RedisMessage, 'event'> & { instanceId?: unknown };
+
+type RejectedMessageCounts = { invalidJson: number; invalidEnvelope: number };
+
+function isIncomingRedisMessage(payload: unknown): payload is IncomingRedisMessage {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false;
+  const event = (payload as Record<string, unknown>).event;
+  return typeof event === 'object' && event !== null && !Array.isArray(event);
+}
 
 export type RedisPubSubAdapter = {
   publishQueueEvent(sessionId: string, event: QueueEvent): Promise<void>;
@@ -75,6 +93,7 @@ export type RedisPubSubAdapter = {
   onBoardQueueMessage(callback: (boardId: string, preview: BoardQueuePreview) => void): void;
   onClimbStatsMessage(callback: (channelKey: string, event: ClimbStatsEvent) => void): void;
   getInstanceId(): string;
+  getRejectedMessageCounts(): RejectedMessageCounts;
 };
 
 export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): RedisPubSubAdapter {
@@ -96,12 +115,34 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
   let boardPresenceMessageCallback: ((boardId: string, event: BoardPresenceEvent) => void) | null = null;
   let boardQueueMessageCallback: ((boardId: string, preview: BoardQueuePreview) => void) | null = null;
   let climbStatsMessageCallback: ((channelKey: string, event: ClimbStatsEvent) => void) | null = null;
+  const rejectedMessageCounts: RejectedMessageCounts = { invalidJson: 0, invalidEnvelope: 0 };
 
   // Set up message handler
   subscriber.on('message', (channel: string, message: string) => {
-    try {
-      const parsed = JSON.parse(message) as IncomingRedisMessage;
+    // This Redis connection is also used by other services, including Kilter
+    // live sync's `*` and numeric control messages.
+    if (!EVENT_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix))) return;
 
+    let parsed: IncomingRedisMessage;
+    try {
+      const payload: unknown = JSON.parse(message);
+      if (!isIncomingRedisMessage(payload)) {
+        rejectedMessageCounts.invalidEnvelope++;
+        if (rejectedMessageCounts.invalidEnvelope === 1) {
+          logger.warn(`[Redis] Ignoring invalid pub/sub envelope on channel: ${channel}`);
+        }
+        return;
+      }
+      parsed = payload;
+    } catch {
+      rejectedMessageCounts.invalidJson++;
+      if (rejectedMessageCounts.invalidJson === 1) {
+        logger.warn(`[Redis] Ignoring invalid pub/sub JSON on channel: ${channel}`);
+      }
+      return;
+    }
+
+    try {
       // Skip messages from this instance (already delivered locally)
       if (parsed.instanceId === instanceId) {
         return;
@@ -162,7 +203,7 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         typeof parsed.instanceId === 'string' && parsed.instanceId ? parsed.instanceId.slice(0, 8) : 'unknown';
       logger.info(`[Redis] Received cross-instance message from ${senderId} on channel: ${channel}`);
     } catch (error) {
-      logger.error('[Redis] Failed to process message:', error);
+      logger.error('[Redis] Failed to dispatch message:', error);
     }
   });
 
@@ -445,6 +486,10 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
 
     getInstanceId(): string {
       return instanceId;
+    },
+
+    getRejectedMessageCounts(): RejectedMessageCounts {
+      return { ...rejectedMessageCounts };
     },
   };
 }

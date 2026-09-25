@@ -296,6 +296,51 @@ describe('Redis PubSub Adapter', () => {
 });
 
 describe('Redis PubSub Adapter - Unit Tests (mocked)', () => {
+  it('ignores Kilter live control messages before parsing their payloads', () => {
+    const messageHandlers: Array<(channel: string, message: string) => void> = [];
+    const mockPublisher = { publish: vi.fn() } as unknown as Redis;
+    const mockSubscriber = {
+      on: vi.fn((eventName: string, listener: (channel: string, message: string) => void) => {
+        if (eventName === 'message') messageHandlers.push(listener);
+      }),
+    } as unknown as Redis;
+    const adapter = createRedisPubSubAdapter(mockPublisher, mockSubscriber);
+    const queueCallback = vi.fn();
+    adapter.onQueueMessage(queueCallback);
+    const parseSpy = vi.spyOn(JSON, 'parse');
+
+    try {
+      messageHandlers[0]?.('boardsesh:kilter-live:changed', '*');
+      messageHandlers[0]?.('boardsesh:kilter-live:changed', '123');
+      expect(parseSpy).not.toHaveBeenCalled();
+      expect(queueCallback).not.toHaveBeenCalled();
+      expect(adapter.getRejectedMessageCounts()).toEqual({ invalidJson: 0, invalidEnvelope: 0 });
+    } finally {
+      parseSpy.mockRestore();
+    }
+  });
+
+  it('counts malformed messages on event channels without dispatching them', () => {
+    const messageHandlers: Array<(channel: string, message: string) => void> = [];
+    const mockPublisher = { publish: vi.fn() } as unknown as Redis;
+    const mockSubscriber = {
+      on: vi.fn((eventName: string, listener: (channel: string, message: string) => void) => {
+        if (eventName === 'message') messageHandlers.push(listener);
+      }),
+    } as unknown as Redis;
+    const adapter = createRedisPubSubAdapter(mockPublisher, mockSubscriber);
+    const queueCallback = vi.fn();
+    adapter.onQueueMessage(queueCallback);
+
+    messageHandlers[0]?.('boardsesh:queue:session-1', 'not-json');
+    for (const payload of ['null', '{}', '{"event":null}', '{"event":[]}']) {
+      messageHandlers[0]?.('boardsesh:queue:session-1', payload);
+    }
+
+    expect(queueCallback).not.toHaveBeenCalled();
+    expect(adapter.getRejectedMessageCounts()).toEqual({ invalidJson: 1, invalidEnvelope: 4 });
+  });
+
   it('routes idless messages to all eight channel callbacks and still skips its own messages', () => {
     const messageHandlers: Array<(channel: string, message: string) => void> = [];
     const mockPublisher = { publish: vi.fn() } as unknown as Redis;
