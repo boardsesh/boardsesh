@@ -6290,6 +6290,9 @@ export type Query = {
    *   true position-exact matches.
    * The duplicate-publish gate uses state-aware (hold_id, hold_state)
    * matching separately — see findExactDuplicateMatch.
+   * Admins get the live query. Everyone else reads the nightly precomputed
+   * index (top 25 per climb at 0.5 and above), and a frames-only lookup
+   * (no climbUuid) is admin-only. See docs/similar-climbs.md.
    */
   similarClimbs: Array<SimilarClimb>;
   /**

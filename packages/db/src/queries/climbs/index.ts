@@ -24,3 +24,26 @@ export { mapSearchInputToParams } from './types';
 
 export { applyWoodsRuleUpdates, type WoodsRuleUpdate } from './woods-rule-repair';
 export * from './spray-visibility';
+export {
+  distinctHoldIds,
+  parseFramesToHoldEntries,
+  storedWoodsSizeId,
+  type NormalizedHold,
+  type NormalizedHoldRow,
+} from './frames-hold-entries';
+export {
+  CLIMB_NEIGHBOR_K,
+  CLIMB_NEIGHBOR_MIN_JACCARD,
+  ClimbNeighborIndex,
+  getMaterializedSimilarClimbs,
+  type ComputedNeighbor,
+  type MaterializedSimilarClimb,
+  type MaterializedSimilarClimbsArgs,
+  type NeighborClimb,
+} from './climb-neighbors';
+export {
+  refreshClimbNeighborsForBoard,
+  type ClimbNeighborRefreshDb,
+  type ClimbNeighborRefreshOptions,
+  type ClimbNeighborRefreshResult,
+} from './climb-neighbors-refresh';

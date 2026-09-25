@@ -1,0 +1,58 @@
+name: Refresh Climb Neighbors
+
+# Nightly: fold every climb that changed since the last run into
+# board_climb_neighbors, the precomputed similar-climbs index the similarClimbs
+# resolver serves to every non-admin caller (the web climb pages included).
+# Watermark-driven per board (board_climb_neighbor_runs), so a normal night only
+# re-scores new and edited climbs plus the lists they land in. Spray walls are
+# never materialised. Design + runbook: docs/similar-climbs.md.
+on:
+  schedule:
+    - cron: '45 6 * * *' # 06:45 UTC daily, after the grade refresh
+  workflow_dispatch:
+    inputs:
+      board:
+        description: 'One board (e.g. kilter), or empty for every board but spray'
+        type: string
+        default: ''
+      full:
+        description: 'Rebuild from scratch, ignoring the watermark (a first run on a board does this by itself)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Compute and count, write nothing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: refresh-climb-neighbors
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # DATABASE_URL must be a WRITABLE connection.
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Refresh climb neighbors
+        working-directory: packages/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BOARD: ${{ inputs.board }}
+        run: >-
+          node --max-old-space-size=4096 --import tsx scripts/refresh-climb-neighbors.ts
+          ${BOARD:+--board=$BOARD}
+          ${{ inputs.full && '--full' || '' }}
+          ${{ inputs.dry_run && '--dry-run' || '' }}

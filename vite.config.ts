@@ -280,6 +280,13 @@ export default defineConfig({
         // read-only validation/dry-runs before writing published grade rows.
         cache: false,
       },
+      'db:refresh-climb-neighbors': {
+        command: 'pnpm --filter @boardsesh/db run db:refresh-climb-neighbors',
+        // Same reasoning as db:refresh-climb-grades: often a remote DB_URL, and
+        // --dry-run writes nothing. Forward flags with
+        // `vp run db:refresh-climb-neighbors -- --board=kilter --full`.
+        cache: false,
+      },
       'db:refresh-moonboard-angle-estimates': {
         command: 'pnpm --filter @boardsesh/db run db:refresh-moonboard-angle-estimates',
         // Same reasoning as db:refresh-climb-grades: often a remote DB_URL, and

@@ -11,16 +11,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
-const { mockDb, findSimilarClimbsMock, parseFramesToHoldEntriesMock } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockDbRead,
+  findSimilarClimbsMock,
+  parseFramesToHoldEntriesMock,
+  getMaterializedSimilarClimbsMock,
+  hasCatalogQueryAccessMock,
+} = vi.hoisted(() => ({
   mockDb: {
     select: vi.fn(),
     execute: vi.fn(),
   },
+  mockDbRead: { execute: vi.fn() },
   findSimilarClimbsMock: vi.fn(),
   parseFramesToHoldEntriesMock: vi.fn(),
+  getMaterializedSimilarClimbsMock: vi.fn(),
+  hasCatalogQueryAccessMock: vi.fn(),
 }));
 
-vi.mock('../db/client', () => ({ db: mockDb }));
+vi.mock('../db/client', () => ({ db: mockDb, dbRead: mockDbRead }));
+
+vi.mock('@boardsesh/db/queries', async () => {
+  const actual = await vi.importActual<typeof import('@boardsesh/db/queries')>('@boardsesh/db/queries');
+  return { ...actual, getMaterializedSimilarClimbs: getMaterializedSimilarClimbsMock };
+});
+
+// Only the boolean gate is scripted; `requireCatalogQueryAccess` stays real so
+// the frames-only rejection below exercises the actual error.
+vi.mock('../graphql/resolvers/social/roles', async () => {
+  const actual = await vi.importActual<typeof import('../graphql/resolvers/social/roles')>(
+    '../graphql/resolvers/social/roles',
+  );
+  return { ...actual, hasCatalogQueryAccess: hasCatalogQueryAccessMock };
+});
 
 vi.mock('../graphql/resolvers/climbs/climb-similarity', async () => {
   // Pull through everything else (CLIMB_DUPLICATE_ERROR_CODE etc.) so other
@@ -69,13 +93,124 @@ function mockSelectChain(rows: ReadonlyArray<Record<string, unknown>>) {
   return chain;
 }
 
-describe('climbQueries.similarClimbs', () => {
+describe('climbQueries.similarClimbs — non-admin callers read the materialised index', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findSimilarClimbsMock.mockReset();
+    getMaterializedSimilarClimbsMock.mockReset();
+    getMaterializedSimilarClimbsMock.mockResolvedValue([]);
+    hasCatalogQueryAccessMock.mockReset();
+    hasCatalogQueryAccessMock.mockResolvedValue(false);
+    mockDb.select.mockReset();
+  });
+
+  it('serves an anonymous climbUuid lookup from board_climb_neighbors, never the live CTE', async () => {
+    const materialised = [{ uuid: 'neighbour', similarity: 0.8 }];
+    getMaterializedSimilarClimbsMock.mockResolvedValue(materialised);
+
+    const result = await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'target', angle: 40, threshold: 0.6, limit: 10 } },
+      makeCtx(),
+    );
+
+    expect(result).toBe(materialised);
+    expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(mockDbRead, {
+      boardType: 'kilter',
+      layoutId: 1,
+      climbUuid: 'target',
+      threshold: 0.6,
+      limit: 10,
+      sizeId: undefined,
+      statsAngle: 40,
+    });
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+    expect(mockDb.select).not.toHaveBeenCalled();
+  });
+
+  it('applies the resolver defaults (0.5, 25) on the materialised path', async () => {
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'tension', layoutId: 9, climbUuid: 'target' } },
+      makeCtx(),
+    );
+    expect(getMaterializedSimilarClimbsMock).toHaveBeenCalledWith(
+      mockDbRead,
+      expect.objectContaining({ threshold: 0.5, limit: 25, statsAngle: undefined }),
+    );
+  });
+
+  it('passes a Woods size through and drops it on other boards', async () => {
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'woods', layoutId: 1, climbUuid: 'target', sizeId: 2 } },
+      makeCtx(),
+    );
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'target', sizeId: 10 } },
+      makeCtx(),
+    );
+    expect(getMaterializedSimilarClimbsMock.mock.calls[0][1]).toMatchObject({ sizeId: 2 });
+    expect(getMaterializedSimilarClimbsMock.mock.calls[1][1]).toMatchObject({ sizeId: undefined });
+  });
+
+  it('rejects a frames-only lookup for a non-admin: there is no materialised answer for it', async () => {
+    await expect(
+      climbQueries.similarClimbs({}, { input: { boardType: 'kilter', layoutId: 1, frames: 'p1r12' } }, makeCtx()),
+    ).rejects.toThrow('This live catalogue query is limited to admins');
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+    expect(getMaterializedSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
+  it('returns [] for a spray wall without touching either path', async () => {
+    const result = await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'spray', layoutId: 7, climbUuid: 'wall-climb' } },
+      makeCtx({ isAuthenticated: true, userId: 'user-1' }),
+    );
+    expect(result).toEqual([]);
+    expect(getMaterializedSimilarClimbsMock).not.toHaveBeenCalled();
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
+  it('answers a frames-only spray lookup with [] rather than an error', async () => {
+    expect(
+      await climbQueries.similarClimbs({}, { input: { boardType: 'spray', layoutId: 7, frames: 'p1r42' } }, makeCtx()),
+    ).toEqual([]);
+  });
+
+  it('asks the gate with the board, so a board-scoped admin counts', async () => {
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'tension', layoutId: 9, climbUuid: 'target' } },
+      makeCtx(),
+    );
+    expect(hasCatalogQueryAccessMock).toHaveBeenCalledWith(expect.anything(), 'tension');
+  });
+});
+
+describe('climbQueries.similarClimbs — admins keep the live path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     findSimilarClimbsMock.mockReset();
     parseFramesToHoldEntriesMock.mockReset();
     findSimilarClimbsMock.mockResolvedValue([]);
+    getMaterializedSimilarClimbsMock.mockReset();
+    hasCatalogQueryAccessMock.mockReset();
+    hasCatalogQueryAccessMock.mockResolvedValue(true);
     mockDb.select.mockReset();
+  });
+
+  it('never reads the materialised index', async () => {
+    mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 1, holdState: 'STARTING' }]));
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 8, climbUuid: 'target' } },
+      makeCtx(),
+    );
+    expect(findSimilarClimbsMock).toHaveBeenCalledTimes(1);
+    expect(getMaterializedSimilarClimbsMock).not.toHaveBeenCalled();
   });
 
   it('looks up Woods physical size from the target climb', async () => {

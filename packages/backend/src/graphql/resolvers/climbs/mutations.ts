@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import {
   type ConnectionContext,
   type SaveClimbResult,
@@ -1105,6 +1105,23 @@ export const climbMutations = {
               )
               .onConflictDoNothing();
           }
+
+          // The materialised similar-climbs index scored this climb on the holds
+          // it just gave up, so its rows are wrong in both directions: its own
+          // neighbour list, and its slot in every other climb's list. Drop them
+          // with the hold rewrite; the UPDATE above bumped `sync_seq`, which puts
+          // the climb back in the nightly refresh window (docs/similar-climbs.md).
+          await tx
+            .delete(dbSchema.boardClimbNeighbors)
+            .where(
+              and(
+                eq(dbSchema.boardClimbNeighbors.boardType, validated.boardType),
+                or(
+                  eq(dbSchema.boardClimbNeighbors.climbUuid, validated.uuid),
+                  eq(dbSchema.boardClimbNeighbors.neighborUuid, validated.uuid),
+                ),
+              ),
+            );
 
           // The climb just moved under the wall, so its integrity number now
           // describes holds it no longer uses. A climber whose problem lost two
