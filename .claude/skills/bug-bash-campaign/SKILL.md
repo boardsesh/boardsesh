@@ -90,7 +90,7 @@ Never under `/tmp` or `.claude/worktrees/` (the mobile bundle check needs a sibl
 
 **Paste this block into every implementer prompt**, replacing `<scratchpad>` with the absolute path
 of your session's scratchpad directory (Claude Code names it in the system prompt; subagents share
-it; with none, use `$TMPDIR/<loop>`) and `<issue>`/`<loop>` with real values:
+it; with none, use `${TMPDIR:-/tmp}/<loop>`) and `<issue>`/`<loop>` with real values:
 
 > - Prove each guard fires: revert the fix, watch the test go red, restore, and paste the real red
 >   output. A new lint rule or checker needs a deliberately broken fixture.
