@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-25T09:21:01.387Z",
+  "generatedAt": "2026-09-25T10:06:25.902Z",
   "entries": [
+    {
+      "prNumber": 5760,
+      "category": "fixed",
+      "title": "Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab",
+      "mergedAt": "2026-09-25T09:59:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5760",
+      "body": "Tapping You always lands on your profile now, even after a trip through Settings"
+    },
     {
       "prNumber": 5759,
       "category": "fixed",

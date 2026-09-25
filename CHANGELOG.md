@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab ([#5760](https://github.com/boardsesh/boardsesh/pull/5760))
+  Tapping You always lands on your profile now, even after a trip through Settings
 - The grade filter now matches the Boardsesh grades you see on each climb. ([#5759](https://github.com/boardsesh/boardsesh/pull/5759))
 - Spanish send button now reads "Encadenado", matching the wording used everywhere else a send shows up in the app. ([#5751](https://github.com/boardsesh/boardsesh/pull/5751))
 - Sign in to Kilter now asks for your email, not a username — matching how you actually log into the Kilter app. ([#5754](https://github.com/boardsesh/boardsesh/pull/5754))
