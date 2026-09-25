@@ -118,30 +118,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: ChildrenProps) => createElement('span', null, children),
 }));
 
-// HoldTargetLayer is markers only — it takes no handlers and never hit-tests.
-// The mock records the props it was handed so a test can assert that.
-type HoldTargetLayerMockProps = {
-  holdTargets: BoardHoldTarget[];
-  showAllHolds: boolean;
-  showHoldMarkers?: boolean;
-};
-const holdLayerProps = vi.hoisted(() => [] as Record<string, unknown>[]);
-vi.mock('../../create-climb/HoldTargetLayer', () => ({
-  HoldTargetLayer: (props: HoldTargetLayerMockProps & Record<string, unknown>) => {
-    holdLayerProps.push(props);
-    const { holdTargets: holds, showAllHolds, showHoldMarkers } = props;
-    return createElement(
-      'div',
-      {
-        'data-hold-layer': 'true',
-        'data-show-all-holds': String(showAllHolds),
-        'data-show-hold-markers': String(showHoldMarkers),
-      },
-      holds.map((hold) => createElement('div', { key: hold.id, 'data-hold-id': hold.id })),
-    );
-  },
-}));
-
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: 'rgba(0,0,0,0.6)', onScrim: '#FFF' },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
@@ -162,7 +138,6 @@ type Overrides = {
   holdsFilter?: HoldsFilter;
   activeHoldId?: number | null;
   onHoldTap?: (id: number) => void;
-  showHoldMarkers?: boolean;
   controlRef?: { current: FilterBoardControls | null };
 };
 
@@ -180,7 +155,6 @@ function renderBoard(overrides: Overrides = {}) {
       holdsFilter={overrides.holdsFilter ?? {}}
       activeHoldId={overrides.activeHoldId ?? null}
       onHoldTap={onHoldTap}
-      showHoldMarkers={overrides.showHoldMarkers}
       renderWidth={400}
       renderHeight={500}
       controlRef={overrides.controlRef}
@@ -194,38 +168,25 @@ describe('InteractiveFilterBoard', () => {
     zoomState.isZoomed = false;
     zoomState.resetZoom.mockClear();
     restTapCalls.length = 0;
-    holdLayerProps.length = 0;
   });
 
-  it('renders the board image, filter rings, and a marker per hold', () => {
+  it('renders the board image and filter rings, with no per-hold dots', () => {
     const { container } = renderBoard();
     expect(container.querySelector('[data-board-image="true"]')).not.toBeNull();
     expect(container.querySelector('[data-rings="true"]')).not.toBeNull();
-    expect(container.querySelectorAll('[data-hold-id]').length).toBe(holdTargets.length);
+    // The round discoverability dots are gone; the board photo is the target.
+    expect(container.querySelectorAll('[data-hold-id]').length).toBe(0);
   });
 
   it('arbitrates at-rest taps through the nearest-hold overlay, not per-hold z-order', () => {
     const { onHoldTap } = renderBoard();
-    // The hold layer takes no handlers, so nothing under the overlay hit-tests
-    // and z-order can't decide the winner any more (#4496).
-    const layerProps = holdLayerProps.at(-1) ?? {};
-    for (const gestureProp of ['onPaint', 'onLongPress', 'pinchRef', 'isPinchingSV', 'interactive']) {
-      expect(layerProps).not.toHaveProperty(gestureProp);
-    }
+    // Nothing is mounted per hold, so nothing under the overlay hit-tests and
+    // z-order can't decide the winner any more (#4496).
     const restOptions = restTapCalls.at(-1);
     expect(restOptions?.onTap).toBe(onHoldTap);
     // One hit circle per hold, so the overlay can resolve by distance.
     expect(restOptions?.hitTargets).toHaveLength(holdTargets.length);
     expect(restOptions?.pinchRef).toBeDefined();
-  });
-
-  it('can hide the hold markers while the overlay keeps taking taps', () => {
-    const { container } = renderBoard({ showHoldMarkers: false });
-    const holdLayer = container.querySelector('[data-hold-layer="true"]');
-    expect(holdLayer?.getAttribute('data-show-all-holds')).toBe('true');
-    expect(holdLayer?.getAttribute('data-show-hold-markers')).toBe('false');
-    // The overlay is independent of the markers, so taps keep working.
-    expect(restTapCalls.at(-1)?.onTap).toBeDefined();
   });
 
   it('shows no reset control while not zoomed', () => {
@@ -254,14 +215,14 @@ describe('InteractiveFilterBoard', () => {
 
   it('renders an active highlight when a hold is active', () => {
     // The highlight is built only when activeHoldId resolves to a known hold;
-    // an unknown id yields none. We assert the known-id path renders without
-    // throwing and the unknown-id path is a no-op.
-    const known = renderBoard({ activeHoldId: 10 });
-    expect(known.container.querySelector('[data-hold-layer="true"]')).not.toBeNull();
-    known.unmount();
-
+    // an unknown id yields none, so the known id mounts exactly one more node.
     const unknown = renderBoard({ activeHoldId: 999 });
-    expect(unknown.container.querySelector('[data-hold-layer="true"]')).not.toBeNull();
+    const unknownCount = unknown.container.querySelectorAll('*').length;
+    expect(unknown.container.querySelector('[data-board-image="true"]')).not.toBeNull();
+    unknown.unmount();
+
+    const known = renderBoard({ activeHoldId: 10 });
+    expect(known.container.querySelectorAll('*').length).toBe(unknownCount + 1);
   });
   it('does not render an above-board overlay unless one is asked for', () => {
     const { container } = renderBoard();

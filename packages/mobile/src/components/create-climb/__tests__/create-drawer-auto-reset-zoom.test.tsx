@@ -94,7 +94,6 @@ function makeController(overrides: Record<string, unknown> = {}): Controller {
     handleToggleBle: vi.fn(),
     litUpHoldsMap: {},
     handlePaint: vi.fn(),
-    showAllHolds: false,
     selectedBrush: 'HAND',
     setSelectedBrush: vi.fn(),
     canUndo: false,

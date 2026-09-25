@@ -77,9 +77,9 @@ type LayeredClimbImageProps = {
   retainPreviousOverlayFor?: string;
   /**
    * Drawn above the board photo and BELOW the holds overlay. For anything that
-   * has to sit on the wall rather than on the climb — the create board's
-   * discoverability dots, a heatmap — where rendering it as a sibling of this
-   * component would put it over the lit holds instead.
+   * has to sit on the wall rather than on the climb — a heatmap — where
+   * rendering it as a sibling of this component would put it over the lit holds
+   * instead.
    */
   underOverlay?: ReactNode;
   /**

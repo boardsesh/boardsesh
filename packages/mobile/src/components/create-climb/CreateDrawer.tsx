@@ -407,7 +407,6 @@ export function CreateDrawer({
                 litUpHoldsMap={controller.litUpHoldsMap}
                 onPaint={controller.handlePaint}
                 onLongPressHold={onLongPressHold}
-                showAllHolds={controller.showAllHolds}
                 renderWidth={boardRender.width}
                 renderHeight={boardRender.height}
                 controlRef={boardControlsRef}
@@ -478,8 +477,6 @@ export function CreateDrawer({
               anyFeetAvailable={controller.anyFeetAvailable}
               isDraft={controller.isDraft}
               onChangeIsDraft={controller.setIsDraft}
-              showAllHolds={controller.showAllHolds}
-              onChangeShowAllHolds={controller.setShowAllHolds}
             />
             <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
           </View>

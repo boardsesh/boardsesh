@@ -88,7 +88,6 @@ function makeController(): Controller {
     handleToggleBle: vi.fn(),
     litUpHoldsMap: {},
     handlePaint: vi.fn(),
-    showAllHolds: false,
     selectedBrush: 'HAND',
     setSelectedBrush: vi.fn(),
     canUndo: false,

@@ -55,18 +55,6 @@ vi.mock('../../BoardImageNative', () => ({
     return createElement('div', { 'data-testid': 'board-image' }, props.underOverlay as ReactNode);
   },
 }));
-// The board no longer imports this. Mocked anyway so the "only one dot layer"
-// assertion below is a real probe: if it is ever mounted again, it shows up.
-vi.mock('../HoldTargetLayer', () => ({
-  HoldTargetLayer: () => createElement('div', { 'data-testid': 'hold-targets' }),
-}));
-const holdMarkerLayerProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
-vi.mock('../HoldMarkerLayer', () => ({
-  HoldMarkerLayer: (props: Record<string, unknown>) => {
-    holdMarkerLayerProps.current = props;
-    return createElement('div', { 'data-testid': 'hold-markers' });
-  },
-}));
 vi.mock('../PaintedHoldsLayer', () => ({
   PaintedHoldsLayer: () => createElement('div', { 'data-testid': 'painted-holds' }),
 }));
@@ -90,18 +78,11 @@ const BOARD_PROPS = {
 };
 
 describe('InteractiveCreateBoard layer order', () => {
-  it('draws the discoverability dots under the rendered holds, not over them', () => {
-    const { container, getByTestId } = render(
-      createElement(InteractiveCreateBoard, { ...BOARD_PROPS, showAllHolds: true }),
-    );
+  it('draws no per-hold dots: the under-overlay slot is empty without a caller overlay', () => {
+    render(createElement(InteractiveCreateBoard, BOARD_PROPS));
 
-    // The marks go in the board image's under-overlay slot. Above the overlay a
-    // dot would sit in the middle of a lit hold's fill and its role glyph.
-    expect(getByTestId('board-image').querySelector('[data-testid="hold-markers"]')).not.toBeNull();
-    expect(holdMarkerLayerProps.current?.showAllHolds).toBe(true);
-    // ...and they are the ONLY dots: the layer that used to draw a second set on
-    // top of the holds is gone, along with its per-hold hit-testing (#4496).
-    expect(container.querySelector('[data-testid="hold-targets"]')).toBeNull();
+    // The round discoverability dots are gone; the board photo is the target.
+    expect(boardImageProps.current?.underOverlay).toBeNull();
   });
 
   it('keeps the caller overlay under the holds too, where its own contract puts it', () => {

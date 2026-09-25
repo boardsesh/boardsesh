@@ -573,7 +573,6 @@ export function SprayHoldEditorScreen({
           holdTargets={holdTargets}
           activeHoldId={state.selectedIds[0] ?? null}
           onHoldTap={handleHoldTap}
-          showHoldMarkers={false}
           renderWidth={boardRender.width}
           renderHeight={boardRender.height}
           renderInTransform={renderInTransform}

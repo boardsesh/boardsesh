@@ -713,8 +713,6 @@
       "settings": {
         "draftLabel": "Guardar como borrador",
         "draftDescription": "Los borradores quedan privados hasta que los publiques.",
-        "showAllHoldsLabel": "Mostrar todas las presas",
-        "showAllHoldsDescription": "Resalta todas las presas pulsables del plafón.",
         "noMatchLabel": "Sin igualar",
         "noMatchDescription": "No se pueden igualar las manos en la misma presa",
         "noKickboardLabel": "Sin repisa inferior",

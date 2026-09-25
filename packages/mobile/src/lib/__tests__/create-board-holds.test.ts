@@ -59,8 +59,8 @@ describe('getCreateBoardHolds', () => {
   });
 
   // A Woods hold id is a mounting slot, and 106 of the 8x10's 485 and 169 of the
-  // 12x12's 894 carry no hold. Only the occupied ones may become tap targets or
-  // discoverability dots (#5185).
+  // 12x12's 894 carry no hold. Only the occupied ones may become tap targets
+  // (#5185).
   it.each([
     { sizeId: 1, dimension: '8x10' as const, slots: 485, width: 720, height: 1000 },
     { sizeId: 2, dimension: '12x12' as const, slots: 894, width: 1225, height: 1400 },

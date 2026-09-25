@@ -713,8 +713,6 @@
       "settings": {
         "draftLabel": "Save as draft",
         "draftDescription": "Drafts stay private until you publish them.",
-        "showAllHoldsLabel": "Show all holds",
-        "showAllHoldsDescription": "Highlight every tappable hold on the board.",
         "noMatchLabel": "No matching",
         "noMatchDescription": "Hands can't match on the same hold",
         "noKickboardLabel": "No kickboard",
