@@ -91,6 +91,11 @@ describe('classifyInstallChannel', () => {
     expect(classifyInstallChannel(parseInstallReferrer('utm_source=google&utm_medium=organic'))).toBe('organic');
   });
 
+  it('reads organic in any letter case', () => {
+    expect(classifyInstallChannel(parseInstallReferrer('utm_source=google-play&utm_medium=Organic'))).toBe('organic');
+    expect(classifyInstallChannel(parseInstallReferrer('utm_medium=ORGANIC'))).toBe('organic');
+  });
+
   it('reads a tagged link as a campaign', () => {
     expect(classifyInstallChannel(parseInstallReferrer('utm_source=gym&utm_medium=qr&utm_campaign=pilot'))).toBe(
       'campaign',

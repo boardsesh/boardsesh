@@ -70,7 +70,7 @@ function hasValue(param: string | null): boolean {
 }
 
 export function classifyInstallChannel(parsed: ParsedInstallReferrer): InstallChannel {
-  if (parsed.medium === 'organic') return 'organic';
+  if (parsed.medium?.toLowerCase() === 'organic') return 'organic';
   if (hasValue(parsed.source) || hasValue(parsed.medium) || hasValue(parsed.campaign)) return 'campaign';
   return 'unknown';
 }

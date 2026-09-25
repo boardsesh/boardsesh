@@ -35,6 +35,22 @@ describe('registerMobileUserAgent', () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  // #5653: the Expo browser app's resolver returns null for a browser with no
+  // UA. The property must stay unset so PostHog flags the event, as on www.
+  it('registers nothing when the resolver has no user agent', async () => {
+    vi.resetModules();
+    vi.doMock('../analytics-user-agent', () => ({ resolveAnalyticsUserAgent: () => null }));
+    try {
+      const { registerMobileUserAgent: registerWithoutUserAgent } = await import('../posthog-client');
+      const register = vi.fn();
+      registerWithoutUserAgent({ register });
+      expect(register).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('../analytics-user-agent');
+      vi.resetModules();
+    }
+  });
 });
 
 // #3814: without this, mobile PostHog events carried no environment tag at all,

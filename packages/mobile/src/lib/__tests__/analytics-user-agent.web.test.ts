@@ -32,16 +32,25 @@ describe('resolveAnalyticsUserAgent (Expo browser app)', () => {
     vi.stubGlobal('navigator', { userAgent: `${BROWSER_UA} ${'x'.repeat(2000)}` });
     const { resolveAnalyticsUserAgent } = await import('../analytics-user-agent.web');
 
-    const resolved = resolveAnalyticsUserAgent();
-    expect(resolved.length).toBe(1000);
+    const resolved = resolveAnalyticsUserAgent() ?? '';
+    expect(resolved).toHaveLength(1000);
     expect(resolved.startsWith(BROWSER_UA)).toBe(true);
   });
 
-  it('falls back to the app constant when the browser exposes no user agent', async () => {
+  // A real browser always has a UA, so an empty one is a bot signal. Returning
+  // the app constant here would label it human; www leaves the property unset.
+  it('returns null, not the app constant, when the browser exposes no user agent', async () => {
     vi.stubGlobal('navigator', {});
     const { resolveAnalyticsUserAgent } = await import('../analytics-user-agent.web');
 
-    expect(resolveAnalyticsUserAgent()).toBe(MOBILE_USER_AGENT);
+    expect(resolveAnalyticsUserAgent()).toBeNull();
+  });
+
+  it('returns null for an empty user agent string', async () => {
+    vi.stubGlobal('navigator', { userAgent: '' });
+    const { resolveAnalyticsUserAgent } = await import('../analytics-user-agent.web');
+
+    expect(resolveAnalyticsUserAgent()).toBeNull();
   });
 });
 

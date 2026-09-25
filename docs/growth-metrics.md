@@ -55,8 +55,9 @@ before grouping.
   `$virt_is_bot` for dates before that.
 - **Native events send the constant `Boardsesh Mobile`.** The browser app now
   sends the real browser UA (`analytics-user-agent.web.ts`), from the same
-  deploy. About 12 Android people a week are still flagged bots by PostHog
-  despite the UA, probably Play pre-launch test devices.
+  deploy, and no UA at all when the browser reports none, so PostHog flags it.
+  About 12 Android people a week are still flagged bots by PostHog despite the
+  UA, probably Play pre-launch test devices.
 
 ## Funnels
 
@@ -80,7 +81,7 @@ These are separate counts. None of them is a funnel of the same people.
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Landing visits       | www `$pageview`, by page group                             | Visits, after the crawler caveats above.                                                         |
 | Store clicks         | `App Install Click` (www), by `platform` and `source`      | Someone tapped a store button. Not an install.                                                    |
-| Android install source | person property `install_channel`, event `Install Attributed` | From the Play Install Referrer, once per install. `campaign`, `organic` or `unknown`.              |
+| Android install source | person properties `install_source` / `install_medium` / `install_campaign`, classified with the expression below | From the Play Install Referrer, once per install. `campaign`, `organic` or `unknown`. |
 | iOS install source   | none                                                       | Apple gives us no referrer. Show iOS as unknown; do not infer it.                                 |
 | New-user activation  | the Activation funnel above                                 | Counts people, not installs.                                                                      |
 
@@ -88,9 +89,36 @@ These are separate counts. None of them is a funnel of the same people.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),
 so 584 of the 663 people who fired it from 2026-08-23 to 2026-09-19 were
 organic. It also fires on the first launch of an older install that never ran
-the referrer code, so it is not a new-install count. Count campaign installs
-with `install_channel = campaign` (sent from the #5653 fix onward); filter new
-installs on `install_begin_timestamp`.
+the referrer code, so it is not a new-install count. Filter new installs on
+`install_begin_timestamp`.
+
+Classify the channel from the person properties every Android install already
+has. This matches `classifyInstallChannel` in
+`packages/mobile/src/lib/install-referrer.ts` and covers every install back to
+the start:
+
+```sql
+multiIf(
+  lower(person.properties.install_medium) = 'organic', 'organic',
+  coalesce(
+    nullIf(nullIf(person.properties.install_source, ''), '(not set)'),
+    nullIf(nullIf(person.properties.install_medium, ''), '(not set)'),
+    nullIf(nullIf(person.properties.install_campaign, ''), '(not set)')
+  ) IS NOT NULL, 'campaign',
+  'unknown'
+)
+```
+
+The app also sends that result as `install_channel`, but don't build tiles on it
+yet. The referrer is read once, on an install's first launch. That launch runs
+the JS embedded in the store APK: expo-updates' `fallbackToCacheTimeout` is left
+at its default of 0, so an OTA only applies from the next cold start. So
+`install_channel` only appears for installs of the next Android store binary
+after #5653, and never for anyone who installed before it.
+
+A Google Ads install whose referrer carries only `gclid=…` and no `utm_*` reads
+as `unknown` and fires no `Install Attributed`. Its raw referrer is kept in
+`install_referrer_raw`.
 
 ## Retention
 
@@ -104,6 +132,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | ---------- | --------------------------------------------------------------- |
 | 2026-07-25 | Native events start carrying `environment` (legacy binaries never do) |
 | 2026-09-11 | Known crawlers stop booting the www client (#5388)              |
-| #5653 deploy | www and browser app send `$raw_user_agent`; `install_channel` added |
+| #5653 web and OTA deploy | www and browser app send `$raw_user_agent` |
+| next Android store binary after #5653 | New Android installs send `install_channel` (use the expression above until then) |
 
 None of these repairs past data. Annotate them; do not backfill.

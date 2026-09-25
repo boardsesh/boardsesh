@@ -5,14 +5,17 @@ import { resolveAppEnvironment } from './app-environment';
 
 // Registers the User-Agent as a super property on every event: the static,
 // non-bot app constant on native, the real browser UA in the Expo browser app
-// (see analytics-user-agent.web.ts). Exported so the call site is unit-testable:
+// (see analytics-user-agent.web.ts), and nothing at all when that browser has
+// no UA, so PostHog flags the event as it does on www. Exported so the call site is unit-testable:
 // getPostHogClient() returns null before reaching its own call to this whenever
 // analytics is disabled (no token, or __DEV__ — both hold in the test env), so
 // the live path can't run in tests. Best-effort: a failure must never block
 // analytics init.
 export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void {
+  const userAgent = resolveAnalyticsUserAgent();
+  if (!userAgent) return;
   try {
-    void Promise.resolve(client.register({ $raw_user_agent: resolveAnalyticsUserAgent() })).catch((error: unknown) => {
+    void Promise.resolve(client.register({ $raw_user_agent: userAgent })).catch((error: unknown) => {
       if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
     });
   } catch (error) {

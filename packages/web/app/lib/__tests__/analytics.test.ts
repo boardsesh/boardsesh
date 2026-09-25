@@ -144,17 +144,8 @@ describe('analytics wrapper', () => {
 
   // #5653: posthog-js-lite never sends `$raw_user_agent`, and PostHog's
   // `$virt_is_bot` reads that event property (not the proxied request header),
-  // so every web event was classed as a bot. The browser UA must ride along as
-  // a super property from the first event.
-  it('registers the browser user agent as $raw_user_agent on first PostHog client init', async () => {
-    const { track } = await import('../analytics');
-
-    track('Climb Opened');
-
-    const registered = mocks.posthog.register.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
-    expect(registered?.$raw_user_agent).toBe(BROWSER_UA);
-  });
-
+  // so every web event was classed as a bot. The assertion above pins the UA
+  // onto the first registration; these pin its edges.
   it('caps $raw_user_agent at 1000 characters', async () => {
     setUserAgent(`${BROWSER_UA} ${'x'.repeat(2000)}`);
     const { track } = await import('../analytics');
@@ -165,6 +156,15 @@ describe('analytics wrapper', () => {
     const rawUserAgent = typeof registered?.$raw_user_agent === 'string' ? registered.$raw_user_agent : '';
     expect(rawUserAgent).toHaveLength(1000);
     expect(rawUserAgent.startsWith(BROWSER_UA)).toBe(true);
+  });
+
+  it('leaves $raw_user_agent unset when the browser reports an empty user agent', async () => {
+    setUserAgent('');
+    const { track } = await import('../analytics');
+
+    track('Climb Opened');
+
+    expect(mocks.posthog.register).toHaveBeenCalledWith({ environment: 'production' });
   });
 
   it('never registers an environment super property on a preview hostname', async () => {

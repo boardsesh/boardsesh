@@ -94,6 +94,17 @@ function getPosthog(): PostHog | null {
   return posthogClient;
 }
 
+// posthog-js caps the UA it sends at 1000 characters too (997 plus "...").
+const MAX_RAW_USER_AGENT_LENGTH = 1000;
+
+// An empty UA leaves `$raw_user_agent` unset, so PostHog flags the event: a real
+// browser always has one.
+function webSuperProperties(userAgent: string): Record<string, string> {
+  const properties: Record<string, string> = { environment: 'production' };
+  if (userAgent) properties.$raw_user_agent = userAgent.slice(0, MAX_RAW_USER_AGENT_LENGTH);
+  return properties;
+}
+
 // Registers the super properties every web event carries: `environment` and
 // `$raw_user_agent`.
 //
@@ -103,7 +114,7 @@ function getPosthog(): PostHog | null {
 // header the backend proxy forwards (#3139), so every web event landed with no
 // UA and was classed as a bot: 0 of ~660k `$lib = js` events carried one over
 // the 120 days to 2026-09-25, and all of them were `$virt_is_bot = true`
-// (#5653). Capped at 1000 chars like posthog-js does. Mobile registers its own
+// (#5653). Mobile registers its own
 // constant for the same reason (registerMobileUserAgent in posthog-client.ts).
 //
 // `environment: 'production'` mirrors mobile's registerAppEnvironment() in
@@ -128,14 +139,6 @@ function getPosthog(): PostHog | null {
 // both swallowed. register() is declared `async` in @posthog/core 1.46.1, so
 // today it can only reject — the Promise.resolve() + try/catch keeps that from
 // being a silent version coupling if a future SDK makes it sync.
-const MAX_RAW_USER_AGENT_LENGTH = 1000;
-
-function webSuperProperties(userAgent: string): Record<string, string> {
-  const properties: Record<string, string> = { environment: 'production' };
-  if (userAgent) properties.$raw_user_agent = userAgent.slice(0, MAX_RAW_USER_AGENT_LENGTH);
-  return properties;
-}
-
 function registerWebSuperProperties(client: PostHog): void {
   try {
     void Promise.resolve(client.register(webSuperProperties(navigator.userAgent))).catch((error: unknown) => {
