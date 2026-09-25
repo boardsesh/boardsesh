@@ -264,6 +264,19 @@ export const SHARED_EVENTS = {
   // what the radio actually did. BluetoothConnectionStolen is the tug-of-war
   // signal: a write failed with a disconnect error while we believed we were
   // connected (another device grabbed the last-connection-wins board).
+  //
+  // Connect-step timings (mobile, #5775). All are whole milliseconds from the
+  // start of the connect (a monotonic clock), so tap-to-picker can be split by
+  // step without joining events:
+  //  - `pre_scan_ms` on Bluetooth Scan Started: the permission check, the
+  //    adapter availability check and tearing down a previous link.
+  //  - `picker_open_ms` on Bluetooth Connection Success / Failed: until the app
+  //    asked for the device picker. It covers everything in `pre_scan_ms` plus
+  //    the iOS config pre-stage. It is when the sheet was requested, not when
+  //    it finished sliding in. Absent when no picker opened (Expo web uses the
+  //    browser's chooser; a connect that failed before the scan).
+  //  - `configure_ms` on the same two events: the iOS native config pre-stage
+  //    alone. Absent off the iOS native adapter.
   BluetoothScanStarted: 'Bluetooth Scan Started',
   BluetoothConnectionStolen: 'Bluetooth Connection Stolen',
   // Mobile-only: the runtime BLE permission request came back denied, so the
