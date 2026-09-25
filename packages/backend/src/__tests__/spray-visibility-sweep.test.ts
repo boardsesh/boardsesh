@@ -573,6 +573,10 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
 
+  // --- hold heatmap: admin-only live aggregate --------------------------------
+  'Query.holdHeatmap':
+    'an admin-only live aggregate behind requireAdmin, so the sweep owner (not an admin) is refused; a non-admin gets the heatmap from the wall mirrored on the phone, and an admin still passes the sprayLayoutIsReadableWithCapability gate',
+
   // --- stats and grades: numbers keyed on a uuid the caller already holds -----
   'Query.angles': 'the static angle catalogue for a board type; the layout id is not read',
   'Query.climbStatsHistory': 'ascent/quality/grade numbers only, and the seed logs no history rows',
