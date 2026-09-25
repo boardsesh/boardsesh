@@ -117,7 +117,7 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
  * The rounded grade id a climb is filtered on — and, under the Boardsesh source,
  * sorted on — for `searchParams.gradeSource` (issues #5643, #5752, #5753).
  *
- *   - 'aurora' (and undefined): the crowd/setter grade (display_difficulty),
+ *   - 'upstream' (and undefined): the board's own catalogue grade (display_difficulty),
  *     falling back to the Boardsesh grade only when there is no stats row.
  *   - 'boardsesh': the Boardsesh grade (COALESCE(universal, local), the value a
  *     list row labels a climb with when Boardsesh grades are on), falling back to
@@ -128,15 +128,15 @@ function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: 
  * packages/mobile/src/db/queries/search-climbs-local.ts.
  */
 export function gradeValueSql(displayDifficulty: SQL, gradeSource: ClimbSearchParams['gradeSource']): SQL {
-  const auroraGrade = sql`ROUND(${displayDifficulty}::numeric, 0)`;
+  const upstreamGrade = sql`ROUND(${displayDifficulty}::numeric, 0)`;
   const boardseshGrade = sql`ROUND(COALESCE(${boardClimbGrades.universalGrade}, ${boardClimbGrades.localGrade})::numeric, 0)`;
-  if (gradeSource !== 'boardsesh') return sql`COALESCE(${auroraGrade}, ${boardseshGrade})`;
+  if (gradeSource !== 'boardsesh') return sql`COALESCE(${upstreamGrade}, ${boardseshGrade})`;
   // A `setter_only` grade is never shown on a row (the label falls back to the
-  // Aurora grade — `resolveBoardseshDifficulty` in the mobile app), so it must not
-  // be filtered or sorted on either. The Aurora branch above keeps its fallback
-  // exactly as it was.
+  // upstream grade — `resolveBoardseshDifficulty` in the mobile app), so it must
+  // not be filtered or sorted on either. The upstream branch above keeps its
+  // fallback exactly as it was.
   const shownBoardseshGrade = sql`CASE WHEN ${boardClimbGrades.confidence} = 'setter_only' THEN NULL ELSE ${boardseshGrade} END`;
-  return sql`COALESCE(${shownBoardseshGrade}, ${auroraGrade})`;
+  return sql`COALESCE(${shownBoardseshGrade}, ${upstreamGrade})`;
 }
 
 /**

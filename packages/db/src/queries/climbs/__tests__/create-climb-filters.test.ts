@@ -718,9 +718,9 @@ void describe('createClimbFilters: grade range', () => {
   });
 
   // Issues #5643 / #5752 / #5753: which grade the range reads first.
-  void it('reads display_difficulty first by default and under aurora', () => {
+  void it('reads display_difficulty first by default and under upstream', () => {
     const dialect = new PgDialect();
-    for (const gradeSource of [undefined, 'aurora'] as const) {
+    for (const gradeSource of [undefined, 'upstream'] as const) {
       const f = createClimbFilters(params, { minGrade: 16, maxGrade: 16, gradeSource });
       const rendered = dialect.sqlToQuery(f.gradeRangeConditions[0]).sql;
       assert.ok(rendered.indexOf('display_difficulty') < rendered.indexOf('universal_grade'), rendered);
@@ -746,11 +746,11 @@ void describe('createClimbFilters: grade range', () => {
 
   void it('normalizes the wire gradeSource: only BOARDSESH survives', () => {
     assert.equal(normalizeGradeSource('BOARDSESH'), 'boardsesh');
-    assert.equal(normalizeGradeSource('AURORA'), undefined);
+    assert.equal(normalizeGradeSource('UPSTREAM'), undefined);
     assert.equal(normalizeGradeSource(undefined), undefined);
     assert.equal(normalizeGradeSource('nonsense'), undefined);
     assert.equal(mapSearchInputToParams({ gradeSource: 'BOARDSESH', minGrade: 16 }).gradeSource, 'boardsesh');
-    assert.equal(mapSearchInputToParams({ gradeSource: 'AURORA', minGrade: 16 }).gradeSource, undefined);
+    assert.equal(mapSearchInputToParams({ gradeSource: 'UPSTREAM', minGrade: 16 }).gradeSource, undefined);
   });
 
   void it('keeps gradeSource only when a grade bound or the difficulty sort can read it', () => {
@@ -765,14 +765,14 @@ void describe('createClimbFilters: grade range', () => {
     assert.equal(withSource({ minGrade: 0, maxGrade: 0 }), undefined);
   });
 
-  void it('skips a setter_only Boardsesh grade under boardsesh, and leaves aurora untouched', () => {
+  void it('skips a setter_only Boardsesh grade under boardsesh, and leaves upstream untouched', () => {
     const dialect = new PgDialect();
     const boardsesh = dialect.sqlToQuery(
       createClimbFilters(params, { minGrade: 16, gradeSource: 'boardsesh' }).gradeRangeConditions[0],
     ).sql;
     assert.match(boardsesh, /CASE WHEN "board_climb_grades"\."confidence" = 'setter_only' THEN NULL ELSE/);
-    const aurora = dialect.sqlToQuery(createClimbFilters(params, { minGrade: 16 }).gradeRangeConditions[0]).sql;
-    assert.doesNotMatch(aurora, /setter_only/);
+    const upstream = dialect.sqlToQuery(createClimbFilters(params, { minGrade: 16 }).gradeRangeConditions[0]).sql;
+    assert.doesNotMatch(upstream, /setter_only/);
   });
 
   void it('getClimbStatsConditions() still includes the grade-range condition for the WHERE clause', () => {

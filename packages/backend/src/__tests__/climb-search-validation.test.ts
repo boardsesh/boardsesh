@@ -73,16 +73,16 @@ describe('ClimbSearchInputSchema personal rating filters (#2645)', () => {
 
 describe('ClimbSearchInputSchema gradeSource (#5643)', () => {
   it('accepts the two enum values and rejects anything else', () => {
-    expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'AURORA' }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'UPSTREAM' }).success).toBe(true);
     expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'BOARDSESH' }).success).toBe(true);
     expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'boardsesh' }).success).toBe(false);
   });
 
-  it('reaches the search params as boardsesh, and AURORA or omitted as undefined so cache keys stay put', () => {
+  it('reaches the search params as boardsesh, and UPSTREAM or omitted as undefined so cache keys stay put', () => {
     const toParams = (input: object) =>
       mapSearchInputToParams(ClimbSearchInputSchema.parse({ ...base, minGrade: 16, ...input }));
     expect(toParams({ gradeSource: 'BOARDSESH' }).gradeSource).toBe('boardsesh');
-    expect(toParams({ gradeSource: 'AURORA' }).gradeSource).toBeUndefined();
+    expect(toParams({ gradeSource: 'UPSTREAM' }).gradeSource).toBeUndefined();
     expect(toParams({}).gradeSource).toBeUndefined();
   });
 

@@ -538,7 +538,7 @@ async function runStandardSearch(
     // never angle-blind in the way this fix addresses.
     ascents: sql`${statsCol('ascensionistCount')}`,
     // Under the Boardsesh source the sort keys on the grade the row is labelled
-    // with, the same value the grade-range filter reads (issue #5643). The Aurora
+    // with, the same value the grade-range filter reads (issue #5643). The upstream
     // sort is unchanged: no fallback, so stats-less climbs keep sorting last.
     difficulty:
       searchParams.gradeSource === 'boardsesh'

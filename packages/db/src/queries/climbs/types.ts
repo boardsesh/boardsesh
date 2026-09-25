@@ -89,12 +89,13 @@ export type ClimbSearchParams = {
   crossAngleStats?: boolean;
   /**
    * Which grade minGrade/maxGrade compare against — see `gradeValueSql` in
-   * ./create-climb-filters. 'aurora' (and `undefined`, which is what the mapper
-   * turns it into so existing search-cache keys are unchanged) reads
-   * display_difficulty first; 'boardsesh' reads the Boardsesh grade first, so a
+   * ./create-climb-filters. 'upstream' (and `undefined`, which is what the mapper
+   * turns it into so existing search-cache keys are unchanged) reads the board's
+   * own catalogue grade (display_difficulty) first; 'boardsesh' reads the
+   * model-generated Boardsesh grade first, so a
    * climber who sees Boardsesh grades on the list filters on those labels.
    */
-  gradeSource?: 'aurora' | 'boardsesh';
+  gradeSource?: 'upstream' | 'boardsesh';
   // Climb-type toggles. Default to undefined (treated as both selected → no
   // SQL filter on frames_count). Set boulders=true to constrain to single-
   // frame climbs, routes=true to constrain to multi-frame climbs. Both true
@@ -198,7 +199,7 @@ export function normalizeHoldIntegrity(raw: string | null | undefined): ClimbSea
 }
 
 /**
- * Map a wire `gradeSource` value onto the param. Only BOARDSESH survives: AURORA
+ * Map a wire `gradeSource` value onto the param. Only BOARDSESH survives: UPSTREAM
  * is the default, so it collapses to undefined like an omitted value — the
  * search-cache key hashes the params, and an explicit default would split one
  * cached page into two keys. Unknown strings collapse too, for the same reason
