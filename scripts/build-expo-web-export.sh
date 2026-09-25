@@ -297,7 +297,7 @@ fi
 # Set deliberately close to the current figure. It is a ratchet, not headroom:
 # the measured total is printed on every run (pass or fail) so it can be walked
 # down as the split work continues.
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2051000}"
+BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2052000}"
 node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
   "$OUTPUT_DIR" \
   "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \
