@@ -239,6 +239,9 @@ export const ClimbSearchInputSchema = z.object({
   // searchClimbs uses this schema's parsed return.
   holdIntegrity: z.enum(['ANY', 'INTACT', 'BROKEN']).optional(),
   crossAngleStats: z.boolean().optional(),
+  // No default: omitted means UPSTREAM, and mapSearchInputToParams collapses an
+  // explicit UPSTREAM to undefined so the search-cache key does not change.
+  gradeSource: z.enum(['UPSTREAM', 'BOARDSESH']).optional(),
   // No default here on purpose: omitted means "no climb-type constraint"
   // (both boulders and routes match), not "boulders-only". searchClimbs (see
   // packages/backend/src/graphql/resolvers/climbs/queries.ts) now uses the
