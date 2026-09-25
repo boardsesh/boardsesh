@@ -214,8 +214,8 @@ describe('one VoiceOver step — the user with no thumb', () => {
   });
 
   it('puts an off-ladder rest back on the ladder instead of carrying its offset', () => {
-    expect(adjustRestLength(100, 1)).toBe(130);
-    expect(adjustRestLength(100, -1)).toBe(70);
+    expect(adjustRestLength(101, 1)).toBe(130);
+    expect(adjustRestLength(101, -1)).toBe(70);
   });
 
   it('stops at both ends rather than wrapping — the tap gesture owns Off', () => {
