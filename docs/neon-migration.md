@@ -135,6 +135,15 @@ owner with `CREATE` on the target database and ownership of pre-existing app
 schemas such as `public`. Reapply and audit runtime grants/default privileges
 separately; `--no-acl` intentionally does not preserve them.
 
+This schema-only restore into a precreated database does **not** restore database
+settings. Before cutover, the target database owner must explicitly set
+`max_parallel_workers_per_gather = 0`, then the target application role must pass
+[serial-plan check-only verification](db-connectivity.md#preserving-the-default-through-a-database-restore)
+through a fresh connection. Do not rely on migration 0225 rerunning from a
+restored ledger or on the routine deployment check to block cutover. Hold traffic
+on the source until the target check succeeds; no change to the restricted
+migration-role privileges is needed.
+
 Create the subscription only through the guarded operator helper below. It
 builds the password-bearing `CONNECTION` clause in a mode `0600` temporary SQL
 file, enables `standard_conforming_strings`, verifies the password-redacted

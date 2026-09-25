@@ -447,19 +447,172 @@ It cannot change results, only latency — and on the top offender the serial pl
 Scan where the serial plan keeps the index.
 
 Plain SQL against a stock `docker run postgres:17`: no Railway knob, no dashboard
-setting, no extension. `ALTER DATABASE ... SET` is a `pg_dumpall` global rather
-than a `pg_dump` one, which is exactly why it lives in a migration — migrations
-are how every Boardsesh database gets built, so a restored dump picks it up on the
-next `db:migrate`.
+setting, no extension. Database settings can travel in a portable dump: a plain
+`pg_dump --create` includes them, and a custom archive restores them with
+`pg_restore --create`. A restore into an existing database does not restore those
+settings. A restored Drizzle ledger also prevents migration 0225 from rerunning;
+follow the [restore verification gate](#preserving-the-default-through-a-database-restore)
+before routing traffic to a restored database.
 
 Two caveats worth knowing:
 
 - **Existing pooled connections keep their old value until they cycle**
   (`idle_timeout` is 30s outside Vercel), so the change lands within about a minute
   of the migration rather than instantly.
-- **The migration is fail-soft.** `ALTER DATABASE ... SET` needs database
-  ownership; a deploy role without it gets a `RAISE WARNING` rather than a blocked
-  release.
+- **The migration is fail-soft**, and in production that is the only path it ever
+  takes. See below.
+
+### Why the migration cannot apply in production (#5352 round 5b)
+
+`ALTER DATABASE ... SET` requires ownership of the database. The production
+migration session is deliberately the opposite of that: `production-deploy.yml`
+connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`, and
+`reserveMigrationOwnerSession` refuses to run a single statement unless
+`ownerDoesNotOwnDatabase` holds (`packages/db/scripts/migration-owner-role.ts`).
+The production investigation for #5372 found the `railway` database owned by
+the Railway-provisioned superuser, without an owner-capable credential in CI.
+That was the observed configuration, not a requirement on future credentials.
+
+On its initial run under that role, 0225 raised `insufficient_privilege`. Its
+`EXCEPTION` handler turned that into a `RAISE WARNING`, and drizzle recorded the
+migration as applied, so later deploys do not retry it. Reproduced against a stock
+`docker run postgres:17` wearing the same role shape:
+
+```
+WARNING:  boardsesh: could not set max_parallel_workers_per_gather on database
+          railway; (must be owner of database railway)
+-- pg_db_role_setting: 0 rows; a runtime session still reports 2
+```
+
+`ALTER ROLE <app_role> SET ...` — the pooled-URL escape hatch used for
+`statement_timeout` above — is closed for the same reason: `permission denied to
+alter role … Only roles with the CREATEROLE attribute and the ADMIN option on
+role "boardsesh_runtime" may alter this role`.
+
+Editing 0225 fixes nothing (it is already recorded), and granting the migration
+role database ownership would dismantle the least-privilege contract the PG18
+transition was built on. So the setting is owned by a **separate, idempotent
+deploy step** instead:
+
+```
+vp run db:verify-serial-plan          # add -- --check-only to never write
+```
+
+`packages/db/scripts/verify-serial-plan.ts`, run by the `verify-serial-plan` job
+after `migrate`:
+
+1. Reads the setting through an ordinary **application** connection
+   (`secrets.DATABASE_URL`, the runtime role). That is the fact that matters —
+   what a new app session resolves the GUC to, the same number `/health/db`
+   reports.
+2. Exits 0 and issues nothing when it is already `0`.
+3. Otherwise applies the database default when `ADMIN_DATABASE_URL` names a
+   connection that owns the database, then re-checks on a **new** application
+   connection (`ALTER DATABASE ... SET` never changes the session that issued
+   it, so re-reading the same session would be a vacuous check). The ALTER
+   targets the admin session's `current_database()`, so the step refuses before
+   any DDL unless that equals the application session's database — an
+   `ADMIN_DATABASE_URL` ending in `/postgres` fails the job instead of changing
+   the maintenance database. It also compares the live server address, port,
+   and postmaster start time before DDL, so another cluster with a database
+   named `railway` fails closed. These values guard this run, not provide a
+   durable cluster identifier. The application probe stays in its own open
+   transaction while the admin probe, ALTER, and catalog recheck run in another.
+   Transaction pooling therefore keeps both server identities pinned through
+   the decision. If either connection path cannot expose a
+   matching identity, use the one-off owner action below instead.
+4. Otherwise **exits 1**, printing the one statement an operator runs once.
+
+The automated ALTER and generated remediation accept simple ASCII database
+identifiers (`[A-Za-z_][A-Za-z0-9_]*`), including the production name `railway`.
+Names containing hyphens, spaces or non-ASCII characters receive a readable owner
+handoff without generated SQL or an administrator connection. An operator must
+handle those names with properly quoted SQL in a separately authorized owning
+session. Connection-cleanup failures emit a warning while preserving the
+verification result or original query error.
+
+A **fresh database still gets the default from migrations**: 0225 applies
+normally wherever the migrating role owns the database — local docker, the
+`boardsesh-dev-db` image, CI service containers, branch deploys — which is every
+environment except the production role shape. The deploy step is what covers that
+one, and what makes a miss loud instead of a warning inside a 13k-line migration
+log.
+
+The job is deliberately **not** in the `needs:` of the deploy jobs. The condition
+it reports is a property of the database, not of the commit being shipped, and a
+deploy cannot fix it; gating the release train on it would trade a reported miss
+for a self-inflicted outage. It is loud instead — a red job on every run plus the
+Discord failure alert. The success notification also waits for this job and
+is suppressed when verification fails or is cancelled; deploy jobs can still
+complete while the workflow reports the database condition. See
+[production deploys](production-deploy.md#serial-plan-verification-after-migrations)
+for its environment and concurrency behavior.
+
+**Operator handoff.** A green workflow requires the default to be applied. Before
+rolling out verification, arrange either the one-off owner action below or the
+owner-capable credential; otherwise every deploy reports verification failure
+and sends the failure alert until the missing default is fixed. The credential
+itself is optional because an already-correct database needs no administrator.
+
+Database ownership is sufficient for this setting; use a dedicated database-owner
+connection, not a cluster-superuser URL. Keep it separate from the restricted
+migration and runtime credentials. A one-off owner session avoids retaining an
+owner credential in the deployment environment.
+
+When the deploy job goes red, either:
+
+```sql
+-- once, from a separately authorized psql session that owns the database
+ALTER DATABASE railway SET max_parallel_workers_per_gather = 0;
+```
+
+or add `ADMIN_DATABASE_URL` to the `Production` environment pointing at such a
+connection, and the job applies it itself on the next run. The setting survives
+restarts on that database. A replacement database needs the restore verification
+below. Confirm with `GET /health/db → database.maxParallelWorkersPerGather`,
+which must read `"0"`.
+
+### Preserving the default through a database restore
+
+PostgreSQL's [pg_dump documentation](https://www.postgresql.org/docs/current/app-pgdump.html)
+and [pg_restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html)
+specify that `--create` includes database-level `ALTER DATABASE ... SET` settings.
+For a full custom archive, use `pg_dump --format=custom` followed by
+`pg_restore --create --exit-on-error` through an operator-provided account allowed
+to create the target database. The restore connection selects a maintenance
+database; PostgreSQL creates the database under the name stored in the archive.
+The destination must not already have that name. Use a mode `0600` `PGPASSFILE`
+and separate connection flags rather than putting passwords in command arguments.
+Global roles still need separate provisioning; `--create` does not create them.
+
+A restore into a precreated or renamed destination without `--create`, a
+schema-only restore into an existing database, and logical replication need an
+explicit target default. The [Neon migration runbook](neon-migration.md)
+uses that path. The existing migration ledger is evidence of prior migration
+execution, not evidence that the replacement database inherited its settings.
+
+Before cutover, verify the **target** with application credentials:
+
+```bash
+# DATABASE_URL is injected for the target application role; no administrator is used.
+vp exec pnpm --filter @boardsesh/db run db:verify-serial-plan -- --check-only
+```
+
+Do not route traffic to the target until this exits successfully and a fresh
+application connection reports both the database default and effective value as
+`0`. If it fails, an operator must apply the `ALTER DATABASE ... SET` above to the
+target through an owning connection, or run the verifier with an explicitly
+provided `ADMIN_DATABASE_URL` for that same target database, then repeat
+`--check-only`. Recheck the target application's `/health/db` after its pooled
+connections cycle. This is a database-migration cutover prerequisite; routine
+deployments retain the separate, nonblocking verification job described above.
+
+The integration suite exercises a real custom archive and both restore paths on
+stock PostgreSQL 17: `--create` preserves the setting and the applied migration
+ledger, while restoring into a precreated database fails verification until an
+owning connection reapplies the default. CI uses the service container's matching
+`pg_dump` and `pg_restore` clients via `SERIAL_PLAN_PG_CONTAINER`; local runs may
+use installed clients compatible with `SERIAL_PLAN_DB_URL` instead.
 
 ### The recurrence signal
 
@@ -472,10 +625,10 @@ GET /health/db → database.maxParallelWorkersPerGather
 ```
 
 `"0"` means the default landed. Anything else means it did not, and `53100` can
-come back — check whether the migration's warning fired, and whether the role owns
-the database. A value present in `pg_db_role_setting` but not on the app's
-connections would be no fix at all, which is why this reads the live session rather
-than the catalog.
+come back — read the `verify-serial-plan` job's log, which prints both the
+session value and the database default and carries its own remediation. A value
+present in `pg_db_role_setting` but not on the app's connections would be no fix
+at all, which is why this reads the live session rather than the catalog.
 
 The other half of the signal is Sentry: until #5351 every one of these landed in
 the unfingerprinted `BOARDSESH-AK` bucket, which is why four "fixed" rounds looked
