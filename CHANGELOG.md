@@ -6,6 +6,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-09-25
 
+### New
+
+- Similar climbs on climb pages load faster ([#5766](https://github.com/boardsesh/boardsesh/pull/5766))
+
+### Improved
+
+- Hold heatmaps are moving into the app, where they run on your downloaded board. ([#5763](https://github.com/boardsesh/boardsesh/pull/5763))
+
 ### Fixed
 
 - Settings opens on top of whatever you're doing and closes back to it, instead of taking over the You tab ([#5760](https://github.com/boardsesh/boardsesh/pull/5760))

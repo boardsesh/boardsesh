@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-25T10:06:25.902Z",
+  "generatedAt": "2026-09-25T12:20:29.096Z",
   "entries": [
+    {
+      "prNumber": 5766,
+      "category": "new",
+      "title": "Similar climbs on climb pages load faster",
+      "mergedAt": "2026-09-25T12:07:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5766"
+    },
+    {
+      "prNumber": 5763,
+      "category": "improved",
+      "title": "Hold heatmaps are moving into the app, where they run on your downloaded board.",
+      "mergedAt": "2026-09-25T09:59:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5763"
+    },
     {
       "prNumber": 5760,
       "category": "fixed",
