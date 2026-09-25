@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getAllLayouts } from '@boardsesh/board-constants/product-sizes';
-import { MOONBOARD_LAYOUTS } from '@boardsesh/board-config';
+import { MOONBOARD_LAYOUTS } from '../moonboard-config';
 import {
   getBoardLayouts,
   getBoardSetsForLayoutAndSize,
   getBoardSizesForLayoutId,
   getDefaultBoardSizeForLayout,
-} from '../custom-board-options';
+} from '../board-catalogue-cascade';
 
 describe('custom board options', () => {
   it('delegates non-MoonBoard layouts to product-size constants', () => {

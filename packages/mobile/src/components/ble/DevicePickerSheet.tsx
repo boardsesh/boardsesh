@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +21,14 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
+// "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
+// knows, never the serial (#5658). The suffix is the one the board-account card
+// uses (`aurora.card.boardSuffix`), and it is "Board" in every locale.
+function savedBoardProductName(boardName: string, boardSuffix: string): string {
+  const displayName = formatBoardDisplayName(boardName);
+  return displayName.endsWith(boardSuffix) ? displayName : `${displayName} ${boardSuffix}`;
+}
+
 type DevicePickerSheetProps = {
   devices: DiscoveredDevice[];
   onSelect: (deviceId: string) => void;
@@ -41,6 +49,25 @@ type DevicePickerSheetProps = {
   isScanning: boolean;
   resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>;
   currentBoardConfig?: BleBoardConfig;
+  /**
+   * `searching`: a connect to the saved board is still trying to auto-select it
+   * (#5658). The sheet shows a spinner, "Searching for your board" and "Search
+   * for any board" instead of the list. Defaults to `list`.
+   */
+  mode?: 'searching' | 'list';
+  /** Whether the sheet should be on screen. Defaults to true. */
+  open?: boolean;
+  /**
+   * The picker ended without a choice (the saved board was found, or the connect
+   * failed). The sheet dismisses itself and calls `onClosed` once that has
+   * settled, so it is never unmounted mid-present.
+   */
+  closing?: boolean;
+  onClosed?: () => void;
+  /** "Search for any board", shown while `searching`. */
+  onSearchAnyBoard?: () => void;
+  /** Another sheet displaced this one. Defaults to `onDismiss`. */
+  onDisplaced?: () => void;
 };
 
 export function DevicePickerSheet({
@@ -52,6 +79,12 @@ export function DevicePickerSheet({
   currentBoardConfig,
   onNoLeds,
   onScanAgain,
+  mode = 'list',
+  open = true,
+  closing = false,
+  onClosed,
+  onSearchAnyBoard,
+  onDisplaced,
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
@@ -60,11 +93,30 @@ export function DevicePickerSheet({
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
 
-  // The host mounts this sheet only while a picker session is active, so it is
-  // always meant to be open. Present/dismiss route through the coordinator
-  // (serialized, no overlapping native transitions); `onDismiss` clears the
-  // host's picker state on a user pan-down / backdrop.
-  const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
+  // The host mounts this sheet while a picker session is active. It is open
+  // unless the session says otherwise (a background connect, or a searching
+  // picker another sheet displaced). Present/dismiss route through the
+  // coordinator (serialized, no overlapping native transitions); `onDismiss`
+  // clears the host's picker state on a user pan-down / backdrop.
+  const managed = useManagedSheet({ open: open && !closing, sheetRef, onClose: onDismiss, onDisplaced });
+
+  // Closing without a choice: wait for the coordinator's dismissal to settle
+  // (immediately if the sheet never reached the screen), then let the host drop
+  // the session. Unmounting straight away could tear the sheet down while it is
+  // still presenting, the UIKit overlap the coordinator exists to prevent.
+  const onClosedRef = useRef(onClosed);
+  onClosedRef.current = onClosed;
+  const { dismissAndWait } = managed.handle;
+  useEffect(() => {
+    if (!closing) return;
+    let active = true;
+    void dismissAndWait().then(() => {
+      if (active) onClosedRef.current?.();
+    });
+    return () => {
+      active = false;
+    };
+  }, [closing, dismissAndWait]);
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
 
@@ -110,8 +162,9 @@ export function DevicePickerSheet({
 
   const { systemColors } = theme;
 
-  const showScanningState = isScanning && devices.length === 0;
-  const showEmptyState = !isScanning && devices.length === 0;
+  const searching = mode === 'searching';
+  const showScanningState = !searching && isScanning && devices.length === 0;
+  const showEmptyState = !searching && !isScanning && devices.length === 0;
 
   // While our manifest declares `BLUETOOTH_SCAN` without `neverForLocation`, an
   // empty list on Android 12+ with location denied is the OS hiding scan
@@ -174,6 +227,22 @@ export function DevicePickerSheet({
           </Text>
         )}
       </BottomSheetView>
+
+      {searching && (
+        <View style={styles.scanningContainer}>
+          <ActivityIndicator size="small" color={theme.brandColors.primary} />
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {currentBoardConfig
+              ? t('ble.searchingForBoard', {
+                  board: savedBoardProductName(currentBoardConfig.boardName, t('aurora.card.boardSuffix')),
+                })
+              : t('ble.searchingForSavedBoard')}
+          </Text>
+          {onSearchAnyBoard && (
+            <Button title={t('ble.searchAnyBoard')} onPress={onSearchAnyBoard} variant="tonal" size="medium" />
+          )}
+        </View>
+      )}
 
       {showScanningState && (
         <View style={styles.scanningContainer}>

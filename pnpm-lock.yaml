@@ -603,6 +603,9 @@ importers:
       '@boardsesh/gym-claim':
         specifier: workspace:*
         version: link:../shared/gym-claim
+      '@boardsesh/gym-filters':
+        specifier: workspace:*
+        version: link:../shared/gym-filters
       '@boardsesh/i18n':
         specifier: workspace:*
         version: link:../shared/i18n
@@ -1275,6 +1278,22 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/gym-filters:
+    dependencies:
+      '@boardsesh/board-config':
+        specifier: workspace:*
+        version: link:../board-config
+      '@boardsesh/board-constants':
+        specifier: workspace:*
+        version: link:../../board-constants
+      '@boardsesh/shared-schema':
+        specifier: workspace:*
+        version: link:../../shared-schema
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/hold-detection:
     devDependencies:
       '@boardsesh/board-art-geometry':
@@ -1658,6 +1677,9 @@ importers:
       '@boardsesh/gym-claim':
         specifier: workspace:*
         version: link:../shared/gym-claim
+      '@boardsesh/gym-filters':
+        specifier: workspace:*
+        version: link:../shared/gym-filters
       '@boardsesh/i18n':
         specifier: workspace:*
         version: link:../shared/i18n

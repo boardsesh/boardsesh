@@ -18,6 +18,7 @@ import {
   type SearchGymsDirectoryQueryVariables,
 } from '@boardsesh/graphql/operations';
 import { gymDirectorySearched } from '@boardsesh/analytics';
+import { toGymBoardFilterInput, type GymBoardFilter } from '@boardsesh/gym-filters';
 import { useGeolocation } from '@/app/hooks/use-geolocation';
 import { trackGymFunnelEvent } from '@/app/lib/gym-funnel-analytics';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -52,8 +53,18 @@ const WIDE_LAYOUT = '@media (min-width: 960px)';
 
 type GymDirectoryNearMeProps = {
   selectedArea?: { facet: DirectoryFacet; query: DirectoryQuery };
-  /** Board types the surrounding route is already filtered to. */
-  boardTypes: string[];
+  /**
+   * The board filter the surrounding route is already applying — types,
+   * layouts, sizes, angles, the multi-board toggle.
+   *
+   * ONE object rather than a prop per filter, deliberately. Near-me mode runs
+   * its own `searchGyms` call rather than reusing the server's, so any filter
+   * this component does not forward is silently dropped the moment a visitor
+   * flips the toggle: the chips keep claiming a filter the results no longer
+   * apply. A single object makes the next filter a field, not a prop nobody
+   * remembers to thread through.
+   */
+  boardFilter: GymBoardFilter;
   /** The visitor's `?q=` text, carried into the near-me query unchanged. */
   searchQuery: string;
   locale: Locale;
@@ -96,7 +107,7 @@ type GymDirectoryNearMeProps = {
  */
 export default function GymDirectoryNearMe({
   selectedArea,
-  boardTypes,
+  boardFilter,
   searchQuery,
   locale,
   browsePins,
@@ -129,12 +140,17 @@ export default function GymDirectoryNearMe({
   const longitude = coordinates ? roundCoordinate(coordinates.longitude) : null;
   const nearMeActive = !selectedArea && nearMeOn && latitude !== null && longitude !== null;
 
-  const boardTypesKey = useMemo(() => [...boardTypes].sort().join(','), [boardTypes]);
+  // The whole board filter as one stable string: the react-query key, the
+  // analytics dedupe signature and the effect dependency all need a primitive,
+  // and deriving three from one mapper keeps them from disagreeing.
+  const boardFilterInput = useMemo(() => toGymBoardFilterInput(boardFilter), [boardFilter]);
+  const boardFilterKey = useMemo(() => JSON.stringify(boardFilterInput), [boardFilterInput]);
+  const boardTypesKey = useMemo(() => [...(boardFilter.boardTypes ?? [])].sort().join(','), [boardFilter.boardTypes]);
 
   const nearMeQuery = useQuery({
     // Rounded coordinates only, and only as a cache key — they never reach an
     // analytics payload, a URL, or a tile request.
-    queryKey: ['gym-directory-near-me', boardTypesKey, searchQuery, latitude, longitude, radiusKm],
+    queryKey: ['gym-directory-near-me', boardFilterKey, searchQuery, latitude, longitude, radiusKm],
     queryFn: async () => {
       if (latitude === null || longitude === null) {
         // Unreachable: `enabled` gates on the same two values.
@@ -148,7 +164,7 @@ export default function GymDirectoryNearMe({
             // Same shape the server builds in `toSearchGymsInput`, so near-me
             // is the browse query plus an origin — not a different search.
             ...(searchQuery ? { query: searchQuery } : {}),
-            ...(boardTypes.length > 0 ? { boardTypes } : {}),
+            ...boardFilterInput,
             latitude,
             longitude,
             radiusKm,
@@ -196,7 +212,7 @@ export default function GymDirectoryNearMe({
 
   useEffect(() => {
     if (!showingNearMeResults) return;
-    const signature = `${boardTypesKey}|${searchQuery.length}|${radiusKm}|${nearMeData.totalCount}`;
+    const signature = `${boardFilterKey}|${searchQuery.length}|${radiusKm}|${nearMeData.totalCount}`;
     if (reportedSearchesRef.current.has(signature)) return;
     reportedSearchesRef.current.add(signature);
 
@@ -210,7 +226,7 @@ export default function GymDirectoryNearMe({
         resultsCount: nearMeData.totalCount,
       }),
     );
-  }, [showingNearMeResults, nearMeData, boardTypesKey, searchQuery, radiusKm]);
+  }, [showingNearMeResults, nearMeData, boardFilterKey, boardTypesKey, searchQuery, radiusKm]);
 
   const handleUseMyLocation = useCallback(() => {
     setNearMeOn(true);

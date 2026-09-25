@@ -19,6 +19,7 @@ import type {
   BleWriteDiagnostics,
   BoardScanFamily,
   DevicePickerFn,
+  DevicePickerTargetListeners,
   DiscoveredDevice,
 } from './types';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
@@ -124,9 +125,19 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     return result.available;
   }
 
-  // The scan/select flow (silent serial auto-select → grace-window picker
-  // fallback → scan timeout) mirrors RNBleAdapter.requestAndConnect and the web
-  // adapters. Kept in lockstep by hand; if you change one, change the others.
+  // The scan/select flow mirrors RNBleAdapter.requestAndConnect. Kept in lockstep
+  // by hand; if you change one, change the other. With a saved board (#5658) it
+  // is a three-state machine:
+  //   searching: the picker opens at the tap in its "searching" state, and the
+  //              scan auto-selects the saved board if it advertises.
+  //   found:     auto-select settled the selection FIRST, then tells the picker
+  //              to close (onTargetFound). The connect carries on.
+  //   list:      the grace window ran out, or the climber tapped "Search for
+  //              any board". Auto-select stops for good and the picker shows the
+  //              list (onTargetSearchEnded). The climber picks or cancels.
+  // Without a saved board the picker opens straight into `list`. The scan
+  // timeout ends a search still running (backstop), then tells the picker the
+  // scan stopped so it drops its spinner.
   async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     const native = this.requireNative();
     const devices = new Map<string, DiscoveredDevice>();
@@ -134,9 +145,8 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     let scanStoppedListener: (() => void) | null = null;
     const pushDevices = () => updateListener?.([...devices.values()]);
 
-    // One selection promise, resolved by either the silent auto-select (by serial
-    // or device id) or — if the target never shows up — the picker the grace
-    // window opens.
+    // One selection promise, settled by the auto-select (by serial or device id),
+    // by the climber's pick from the list, or by a cancel / scan failure.
     let resolveSelection!: (deviceId: string) => void;
     let rejectSelection!: (error: Error) => void;
     const selectionPromise = new Promise<string>((resolve, reject) => {
@@ -144,25 +154,31 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       rejectSelection = reject;
     });
 
-    // True only while we're still silently matching the reconnect target — flips
-    // false the moment we auto-select or hand off to the picker.
-    let autoSelecting = Boolean(targetSerial || targetDeviceId);
-    let pickerOpened = false;
-    const openPicker = () => {
-      if (pickerOpened) return;
-      pickerOpened = true;
+    const hasTarget = Boolean(targetSerial || targetDeviceId);
+    // True only while we're still matching the saved board (`searching`). Flips
+    // false the moment we auto-select (`found`) or the search ends (`list`), and
+    // never flips back.
+    let autoSelecting = hasTarget;
+    let targetListeners: DevicePickerTargetListeners | null = null;
+    // searching → list. Idempotent: the grace timer, the scan timeout and the
+    // picker's "Search for any board" can each call it.
+    const endTargetSearch = () => {
+      if (!autoSelecting) return;
       autoSelecting = false;
-      this.devicePicker((onUpdate, onScanStopped) => {
-        updateListener = onUpdate;
-        scanStoppedListener = onScanStopped ?? null;
-        pushDevices();
-      }).then(resolveSelection, rejectSelection);
+      targetListeners?.onTargetSearchEnded();
     };
 
-    // No reconnect target → straight to the picker.
-    if (!targetSerial && !targetDeviceId) {
-      openPicker();
-    }
+    // The picker opens at the tap for every connect: in `searching` with a saved
+    // board, straight into the list without one.
+    this.devicePicker(
+      (onUpdate, onScanStopped, listeners) => {
+        updateListener = onUpdate;
+        scanStoppedListener = onScanStopped ?? null;
+        targetListeners = listeners ?? null;
+        pushDevices();
+      },
+      hasTarget ? { searchAnyBoard: endTargetSearch } : undefined,
+    ).then(resolveSelection, rejectSelection);
 
     // MoonBoard scans are unfiltered on newer binaries (a native service-UUID
     // filter would hide controllers that only surface via name). Aurora scans
@@ -192,15 +208,18 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
         pushDevices();
       }
 
-      // Auto-select the stored board only until the picker takes over. A
-      // MoonBoard has no serial, so it matches on the remembered BLE device id;
-      // Aurora boards match on the serial parsed from the advertised name.
+      // Auto-select the stored board only while still `searching`. A MoonBoard
+      // has no serial, so it matches on the remembered BLE device id; Aurora
+      // boards match on the serial parsed from the advertised name.
       if (autoSelecting) {
         const matchesDeviceId = targetDeviceId !== undefined && device.deviceId === targetDeviceId;
         const matchesSerial = targetSerial !== undefined && parseSerialNumber(device.name) === targetSerial;
         if (matchesDeviceId || matchesSerial) {
           autoSelecting = false;
+          // Settle the selection BEFORE closing the picker: closing rejects the
+          // picker's promise, which must find the selection already settled.
           resolveSelection(device.deviceId);
+          targetListeners?.onTargetFound();
         }
       }
     });
@@ -224,22 +243,16 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
               [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
       await native.startScan(scanServiceUuids);
 
-      // Grace window: if the remembered board hasn't matched shortly, open the
-      // picker (scan keeps running so it live-updates) instead of waiting out
-      // the full scan window and failing. Matches the web reconnect-by-serial
-      // fallback.
-      pickerFallbackId =
-        targetSerial || targetDeviceId
-          ? setTimeout(() => {
-              if (autoSelecting) openPicker();
-            }, SERIAL_RECONNECT_GRACE_MS)
-          : undefined;
+      // Grace window: if the saved board hasn't matched by now, stop auto-selecting
+      // and let the picker show the list. The scan keeps running, so the list
+      // live-updates.
+      pickerFallbackId = hasTarget ? setTimeout(endTargetSearch, SERIAL_RECONNECT_GRACE_MS) : undefined;
 
       scanTimeoutId = setTimeout(() => {
         void native.stopScan();
-        // Belt-and-suspenders: make sure the picker is open even if the grace
-        // window never fired.
-        if (autoSelecting) openPicker();
+        // Belt-and-suspenders: end a search still running even if the grace
+        // window never fired, so the picker is showing the list.
+        endTargetSearch();
         // The picker stays open whatever the scan found: tell it the scan stopped
         // so it drops the spinner. With boards listed the climber can still pick
         // one. With none it shows its empty state (tips, Scan again, the no-lights
@@ -250,6 +263,8 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
 
       selectedDeviceId = await selectionPromise;
     } finally {
+      // A late advert after a cancel or a pick must not auto-select.
+      autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       scanSubscription.remove();

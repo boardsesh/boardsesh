@@ -461,6 +461,20 @@ describe('RestTimerSheet', () => {
     expect(container.querySelector(LENGTH_PILL)?.getAttribute('data-expanded')).toBe('false');
   });
 
+  it('opens the slider on its own full-width line, not squeezed beside the label (#5664)', () => {
+    const { container, getByText } = renderSheet();
+    holdPill(container);
+
+    // The row the label sits on holds the pill and nothing else: a slider inside
+    // it only ever got the pill's width. The slider is that row's sibling, so it
+    // spans the whole length block.
+    const labelRow = getByText('mobile.restTimer.targetLabel').parentElement as HTMLElement;
+    const slider = container.querySelector(LENGTH_SLIDER) as HTMLElement;
+    expect(labelRow.contains(container.querySelector(LENGTH_PILL))).toBe(true);
+    expect(labelRow.contains(slider)).toBe(false);
+    expect(labelRow.parentElement?.contains(slider)).toBe(true);
+  });
+
   it('publishes the slider as one adjustable node over the whole duration range', () => {
     const { container } = renderSheet();
     holdPill(container);
@@ -500,6 +514,19 @@ describe('RestTimerSheet', () => {
     expect(container.textContent).toContain('mobile.restTimer.modeAfterTickHint');
   });
 
+  it('names the fixed-window cadence by its length, so "every 3:00" reads as what it is (#5664)', () => {
+    settingsStore.values.restTimerTargetSeconds = 180;
+    const { container } = renderSheet();
+    const fixedWindow = '[data-segment="mobile.restTimer.modeAria:onTheMinute"]';
+    expect(container.querySelector(fixedWindow)?.textContent).toBe('mobile.restTimer.modeEvery:3:00');
+
+    // With the rest Off there is no length to name.
+    cleanup();
+    settingsStore.values.restTimerTargetSeconds = null;
+    const { container: offContainer } = renderSheet();
+    expect(offContainer.querySelector(fixedWindow)?.textContent).toBe('mobile.restTimer.modeOnTheMinute');
+  });
+
   it('re-arms cleanly when the cadence changes, rather than leaving a half-converted anchor', () => {
     const { container } = renderSheet();
     expect(getRestTimerState().anchorMs).toBeNull();
@@ -512,6 +539,31 @@ describe('RestTimerSheet', () => {
     // only thing that produces that.
     expect(getRestTimerState().anchorMs).toBe(NOW_MS + 5_000);
     expect(getRestTimerState().armedForSessionId).toBe('session-1');
+  });
+
+  it('leaves the timer alone when the already-selected cadence is tapped again (#5664)', () => {
+    // Paper's SegmentedButtons (Android, web) calls back on a press of the lit
+    // segment. A re-arm there would restart a fixed window mid-block.
+    settingsStore.values.restTimerMode = 'onTheMinute';
+    armRestTimer('onTheMinute', NOW_MS, 'session-1');
+    const { container } = renderSheet();
+    const { anchorMs, cycleId } = getRestTimerState();
+
+    harness.nowMs = NOW_MS + 40_000;
+    fireEvent.click(container.querySelector('[data-segment="mobile.restTimer.modeAria:onTheMinute"]') as HTMLElement);
+    expect(getRestTimerState()).toMatchObject({ anchorMs, cycleId });
+
+    // Same for a running after-tick rest: the tap must not drop it back to waiting.
+    cleanup();
+    settingsStore.values.restTimerMode = 'afterTick';
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    logFirstTick();
+    const { container: afterTickContainer } = renderSheet();
+    const before = getRestTimerState();
+    fireEvent.click(
+      afterTickContainer.querySelector('[data-segment="mobile.restTimer.modeAria:afterTick"]') as HTMLElement,
+    );
+    expect(getRestTimerState()).toMatchObject({ anchorMs: before.anchorMs, cycleId: before.cycleId });
   });
 
   it('lets the climber driving the wall arm auto-advance', () => {

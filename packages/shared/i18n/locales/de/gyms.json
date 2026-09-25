@@ -55,6 +55,23 @@
     "tension": "Tension · {{formattedCount}}",
     "countHint": "Die Zahlen zählen Hallen, nicht Boards: Eine Halle mit drei Kilter-Wänden zählt einmal."
   },
+  "filters": {
+    "boardHeading": "Board",
+    "moreLabel": "Genauer suchen",
+    "moreLabelActive": "Genauer suchen · {{count}}",
+    "layoutHeading": "Layout",
+    "layoutLocked": "Wähl oben ein Board, dann erscheinen seine Layouts.",
+    "sizeHeading": "Größe",
+    "sizeLocked": "Wähl ein Layout, dann erscheinen die Größen.",
+    "angleHeading": "Winkel",
+    "angleLocked": "Wähl oben ein Board, dann erscheinen seine Winkel.",
+    "angleOption": "{{angle}}°",
+    "angleHint": "Der Winkel, den die Halle hinterlegt hat. Die meisten Boards lassen sich neigen — lies ihn als letzte Einstellung.",
+    "multiBoardLabel": "Nur Hallen mit zwei oder mehr verschiedenen Boards",
+    "submit": "Hallen zeigen",
+    "activeHeading": "Gefiltert nach",
+    "clearAll": "Filter zurücksetzen"
+  },
   "search": {
     "geoHint": "Standort deaktiviert? Gib einen Ort ein. Keine Berechtigung nötig.",
     "label": "Hallen suchen",

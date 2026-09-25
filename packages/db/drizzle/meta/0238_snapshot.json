@@ -1,5 +1,5 @@
 {
-  "id": "08e7cf1c-64bd-45a1-b931-8fab34338e2b",
+  "id": "14695e5e-7ff0-4f89-b4ad-a6c0be8f3896",
   "prevId": "54e0dc01-6a62-47e0-8041-a9de60583060",
   "version": "7",
   "dialect": "postgresql",
@@ -5943,6 +5943,46 @@
           "method": "btree",
           "with": {}
         },
+        "user_boards_gym_filter_idx": {
+          "name": "user_boards_gym_filter_idx",
+          "columns": [
+            {
+              "expression": "gym_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "board_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "layout_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "size_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "angle",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"user_boards\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "user_boards_owner_config_idx": {
           "name": "user_boards_owner_config_idx",
           "columns": [
@@ -7583,58 +7623,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "boardsesh_ticks_user_grade_latest_idx": {
-          "name": "boardsesh_ticks_user_grade_latest_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "board_type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "angle",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "climb_uuid",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "climbed_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "first"
-            },
-            {
-              "expression": "uuid",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "first"
-            },
-            {
-              "expression": "difficulty",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"boardsesh_ticks\".\"difficulty\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

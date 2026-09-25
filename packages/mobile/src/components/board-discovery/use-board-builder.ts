@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardName, CreateBoardInput, UpdateBoardInput } from '@boardsesh/shared-schema';
-import { SUPPORTED_BOARDS, ANGLES, normaliseSetIds } from '@boardsesh/board-config';
 import {
+  SUPPORTED_BOARDS,
+  ANGLES,
+  normaliseSetIds,
   getBoardLayouts,
   getBoardSizesForLayoutId,
   getBoardSetsForLayoutAndSize,
   getDefaultBoardSizeForLayout,
-} from '../../lib/custom-board-options';
+} from '@boardsesh/board-config';
 import { defaultAngle } from '../../lib/boards/default-angle';
 import type { BoardConfigPreset } from '../../lib/boards/board-config-preset';
 import { cleanLayoutName } from './board-builder-labels';

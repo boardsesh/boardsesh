@@ -12,15 +12,13 @@ import {
 } from '@boardsesh/board-constants/product-sizes';
 import {
   getLayoutById,
-  spraySizeIdForLayout,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
-  WOODS_LAYOUTS,
-  WOODS_SETS,
-  WOODS_SIZES,
   type MoonBoardLayoutKey,
-} from '@boardsesh/board-config';
+} from './moonboard-config';
+import { spraySizeIdForLayout } from './spray-config';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
 
 const MOONBOARD_PRODUCT_SIZE: ProductSizeData = {
   id: MOONBOARD_SIZE.id,
