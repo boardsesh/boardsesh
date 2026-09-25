@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-25T12:20:29.096Z",
+  "generatedAt": "2026-09-25T21:08:52.969Z",
   "entries": [
+    {
+      "prNumber": 5782,
+      "category": "fixed",
+      "title": "If Boardsesh updates while you have it open in your browser, the page now reloads itself instead of getting stuck on an error.",
+      "mergedAt": "2026-09-25T21:04:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5782"
+    },
     {
       "prNumber": 5766,
       "category": "new",
