@@ -233,4 +233,39 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
     // The board lookup select() should not have been invoked at all.
     expect(boardScopeTestState.selectMock).toHaveBeenCalledTimes(1);
   });
+
+  it('includes session-less daily highlights on a resolved board scope (#5567)', async () => {
+    boardScopeTestState.selectQueue.push(
+      [{ id: 4242 }],
+      [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
+    );
+    primeFeedExecuteMocks();
+
+    await sessionGroupedFeed(null, {
+      input: { boardUuid: 'board-uuid-abc', includeDailyHighlights: true, limit: 20 },
+    });
+
+    const mainQueryText = sqlToText(boardScopeTestState.executeMock.mock.calls[0][0]);
+    expect(mainQueryText).toContain('daily_ticks AS (');
+    // No participant filter, so no eligible_users CTE to join against.
+    expect(mainQueryText).not.toContain('eligible_users');
+    // The daily ticks carry the same exact-board filter as the party sessions.
+    const dailyTicksText = mainQueryText.slice(mainQueryText.indexOf('daily_ticks AS ('));
+    expect(dailyTicksText).toContain('AND t.board_id =');
+  });
+
+  it('leaves daily highlights off when the boardUuid does not resolve (#4105)', async () => {
+    boardScopeTestState.selectQueue.push(
+      [],
+      [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
+    );
+    primeFeedExecuteMocks();
+
+    await sessionGroupedFeed(null, {
+      input: { boardUuid: 'unknown-uuid', includeDailyHighlights: true, limit: 20 },
+    });
+
+    const mainQueryText = sqlToText(boardScopeTestState.executeMock.mock.calls[0][0]);
+    expect(mainQueryText).not.toContain('daily_ticks');
+  });
 });
