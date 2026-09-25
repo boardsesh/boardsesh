@@ -26,7 +26,7 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
-import { SheetScrollIntoViewProvider, useSheetScrollIntoViewHost } from './sheet-scroll-into-view';
+import { SheetScrollIntoViewProvider, useProgrammaticSnap, useSheetScrollIntoViewHost } from './sheet-scroll-into-view';
 import {
   useManagedSheet,
   type ManagedSheetHandle,
@@ -141,10 +141,13 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
 
+  // The keyboard-detent snap on field focus is not a drag: no haptic for it.
+  const { programmaticSnapRef, snapWithoutHaptic } = useProgrammaticSnap(managed.handle.snapToIndex);
+
   const handleChange = useCallback(
     (index: number) => {
       if (index >= 0) {
-        hapticMedium();
+        if (!programmaticSnapRef.current) hapticMedium();
         setActiveIndex(index);
       } else {
         // Reset on close so a re-open of an always-mounted sheet starts at the
@@ -156,7 +159,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       managed.onChange(index);
       onChangeRef.current?.(index);
     },
-    [managed],
+    [managed, programmaticSnapRef],
   );
 
   // A fixed header or a pinned footer both need a wrapper around the body, and
@@ -194,7 +197,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     onBodyLayout: bodyLayout,
     lastDetentIndex: useContentFitting ? 0 : effectiveSnapPoints.length - 1,
     activeIndex,
-    snapToIndex: managed.handle.snapToIndex,
+    snapToIndex: snapWithoutHaptic,
   });
   const body = scrollable ? (
     <BottomSheetScrollView

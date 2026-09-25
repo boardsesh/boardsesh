@@ -53,10 +53,11 @@ export const TickNoteField = React.memo(function TickNoteField({
     setFocused(false);
     if (inputRef.current) scrollIntoView?.release(inputRef.current);
   }, [scrollIntoView]);
-  // A new line grows the field (up to its maxHeight), so reveal again to keep
-  // its bottom edge in view.
+  // A new line grows the field (up to its maxHeight), so scroll again to keep
+  // its bottom edge in view. `follow`, not `reveal`: typing never moves the
+  // sheet's detent.
   const handleContentSizeChange = useCallback(() => {
-    if (focusedRef.current && inputRef.current) scrollIntoView?.reveal(inputRef.current);
+    if (focusedRef.current && inputRef.current) scrollIntoView?.follow(inputRef.current);
   }, [scrollIntoView]);
 
   return (

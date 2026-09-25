@@ -50,7 +50,10 @@ type RevealGeometry = {
  *
  * Moves as little as possible: a field below the fold lands with its bottom
  * `margin` above the viewport's bottom, and a field above the fold lands at the
- * top. A field taller than the viewport shows its top, where the caret starts.
+ * top. When the field and its margin don't fit (a long note on a short phone:
+ * ~147pt of body on an iPhone 13 mini with the keyboard up), the margin goes
+ * first, then the field keeps its BOTTOM in view. That is where the climber is
+ * typing; showing the top would leave the caret line under the footer.
  */
 export function revealScrollOffset({
   targetY,
@@ -61,13 +64,12 @@ export function revealScrollOffset({
   margin,
 }: RevealGeometry): number | null {
   if (viewportHeight <= 0) return null;
-  const targetBottom = targetY + targetHeight + margin;
+  const fits = targetHeight + margin <= viewportHeight;
+  const targetBottom = targetY + targetHeight + (fits ? margin : 0);
   let next: number;
-  if (targetHeight + margin > viewportHeight) {
-    next = targetY;
-  } else if (targetBottom > currentOffset + viewportHeight) {
+  if (targetBottom > currentOffset + viewportHeight) {
     next = targetBottom - viewportHeight;
-  } else if (targetY < currentOffset) {
+  } else if (fits && targetY < currentOffset) {
     next = targetY;
   } else {
     return null;
@@ -81,8 +83,12 @@ export function revealScrollOffset({
 export type SheetRevealTarget = Pick<HostInstance, 'measureLayout'>;
 
 export type SheetScrollIntoView = {
-  /** Keep this field in view: scroll now, and again on every viewport resize. */
+  /** On focus. Raise the sheet to its keyboard detent, then keep this field in
+   *  view: scroll now, and again on every viewport resize. */
   reveal: (target: SheetRevealTarget) => void;
+  /** While typing (the field grew). Scroll only, never change the detent: a
+   *  climber who dragged the sheet down mid-note must not be sprung back up. */
+  follow: (target: SheetRevealTarget) => void;
   /** Stop tracking the field (call on blur). A no-op for any other field. */
   release: (target: SheetRevealTarget) => void;
 };
@@ -115,6 +121,7 @@ type SheetScrollIntoViewHostOptions = {
   lastDetentIndex: number;
   /** The detent the sheet rests at now. */
   activeIndex: number;
+  /** Must not fire the user-drag haptic: see `useProgrammaticSnap`. */
   snapToIndex: (index: number) => void;
 };
 
@@ -122,14 +129,18 @@ type SheetScrollIntoViewHostOptions = {
  * Host side, for `Sheet` / `ModalSheet`: returns the context value to provide
  * and the props to spread on the scroll body.
  *
- * A reveal also raises the sheet to its tallest detent (the keyboard detent).
- * The iOS column is pinned to the detent it rests at (`useSheetColumnStyle`),
- * and nothing else moves it when a field gets focus. At the tick sheets' first
- * detent the keyboard leaves less room than the header and footer need, so no
- * scroll could bring the field into view there. The detent change lands as a
- * body layout change, which runs the reveal again.
+ * A reveal (focus) also raises the sheet to its tallest detent, the keyboard
+ * detent. The iOS column is pinned to the detent it rests at
+ * (`useSheetColumnStyle`), and nothing else moves it when a field gets focus.
+ * At the tick sheets' first detent the keyboard leaves less room than the
+ * header and footer need, so no scroll could bring the field into view there.
+ * The detent change lands as a body layout change, which runs the scroll again.
  *
- * Off on web: the Expo-web shim's Gorhom sheet has its own keyboard handling.
+ * Off on web: the Expo-web shim's Gorhom sheet has its own keyboard handling,
+ * and its scrollable spreads our props AFTER its own `scrollEventThrottle={16}`
+ * (`createBottomSheetScrollableComponent.tsx:139-148`), so passing anything
+ * but the probe's `onLayout` there would slow the handler that pins the
+ * scroll while the sheet is locked.
  */
 export function useSheetScrollIntoViewHost({
   onBodyLayout,
@@ -142,6 +153,9 @@ export function useSheetScrollIntoViewHost({
   const contentHeightRef = useRef(0);
   const offsetRef = useRef(0);
   const activeTargetRef = useRef<SheetRevealTarget | null>(null);
+  // Refs, so the context value stays stable across detent changes.
+  const detentRef = useRef({ activeIndex, lastDetentIndex, snapToIndex });
+  detentRef.current = { activeIndex, lastDetentIndex, snapToIndex };
 
   const revealActive = useCallback(() => {
     const target = activeTargetRef.current;
@@ -166,26 +180,26 @@ export function useSheetScrollIntoViewHost({
     });
   }, []);
 
-  const expandToLastDetent = useCallback(() => {
-    if (lastDetentIndex > 0 && activeIndex < lastDetentIndex) snapToIndex(lastDetentIndex);
-  }, [activeIndex, lastDetentIndex, snapToIndex]);
-
-  const scrollIntoView = useMemo<SheetScrollIntoView | null>(
-    () =>
-      Platform.OS === 'web'
-        ? null
-        : {
-            reveal: (target) => {
-              activeTargetRef.current = target;
-              expandToLastDetent();
-              revealActive();
-            },
-            release: (target) => {
-              if (activeTargetRef.current === target) activeTargetRef.current = null;
-            },
-          },
-    [expandToLastDetent, revealActive],
-  );
+  const scrollIntoView = useMemo<SheetScrollIntoView | null>(() => {
+    if (Platform.OS === 'web') return null;
+    return {
+      reveal: (target) => {
+        activeTargetRef.current = target;
+        const detent = detentRef.current;
+        if (detent.lastDetentIndex > 0 && detent.activeIndex < detent.lastDetentIndex) {
+          detent.snapToIndex(detent.lastDetentIndex);
+        }
+        revealActive();
+      },
+      follow: (target) => {
+        activeTargetRef.current = target;
+        revealActive();
+      },
+      release: (target) => {
+        if (activeTargetRef.current === target) activeTargetRef.current = null;
+      },
+    };
+  }, [revealActive]);
 
   const onLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -202,15 +216,50 @@ export function useSheetScrollIntoViewHost({
     contentHeightRef.current = height;
   }, []);
 
-  // A ref write, never state: no re-render per scroll event.
-  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  // A ref write, never state: no re-render per scroll event. The throttled
+  // `onScroll` can miss a fling's last frames, so the end events settle it.
+  const trackOffset = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     offsetRef.current = event.nativeEvent.contentOffset.y;
   }, []);
 
   const scrollProps = useMemo(
-    () => ({ ref: scrollRef, onLayout, onContentSizeChange, onScroll, scrollEventThrottle: 32 }),
-    [onLayout, onContentSizeChange, onScroll],
+    () =>
+      Platform.OS === 'web'
+        ? { onLayout: onBodyLayout }
+        : {
+            ref: scrollRef,
+            onLayout,
+            onContentSizeChange,
+            onScroll: trackOffset,
+            onScrollEndDrag: trackOffset,
+            onMomentumScrollEnd: trackOffset,
+            scrollEventThrottle: 32,
+          },
+    [onBodyLayout, onLayout, onContentSizeChange, trackOffset],
   );
 
   return { scrollIntoView, scrollProps };
+}
+
+/**
+ * Wrap a sheet's `snapToIndex` so a snap the code asks for (the keyboard
+ * detent on focus) skips the detent haptic, which is for the climber's own
+ * drags. `@expo/ui` fires `onChange` synchronously inside `snapToIndex` on both
+ * platforms (`BottomSheet.ios.tsx:170-181`, `BottomSheet.android.tsx:165-186`),
+ * so the flag is only up for that one call.
+ */
+export function useProgrammaticSnap(snapToIndex: (index: number) => void) {
+  const programmaticSnapRef = useRef(false);
+  const snapWithoutHaptic = useCallback(
+    (index: number) => {
+      programmaticSnapRef.current = true;
+      try {
+        snapToIndex(index);
+      } finally {
+        programmaticSnapRef.current = false;
+      }
+    },
+    [snapToIndex],
+  );
+  return { programmaticSnapRef, snapWithoutHaptic };
 }
