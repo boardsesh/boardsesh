@@ -318,7 +318,7 @@
       "off": "Désactivé",
       "modeLabel": "Cadence",
       "modeAria": "Cadence du minuteur de repos",
-      "modeAfterTick": "Après chaque croix",
+      "modeAfterTick": "Après chaque bloc",
       "modeOnTheMinute": "Rythme fixe",
       "modeEvery": "Toutes les {{length}}",
       "modeAfterTickHint": "Ton repos repart à zéro à chaque essai ou croix que tu enregistres.",

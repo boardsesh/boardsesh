@@ -541,6 +541,31 @@ describe('RestTimerSheet', () => {
     expect(getRestTimerState().armedForSessionId).toBe('session-1');
   });
 
+  it('leaves the timer alone when the already-selected cadence is tapped again (#5664)', () => {
+    // Paper's SegmentedButtons (Android, web) calls back on a press of the lit
+    // segment. A re-arm there would restart a fixed window mid-block.
+    settingsStore.values.restTimerMode = 'onTheMinute';
+    armRestTimer('onTheMinute', NOW_MS, 'session-1');
+    const { container } = renderSheet();
+    const { anchorMs, cycleId } = getRestTimerState();
+
+    harness.nowMs = NOW_MS + 40_000;
+    fireEvent.click(container.querySelector('[data-segment="mobile.restTimer.modeAria:onTheMinute"]') as HTMLElement);
+    expect(getRestTimerState()).toMatchObject({ anchorMs, cycleId });
+
+    // Same for a running after-tick rest: the tap must not drop it back to waiting.
+    cleanup();
+    settingsStore.values.restTimerMode = 'afterTick';
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    logFirstTick();
+    const { container: afterTickContainer } = renderSheet();
+    const before = getRestTimerState();
+    fireEvent.click(
+      afterTickContainer.querySelector('[data-segment="mobile.restTimer.modeAria:afterTick"]') as HTMLElement,
+    );
+    expect(getRestTimerState()).toMatchObject({ anchorMs: before.anchorMs, cycleId: before.cycleId });
+  });
+
   it('lets the climber driving the wall arm auto-advance', () => {
     const { container } = renderSheet();
     const row = container.querySelector(AUTO_ADVANCE_ROW) as HTMLElement;

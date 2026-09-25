@@ -64,9 +64,10 @@ export function RestTimerArmRow() {
       />
       {armed ? (
         <View style={styles.controls}>
-          {/* `inset={false}`: the length control pulls back out through the
-              card's own 16pt padding so its rail bleeds to the card edge, then
-              re-applies the gutter to its header, chips and footnote. */}
+          {/* `inset={false}`: the length and cadence blocks pull back out
+              through the card's own 16pt padding, then re-apply the gutter
+              themselves, so the rest slider spans the card's content width and
+              the cadence header lines up with the Rest label. */}
           <RestTimerLengthControl inset={false} />
           <RestTimerCadenceSection inset={false} />
           <RestTimerAutoAdvanceRow />
@@ -77,9 +78,9 @@ export function RestTimerArmRow() {
 }
 
 const styles = StyleSheet.create({
-  // No gap / top margin of its own: the length control's SectionHeader brings
-  // the section's top rhythm and the SwitchRow its own vertical padding, so a
-  // second spacing layer here just doubles both seams.
+  // Only a small top margin: the cadence SectionHeader brings its own top
+  // padding and each SwitchRow its own vertical padding, so a gap here would
+  // just double those seams.
   controls: {
     marginTop: spacing[1],
   },

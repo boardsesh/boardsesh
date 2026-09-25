@@ -318,7 +318,7 @@
       "off": "Aus",
       "modeLabel": "Takt",
       "modeAria": "Takt des Pausen-Timers",
-      "modeAfterTick": "Nach jeder Begehung",
+      "modeAfterTick": "Nach jedem Boulder",
       "modeOnTheMinute": "Fester Takt",
       "modeEvery": "Alle {{length}}",
       "modeAfterTickHint": "Deine Pause startet neu, sobald du einen Versuch oder eine Begehung einträgst.",

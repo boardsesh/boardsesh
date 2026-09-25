@@ -318,7 +318,7 @@
       "off": "Off",
       "modeLabel": "Cadence",
       "modeAria": "Rest timer cadence",
-      "modeAfterTick": "After each send",
+      "modeAfterTick": "After each climb",
       "modeOnTheMinute": "Fixed window",
       "modeEvery": "Every {{length}}",
       "modeAfterTickHint": "Your rest restarts every time you log an attempt or a send.",

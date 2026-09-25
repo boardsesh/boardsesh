@@ -318,7 +318,7 @@
       "off": "Desactivado",
       "modeLabel": "Cadencia",
       "modeAria": "Cadencia del temporizador de descanso",
-      "modeAfterTick": "Tras cada encadene",
+      "modeAfterTick": "Tras cada bloque",
       "modeOnTheMinute": "Ritmo fijo",
       "modeEvery": "Cada {{length}}",
       "modeAfterTickHint": "Tu descanso vuelve a empezar cada vez que registras un intento o un encadene.",
