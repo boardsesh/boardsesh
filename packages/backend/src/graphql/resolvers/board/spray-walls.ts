@@ -736,9 +736,13 @@ async function deletePublicWallPhoto(key: string | null | undefined): Promise<vo
  * row is only ever written together with the flag, but this field is what a web
  * page and a crawler read, so it re-asserts the rule rather than trusting the
  * pair to be consistent.
+ *
+ * Null for a HIDDEN wall too, owner included. Hidden reads as private, and a
+ * private wall has no public URL for anybody; the owner's own reads use the
+ * presigned private photo, not this.
  */
 function publicWallPhotoUrl(board: UserBoardRow, wall: SprayWallRow): string | null {
-  if (!board.isPublic || !wall.publicPhotoKey || !isS3Configured('media')) return null;
+  if (!board.isPublic || wall.hiddenAt != null || !wall.publicPhotoKey || !isS3Configured('media')) return null;
   try {
     return getPublicUrl('media', wall.publicPhotoKey);
   } catch (error) {

@@ -209,8 +209,30 @@ export async function sprayBoardRowIsReadable(
   lookupKey: 'capability' | 'enumerable',
 ): Promise<boolean> {
   if (!isSprayBoardType(board.boardType)) return true;
-  if (lookupKey === 'capability' && board.isUnlisted === true) return true;
+  // A hidden wall hands out no capability, the same rule `viewerCanSeeSprayWall`
+  // and `viewerCanWriteSprayClimbs` apply: the share link an owner sent before an
+  // admin acted stops opening the wall, or hiding it would not take it off the
+  // internet. A hidden wall falls through to the by-layout rule, which keeps it
+  // for its owner and nobody else.
+  if (lookupKey === 'capability' && board.isUnlisted === true && (await sprayWallIsUnhidden(board.layoutId))) {
+    return true;
+  }
   return sprayLayoutIsReadable(board.boardType, board.layoutId, viewerUserId);
+}
+
+/**
+ * Whether the wall at this layout exists and is NOT admin-hidden. Only asked on
+ * the unlisted capability path, so an ordinary read pays nothing for it. A missing
+ * row answers false: no wall, no capability.
+ */
+async function sprayWallIsUnhidden(layoutId: number | null): Promise<boolean> {
+  if (layoutId == null || !Number.isFinite(layoutId)) return false;
+  const [row] = await dbRead
+    .select({ hiddenAt: dbSchema.sprayWalls.hiddenAt })
+    .from(dbSchema.sprayWalls)
+    .where(eq(dbSchema.sprayWalls.layoutId, Number(layoutId)))
+    .limit(1);
+  return row !== undefined && row.hiddenAt === null;
 }
 
 /**
