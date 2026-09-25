@@ -12,8 +12,9 @@
 // loading native expo-sqlite.
 
 import {
-  BOARD_CLIMB_HOLDS,
-  INDEX_CLIMB_HOLDS_BY_HOLD,
+  BOARD_CLIMB_HOLD_POSTINGS,
+  BOARD_CLIMB_HOLD_SETS,
+  HOLDS_INDEX_CLIMBS,
   INDEX_CLIMBS_SYNC_SEQ,
   SCHEMA_STATEMENTS,
   SPRAY_WALLS,
@@ -160,12 +161,13 @@ export const MIGRATIONS: Migration[] = [
   {
     // The device-derived holds index (hold heatmap + similar climbs on device).
     //
-    // `board_climb_holds` is built on the phone from `board_climbs.frames` by
-    // holds-index/hold-index.ts. It is NOT a synced table: no TABLE_CONFIGS
-    // entry, no checkpoint, no tombstones, and never part of a snapshot artifact
-    // (DEVICE_ONLY_TABLES; the export refuses DDL that names it). Its freshness
-    // lives in one `holds-index:<scopeKey>` sync_meta watermark per downloaded
-    // scope, which scope teardown clears with the rows.
+    // Three tables built on the phone from `board_climbs.frames` by
+    // holds-index/hold-index.ts: a local integer id per climb uuid, one packed
+    // hold set per climb, and one packed posting list per (layout, hold). NOT
+    // synced tables: no TABLE_CONFIGS entry, no checkpoint, no tombstones, and
+    // never part of a snapshot artifact (DEVICE_ONLY_TABLES; the export refuses
+    // DDL that names them). Freshness lives in one `holds-index:<scopeKey>`
+    // sync_meta watermark per downloaded scope.
     //
     // `idx_climbs_sync_seq` is on `board_climbs` because the builder walks a
     // layout in `sync_seq` order from that watermark, and asks "is anything
@@ -176,7 +178,7 @@ export const MIGRATIONS: Migration[] = [
     // v10 clients until the next live threshold scan rebuilds them (every 15
     // minutes; docs/board-snapshots.md "Schema-bump staleness window").
     version: 10,
-    statements: [BOARD_CLIMB_HOLDS, INDEX_CLIMB_HOLDS_BY_HOLD, INDEX_CLIMBS_SYNC_SEQ],
+    statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
   },
 ];
 

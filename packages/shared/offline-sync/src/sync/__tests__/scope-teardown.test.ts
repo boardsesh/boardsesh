@@ -297,9 +297,14 @@ describe('removeBoardScopeData — markers', () => {
     await removeBoardScopeData({ db, scope: KILTER_12X12, scopeKey: 'kilter:1:5', retainedScopes: [KILTER_8X12] });
 
     for (const key of scopeSyncMetaKeys('kilter:1:7')) {
+      // The one deliberate exception: the holds index's postings are per LAYOUT,
+      // so the teardown clears the whole layout's index and every sibling's
+      // watermark, and the sibling rebuilds on its next cycle.
+      if (key === 'holds-index:kilter:1:7') continue;
       const row = await db.getFirstAsync<{ key: string }>('SELECT key FROM sync_meta WHERE key = ?', [key]);
       expect(row, `${key} should survive`).not.toBeNull();
     }
+    expect(await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', ['holds-index:kilter:1:7'])).toBeNull();
   });
 
   // Guards against anyone "tidying" the exact-key list into a LIKE 'checkpoint:%'

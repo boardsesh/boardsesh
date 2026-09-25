@@ -88,7 +88,7 @@ import {
 } from './deletions-coverage';
 import { classifySqliteLockError } from '../db/lock-errors';
 import { buildMultiRowInsertSql, multiRowChunkSize, runPullWrite } from './pull-write';
-import { ensureHoldIndex, type HoldRowParser } from '../holds-index/hold-index';
+import { ensureHoldIndex, removeClimbFromHoldIndex, type HoldRowParser } from '../holds-index/hold-index';
 // Re-exported: the export job and the package index have always imported it from here.
 export { multiRowChunkSize } from './pull-write';
 import { getPendingCount } from '../mutation-queue/queue';
@@ -638,7 +638,7 @@ export type SyncOptions = {
   /** Jitter source for the retry ladder. Defaults to `Math.random`. */
   random?: () => number;
   /**
-   * Build the device-derived holds index (`board_climb_holds`) for every
+   * Build the device-derived holds index (holds-index/) for every
    * downloaded scope at the end of the cycle. Omitted → no index is built by the
    * pull, which is every caller that predates it; the local readers still build
    * it lazily. See holds-index/hold-index.ts.
@@ -1138,17 +1138,15 @@ async function processDeletions(
             // whose key is one column, and a composite-key table would need the
             // same split the DELETE below does — add it there when one asks.
             let captured: Record<string, unknown> | null = null;
-            // A climb's derived hold rows go with it (below). Their key leads with
-            // board_type, so read it now: `WHERE climb_uuid = ?` alone could not
-            // use the primary key and would scan the whole index per tombstone.
-            const climbBoardType =
+            // A climb leaves the device-derived holds index with it (below). Its
+            // postings are per (board, layout), so read those now, before the row
+            // is gone.
+            const deletedClimb =
               deletion.tableName === 'board_climbs'
-                ? (
-                    await transaction.getFirstAsync<{ board_type: string | null }>(
-                      'SELECT board_type FROM board_climbs WHERE uuid = ?',
-                      [deletion.recordId],
-                    )
-                  )?.board_type
+                ? await transaction.getFirstAsync<{ board_type: string | null; layout_id: number | null }>(
+                    'SELECT board_type, layout_id FROM board_climbs WHERE uuid = ?',
+                    [deletion.recordId],
+                  )
                 : null;
             if (config.captureOnDelete && config.captureOnDelete.length > 0) {
               captured = await transaction.getFirstAsync<Record<string, unknown>>(
@@ -1171,14 +1169,15 @@ async function processDeletions(
               await transaction.runAsync(`DELETE FROM playlist_climbs WHERE playlist_uuid = ?`, [deletion.recordId]);
             }
             // Same local cascade for the device-derived holds index: nothing on
-            // the server tombstones those rows, because the server never sent
-            // them. Gated the same way, so a resurrection-guarded tombstone keeps
-            // a live climb's rows.
-            if (deletion.tableName === 'board_climbs' && climbBoardType && (deleteResult?.changes ?? 0) > 0) {
-              await transaction.runAsync('DELETE FROM board_climb_holds WHERE board_type = ? AND climb_uuid = ?', [
-                climbBoardType,
-                deletion.recordId,
-              ]);
+            // the server tombstones it, because the server never sent it. Gated
+            // the same way, so a resurrection-guarded tombstone keeps a live
+            // climb indexed.
+            if (deletedClimb?.board_type && deletedClimb.layout_id !== null && (deleteResult?.changes ?? 0) > 0) {
+              await removeClimbFromHoldIndex(transaction, {
+                uuid: deletion.recordId,
+                boardType: deletedClimb.board_type,
+                layoutId: deletedClimb.layout_id,
+              });
             }
             // Only when the row really went: a resurrection-guarded tombstone
             // leaves a live row behind, and deleting its photograph would blank

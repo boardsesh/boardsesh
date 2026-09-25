@@ -94,7 +94,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // climbs changes who's set on the board, so it must refresh alongside search).
   //
   // ['similarClimbs'] — answered on device from board_climbs joined to the
-  // derived board_climb_holds index, so a climb arriving, changing or being
+  // derived holds index (holds-index/), so a climb arriving, changing or being
   // hidden changes the strip. (['holdHeatmap'] joins it once the heatmap's
   // reader exists: the drift test refuses a key nobody reads.)
   board_climbs: [
@@ -123,7 +123,7 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // The device-derived holds index (holds-index/hold-index.ts). Not a synced
   // table — nothing pulls or drains it — but the index builder invalidates
   // through this map after a chunk changed rows, so it lives here with the rest.
-  board_climb_holds: [['similarClimbs']],
+  board_climb_hold_sets: [['similarClimbs']],
 
   // Deliberately empty — not a placeholder.
   //

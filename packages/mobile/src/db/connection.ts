@@ -19,6 +19,7 @@ import {
   vacuumDatabase,
   BOARD_DATA_TABLES,
   DEVICE_ONLY_TABLES,
+  clearBoardTypeHoldIndex,
   getUnfinishedDownloadScopeKeys,
   claimAbandonedDownloadTerminal,
   purgeNamespaceForScopeKey,
@@ -80,16 +81,7 @@ const SPRAY_BOARD_TYPE = 'spray';
 // — deliberately, because a Kilter catalogue is shared. So the rows for the one
 // board type where that is false have to go with the wall. Only `board_type =
 // 'spray'` is touched; the catalogue download the wipe exists to protect is not.
-//
-// `board_climb_holds` is the device-derived holds index: it carries the wall's
-// climbs' holds, so it goes with them. Its watermark is in `scopeSyncMetaKeys`,
-// which the per-wall marker loop below already clears.
-const SPRAY_SCOPED_BOARD_TABLES = [
-  'board_climbs',
-  'board_climb_stats',
-  'board_climb_grades',
-  'board_climb_holds',
-] as const;
+const SPRAY_SCOPED_BOARD_TABLES = ['board_climbs', 'board_climb_stats', 'board_climb_grades'] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;
 
@@ -882,6 +874,10 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
+    // The device-derived holds index carries the walls' climbs' holds, so it goes
+    // too: hold sets, postings, local ids and watermarks. First, because it finds
+    // the wall's climbs through board_climbs.
+    await clearBoardTypeHoldIndex(txn, SPRAY_BOARD_TYPE);
     for (const table of SPRAY_SCOPED_BOARD_TABLES) {
       await txn.runAsync(`DELETE FROM ${table} WHERE board_type = ?`, [SPRAY_BOARD_TYPE]);
     }

@@ -1,15 +1,12 @@
-// Measures what the device-derived holds index (`board_climb_holds`) costs on a
-// real board: rows, bytes on disk, and build time, against a published snapshot
-// artifact loaded into node:sqlite with the real migrations and the real parser.
+// Measures what the device-derived holds index costs on a real board — bytes on
+// disk, WAL written, build time, and the similar-climbs candidate query — against
+// a published snapshot artifact loaded into node:sqlite with the real migrations
+// and the real parser.
 //
 // Usage (from the repo root):
 //   node --import tsx packages/shared/offline-sync/scripts/measure-holds-index.ts --artifact <file.db | file.db.gz>
 //   node --import tsx packages/shared/offline-sync/scripts/measure-holds-index.ts \
 //     --manifest-url <.../manifest.json> --board kilter --layout 1 [--download-dir <dir>]
-//
-// --bulk writes every parsed row in ONE transaction instead of calling
-// ensureHoldIndex. Same rows, same table, so the bytes are exact; the time is not
-// the chunked build's. Use it for large layouts when only the disk cost matters.
 //
 // Optional: --size <id> measures one size scope instead of the layout's largest,
 // and --all-sizes builds every size scope of the layout one after another (the
@@ -42,6 +39,7 @@ import { configureMainConnection } from '../src/db/pragmas';
 import { markScopeDownloadComplete } from '../src/sync/checkpoints';
 import { parseSnapshotManifest } from '../src/sync/snapshot-manifest';
 import { ensureHoldIndex, type HoldRowParser } from '../src/holds-index/hold-index';
+import { decodeHoldSetIds, findSimilarClimbCandidates, HOLD_SET_ENTRY_BYTES } from '../src/holds-index/query';
 import { offlineBoardKey, type OfflineBoardScope } from '../src/offline-board-key';
 import { createTestDatabase, type TestSqliteDb } from '../src/testing/sqlite-test-db';
 
@@ -59,7 +57,6 @@ const { values: args } = parseArgs({
     size: { type: 'string' },
     'all-sizes': { type: 'boolean', default: false },
     'download-dir': { type: 'string' },
-    bulk: { type: 'boolean', default: false },
   },
 });
 
@@ -175,11 +172,14 @@ async function main(): Promise<void> {
     console.log(`Database before the index: ${megabytes(bytesBefore)}`);
 
     // WAL accounting. Each write transaction runs on its own connection, as on
-    // the device, and that connection checkpoints and deletes the WAL when it
-    // closes. So the WAL file is measured right after COMMIT, before the close:
-    // its size is exactly the pages that one commit appended.
+    // the device. Checkpoints are switched off for the build and the WAL starts
+    // empty, so the file only grows: each commit's growth is the pages it
+    // appended, and the sum is everything the build wrote to the WAL.
     const devicePath = join(workDir, 'device.db');
+    await db.execAsync('PRAGMA wal_autocheckpoint = 0');
+    await db.getFirstAsync('PRAGMA wal_checkpoint(TRUNCATE)');
     let walBytes = 0;
+    let largestCommitWalBytes = 0;
     db.withExclusiveTransactionAsync = async (task) => {
       const connection = createTestDatabase(devicePath);
       try {
@@ -194,7 +194,9 @@ async function main(): Promise<void> {
           await connection.execAsync('ROLLBACK');
           throw error;
         }
-        walBytes += Math.max(0, (existsSync(walPath) ? statSync(walPath).size : 0) - walBefore);
+        const commitWalBytes = Math.max(0, (existsSync(walPath) ? statSync(walPath).size : 0) - walBefore);
+        walBytes += commitWalBytes;
+        largestCommitWalBytes = Math.max(largestCommitWalBytes, commitWalBytes);
       } finally {
         connection.close();
       }
@@ -202,28 +204,7 @@ async function main(): Promise<void> {
 
     const startedAll = performance.now();
     const cpuBefore = process.cpuUsage();
-    if (args.bulk) {
-      const filterSql = sizeScoped
-        ? ` AND EXISTS (SELECT 1 FROM json_each(compatible_size_ids) WHERE value IN (${sizeIds.map(() => '?').join(', ')}))`
-        : '';
-      const climbs = await db.getAllAsync<{ uuid: string; frames: string | null }>(
-        `SELECT uuid, frames FROM board_climbs WHERE board_type = ? AND layout_id = ?
-           AND is_listed = 1 AND is_draft = 0 AND COALESCE(is_hidden, 0) = 0${filterSql}`,
-        [layout.board_type, layout.layout_id, ...(sizeScoped ? sizeIds : [])],
-      );
-      await db.withExclusiveTransactionAsync(async (transaction) => {
-        for (const climb of climbs) {
-          const holds = parseHoldRows(layout.board_type, climb.frames ?? '');
-          if (holds.length === 0) continue;
-          await transaction.runAsync(
-            `INSERT OR REPLACE INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES ${holds.map(() => '(?, ?, ?, ?)').join(', ')}`,
-            holds.flatMap((hold) => [layout.board_type, climb.uuid, hold.holdId, hold.holdState]),
-          );
-        }
-      });
-      console.log(`  bulk: ${climbs.length} climbs in one transaction (bytes only; not the chunked build's time)`);
-    }
-    for (const sizeId of args.bulk ? [] : sizeIds) {
+    for (const sizeId of sizeIds) {
       const scope: OfflineBoardScope = { boardType: layout.board_type, layoutId: layout.layout_id, sizeId };
       await markScopeDownloadComplete(db, offlineBoardKey(scope));
       const started = performance.now();
@@ -231,16 +212,19 @@ async function main(): Promise<void> {
       const seconds = (performance.now() - started) / 1000;
       console.log(
         `  scope ${offlineBoardKey(scope)}: ${result.status}, ${result.climbsProcessed} climbs read, ` +
-          `${result.rowsInserted} rows, ${result.chunks} chunks, ${seconds.toFixed(1)} s`,
+          `${result.holdSetsWritten} hold sets, ${result.postingsWritten} postings, ${result.chunks} chunks, ${seconds.toFixed(1)} s`,
       );
     }
     const totalSeconds = (performance.now() - startedAll) / 1000;
     const cpu = process.cpuUsage(cpuBefore);
     const cpuSeconds = (cpu.user + cpu.system) / 1e6;
 
-    const rows = (await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM board_climb_holds'))?.n ?? 0;
-    const indexedClimbs =
-      (await db.getFirstAsync<{ n: number }>('SELECT COUNT(DISTINCT climb_uuid) AS n FROM board_climb_holds'))?.n ?? 0;
+    const holdSets = await db.getFirstAsync<{ n: number; holds: number; bytes: number }>(
+      'SELECT COUNT(*) AS n, SUM(length(holds)) / 5 AS holds, SUM(length(holds)) AS bytes FROM board_climb_hold_sets',
+    );
+    const postings = await db.getFirstAsync<{ n: number; bytes: number }>(
+      'SELECT COUNT(*) AS n, SUM(length(climb_ids)) AS bytes FROM board_climb_hold_postings',
+    );
     // Deletes during a build leave free pages; VACUUM so "after" is what a
     // steady-state device file holds, not build scratch.
     await db.execAsync('VACUUM');
@@ -248,15 +232,59 @@ async function main(): Promise<void> {
 
     console.log('');
     console.log(
-      `board_climb_holds rows:     ${rows} (${indexedClimbs} climbs, ${(rows / Math.max(indexedClimbs, 1)).toFixed(1)} per climb)`,
+      `Hold sets:                  ${holdSets?.n ?? 0} climbs, ${holdSets?.holds ?? 0} holds ` +
+        `(${((holdSets?.holds ?? 0) / Math.max(holdSets?.n ?? 0, 1)).toFixed(1)} per climb), ${megabytes(holdSets?.bytes ?? 0)} of blobs`,
     );
+    console.log(`Postings:                   ${postings?.n ?? 0} holds, ${megabytes(postings?.bytes ?? 0)} of blobs`);
     console.log(`Database after the index:   ${megabytes(bytesAfter)}`);
     console.log(`Index cost on disk:         ${megabytes(bytesAfter - bytesBefore)}`);
     // Wall time on a slow-fsync disk is mostly I/O wait; CPU time is the part
     // that transfers to another machine.
     console.log(`Build wall time (this box): ${totalSeconds.toFixed(1)} s`);
     console.log(`Build CPU time:             ${cpuSeconds.toFixed(1)} s`);
-    console.log(`WAL appended by the build:  ${megabytes(walBytes)}`);
+    console.log(
+      `WAL appended by the build:  ${megabytes(walBytes)} (largest single commit ${megabytes(largestCommitWalBytes)})`,
+    );
+
+    // The similar-climbs candidate query, for a typical climb and a busy one.
+    for (const holdCount of [13, 40]) {
+      const target = await db.getFirstAsync<{ uuid: string; holds: Uint8Array }>(
+        `SELECT hic.uuid, hs.holds FROM board_climb_hold_sets hs JOIN holds_index_climbs hic ON hic.id = hs.climb_id
+         WHERE length(hs.holds) >= ? ORDER BY length(hs.holds), hs.climb_id LIMIT 1`,
+        [holdCount * HOLD_SET_ENTRY_BYTES],
+      );
+      if (!target) continue;
+      const targetHoldIds = [...decodeHoldSetIds(target.holds)];
+      const looser = await findSimilarClimbCandidates(db, {
+        boardType: layout.board_type,
+        layoutId: layout.layout_id,
+        targetHoldIds,
+        threshold: 0.3,
+        excludeUuid: target.uuid,
+        limit: 1000,
+      });
+      const timings: number[] = [];
+      let candidates = 0;
+      for (let run = 0; run < 5; run += 1) {
+        const started = performance.now();
+        const found = await findSimilarClimbCandidates(db, {
+          boardType: layout.board_type,
+          layoutId: layout.layout_id,
+          targetHoldIds,
+          threshold: 0.5,
+          excludeUuid: target.uuid,
+          limit: 12,
+        });
+        timings.push(performance.now() - started);
+        candidates = found.length;
+      }
+      timings.sort((left, right) => left - right);
+      console.log(
+        `Similar candidates, ${targetHoldIds.length}-hold climb: median ${timings[2].toFixed(1)} ms ` +
+          `(slowest of 5 runs ${timings[timings.length - 1].toFixed(1)} ms), ${candidates} at Jaccard ≥ 0.5, ` +
+          `${looser.length} at ≥ 0.3`,
+      );
+    }
     db.close();
   } finally {
     rmSync(workDir, { recursive: true, force: true });
