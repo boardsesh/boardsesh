@@ -506,7 +506,7 @@ describe('DevicePickerSheet while searching for the saved board (#5658)', () => 
 
     expect(container.querySelector('[data-spinner]')).not.toBeNull();
     // The product name, never a serial.
-    expect(hasText(container, 'ble.searchingForBoard:kilter Board')).toBe(true);
+    expect(hasText(container, 'ble.searchingForBoard:kilter aurora.card.boardSuffix')).toBe(true);
     expect(hasText(container, 'ble.scanning')).toBe(false);
     expect(hasText(container, 'ble.troubleshootTitle')).toBe(false);
     expect(container.querySelector('[data-button="ble.scanAgain"]')).toBeNull();
@@ -517,7 +517,7 @@ describe('DevicePickerSheet while searching for the saved board (#5658)', () => 
 
   it('keeps its searching state even when the scan has stopped', () => {
     const { container } = render(<DevicePickerSheet {...makeProps({ mode: 'searching', isScanning: false })} />);
-    expect(hasText(container, 'ble.searchingForBoard:kilter Board')).toBe(true);
+    expect(hasText(container, 'ble.searchingForBoard:kilter aurora.card.boardSuffix')).toBe(true);
     expect(hasText(container, 'ble.noDevicesFound')).toBe(false);
   });
 

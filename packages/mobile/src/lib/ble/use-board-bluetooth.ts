@@ -830,7 +830,9 @@ export function useBoardBluetooth({
   );
 
   const [pickerState, setPickerState] = useState<PickerState | null>(null);
-  const pickerRejectRef = useRef<((error: Error) => void) | null>(null);
+  // The live picker's reject, tagged with its session so connect()'s failure
+  // path only ever settles the picker that connect opened.
+  const pickerRejectRef = useRef<{ sessionId: number; reject: (error: Error) => void } | null>(null);
   const pickerSessionCounterRef = useRef(0);
 
   // Keep the screen awake while connected to a board
@@ -870,9 +872,9 @@ export function useBoardBluetooth({
         settled = true;
         reject(error);
       };
-      pickerRejectRef.current = rejectPicker;
+      pickerRejectRef.current = { sessionId, reject: rejectPicker };
       const releaseRejectRef = () => {
-        if (pickerRejectRef.current === rejectPicker) pickerRejectRef.current = null;
+        if (pickerRejectRef.current?.reject === rejectPicker) pickerRejectRef.current = null;
       };
 
       const cleanup = () => {
@@ -1531,6 +1533,15 @@ export function useBoardBluetooth({
       // diagnostics (which services the board exposed) for a service_missing
       // report (#3480); `adapter` itself is block-scoped to the try.
       let connectAdapter: BluetoothAdapter | null = null;
+      // The picker session this connect opened (an adapter opens at most one per
+      // requestAndConnect), so the catch below can scope its cleanup to it.
+      let connectPickerSessionId: number | null = null;
+      const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
+        const pickerPromise = devicePicker(subscribe, targetSearch);
+        // The picker's executor ran synchronously, so the counter now holds its session.
+        connectPickerSessionId ??= pickerSessionCounterRef.current;
+        return pickerPromise;
+      };
 
       try {
         // Bluetooth only: the Android 13+ notifications prompt waits until the
@@ -1559,7 +1570,7 @@ export function useBoardBluetooth({
         }
 
         const adapter = createBluetoothAdapter(
-          devicePicker,
+          connectDevicePicker,
           scanFamilyForBoard(boardName),
           adapterOptionsForBoard(boardName),
         );
@@ -1909,9 +1920,17 @@ export function useBoardBluetooth({
         // The sheet leaves by dismissal, not by unmounting, because a scan error
         // can land while it is still presenting; the host clears the state once
         // the dismissal settles.
-        pickerRejectRef.current?.(new Error('Connection failed'));
-        pickerRejectRef.current = null;
-        setPickerState((prev) => (prev ? { ...prev, closing: true } : null));
+        // Scoped to the picker session THIS connect opened: a stale connect's
+        // failure must never settle or close a newer picker. connectInFlightRef
+        // keeps connects from overlapping today; this keeps it true without it.
+        if (connectPickerSessionId !== null) {
+          const ownPickerSessionId = connectPickerSessionId;
+          if (pickerRejectRef.current?.sessionId === ownPickerSessionId) {
+            pickerRejectRef.current.reject(new Error('Connection failed'));
+            pickerRejectRef.current = null;
+          }
+          setPickerState((prev) => (prev && prev.sessionId === ownPickerSessionId ? { ...prev, closing: true } : prev));
+        }
 
         // failureCategory (classified above) maps to actionable user copy via the
         // shared, deliberately-tight predicate. A previous bare `/cancel/i` regex
@@ -2298,7 +2317,7 @@ export function useBoardBluetooth({
       // Reject with the explicit user-cancel signature so a connect that's
       // still awaiting the picker classifies as `user_cancelled` (silent)
       // rather than popping an alert over whatever screen comes next.
-      pickerRejectRef.current?.(new Error('Device selection cancelled'));
+      pickerRejectRef.current?.reject(new Error('Device selection cancelled'));
       pickerRejectRef.current = null;
       unsubDisconnectRef.current?.();
       unsubDisconnectRef.current = null;

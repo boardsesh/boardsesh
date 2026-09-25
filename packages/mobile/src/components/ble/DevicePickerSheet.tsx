@@ -22,10 +22,11 @@ import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
-// knows, never the serial (#5658). Brand names stay untranslated in every locale.
-function savedBoardProductName(boardName: string): string {
+// knows, never the serial (#5658). The suffix is the one the board-account card
+// uses (`aurora.card.boardSuffix`), and it is "Board" in every locale.
+function savedBoardProductName(boardName: string, boardSuffix: string): string {
   const displayName = formatBoardDisplayName(boardName);
-  return displayName.endsWith('Board') ? displayName : `${displayName} Board`;
+  return displayName.endsWith(boardSuffix) ? displayName : `${displayName} ${boardSuffix}`;
 }
 
 type DevicePickerSheetProps = {
@@ -232,7 +233,9 @@ export function DevicePickerSheet({
           <ActivityIndicator size="small" color={theme.brandColors.primary} />
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {currentBoardConfig
-              ? t('ble.searchingForBoard', { board: savedBoardProductName(currentBoardConfig.boardName) })
+              ? t('ble.searchingForBoard', {
+                  board: savedBoardProductName(currentBoardConfig.boardName, t('aurora.card.boardSuffix')),
+                })
               : t('ble.searchingForSavedBoard')}
           </Text>
           {onSearchAnyBoard && (

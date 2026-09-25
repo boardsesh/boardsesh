@@ -184,7 +184,7 @@ import {
   type BleConnectionHandle,
 } from '../use-board-bluetooth';
 import { getBleEncodingSignature } from '../encoding-signature';
-import type { BleWriteDiagnostics } from '../types';
+import type { BleWriteDiagnostics, DevicePickerFn } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
@@ -4681,6 +4681,55 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     });
     expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
     expect(result.current.loading).toBe(true);
+  });
+
+  it("never lets a stale connect's failure settle or close a newer picker", async () => {
+    let capturedPicker: DevicePickerFn | null = null;
+    let failConnect: (error: Error) => void = () => {};
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      (devicePicker) =>
+        ({
+          ...makeFakeAdapter(),
+          requestAndConnect: vi.fn(() => {
+            capturedPicker = devicePicker;
+            // This connect's own picker; the climber picks from it below.
+            void devicePicker(() => {}).catch(() => {});
+            return new Promise((_resolve, reject) => {
+              failConnect = reject;
+            });
+          }),
+        }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderBluetooth();
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const ownSessionId = result.current.pickerState?.sessionId;
+    act(() => result.current.pickerState?.handleSelect('device-1'));
+    expect(result.current.pickerState).toBeNull();
+
+    // A newer picker opens while that connect is still unwinding. Connects can't
+    // overlap today (connectInFlightRef), so it is opened through the same picker
+    // function; the failure path must still leave it alone.
+    let newerPickerSettled = false;
+    act(() => {
+      void capturedPicker?.(() => {}).then(
+        () => (newerPickerSettled = true),
+        () => (newerPickerSettled = true),
+      );
+    });
+    const newerSessionId = result.current.pickerState?.sessionId;
+    expect(newerSessionId).not.toBe(ownSessionId);
+
+    await act(async () => {
+      failConnect(new Error('Connection timed out — board may be powered off'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await expect(connectPromise).resolves.toBe(false);
+    expect(result.current.pickerState).toMatchObject({ sessionId: newerSessionId, closing: false });
+    expect(newerPickerSettled).toBe(false);
   });
 
   it('still cancels a displaced list, as before', async () => {
