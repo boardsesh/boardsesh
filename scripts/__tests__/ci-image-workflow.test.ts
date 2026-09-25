@@ -397,7 +397,7 @@ describe('ci-image.yml: build authority is main only', () => {
     }
   });
 
-  it('is never triggered by pull_request or push -- only schedule and workflow_dispatch', () => {
+  it('is never triggered by pull_request, push or schedule -- only workflow_dispatch', () => {
     const lines = withoutCommentLines(workflowSource);
     const onIndex = lines.findIndex((line) => line === 'on:');
     expect(onIndex).toBeGreaterThan(-1);
@@ -407,7 +407,9 @@ describe('ci-image.yml: build authority is main only', () => {
       onBlock.push(line);
     }
     const triggers = onBlock.filter((line) => /^  [a-z_]+:/.test(line)).map((line) => line.trim().replace(':', ''));
-    expect(triggers.sort()).toEqual(['schedule', 'workflow_dispatch']);
+    // No cron: a daily run burned a GitHub-hosted slot for a rebuild that is
+    // a cache hit most days. Dispatch it when the lockfile or history needs it.
+    expect(triggers.sort()).toEqual(['workflow_dispatch']);
   });
 });
 
