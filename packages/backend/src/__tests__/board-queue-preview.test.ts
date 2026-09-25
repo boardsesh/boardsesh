@@ -462,6 +462,43 @@ describe('board-queue-preview privacy gates', () => {
     }
   });
 
+  it('does not yield a seed computed after the spray wall was hidden, except to its owner', async () => {
+    // The seed lookup is async; a hide landing while it runs must not leak one
+    // post-hide snapshot to a stranger. The spy hides the wall inside the lookup.
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: true });
+    const layoutId = 900_000 + Math.floor(Math.random() * 90_000);
+    await db.execute(sql`
+      UPDATE user_boards SET board_type = 'spray', layout_id = ${layoutId}, size_id = ${layoutId}, set_ids = '1'
+      WHERE id = ${boardId}
+    `);
+    await db.execute(sql`INSERT INTO spray_walls (board_uuid, layout_id) VALUES (${boardUuid}, ${layoutId})`);
+    const preview = { boardId, current: null, upNext: [] } as unknown as BoardQueuePreview;
+    const seedLookup = vi
+      .spyOn(boardQueuePreviewService, 'getBoardQueuePreviewSnapshot')
+      .mockImplementation(async () => {
+        await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE layout_id = ${layoutId}`);
+        return preview;
+      });
+
+    const stranger = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(
+      undefined,
+      { boardId },
+      authCtx({ userId: 'board-queue-preview-stranger' }),
+    );
+    const owner = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, authCtx());
+    try {
+      expect((await stranger.next()).done).toBe(true);
+      const ownerSeed = await owner.next();
+      expect(ownerSeed.done).toBe(false);
+      expect((ownerSeed.value as { boardQueuePreview: BoardQueuePreview }).boardQueuePreview.boardId).toBe(boardId);
+    } finally {
+      seedLookup.mockRestore();
+      await owner.return?.(undefined);
+      await stranger.return?.(undefined);
+      await db.execute(sql`DELETE FROM spray_walls WHERE layout_id = ${layoutId}`);
+    }
+  });
+
   it('public board + public session → data flows to an anonymous viewer', async () => {
     const boardId = await makeBoard({ isPublic: true });
     const sessionId = await makeSession({ boardId, isPublic: true });

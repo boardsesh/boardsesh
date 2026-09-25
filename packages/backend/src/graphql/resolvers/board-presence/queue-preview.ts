@@ -89,6 +89,9 @@ export const boardQueuePreviewSubscriptions = {
 
       try {
         const seed = await getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
+        // The seed lookup is async, so the wall can go private or hidden while it
+        // runs: re-check before yielding it, exactly as for every live event.
+        if (seed && gate && !(await gate())) return;
         if (seed) {
           yield { boardQueuePreview: seed };
         }
