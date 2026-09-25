@@ -468,10 +468,16 @@ Two caveats worth knowing:
 migration session is deliberately the opposite of that: `production-deploy.yml`
 connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`, and
 `reserveMigrationOwnerSession` refuses to run a single statement unless
-`ownerDoesNotOwnDatabase` holds (`packages/db/scripts/migration-owner-role.ts`).
+the owner role did not own the database (`packages/db/scripts/migration-owner-role.ts`).
 The production investigation for #5372 found the `railway` database owned by
 the Railway-provisioned superuser, without an owner-capable credential in CI.
 That was the observed configuration, not a requirement on future credentials.
+
+**Update, 25 Sep 2026:** the replication work transferred `railway` to
+`boardsesh_owner`. `reserveMigrationOwnerSession` now accepts either layout —
+a superuser-owned database with the single non-grantable owner `CREATE`, or
+`boardsesh_owner` owning this database — and still rejects the owner role
+owning any other database. The history below describes the earlier layout.
 
 On its initial run under that role, 0225 raised `insufficient_privilege`. Its
 `EXCEPTION` handler turned that into a `RAISE WARNING`, and drizzle recorded the

@@ -578,8 +578,8 @@ jobs:
   # Round 5b of the DSM saga (#5352, #5369). Migration 0225 tried to set
   # `max_parallel_workers_per_gather = 0` with `ALTER DATABASE ... SET`, which
   # needs database ownership — and the role above is deliberately NOT the
-  # database owner (`reserveMigrationOwnerSession` refuses to run unless
-  # `ownerDoesNotOwnDatabase` holds). So 0225 raised `insufficient_privilege` on
+  # database owner (until the Sep 2026 replication work,
+  # `reserveMigrationOwnerSession` refused to run when it was). So 0225 raised `insufficient_privilege` on
   # every production deploy, swallowed it into a `RAISE WARNING`, and drizzle
   # recorded it as applied. It will never retry, and parallel-query DSM
   # exhaustion (SQLSTATE 53100) stayed possible.

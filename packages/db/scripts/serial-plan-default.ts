@@ -5,10 +5,10 @@
  * the recorded migration is not retried on later deploys.
  *
  * `ALTER DATABASE ... SET` requires ownership of the database (or superuser).
- * The production migration session is deliberately the opposite of that: the
- * deploy connects as `boardsesh_migrator` and `SET ROLE`s to `boardsesh_owner`,
- * and `reserveMigrationOwnerSession` refuses to proceed unless
- * `ownerDoesNotOwnDatabase` holds (migration-owner-role.ts). Reproduced against
+ * When 0225 shipped the production migration session was the opposite of that:
+ * the deploy connects as `boardsesh_migrator` and `SET ROLE`s to
+ * `boardsesh_owner`, which did not own the database until the Sep 2026
+ * replication work (migration-owner-role.ts accepts both layouts). Reproduced against
  * a stock `docker run postgres:17` with the production role shape:
  *
  *     WARNING:  boardsesh: could not set max_parallel_workers_per_gather on
