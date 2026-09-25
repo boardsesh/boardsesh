@@ -425,6 +425,28 @@ describe('searchClimbsLocal', () => {
     ]);
   });
 
+  // #5353: iOS Smart Punctuation types `’`, and the catalogue stores both
+  // apostrophe forms, so either form has to find either name.
+  it('finds a climb whatever apostrophe, dash or spacing the query uses', async () => {
+    await insertClimb(db, { uuid: 'straight', name: "Joey's Gaston" });
+    await insertClimb(db, { uuid: 'curly', name: 'Joey’s Gaston' });
+    await insertClimb(db, { uuid: 'dashed', name: 'Spider-Man  Roof' });
+    await insertClimb(db, { uuid: 'plain', name: 'Perfect gaston' });
+    await insertClimb(db, { uuid: 'percent', name: '50% crimp' });
+    await insertClimb(db, { uuid: 'fifty', name: '500 crimp' });
+
+    const found = async (name: string) => uuids(await searchClimbsLocal(db, makeInput({ name }))).sort();
+
+    expect(await found('Joey’s Gaston')).toEqual(['curly', 'straight']);
+    expect(await found("Joey's Gaston")).toEqual(['curly', 'straight']);
+    expect(await found('joey gaston')).toEqual(['curly', 'straight']);
+    expect(await found('spider–man roof')).toEqual(['dashed']);
+    // A plain query matches exactly what it did before the folding.
+    expect(await found('gaston')).toEqual(['curly', 'plain', 'straight']);
+    // The user's own `%` still matches literally, through the explicit ESCAPE.
+    expect(await found('50%')).toEqual(['percent']);
+  });
+
   // Woods numbers its holds from 0, so hold 0 is a real hold. It used to be
   // dropped by the key parser here and online both — boardsesh/boardsesh#4748.
   it('filters on hold id 0 without matching p10r/p20r', async () => {

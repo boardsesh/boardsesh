@@ -8,3 +8,4 @@ export * from './board-filter-state';
 export * from './active-filter-count';
 export * from './climb-zone-math';
 export * from './hold-filter-options';
+export * from './climb-name-pattern';
