@@ -17,14 +17,20 @@ import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { getSetting } from '../../settings';
 import { nowMs } from '../../lib/clock';
 import { armRestTimer, disarmRestTimer } from '../../lib/rest-timer-store';
-import { RestTimerAutoAdvanceRow, RestTimerLengthControl } from '../queue-control/RestTimerSheet';
+import {
+  RestTimerAutoAdvanceRow,
+  RestTimerCadenceSection,
+  RestTimerLengthControl,
+} from '../queue-control/RestTimerSheet';
 import { spacing } from '../../theme/tokens';
 
 /**
- * The arm switch plus, once armed, the two controls a climber actually changes
- * mid-session (rest length, auto-advance) and the live clock — so the Record tab
- * is not the one screen that cannot see its own timer. Cadence stays in the
- * sheet: it is a set-once choice, and changing it re-arms.
+ * The arm switch plus, once armed, the controls a climber sets a session up
+ * with: rest length, cadence and auto-advance. Cadence lives here as well as in
+ * the sheet (#5664): this card is where a fixed-window block ("a boulder every
+ * 3:00") gets set up, and without the choice here the timer could only ever run
+ * "after each send", restarting on every attempt. Changing it re-arms the live
+ * timer — the section itself handles that.
  */
 export function RestTimerArmRow() {
   const { t } = useTranslation('session');
@@ -58,10 +64,12 @@ export function RestTimerArmRow() {
       />
       {armed ? (
         <View style={styles.controls}>
-          {/* `inset={false}`: the length control pulls back out through the
-              card's own 16pt padding so its rail bleeds to the card edge, then
-              re-applies the gutter to its header, chips and footnote. */}
+          {/* `inset={false}`: the length and cadence blocks pull back out
+              through the card's own 16pt padding, then re-apply the gutter
+              themselves, so the rest slider spans the card's content width and
+              the cadence header lines up with the Rest label. */}
           <RestTimerLengthControl inset={false} />
+          <RestTimerCadenceSection inset={false} />
           <RestTimerAutoAdvanceRow />
         </View>
       ) : null}
@@ -70,9 +78,9 @@ export function RestTimerArmRow() {
 }
 
 const styles = StyleSheet.create({
-  // No gap / top margin of its own: the length control's SectionHeader brings
-  // the section's top rhythm and the SwitchRow its own vertical padding, so a
-  // second spacing layer here just doubles both seams.
+  // Only a small top margin: the cadence SectionHeader brings its own top
+  // padding and each SwitchRow its own vertical padding, so a gap here would
+  // just double those seams.
   controls: {
     marginTop: spacing[1],
   },
