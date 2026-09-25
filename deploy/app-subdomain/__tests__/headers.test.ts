@@ -33,13 +33,17 @@ const inlineScriptHashes = [...shellSource.matchAll(/<script>([\s\S]*?)<\/script
 
 /**
  * Why a CSP would block the shell's inline scripts, or null if it allows them.
- * No script-src/default-src means no restriction. A hash or nonce in the
+ * The effective directive is script-src-elem, else script-src, else
+ * default-src; none of them means no restriction. A hash or nonce in the
  * directive makes browsers ignore 'unsafe-inline', so then every inline script's
  * hash must be listed; otherwise 'unsafe-inline' must be.
  */
 function inlineScriptBlockReason(csp: string, requiredHashes: readonly string[]): string | null {
   const directives = parseCspDirectives(csp);
-  const scriptSources = directives.get('script-src') ?? directives.get('default-src');
+  // The fallback order browsers use for a <script> element: script-src-elem,
+  // then script-src, then default-src.
+  const scriptSources =
+    directives.get('script-src-elem') ?? directives.get('script-src') ?? directives.get('default-src');
   if (!scriptSources) return null;
   const usesHashOrNonce = scriptSources.some((source) => /^'(sha256|sha384|sha512|nonce)-/.test(source));
   if (usesHashOrNonce) {
@@ -119,6 +123,15 @@ describe('deploy/app-subdomain/_headers', () => {
     expect(
       inlineScriptBlockReason(`${evalOnly} 'unsafe-inline' 'sha256-${'A'.repeat(43)}='`, inlineScriptHashes),
     ).not.toBeNull();
+    // Browsers resolve an inline <script> element against script-src-elem first,
+    // then script-src, then default-src.
+    expect(
+      inlineScriptBlockReason(`${evalOnly} 'unsafe-inline'; script-src-elem 'self'`, inlineScriptHashes),
+    ).not.toBeNull();
+    expect(inlineScriptBlockReason(`${evalOnly}; script-src-elem 'self' ${scriptHash}`, inlineScriptHashes)).toBeNull();
+    expect(
+      inlineScriptBlockReason(`default-src 'self'; script-src-elem 'self' 'unsafe-inline'`, inlineScriptHashes),
+    ).toBeNull();
   });
 
   it('applies X-Robots-Tag: noindex to every path', () => {
