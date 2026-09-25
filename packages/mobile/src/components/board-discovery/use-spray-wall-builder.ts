@@ -120,24 +120,28 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
     return {
       name: trimmedName,
       angle,
-      // ALWAYS private at creation, whatever the climber chose.
+      // The climber's choice, sent at creation so the SERVER holds it (#5513).
       //
       // The row exists from here on — the photo handler authorises against it —
-      // but it has no version, no photo and no holds, and `searchBoards` filters
-      // on `is_public` / `is_unlisted` alone. A wall created public is therefore
-      // discoverable as an unusable board for as long as the flow takes, and
-      // forever if the flow is abandoned. The chosen visibility is applied by
-      // `updateSprayWall` immediately after the first publish instead, which is
-      // the first moment there is anything to see.
-      isPublic: false,
-      isUnlisted: false,
+      // but it has no version, no photo and no holds, so `createSprayWall` keeps
+      // the board private and parks this pair on the wall until the first
+      // publish applies it. It used to be forced false here and applied from
+      // React state after the publish, which a climber who closed the app and
+      // resumed the wall never got: the resumed builder's defaults said private.
+      //
+      // `pendingVisibility` below still drives an `updateSprayWall` after the
+      // publish. Against a backend that applies the pair itself that write is a
+      // no-op; against one that predates it, the wall was created with these
+      // flags directly and the write re-states them.
+      isPublic,
+      isUnlisted,
       hideLocation,
       locationName: locationName.trim() || undefined,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
       gymUuid: selectedGym?.uuid,
     };
-  }, [name, angle, hideLocation, locationName, coords, selectedGym]);
+  }, [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym]);
 
   /**
    * The visibility the climber asked for, to be applied once the wall has
