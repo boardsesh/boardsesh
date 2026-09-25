@@ -21,7 +21,7 @@ import {
   requireAnonReadableBoard,
   resolveBoardHolder,
 } from './shared';
-import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { assertSprayBoardIdIsReadable, assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 export const boardPresenceQueries = {
@@ -319,6 +319,9 @@ export const boardPresenceQueries = {
     // Validates the id and, for anonymous viewers, restricts to public /
     // system-shared boards.
     await requireAnonReadableBoard(boardId, ctx.userId);
+    // A spray wall's holder is its climbers' identity; it takes the wall's own
+    // rule, like every other presence read here (hidden = owner only).
+    await assertSprayBoardIdIsReadable(boardId, ctx.userId);
     return resolveBoardHolder(boardId);
   },
 };
