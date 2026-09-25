@@ -150,11 +150,16 @@
 
          The root layout sets window.__BOARDSESH_ROOT_LAYOUT_LOADED__ as it
          evaluates (markRootLayoutLoaded in src/lib/chunk-load-recovery.web.ts).
-         While that flag is unset, this listener reloads, under the same
+         While that flag is unset, this listener first sends a HEAD for the
+         failed chunk (3 s). Only an HTTP answer earns a reload, under the same
          sessionStorage guard as that module: same keys, one reload per 60 s,
-         three per tab. If it may not reload (offline, guard spent, storage
-         blocked), it paints a Reload button over the page instead of leaving it
-         black. Once the flag is set, the boundary owns every chunk failure and
+         three per tab. No answer (captive portal, origin outage, a flaky in-app
+         browser that still claims to be online) means a reload would land on
+         the browser's network-error page, so it keeps the shell and does not
+         spend the guard. Whenever it may not reload (offline, no answer, guard
+         spent, storage blocked), it paints a Reload button over the page
+         instead of leaving it black. ES5 only: old in-app browsers run this
+         before any polyfill. Once the flag is set, the boundary owns every chunk failure and
          this stands down. Kept inline because it has to run before the entry
          bundle it guards; any CSP on the app subdomain must allow it
          (deploy/app-subdomain/README.md). -->
@@ -181,14 +186,48 @@
             return false;
           }
         }
-        window.addEventListener('unhandledrejection', function (event) {
-          var reason = event && event.reason;
-          if (!reason || reason.name !== 'AsyncRequireError') return;
-          if (window.__BOARDSESH_ROOT_LAYOUT_LOADED__ === true) return;
-          if (navigator.onLine !== false && claimAutoReload()) {
-            window.location.reload();
-            return;
+        var CHUNK_FAILURE_MESSAGE = /^Loading module (\S+) failed\./;
+        var PROBE_TIMEOUT_MS = 3000;
+        var MESSAGES = {
+          offline: "You're offline. Reconnect, then reload.",
+          unreachable: "Couldn't reach Boardsesh. Check your connection, then reload.",
+          exhausted: "Boardsesh didn't load. Reload to try again.",
+        };
+        var probing = false;
+        // Same reading as readChunkUrl in chunk-load-recovery.web.ts.
+        function readChunkUrl(reason) {
+          if (typeof reason.request === 'string' && reason.request) return reason.request;
+          var match = typeof reason.message === 'string' ? CHUNK_FAILURE_MESSAGE.exec(reason.message) : null;
+          return match ? match[1] : null;
+        }
+        // Ask the origin for the failed chunk again. Any HTTP answer (a 404 from
+        // a deploy that removed it, or a live chunk that simply did not arrive)
+        // means a reload can reach a fresh shell; no answer means a reload would
+        // land on the browser's network-error page, so keep this one instead.
+        function probeChunk(url, done) {
+          var settled = false;
+          function settle(answered) {
+            if (settled) return;
+            settled = true;
+            done(answered);
           }
+          if (typeof fetch !== 'function') return settle(false);
+          var controller = typeof AbortController === 'function' ? new AbortController() : null;
+          setTimeout(function () {
+            if (controller) controller.abort();
+            settle(false);
+          }, PROBE_TIMEOUT_MS);
+          var init = { method: 'HEAD', cache: 'no-store' };
+          if (controller) init.signal = controller.signal;
+          function onAnswer() {
+            settle(true);
+          }
+          function onNoAnswer() {
+            settle(false);
+          }
+          fetch(url, init).then(onAnswer, onNoAnswer);
+        }
+        function showPanel(kind) {
           var panel = document.getElementById('boot-failure');
           if (!panel) {
             panel = document.createElement('div');
@@ -207,10 +246,27 @@
             panel.appendChild(reloadButton);
             document.body.appendChild(panel);
           }
-          panel.getElementsByTagName('p')[0].textContent =
-            navigator.onLine === false
-              ? "You're offline. Reconnect, then reload."
-              : "Boardsesh didn't load. Reload to try again.";
+          panel.setAttribute('data-kind', kind);
+          panel.getElementsByTagName('p')[0].textContent = MESSAGES[kind];
+        }
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason;
+          if (!reason || reason.name !== 'AsyncRequireError') return;
+          if (window.__BOARDSESH_ROOT_LAYOUT_LOADED__ === true) return;
+          if (navigator.onLine === false) return showPanel('offline');
+          // expo-router loads every layout at once, so one outage rejects
+          // several chunks together: one probe answers for all of them.
+          if (probing) return;
+          var chunkUrl = readChunkUrl(reason);
+          if (!chunkUrl) return showPanel('unreachable');
+          probing = true;
+          probeChunk(chunkUrl, function (answered) {
+            probing = false;
+            if (window.__BOARDSESH_ROOT_LAYOUT_LOADED__ === true) return;
+            if (!answered) return showPanel('unreachable');
+            if (claimAutoReload()) return window.location.reload();
+            showPanel('exhausted');
+          });
         });
       })();
     </script>
