@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-25T00:41:06.296Z",
+  "generatedAt": "2026-09-25T00:49:47.949Z",
   "entries": [
+    {
+      "prNumber": 5754,
+      "category": "fixed",
+      "title": "Sign in to Kilter now asks for your email, not a username — matching how you actually log into the Kilter app.",
+      "mergedAt": "2026-09-25T00:38:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5754"
+    },
+    {
+      "prNumber": 5755,
+      "category": "fixed",
+      "title": "Translated pages on iPhone Safari can recover from a login-page hiccup, so you can get back to your account.",
+      "mergedAt": "2026-09-25T00:38:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5755"
+    },
     {
       "prNumber": 5756,
       "category": "fixed",
