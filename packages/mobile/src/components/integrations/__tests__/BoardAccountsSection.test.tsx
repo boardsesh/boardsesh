@@ -254,7 +254,7 @@ describe('BoardAccountsSection — board cards', () => {
 
     fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
 
-    fireEvent.change(input(container, 'aurora.linkDialog.usernamePlaceholder')!, {
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
       target: { value: 'climber' },
     });
     fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
@@ -267,6 +267,26 @@ describe('BoardAccountsSection — board cards', () => {
       expect(mocks.saveKilterViaPassword).toHaveBeenCalledWith({ username: 'climber', password: 'secret' });
     });
     expect(mocks.saveAurora).not.toHaveBeenCalled();
+  });
+
+  it('reports invalid Kilter credentials as an email problem, not a username one', async () => {
+    mocks.flags = { 'kilter-oauth-linking': true };
+    mocks.saveKilterViaPassword.mockRejectedValue(new BoardAccountError('invalid_credentials'));
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.kilterSignIn')!);
+    fireEvent.change(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')!, {
+      target: { value: 'climber@example.com' },
+    });
+    fireEvent.change(input(container, 'aurora.linkDialog.passwordPlaceholder')!, {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(button(container, 'aurora.linkDialog.submit')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.invalidCredentialsKilter', 'error');
+    });
+    expect(mocks.showToast).not.toHaveBeenCalledWith('aurora.mobile.invalidCredentials', 'error');
   });
 });
 
@@ -564,11 +584,23 @@ describe('LinkBoardAccountModal host lifecycle', () => {
       target: { value: 'second-secret' },
     });
     rerender(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={onClose} />);
-    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')?.value).toBe('');
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')?.value).toBe('');
     expect(input(container, 'aurora.linkDialog.passwordPlaceholder')?.value).toBe('');
     expect(mocks.linkStarted).not.toHaveBeenCalled();
     expect(mocks.saveAurora).not.toHaveBeenCalled();
     expect(mocks.saveKilterViaPassword).not.toHaveBeenCalled();
+  });
+
+  it('shows the username field for a non-Kilter board, not the Kilter email field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="tension" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).toBeNull();
+  });
+
+  it('shows the Kilter email field, not the generic username field', () => {
+    const { container } = render(<LinkBoardAccountModal boardType="kilter" source="integrations" onClose={vi.fn()} />);
+    expect(input(container, 'aurora.kilterLinkDialog.emailPlaceholder')).not.toBeNull();
+    expect(input(container, 'aurora.linkDialog.usernamePlaceholder')).toBeNull();
   });
 
   it('notifies the host after both credential caches refresh with one linked outcome', async () => {

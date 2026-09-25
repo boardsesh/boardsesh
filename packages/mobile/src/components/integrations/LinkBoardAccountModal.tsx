@@ -37,13 +37,13 @@ function failureReasonFor(error: unknown): BoardLinkFailureReason {
   return error instanceof BoardAccountError ? error.code : 'request_failed';
 }
 
-export function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
+export function errorMessageFor(error: unknown, t: TFunction<'settings'>, isKilter = false): string {
   if (error instanceof BoardAccountError) {
     switch (error.code) {
       case 'account_already_linked':
         return t('aurora.linkDialog.accountAlreadyLinked');
       case 'invalid_credentials':
-        return t('aurora.mobile.invalidCredentials');
+        return isKilter ? t('aurora.mobile.invalidCredentialsKilter') : t('aurora.mobile.invalidCredentials');
       case 'not_allowed':
         return t('aurora.mobile.kilterNotAllowed');
       case 'rate_limited':
@@ -74,12 +74,12 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
 
   // A new board or a closed dialog clears credentials.
   useEffect(() => {
-    setUsername('');
+    setIdentifier('');
     setPassword('');
   }, [boardType]);
 
@@ -97,15 +97,15 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
     },
     onError: (error, variables) => {
       trackLinkFailed({ boardType: variables.boardType, source }, failureReasonFor(error));
-      showToast(errorMessageFor(error, t), 'error');
+      showToast(errorMessageFor(error, t, variables.boardType === 'kilter'), 'error');
     },
   });
 
   const handleSubmit = useCallback(() => {
     if (!boardType) return;
     trackLinkStarted({ boardType, source });
-    saveCredentialMutation.mutate({ boardType, username: username.trim(), password });
-  }, [boardType, password, saveCredentialMutation, source, username]);
+    saveCredentialMutation.mutate({ boardType, username: identifier.trim(), password });
+  }, [boardType, identifier, password, saveCredentialMutation, source]);
 
   const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
   const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
@@ -125,12 +125,17 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
             {isKilter ? t('aurora.kilterLinkDialog.description') : t('aurora.linkDialog.description', { boardName })}
           </Text>
           <TextInput
-            value={username}
-            onChangeText={setUsername}
-            placeholder={t('aurora.linkDialog.usernamePlaceholder')}
+            value={identifier}
+            onChangeText={setIdentifier}
+            placeholder={
+              isKilter ? t('aurora.kilterLinkDialog.emailPlaceholder') : t('aurora.linkDialog.usernamePlaceholder')
+            }
             placeholderTextColor="rgba(60, 60, 67, 0.6)"
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType={isKilter ? 'email-address' : 'default'}
+            textContentType={isKilter ? 'emailAddress' : 'username'}
+            autoComplete={isKilter ? 'email' : 'username'}
             style={inputStyle}
           />
           <TextInput
@@ -152,7 +157,7 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
               title={t('aurora.linkDialog.submit')}
               onPress={handleSubmit}
               loading={saveCredentialMutation.isPending}
-              disabled={username.trim().length === 0 || password.length === 0 || saveCredentialMutation.isPending}
+              disabled={identifier.trim().length === 0 || password.length === 0 || saveCredentialMutation.isPending}
             />
           </View>
         </View>

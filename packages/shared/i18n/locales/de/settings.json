@@ -146,7 +146,7 @@
       "kilterAuroraTitle": "Kilter (Aurora)",
       "kilterAuroraCopy": "Du hast die alte Kilter-App von Aurora genutzt? Importier einen JSON-Export oder schreib Aurora Climbing eine Mail und fordere deine Daten an.",
       "kilterNewTitle": "Kilter (neu)",
-      "kilterNewCopy": "Melde dich mit deinem Kilter-Benutzernamen und -Passwort an und hol deine Begehungen, Versuche, Bewertungen und Circuits nach Boardsesh.",
+      "kilterNewCopy": "Melde dich mit deiner Kilter-E-Mail-Adresse und deinem Passwort an und hol deine Begehungen, Versuche, Bewertungen und Circuits nach Boardsesh.",
       "kilterSignIn": "Bei Kilter anmelden",
       "reconnect": "Neu verbinden",
       "notConnected": "Nicht verbunden. Verknüpf dein {{boardName}}-Konto, um deine Begehungen zu holen, oder importier eine JSON-Exportdatei.",
@@ -190,7 +190,8 @@
     },
     "kilterLinkDialog": {
       "title": "Bei Kilter anmelden",
-      "description": "Gib deinen Kilter-Benutzernamen und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert.",
+      "description": "Gib deine Kilter-E-Mail-Adresse und dein Passwort ein. Dein Passwort wird gegen ein sicheres Token getauscht und nie gespeichert.",
+      "emailPlaceholder": "E-Mail-Adresse eingeben",
       "passwordHelp": "Funktioniert mit deinem bestehenden Kilter-Login. Konten mit Zwei-Faktor oder reinem Social-Login kommen hier nicht rein – nutz stattdessen den Import."
     },
     "unlinkError": "Konto konnte nicht getrennt werden",
@@ -318,6 +319,7 @@
       "unlinkSuccess": "{{boardName}} getrennt",
       "unlinkPartial": "{{boardName}} ist hier weg, beim Anbieter läuft die Sitzung aber vielleicht noch.",
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",
+      "invalidCredentialsKilter": "E-Mail oder Passwort hat nicht gepasst.",
       "rateLimited": "Zu viele Versuche. Probier es später nochmal.",
       "requestFailed": "Die Verknüpfung ließ sich nicht speichern. Versuch es nochmal.",
       "loadFailed": "Deine Board-Konten ließen sich nicht laden.",
