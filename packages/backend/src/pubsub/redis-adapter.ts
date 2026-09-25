@@ -39,6 +39,8 @@ type RedisMessage = {
   timestamp: number;
 };
 
+type IncomingRedisMessage = Omit<RedisMessage, 'instanceId'> & { instanceId?: unknown };
+
 export type RedisPubSubAdapter = {
   publishQueueEvent(sessionId: string, event: QueueEvent): Promise<void>;
   publishSessionEvent(sessionId: string, event: SessionEvent): Promise<void>;
@@ -98,16 +100,12 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
   // Set up message handler
   subscriber.on('message', (channel: string, message: string) => {
     try {
-      const parsed = JSON.parse(message) as RedisMessage;
+      const parsed = JSON.parse(message) as IncomingRedisMessage;
 
       // Skip messages from this instance (already delivered locally)
       if (parsed.instanceId === instanceId) {
         return;
       }
-
-      logger.info(
-        `[Redis] Received cross-instance message from ${parsed.instanceId.slice(0, 8)} on channel: ${channel}`,
-      );
 
       if (channel.startsWith(QUEUE_CHANNEL_PREFIX)) {
         const sessionId = channel.slice(QUEUE_CHANNEL_PREFIX.length);
@@ -158,8 +156,13 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
           climbStatsMessageCallback(channelKey, parsed.event as ClimbStatsEvent);
         }
       }
+
+      // Logging must not prevent a valid message from reaching its subscribers.
+      const senderId =
+        typeof parsed.instanceId === 'string' && parsed.instanceId ? parsed.instanceId.slice(0, 8) : 'unknown';
+      logger.info(`[Redis] Received cross-instance message from ${senderId} on channel: ${channel}`);
     } catch (error) {
-      logger.error('[Redis] Failed to parse message:', error);
+      logger.error('[Redis] Failed to process message:', error);
     }
   });
 

@@ -39,6 +39,29 @@ describe('Redis PubSub Adapter', () => {
   });
 
   describe('Cross-instance message delivery', () => {
+    it('delivers an idless Redis queue message to another instance', async () => {
+      const sessionId = 'test-session-idless';
+      const event: QueueEvent = {
+        __typename: 'QueueItemRemoved',
+        sequence: 1,
+        stateHash: 'idless-hash',
+        uuid: 'idless-item',
+      };
+      const receivedEvents: QueueEvent[] = [];
+      adapter2.onQueueMessage((receivedSessionId, receivedEvent) => {
+        if (receivedSessionId === sessionId) receivedEvents.push(receivedEvent);
+      });
+      await adapter2.subscribeQueueChannel(sessionId);
+
+      try {
+        await publisher1.publish(`boardsesh:queue:${sessionId}`, JSON.stringify({ event, timestamp: Date.now() }));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect(receivedEvents).toEqual([event]);
+      } finally {
+        await adapter2.unsubscribeQueueChannel(sessionId);
+      }
+    });
+
     it('should deliver queue events from instance 1 to instance 2', async () => {
       const sessionId = 'test-session-1';
       const receivedEvents: QueueEvent[] = [];
@@ -273,6 +296,70 @@ describe('Redis PubSub Adapter', () => {
 });
 
 describe('Redis PubSub Adapter - Unit Tests (mocked)', () => {
+  it('routes idless messages to all eight channel callbacks and still skips its own messages', () => {
+    const messageHandlers: Array<(channel: string, message: string) => void> = [];
+    const mockPublisher = { publish: vi.fn() } as unknown as Redis;
+    const mockSubscriber = {
+      on: vi.fn((eventName: string, listener: (channel: string, message: string) => void) => {
+        if (eventName === 'message') messageHandlers.push(listener);
+      }),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Redis;
+    const adapter = createRedisPubSubAdapter(mockPublisher, mockSubscriber);
+    const callbacks = {
+      queue: vi.fn(),
+      session: vi.fn(),
+      notifications: vi.fn(),
+      comments: vi.fn(),
+      newClimbs: vi.fn(),
+      boardPresence: vi.fn(),
+      boardQueue: vi.fn(),
+      climbStats: vi.fn(),
+    };
+    adapter.onQueueMessage(callbacks.queue);
+    adapter.onSessionMessage(callbacks.session);
+    adapter.onNotificationMessage(callbacks.notifications);
+    adapter.onCommentMessage(callbacks.comments);
+    adapter.onNewClimbMessage(callbacks.newClimbs);
+    adapter.onBoardPresenceMessage(callbacks.boardPresence);
+    adapter.onBoardQueueMessage(callbacks.boardQueue);
+    adapter.onClimbStatsMessage(callbacks.climbStats);
+
+    const cases = [
+      { channel: 'boardsesh:queue:session-1', key: 'session-1', callback: callbacks.queue },
+      { channel: 'boardsesh:session:session-2', key: 'session-2', callback: callbacks.session },
+      { channel: 'boardsesh:notifications:user-1', key: 'user-1', callback: callbacks.notifications },
+      { channel: 'boardsesh:comments:climb:1', key: 'climb:1', callback: callbacks.comments },
+      { channel: 'boardsesh:new-climbs:kilter:1', key: 'kilter:1', callback: callbacks.newClimbs },
+      { channel: 'boardsesh:board:123', key: '123', callback: callbacks.boardPresence },
+      { channel: 'boardsesh:board-queue:456', key: '456', callback: callbacks.boardQueue },
+      { channel: 'boardsesh:climb-stats-layout:kilter:2', key: 'kilter:2', callback: callbacks.climbStats },
+    ];
+
+    expect(messageHandlers).toHaveLength(1);
+    for (const { channel, key, callback } of cases) {
+      // Routing is independent of the event's domain-specific shape.
+      const event = { marker: channel };
+      messageHandlers[0]?.(channel, JSON.stringify({ event, timestamp: Date.now() }));
+      expect(callback).toHaveBeenCalledExactlyOnceWith(key, event);
+    }
+
+    messageHandlers[0]?.(
+      'boardsesh:queue:session-1',
+      JSON.stringify({
+        instanceId: adapter.getInstanceId(),
+        event: { marker: 'self' },
+        timestamp: Date.now(),
+      }),
+    );
+    expect(callbacks.queue).toHaveBeenCalledTimes(1);
+
+    const event = { marker: 'non-string sender' };
+    messageHandlers[0]?.('boardsesh:queue:session-1', JSON.stringify({ instanceId: 42, event, timestamp: Date.now() }));
+    expect(callbacks.queue).toHaveBeenLastCalledWith('session-1', event);
+  });
+
   it('should publish to correct channel format', async () => {
     const mockPublish = vi.fn().mockResolvedValue(1);
     const mockPublisher = { publish: mockPublish } as unknown as Redis;
