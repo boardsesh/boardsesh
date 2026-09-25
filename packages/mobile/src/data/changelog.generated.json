@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-25T23:25:28.787Z",
+  "generatedAt": "2026-09-25T23:41:46.011Z",
   "entries": [
+    {
+      "prNumber": 5790,
+      "category": "fixed",
+      "title": "Two Kilter-built LED boxes in one gym now each get their own row when you connect, so you can pick the wall you're at.",
+      "mergedAt": "2026-09-25T23:26:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5790"
+    },
     {
       "prNumber": 5792,
       "category": "fixed",

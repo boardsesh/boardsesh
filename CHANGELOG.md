@@ -20,6 +20,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Two Kilter-built LED boxes in one gym now each get their own row when you connect, so you can pick the wall you're at. ([#5790](https://github.com/boardsesh/boardsesh/pull/5790))
 - A climb pulled in from another angle now tells you which angle its grade and sends come from — in the list and in the climb header, not just the screen-reader label ([#5792](https://github.com/boardsesh/boardsesh/pull/5792))
 - The Attempt and Flash buttons stay lined up while you type a note ([#5774](https://github.com/boardsesh/boardsesh/pull/5774))
 - Tap connect and the board sheet opens right away while it looks for your saved board ([#5783](https://github.com/boardsesh/boardsesh/pull/5783))
