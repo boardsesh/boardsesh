@@ -7,6 +7,13 @@ import type { BoardRouteParams, ClimbSearchParams } from './types';
 import { followedAuthorCondition } from './followed-authors';
 import { browsedAngleRestrictionSql, resolveBrowsedAngleRestriction } from './effective-stats';
 
+// Escape LIKE/ILIKE metacharacters so the setter search matches the typed text
+// literally. Postgres' default escape character is backslash, and the value is
+// bound as a parameter, so this is the only escaping layer needed.
+function escapeLikeMetacharacters(input: string): string {
+  return input.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 /**
  * One row in the setter-stats result: a setter's username and how many
  * climbs they've authored on the given board/layout/size. Returned by
@@ -103,6 +110,15 @@ export type SetterStatsOptions = Pick<ClimbSearchParams, 'crossAngleStats'>;
  * so the cut is deterministic — the long tail is dominated by one-climb setters,
  * and an unordered tie at row 50 would make the picker flicker between refetches.
  *
+ * With a search term, name relevance comes before climb count: an exact username
+ * match first, then usernames that start with the term, then the other substring
+ * matches. Without that, a short name was never found (#4885). `%ES%` matches every
+ * setter with "es" anywhere in their name, the prolific ones fill all 50 rows, and
+ * the setter called "ES", with three climbs, never reaches the picker. Both tiers
+ * are case-insensitive, like the substring filter. The term's own `%`, `_` and `\`
+ * are escaped, so a search for "a_b" finds that setter and not "axb".
+ * `getSetterStatsLocal` on mobile orders and escapes the same way.
+ *
  * Runs under `withSerialPlan`: a scan of the whole layout in `board_climbs` feeding
  * a HashAggregate is a plan the planner is happy to parallelize, and the per-worker
  * DSM allocations are what kept exhausting `/dev/shm` (#4105). The LIMIT 50 applies
@@ -162,9 +178,19 @@ export const getSetterStats = async (
     ...(restrictToBrowsedAngle ? [browsedAngleRestrictionSql(params.angle)] : []),
   ];
 
-  if (searchQuery && searchQuery.trim().length > 0) {
-    whereConditions.push(ilike(boardClimbs.setterUsername, `%${searchQuery}%`));
+  const searchTerm = searchQuery?.trim() ?? '';
+  const escapedSearchTerm = escapeLikeMetacharacters(searchTerm);
+  if (searchTerm.length > 0) {
+    whereConditions.push(ilike(boardClimbs.setterUsername, `%${escapedSearchTerm}%`));
   }
+  // Exact match, then prefix, then the rest, ahead of climb count (#4885). Only
+  // with a search term: the unsearched picker keeps its plain count order.
+  const searchRelevanceOrder =
+    searchTerm.length > 0
+      ? [
+          sql`CASE WHEN lower(${boardClimbs.setterUsername}) = lower(${searchTerm}) THEN 0 WHEN ${boardClimbs.setterUsername} ILIKE ${`${escapedSearchTerm}%`} THEN 1 ELSE 2 END`,
+        ]
+      : [];
 
   const result = await withSerialPlan(db, (tx) => {
     const fromClimbs = tx
@@ -191,7 +217,7 @@ export const getSetterStats = async (
     return withBrowsedAngleStats
       .where(and(...whereConditions))
       .groupBy(boardClimbs.setterUsername)
-      .orderBy(sql`count(*) DESC`, sql`${boardClimbs.setterUsername} ASC`)
+      .orderBy(...searchRelevanceOrder, sql`count(*) DESC`, sql`${boardClimbs.setterUsername} ASC`)
       .limit(50);
   });
 
