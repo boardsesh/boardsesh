@@ -18,10 +18,10 @@ import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
 import {
   assertAnonReadableBoard,
   requireActiveBoardWithVisibilityById,
-  requireAnonReadableBoard,
+  requireReadablePresenceBoard,
   resolveBoardHolder,
 } from './shared';
-import { assertSprayBoardIdIsReadable, assertSprayBoardIsReadable } from '../climbs/spray-read-access';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 const RECENT_CLIMB_SENDERS_LIMIT = 5;
@@ -334,10 +334,9 @@ export const boardPresenceQueries = {
     await applyRateLimit(ctx, 60, 'boardConnection');
     // Validates the id and, for anonymous viewers, restricts to public /
     // system-shared boards.
-    await requireAnonReadableBoard(boardId, ctx.userId);
-    // A spray wall's holder is its climbers' identity; it takes the wall's own
-    // rule, like every other presence read here (hidden = owner only).
-    await assertSprayBoardIdIsReadable(boardId, ctx.userId);
+    // A spray wall's holder is its climbers' identity, so it also takes the
+    // wall's own rule, like every other presence read here (hidden = owner only).
+    await requireReadablePresenceBoard(boardId, ctx.userId);
     return resolveBoardHolder(boardId);
   },
 };
