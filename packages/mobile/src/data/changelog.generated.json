@@ -1,6 +1,44 @@
 {
-  "generatedAt": "2026-09-25T21:51:14.953Z",
+  "generatedAt": "2026-09-25T22:38:43.895Z",
   "entries": [
+    {
+      "prNumber": 5783,
+      "category": "fixed",
+      "title": "Tap connect and the board sheet opens right away while it looks for your saved board",
+      "mergedAt": "2026-09-25T21:43:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5783",
+      "body": "Board off or out of range? Tap \"Search for any board\" to skip the wait"
+    },
+    {
+      "prNumber": 5772,
+      "category": "fixed",
+      "title": "Your note stays in view above the keyboard when you log or edit a tick",
+      "mergedAt": "2026-09-25T21:41:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5772"
+    },
+    {
+      "prNumber": 5771,
+      "category": "fixed",
+      "title": "The rest-length slider now spans the full card, so it's easy to drag between sets.",
+      "mergedAt": "2026-09-25T21:40:50Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5771",
+      "body": "Set up a fixed window like \"Every 3:00\" straight from the session card. Logging attempts or sends won't restart it."
+    },
+    {
+      "prNumber": 5745,
+      "category": "new",
+      "title": "Find a gym by the exact wall you want: pick a board, then its layout, size and angle.",
+      "mergedAt": "2026-09-25T21:38:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5745"
+    },
+    {
+      "prNumber": 5768,
+      "category": "new",
+      "title": "Similar climbs now come from your downloaded board, so they work with no signal",
+      "mergedAt": "2026-09-25T21:18:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5768",
+      "body": "On a board you haven't downloaded, one tap downloads it and switches similar climbs on\nHold heatmap: see which holds get used most on your downloaded board, filtered the way your climb list is; on the create board too"
+    },
     {
       "prNumber": 5781,
       "category": "fixed",

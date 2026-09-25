@@ -8,6 +8,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Find a gym by the exact wall you want: pick a board, then its layout, size and angle. ([#5745](https://github.com/boardsesh/boardsesh/pull/5745))
+- Similar climbs now come from your downloaded board, so they work with no signal ([#5768](https://github.com/boardsesh/boardsesh/pull/5768))
+  On a board you haven't downloaded, one tap downloads it and switches similar climbs on
+  Hold heatmap: see which holds get used most on your downloaded board, filtered the way your climb list is; on the create board too
 - Similar climbs on climb pages load faster ([#5766](https://github.com/boardsesh/boardsesh/pull/5766))
 
 ### Improved
@@ -16,6 +20,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Tap connect and the board sheet opens right away while it looks for your saved board ([#5783](https://github.com/boardsesh/boardsesh/pull/5783))
+  Board off or out of range? Tap "Search for any board" to skip the wait
+- Your note stays in view above the keyboard when you log or edit a tick ([#5772](https://github.com/boardsesh/boardsesh/pull/5772))
+- The rest-length slider now spans the full card, so it's easy to drag between sets. ([#5771](https://github.com/boardsesh/boardsesh/pull/5771))
+  Set up a fixed window like "Every 3:00" straight from the session card. Logging attempts or sends won't restart it.
 - Find any setter by name in the setter filter, even a two-letter one ([#5781](https://github.com/boardsesh/boardsesh/pull/5781))
 - Your crew sees live session changes across devices again. ([#5784](https://github.com/boardsesh/boardsesh/pull/5784))
 - Search finds a climb by its full name, apostrophes and dashes included ([#5778](https://github.com/boardsesh/boardsesh/pull/5778))
