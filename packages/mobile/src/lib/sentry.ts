@@ -65,6 +65,38 @@ export function isExpoUiSheetNoHandlerRejection(event: SentryEventLike, original
   return EXPO_UI_SHEET_NO_HANDLER.test(fromEvent) || EXPO_UI_SHEET_NO_HANDLER.test(fromHint);
 }
 
+type FingerprintableEvent = SentryEventLike & {
+  fingerprint?: string[];
+  exception?: { values?: Array<{ type?: string | undefined; value?: string | undefined }> };
+};
+
+const CHUNK_LOAD_FINGERPRINT_ROOT = 'chunk-load-error';
+
+/**
+ * Group every failed web chunk load by mechanism, not by the hashed chunk URL in
+ * its message (#5611). Expo Router calls `loadRoute()` for every layout at
+ * startup and drops the promise, so one failure can arrive twice: once from the
+ * root error boundary, which already fingerprints it `['chunk-load-error',
+ * <cause>]` via chunk-load-recovery, and once from the global
+ * onunhandledrejection handler, which knows no cause. The second gets
+ * `['chunk-load-error', 'unknown']`. Pure and ungated so it is unit-testable;
+ * harmless on native, where a production bundle has no async chunks to fail.
+ */
+export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
+  event: T,
+  originalException?: unknown,
+): T & { fingerprint?: string[] } {
+  const exceptionType = event.exception?.values?.[0]?.type;
+  const hintName =
+    typeof originalException === 'object' && originalException !== null
+      ? (originalException as { name?: unknown }).name
+      : undefined;
+  if (exceptionType !== 'AsyncRequireError' && hintName !== 'AsyncRequireError') return event;
+  if (event.fingerprint?.[0] === CHUNK_LOAD_FINGERPRINT_ROOT) return event;
+  event.fingerprint = [CHUNK_LOAD_FINGERPRINT_ROOT, 'unknown'];
+  return event;
+}
+
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
@@ -79,7 +111,7 @@ if (isSentryEnabled) {
     // isExpoUiSheetNoHandlerRejection above.
     beforeSend(event, hint) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
-      return event;
+      return applyChunkLoadFingerprint(event, hint?.originalException);
     },
     // Explicit so a future option change can't silently turn either off. Native
     // crash handling persists SIGABRT / native exceptions across the crash and

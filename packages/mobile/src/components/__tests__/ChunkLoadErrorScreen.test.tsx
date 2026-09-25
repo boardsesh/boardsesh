@@ -82,6 +82,14 @@ describe('ChunkLoadErrorScreen', () => {
     expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
   });
 
+  it('falls back to the Reload button if recovery itself throws', async () => {
+    recovery.recoverFromChunkLoadError.mockRejectedValue(new Error('probe blew up'));
+    render(createElement(ChunkLoadErrorScreen, { error: chunkError }));
+    await act(async () => {});
+    expect(screen.getByText("This screen didn't load")).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
+  });
+
   it('recovers once per error across re-renders', async () => {
     const view = await renderSettled('exhausted');
     view.rerender(createElement(ChunkLoadErrorScreen, { error: chunkError }));

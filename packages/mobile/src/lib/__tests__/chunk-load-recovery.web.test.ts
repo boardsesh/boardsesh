@@ -10,9 +10,13 @@ vi.mock('../error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../sentry', () => ({ flushSentry: vi.fn().mockResolvedValue(true) }));
 
 import {
+  CHUNK_RELOAD_COUNT_KEY,
   CHUNK_RELOAD_GUARD_KEY,
+  CHUNK_RELOAD_MAX_PER_TAB,
   CHUNK_RELOAD_WINDOW_MS,
+  ROOT_LAYOUT_LOADED_FLAG,
   claimAutoReload,
+  markRootLayoutLoaded,
   isChunkLoadError,
   probeChunk,
   readChunkUrl,
@@ -148,6 +152,21 @@ describe('claimAutoReload', () => {
     expect(claimAutoReload(storage, 1_000_000 + CHUNK_RELOAD_WINDOW_MS)).toBe(true);
   });
 
+  it('stops for good after three reloads in one tab, however far apart', () => {
+    // A network that stalls every chunk past the window would otherwise reload
+    // the tab once a minute for as long as it stays open.
+    const storage = memoryStorage();
+    let now = 1_000_000;
+    for (let reload = 1; reload <= CHUNK_RELOAD_MAX_PER_TAB; reload += 1) {
+      expect(claimAutoReload(storage, now)).toBe(true);
+      expect(storage.values.get(CHUNK_RELOAD_COUNT_KEY)).toBe(String(reload));
+      now += CHUNK_RELOAD_WINDOW_MS * 10;
+    }
+    expect(CHUNK_RELOAD_MAX_PER_TAB).toBe(3);
+    expect(claimAutoReload(storage, now)).toBe(false);
+    expect(claimAutoReload(storage, now + CHUNK_RELOAD_WINDOW_MS * 100)).toBe(false);
+  });
+
   it('refuses without storage, because an unguarded reload can loop', () => {
     expect(claimAutoReload(null, 1_000_000)).toBe(false);
   });
@@ -172,6 +191,21 @@ describe('claimAutoReload', () => {
     expect(claimAutoReload(window.sessionStorage, 5_000_000)).toBe(true);
     expect(claimAutoReload(window.sessionStorage, 5_000_001)).toBe(false);
     window.sessionStorage.clear();
+  });
+});
+
+describe('markRootLayoutLoaded', () => {
+  it('raises the flag the shell script stands down on, and clears its panel', () => {
+    const flags = window as unknown as Record<string, unknown>;
+    delete flags[ROOT_LAYOUT_LOADED_FLAG];
+    document.body.innerHTML = '<div id="root"></div><div id="boot-failure">Reload</div>';
+
+    markRootLayoutLoaded();
+
+    expect(flags[ROOT_LAYOUT_LOADED_FLAG]).toBe(true);
+    expect(document.getElementById('boot-failure')).toBeNull();
+    expect(document.getElementById('root')).not.toBeNull();
+    delete flags[ROOT_LAYOUT_LOADED_FLAG];
   });
 });
 
@@ -226,6 +260,13 @@ describe('recoverFromChunkLoadError', () => {
     expect(deps.reload).not.toHaveBeenCalled();
     // The window's one reload is still unspent for when the network comes back.
     expect(storage.values.has(CHUNK_RELOAD_GUARD_KEY)).toBe(false);
+  });
+
+  it('stops auto-reloading after the per-tab cap, leaving the manual button', async () => {
+    const { deps, storage } = makeDeps();
+    storage.values.set(CHUNK_RELOAD_COUNT_KEY, String(CHUNK_RELOAD_MAX_PER_TAB));
+    await expect(recoverFromChunkLoadError(asyncRequireError(), deps)).resolves.toBe('exhausted');
+    expect(deps.reload).not.toHaveBeenCalled();
   });
 
   it('does not reload when storage is blocked', async () => {

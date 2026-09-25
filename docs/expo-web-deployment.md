@@ -164,19 +164,44 @@ current chunk map. Two places do that reload:
   `chunk_load_cause` (`stale-deploy` for a 404, `transient` for any other
   answer, `network` for none, `offline`) and a fingerprint by cause rather than
   by hashed filename, then reloads.
-- **The root `_layout` chunk.** The boundary lives inside that chunk, so the
-  failure only surfaces as an unhandled rejection. An inline script in
-  `public/index.html` catches it while the app has not mounted and does the
-  same reload.
+- **The root `_layout` chunk.** The boundary lives inside that chunk, so an
+  inline script in `public/index.html` covers it. The root layout sets
+  `window.__BOARDSESH_ROOT_LAYOUT_LOADED__` as it evaluates
+  (`markRootLayoutLoaded`). While that flag is unset, the script reloads on
+  any unhandled `AsyncRequireError`, and when it may not reload it paints a
+  Reload panel over the page (a `<body>` child, never inside React's `#root`).
+  Once the flag is set, it stands down.
 
-Both share one loop guard: at most one automatic reload per tab per 60 s,
-recorded in `sessionStorage` under `boardsesh:chunk-reload-at`. That key is
-the one sanctioned `sessionStorage` use in the mobile package. It has to be
-synchronous and survive the reload, which IndexedDB cannot promise. There is
-no automatic reload when the browser is offline, when the probe gets no answer,
-or when `sessionStorage` is blocked. Each of those cases shows a Reload button
-instead. The native fork `chunk-load-recovery.ts` is a constant module, so the
-store fleet's crash screen is unchanged.
+An unhandled `AsyncRequireError` alone does not prove the root chunk failed.
+Expo Router calls `loadRoute()` for every layout at startup and drops the
+promise (`getRoutesCore.js`), so any layout chunk failure also surfaces as an
+unhandled rejection, on top of whatever the boundary catches. Two things
+follow. The shell keys on the flag, not on the rejection. And Sentry's
+`beforeSend` (`applyChunkLoadFingerprint` in `src/lib/sentry.ts`) groups every
+`AsyncRequireError` as `['chunk-load-error', <cause>]`, with `unknown` for the
+unhandled copy that has no probe result, so neither path splits into one issue
+per hashed filename.
+
+Both paths share one loop guard in `sessionStorage`:
+
+- at most one automatic reload per 60 s (`boardsesh:chunk-reload-at`);
+- at most three automatic reloads per tab, ever (`boardsesh:chunk-reload-count`).
+  Without the cap, a network that stalls every chunk past the window would
+  reload once a minute for as long as the tab stayed open.
+
+These keys are the one sanctioned `sessionStorage` use in the mobile package.
+IndexedDB won't do, for three reasons:
+
+- the shell script needs a synchronous read before the entry bundle runs;
+- IndexedDB is origin-wide, so every tab would share one guard and one tab's
+  reload would spend another's;
+- some in-app browsers block IndexedDB outright.
+
+There is no automatic reload when the browser is offline, when the probe gets
+no answer, or when `sessionStorage` is blocked. Each of those cases shows a
+Reload button instead. The native fork `chunk-load-recovery.ts` is a constant
+module, so the store fleet's crash screen is unchanged. Any CSP on the app
+subdomain must allow the inline script; see `deploy/app-subdomain/README.md`.
 
 A reload keeps the URL, including `?sessionId`, and the solo queue is already
 persisted, so the climber comes back where they were. Keeping the previous

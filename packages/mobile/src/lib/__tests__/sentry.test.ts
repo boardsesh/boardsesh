@@ -20,6 +20,7 @@ vi.mock('@sentry/react-native', () => ({
 import * as Sentry from '@sentry/react-native';
 import {
   applyBleDiagnosticsToScope,
+  applyChunkLoadFingerprint,
   applyErrorContextToScope,
   applyLiveActivityIntentDiagnosticToScope,
   captureEnabledLiveActivityIntentDiagnostic,
@@ -446,5 +447,35 @@ describe('isExpoUiSheetNoHandlerRejection', () => {
     expect(isExpoUiSheetNoHandlerRejection({})).toBe(false);
     expect(isExpoUiSheetNoHandlerRejection({ exception: { values: [] } })).toBe(false);
     expect(isExpoUiSheetNoHandlerRejection({}, 'not an Error instance')).toBe(false);
+  });
+});
+
+describe('applyChunkLoadFingerprint (#5611)', () => {
+  const chunkEvent = () => ({
+    exception: {
+      values: [
+        { type: 'AsyncRequireError', value: 'Loading module https://app.boardsesh.com/x/_layout-abc.js failed.' },
+      ],
+    },
+  });
+
+  it('groups an unhandled chunk failure by mechanism, not by hashed filename', () => {
+    expect(applyChunkLoadFingerprint(chunkEvent()).fingerprint).toEqual(['chunk-load-error', 'unknown']);
+  });
+
+  it('matches on the original exception when the event type was lost', () => {
+    const asyncRequireError = Object.assign(new Error('Loading module x failed.'), { name: 'AsyncRequireError' });
+    expect(applyChunkLoadFingerprint({}, asyncRequireError).fingerprint).toEqual(['chunk-load-error', 'unknown']);
+  });
+
+  it('keeps the cause the error boundary already fingerprinted', () => {
+    const event = { ...chunkEvent(), fingerprint: ['chunk-load-error', 'stale-deploy'] };
+    expect(applyChunkLoadFingerprint(event).fingerprint).toEqual(['chunk-load-error', 'stale-deploy']);
+  });
+
+  it('leaves every other error alone', () => {
+    const event = { exception: { values: [{ type: 'TypeError', value: 'boom' }] }, fingerprint: ['custom'] };
+    expect(applyChunkLoadFingerprint(event).fingerprint).toEqual(['custom']);
+    expect(applyChunkLoadFingerprint({ exception: { values: [{ type: 'Error' }] } }).fingerprint).toBeUndefined();
   });
 });

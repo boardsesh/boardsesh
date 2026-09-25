@@ -28,6 +28,7 @@ describe('chunk-load-recovery (native fork)', () => {
   it('recovers nothing', async () => {
     await expect(nativeFork.recoverFromChunkLoadError(new Error('x'))).resolves.toBe('exhausted');
     expect(nativeFork.reloadPage()).toBeUndefined();
+    expect(nativeFork.markRootLayoutLoaded()).toBeUndefined();
   });
 
   it('references no browser global and imports nothing', () => {
@@ -44,7 +45,14 @@ describe('chunk-load-recovery (native fork)', () => {
         typeof (nativeFork as Record<string, unknown>)[key],
       );
     }
-    expect(nativeFork.CHUNK_RELOAD_GUARD_KEY).toBe(webFork.CHUNK_RELOAD_GUARD_KEY);
-    expect(nativeFork.CHUNK_RELOAD_WINDOW_MS).toBe(webFork.CHUNK_RELOAD_WINDOW_MS);
+    for (const constant of [
+      'CHUNK_RELOAD_GUARD_KEY',
+      'CHUNK_RELOAD_WINDOW_MS',
+      'CHUNK_RELOAD_COUNT_KEY',
+      'CHUNK_RELOAD_MAX_PER_TAB',
+      'ROOT_LAYOUT_LOADED_FLAG',
+    ] as const) {
+      expect(nativeFork[constant], constant).toBe(webFork[constant]);
+    }
   });
 });

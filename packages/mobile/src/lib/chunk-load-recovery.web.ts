@@ -14,8 +14,10 @@
 // A full page load fetches the current `index.html`, whose entry carries the
 // current chunk map. So the recovery is a reload, bounded so it cannot loop:
 //
-//   - at most one automatic reload per tab per CHUNK_RELOAD_WINDOW_MS, tracked in
-//     sessionStorage (survives the reload, scoped to the tab);
+//   - at most one automatic reload per tab per CHUNK_RELOAD_WINDOW_MS, and at
+//     most CHUNK_RELOAD_MAX_PER_TAB in the tab's lifetime (a network that stalls
+//     each chunk past the window would otherwise reload once a minute forever),
+//     tracked in sessionStorage (survives the reload, scoped to the tab);
 //   - no automatic reload while the browser reports itself offline, or when the
 //     origin does not answer a probe — a reload then lands on the browser's own
 //     offline page and loses the app entirely;
@@ -26,8 +28,9 @@
 //
 // The inline script in `public/index.html` covers the one failure this module
 // cannot: the root `_layout` chunk itself, which holds the error boundary that
-// calls in here. It shares CHUNK_RELOAD_GUARD_KEY and CHUNK_RELOAD_WINDOW_MS, so
-// the two paths together still reload at most once per window.
+// calls in here. It acts only while ROOT_LAYOUT_LOADED_FLAG is unset — the root
+// layout sets it through `markRootLayoutLoaded` as it evaluates — and shares the
+// guard keys and limits, so the two paths together stay inside one budget.
 
 import { reportError } from './error-reporting';
 import { flushSentry } from './sentry';
@@ -42,6 +45,18 @@ export const CHUNK_RELOAD_GUARD_KEY = 'boardsesh:chunk-reload-at';
 
 /** Minimum gap between two automatic reloads in one tab. Read by `public/index.html` too. */
 export const CHUNK_RELOAD_WINDOW_MS = 60_000;
+
+/** sessionStorage key counting automatic reloads in this tab. Read by `public/index.html` too. */
+export const CHUNK_RELOAD_COUNT_KEY = 'boardsesh:chunk-reload-count';
+
+/** Automatic reloads one tab may ever make; past this only the manual button remains. Read by `public/index.html` too. */
+export const CHUNK_RELOAD_MAX_PER_TAB = 3;
+
+/** Window property the root layout sets as it evaluates. Read by `public/index.html` too. */
+export const ROOT_LAYOUT_LOADED_FLAG = '__BOARDSESH_ROOT_LAYOUT_LOADED__';
+
+/** The panel the shell script paints when it may not reload. Read by `public/index.html` too. */
+const BOOT_FAILURE_PANEL_ID = 'boot-failure';
 
 /** How long the status probe may take before the failure counts as a network one. */
 const PROBE_TIMEOUT_MS = 3_000;
@@ -107,17 +122,24 @@ function tabStorage(): GuardStorage | null {
 }
 
 /**
- * Take this tab's one automatic reload for the current window. Returns false if
- * the window's reload is already spent — or if storage cannot be read or
- * written, because a reload whose guard did not stick is a reload that can loop.
+ * Take one of this tab's automatic reloads. Returns false if the current
+ * window's reload is already spent, if the tab has used all
+ * CHUNK_RELOAD_MAX_PER_TAB, or if storage cannot be read or written — a reload
+ * whose guard did not stick is a reload that can loop.
  */
 export function claimAutoReload(storage: GuardStorage | null, now: number): boolean {
   if (!storage) return false;
   try {
+    const reloadCount = Number(storage.getItem(CHUNK_RELOAD_COUNT_KEY)) || 0;
+    if (reloadCount >= CHUNK_RELOAD_MAX_PER_TAB) return false;
     const lastReloadAt = Number(storage.getItem(CHUNK_RELOAD_GUARD_KEY));
     if (lastReloadAt > 0 && now - lastReloadAt < CHUNK_RELOAD_WINDOW_MS) return false;
     storage.setItem(CHUNK_RELOAD_GUARD_KEY, String(now));
-    return storage.getItem(CHUNK_RELOAD_GUARD_KEY) === String(now);
+    storage.setItem(CHUNK_RELOAD_COUNT_KEY, String(reloadCount + 1));
+    return (
+      storage.getItem(CHUNK_RELOAD_GUARD_KEY) === String(now) &&
+      storage.getItem(CHUNK_RELOAD_COUNT_KEY) === String(reloadCount + 1)
+    );
   } catch {
     return false;
   }
@@ -192,6 +214,17 @@ export async function recoverFromChunkLoadError(
     deps.reload();
   }
   return outcome;
+}
+
+/**
+ * Called once as the root layout module evaluates. From here on the root error
+ * boundary exists, so the shell script in `public/index.html` stands down; it
+ * also clears a failure panel the shell painted for a sibling layout chunk that
+ * failed while the root one was still arriving.
+ */
+export function markRootLayoutLoaded(): void {
+  (window as unknown as Record<string, unknown>)[ROOT_LAYOUT_LOADED_FLAG] = true;
+  document.getElementById(BOOT_FAILURE_PANEL_ID)?.remove();
 }
 
 /** The manual Reload button. Always allowed: the climber asked for it. */

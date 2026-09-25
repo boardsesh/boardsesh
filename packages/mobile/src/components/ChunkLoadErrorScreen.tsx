@@ -50,9 +50,15 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
     recoveredErrorRef.current = error;
     let cancelled = false;
     setState({ kind: 'recovering' });
-    void recoverFromChunkLoadError(error).then((outcome) => {
-      if (!cancelled) setState({ kind: 'settled', outcome });
-    });
+    void recoverFromChunkLoadError(error)
+      .then((outcome) => {
+        if (!cancelled) setState({ kind: 'settled', outcome });
+      })
+      // Recovery catches its own failures today; if that ever changes, the
+      // climber still gets the Reload button instead of a spinner-less dead end.
+      .catch(() => {
+        if (!cancelled) setState({ kind: 'settled', outcome: 'exhausted' });
+      });
     return () => {
       cancelled = true;
     };

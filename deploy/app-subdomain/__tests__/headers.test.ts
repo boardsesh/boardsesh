@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { effectiveHeaderValues, headerBlocks } from './cloudflare-config';
 
@@ -13,6 +16,39 @@ function parseCspDirectives(csp: string): Map<string, string[]> {
     if (name) directives.set(name.toLowerCase(), sources);
   }
   return directives;
+}
+
+/**
+ * The Expo shell's inline scripts (packages/mobile/public/index.html). The
+ * chunk-recovery one (#5611) is the only thing that recovers a failed root
+ * layout chunk, and a CSP that blocks inline scripts disables it silently.
+ */
+const shellSource = readFileSync(
+  resolve(import.meta.dirname, '..', '..', '..', 'packages', 'mobile', 'public', 'index.html'),
+  'utf8',
+);
+const inlineScriptHashes = [...shellSource.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+  ([, body]) => `'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`,
+);
+
+/**
+ * Why a CSP would block the shell's inline scripts, or null if it allows them.
+ * No script-src/default-src means no restriction. A hash or nonce in the
+ * directive makes browsers ignore 'unsafe-inline', so then every inline script's
+ * hash must be listed; otherwise 'unsafe-inline' must be.
+ */
+function inlineScriptBlockReason(csp: string, requiredHashes: readonly string[]): string | null {
+  const directives = parseCspDirectives(csp);
+  const scriptSources = directives.get('script-src') ?? directives.get('default-src');
+  if (!scriptSources) return null;
+  const usesHashOrNonce = scriptSources.some((source) => /^'(sha256|sha384|sha512|nonce)-/.test(source));
+  if (usesHashOrNonce) {
+    const missing = requiredHashes.filter((hash) => !scriptSources.includes(hash));
+    return missing.length
+      ? `lists hashes/nonces but not the shell's inline script hash(es) ${missing.join(' ')}`
+      : null;
+  }
+  return scriptSources.includes("'unsafe-inline'") ? null : "allows neither 'unsafe-inline' nor the inline script hash";
 }
 
 describe('deploy/app-subdomain/_headers', () => {
@@ -48,6 +84,41 @@ describe('deploy/app-subdomain/_headers', () => {
         }
       }
     }
+  });
+
+  // The chunk-recovery script in the Expo shell (#5611) is inline. A future CSP
+  // that restricts scripts without allowing it would pass the eval rule above
+  // and silently leave a failed root layout chunk as a black page.
+  it("never blocks the shell's inline chunk-recovery script", () => {
+    expect(inlineScriptHashes.length, 'the shell should carry the inline recovery script').toBeGreaterThan(0);
+    for (const block of headerBlocks) {
+      for (const [name, values] of block.headers) {
+        if (name.toLowerCase() !== 'content-security-policy') continue;
+        for (const csp of values) {
+          const reason = inlineScriptBlockReason(csp, inlineScriptHashes);
+          expect(
+            reason,
+            `${block.path} sets a CSP ("${csp}") that ${reason} — it disables the shell's chunk-recovery script (packages/mobile/public/index.html). See README.md.`,
+          ).toBeNull();
+        }
+      }
+    }
+  });
+
+  it('the inline-script CSP check catches a policy that would block the script (fixtures)', () => {
+    const [scriptHash] = inlineScriptHashes;
+    const evalOnly = "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'";
+    expect(inlineScriptBlockReason("frame-ancestors 'none'", inlineScriptHashes)).toBeNull();
+    expect(inlineScriptBlockReason(evalOnly, inlineScriptHashes)).not.toBeNull();
+    expect(
+      inlineScriptBlockReason("default-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'", inlineScriptHashes),
+    ).not.toBeNull();
+    expect(inlineScriptBlockReason(`${evalOnly} 'unsafe-inline'`, inlineScriptHashes)).toBeNull();
+    expect(inlineScriptBlockReason(`${evalOnly} ${scriptHash}`, inlineScriptHashes)).toBeNull();
+    // A hash of something else switches 'unsafe-inline' off in browsers.
+    expect(
+      inlineScriptBlockReason(`${evalOnly} 'unsafe-inline' 'sha256-${'A'.repeat(43)}='`, inlineScriptHashes),
+    ).not.toBeNull();
   });
 
   it('applies X-Robots-Tag: noindex to every path', () => {

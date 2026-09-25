@@ -83,7 +83,7 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
-import { isChunkLoadError } from '../src/lib/chunk-load-recovery';
+import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
 import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
@@ -120,6 +120,10 @@ import { getPreference, removePreference, setPreference } from '../src/lib/prefe
 import '../modules/memory-trim/src/index';
 
 markStartup('root.module.ready');
+// The root layout chunk arrived and evaluated, so the ErrorBoundary below exists
+// from here on: the shell's chunk-recovery script (public/index.html) stands
+// down. No-op on native (#5611).
+markRootLayoutLoaded();
 void SplashScreen.preventAutoHideAsync();
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
