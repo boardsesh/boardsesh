@@ -53,6 +53,28 @@ export function parseInstallReferrer(raw: string): ParsedInstallReferrer {
   };
 }
 
+// What the referrer says about where the install came from. Play fills the
+// utm_* params for installs that no tagged link drove too: an install from a
+// Play Store search or browse arrives as `utm_source=google-play&utm_medium=organic`,
+// and one Play has no referrer for as `utm_source=(not set)&utm_medium=(not set)`.
+// So "has a utm_* param" does not mean "a campaign drove it" — 584 of the 663
+// people who fired Install Attributed from 2026-08-23 to 2026-09-19 were
+// google-play/organic (#5653). This names the three cases so a dashboard can
+// count campaign installs without re-deriving Play's conventions.
+export type InstallChannel = 'campaign' | 'organic' | 'unknown';
+
+const PLAY_NOT_SET = '(not set)';
+
+function hasValue(param: string | null): boolean {
+  return param !== null && param !== '' && param !== PLAY_NOT_SET;
+}
+
+export function classifyInstallChannel(parsed: ParsedInstallReferrer): InstallChannel {
+  if (parsed.medium?.toLowerCase() === 'organic') return 'organic';
+  if (hasValue(parsed.source) || hasValue(parsed.medium) || hasValue(parsed.campaign)) return 'campaign';
+  return 'unknown';
+}
+
 // Fetch-once-ever, cache-the-flag, never-throw. `fetchNative` is injectable so
 // tests can supply a fake result without mocking the native module resolver.
 export async function maybeFetchAndAttachInstallReferrer(
@@ -76,12 +98,19 @@ export async function maybeFetchAndAttachInstallReferrer(
     if (!result) return;
 
     const parsed = parseInstallReferrer(result.installReferrer);
-    // Person properties are written even for an organic/direct install (all
-    // three utm_* fields null) — that's honest, useful data for channel-mix
-    // cohorting. But INSTALL_ATTRIBUTED_EVENT specifically means "we resolved
-    // a campaign for this install", so only fire it when at least one utm_*
-    // field is present — an unconditional fire here would name every organic
-    // install "attributed" and inflate attributed-install counts.
+    const installChannel = classifyInstallChannel(parsed);
+    // Person properties are written for every install, whatever its channel —
+    // honest, useful data for channel-mix cohorting.
+    //
+    // INSTALL_ATTRIBUTED_EVENT fires whenever at least one utm_* field is
+    // present. That is NOT "a campaign drove this install": Play stamps
+    // utm_* on organic installs too (see classifyInstallChannel), so most of
+    // these events are google-play/organic. The firing rule is kept as it is
+    // so the event's history stays comparable; count campaign installs with
+    // `install_channel = 'campaign'` instead. The event also fires on the
+    // first launch of an older install that never ran this code, so it is not
+    // a new-install count either — `install_begin_timestamp` says when Play
+    // saw the install.
     setPersonProperties(undefined, {
       install_referrer_raw: parsed.raw,
       install_source: parsed.source,
@@ -89,6 +118,7 @@ export async function maybeFetchAndAttachInstallReferrer(
       install_campaign: parsed.campaign,
       install_click_timestamp: result.referrerClickTimestampSeconds,
       install_begin_timestamp: result.installBeginTimestampSeconds,
+      install_channel: installChannel,
     });
     const hasAttribution = parsed.source !== null || parsed.medium !== null || parsed.campaign !== null;
     if (hasAttribution) {
@@ -96,6 +126,7 @@ export async function maybeFetchAndAttachInstallReferrer(
         install_source: parsed.source,
         install_medium: parsed.medium,
         install_campaign: parsed.campaign,
+        install_channel: installChannel,
       });
     }
   } catch (error) {
