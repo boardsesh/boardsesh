@@ -56,7 +56,16 @@ type RejectedMessageCounts = { invalidJson: number; invalidEnvelope: number };
 function isIncomingRedisMessage(payload: unknown): payload is IncomingRedisMessage {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return false;
   const event = (payload as Record<string, unknown>).event;
+  // Event fields vary by channel; validate only the shared envelope here.
   return typeof event === 'object' && event !== null && !Array.isArray(event);
+}
+
+function isHighFrequencySessionEvent(event: unknown): boolean {
+  if (typeof event !== 'object' || event === null) return false;
+  const eventType = (event as { __typename?: unknown }).__typename;
+  return (
+    eventType === 'WallConfirmedClimb' || eventType === 'WallDisconnected' || eventType === 'SessionBoardSerialChanged'
+  );
 }
 
 export type RedisPubSubAdapter = {
@@ -201,7 +210,12 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
       // Logging must not prevent a valid message from reaching its subscribers.
       const senderId =
         typeof parsed.instanceId === 'string' && parsed.instanceId ? parsed.instanceId.slice(0, 8) : 'unknown';
-      logger.info(`[Redis] Received cross-instance message from ${senderId} on channel: ${channel}`);
+      const logMessage = `[Redis] Received cross-instance message from ${senderId} on channel: ${channel}`;
+      if (channel.startsWith(SESSION_CHANNEL_PREFIX) && isHighFrequencySessionEvent(parsed.event)) {
+        logger.debug(logMessage);
+      } else {
+        logger.info(logMessage);
+      }
     } catch (error) {
       logger.error('[Redis] Failed to dispatch message:', error);
     }
@@ -231,12 +245,8 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
       // every wall drop, and `SessionBoardSerialChanged` on every reconnect —
       // all noisy. Membership-level events stay at INFO since they're rare and
       // useful for triage.
-      const isHighFrequency =
-        event.__typename === 'WallConfirmedClimb' ||
-        event.__typename === 'WallDisconnected' ||
-        event.__typename === 'SessionBoardSerialChanged';
       const logMessage = `[Redis] Publishing session event to channel: ${sessionId} (type: ${event.__typename})`;
-      if (isHighFrequency) {
+      if (isHighFrequencySessionEvent(event)) {
         logger.debug(logMessage);
       } else {
         logger.info(logMessage);

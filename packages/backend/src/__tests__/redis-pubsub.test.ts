@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vite-plus/test';
 import Redis from 'ioredis';
 import { createRedisPubSubAdapter, type RedisPubSubAdapter } from '../pubsub/redis-adapter';
+import { logger } from '../utils/logger';
 import type { ClimbStatsEvent, QueueEvent, SessionEvent } from '@boardsesh/shared-schema';
 
 // Integration tests require Redis to be running
@@ -52,6 +53,7 @@ describe('Redis PubSub Adapter', () => {
         if (receivedSessionId === sessionId) receivedEvents.push(receivedEvent);
       });
       await adapter2.subscribeQueueChannel(sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       try {
         await publisher1.publish(`boardsesh:queue:${sessionId}`, JSON.stringify({ event, timestamp: Date.now() }));
@@ -339,6 +341,37 @@ describe('Redis PubSub Adapter - Unit Tests (mocked)', () => {
 
     expect(queueCallback).not.toHaveBeenCalled();
     expect(adapter.getRejectedMessageCounts()).toEqual({ invalidJson: 1, invalidEnvelope: 4 });
+  });
+
+  it('logs incoming wall session events at debug while delivering them', () => {
+    const messageHandlers: Array<(channel: string, message: string) => void> = [];
+    const mockPublisher = { publish: vi.fn() } as unknown as Redis;
+    const mockSubscriber = {
+      on: vi.fn((eventName: string, listener: (channel: string, message: string) => void) => {
+        if (eventName === 'message') messageHandlers.push(listener);
+      }),
+    } as unknown as Redis;
+    const adapter = createRedisPubSubAdapter(mockPublisher, mockSubscriber);
+    const sessionCallback = vi.fn();
+    adapter.onSessionMessage(sessionCallback);
+    const debugSpy = vi.spyOn(logger, 'debug');
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    try {
+      const wallEvent = { __typename: 'WallConfirmedClimb' };
+      messageHandlers[0]?.('boardsesh:session:session-1', JSON.stringify({ event: wallEvent }));
+      expect(sessionCallback).toHaveBeenCalledExactlyOnceWith('session-1', wallEvent);
+      expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('Received cross-instance message'));
+      expect(infoSpy).not.toHaveBeenCalled();
+
+      const membershipEvent = { __typename: 'UserJoined' };
+      messageHandlers[0]?.('boardsesh:session:session-1', JSON.stringify({ event: membershipEvent }));
+      expect(sessionCallback).toHaveBeenLastCalledWith('session-1', membershipEvent);
+      expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('Received cross-instance message'));
+    } finally {
+      debugSpy.mockRestore();
+      infoSpy.mockRestore();
+    }
   });
 
   it('routes idless messages to all eight channel callbacks and still skips its own messages', () => {
