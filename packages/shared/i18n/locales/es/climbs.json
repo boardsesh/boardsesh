@@ -604,7 +604,7 @@
         "footlessKickboard": "Sin pies + KB",
         "noKickboard": "Sin KB"
       },
-      "setAngleMarker": "{{angle}}°",
+      "setAngleMarker": "ajustado a {{angle}}°",
       "setAngleMarkerAria": "La dificultad y las repeticiones son de {{angle}} grados"
     },
     "climbRules": {
