@@ -230,6 +230,16 @@ function isAppActive(): boolean {
   return AppState.currentState === 'active' || AppState.currentState === 'inactive';
 }
 
+// Whole milliseconds since `startMs`, for the connect-step timings (#5775).
+// performance.now() is monotonic, so a wall-clock correction mid-connect can't
+// turn a step negative or add a minute to it the way Date.now() could.
+function monotonicNowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+function elapsedMsSince(startMs: number): number {
+  return Math.round(monotonicNowMs() - startMs);
+}
+
 // MoonBoard grid rows for the native configureBoard payload, so native
 // re-encodes (widget intents, reconnect re-light) use the same serpentine grid
 // as the JS send path — Mini strips are 12 rows, standard 18 (#3392). Undefined
@@ -1508,6 +1518,13 @@ export function useBoardBluetooth({
 
   const connect = useCallback(
     async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
+      // Connect-step timings (#5775), all measured from here. `pre_scan_ms` on
+      // Bluetooth Scan Started, `picker_open_ms` and `configure_ms` on the
+      // connection outcome. The last two stay undefined (dropped from the event)
+      // when that step never ran.
+      const connectStartedAtMs = monotonicNowMs();
+      let pickerOpenMs: number | undefined;
+      let configureMs: number | undefined;
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1537,6 +1554,7 @@ export function useBoardBluetooth({
       // requestAndConnect), so the catch below can scope its cleanup to it.
       let connectPickerSessionId: number | null = null;
       const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
+        pickerOpenMs ??= elapsedMsSince(connectStartedAtMs);
         const pickerPromise = devicePicker(subscribe, targetSearch);
         // The picker's executor ran synchronously, so the counter now holds its session.
         connectPickerSessionId ??= pickerSessionCounterRef.current;
@@ -1626,6 +1644,7 @@ export function useBoardBluetooth({
           layoutId,
           sizeId,
           reconnect: !!targetSerial || !!targetDeviceId,
+          pre_scan_ms: elapsedMsSince(connectStartedAtMs),
         });
 
         // Stage the board configuration into the native manager BEFORE the
@@ -1643,6 +1662,7 @@ export function useBoardBluetooth({
           layoutId !== undefined &&
           sizeId !== undefined
         ) {
+          const configureStartedAtMs = monotonicNowMs();
           try {
             await adapter.configureBoard({
               boardName,
@@ -1655,6 +1675,7 @@ export function useBoardBluetooth({
           } catch (error) {
             console.warn('[BLE] Failed to pre-stage board configuration to native side:', error);
           }
+          configureMs = elapsedMsSince(configureStartedAtMs);
         }
 
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
@@ -1800,6 +1821,8 @@ export function useBoardBluetooth({
             // Sits alongside the classifyBleFailure categories used by the catch
             // block below; this one is only reachable from the initial write.
             failureReason: 'dropped_after_connect',
+            picker_open_ms: pickerOpenMs,
+            configure_ms: configureMs,
           });
           return false;
         }
@@ -1870,6 +1893,8 @@ export function useBoardBluetooth({
           bleManufacturerData: connection.manufacturerData ?? undefined,
           bleManufacturerCompanyId: manufacturerCompanyId(connection.manufacturerData),
           bleServiceData: connection.serviceData ? JSON.stringify(connection.serviceData) : undefined,
+          picker_open_ms: pickerOpenMs,
+          configure_ms: configureMs,
         });
         return true;
       } catch (error) {
@@ -1966,6 +1991,8 @@ export function useBoardBluetooth({
           // low-level GATT status are visible for re-measurement (#3608). Empty on
           // web / native iOS.
           ...blePlxErrorCodes(error),
+          picker_open_ms: pickerOpenMs,
+          configure_ms: configureMs,
         });
       } finally {
         connectInFlightRef.current = false;
