@@ -15,10 +15,11 @@
 // `resolveFlexibleLength`, so the old child resolved to ~26pt, and a 20pt line
 // fits in 26pt). Either way the padding is what changed the rendering, so the
 // test next door pins it (#4642).
-import React, { useCallback, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { StyleSheet, type TextInput } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTheme } from '../../providers/theme-provider';
+import { useSheetScrollIntoView } from '../sheet-scroll-into-view';
 
 type TickNoteFieldProps = {
   value: string;
@@ -35,17 +36,38 @@ export const TickNoteField = React.memo(function TickNoteField({
 }: TickNoteFieldProps) {
   const { systemColors, brandColors, borderRadius, spacing, textStyles } = useTheme();
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  const focusedRef = useRef(false);
+  // Keeps the note above the pinned footer while the keyboard is up. Neither
+  // tick sheet scrolled it into view on its own, and the edit sheet's note sat
+  // under the keyboard (#5665). `null` outside a scrollable sheet.
+  const scrollIntoView = useSheetScrollIntoView();
 
-  const handleFocus = useCallback(() => setFocused(true), []);
-  const handleBlur = useCallback(() => setFocused(false), []);
+  const handleFocus = useCallback(() => {
+    focusedRef.current = true;
+    setFocused(true);
+    if (inputRef.current) scrollIntoView?.reveal(inputRef.current);
+  }, [scrollIntoView]);
+  const handleBlur = useCallback(() => {
+    focusedRef.current = false;
+    setFocused(false);
+    if (inputRef.current) scrollIntoView?.release(inputRef.current);
+  }, [scrollIntoView]);
+  // A new line grows the field (up to its maxHeight), so reveal again to keep
+  // its bottom edge in view.
+  const handleContentSizeChange = useCallback(() => {
+    if (focusedRef.current && inputRef.current) scrollIntoView?.reveal(inputRef.current);
+  }, [scrollIntoView]);
 
   return (
     <BottomSheetTextInput
+      ref={inputRef}
       multiline
       value={value}
       onChangeText={onChangeText}
       onFocus={handleFocus}
       onBlur={handleBlur}
+      onContentSizeChange={handleContentSizeChange}
       placeholder={placeholder}
       // `secondaryLabel`, not `tertiaryLabel`: on iOS the tertiary label is a
       // ~30%-alpha PlatformColor, which composites to 1.73:1 against the opaque
