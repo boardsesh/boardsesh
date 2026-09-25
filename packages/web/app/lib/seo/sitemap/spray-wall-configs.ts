@@ -121,6 +121,9 @@ export function buildPublicSprayWallQuery(db: typeof dbzRead) {
         isNull(userBoards.deletedAt),
         isNull(sprayWalls.deletedAt),
         isNotNull(sprayWalls.currentVersionId),
+        // An admin-hidden wall reads as private to everybody but its owner, and a
+        // crawler is never the owner (SW-17).
+        isNull(sprayWalls.hiddenAt),
       ),
     )
     .groupBy(sprayWalls.layoutId, userBoards.slug, userBoards.name, userBoards.angle);

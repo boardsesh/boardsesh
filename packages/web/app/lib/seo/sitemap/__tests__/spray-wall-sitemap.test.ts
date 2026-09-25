@@ -184,6 +184,10 @@ describe('the public spray wall query', () => {
     expect(normalised).toContain('"spray_walls"."current_version_id" is not null');
   });
 
+  it('skips a wall an admin has hidden', () => {
+    expect(normalised).toContain('"spray_walls"."hidden_at" is null');
+  });
+
   it('needs a slug, because that is the whole URL', () => {
     expect(normalised).toContain('"user_boards"."slug" is not null');
   });

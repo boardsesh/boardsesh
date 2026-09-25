@@ -55,6 +55,7 @@ const publicWall: SprayOgWallRow = {
   layoutId: 90001,
   wallName: 'Garage wall',
   isPublic: true,
+  hiddenAt: null,
   publicPhotoKey: 'spray-walls/abc/deadbeef.jpg',
   currentVersionId: 42,
 };
@@ -136,6 +137,12 @@ describe('renderSprayOgCard — the visibility gate', () => {
     {
       name: 'an unlisted-but-not-public wall',
       overrides: { loadWall: vi.fn(async () => ({ ...publicWall, isPublic: false, publicPhotoKey: null })) },
+    },
+    {
+      // Public, published and promoted: every other gate would open. Hidden
+      // means private for everybody but the owner, and a crawler is not the owner.
+      name: 'a public wall an admin has hidden',
+      overrides: { loadWall: vi.fn(async () => ({ ...publicWall, hiddenAt: new Date() })) },
     },
     {
       name: 'a wall that has never published a version',
