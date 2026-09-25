@@ -4646,6 +4646,114 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     expect(await sprayWallQueries.sprayWallByLayout({}, { layoutId: wall.layoutId }, ctxFor(STRANGER))).toBeNull();
   });
 
+  /** Upload a photo and open a draft version on an existing wall, anchored. */
+  const openDraft = async (wallUuid: string): Promise<string> => {
+    const photoId = registerUploadedPhoto(wallUuid);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    return version.id;
+  };
+
+  it('applies a pending choice on the FIRST publish only, never on a later one', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    // A pair left standing after the first publish — what a backend rolled back
+    // across this change leaves behind, since it never clears the columns.
+    await db.execute(sql`
+      UPDATE spray_walls SET pending_is_public = true, pending_is_unlisted = false
+      WHERE board_uuid = ${wall.uuid}
+    `);
+
+    const versionId = await openDraft(wall.uuid);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(false);
+    expect(row.public_photo_key).toBeNull();
+    // …and the stale pair is cleared, not left for the next one.
+    expect(row.pending_is_public).toBeNull();
+  });
+
+  it('heals a public wall whose post-publish photo copy failed when public is re-stated', async () => {
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    vi.mocked(copyObjectBetweenBuckets).mockRejectedValueOnce(new Error('media bucket unreachable'));
+
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    const broken = await visibilityOf(wall.uuid);
+    expect(broken.is_public).toBe(true);
+    expect(broken.public_photo_key).toBeNull();
+
+    // What the wizard sends straight after its publish.
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+
+    const healed = await visibilityOf(wall.uuid);
+    expect(healed.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(healed.public_photo_key!)).toBe(true);
+  });
+
+  it('never copies an admin-hidden wall’s photo into the public bucket on publish', async () => {
+    const wall = await createWall(OWNER, { isPublic: true });
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+
+    const versionId = await openDraft(wall.uuid);
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.public_photo_key).toBeNull();
+    // The copy made before the guard said no is deleted, not left world-readable.
+    expect(publicBucketObjects.size).toBe(0);
+  });
+
+  it('applies a public choice on a version-1 commit, photo copy included', async () => {
+    const wall = await createWall(OWNER, { isPublic: true });
+    const versionId = await openDraft(wall.uuid);
+
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      {
+        input: {
+          wallUuid: wall.uuid,
+          versionId,
+          kept: [],
+          removed: [],
+          added: [{ detection: { cx: 100, cy: 120, r: 24 } }],
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.pending_is_public).toBeNull();
+    expect(row.public_photo_key).not.toBeNull();
+    expect(publicBucketObjects.has(row.public_photo_key!)).toBe(true);
+  });
+
+  it('moves a public wall’s public photo copy to the new photo on a reset commit', async () => {
+    const { wall } = await createPublishedWall(OWNER, { isPublic: true });
+    const before = (await visibilityOf(wall.uuid)).public_photo_key;
+    expect(before).not.toBeNull();
+
+    const versionId = await openDraft(wall.uuid);
+    await sprayWallMutations.commitSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, versionId, kept: [], removed: [], added: [] } },
+      ctxFor(OWNER),
+    );
+
+    const [version] = (await db.execute(
+      sql`SELECT photo_key FROM spray_wall_versions WHERE id = ${versionId}`,
+    )) as unknown as Array<{ photo_key: string }>;
+    const after = (await visibilityOf(wall.uuid)).public_photo_key;
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    // The copy is of the photo the reset just published, and the old one is gone.
+    expect(publicBucketObjects.get(after!)).toBe(version.photo_key);
+    expect(publicBucketObjects.has(before!)).toBe(false);
+  });
+
   it('lets a visibility change before the first publish win over the creation-time choice', async () => {
     const wall = await createWall(OWNER, { isPublic: true });
     await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: false } }, ctxFor(OWNER));

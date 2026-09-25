@@ -807,6 +807,9 @@ async function refreshPublicWallPhoto(
         WHERE locked.id = ${wallId}
           AND locked.current_version_id = ${publishedVersionId}
           AND locked.deleted_at IS NULL
+          -- An admin-hidden wall reads as private to everybody but its owner, so
+          -- its photo has no business in the world-readable bucket either.
+          AND locked.hidden_at IS NULL
           AND board.is_public = true
           AND board.deleted_at IS NULL
         FOR UPDATE OF locked
@@ -1043,16 +1046,19 @@ async function publishDraftUnderLock(
   const alive = (await aliveHolds(tx, wall.id, row.versionNumber)).length;
 
   // The visibility the owner picked when they created the wall, applied now that
-  // there is something to see (#5513). Read under the lock above, and cleared in
-  // the same write that moves `current_version_id`, so it is applied exactly once
-  // — a later publish finds nothing pending. It is the OWNER's choice even when a
-  // gym admin presses publish: only the owner creates a wall, and only the owner
-  // can change a pending request (`updateSprayWall` clears it).
+  // there is something to see (#5513). It is the OWNER's choice even when a gym
+  // admin presses publish: only the owner creates a wall, and only the owner can
+  // change a pending request (`updateSprayWall` clears it).
   //
-  // Only ever a promotion, never a demotion: the board row is private until this
-  // moment, and an explicit `updateSprayWall` in between nulls the pair.
+  // FIRST publish only, decided on `current_version_id` read under the lock above
+  // rather than on the pair being non-null. The pair is also nulled on every
+  // publish below, but "exactly once" must not rest on every earlier writer having
+  // cleared it: a backend rolled back across this change publishes and changes
+  // visibility without knowing the columns exist, and a pair left standing through
+  // that would otherwise overturn the owner's later choice on their next reset.
+  const isFirstPublish = wallNow.currentVersionId == null;
   const appliedVisibility: PendingVisibility | null =
-    wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null
+    isFirstPublish && (wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null)
       ? { isPublic: wallNow.pendingIsPublic === true, isUnlisted: wallNow.pendingIsUnlisted === true }
       : null;
   if (appliedVisibility) {
@@ -2002,8 +2008,14 @@ export const sprayWallMutations = {
     // upload bandwidth. What that order costs is an orphaned object when the
     // transaction then fails, which the catch below cleans up. The other order
     // costs a public wall whose photo never got copied, which nothing cleans up.
+    //
+    // A wall that is already public but has no public copy is promoted again. That
+    // state is reachable: a first publish that applies a public creation-time
+    // choice (#5513) commits the flag and makes the copy afterwards, best effort,
+    // so a failed copy leaves a public wall with no photo to show. Re-stating
+    // "public" — which the wizard does straight after its publish — heals it.
     const promotedPhotoKey =
-      validated.isPublic === true && !board.isPublic
+      validated.isPublic === true && (!board.isPublic || wall.publicPhotoKey == null)
         ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
         : null;
 
@@ -2426,7 +2438,7 @@ export const sprayWallMutations = {
     await applyRateLimit(ctx, PUBLISH_RATE_LIMIT, 'commitSprayWallVersion');
 
     const validated = validateInput(CommitSprayWallVersionInputSchema, input, 'input');
-    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
+    const { wall, board } = await loadEditableWall(ctx, validated.wallUuid);
 
     const committed = await db.transaction(async (tx) => {
       // EVERY check runs inside the lock, and the lock is the first statement.
@@ -2619,11 +2631,14 @@ export const sprayWallMutations = {
       climbsChanged: committed.climbsChanged,
     });
 
-    // A version-1 commit is a wall's FIRST publish, so it can be the one that
-    // applies a public creation-time choice (#5513) — and a wall that has just gone
-    // public needs its photo in the public bucket, exactly as `publishSprayWallVersion`
-    // does it. After the commit and best effort, for the same reasons given there.
-    if (committed.appliedVisibility?.isPublic) {
+    // The same public-copy refresh `publishSprayWallVersion` makes, on the same
+    // condition. A reset of a public wall moves the photo climbers see, so the
+    // public copy has to follow it or the gym page keeps last generation's wall;
+    // and a version-1 commit is a wall's FIRST publish, so it can be the one that
+    // applies a public creation-time choice (#5513). After the commit and best
+    // effort, for the reasons given there — `refreshPublicWallPhoto` re-checks the
+    // board is still public under the row lock.
+    if (board.isPublic || committed.appliedVisibility?.isPublic) {
       await refreshPublicWallPhoto(
         wall.id,
         wall.boardUuid,
