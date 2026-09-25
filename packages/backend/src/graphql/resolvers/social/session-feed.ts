@@ -23,6 +23,8 @@ import type {
 } from '@boardsesh/shared-schema';
 import { logger } from '../../../utils/logger';
 import { buildGradeDistributionFromTicks, computeSessionAggregates } from './session-feed-utils';
+import { isRowAnonReadable } from '../board-presence/shared';
+import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 
 type SessionFeedFilterOptions = {
   boardIdFilter: number | null;
@@ -139,13 +141,31 @@ export async function getSessionFeed(
   let boardIdFilter: number | null = null;
   if (validatedInput.boardUuid) {
     const board = await dbRead
-      .select({ id: dbSchema.userBoards.id })
+      .select({
+        id: dbSchema.userBoards.id,
+        boardType: dbSchema.userBoards.boardType,
+        layoutId: dbSchema.userBoards.layoutId,
+        isPublic: dbSchema.userBoards.isPublic,
+        isUnlisted: dbSchema.userBoards.isUnlisted,
+        ownerId: dbSchema.userBoards.ownerId,
+      })
       .from(dbSchema.userBoards)
-      .where(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid))
+      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1)
       .then((rows) => rows[0]);
 
     if (board) {
+      // Same visibility rule as `board(boardUuid)`: a spray wall takes the
+      // wall's own rule, and every other private board is masked from an
+      // anonymous caller. Without this, anyone holding a private board's uuid
+      // could read its owner's climbs (daily cards carry name, avatar, grades).
+      // A masked board answers with an empty page — the Home screen's empty
+      // state, not its error state.
+      const viewerId = ctx?.isAuthenticated ? ctx.userId : undefined;
+      const readable = isSprayBoardType(board.boardType)
+        ? await sprayBoardRowIsReadable(board, viewerId, 'capability')
+        : Boolean(viewerId) || isRowAnonReadable(board);
+      if (!readable) return { sessions: [], cursor: null, hasMore: false };
       boardIdFilter = board.id;
     }
   }
@@ -260,6 +280,10 @@ export async function getSessionFeed(
             FROM boardsesh_ticks session_tick
             WHERE session_tick.user_id = dg.user_id
               AND session_tick.session_id IS NOT NULL
+              -- On a board's feed only a session on THIS board claims the day:
+              -- a session elsewhere is filtered out of this feed, so its day's
+              -- climbs here would otherwise show on no card at all.
+              ${boardIdFilter !== null ? sql`AND session_tick.board_id = ${boardIdFilter}` : sql``}
               AND session_tick.climbed_at >= dg.day
               AND session_tick.climbed_at < dg.day + 1
               ${pagination ? sql`AND session_tick.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
@@ -609,14 +633,11 @@ export const sessionFeedQueries = {
       ? and(
           eq(dbSchema.boardseshTicks.userId, dailySession.userId),
           isNull(dbSchema.boardseshTicks.sessionId),
+          // No "was there a session that day" check here: the feed only mints a
+          // daily id once it has decided the day is session-less in its own
+          // scope, and a board's feed scopes that to the board. Re-checking
+          // against every board would open that card onto nothing.
           sql`${dbSchema.boardseshTicks.climbedAt}::date = ${dailySession.day}::date`,
-          sql`NOT EXISTS (
-            SELECT 1
-            FROM boardsesh_ticks session_tick
-            WHERE session_tick.user_id = ${dbSchema.boardseshTicks.userId}
-              AND session_tick.session_id IS NOT NULL
-              AND session_tick.climbed_at::date = ${dbSchema.boardseshTicks.climbedAt}::date
-          )`,
         )
       : eq(dbSchema.boardseshTicks.sessionId, sessionId);
 
