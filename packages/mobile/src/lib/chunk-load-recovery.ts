@@ -20,19 +20,19 @@ export type ChunkLoadCause = 'stale-deploy' | 'transient' | 'network' | 'offline
  */
 export type ChunkRecoveryOutcome = 'reloading' | 'offline' | 'unreachable' | 'exhausted';
 
-/** Shared with the inline shell script in `public/index.html` (web only). */
+/** Shared with the web shell's inline script (index.html in public/, web only). */
 export const CHUNK_RELOAD_GUARD_KEY = 'boardsesh:chunk-reload-at';
 
-/** Shared with the inline shell script in `public/index.html` (web only). */
+/** Shared with the web shell's inline script (index.html in public/, web only). */
 export const CHUNK_RELOAD_WINDOW_MS = 60_000;
 
-/** Shared with the inline shell script in `public/index.html` (web only). */
+/** Shared with the web shell's inline script (index.html in public/, web only). */
 export const CHUNK_RELOAD_COUNT_KEY = 'boardsesh:chunk-reload-count';
 
-/** Shared with the inline shell script in `public/index.html` (web only). */
+/** Shared with the web shell's inline script (index.html in public/, web only). */
 export const CHUNK_RELOAD_MAX_PER_TAB = 3;
 
-/** Shared with the inline shell script in `public/index.html` (web only). */
+/** Shared with the web shell's inline script (index.html in public/, web only). */
 export const ROOT_LAYOUT_LOADED_FLAG = '__BOARDSESH_ROOT_LAYOUT_LOADED__';
 
 /** Constant `false`: native has no async route chunks to fail. */

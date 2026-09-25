@@ -33,6 +33,11 @@ cat > "$output_dir/index.html" <<'SHELL_EOF'
     <link rel="manifest" href="/app/manifest.json" />
   </head>
   <body><div id="root"></div>
+  <script>
+    /* Stand-in for the shell's inline chunk-recovery script (#5611): the export
+       script greps for its sessionStorage key and its unhandledrejection hook. */
+    window.addEventListener('unhandledrejection', function () { sessionStorage.getItem('boardsesh:chunk-reload-at'); });
+  </script>
   <script src="/app/_expo/static/js/web/entry-stub.js" defer></script>
   </body>
 </html>
