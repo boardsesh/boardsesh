@@ -162,7 +162,7 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
   it('scopes to the resolved board id via t.board_id, not board_type/layout', async () => {
     // board lookup → id 4242; meta batch → the party-1 row
     boardScopeTestState.selectQueue.push(
-      [{ id: 4242 }],
+      [{ id: 4242, boardType: 'kilter', layoutId: 1, isPublic: true, isUnlisted: false, ownerId: 'owner-1' }],
       [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
     );
     primeFeedExecuteMocks();
@@ -187,7 +187,7 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
 
   it('applies the board_id filter to the batch-enrichment queries too', async () => {
     boardScopeTestState.selectQueue.push(
-      [{ id: 99 }],
+      [{ id: 99, boardType: 'kilter', layoutId: 1, isPublic: true, isUnlisted: false, ownerId: 'owner-1' }],
       [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
     );
     primeFeedExecuteMocks();
@@ -236,7 +236,7 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
 
   it('includes session-less daily highlights on a resolved board scope (#5567)', async () => {
     boardScopeTestState.selectQueue.push(
-      [{ id: 4242 }],
+      [{ id: 4242, boardType: 'kilter', layoutId: 1, isPublic: true, isUnlisted: false, ownerId: 'owner-1' }],
       [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
     );
     primeFeedExecuteMocks();
