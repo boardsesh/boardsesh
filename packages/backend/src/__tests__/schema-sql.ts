@@ -15,6 +15,10 @@ const climbNeighborsSchema = readFileSync(
   new URL('../../../db/drizzle/0236_climb_neighbors.sql', import.meta.url),
   'utf8',
 );
+const climbNeighborResumableBuildsSchema = readFileSync(
+  new URL('../../../db/drizzle/0237_climb_neighbor_resumable_builds.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
@@ -1858,6 +1862,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE EXTENSION IF NOT EXISTS pg_trgm;
   DROP TABLE IF EXISTS places, place_imports;
   ${placesSchema}
-  DROP TABLE IF EXISTS board_climb_neighbors, board_climb_neighbor_runs;
+  DROP TABLE IF EXISTS board_climb_neighbors, board_climb_neighbor_runs, board_climb_neighbor_group_runs;
   ${climbNeighborsSchema}
+  ${climbNeighborResumableBuildsSchema}
 `;

@@ -6,15 +6,24 @@ name: Refresh Climb Neighbors
 # Watermark-driven per board (board_climb_neighbor_runs), so a normal night only
 # re-scores new and edited climbs plus the lists they land in. Spray walls are
 # never materialised. Design + runbook: docs/similar-climbs.md.
+#
+# One job per board, so the small catalogues finish in minutes while Kilter
+# (about 295k eligible climbs in one layout) runs on its own. A full build is
+# resumable: a job cut off by the timeout leaves its finished groups and lists
+# recorded, and the next run carries on from there. The board list must match
+# CLIMB_NEIGHBOR_BOARDS (pinned by climb-neighbors-workflow.test.ts).
 on:
   schedule:
     - cron: '45 6 * * *' # 06:45 UTC daily, after the grade refresh
   workflow_dispatch:
     inputs:
       board:
-        description: 'One board (e.g. kilter), or empty for every board but spray'
-        type: string
-        default: ''
+        description: 'One board, or all of them (every board but spray)'
+        type: choice
+        default: all
+        # Keep in step with the matrix below and CLIMB_NEIGHBOR_BOARDS
+        # (climb-neighbors-workflow.test.ts checks all three agree).
+        options: [all, decoy, grasshopper, kilter, moonboard, soill, tension, touchstone, woods]
       full:
         description: 'Rebuild from scratch, ignoring the watermark (a first run on a board does this by itself)'
         type: boolean
@@ -24,35 +33,51 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: refresh-climb-neighbors
-  cancel-in-progress: false
-
 jobs:
   refresh:
+    name: refresh (${{ matrix.board }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 350
     # DATABASE_URL must be a WRITABLE connection.
     environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [decoy, grasshopper, kilter, moonboard, soill, tension, touchstone, woods]
+    # One run per board at a time, and a running build is never cancelled by a
+    # newer run. GitHub keeps only ONE pending job per concurrency group: a
+    # further run arriving while one is already pending replaces the pending
+    # one, so at most one run waits behind a long build.
+    concurrency:
+      group: refresh-climb-neighbors-${{ matrix.board }}
+      cancel-in-progress: false
+    env:
+      # A dispatch naming one board runs only that board's job; the others skip
+      # their steps and finish green.
+      SELECTED: ${{ github.event_name != 'workflow_dispatch' || inputs.board == 'all' || inputs.board == matrix.board }}
     steps:
       - name: Checkout repository
+        if: env.SELECTED == 'true'
         uses: actions/checkout@v4
 
       - uses: voidzero-dev/setup-vp@v1
+        if: env.SELECTED == 'true'
         with:
           node-version: '22.x'
           cache: true
 
       - name: Install dependencies
+        if: env.SELECTED == 'true'
         run: vp install --frozen-lockfile
 
       - name: Refresh climb neighbors
+        if: env.SELECTED == 'true'
         working-directory: packages/db
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          BOARD: ${{ inputs.board }}
+          BOARD: ${{ matrix.board }}
         run: >-
           node --max-old-space-size=4096 --import tsx scripts/refresh-climb-neighbors.ts
-          ${BOARD:+--board=$BOARD}
+          --board=$BOARD
           ${{ inputs.full && '--full' || '' }}
           ${{ inputs.dry_run && '--dry-run' || '' }}

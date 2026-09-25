@@ -1660,6 +1660,13 @@
       "when": 1790330920031,
       "tag": "0236_climb_neighbors",
       "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1790344121718,
+      "tag": "0237_climb_neighbor_resumable_builds",
+      "breakpoints": true
     }
   ]
 }

@@ -19,7 +19,12 @@ export const CLIMB_NEIGHBOR_K = 25;
  */
 export const CLIMB_NEIGHBOR_MIN_JACCARD = 0.5;
 
-/** One climb as the index sees it: its distinct hold ids, ascending. */
+/**
+ * One climb as the index sees it: its hold ids, ascending and DISTINCT
+ * (`distinctHoldIds` produces exactly that). The index counts one overlap per
+ * posting it walks, so a repeated id would be counted twice and inflate the
+ * climb's size and every score it takes part in.
+ */
 export type NeighborClimb = {
   uuid: string;
   holdIds: readonly number[];
@@ -37,26 +42,6 @@ export type ComputedNeighbor = {
 // 7.000000000000001, which would otherwise demand 8 shared holds.
 const FLOAT_SLACK = 1e-9;
 
-function countShared(left: readonly number[], right: readonly number[]): number {
-  let shared = 0;
-  let leftIndex = 0;
-  let rightIndex = 0;
-  while (leftIndex < left.length && rightIndex < right.length) {
-    const leftHold = left[leftIndex];
-    const rightHold = right[rightIndex];
-    if (leftHold === rightHold) {
-      shared += 1;
-      leftIndex += 1;
-      rightIndex += 1;
-    } else if (leftHold < rightHold) {
-      leftIndex += 1;
-    } else {
-      rightIndex += 1;
-    }
-  }
-  return shared;
-}
-
 /**
  * In-memory hold → climbs inverted index over one comparison group (a layout,
  * or a layout + wall on Woods), answering "which climbs in this group share at
@@ -64,31 +49,46 @@ function countShared(left: readonly number[], right: readonly number[]): number 
  *
  * The score is the one `findSimilarClimbs` computes in SQL: position-only
  * Jaccard over distinct hold ids, shared / (|a| + |b| − shared).
+ *
+ * Sized for Kilter's layout 1: about 295k eligible climbs in one group, each
+ * probed once in a full build. Everything on the hot path is a typed array.
  */
 export class ClimbNeighborIndex {
-  private readonly climbs: NeighborClimb[];
+  private readonly uuidsByPosition: string[];
+  private readonly holdIdsByPosition: (readonly number[])[];
+  private readonly sizes: Uint16Array;
   private readonly positionByUuid = new Map<string, number>();
-  private readonly climbsByHold = new Map<number, number[]>();
-  // Per-query "already a candidate" marks, reset by bumping the generation
-  // instead of clearing the array.
+  private readonly climbsByHold = new Map<number, Int32Array>();
+  // Per-query scratch, reset by bumping the generation instead of clearing:
+  // `seenGeneration[p] === generation` means p was met this query, and
+  // `sharedCounts[p]` is then its running overlap with the target.
   private readonly seenGeneration: Int32Array;
+  private readonly sharedCounts: Uint16Array;
+  private readonly admitted: Int32Array;
   private generation = 0;
 
   constructor(climbs: readonly NeighborClimb[]) {
-    this.climbs = climbs.filter((climb) => climb.holdIds.length > 0);
-    this.climbs.forEach((climb, position) => {
+    const indexed = climbs.filter((climb) => climb.holdIds.length > 0);
+    this.uuidsByPosition = indexed.map(({ uuid }) => uuid);
+    this.holdIdsByPosition = indexed.map(({ holdIds }) => holdIds);
+    this.sizes = Uint16Array.from(indexed, ({ holdIds }) => holdIds.length);
+    const postings = new Map<number, number[]>();
+    indexed.forEach((climb, position) => {
       this.positionByUuid.set(climb.uuid, position);
       for (const holdId of climb.holdIds) {
-        const posting = this.climbsByHold.get(holdId);
+        const posting = postings.get(holdId);
         if (posting) posting.push(position);
-        else this.climbsByHold.set(holdId, [position]);
+        else postings.set(holdId, [position]);
       }
     });
-    this.seenGeneration = new Int32Array(this.climbs.length);
+    for (const [holdId, posting] of postings) this.climbsByHold.set(holdId, Int32Array.from(posting));
+    this.seenGeneration = new Int32Array(indexed.length);
+    this.sharedCounts = new Uint16Array(indexed.length);
+    this.admitted = new Int32Array(indexed.length);
   }
 
   get size(): number {
-    return this.climbs.length;
+    return this.uuidsByPosition.length;
   }
 
   has(uuid: string): boolean {
@@ -96,59 +96,82 @@ export class ClimbNeighborIndex {
   }
 
   uuids(): string[] {
-    return this.climbs.map(({ uuid }) => uuid);
+    return [...this.uuidsByPosition];
   }
 
   /**
    * Every other climb in the group at or above `minJaccard`, best first (ties by
    * uuid so reruns write identical lists). Empty when `uuid` is not indexed.
    *
-   * Prefix filter: a candidate reaching `minJaccard` shares at least
-   * ceil(minJaccard × |a|) of a's holds, so it must share one of ANY
-   * |a| − ceil(minJaccard × |a|) + 1 of them. Probing only that many holds, the
-   * rarest first, skips the long posting lists of the wall's popular holds.
+   * One pass over the target's holds, rarest first, counting overlaps instead
+   * of intersecting hold lists per candidate:
+   *
+   * - Prefix filter: a candidate reaching `minJaccard` shares at least
+   *   ceil(minJaccard × |a|) of a's holds, so it must share one of ANY
+   *   |a| − ceil(minJaccard × |a|) + 1 of them. Only the first that many holds
+   *   (the rarest, with the shortest posting lists) may ADMIT a candidate.
+   * - The remaining holds only add to the counts of admitted candidates, so
+   *   when the pass ends each count is the exact overlap. Size filter
+   *   (t·|a| ≤ |b| ≤ |a|/t) rejects at admission.
    */
   neighborsOf(uuid: string, minJaccard: number = CLIMB_NEIGHBOR_MIN_JACCARD): ComputedNeighbor[] {
     const position = this.positionByUuid.get(uuid);
     if (position === undefined) return [];
-    const target = this.climbs[position];
-    const targetSize = target.holdIds.length;
+    const targetHolds = this.holdIdsByPosition[position];
+    const targetSize = targetHolds.length;
     const threshold = Math.max(0, Math.min(1, minJaccard));
     const minShared = Math.max(1, Math.ceil(threshold * targetSize - FLOAT_SLACK));
     const prefixLength = targetSize - minShared + 1;
-    const probeHolds = [...target.holdIds]
-      .sort(
-        (left, right) =>
-          (this.climbsByHold.get(left)?.length ?? 0) - (this.climbsByHold.get(right)?.length ?? 0) || left - right,
-      )
-      .slice(0, prefixLength);
+    const minCandidateSize = threshold * targetSize - FLOAT_SLACK;
+    const maxCandidateSize = threshold > 0 ? targetSize / threshold + FLOAT_SLACK : Number.POSITIVE_INFINITY;
+    const postingsRarestFirst = targetHolds
+      .map((holdId) => this.climbsByHold.get(holdId) ?? new Int32Array(0))
+      .sort((left, right) => left.length - right.length);
 
     this.generation += 1;
     const generation = this.generation;
-    this.seenGeneration[position] = generation;
+    const { seenGeneration, sharedCounts, admitted, sizes } = this;
+    // The target itself: seen, never admitted.
+    seenGeneration[position] = generation;
+    sharedCounts[position] = 0;
+    let admittedCount = 0;
+
+    for (let holdIndex = 0; holdIndex < postingsRarestFirst.length; holdIndex += 1) {
+      const posting = postingsRarestFirst[holdIndex];
+      const mayAdmit = holdIndex < prefixLength;
+      for (let entry = 0; entry < posting.length; entry += 1) {
+        const candidate = posting[entry];
+        if (seenGeneration[candidate] === generation) {
+          sharedCounts[candidate] += 1;
+        } else if (mayAdmit) {
+          seenGeneration[candidate] = generation;
+          sharedCounts[candidate] = 1;
+          const candidateSize = sizes[candidate];
+          // Rejected by size: stays "seen" so it is never re-admitted, but is
+          // not in `admitted`, so its count is never read.
+          if (candidateSize >= minCandidateSize && candidateSize <= maxCandidateSize) {
+            admitted[admittedCount] = candidate;
+            admittedCount += 1;
+          }
+        }
+      }
+    }
 
     const neighbors: ComputedNeighbor[] = [];
-    for (const holdId of probeHolds) {
-      for (const candidatePosition of this.climbsByHold.get(holdId) ?? []) {
-        if (this.seenGeneration[candidatePosition] === generation) continue;
-        this.seenGeneration[candidatePosition] = generation;
-        const candidate = this.climbs[candidatePosition];
-        const candidateSize = candidate.holdIds.length;
-        // Size filter: |b| < t·|a| or |b| > |a|/t cannot reach t.
-        if (candidateSize < threshold * targetSize - FLOAT_SLACK) continue;
-        if (threshold > 0 && candidateSize > targetSize / threshold + FLOAT_SLACK) continue;
-        const shared = countShared(target.holdIds, candidate.holdIds);
-        if (shared < minShared) continue;
-        const jaccard = shared / (targetSize + candidateSize - shared);
-        if (jaccard + FLOAT_SLACK < threshold) continue;
-        neighbors.push({
-          neighborUuid: candidate.uuid,
-          sharedHoldCount: shared,
-          targetHoldCount: targetSize,
-          candidateHoldCount: candidateSize,
-          jaccard,
-        });
-      }
+    for (let slot = 0; slot < admittedCount; slot += 1) {
+      const candidate = admitted[slot];
+      const shared = sharedCounts[candidate];
+      if (shared < minShared) continue;
+      const candidateSize = sizes[candidate];
+      const jaccard = shared / (targetSize + candidateSize - shared);
+      if (jaccard + FLOAT_SLACK < threshold) continue;
+      neighbors.push({
+        neighborUuid: this.uuidsByPosition[candidate],
+        sharedHoldCount: shared,
+        targetHoldCount: targetSize,
+        candidateHoldCount: candidateSize,
+        jaccard,
+      });
     }
     neighbors.sort(
       (left, right) =>

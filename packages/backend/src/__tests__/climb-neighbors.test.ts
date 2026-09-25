@@ -135,6 +135,7 @@ async function settleClimbs(): Promise<void> {
 
 async function reset(): Promise<void> {
   await db.execute(sql`DELETE FROM board_climb_neighbor_runs`);
+  await db.execute(sql`DELETE FROM board_climb_neighbor_group_runs`);
   await db.execute(sql`DELETE FROM board_climb_neighbors`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM board_climb_holds WHERE climb_uuid LIKE ${PREFIX + '%'}`);
@@ -166,40 +167,72 @@ describe('ClimbNeighborIndex', () => {
     expect(index.neighborsOf('a', 0.7).map(({ neighborUuid }) => neighborUuid)).toEqual(['c']);
   });
 
-  it('matches a brute-force scorer on a random catalogue', () => {
-    let seed = 7;
+  function randomCatalogue(seed: number, count: number, minSize: number, maxSize: number, holdSpace: number) {
+    let state = seed;
     const random = () => {
-      seed = (seed * 1103515245 + 12345) % 2 ** 31;
-      return seed / 2 ** 31;
+      state = (state * 1103515245 + 12345) % 2 ** 31;
+      return state / 2 ** 31;
     };
-    const climbs = Array.from({ length: 300 }, (_, position) => {
+    return Array.from({ length: count }, (_, position) => {
       const holds = new Set<number>();
-      const size = 4 + Math.floor(random() * 10);
-      while (holds.size < size) holds.add(Math.floor(random() * 40));
-      return { uuid: `c${position}`, holdIds: [...holds].sort((left, right) => left - right) };
+      const size = minSize + Math.floor(random() * (maxSize - minSize + 1));
+      while (holds.size < size) holds.add(Math.floor(random() * holdSpace));
+      return { uuid: `c${String(position).padStart(3, '0')}`, holdIds: [...holds].sort((left, right) => left - right) };
     });
-    const index = new ClimbNeighborIndex(climbs);
-    for (const target of climbs.slice(0, 60)) {
-      const expected = climbs
-        .filter((candidate) => candidate.uuid !== target.uuid)
-        .map((candidate) => {
-          const shared = candidate.holdIds.filter((holdId) => target.holdIds.includes(holdId)).length;
-          return {
-            uuid: candidate.uuid,
-            jaccard: shared / (target.holdIds.length + candidate.holdIds.length - shared),
-          };
-        })
-        .filter(({ jaccard }) => jaccard >= 0.5)
-        .map(({ uuid }) => uuid)
-        .sort();
-      expect(
-        index
-          .neighborsOf(target.uuid)
-          .map(({ neighborUuid }) => neighborUuid)
-          .sort(),
-      ).toEqual(expected);
+  }
+
+  // The live SQL only ever sees candidates sharing at least one hold (it joins
+  // on board_climb_holds), so "shared >= 1" is part of the definition even at
+  // threshold 0.
+  function bruteForce(climbs: ReturnType<typeof randomCatalogue>, targetUuid: string, threshold: number) {
+    const target = climbs.find(({ uuid }) => uuid === targetUuid);
+    if (!target) return [];
+    return climbs
+      .filter((candidate) => candidate.uuid !== target.uuid)
+      .map((candidate) => {
+        const shared = candidate.holdIds.filter((holdId) => target.holdIds.includes(holdId)).length;
+        return {
+          neighborUuid: candidate.uuid,
+          sharedHoldCount: shared,
+          candidateHoldCount: candidate.holdIds.length,
+          jaccard: shared / (target.holdIds.length + candidate.holdIds.length - shared),
+        };
+      })
+      .filter(({ sharedHoldCount, jaccard }) => sharedHoldCount >= 1 && jaccard >= threshold)
+      .sort(
+        (left, right) =>
+          right.jaccard - left.jaccard ||
+          (left.neighborUuid < right.neighborUuid ? -1 : left.neighborUuid > right.neighborUuid ? 1 : 0),
+      );
+  }
+
+  const THRESHOLDS = [0, 0.3, 0.5, 0.7, 1];
+  const CATALOGUES = [
+    // Kilter-shaped: 4–13 holds from a 40-hold wall.
+    { name: '4–13-hold climbs', climbs: randomCatalogue(7, 300, 4, 13, 40) },
+    // Tiny climbs, where the prefix is the whole climb (prefixLength === size)
+    // and a single shared hold is enough (minShared === 1).
+    { name: '1–3-hold climbs', climbs: randomCatalogue(11, 120, 1, 3, 12) },
+  ];
+
+  for (const { name, climbs } of CATALOGUES) {
+    for (const threshold of THRESHOLDS) {
+      it(`matches a brute-force scorer, list for list, on ${name} at ${threshold}`, () => {
+        const index = new ClimbNeighborIndex(climbs);
+        for (const target of climbs.slice(0, 60)) {
+          const actual = index
+            .neighborsOf(target.uuid, threshold)
+            .map(({ neighborUuid, sharedHoldCount, candidateHoldCount, jaccard }) => ({
+              neighborUuid,
+              sharedHoldCount,
+              candidateHoldCount,
+              jaccard,
+            }));
+          expect(actual).toEqual(bruteForce(climbs, target.uuid, threshold));
+        }
+      });
     }
-  });
+  }
 });
 
 describe('refreshClimbNeighborsForBoard', () => {
@@ -364,6 +397,106 @@ describe('refreshClimbNeighborsForBoard', () => {
   it('skips spray walls outright', async () => {
     const result = await refreshClimbNeighborsForBoard(db, { boardType: 'spray', full: true });
     expect(result.skipped).toBe(true);
+  });
+});
+
+describe('a full build survives being cut off', () => {
+  beforeAll(reset);
+  afterAll(reset);
+
+  async function runRow() {
+    const [row] = await db
+      .select()
+      .from(dbSchema.boardClimbNeighborRuns)
+      .where(eq(dbSchema.boardClimbNeighborRuns.boardType, BOARD));
+    return row;
+  }
+
+  async function completedGroups(): Promise<number[]> {
+    const rows = await db
+      .select({ layoutId: dbSchema.boardClimbNeighborGroupRuns.layoutId })
+      .from(dbSchema.boardClimbNeighborGroupRuns)
+      .where(eq(dbSchema.boardClimbNeighborGroupRuns.boardType, BOARD));
+    return rows.map(({ layoutId }) => layoutId).sort((left, right) => left - right);
+  }
+
+  it('records finished groups, smallest first, and resumes without redoing them', async () => {
+    // Layout 5: 2 climbs (the smaller group, so it goes first). Layout 6: 4.
+    await insertClimb({ uuid: 'r5-a', layoutId: 5, holds: range(1, 10) });
+    await insertClimb({ uuid: 'r5-b', layoutId: 5, holds: [...range(1, 9), 11] });
+    for (let variant = 0; variant < 4; variant += 1) {
+      await insertClimb({ uuid: `r6-${variant}`, layoutId: 6, holds: [...range(1, 10), 20 + variant] });
+    }
+    await settleClimbs();
+    const pinned = await highestSyncSeq();
+
+    // Let exactly one chunk through: layout 5's only chunk.
+    let chunksAllowed = 1;
+    const first = await refreshClimbNeighborsForBoard(db, {
+      boardType: BOARD,
+      shouldContinue: () => chunksAllowed-- > 0,
+    });
+
+    expect(first.interrupted).toBe(true);
+    expect(first.full).toBe(true);
+    expect(first.groups.map(({ layoutId }) => layoutId)).toEqual([5, 6]);
+    expect(await completedGroups()).toEqual([5]);
+    expect(await neighbourList('r5-a')).toEqual([{ neighbor: 'r5-b', rank: 1, shared: 9 }]);
+    expect(await neighbourList('r6-0')).toEqual([]);
+    const midBuild = await runRow();
+    expect(midBuild.lastSyncSeq).toBe(0);
+    expect(midBuild.fullBuildSyncSeq).toBe(pinned);
+    expect(midBuild.fullBuildStartedAt).not.toBeNull();
+
+    // A climb that lands between the two runs sits above the pinned target.
+    await insertClimb({ uuid: 'r6-late', layoutId: 6, holds: [...range(1, 10), 40] });
+
+    // The next run is a plain nightly run: it resumes the build on its own.
+    const second = await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+
+    expect(second.resumed).toBe(true);
+    expect(second.interrupted).toBe(false);
+    const layoutFive = second.groups.find(({ layoutId }) => layoutId === 5);
+    expect(layoutFive?.alreadyComplete).toBe(true);
+    expect(await neighbourList('r6-0')).toHaveLength(4);
+    const finished = await runRow();
+    // The watermark lands on the target pinned when the build started, not on
+    // the late climb, so the next incremental run still folds it in.
+    expect(finished.lastSyncSeq).toBe(pinned);
+    expect(finished.fullBuildStartedAt).toBeNull();
+    expect(finished.fullBuildSyncSeq).toBeNull();
+  });
+
+  it('skips lists a cut-off run already wrote inside an unfinished group', async () => {
+    await reset();
+    for (let variant = 0; variant < 6; variant += 1) {
+      await insertClimb({ uuid: `r7-${variant}`, layoutId: 7, holds: [...range(1, 10), 50 + variant] });
+    }
+
+    let chunksAllowed = 1;
+    const first = await refreshClimbNeighborsForBoard(db, {
+      boardType: BOARD,
+      chunkSize: 2,
+      shouldContinue: () => chunksAllowed-- > 0,
+    });
+    expect(first.interrupted).toBe(true);
+    expect(first.rowsWritten).toBe(2 * 5);
+    expect(await completedGroups()).toEqual([]);
+
+    const second = await refreshClimbNeighborsForBoard(db, { boardType: BOARD, chunkSize: 2 });
+
+    expect(second.resumed).toBe(true);
+    expect(second.groups[0]).toMatchObject({ layoutId: 7, climbsSkipped: 2, climbsProcessed: 4 });
+    for (let variant = 0; variant < 6; variant += 1) {
+      expect(await neighbourList(`r7-${variant}`)).toHaveLength(5);
+    }
+    expect(await completedGroups()).toEqual([7]);
+  });
+
+  it('an explicit --full on a finished board starts a new build, rewriting every list', async () => {
+    const result = await refreshClimbNeighborsForBoard(db, { boardType: BOARD, full: true, chunkSize: 2 });
+    expect(result.resumed).toBe(false);
+    expect(result.groups[0]).toMatchObject({ climbsSkipped: 0, climbsProcessed: 6 });
   });
 });
 

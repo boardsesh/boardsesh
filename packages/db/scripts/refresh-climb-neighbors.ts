@@ -12,13 +12,21 @@
  * board(s) from scratch, ignoring the watermark; a board with no watermark row
  * gets a full build on its first run without it) ·
  * --dry-run (compute and count, write nothing).
+ *
+ * A full build is resumable: a cancelled run leaves its finished groups and
+ * lists recorded, and the next run (with or without --full) carries on. Boards
+ * run cheapest first. CI runs one board per matrix job instead.
  */
-import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
-import { refreshClimbNeighborsForBoard } from '../src/queries/climbs/climb-neighbors-refresh.js';
+import {
+  CLIMB_NEIGHBOR_BOARDS,
+  orderBoardsByClimbCount,
+  refreshClimbNeighborsForBoard,
+} from '../src/queries/climbs/climb-neighbors-refresh.js';
 
 function parseBoards(requested: string | undefined): BoardName[] {
-  const materialised = SUPPORTED_BOARDS.filter((board) => board !== 'spray');
+  const materialised = CLIMB_NEIGHBOR_BOARDS;
   if (!requested) return [...materialised];
   const boards = requested.split(',').map((board) => board.trim());
   for (const board of boards) {
@@ -33,16 +41,18 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const get = (flag: string): string | undefined =>
     argv.find((arg) => arg.startsWith(`${flag}=`))?.slice(flag.length + 1);
-  const boards = parseBoards(get('--board'));
+  const requestedBoards = parseBoards(get('--board'));
   const full = argv.includes('--full');
   const dryRun = argv.includes('--dry-run');
 
   const { db, close } = createScriptDb();
   const startedAt = Date.now();
-  console.log(
-    `[refresh-climb-neighbors] boards=${boards.join(',')}${full ? ' --full' : ''}${dryRun ? ' --dry-run' : ''}`,
-  );
   try {
+    // Cheapest boards first: the small catalogues are served before Kilter.
+    const boards = await orderBoardsByClimbCount(db, requestedBoards);
+    console.log(
+      `[refresh-climb-neighbors] boards=${boards.join(',')}${full ? ' --full' : ''}${dryRun ? ' --dry-run' : ''}`,
+    );
     let totalRows = 0;
     for (const boardType of boards) {
       const result = await refreshClimbNeighborsForBoard(db, {

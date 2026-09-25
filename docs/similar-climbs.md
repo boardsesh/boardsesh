@@ -55,6 +55,13 @@ precision, so 7 of 10 holds still passes a 0.7 threshold.
 
 `packages/db/scripts/refresh-climb-neighbors.ts`, run by
 `.github/workflows/refresh-climb-neighbors.yml` at 06:45 UTC against Production.
+The workflow runs one matrix job per board (every board but spray, pinned to
+`CLIMB_NEIGHBOR_BOARDS` by `climb-neighbors-workflow.test.ts`). Each job has a
+350-minute timeout and its own concurrency group, so a newer run never cancels a
+running build. GitHub keeps only one pending job per group, so at most one run
+waits behind a long build (a later one replaces it). A dispatch picks one board
+or `all` from a fixed list. Run locally over several boards, the
+script takes the cheapest boards first.
 The logic lives in `packages/db/src/queries/climbs/climb-neighbors-refresh.ts` so
 the backend test suite can run it against a real Postgres.
 
@@ -73,7 +80,8 @@ row for good. The trigger's `updated_at` is the transaction's start time, so thi
 is safe for any transaction shorter than an hour. The cost: the last hour's
 changes are scored again the next night, which gives the same rows.
 
-Per board, per comparison group (layout, or layout + wall on Woods):
+Per board, per comparison group (layout, or layout + wall on Woods), smallest
+group first:
 
 1. Delete every row naming a work-set climb, in either direction.
 2. Load the group's eligible climbs (`uuid, frames`, parsed with the same
@@ -83,9 +91,42 @@ Per board, per comparison group (layout, or layout + wall on Woods):
    climbs, their above-0.5 neighbours (the new climb may now rank in their
    top 25), the lists that lost a row in step 1, and any list now shorter than
    when it was written (see below). Each chunk of lists is replaced in one transaction.
-4. Advance the watermark.
+4. Advance the watermark, once every group on the board is done.
 
-Each group logs climbs processed, rows written and seconds.
+Each group logs climbs processed, rows written and seconds. A group with 5,000 or
+more lists to write also logs a progress line every 5,000 climbs: done / total,
+rows written, elapsed, climbs per second, and an ETA.
+
+**Resumable full builds.** A full build (a board's first run, or `--full`)
+records its state in `board_climb_neighbor_runs` when it starts:
+`full_build_started_at` and `full_build_sync_seq`, the watermark it will land on.
+The next run finds that state and resumes the same build, whatever flags it was
+given:
+
+- A group it finished is in `board_climb_neighbor_group_runs` with
+  `completed_at` after the build started. It is skipped whole.
+- Inside an unfinished group, a climb whose list already carries
+  `computed_at` after the build started was written by an earlier run of this
+  build. It is skipped too. A climb with no neighbours writes no rows, so it
+  is simply scored again, which costs only CPU.
+- When the last group finishes, rows older than the build's start (lists of
+  climbs no longer eligible) are deleted. The watermark moves to the pinned
+  `full_build_sync_seq` and the build state is cleared.
+
+The watermark lands on the value pinned at the start, not a later one. Climbs
+that changed while the build was cut off have a higher `sync_seq`, so the first
+incremental run afterwards folds them into lists the build wrote before they
+existed.
+
+**How long a full build takes.** The index counts overlaps over typed arrays.
+Only the rarest |a| − ⌈0.5·|a|⌉ + 1 holds may admit a candidate; the rest only
+add to admitted candidates' counts, and there is no per-candidate intersection.
+Measured on the Kilter layout 1 snapshot (294,823 eligible climbs, one group)
+on a 12th-gen i9 laptop: about 640 climbs a second, so about 8 minutes of
+compute for a full build. The first implementation managed 44 a second, about
+110 minutes. A CI runner is slower, and loading the layout plus writing
+about 0.6 rows per climb adds a few minutes, so expect well under an hour for a
+full Kilter build. Every other board is a fraction of that.
 
 **Lists that lost a row.** Two things remove rows outside the job: `updateClimb`
 (below), and a deleted climb, whose rows go with the FK cascade. By the next run
@@ -111,13 +152,17 @@ longer uses. The update bumped `sync_seq`, so the next run re-scores it.
 - **Full rebuild**: dispatch with `full` ticked. It rewrites every list, then
   deletes anything it didn't write (lists of climbs no longer eligible). Readers
   never see an empty gap: each chunk of lists is swapped in one transaction.
+- **A build was cut off** (timeout, cancel, runner lost): do nothing. The next
+  run of that board, nightly or dispatched, resumes it. To start over instead,
+  clear `full_build_started_at` and `full_build_sync_seq` on the board's
+  `board_climb_neighbor_runs` row and dispatch with `full`.
 - **Locally**: `vp run db:refresh-climb-neighbors -- --board=kilter --dry-run`
   (then without `--dry-run`, or with `--full`). Uses `DB_URL` / `DATABASE_URL`
   like the other `packages/db` scripts.
 - **Something looks stale**: `--full` for that board is always safe to re-run.
 - **Memory**: the job holds one group's `(uuid, frames)` and hold index in memory
-  at a time (the biggest layout is roughly 120k climbs). The workflow gives node
-  4 GB.
+  at a time. The biggest is Kilter layout 1, with about 295k eligible climbs.
+  The workflow gives node 4 GB.
 - **Check it worked**: the front-door similar strip should load cold in well
   under a second, and `seq_scan` on `board_climb_holds` in `pg_stat_user_tables`
   should stop climbing.
