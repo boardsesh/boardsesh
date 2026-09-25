@@ -153,7 +153,7 @@ describe('BoardLookStep', () => {
     it('is written on a save', async () => {
       const { props, getByText } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
       expect(markTipSeenMock).toHaveBeenCalledOnce();
@@ -163,7 +163,7 @@ describe('BoardLookStep', () => {
       const { props, getByText } = renderStep();
 
       act(() => carouselCtrl.onSelect?.('custom'));
-      fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.customCta'));
       await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
 
       expect(markTipSeenMock).toHaveBeenCalledOnce();
@@ -175,7 +175,7 @@ describe('BoardLookStep', () => {
       applyBoardLookOption.mockRejectedValueOnce(new Error('disk full'));
       const { props, getByText } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
       expect(markTipSeenMock).toHaveBeenCalledOnce();
@@ -206,7 +206,7 @@ describe('BoardLookStep', () => {
     it('on save', async () => {
       const { props, getByText } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
       expect(applyBoardLookOption).toHaveBeenCalledWith('aura');
@@ -230,7 +230,7 @@ describe('BoardLookStep', () => {
     it('and not a second time when the unmount follows a save', async () => {
       const { props, getByText, unmount } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
       unmount();
 
@@ -244,15 +244,15 @@ describe('BoardLookStep', () => {
 
       act(() => carouselCtrl.onSelect?.('custom'));
 
-      expect(queryByText('mobile.more.boardLook.intro.saveNamed')).toBeNull();
-      expect(getByText('mobile.more.boardLook.intro.customCta')).toBeTruthy();
+      expect(queryByText('mobile.settings.boardLook.intro.saveNamed')).toBeNull();
+      expect(getByText('mobile.settings.boardLook.intro.customCta')).toBeTruthy();
     });
 
     it('applies the plain Aura bundle and hands off to Board look', async () => {
       const { props, getByText } = renderStep();
 
       act(() => carouselCtrl.onSelect?.('custom'));
-      fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.customCta'));
       await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
 
       // They land on the configure screen already in Aura mode, so every
@@ -266,7 +266,7 @@ describe('BoardLookStep', () => {
       const { props, getByText } = renderStep();
 
       act(() => carouselCtrl.onSelect?.('custom'));
-      fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
+      fireEvent.click(getByText('mobile.settings.boardLook.intro.customCta'));
       await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
 
       // The Custom card previews Aura Bold under a question mark but WRITES
@@ -286,7 +286,7 @@ describe('BoardLookStep', () => {
     carouselCtrl.onCardSeen?.('aura');
     carouselCtrl.onCardSeen?.('aura-subtle');
     carouselCtrl.onCardSeen?.('aura');
-    fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+    fireEvent.click(getByText('mobile.settings.boardLook.intro.saveNamed'));
     await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
     // Distinct, not a tally of viewability callbacks — "took the default on
@@ -303,6 +303,6 @@ describe('BoardLookStep', () => {
     expect(buttons.length).toBe(1);
     // Names the look rather than saying "this", so a climber reading only the
     // button — or hearing it read out — knows what they are committing to.
-    expect(buttons[0]?.textContent).toBe('mobile.more.boardLook.intro.saveNamed');
+    expect(buttons[0]?.textContent).toBe('mobile.settings.boardLook.intro.saveNamed');
   });
 });

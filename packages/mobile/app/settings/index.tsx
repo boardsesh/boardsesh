@@ -7,17 +7,17 @@ import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
 import { SUPPORTED_LOCALES, LOCALE_LABELS } from '@boardsesh/i18n';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
-import { useTheme } from '../../../src/providers/theme-provider';
-import { useOptionalBluetoothContext } from '../../../src/providers/bluetooth-provider';
-import { useLocalePreference } from '../../../src/providers/i18n-provider';
-import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
-import { openExternalUrl } from '../../../src/lib/open-url';
-import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
-import { useProfile, useMyBoards, useIsAdmin } from '../../../src/lib/graphql/hooks';
-import { useQaMenu } from '../../../src/lib/qa/use-qa-menu';
-import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
-import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
-import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
+import { useTheme } from '../../src/providers/theme-provider';
+import { useOptionalBluetoothContext } from '../../src/providers/bluetooth-provider';
+import { useLocalePreference } from '../../src/providers/i18n-provider';
+import { resolveLanguage, type LocaleOverride } from '../../src/lib/i18n/locale-preference';
+import { openExternalUrl } from '../../src/lib/open-url';
+import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
+import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
+import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
+import { useBoardDownloads } from '../../src/offline/use-board-downloads';
+import { isOfflineEngineEnabled } from '../../src/lib/offline-engine';
+import { useOfflineSchemaReady } from '../../src/db/use-offline-schema-ready';
 import {
   useSetting,
   setSetting,
@@ -26,11 +26,11 @@ import {
   rememberDownloadAllTap,
   takeDownloadAllTap,
   forgetDownloadAllTap,
-} from '../../../src/settings';
-import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity';
-import { isOfflineModeSupported, setDevForcedUnreachable } from '../../../src/lib/connectivity/connectivity-store';
-import { notifyOutboxChanged, useOutboxSummary } from '../../../src/offline/outbox-store';
-import { RECLAIMABLE_VISIBLE_BYTES } from '../../../src/db/storage-usage';
+} from '../../src/settings';
+import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
+import { isOfflineModeSupported, setDevForcedUnreachable } from '../../src/lib/connectivity/connectivity-store';
+import { notifyOutboxChanged, useOutboxSummary } from '../../src/offline/outbox-store';
+import { RECLAIMABLE_VISIBLE_BYTES } from '../../src/db/storage-usage';
 import {
   getDeadLetterCount,
   getDeadLetters,
@@ -38,36 +38,36 @@ import {
   measureReclaimableBytes,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
-import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
-import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
-import { getHttpClient } from '../../../src/lib/graphql/client';
-import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
-import { getDevMetadataSection } from '../../../src/components/dev-metadata-section';
-import { buildOfflineModeRow } from '../../../src/components/offline-mode-row';
-import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
-import { MoreForm } from '../../../src/components/MoreForm';
-import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
-import { isPreviewBuild } from '../../../src/lib/preview-build';
-import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
-import { useGradeFormat } from '../../../src/hooks/use-grade-format';
-import { useSessionRecordingPreference } from '../../../src/lib/session-recording-preference';
-import { setSessionRecordingEnabled, track } from '../../../src/lib/analytics';
+import { drainMutationQueue } from '../../src/offline/offline-sync-adapter';
+import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { getHttpClient } from '../../src/lib/graphql/client';
+import { hapticLight, hapticSelection } from '../../src/lib/haptics';
+import { getDevMetadataSection } from '../../src/components/dev-metadata-section';
+import { buildOfflineModeRow } from '../../src/components/offline-mode-row';
+import { useBottomChromeDiagnosticsEligible } from '../../src/components/BottomChromeDebugOverlay';
+import { MoreForm } from '../../src/components/MoreForm';
+import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../src/components/MoreForm.types';
+import { isPreviewBuild } from '../../src/lib/preview-build';
+import { isDevLauncherAvailable } from '../../src/lib/dev-launcher';
+import { useGradeFormat } from '../../src/hooks/use-grade-format';
+import { useSessionRecordingPreference } from '../../src/lib/session-recording-preference';
+import { setSessionRecordingEnabled, track } from '../../src/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { useShowPlaylistTagsPreference } from '../../../src/lib/show-playlist-tags-preference';
-import { useBoardseshGradesPreference } from '../../../src/lib/boardsesh-grades-preference';
-import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
-import { useToast } from '../../../src/providers/toast-provider';
+import { useShowPlaylistTagsPreference } from '../../src/lib/show-playlist-tags-preference';
+import { useBoardseshGradesPreference } from '../../src/lib/boardsesh-grades-preference';
+import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
+import { useToast } from '../../src/providers/toast-provider';
 import {
   useFeatureFlag,
   useOfflineDownloadsEnabled,
   useBoardseshGradeEnabled,
   useClimbModerationEnabled,
-} from '../../../src/providers/feature-flags-provider';
-import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
-import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
-import { reportError } from '../../../src/lib/error-reporting';
-import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
-import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
+} from '../../src/providers/feature-flags-provider';
+import { replayOnboarding } from '../../src/lib/onboarding/onboarding-storage';
+import { replayBoardLookStep } from '../../src/lib/board-render/replay-board-look-step';
+import { reportError } from '../../src/lib/error-reporting';
+import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../src/lib/ble/auto-disconnect-controller';
+import { useAutoDisconnectTimeoutLabels } from '../../src/components/ble/use-auto-disconnect-timeout-labels';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -234,8 +234,8 @@ export default function MoreScreen() {
     pendingCount === 0
       ? undefined
       : effectiveOffline
-        ? t('mobile.more.offline.pendingFooter', { count: pendingCount })
-        : t('mobile.more.offline.syncingFooter', { count: pendingCount });
+        ? t('mobile.settings.offline.pendingFooter', { count: pendingCount })
+        : t('mobile.settings.offline.syncingFooter', { count: pendingCount });
 
   // Guard against a rapid double-tap spawning overlapping retries (the drain is
   // single-flight internally, but this avoids the wasted re-entrant work).
@@ -307,7 +307,7 @@ export default function MoreScreen() {
   // labelled in their own script (English / Español / Français) from
   // LOCALE_LABELS — language names are intentionally not translated.
   const languageOptions: { key: LocaleOverride; label: string }[] = [
-    { key: 'system', label: t('mobile.more.language.system') },
+    { key: 'system', label: t('mobile.settings.language.system') },
     ...SUPPORTED_LOCALES.map((locale) => ({ key: locale, label: LOCALE_LABELS[locale] })),
   ];
 
@@ -320,15 +320,15 @@ export default function MoreScreen() {
   };
 
   const appearanceOptions: { key: ThemeOverride; label: string }[] = [
-    { key: 'system', label: t('mobile.more.appearance.system') },
-    { key: 'light', label: t('mobile.more.appearance.light') },
-    { key: 'dark', label: t('mobile.more.appearance.dark') },
+    { key: 'system', label: t('mobile.settings.appearance.system') },
+    { key: 'light', label: t('mobile.settings.appearance.light') },
+    { key: 'dark', label: t('mobile.settings.appearance.dark') },
   ];
 
   const gradeFormatOptions: { key: GradeDisplayFormat; label: string }[] = [
-    { key: 'v-grade', label: t('mobile.more.gradeFormat.vGrade') },
-    { key: 'font', label: t('mobile.more.gradeFormat.font') },
-    { key: 'both', label: t('mobile.more.gradeFormat.both') },
+    { key: 'v-grade', label: t('mobile.settings.gradeFormat.vGrade') },
+    { key: 'font', label: t('mobile.settings.gradeFormat.font') },
+    { key: 'both', label: t('mobile.settings.gradeFormat.both') },
   ];
 
   const handleReplayWalkthrough = () => {
@@ -394,7 +394,7 @@ export default function MoreScreen() {
       label: tSettings('deleteAccount.button'),
       role: 'destructive',
       emphasis: 'subtle',
-      onPress: () => router.push('/(tabs)/profile/delete-account'),
+      onPress: () => router.push('/settings/delete-account'),
     },
   ];
 
@@ -410,13 +410,13 @@ export default function MoreScreen() {
   if (!effectiveOffline && deadLetterCount > 0) {
     sections.push({
       key: 'syncIssues',
-      title: t('mobile.more.syncIssues.title'),
-      footer: t('mobile.more.syncIssues.description', { count: deadLetterCount }),
+      title: t('mobile.settings.syncIssues.title'),
+      footer: t('mobile.settings.syncIssues.description', { count: deadLetterCount }),
       rows: [
         {
           kind: 'button',
           key: 'retrySync',
-          label: t('mobile.more.syncIssues.retry'),
+          label: t('mobile.settings.syncIssues.retry'),
           emphasis: 'primary',
           onPress: () => {
             hapticLight();
@@ -433,25 +433,35 @@ export default function MoreScreen() {
   if (profile?.id) {
     sections.push({
       key: 'library',
-      title: t('mobile.more.library'),
+      title: t('mobile.settings.library'),
       rows: [
         {
           // The You tab's way in to notifications, and the only entry point for
           // `(tabs)/profile/notifications` — the Home chrome's bell pushes Home's
           // own copy of the screen so Back lands on the feed. Without this row the
           // profile route ships registered but unreachable.
+          //
+          // `dismissTo`, not `push`: this screen is a ROOT destination, so a push
+          // at a tab route would stack a SECOND `(tabs)` instance over Settings
+          // (docs/mobile-sheets-vs-routes.md, the cross-navigator trap).
+          // `dismissTo` pops back to the tabs already below us — Settings drops
+          // away and Back from notifications lands on You, the tab the screen
+          // belongs to.
           kind: 'nav',
           key: 'notifications',
           label: tNotifications('title'),
           icon: 'notifications',
-          onPress: navAction(() => router.push('/(tabs)/profile/notifications')),
+          onPress: navAction(() => router.dismissTo('/(tabs)/profile/notifications')),
         },
         {
+          // Same cross-navigator rule as the row above: the playlist library is a
+          // Discover-tab screen, so `dismissTo` there rather than pushing a
+          // second copy of the tabs over Settings.
           kind: 'nav',
           key: 'allPlaylists',
           label: tPlaylists('library.allPlaylists.title'),
           icon: 'playlists',
-          onPress: navAction(() => router.push('/(tabs)/discover/all')),
+          onPress: navAction(() => router.dismissTo('/(tabs)/discover/all')),
         },
         {
           kind: 'nav',
@@ -488,17 +498,17 @@ export default function MoreScreen() {
   // Integrations.
   sections.push({
     key: 'integrations',
-    title: t('mobile.more.integrations.title'),
+    title: t('mobile.settings.integrations.title'),
     rows: [
       {
         kind: 'nav',
         key: 'integrations',
-        label: t('mobile.more.integrations.title'),
+        label: t('mobile.settings.integrations.title'),
         subtitle: t(
-          stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
+          stravaEnabled ? 'mobile.settings.integrations.subtitleWithStrava' : 'mobile.settings.integrations.subtitle',
         ),
         icon: 'integrations',
-        onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
+        onPress: navAction(() => router.push('/settings/integrations')),
       },
       ...(garminWatchEnabled
         ? [
@@ -508,7 +518,7 @@ export default function MoreScreen() {
               label: tSettings('watchPairing.title'),
               subtitle: tSettings('watchPairing.subtitle'),
               icon: 'watch' as const,
-              onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
+              onPress: navAction(() => router.push('/settings/watch-pair')),
             },
           ]
         : []),
@@ -518,12 +528,12 @@ export default function MoreScreen() {
   // Appearance (segmented).
   sections.push({
     key: 'appearance',
-    title: t('mobile.more.appearance.title'),
+    title: t('mobile.settings.appearance.title'),
     rows: [
       {
         kind: 'segmented',
         key: 'appearance',
-        label: t('mobile.more.appearance.title'),
+        label: t('mobile.settings.appearance.title'),
         options: appearanceOptions,
         selectedKey: themeOverride,
         onSelect: (key) => {
@@ -540,13 +550,13 @@ export default function MoreScreen() {
   // Grade Format (segmented) — description as the section footer.
   sections.push({
     key: 'gradeFormat',
-    title: t('mobile.more.gradeFormat.title'),
-    footer: t('mobile.more.gradeFormat.description'),
+    title: t('mobile.settings.gradeFormat.title'),
+    footer: t('mobile.settings.gradeFormat.description'),
     rows: [
       {
         kind: 'segmented',
         key: 'gradeFormat',
-        label: t('mobile.more.gradeFormat.title'),
+        label: t('mobile.settings.gradeFormat.title'),
         options: gradeFormatOptions,
         selectedKey: gradeFormat,
         onSelect: (key) => {
@@ -565,13 +575,13 @@ export default function MoreScreen() {
   // opt-in; the flag gates whether it's offered at all).
   sections.push({
     key: 'displayOptions',
-    title: t('mobile.more.displayOptions.title'),
+    title: t('mobile.settings.displayOptions.title'),
     rows: [
       {
         kind: 'toggle',
         key: 'playlistTags',
-        label: t('mobile.more.displayOptions.playlistTags'),
-        subtitle: t('mobile.more.displayOptions.playlistTagsDescription'),
+        label: t('mobile.settings.displayOptions.playlistTags'),
+        subtitle: t('mobile.settings.displayOptions.playlistTagsDescription'),
         value: showPlaylistTags,
         onValueChange: (next) => {
           hapticSelection();
@@ -581,8 +591,8 @@ export default function MoreScreen() {
       {
         kind: 'toggle',
         key: 'quickActionsButton',
-        label: t('mobile.more.displayOptions.quickActionsButton'),
-        subtitle: t('mobile.more.displayOptions.quickActionsButtonDescription'),
+        label: t('mobile.settings.displayOptions.quickActionsButton'),
+        subtitle: t('mobile.settings.displayOptions.quickActionsButtonDescription'),
         value: showQuickActionsButton,
         onValueChange: (next) => {
           hapticSelection();
@@ -595,8 +605,8 @@ export default function MoreScreen() {
             {
               kind: 'toggle' as const,
               key: 'boardseshGrades',
-              label: t('mobile.more.displayOptions.boardseshGrades'),
-              subtitle: t('mobile.more.displayOptions.boardseshGradesDescription'),
+              label: t('mobile.settings.displayOptions.boardseshGrades'),
+              subtitle: t('mobile.settings.displayOptions.boardseshGradesDescription'),
               value: showBoardseshGrades,
               onValueChange: (next: boolean) => {
                 hapticSelection();
@@ -695,7 +705,7 @@ export default function MoreScreen() {
   if (offlineEnabled) {
     sections.push({
       key: 'offline',
-      title: t('mobile.more.offline.title'),
+      title: t('mobile.settings.offline.title'),
       footer: offlineFooter,
       rows: [
         // First, because it decides whether anything below it can reach the
@@ -711,8 +721,8 @@ export default function MoreScreen() {
         {
           kind: 'toggle',
           key: 'autoOfflineBoards',
-          label: t('mobile.more.offline.autoDownload'),
-          subtitle: t('mobile.more.offline.autoDownloadDescription'),
+          label: t('mobile.settings.offline.autoDownload'),
+          subtitle: t('mobile.settings.offline.autoDownloadDescription'),
           value: autoOfflineBoards,
           onValueChange: (next) => {
             hapticSelection();
@@ -731,7 +741,7 @@ export default function MoreScreen() {
                 offlineEngineEnabled: isOfflineEngineEnabled(),
               });
               if (missing.length > 0) {
-                showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
+                showToast(t('mobile.settings.offline.downloadingAll', { count: missing.length }), 'info');
               }
             } else {
               // Switched back off before the list ever resolved: the tap is spent,
@@ -749,15 +759,15 @@ export default function MoreScreen() {
   // the old Accessibility row used to open on their own (issue #2202).
   sections.push({
     key: 'boardLook',
-    title: t('mobile.more.boardLook.title'),
+    title: t('mobile.settings.boardLook.title'),
     rows: [
       {
         kind: 'nav',
         key: 'boardLook',
-        label: t('mobile.more.boardLook.title'),
-        subtitle: t('mobile.more.boardLook.rowSubtitleShort'),
+        label: t('mobile.settings.boardLook.title'),
+        subtitle: t('mobile.settings.boardLook.rowSubtitleShort'),
         icon: 'boardLook',
-        onPress: navAction(() => router.push('/(tabs)/profile/board-look')),
+        onPress: navAction(() => router.push('/settings/board-look')),
       },
     ],
   });
@@ -766,12 +776,12 @@ export default function MoreScreen() {
   // picker's own label carries the word "Language", so no section title.
   sections.push({
     key: 'language',
-    footer: t('mobile.more.language.description'),
+    footer: t('mobile.settings.language.description'),
     rows: [
       {
         kind: 'select',
         key: 'language',
-        label: t('mobile.more.language.title'),
+        label: t('mobile.settings.language.title'),
         options: languageOptions,
         selectedKey: localePreference,
         onSelect: (key) => {
@@ -792,8 +802,8 @@ export default function MoreScreen() {
       {
         kind: 'nav',
         key: 'helpTranslate',
-        label: t('mobile.more.language.contributeTitle'),
-        subtitle: t('mobile.more.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
+        label: t('mobile.settings.language.contributeTitle'),
+        subtitle: t('mobile.settings.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
         icon: 'translate',
         onPress: navAction(handleHelpTranslate),
       },
@@ -809,15 +819,15 @@ export default function MoreScreen() {
   if (showStorage) {
     sections.push({
       key: 'storage',
-      title: t('mobile.more.storage.title'),
+      title: t('mobile.settings.storage.title'),
       rows: [
         {
           kind: 'nav',
           key: 'storage',
-          label: t('mobile.more.storage.rowLabel'),
-          subtitle: t('mobile.more.storage.rowSubtitle'),
+          label: t('mobile.settings.storage.rowLabel'),
+          subtitle: t('mobile.settings.storage.rowSubtitle'),
           icon: 'storage',
-          onPress: navAction(() => router.push('/(tabs)/profile/storage')),
+          onPress: navAction(() => router.push('/settings/storage')),
         },
       ],
     });
@@ -826,13 +836,13 @@ export default function MoreScreen() {
   // Diagnostics — Session Recording toggle. Persist + apply live.
   sections.push({
     key: 'diagnostics',
-    title: t('mobile.more.diagnostics.title'),
+    title: t('mobile.settings.diagnostics.title'),
     rows: [
       {
         kind: 'toggle',
         key: 'sessionRecording',
-        label: t('mobile.more.diagnostics.recording'),
-        subtitle: t('mobile.more.diagnostics.recordingDescription'),
+        label: t('mobile.settings.diagnostics.recording'),
+        subtitle: t('mobile.settings.diagnostics.recordingDescription'),
         value: sessionRecordingEnabled,
         onValueChange: (next) => {
           hapticSelection();
@@ -878,8 +888,8 @@ export default function MoreScreen() {
       {
         kind: 'nav',
         key: 'replay-board-look',
-        label: t('mobile.more.boardLook.intro.replayTitle'),
-        subtitle: t('mobile.more.boardLook.intro.replaySubtitle'),
+        label: t('mobile.settings.boardLook.intro.replayTitle'),
+        subtitle: t('mobile.settings.boardLook.intro.replaySubtitle'),
         icon: 'replay',
         onPress: navAction(handleReplayBoardLook),
       },
@@ -894,22 +904,22 @@ export default function MoreScreen() {
   if (showQaPreviews) {
     sections.push({
       key: 'previews',
-      title: t('mobile.more.previews.title'),
+      title: t('mobile.settings.previews.title'),
       rows: [
         qaPrNumber !== null
           ? {
               kind: 'nav',
               key: 'qaBrief',
-              label: t('mobile.more.previews.testPlanTitle', { prNumber: qaPrNumber }),
-              subtitle: t('mobile.more.previews.testPlanSubtitle'),
+              label: t('mobile.settings.previews.testPlanTitle', { prNumber: qaPrNumber }),
+              subtitle: t('mobile.settings.previews.testPlanSubtitle'),
               icon: 'branchSwitcher',
               onPress: navAction(() => router.push('/qa/brief')),
             }
           : {
               kind: 'nav',
               key: 'qaPick',
-              label: t('mobile.more.previews.pickTitle'),
-              subtitle: t('mobile.more.previews.pickSubtitle'),
+              label: t('mobile.settings.previews.pickTitle'),
+              subtitle: t('mobile.settings.previews.pickSubtitle'),
               icon: 'branchSwitcher',
               onPress: navAction(() => router.push('/qa/pick')),
             },
@@ -918,8 +928,8 @@ export default function MoreScreen() {
               {
                 kind: 'toggle' as const,
                 key: 'qaPromptOnLaunch',
-                label: t('mobile.more.previews.promptOnLaunchTitle'),
-                subtitle: t('mobile.more.previews.promptOnLaunchSubtitle'),
+                label: t('mobile.settings.previews.promptOnLaunchTitle'),
+                subtitle: t('mobile.settings.previews.promptOnLaunchSubtitle'),
                 value: qaPromptOnLaunch,
                 onValueChange: (next: boolean) => {
                   hapticSelection();
@@ -939,10 +949,10 @@ export default function MoreScreen() {
       devRows.push({
         kind: 'nav',
         key: 'metroServers',
-        label: t('mobile.more.metroServersTitle'),
-        subtitle: t('mobile.more.metroServersSubtitle'),
+        label: t('mobile.settings.metroServersTitle'),
+        subtitle: t('mobile.settings.metroServersSubtitle'),
         icon: 'devServers',
-        onPress: navAction(() => router.push('/(tabs)/profile/dev-servers')),
+        onPress: navAction(() => router.push('/settings/dev-servers')),
       });
     }
     if (showFeatureFlags) {
@@ -954,7 +964,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Force feature flags on or off',
         icon: 'featureFlags',
-        onPress: navAction(() => router.push('/(tabs)/profile/feature-flags')),
+        onPress: navAction(() => router.push('/settings/feature-flags')),
       });
     }
     if (showOfflineWrites) {
@@ -966,7 +976,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Hold the SQLite write lock, inject faults, inspect the outbox',
         icon: 'featureFlags',
-        onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
+        onPress: navAction(() => router.push('/settings/dev-offline-writes')),
       });
     }
     if (__DEV__) {
@@ -992,7 +1002,7 @@ export default function MoreScreen() {
         // Board-look, not featureFlags: this row edits how the board is DRAWN,
         // and the two dev rows above it already carry the flag icon.
         icon: 'boardLook',
-        onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
+        onPress: navAction(() => router.push('/settings/outline-editor')),
       });
     }
     if (profile?.isTester) {
@@ -1004,7 +1014,7 @@ export default function MoreScreen() {
         // i18n-ignore-next-line
         subtitle: 'Verify handled, uncaught, and native crash reporting',
         icon: 'otaChannel',
-        onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
+        onPress: navAction(() => router.push('/settings/sentry-diagnostics')),
       });
     }
     // Pretend the server is down, so the banner, the per-surface placards and
@@ -1014,15 +1024,15 @@ export default function MoreScreen() {
     devRows.push({
       kind: 'toggle',
       key: 'forceServerUnreachable',
-      label: t('mobile.more.dev.forceServerUnreachable'),
-      subtitle: t('mobile.more.dev.forceServerUnreachableDescription'),
+      label: t('mobile.settings.dev.forceServerUnreachable'),
+      subtitle: t('mobile.settings.dev.forceServerUnreachableDescription'),
       value: devForcedUnreachable,
       onValueChange: (next) => {
         hapticSelection();
         setDevForcedUnreachable(next);
       },
     });
-    sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
+    sections.push({ key: 'development', title: t('mobile.settings.development'), rows: devRows });
   }
 
   // Preview Build — branch switcher, only in EAS preview dev-client builds.
@@ -1040,7 +1050,7 @@ export default function MoreScreen() {
           // i18n-ignore-next-line
           subtitle: 'Switch EAS Update branch',
           icon: 'branchSwitcher',
-          onPress: navAction(() => router.push('/(tabs)/profile/branch-switcher')),
+          onPress: navAction(() => router.push('/settings/branch-switcher')),
         },
       ],
     });
@@ -1060,7 +1070,7 @@ export default function MoreScreen() {
           key: 'editProfile',
           label: tSettings('profile.editAction'),
           icon: 'editProfile',
-          onPress: navAction(() => router.push('/(tabs)/profile/edit')),
+          onPress: navAction(() => router.push('/settings/edit')),
         },
       ],
     });

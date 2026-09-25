@@ -90,11 +90,15 @@ export function OnboardingBoardRoute({
     [offlineDownloadsEnabled, isOffline, boardOfflineState, nudgeContextFor, confirmAndDownload],
   );
 
-  // `replace`, not the picker's `dismissTo`: onboarding is a full-screen cover
-  // with nothing of its own left to return to, and the board-look gate picks the
-  // climber up on Climbs.
+  // `dismissTo`, like the picker and the link step: onboarding is a full-screen
+  // cover with nothing of its own left to return to, and the board-look gate
+  // picks the climber up on Climbs. It used to `replace` — but the replay rows
+  // open this walkthrough from Settings, itself a root destination now, so a
+  // replace would swap onboarding for a SECOND copy of the tabs and strand
+  // Settings under it. `dismissTo` pops back to the tabs already in the stack,
+  // and still replaces this screen on a cold deep link where there are none.
   const leaveToClimbs = useCallback(() => {
-    router.replace('/(tabs)/climbs');
+    router.dismissTo('/(tabs)/climbs');
   }, []);
 
   const bindingRef = useRef(false);

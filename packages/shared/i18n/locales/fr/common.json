@@ -10,8 +10,8 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
-    "more": {
-      "title": "Plus",
+    "settings": {
+      "title": "Paramètres",
       "library": "Bibliothèque",
       "development": "Développement",
       "dev": {
@@ -571,7 +571,7 @@
       "serverTitle": "Impossible de joindre Boardsesh pour l'instant",
       "serverBody": "Il faut notre serveur pour ça. Les boards téléchargées se parcourent, se cherchent et s'enregistrent toujours, et tes croix attendent sur ton téléphone.",
       "offlineModeTitle": "Le mode hors ligne est activé",
-      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Plus pour le charger.",
+      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Paramètres pour le charger.",
       "errorTitle": "Impossible de charger ça",
       "errorBody": "Ça n'est pas passé. Réessaie.",
       "retry": "Réessayer"

@@ -168,8 +168,8 @@ const PREVIEW = {
 
 const OPTION: BoardLookOption = {
   id: 'aura',
-  labelI18nKey: 'mobile.more.boardLook.presets.aura',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.boardsesh',
+  labelI18nKey: 'mobile.settings.boardLook.presets.aura',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.boardsesh',
   previewSettings: null,
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -262,7 +262,7 @@ describe('BoardLookPreviewCard', () => {
     const press = getByTestId('card-press');
     expect(press.getAttribute('data-role')).toBe('radio');
     expect(press.getAttribute('data-checked')).toBe('true');
-    expect(press.getAttribute('data-value')).toBe('mobile.more.boardLook.presets.position');
+    expect(press.getAttribute('data-value')).toBe('mobile.settings.boardLook.presets.position');
   });
 
   it('leaves an unpicked look unbadged and unframed', () => {

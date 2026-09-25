@@ -198,7 +198,7 @@ stuck partner loop cannot fill the codes table.
 
 ### Revocation and the Connected apps screen
 
-`packages/mobile/app/(tabs)/profile/integrations.tsx` already renders board
+`packages/mobile/app/settings/integrations.tsx` already renders board
 accounts and platform cards. A new "Apps with access" section lists
 `oauth_grants` for the viewer via a `connectedApps` query (client name, icon,
 scopes, connected date) with Disconnect. Disconnect calls

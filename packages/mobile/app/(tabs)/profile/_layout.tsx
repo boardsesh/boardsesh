@@ -5,9 +5,15 @@ import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-b
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 
+/**
+ * The You tab: the profile itself and the two screens that belong to it. Settings
+ * used to live here too (`more` plus a dozen sub-pages) and that is exactly why it
+ * doesn't any more — opening it claimed this tab's stack, so the next tap on You
+ * reopened Settings instead of the profile. It is a root destination now,
+ * `app/settings/`.
+ */
 export default function ProfileLayout() {
   const { t } = useTranslation('common');
-  const { t: tSettings } = useTranslation('settings');
   const { t: tNotifications } = useTranslation('notifications');
   const screenOptions = useStackScreenOptions();
   usePopToTopOnTabBlur('profile');
@@ -27,37 +33,6 @@ export default function ProfileLayout() {
         {/* Same screen component as the Home tab's notifications route, registered
           here too so a push from this tab keeps its own back stack. */}
         <Stack.Screen name="notifications" options={{ headerShown: true, title: tNotifications('title') }} />
-        <Stack.Screen name="more" options={{ title: t('mobile.more.title') }} />
-        {/* Board look is a parent plus two leaves: the parent asks "which look?",
-          and everything you can tune about one lives a tap away. Registered flat
-          in this stack (no nested layout) so back-swipe, the header and the
-          native tab bar all keep behaving. */}
-        <Stack.Screen name="board-look/index" options={{ title: t('mobile.more.boardLook.title') }} />
-        <Stack.Screen name="board-look/custom" options={{ title: t('mobile.more.boardLook.customLook.title') }} />
-        <Stack.Screen
-          name="board-look/accessibility"
-          options={{ title: t('mobile.more.boardLook.accessibility.title') }}
-        />
-        {/* Redirects straight to "board-look" — no header of its own to flash. */}
-        <Stack.Screen name="accessibility" options={{ headerShown: false }} />
-        <Stack.Screen name="storage" options={{ title: t('mobile.more.storage.title') }} />
-        <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
-        <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
-        <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
-        {/* i18n-ignore-next-line — preview-only screen */}
-        <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
-        <Stack.Screen name="dev-servers" options={{ title: t('mobile.more.metroServersTitle') }} />
-        {/* i18n-ignore-next-line — tester-only screen */}
-        <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
-        {/* i18n-ignore-next-line — tester-only screen */}
-        <Stack.Screen name="dev-offline-writes" options={{ title: 'Offline Writes' }} />
-        {/* i18n-ignore-next-line — tester-only screen */}
-        <Stack.Screen name="sentry-diagnostics" options={{ title: 'Sentry Diagnostics' }} />
-        {/* i18n-ignore-next-line — admin-only screen */}
-        <Stack.Screen name="outline-editor" options={{ title: 'Hold Outlines' }} />
-        {/* i18n-ignore-next-line — admin-only screen */}
-        <Stack.Screen name="outline-canvas" options={{ title: 'Outline Editor' }} />
-        <Stack.Screen name="delete-account" options={{ title: tSettings('deleteAccount.title') }} />
       </Stack>
     </BoardArtVisibilityProvider>
   );

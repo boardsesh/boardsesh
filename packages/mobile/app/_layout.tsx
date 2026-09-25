@@ -737,6 +737,17 @@ function RootLayout() {
                                                                           options={{ headerShown: false }}
                                                                         />
                                                                         <Stack.Screen name="users/connections" />
+                                                                        {/* Settings and every one of its sub-pages — a
+                                                          destination of its own, pushed over the tabs like
+                                                          about/changelog, NOT a branch of the You tab. It lived at
+                                                          `(tabs)/profile/more`, where opening it left
+                                                          `more` on the You tab's stack: the next tap on You reopened
+                                                          Settings instead of the profile. app/settings/_layout.tsx
+                                                          owns the headers for the whole stack. */}
+                                                                        <Stack.Screen
+                                                                          name="settings"
+                                                                          options={{ headerShown: false }}
+                                                                        />
                                                                         <Stack.Screen
                                                                           name="join/[sessionId]"
                                                                           options={{
@@ -766,7 +777,7 @@ function RootLayout() {
                                                       it, and /play is itself a root transparentModal, so a push
                                                       aimed at a tab stack lands BENEATH the player (dead tap,
                                                       stranded screen). A root modal card presents above whatever
-                                                      is open, so the More tab, both tabs' proposal notifications
+                                                      is open, so Settings, both tabs' proposal notifications
                                                       and the drawer all push the same route. app/moderation.tsx
                                                       titles itself on its own Stack.Screen, the way
                                                       about/changelog/scout do. */}
@@ -777,7 +788,7 @@ function RootLayout() {
                                                                             headerShown: true,
                                                                           }}
                                                                         />
-                                                                        {/* The walkthrough, now reached only from the More tab's
+                                                                        {/* The walkthrough, now reached only from Settings'
                                                       replay rows (OnboardingGate opens the first-board
                                                       picker at /boards instead, #5654). A full-screen cover
                                                       over the live tabs: transparentModal with the opaque

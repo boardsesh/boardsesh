@@ -127,7 +127,7 @@ describe('PaletteCarousel', () => {
     act(() => cardProps.enlarge.get('tritanopia')?.('tritanopia'));
 
     expect(sheet.visible).toBe(true);
-    expect(sheet.title).toBe('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
+    expect(sheet.title).toBe('mobile.settings.boardLook.accessibility.cvdPalette.presets.tritanopia');
     // Looking is not applying: nothing may reach the physical board's LEDs.
     expect(onSelect).not.toHaveBeenCalled();
   });

@@ -16,7 +16,7 @@ const envCtrl = vi.hoisted(() => ({
   offlineState: 'off' as string,
 }));
 
-const replaceMock = vi.hoisted(() => vi.fn());
+const dismissToMock = vi.hoisted(() => vi.fn());
 const pushMock = vi.hoisted(() => vi.fn());
 const confirmAndDownloadMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const activateBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -27,7 +27,7 @@ const nudgeMocks = vi.hoisted(() => ({
   trackNudgeDismissed: vi.fn(),
 }));
 
-vi.mock('expo-router', () => ({ router: { replace: replaceMock, push: pushMock } }));
+vi.mock('expo-router', () => ({ router: { dismissTo: dismissToMock, push: pushMock } }));
 vi.mock('../OnboardingBoardStep', () => ({
   OnboardingBoardStep: (props: OnboardingBoardStepProps) => {
     stepCtrl.props = props;
@@ -119,7 +119,7 @@ describe('OnboardingBoardRoute', () => {
 
     expect(activateOptionsCtrl.last?.source).toBe('onboarding');
     (activateOptionsCtrl.last!.navigate as () => void)();
-    expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+    expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
   });
 
   it('keeps the pending selection until activation completes', async () => {
@@ -248,7 +248,7 @@ describe('OnboardingBoardRoute', () => {
       renderRoute();
 
       stepCtrl.props?.onSkipUnusable?.();
-      expect(replaceMock).toHaveBeenCalledWith('/(tabs)/climbs');
+      expect(dismissToMock).toHaveBeenCalledWith('/(tabs)/climbs');
     });
 
     // Captive-portal or gym wifi with a dead upstream reports ONLINE while every

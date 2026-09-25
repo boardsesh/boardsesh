@@ -83,30 +83,30 @@ type AccessibilitySectionProps = {
 function labelForRole(t: TFunction<'common'>, role: HoldColorOverrideRole): string {
   switch (role) {
     case 'STARTING':
-      return t('mobile.more.accessibility.roles.starting');
+      return t('mobile.settings.accessibility.roles.starting');
     case 'HAND':
-      return t('mobile.more.accessibility.roles.hand');
+      return t('mobile.settings.accessibility.roles.hand');
     case 'FINISH':
-      return t('mobile.more.accessibility.roles.finish');
+      return t('mobile.settings.accessibility.roles.finish');
     case 'FOOT':
-      return t('mobile.more.accessibility.roles.foot');
+      return t('mobile.settings.accessibility.roles.foot');
   }
 }
 
 function labelForShape(t: TFunction<'common'>, shape: HoldMarkerShape): string {
   switch (shape) {
     case 'circle':
-      return t('mobile.more.accessibility.shapes.circle');
+      return t('mobile.settings.accessibility.shapes.circle');
     case 'triangle-up':
-      return t('mobile.more.accessibility.shapes.triangleUp');
+      return t('mobile.settings.accessibility.shapes.triangleUp');
     case 'triangle-down':
-      return t('mobile.more.accessibility.shapes.triangleDown');
+      return t('mobile.settings.accessibility.shapes.triangleDown');
     case 'square':
-      return t('mobile.more.accessibility.shapes.square');
+      return t('mobile.settings.accessibility.shapes.square');
     case 'diamond':
-      return t('mobile.more.accessibility.shapes.diamond');
+      return t('mobile.settings.accessibility.shapes.diamond');
     case 'octagon':
-      return t('mobile.more.accessibility.shapes.octagon');
+      return t('mobile.settings.accessibility.shapes.octagon');
   }
 }
 
@@ -121,11 +121,11 @@ function boardNameFromActiveBoard(boardType: string | undefined): BoardName {
 function labelForVision(t: TFunction<'common'>, vision: CvdType): string {
   switch (vision) {
     case 'deuteranopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia');
+      return t('mobile.settings.boardLook.accessibility.cvdPalette.presets.deuteranopia');
     case 'protanopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.protanopia');
+      return t('mobile.settings.boardLook.accessibility.cvdPalette.presets.protanopia');
     case 'tritanopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
+      return t('mobile.settings.boardLook.accessibility.cvdPalette.presets.tritanopia');
   }
 }
 
@@ -138,15 +138,15 @@ function labelForVision(t: TFunction<'common'>, vision: CvdType): string {
 function verdictLine(t: TFunction<'common'>, verdict: CvdRoleVerdict): string | null {
   switch (verdict.kind) {
     case 'clear':
-      return t('mobile.more.accessibility.cvd.verdict.clear');
+      return t('mobile.settings.accessibility.cvd.verdict.clear');
     case 'close':
-      return t('mobile.more.accessibility.cvd.verdict.close', {
+      return t('mobile.settings.accessibility.cvd.verdict.close', {
         vision: labelForVision(t, verdict.vision),
         first: labelForRole(t, verdict.roles[0]),
         second: labelForRole(t, verdict.roles[1]),
       });
     case 'faint':
-      return t('mobile.more.accessibility.cvd.verdict.faint', { role: labelForRole(t, verdict.role) });
+      return t('mobile.settings.accessibility.cvd.verdict.faint', { role: labelForRole(t, verdict.role) });
     case 'unknown':
       return null;
   }
@@ -289,9 +289,9 @@ export function AccessibilitySection({
   return (
     <>
       <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.accessibility.cvd.title')} />
+        <SectionHeader title={t('mobile.settings.accessibility.cvd.title')} />
         <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.description, styles.sectionCopy]}>
-          {t('mobile.more.accessibility.cvd.subtitle')}
+          {t('mobile.settings.accessibility.cvd.subtitle')}
         </Text>
         {/* The climber's own board, drawn once per palette. A picker, not a
             viewer: pressing a card writes the four role colours. */}
@@ -312,11 +312,11 @@ export function AccessibilitySection({
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.boardLook.accessibility.title')} />
+        <SectionHeader title={t('mobile.settings.boardLook.accessibility.title')} />
         <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
           <SwitchRow
-            label={t('mobile.more.boardLook.accessibility.roleGlyphs.label')}
-            description={t('mobile.more.boardLook.accessibility.roleGlyphs.note')}
+            label={t('mobile.settings.boardLook.accessibility.roleGlyphs.label')}
+            description={t('mobile.settings.boardLook.accessibility.roleGlyphs.note')}
             value={boardsesh.roleGlyphs}
             onValueChange={(value) => setBoardseshField('roleGlyphs', value)}
           />
@@ -324,14 +324,14 @@ export function AccessibilitySection({
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.accessibility.markersTitle')} />
+        <SectionHeader title={t('mobile.settings.accessibility.markersTitle')} />
         {!isClassic ? (
           <Text
             variant="footnote"
             color={systemColors.secondaryLabel}
             style={[styles.description, styles.classicOnlyNote]}
           >
-            {t('mobile.more.boardLook.accessibility.classicOnlyNote')}
+            {t('mobile.settings.boardLook.accessibility.classicOnlyNote')}
           </Text>
         ) : null}
         <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
@@ -340,11 +340,11 @@ export function AccessibilitySection({
             const roleShape = getEffectiveHoldRoleShape(role, shapes);
             const roleLabel = labelForRole(t, role);
             const modeLabel = roleOverride
-              ? t('mobile.more.accessibility.mode.user')
-              : t('mobile.more.accessibility.mode.default');
+              ? t('mobile.settings.accessibility.mode.user')
+              : t('mobile.settings.accessibility.mode.default');
             const shapeLabel = labelForShape(t, roleShape);
             const subtitle = isClassic
-              ? t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel })
+              ? t('mobile.settings.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel })
               : modeLabel;
             const swatchColor = getEffectiveHoldRoleColor(boardName, role, overrides);
             const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
@@ -353,7 +353,7 @@ export function AccessibilitySection({
                 key={role}
                 title={roleLabel}
                 subtitle={subtitle}
-                accessibilityLabel={t('mobile.more.accessibility.rowAccessibility', {
+                accessibilityLabel={t('mobile.settings.accessibility.rowAccessibility', {
                   role: roleLabel,
                   mode: subtitle,
                 })}
@@ -370,9 +370,9 @@ export function AccessibilitySection({
           {isClassic ? (
             <>
               <ListRow
-                title={t('mobile.more.accessibility.brush.title')}
-                subtitle={t('mobile.more.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
-                accessibilityLabel={t('mobile.more.accessibility.brush.rowAccessibility', {
+                title={t('mobile.settings.accessibility.brush.title')}
+                subtitle={t('mobile.settings.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
+                accessibilityLabel={t('mobile.settings.accessibility.brush.rowAccessibility', {
                   value: brushThickness.toFixed(1),
                 })}
                 leading={
@@ -393,9 +393,9 @@ export function AccessibilitySection({
                 onPress={() => setThicknessSheetOpen(true)}
               />
               <ListRow
-                title={t('mobile.more.accessibility.size.title')}
-                subtitle={t('mobile.more.accessibility.size.value', { value: shapeSize.toFixed(1) })}
-                accessibilityLabel={t('mobile.more.accessibility.size.rowAccessibility', {
+                title={t('mobile.settings.accessibility.size.title')}
+                subtitle={t('mobile.settings.accessibility.size.value', { value: shapeSize.toFixed(1) })}
+                accessibilityLabel={t('mobile.settings.accessibility.size.rowAccessibility', {
                   value: shapeSize.toFixed(1),
                 })}
                 leading={<MarkerSwatch color={systemColors.accent} shape="diamond" size={shapeSize} />}
@@ -414,7 +414,7 @@ export function AccessibilitySection({
         {hasMarkerOverrides ? (
           <Pressable accessibilityRole="button" onPress={handleResetMarkers} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>
-              {t('mobile.more.accessibility.resetAll')}
+              {t('mobile.settings.accessibility.resetAll')}
             </Text>
           </Pressable>
         ) : null}
@@ -482,8 +482,8 @@ function HoldColorPickerSheet({
 
   const modeOptions = useMemo<{ key: ColorMode; label: string }[]>(
     () => [
-      { key: 'default', label: t('mobile.more.accessibility.mode.default') },
-      { key: 'user', label: t('mobile.more.accessibility.mode.user') },
+      { key: 'default', label: t('mobile.settings.accessibility.mode.default') },
+      { key: 'user', label: t('mobile.settings.accessibility.mode.user') },
     ],
     [t],
   );
@@ -517,7 +517,7 @@ function HoldColorPickerSheet({
     onSave(role, mode === 'default' ? null : userColor, shape);
   }, [mode, onSave, role, shape, userColor]);
 
-  const footer = <Button title={t('mobile.more.accessibility.save')} onPress={handleSave} size="large" />;
+  const footer = <Button title={t('mobile.settings.accessibility.save')} onPress={handleSave} size="large" />;
 
   return (
     <ModalSheet visible={role != null} snapPoints={['95%']} onClose={onClose} footer={footer} scrollable>
@@ -525,9 +525,9 @@ function HoldColorPickerSheet({
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={previewColor} shape={shape} size={shapeSize} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{role ? labelForRole(t, role) : t('mobile.more.accessibility.title')}</Text>
+            <Text variant="headline">{role ? labelForRole(t, role) : t('mobile.settings.accessibility.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('mobile.more.accessibility.pickerSubtitle')}
+              {t('mobile.settings.accessibility.pickerSubtitle')}
             </Text>
           </View>
         </View>
@@ -537,21 +537,21 @@ function HoldColorPickerSheet({
           selectedKey={mode}
           onSelect={handleModeSelect}
           trackColor={systemColors.fill}
-          accessibilityLabel={t('mobile.more.accessibility.modeLabel')}
+          accessibilityLabel={t('mobile.settings.accessibility.modeLabel')}
         />
 
         {mode === 'user' ? (
           <OkhslColorPicker key={seedCounter} value={userColor} onChange={setUserColor} />
         ) : (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.defaultCopy}>
-            {t('mobile.more.accessibility.defaultCopy')}
+            {t('mobile.settings.accessibility.defaultCopy')}
           </Text>
         )}
 
         {showShapePicker ? (
           <View style={styles.shapeSection}>
             <Text variant="subheadline" color={systemColors.label}>
-              {t('mobile.more.accessibility.shapeLabel')}
+              {t('mobile.settings.accessibility.shapeLabel')}
             </Text>
             <View style={styles.shapeGrid}>
               {HOLD_MARKER_SHAPES.map((option) => {
@@ -615,7 +615,7 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
     onClose();
   }, [draftValue, onClose, onSave]);
 
-  const footer = <Button title={t('mobile.more.accessibility.brush.save')} onPress={handleSave} size="large" />;
+  const footer = <Button title={t('mobile.settings.accessibility.brush.save')} onPress={handleSave} size="large" />;
 
   return (
     <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} footer={footer} scrollable>
@@ -623,20 +623,20 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="circle" thickness={draftValue} size={shapeSize} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{t('mobile.more.accessibility.brush.title')}</Text>
+            <Text variant="headline">{t('mobile.settings.accessibility.brush.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('mobile.more.accessibility.brush.subtitle')}
+              {t('mobile.settings.accessibility.brush.subtitle')}
             </Text>
           </View>
         </View>
         <MarkerMultiplierSlider
-          accessibilityLabel={t('mobile.more.accessibility.brush.title')}
+          accessibilityLabel={t('mobile.settings.accessibility.brush.title')}
           value={draftValue}
           min={MIN_HOLD_BRUSH_THICKNESS}
           max={MAX_HOLD_BRUSH_THICKNESS}
           step={0.1}
           format={(multiplier) =>
-            t('mobile.more.accessibility.brush.value', { value: normalizeBrushThickness(multiplier).toFixed(1) })
+            t('mobile.settings.accessibility.brush.value', { value: normalizeBrushThickness(multiplier).toFixed(1) })
           }
           onChange={setDraftValue}
         />
@@ -673,7 +673,7 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
     onClose();
   }, [draftValue, onClose, onSave]);
 
-  const footer = <Button title={t('mobile.more.accessibility.size.save')} onPress={handleSave} size="large" />;
+  const footer = <Button title={t('mobile.settings.accessibility.size.save')} onPress={handleSave} size="large" />;
 
   return (
     <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} footer={footer} scrollable>
@@ -681,20 +681,20 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="diamond" thickness={brushThickness} size={draftValue} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{t('mobile.more.accessibility.size.title')}</Text>
+            <Text variant="headline">{t('mobile.settings.accessibility.size.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('mobile.more.accessibility.size.subtitle')}
+              {t('mobile.settings.accessibility.size.subtitle')}
             </Text>
           </View>
         </View>
         <MarkerMultiplierSlider
-          accessibilityLabel={t('mobile.more.accessibility.size.title')}
+          accessibilityLabel={t('mobile.settings.accessibility.size.title')}
           value={draftValue}
           min={MIN_HOLD_SHAPE_SIZE}
           max={MAX_HOLD_SHAPE_SIZE}
           step={0.1}
           format={(multiplier) =>
-            t('mobile.more.accessibility.size.value', { value: normalizeHoldShapeSize(multiplier).toFixed(1) })
+            t('mobile.settings.accessibility.size.value', { value: normalizeHoldShapeSize(multiplier).toFixed(1) })
           }
           onChange={setDraftValue}
         />

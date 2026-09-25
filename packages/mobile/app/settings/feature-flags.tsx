@@ -1,4 +1,4 @@
-import { FeatureFlagsScreen } from '../../../src/components/FeatureFlagsScreen';
+import { FeatureFlagsScreen } from '../../src/components/FeatureFlagsScreen';
 
 export default function FeatureFlagsRoute() {
   return <FeatureFlagsScreen />;

@@ -1,8 +1,8 @@
 import { useLocalSearchParams } from 'expo-router';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
-import { OutlineCanvasScreen } from '../../../src/components/outline-editor/OutlineCanvasScreen';
-import { OutlineEditorGate } from '../../../src/components/outline-editor/OutlineEditorGate';
-import { OutlineEditorMessage } from '../../../src/components/outline-editor/OutlineEditorMessage';
+import { OutlineCanvasScreen } from '../../src/components/outline-editor/OutlineCanvasScreen';
+import { OutlineEditorGate } from '../../src/components/outline-editor/OutlineEditorGate';
+import { OutlineEditorMessage } from '../../src/components/outline-editor/OutlineEditorMessage';
 
 type Params = {
   boardName?: string;

@@ -89,7 +89,7 @@ export function DevOfflineWritesScreen() {
       );
     }
     if (!profile?.isTester) {
-      return <Redirect href="/(tabs)/profile/more" />;
+      return <Redirect href="/settings" />;
     }
   }
 

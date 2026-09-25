@@ -85,11 +85,11 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const navigateToSettings = useCallback(() => {
-    router.push('/(tabs)/profile/more');
+    router.push('/settings');
   }, []);
 
   const navigateToEditProfile = useCallback(() => {
-    router.push('/(tabs)/profile/edit');
+    router.push('/settings/edit');
   }, []);
 
   const navigateToPlaylists = useCallback(() => {

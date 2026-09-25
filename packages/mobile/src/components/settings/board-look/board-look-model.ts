@@ -65,8 +65,8 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
         {
           kind: 'info',
           key: 'rendererUnavailable',
-          label: t('mobile.more.boardLook.rendererUnavailable.title'),
-          body: t('mobile.more.boardLook.rendererUnavailable.body'),
+          label: t('mobile.settings.boardLook.rendererUnavailable.title'),
+          body: t('mobile.settings.boardLook.rendererUnavailable.body'),
         },
       ],
     });
@@ -96,7 +96,7 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
           key: 'suggestionDismiss',
           // The literal, not the exported constant: `t(someVariable)` cannot be
           // statically analysed, so the i18n orphan checker rejects it.
-          label: t('mobile.more.boardLook.suggestion.dismiss'),
+          label: t('mobile.settings.boardLook.suggestion.dismiss'),
           emphasis: 'subtle',
           onPress: input.onDismissSuggestion,
         },
@@ -107,7 +107,7 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
   if (carousel) {
     sections.push({
       key: 'presets',
-      title: t('mobile.more.boardLook.presets.title'),
+      title: t('mobile.settings.boardLook.presets.title'),
       // No footer: the cards are renders of the climber's own board, so a
       // sentence explaining that you are choosing how holds render only repeats
       // what the rail is already showing.
@@ -119,24 +119,24 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
     {
       kind: 'nav',
       key: 'customLook',
-      label: t('mobile.more.boardLook.customLook.title'),
+      label: t('mobile.settings.boardLook.customLook.title'),
       // Says which look you are on, so the row reads as "go and tune what you
       // have" rather than as another way to switch looks.
       subtitle:
         matchingOptionId === 'custom'
-          ? t('mobile.more.boardLook.customLook.rowSubtitleCustom')
-          : t('mobile.more.boardLook.customLook.rowSubtitle', { look: currentLookLabel }),
+          ? t('mobile.settings.boardLook.customLook.rowSubtitleCustom')
+          : t('mobile.settings.boardLook.customLook.rowSubtitle', { look: currentLookLabel }),
       icon: 'boardLook',
       onPress: input.onOpenCustomLook,
     },
     {
       kind: 'nav',
       key: 'accessibility',
-      label: t('mobile.more.boardLook.accessibility.title'),
+      label: t('mobile.settings.boardLook.accessibility.title'),
       subtitle:
         overriddenCount === 0
-          ? t('mobile.more.boardLook.accessibility.rowSubtitleDefault')
-          : t('mobile.more.boardLook.accessibility.rowSubtitleOverridden', { count: overriddenCount }),
+          ? t('mobile.settings.boardLook.accessibility.rowSubtitleDefault')
+          : t('mobile.settings.boardLook.accessibility.rowSubtitleOverridden', { count: overriddenCount }),
       icon: 'accessibility',
       onPress: input.onOpenAccessibility,
     },
@@ -150,14 +150,14 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
       {
         kind: 'button',
         key: 'resetBoardLook',
-        label: t('mobile.more.boardLook.resetAll'),
+        label: t('mobile.settings.boardLook.resetAll'),
         emphasis: 'subtle',
         onPress: input.onResetBoardLook,
       },
     ],
     // The footer is what makes the reset split legible: this button used to wipe
     // the climber's hold colours too, under a label that never mentioned them.
-    footer: t('mobile.more.boardLook.resetAllNote'),
+    footer: t('mobile.settings.boardLook.resetAllNote'),
   });
 
   return { sections };

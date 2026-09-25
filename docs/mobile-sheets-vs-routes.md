@@ -414,7 +414,7 @@ climb changes reuse the carousel without restarting the opening placeholder.
   `onAddBetaVideo`), so `PlayDrawer` mounts its own copy and the root `DrawerHostProvider` mounts
   the other.
 - **Moderation feed** (`app/moderation.tsx`) — root-stack `modal` card, so it presents above the
-  player as well as from the More tab and from a proposal notification in either tab. It lived in
+  player as well as from Settings and from a proposal notification in either tab. It lived in
   both tab stacks first, and that was wrong: the play drawer's Community section links into it, and
   `/play` is itself a root `transparentModal`, so a tab-stack push landed *beneath* the player (the
   rule-1 trap above). The deep-link param is `proposalUuid`, plus `climbUuid` / `boardType` when the
@@ -428,7 +428,7 @@ climb changes reuse the carousel without restarting the opening placeholder.
 - **Setters / hold / zone filters** — opened from the climb filter sheet, which suspends and
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
-- **Onboarding** (the walkthrough, replayed from the More tab) — an immersive cover presented
+- **Onboarding** (the walkthrough, replayed from Settings) — an immersive cover presented
   over the live tabs, so `transparentModal` + an opaque backing, like the player (rule 2). It was a
   `fullScreenModal` until #5654. Like the player it counts as a tabs-chrome route
   (`isTabsChromeRoute`), so the bottom accessory stays mounted under it rather than detaching
@@ -443,13 +443,26 @@ climb changes reuse the carousel without restarting the opening placeholder.
   `close(after)` once that route's view controller is gone (#3211). Its two QA screens
   (`app/qa/pick`, `app/qa/brief`) are plain `modal` cards — self-contained flows, so rule 1 applies
   unchanged.
-- **Board look** (`app/(tabs)/profile/board-look/{index,custom,accessibility}`) — a settings parent
-  and two leaves, all **pushed routes registered flat in the profile stack**, with no nested
+- **Settings** (`app/settings/`) — a pushed ROOT destination with its own `_layout`, covering the
+  tab bar like `about` / `changelog`. It lived at `(tabs)/profile/more`, and that was
+  the bug: opening it from the user drawer switched to the You tab and left `more` on that tab's
+  stack, so the next tap on You reopened Settings instead of the profile. A tab's stack is the
+  tab's own history — put a surface there only if it is genuinely part of that tab. Two
+  consequences worth knowing before you add a row: the first screen of a root group still shows a
+  back chevron (the root stack hands its `HeaderBackContext` down), and a `router.push` aimed at a
+  TAB route from inside Settings stacks a SECOND `(tabs)` instance over it — use `router.dismissTo`
+  for those (the "Notifications" and "Playlists" rows both do), which pops back to the tabs already
+  below and drops Settings on the way. Same rule for a root route Settings pushes that exits to a
+  tab: `onboarding`'s replay exits `dismissTo` rather than `replace` for exactly this reason, and
+  `dismissTo` is the verb to reach for because it also behaves on a cold deep link — it replaces
+  the current screen when the route it names isn't in the stack to pop back to.
+- **Board look** (`app/settings/board-look/{index,custom,accessibility}`) — a settings parent
+  and two leaves, all **pushed routes registered flat in the settings stack**, with no nested
   `_layout` of their own. The parent asks one question (which look?) over a rail of renders of your
   own board; each leaf holds what you can tune about the answer. Flat rather than nested because a
-  nested navigator inside a tab stack costs you the back-swipe, the inherited header and the native
-  tab bar's own behaviour for nothing — the depth is already expressed by the route names. Reach for
-  the same shape for any settings screen that grows sub-pages.
+  nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
+  already expressed by the route names. Reach for the same shape for any settings screen that grows
+  sub-pages.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js
