@@ -22,6 +22,11 @@ const RENDERED_SHELL = `<!doctype html>
     <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" href="https://www.boardsesh.com/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="https://www.boardsesh.com/icons/apple-touch-icon.png" />
+    <script>
+      window.addEventListener('unhandledrejection', function () {
+        sessionStorage.getItem('boardsesh:chunk-reload-at');
+      });
+    </script>
   </head>
   <body><div id="root"></div>
   <script src="/app/_expo/static/js/web/entry-stub.js" defer></script>
@@ -180,6 +185,16 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
       icons: Array<{ src: string }>;
     };
     expect(manifest.icons.every(({ src }) => src.startsWith('https://assets.boardsesh.com/static/v1/'))).toBe(true);
+  });
+
+  it('fails the export when the shell lost its inline chunk-recovery script', () => {
+    // #5611: that script is the only recovery for a failed root layout chunk.
+    writeVpStub(RENDERED_SHELL.replace(/    <script>[\s\S]*?<\/script>\n/, ''));
+
+    const result = runExport('--subdomain');
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('[build-expo-web-export] index.html lost the inline chunk-recovery script');
   });
 
   it('fails the export when the shell lost its manifest link', () => {

@@ -214,6 +214,16 @@ if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/b
   exit 1
 fi
 
+# The shell's inline chunk-recovery script (#5611) is the only thing that can
+# recover a failed root `_layout` chunk. Expo renders index.html from the
+# public/ template, so assert the script made it through rather than trust it.
+if ! grep -q "boardsesh:chunk-reload-at" "$OUTPUT_DIR/index.html" ||
+  ! grep -q "unhandledrejection" "$OUTPUT_DIR/index.html"; then
+  echo "[build-expo-web-export] index.html lost the inline chunk-recovery script (public/index.html)" >&2
+  exit 1
+fi
+echo "[build-expo-web-export] index.html carries the inline chunk-recovery script"
+
 # --- PWA manifest (W-24, #4438) -------------------------------------------
 # index.html is a checked-in template (packages/mobile/public/index.html) whose
 # manifest href is a fixed `/app/manifest.json`, and manifest.json is copied

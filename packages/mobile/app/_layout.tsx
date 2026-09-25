@@ -83,6 +83,8 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
+import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
@@ -118,6 +120,10 @@ import { getPreference, removePreference, setPreference } from '../src/lib/prefe
 import '../modules/memory-trim/src/index';
 
 markStartup('root.module.ready');
+// The root layout chunk arrived and evaluated, so the ErrorBoundary below exists
+// from here on: the shell's chunk-recovery script (public/index.html) stands
+// down. No-op on native (#5611).
+markRootLayoutLoaded();
 void SplashScreen.preventAutoHideAsync();
 
 // The screenshots build is a Debug dev-client (__DEV__ true) so it can load its
@@ -275,6 +281,14 @@ type RecoveryState =
   | { kind: 'failed' };
 
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  // A route chunk that failed to load (web only; the native predicate is
+  // constant false) gets its own screen: this one's "Try again" and "Go home"
+  // cannot recover it, a page load can (#5611).
+  if (isChunkLoadError(error)) return <ChunkLoadErrorScreen error={error} />;
+  return <CrashScreen error={error} retry={retry} />;
+}
+
+function CrashScreen({ error, retry }: ErrorBoundaryProps) {
   // No useTranslation here: Expo Router renders this before any of our
   // providers mount, so i18next isn't initialized. Calling the hook would
   // return raw key strings exactly when the user most needs readable copy.

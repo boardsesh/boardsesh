@@ -140,6 +140,80 @@ Metro and never pass through this script, so an install prompt in dev keeps
   content-hashed and can be cached forever (`Cache-Control: immutable`);
   `index.html` and `wasm/*` (fixed names) should not.
 
+### Chunk-load recovery: tabs that outlive a deploy
+
+Every route is its own content-hashed chunk (`asyncRoutes`, #5467), and Pages
+serves only the current deployment's files. A tab opened before a deploy keeps
+the old entry's chunk map, so the first time it opens a route it has not loaded
+yet, it asks for a file the new deploy removed. `functions/_middleware.ts`
+answers that with a real 404, and Expo's loader rejects with
+`AsyncRequireError`. With several app deploys a day, this was 9 of the 11
+production `AsyncRequireError`s in the week after #5467 (#5611). The other two
+were chunks that were live but never arrived, in in-app browsers.
+
+The tab cannot fix this itself. Expo Router wraps each route in `React.lazy`,
+and React keeps a failed lazy load failed for the life of the page, so "Try
+again" throws the same error and "Go home" asks for another missing chunk. Only
+a full page load helps, because it fetches the current `index.html` and the
+current chunk map. Two places do that reload:
+
+- **Any route but the root.** The root `ErrorBoundary` (`app/_layout.tsx`)
+  hands a chunk error to `ChunkLoadErrorScreen`, which calls
+  `recoverFromChunkLoadError` (`src/lib/chunk-load-recovery.web.ts`). That
+  sends a `HEAD` probe for the chunk, reports the failure to Sentry with
+  `chunk_load_cause` (`stale-deploy` for a 404, `transient` for any other
+  answer, `network` for none, `offline`) and a fingerprint by cause rather than
+  by hashed filename, then reloads.
+- **The root `_layout` chunk.** The boundary lives inside that chunk, so an
+  inline script in `public/index.html` covers it. The root layout sets
+  `window.__BOARDSESH_ROOT_LAYOUT_LOADED__` as it evaluates
+  (`markRootLayoutLoaded`). While that flag is unset, the script handles any
+  unhandled `AsyncRequireError` the way the boundary does. It sends a `HEAD`
+  probe for the failed chunk (3 s) and reloads only if the probe gets an HTTP
+  answer. With no answer, which covers a captive portal, an origin outage, or
+  an in-app browser that claims to be online, a reload would land on the
+  browser's network-error page. So it keeps the shell and leaves the guard
+  unspent. Whenever it may not reload, it paints a Reload panel over the page
+  (a `<body>` child, never inside React's `#root`). Once the flag is set, it
+  stands down. The script is ES5-only, which a test pins, because the
+  formatter also rewrites it.
+
+An unhandled `AsyncRequireError` alone does not prove the root chunk failed.
+Expo Router calls `loadRoute()` for every layout at startup and drops the
+promise (`getRoutesCore.js`), so any layout chunk failure also surfaces as an
+unhandled rejection, on top of whatever the boundary catches. Two things
+follow. The shell keys on the flag, not on the rejection. And Sentry's
+`beforeSend` (`applyChunkLoadFingerprint` in `src/lib/sentry.ts`) groups every
+`AsyncRequireError` as `['chunk-load-error', <cause>]`, with `unknown` for the
+unhandled copy that has no probe result, so neither path splits into one issue
+per hashed filename.
+
+Both paths share one loop guard in `sessionStorage`:
+
+- at most one automatic reload per 60 s (`boardsesh:chunk-reload-at`);
+- at most three automatic reloads per tab, ever (`boardsesh:chunk-reload-count`).
+  Without the cap, a network that stalls every chunk past the window would
+  reload once a minute for as long as the tab stayed open.
+
+These keys are the one sanctioned `sessionStorage` use in the mobile package.
+IndexedDB won't do, for three reasons:
+
+- the shell script needs a synchronous read before the entry bundle runs;
+- IndexedDB is origin-wide, so every tab would share one guard and one tab's
+  reload would spend another's;
+- some in-app browsers block IndexedDB outright.
+
+There is no automatic reload when the browser is offline, when the probe gets
+no answer, or when `sessionStorage` is blocked. Each of those cases shows a
+Reload button instead. The native fork `chunk-load-recovery.ts` is a constant
+module, so the store fleet's crash screen is unchanged. Any CSP on the app
+subdomain must allow the inline script; see `deploy/app-subdomain/README.md`.
+
+A reload keeps the URL, including `?sessionId`, and the solo queue is already
+persisted, so the climber comes back where they were. Keeping the previous
+deploys' chunks live would avoid the reload entirely; that is tracked
+in #5780.
+
 ### Cross-origin backend
 
 Because the app runs on `app.boardsesh.com` and the backend on

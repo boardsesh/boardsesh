@@ -95,6 +95,15 @@ that covers `default-src` too, since `script-src` falls back to it. If the
 renderer ever stops needing `new Function(...)`, relax the test in the same PR
 that relaxes this rule.
 
+The shell also carries an **inline** script: the chunk-recovery listener in
+`packages/mobile/public/index.html` (#5611), the only thing that recovers a
+failed root layout chunk. A policy restricting script sources must also allow
+it, either with `'unsafe-inline'` or with the script's `'sha256-…'` hash. Once a
+policy lists any hash or nonce, browsers ignore `'unsafe-inline'`, so the hash
+then becomes mandatory. The same test computes the hash from the template and
+fails a policy that would block the script, so a CSP that passes the eval rule
+cannot silently switch off the recovery.
+
 ## Editing these files
 
 Run `vp test run --project deploy-app-subdomain`. The suite parses both config
