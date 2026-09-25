@@ -114,7 +114,7 @@ export type SetterStatsOptions = Pick<ClimbSearchParams, 'crossAngleStats'>;
  * match first, then usernames that start with the term, then the other substring
  * matches. Without that, a short name was never found (#4885). `%ES%` matches every
  * setter with "es" anywhere in their name, the prolific ones fill all 50 rows, and
- * the setter called "ES", with three climbs, never reaches the picker. Both tiers
+ * the setter called "ES", with only a few climbs, never reaches the picker. Both tiers
  * are case-insensitive, like the substring filter. The term's own `%`, `_` and `\`
  * are escaped, so a search for "a_b" finds that setter and not "axb".
  * `getSetterStatsLocal` on mobile orders and escapes the same way.
