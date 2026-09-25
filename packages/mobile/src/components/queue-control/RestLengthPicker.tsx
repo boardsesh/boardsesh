@@ -14,7 +14,7 @@
 // the tap-wrap owns it, and a cancelled drag has to be restored by this file
 // because the slider has no way to express it.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -44,6 +44,12 @@ import {
 const REST_PILL_MIN_WIDTH = 88;
 
 type RestLengthPickerProps = {
+  /**
+   * The field's label, drawn on the pill's row. The picker owns that row so the
+   * slider it reveals can open on its OWN line below it, at the block's full
+   * width. Left beside the label, the slider only got the pill's ~88pt (#5664).
+   */
+  label: ReactNode;
   /** The persisted rest length in seconds; `null` is `Off`. */
   value: number | null;
   onChange: (nextSeconds: number | null) => void;
@@ -57,7 +63,7 @@ type RestLengthPickerProps = {
  * moves it themselves — silently rounding a persisted setting because the UI was
  * redesigned underneath it is the one thing this control must not do.
  */
-export function RestLengthPicker({ value, onChange }: RestLengthPickerProps) {
+export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLengthPickerProps) {
   const { t } = useTranslation('session');
   const reduceMotion = useReduceMotion();
   const [expanded, setExpanded] = useState(false);
@@ -90,6 +96,7 @@ export function RestLengthPicker({ value, onChange }: RestLengthPickerProps) {
   return (
     <View>
       <View style={styles.pillRow}>
+        {fieldLabel}
         <ValuePill
           label={label}
           active={expanded}
@@ -137,11 +144,14 @@ export function RestLengthPicker({ value, onChange }: RestLengthPickerProps) {
 }
 
 const styles = StyleSheet.create({
-  // The row owns no horizontal padding: the gutter belongs to the block that
-  // mounts this (tick-sheet-metrics' two-seam rule).
+  // Label and pill on ONE row; the slider is this row's sibling, so it spans the
+  // whole block. Neither owns horizontal padding: the gutter belongs to the
+  // block that mounts this (tick-sheet-metrics' two-seam rule).
   pillRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing[3],
   },
   sliderRow: {
     paddingTop: spacing[2],

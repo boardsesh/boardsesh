@@ -42,7 +42,7 @@ import {
 import { spacing } from '../../theme/tokens';
 import { RestTimerHeroClock } from './RestTimerPill';
 import { RestLengthPicker } from './RestLengthPicker';
-import { hasRestLength } from './rest-length.logic';
+import { formatRestLength, hasRestLength } from './rest-length.logic';
 
 /**
  * Rest length: one pill that steps 30 s a tap, and the fine slider it reveals on
@@ -65,11 +65,18 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
           stacked over a lone pill left a third of the row empty and read as a
           heading for a group of one. `body` in `label` rather than the grey
           uppercase caption, for the same reason — it names the value beside it. */}
-      <View style={styles.lengthRow}>
-        <Text variant="body" color={systemColors.label} style={styles.lengthLabel}>
-          {t('mobile.restTimer.targetLabel')}
-        </Text>
-        <RestLengthPicker value={targetSeconds} onChange={setTargetSeconds} />
+      {/* The picker draws this row itself and opens its slider on a full-width
+          line under it — a slider sharing the row got only the pill's width. */}
+      <View style={styles.lengthBlock}>
+        <RestLengthPicker
+          label={
+            <Text variant="body" color={systemColors.label} style={styles.lengthLabel}>
+              {t('mobile.restTimer.targetLabel')}
+            </Text>
+          }
+          value={targetSeconds}
+          onChange={setTargetSeconds}
+        />
       </View>
       {hasRestLength(targetSeconds) ? null : (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupFootnote}>
@@ -135,22 +142,37 @@ export function RestTimerAutoAdvanceRow() {
  *
  * Inline, not folded away. It is a binary with two visible options and a one-line
  * hint — a disclosure over that hides nothing worth hiding and costs a tap to
- * read a choice you can already see. The arm row still leaves it out entirely:
- * it is set once, and changing it RE-ARMS the live timer.
+ * read a choice you can already see. Exported because the Record tab's arm row
+ * mounts it too: that card is where a climber sets up a session, and without it
+ * the card could only ever arm "after each send" (#5664).
+ *
+ * The fixed-window option names its own length ("Every 3:00"), because that is
+ * the thing someone setting up a boulder-every-three-minutes block is looking
+ * for. With the rest length Off there is no length to name, so it falls back to
+ * the plain mode name.
+ *
+ * `inset={false}` is the arm row's padded `Card`, exactly as for
+ * {@link RestTimerLengthControl}: the header and the segmented control pull back
+ * out through the card's padding so they share the length label's seam.
  */
-function RestTimerCadenceSection() {
+export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = {}) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const [mode, setMode] = useSetting('restTimerMode');
+  const [targetSeconds] = useSetting('restTimerTargetSeconds');
   const { armed } = useRestTimerState();
   const { sessionId } = useQueueSessionId();
+
+  const fixedWindowLabel = hasRestLength(targetSeconds)
+    ? t('mobile.restTimer.modeEvery', { length: formatRestLength(targetSeconds) })
+    : t('mobile.restTimer.modeOnTheMinute');
 
   const options = useMemo<SegmentOption<RestTimerMode>[]>(
     () => [
       { key: 'afterTick', label: t('mobile.restTimer.modeAfterTick') },
-      { key: 'onTheMinute', label: t('mobile.restTimer.modeOnTheMinute') },
+      { key: 'onTheMinute', label: fixedWindowLabel },
     ],
-    [t],
+    [fixedWindowLabel, t],
   );
 
   const handleSelect = useCallback(
@@ -165,7 +187,7 @@ function RestTimerCadenceSection() {
   );
 
   return (
-    <View>
+    <View style={inset ? null : styles.cardBleed}>
       <SectionHeader title={t('mobile.restTimer.modeLabel')} />
       <View style={styles.cadenceContent}>
         <SegmentedControl
@@ -303,11 +325,7 @@ const styles = StyleSheet.create({
   cardBleed: {
     marginHorizontal: -spacing[4],
   },
-  lengthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
+  lengthBlock: {
     paddingHorizontal: TICK_GUTTER,
     paddingTop: spacing[1],
   },

@@ -71,6 +71,8 @@ vi.mock('../../queue-control/RestTimerSheet', () => ({
   RestTimerLengthControl: ({ inset }: { inset?: boolean }) =>
     createElement('div', { 'data-testid': 'length-control', 'data-inset': String(inset !== false) }),
   RestTimerAutoAdvanceRow: () => createElement('div', { 'data-testid': 'auto-advance-row' }),
+  RestTimerCadenceSection: ({ inset }: { inset?: boolean }) =>
+    createElement('div', { 'data-testid': 'cadence-section', 'data-inset': String(inset !== false) }),
 }));
 
 import { armRestTimer, getRestTimerState, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
@@ -138,6 +140,16 @@ describe('RestTimerArmRow', () => {
 
     expect(queryByTestId('length-control')).not.toBeNull();
     expect(queryByTestId('auto-advance-row')).not.toBeNull();
+  });
+
+  it('offers the cadence on the card, where a fixed-window block gets set up (#5664)', () => {
+    const { container, queryByTestId } = render(<RestTimerArmRow />);
+    expect(queryByTestId('cadence-section')).toBeNull();
+
+    fireEvent.click(container.querySelector(ARM_SWITCH) as HTMLElement);
+
+    // Same card gutter treatment as the length control above it.
+    expect(queryByTestId('cadence-section')?.getAttribute('data-inset')).toBe('false');
   });
 
   it('never puts a running clock above its own on/off switch', () => {

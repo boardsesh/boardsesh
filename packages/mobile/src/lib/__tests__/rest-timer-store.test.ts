@@ -69,6 +69,20 @@ describe('ticks', () => {
     expect(getRestTimerState().lastTickAt).toBe(tickAt(20));
   });
 
+  it('holds a fixed window through an attempt, a send and a back-dated tick (#5664)', () => {
+    // A boulder every 3:00: try for about a minute, rest out the rest. Nothing
+    // logged inside the window may move it — the store sees an attempt and a send
+    // the same way (a climbedAt), and an edited earlier tick arrives older still.
+    armRestTimer('onTheMinute', T0, 'session-1');
+    const { cycleId } = getRestTimerState();
+
+    noteRestTimerTick(tickAt(40), 'onTheMinute', T0 + 40_000); // attempt
+    noteRestTimerTick(tickAt(75), 'onTheMinute', T0 + 75_000); // send
+    noteRestTimerTick(tickAt(-600), 'onTheMinute', T0 + 90_000); // earlier tick, re-saved
+
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0, cycleId, isRunning: true });
+  });
+
   it('adopts the tick as the on-the-minute anchor only when there is none', () => {
     armRestTimer('onTheMinute', T0, null);
     resetRestTimer(T0 + 5_000);

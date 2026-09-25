@@ -461,6 +461,20 @@ describe('RestTimerSheet', () => {
     expect(container.querySelector(LENGTH_PILL)?.getAttribute('data-expanded')).toBe('false');
   });
 
+  it('opens the slider on its own full-width line, not squeezed beside the label (#5664)', () => {
+    const { container, getByText } = renderSheet();
+    holdPill(container);
+
+    // The row the label sits on holds the pill and nothing else: a slider inside
+    // it only ever got the pill's width. The slider is that row's sibling, so it
+    // spans the whole length block.
+    const labelRow = getByText('mobile.restTimer.targetLabel').parentElement as HTMLElement;
+    const slider = container.querySelector(LENGTH_SLIDER) as HTMLElement;
+    expect(labelRow.contains(container.querySelector(LENGTH_PILL))).toBe(true);
+    expect(labelRow.contains(slider)).toBe(false);
+    expect(labelRow.parentElement?.contains(slider)).toBe(true);
+  });
+
   it('publishes the slider as one adjustable node over the whole duration range', () => {
     const { container } = renderSheet();
     holdPill(container);
@@ -498,6 +512,19 @@ describe('RestTimerSheet', () => {
     // Both options AND the hint for the live one are readable without a tap.
     expect(container.querySelector('[data-segment="mobile.restTimer.modeAria:onTheMinute"]')).not.toBeNull();
     expect(container.textContent).toContain('mobile.restTimer.modeAfterTickHint');
+  });
+
+  it('names the fixed-window cadence by its length, so "every 3:00" reads as what it is (#5664)', () => {
+    settingsStore.values.restTimerTargetSeconds = 180;
+    const { container } = renderSheet();
+    const fixedWindow = '[data-segment="mobile.restTimer.modeAria:onTheMinute"]';
+    expect(container.querySelector(fixedWindow)?.textContent).toBe('mobile.restTimer.modeEvery:3:00');
+
+    // With the rest Off there is no length to name.
+    cleanup();
+    settingsStore.values.restTimerTargetSeconds = null;
+    const { container: offContainer } = renderSheet();
+    expect(offContainer.querySelector(fixedWindow)?.textContent).toBe('mobile.restTimer.modeOnTheMinute');
   });
 
   it('re-arms cleanly when the cadence changes, rather than leaving a half-converted anchor', () => {
