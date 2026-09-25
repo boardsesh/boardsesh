@@ -491,7 +491,6 @@ export function useBoardseshGradeEnabled(): boolean {
 }
 
 /**
-/**
  * Kill switch for backend outage detection (issue #4862). A KILL switch, and the
  * direction is the whole point: PostHog flags resolve asynchronously, so a
  * positive flag reads as OFF for the first frames of a cold open — which here
