@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BleAdapterOptions, DevicePickerFn, DevicePickerTargetSearch, BoardScanFamily } from '../types';
 import { recordingTargetPicker } from './recording-target-picker';
 
@@ -44,7 +44,10 @@ vi.mock('@boardsesh/ble-protocol', () => ({
   MAX_BLUETOOTH_MESSAGE_SIZE: 20,
   effectiveChunkSizeForMtu: (mtu: number) => Math.min(Math.max(mtu - 3, 20), 244),
   INTER_CHUNK_DELAY_MS: 0,
-  parseSerialNumber: vi.fn(),
+  // The real `#serial@` parse: the scan cache keys a serial-named box by its name
+  // and a bare-named one by its peripheral id (#5601), so the picker rows these
+  // tests assert depend on it.
+  parseSerialNumber: vi.fn((name?: string) => name?.match(/#([^@]+)/)?.[1]),
 }));
 
 // ── Import after mocks ─────────────────────────────────────────────────
@@ -52,7 +55,7 @@ vi.mock('@boardsesh/ble-protocol', () => ({
 import { RNBleAdapter } from '../adapter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../scan-options';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
-import { parseSerialNumber, splitMessages } from '@boardsesh/ble-protocol';
+import { splitMessages } from '@boardsesh/ble-protocol';
 import { State } from 'react-native-ble-plx';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -905,6 +908,55 @@ describe('RNBleAdapter', () => {
         [{ deviceId: 'late-name-device', name: 'Kilter Board#751737@3' }],
       ]);
     });
+
+    it('lists two bare-name boxes as two rows and connects to the one picked (#5601)', async () => {
+      mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+      mockBleManager.startDeviceScan.mockImplementation(
+        (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+          callback(null, {
+            id: 'wall-a',
+            localName: 'Kilter Board',
+            name: 'Kilter Board',
+            rssi: -45,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+          callback(null, {
+            id: 'wall-b',
+            localName: 'Kilter Board',
+            name: 'Kilter Board',
+            rssi: -60,
+            serviceUUIDs: ['aurora-uuid'],
+          });
+        },
+      );
+
+      const seenDeviceIdsByUpdate: string[][] = [];
+      const devicePicker: DevicePickerFn = (subscribe) => {
+        subscribe((devices) => {
+          seenDeviceIdsByUpdate.push(devices.map((device) => device.deviceId));
+        });
+        return Promise.resolve('wall-a');
+      };
+
+      const mockCharacteristic = { uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() };
+      const mockDeviceWithServices = {
+        id: 'wall-a',
+        characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+      };
+      mockBleManager.connectToDevice.mockResolvedValue({
+        id: 'wall-a',
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+        discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+      });
+
+      const adapter = new RNBleAdapter(devicePicker, 'aurora');
+      await adapter.requestAndConnect();
+
+      expect(seenDeviceIdsByUpdate.at(-1)).toEqual(['wall-a', 'wall-b']);
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('wall-a');
+    });
   });
 
   describe('requestAndConnect — failure modes', () => {
@@ -987,11 +1039,6 @@ describe('RNBleAdapter', () => {
           captured.push(callback);
         },
       );
-      vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
-      // clearAllMocks keeps implementations, so drop this one after the test.
-      onTestFinished(() => {
-        vi.mocked(parseSerialNumber).mockReset();
-      });
       const characteristic = {
         uuid: 'uart-write-uuid',
         isWritableWithoutResponse: true,

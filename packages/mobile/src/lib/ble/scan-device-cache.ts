@@ -1,8 +1,16 @@
+import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import type { DiscoveredDevice } from './types';
 
+// One picker row per physical controller. An Aurora name carries the box's
+// serial (`Kilter Board#751737@3`), so it names exactly one box and we key on it:
+// the same box can surface under a new peripheral id across scan callbacks, and
+// the name folds those back into one row. A name without a serial does not name
+// one box: every Kilter-built box advertises a bare `Kilter Board` and every
+// MoonBoard the same prefix, so two of them in one gym would share a name key and
+// the later advert would overwrite the earlier (#5601). Those key on the id.
 function getDiscoveredDeviceKey(device: DiscoveredDevice): string {
   const trimmedName = device.name?.trim();
-  return trimmedName ? trimmedName : device.deviceId;
+  return trimmedName && parseSerialNumber(trimmedName) ? trimmedName : device.deviceId;
 }
 
 export function upsertDiscoveredDevice(devices: Map<string, DiscoveredDevice>, device: DiscoveredDevice): boolean {
