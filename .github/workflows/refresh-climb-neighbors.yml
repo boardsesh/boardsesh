@@ -18,9 +18,12 @@ on:
   workflow_dispatch:
     inputs:
       board:
-        description: 'One board (e.g. kilter), or empty for every board but spray'
-        type: string
-        default: ''
+        description: 'One board, or all of them (every board but spray)'
+        type: choice
+        default: all
+        # Keep in step with the matrix below and CLIMB_NEIGHBOR_BOARDS
+        # (climb-neighbors-workflow.test.ts checks all three agree).
+        options: [all, decoy, grasshopper, kilter, moonboard, soill, tension, touchstone, woods]
       full:
         description: 'Rebuild from scratch, ignoring the watermark (a first run on a board does this by itself)'
         type: boolean
@@ -41,15 +44,17 @@ jobs:
       fail-fast: false
       matrix:
         board: [decoy, grasshopper, kilter, moonboard, soill, tension, touchstone, woods]
-    # One run per board at a time; a nightly run queues behind a long full
-    # build instead of cancelling it.
+    # One run per board at a time, and a running build is never cancelled by a
+    # newer run. GitHub keeps only ONE pending job per concurrency group: a
+    # further run arriving while one is already pending replaces the pending
+    # one, so at most one run waits behind a long build.
     concurrency:
       group: refresh-climb-neighbors-${{ matrix.board }}
       cancel-in-progress: false
     env:
       # A dispatch naming one board runs only that board's job; the others skip
       # their steps and finish green.
-      SELECTED: ${{ github.event_name != 'workflow_dispatch' || inputs.board == '' || inputs.board == matrix.board }}
+      SELECTED: ${{ github.event_name != 'workflow_dispatch' || inputs.board == 'all' || inputs.board == matrix.board }}
     steps:
       - name: Checkout repository
         if: env.SELECTED == 'true'

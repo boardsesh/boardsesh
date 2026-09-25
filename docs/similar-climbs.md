@@ -57,8 +57,10 @@ precision, so 7 of 10 holds still passes a 0.7 threshold.
 `.github/workflows/refresh-climb-neighbors.yml` at 06:45 UTC against Production.
 The workflow runs one matrix job per board (every board but spray, pinned to
 `CLIMB_NEIGHBOR_BOARDS` by `climb-neighbors-workflow.test.ts`). Each job has a
-350-minute timeout and its own concurrency group, so a nightly run queues behind
-a long build instead of cancelling it. Run locally over several boards, the
+350-minute timeout and its own concurrency group, so a newer run never cancels a
+running build. GitHub keeps only one pending job per group, so at most one run
+waits behind a long build (a later one replaces it). A dispatch picks one board
+or `all` from a fixed list. Run locally over several boards, the
 script takes the cheapest boards first.
 The logic lives in `packages/db/src/queries/climbs/climb-neighbors-refresh.ts` so
 the backend test suite can run it against a real Postgres.

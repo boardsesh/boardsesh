@@ -167,40 +167,72 @@ describe('ClimbNeighborIndex', () => {
     expect(index.neighborsOf('a', 0.7).map(({ neighborUuid }) => neighborUuid)).toEqual(['c']);
   });
 
-  it('matches a brute-force scorer on a random catalogue', () => {
-    let seed = 7;
+  function randomCatalogue(seed: number, count: number, minSize: number, maxSize: number, holdSpace: number) {
+    let state = seed;
     const random = () => {
-      seed = (seed * 1103515245 + 12345) % 2 ** 31;
-      return seed / 2 ** 31;
+      state = (state * 1103515245 + 12345) % 2 ** 31;
+      return state / 2 ** 31;
     };
-    const climbs = Array.from({ length: 300 }, (_, position) => {
+    return Array.from({ length: count }, (_, position) => {
       const holds = new Set<number>();
-      const size = 4 + Math.floor(random() * 10);
-      while (holds.size < size) holds.add(Math.floor(random() * 40));
-      return { uuid: `c${position}`, holdIds: [...holds].sort((left, right) => left - right) };
+      const size = minSize + Math.floor(random() * (maxSize - minSize + 1));
+      while (holds.size < size) holds.add(Math.floor(random() * holdSpace));
+      return { uuid: `c${String(position).padStart(3, '0')}`, holdIds: [...holds].sort((left, right) => left - right) };
     });
-    const index = new ClimbNeighborIndex(climbs);
-    for (const target of climbs.slice(0, 60)) {
-      const expected = climbs
-        .filter((candidate) => candidate.uuid !== target.uuid)
-        .map((candidate) => {
-          const shared = candidate.holdIds.filter((holdId) => target.holdIds.includes(holdId)).length;
-          return {
-            uuid: candidate.uuid,
-            jaccard: shared / (target.holdIds.length + candidate.holdIds.length - shared),
-          };
-        })
-        .filter(({ jaccard }) => jaccard >= 0.5)
-        .map(({ uuid }) => uuid)
-        .sort();
-      expect(
-        index
-          .neighborsOf(target.uuid)
-          .map(({ neighborUuid }) => neighborUuid)
-          .sort(),
-      ).toEqual(expected);
+  }
+
+  // The live SQL only ever sees candidates sharing at least one hold (it joins
+  // on board_climb_holds), so "shared >= 1" is part of the definition even at
+  // threshold 0.
+  function bruteForce(climbs: ReturnType<typeof randomCatalogue>, targetUuid: string, threshold: number) {
+    const target = climbs.find(({ uuid }) => uuid === targetUuid);
+    if (!target) return [];
+    return climbs
+      .filter((candidate) => candidate.uuid !== target.uuid)
+      .map((candidate) => {
+        const shared = candidate.holdIds.filter((holdId) => target.holdIds.includes(holdId)).length;
+        return {
+          neighborUuid: candidate.uuid,
+          sharedHoldCount: shared,
+          candidateHoldCount: candidate.holdIds.length,
+          jaccard: shared / (target.holdIds.length + candidate.holdIds.length - shared),
+        };
+      })
+      .filter(({ sharedHoldCount, jaccard }) => sharedHoldCount >= 1 && jaccard >= threshold)
+      .sort(
+        (left, right) =>
+          right.jaccard - left.jaccard ||
+          (left.neighborUuid < right.neighborUuid ? -1 : left.neighborUuid > right.neighborUuid ? 1 : 0),
+      );
+  }
+
+  const THRESHOLDS = [0, 0.3, 0.5, 0.7, 1];
+  const CATALOGUES = [
+    // Kilter-shaped: 4–13 holds from a 40-hold wall.
+    { name: '4–13-hold climbs', climbs: randomCatalogue(7, 300, 4, 13, 40) },
+    // Tiny climbs, where the prefix is the whole climb (prefixLength === size)
+    // and a single shared hold is enough (minShared === 1).
+    { name: '1–3-hold climbs', climbs: randomCatalogue(11, 120, 1, 3, 12) },
+  ];
+
+  for (const { name, climbs } of CATALOGUES) {
+    for (const threshold of THRESHOLDS) {
+      it(`matches a brute-force scorer, list for list, on ${name} at ${threshold}`, () => {
+        const index = new ClimbNeighborIndex(climbs);
+        for (const target of climbs.slice(0, 60)) {
+          const actual = index
+            .neighborsOf(target.uuid, threshold)
+            .map(({ neighborUuid, sharedHoldCount, candidateHoldCount, jaccard }) => ({
+              neighborUuid,
+              sharedHoldCount,
+              candidateHoldCount,
+              jaccard,
+            }));
+          expect(actual).toEqual(bruteForce(climbs, target.uuid, threshold));
+        }
+      });
     }
-  });
+  }
 });
 
 describe('refreshClimbNeighborsForBoard', () => {

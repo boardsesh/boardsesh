@@ -21,6 +21,16 @@ describe('refresh-climb-neighbors.yml', () => {
     expect(matrixBoards).not.toContain('spray');
   });
 
+  it('offers exactly those boards (plus all) as the dispatch choice, so a typo cannot skip every job', () => {
+    expect(workflow).toMatch(/type: choice/);
+    const match = /^\s+options: \[([^\]]*)\]$/m.exec(workflow);
+    expect(match).not.toBeNull();
+    const options = (match?.[1] ?? '').split(',').map((option) => option.trim());
+    expect(options[0]).toBe('all');
+    expect(options.slice(1).sort()).toEqual([...CLIMB_NEIGHBOR_BOARDS].sort());
+    expect(workflow).toMatch(/default: all/);
+  });
+
   it('gives a long full build room and never cancels one for the next run', () => {
     expect(workflow).toMatch(/timeout-minutes: 350/);
     expect(workflow).toMatch(/group: refresh-climb-neighbors-\$\{\{ matrix\.board \}\}/);

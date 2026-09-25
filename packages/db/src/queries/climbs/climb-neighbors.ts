@@ -19,7 +19,12 @@ export const CLIMB_NEIGHBOR_K = 25;
  */
 export const CLIMB_NEIGHBOR_MIN_JACCARD = 0.5;
 
-/** One climb as the index sees it: its distinct hold ids, ascending. */
+/**
+ * One climb as the index sees it: its hold ids, ascending and DISTINCT
+ * (`distinctHoldIds` produces exactly that). The index counts one overlap per
+ * posting it walks, so a repeated id would be counted twice and inflate the
+ * climb's size and every score it takes part in.
+ */
 export type NeighborClimb = {
   uuid: string;
   holdIds: readonly number[];
