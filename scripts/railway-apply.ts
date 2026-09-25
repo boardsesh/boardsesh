@@ -83,8 +83,8 @@ export function parseArgs(argv: string[]): CliOptions {
 /**
  * Collect the variable values the caller supplied, as a name -> value map.
  *
- * Exported for tests. The returned values are secrets; only their KEYS ever reach
- * the plan layer or any log line.
+ * Exported for tests. The plan compares these secrets internally, but only their
+ * names and status ever reach its output or any log line.
  */
 export function collectSuppliedVars(env: NodeJS.ProcessEnv): Map<string, string> {
   const supplied = new Map<string, string>();
@@ -479,7 +479,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     console.log(`[railway-apply] note: service "${name}" is live but not declared here — left untouched.`);
   }
 
-  const changes = buildPlan(desired, live, { suppliedVars: suppliedVarKeys(desired, supplied) });
+  const changes = buildPlan(desired, live, {
+    suppliedVars: suppliedVarKeys(desired, supplied),
+    suppliedValues: supplied,
+  });
 
   if (changes.length === 0) {
     console.log('[railway-apply] In sync — nothing to do.');

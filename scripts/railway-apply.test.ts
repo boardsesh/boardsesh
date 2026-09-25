@@ -12,6 +12,7 @@ import {
   PLACEHOLDER_PATTERN,
   POSTGRES_PRIMARY_SERVICE_NAME,
   WEB_SERVICE_NAME,
+  BACKEND_SERVICE_NAME,
   desiredRailwayState,
 } from '../infra/railway/config';
 import {
@@ -44,6 +45,7 @@ const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 const BASELINE_REQUIRED_VARS = {
   SMTP_USER: 'mailer@boardsesh.com',
   SMTP_PASSWORD: 'test-password',
+  INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
   BOARDSESH_WEB: '1',
   BASE_URL: CANONICAL_WEB_ORIGIN,
   PG_TLS_SERVER_CERT: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
@@ -61,8 +63,10 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
       { id: 'svc-web', name: WEB_SERVICE_NAME },
       { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME },
+      { id: 'svc-backend', name: BACKEND_SERVICE_NAME },
     ],
     variables: {
+      [BACKEND_SERVICE_NAME]: { INTERNAL_SERVICE_SECRET: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET },
       [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' },
       // Presence is all this config asserts; the PEM bodies live only in Railway.
       [POSTGRES_PRIMARY_SERVICE_NAME]: {
@@ -72,6 +76,7 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       [WEB_SERVICE_NAME]: {
         SMTP_USER: 'mailer@boardsesh.com',
         SMTP_PASSWORD: 'test-password',
+        INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
         BOARDSESH_WEB: '1',
         BASE_URL: CANONICAL_WEB_ORIGIN,
       },
@@ -266,6 +271,17 @@ describe('diffServiceVars', () => {
     );
   });
 
+  it('reports a missing web INTERNAL_SERVICE_SECRET (#5291)', () => {
+    const { INTERNAL_SERVICE_SECRET: _omitted, ...webWithoutSecret } = BASELINE_REQUIRED_VARS;
+    const live = liveState({
+      variables: { ...liveState().variables, [WEB_SERVICE_NAME]: webWithoutSecret },
+    });
+
+    expect(diffServiceVars(webService, live, NO_SUPPLIED).map((change) => change.summary)).toEqual([
+      expect.stringContaining('INTERNAL_SERVICE_SECRET is absent'),
+    ]);
+  });
+
   it('allows an absent BOARDSESH_WEB override', () => {
     const live = liveState({
       variables: {
@@ -273,6 +289,7 @@ describe('diffServiceVars', () => {
         [WEB_SERVICE_NAME]: {
           SMTP_USER: 'mailer@boardsesh.com',
           SMTP_PASSWORD: 'test-password',
+          INTERNAL_SERVICE_SECRET: 'test-internal-service-secret',
           BASE_URL: CANONICAL_WEB_ORIGIN,
         },
       },
@@ -342,6 +359,71 @@ describe('diffTableRetention', () => {
 });
 
 describe('buildPlan', () => {
+  it.each([WEB_SERVICE_NAME, BACKEND_SERVICE_NAME])('reports a missing %s service secret', (serviceName) => {
+    const live = liveState();
+    delete live.variables[serviceName].INTERNAL_SERVICE_SECRET;
+    const changes = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
+    expect(changes).toEqual([
+      expect.objectContaining({ summary: `${serviceName}: INTERNAL_SERVICE_SECRET is absent`, blocked: true }),
+    ]);
+  });
+
+  it.each(['a-different-secret', 'test-internal-service-secret '])(
+    'reports unequal credentials without exposing or overwriting either value',
+    (backendSecret) => {
+      const live = liveState();
+      live.variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET = backendSecret;
+      const changes = buildPlan(desiredRailwayState, live, {
+        suppliedVars: new Set([varKey(BACKEND_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET')]),
+      });
+      expect(changes).toEqual([
+        expect.objectContaining({
+          summary: `INTERNAL_SERVICE_SECRET differs between ${WEB_SERVICE_NAME} and ${BACKEND_SERVICE_NAME}`,
+          blocked: true,
+        }),
+      ]);
+      expect(changes[0].target).toBeUndefined();
+      expect(JSON.stringify(changes)).not.toContain(backendSecret);
+      expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+    },
+  );
+
+  it('reports a service secret reused as the backend cron secret without exposing it', () => {
+    const live = liveState();
+    live.variables[BACKEND_SERVICE_NAME].CRON_SECRET = BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET;
+    const changes = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
+    expect(changes).toEqual([
+      expect.objectContaining({
+        summary: `INTERNAL_SERVICE_SECRET must differ from CRON_SECRET on ${BACKEND_SERVICE_NAME}`,
+        blocked: true,
+      }),
+    ]);
+    expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
+  it('blocks writing a missing service secret when the supplied value equals the cron secret', () => {
+    const live = liveState();
+    live.variables[BACKEND_SERVICE_NAME].CRON_SECRET = BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET;
+    live.variables[BACKEND_SERVICE_NAME].INTERNAL_SERVICE_SECRET = '';
+    const changes = buildPlan(desiredRailwayState, live, {
+      suppliedVars: new Set([varKey(BACKEND_SERVICE_NAME, 'INTERNAL_SERVICE_SECRET')]),
+      suppliedValues: new Map([['INTERNAL_SERVICE_SECRET', BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET]]),
+    });
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: `${BACKEND_SERVICE_NAME}: INTERNAL_SERVICE_SECRET is absent`,
+          blocked: true,
+        }),
+        expect.objectContaining({
+          summary: `INTERNAL_SERVICE_SECRET must differ from CRON_SECRET on ${BACKEND_SERVICE_NAME}`,
+          blocked: true,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(changes)).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
   it('is empty when everything matches', () => {
     expect(buildPlan(desiredRailwayState, liveState(), NO_SUPPLIED)).toEqual([]);
   });
@@ -355,7 +437,7 @@ describe('buildPlan', () => {
     const live = liveState({ services: [], variables: {} });
     const plan = buildPlan(desiredRailwayState, live, NO_SUPPLIED);
     expect(plan.filter((change) => change.resource === 'env-var')).toEqual([]);
-    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(4);
+    expect(plan.filter((change) => change.resource === 'service')).toHaveLength(desiredRailwayState.services.length);
   });
 
   it('reports missing TTLs', () => {
@@ -470,6 +552,7 @@ describe('main', () => {
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                   { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+                  { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
                 ],
               },
             },
@@ -603,6 +686,7 @@ describe('Railway authentication', () => {
           { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
           { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
           { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+          { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
         ],
       },
     },
@@ -866,7 +950,10 @@ describe('apply mode', () => {
     };
   }
 
-  function stubApply(variables: Record<string, string>): {
+  function stubApply(
+    variables: Record<string, string>,
+    serviceVariables: Record<string, Record<string, string>>,
+  ): {
     fetch: typeof globalThis.fetch;
     upserts: Upsert[];
   } {
@@ -903,9 +990,11 @@ describe('apply mode', () => {
         );
       }
       if (body.query.includes('variables(')) {
-        return new Response(JSON.stringify({ data: { variables: withBaselineRequiredVars(variables) } }), {
-          status: 200,
-        });
+        const serviceId = String(body.variables.serviceId);
+        return new Response(
+          JSON.stringify({ data: { variables: serviceVariables[serviceId] ?? withBaselineRequiredVars(variables) } }),
+          { status: 200 },
+        );
       }
       return new Response(
         JSON.stringify({
@@ -919,6 +1008,7 @@ describe('apply mode', () => {
                   { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
                   { node: { id: 'svc-web', name: WEB_SERVICE_NAME } },
                   { node: { id: 'svc-pg18', name: POSTGRES_PRIMARY_SERVICE_NAME } },
+                  { node: { id: 'svc-backend', name: BACKEND_SERVICE_NAME } },
                 ],
               },
             },
@@ -934,11 +1024,12 @@ describe('apply mode', () => {
   async function runApply(
     variables: Record<string, string>,
     env: Record<string, string> = {},
+    serviceVariables: Record<string, Record<string, string>> = {},
   ): Promise<{ code: number; output: string; upserts: Upsert[] }> {
     const originalFetch = globalThis.fetch;
     const originalEnv = { ...process.env };
     const captured = collectStdout();
-    const stub = stubApply(variables);
+    const stub = stubApply(variables, serviceVariables);
 
     globalThis.fetch = stub.fetch;
     process.env.RAILWAY_TOKEN = 'test-token';
@@ -974,6 +1065,68 @@ describe('apply mode', () => {
     const { code, upserts } = await runApply({ CLICKHOUSE_URL: SECRET_VALUE });
     expect(code).toBe(0);
     expect(upserts).toEqual([]);
+  });
+
+  it.each([
+    ['svc-web', ''],
+    ['svc-web', '<generate-secret>'],
+    ['svc-backend', ''],
+    ['svc-backend', '<generate-secret>'],
+  ])('blocks a mismatched supplied credential before writing %s (%s)', async (serviceId, missingSecret) => {
+    const suppliedSecret = 'different-supplied-credential';
+    const { code, upserts, output } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: suppliedSecret },
+      { [serviceId]: { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: missingSecret } },
+    );
+    expect(code).toBe(1);
+    expect(upserts).toEqual([]);
+    expect(output).toContain('INTERNAL_SERVICE_SECRET differs between');
+    expect(output).not.toContain('project converged');
+    expect(output).not.toContain(suppliedSecret);
+    expect(output).not.toContain(BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET);
+  });
+
+  it.each(['svc-web', 'svc-backend'])('fills %s when the supplied credential matches its peer', async (serviceId) => {
+    const { code, upserts } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET },
+      { [serviceId]: { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: '' } },
+    );
+    expect(code).toBe(0);
+    expect(upserts).toEqual([
+      expect.objectContaining({
+        serviceId,
+        name: 'INTERNAL_SERVICE_SECRET',
+        value: BASELINE_REQUIRED_VARS.INTERNAL_SERVICE_SECRET,
+      }),
+    ]);
+  });
+
+  it('fills both missing service credentials with the same supplied value', async () => {
+    const { code, upserts } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: 'new-shared-credential' },
+      {
+        'svc-web': { ...BASELINE_REQUIRED_VARS, INTERNAL_SERVICE_SECRET: '' },
+        'svc-backend': {},
+      },
+    );
+    expect(code).toBe(0);
+    expect(upserts).toHaveLength(2);
+    expect(new Set(upserts.map((upsert) => upsert.value))).toEqual(new Set(['new-shared-credential']));
+  });
+
+  it('rejects a supplied placeholder instead of reporting convergence', async () => {
+    const { code, upserts, output } = await runApply(
+      { CLICKHOUSE_URL: SECRET_VALUE },
+      { RAILWAY_VAR_INTERNAL_SERVICE_SECRET: '<generate-secret>' },
+      { 'svc-backend': {} },
+    );
+    expect(code).toBe(1);
+    expect(upserts).toEqual([]);
+    expect(output).not.toContain('project converged');
+    expect(output).not.toContain('<generate-secret>');
   });
 
   it('refuses to invent a value it was not given', async () => {

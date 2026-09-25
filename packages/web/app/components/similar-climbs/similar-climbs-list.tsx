@@ -120,16 +120,10 @@ export default function SimilarClimbsList({
     enabled,
     staleTime: 5 * 60 * 1000,
     initialData: initialClimbs,
-    // Pins the seed's freshness explicitly rather than relying on the default.
-    // The contract that matters is "a seeded query is fresh": if it were stamped
-    // `dataUpdatedAt = 0`, `Date.now() - 0` would beat any staleTime and the
-    // client would refetch the moment the front door hydrates — re-running a
-    // resolver rate-limited 30/min against the web server's single IP, which is
-    // exactly what the server-side cache in `front-door-data.server.ts` exists
-    // to avoid. query-core 5.101.4 already defaults `dataUpdatedAt` to
-    // `Date.now()` when `initialData` is present (`getDefaultState`, query.js),
-    // so today this is belt-and-braces; `similar-climbs-ssr.test.tsx` pins the
-    // freshness itself rather than the mechanism.
+    // Successful SSR results, including genuinely empty arrays, stay fresh so
+    // hydration does not repeat a resolved read. An unavailable SSR section
+    // passes no seed and recovers through the browser's own request identity.
+    // The SSR tests pin freshness and first-render links, not the mechanism.
     initialDataUpdatedAt: initialClimbs ? Date.now() : undefined,
   });
 

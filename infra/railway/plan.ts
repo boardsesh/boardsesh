@@ -14,7 +14,7 @@
 //   2. Never overwrite a value that is already set and not a placeholder. Only
 //      `absent` and `placeholder` are drift this tool will fix.
 //   3. Never surface a secret value. Variable values are inspected only to
-//      classify them or compare them to public configured values; no live value
+//      classify them or compare them against declared constraints; no live value
 //      reaches a PlannedChange.
 
 import {
@@ -34,8 +34,8 @@ export interface LiveService {
  * Live state for one environment.
  *
  * `variables` maps service name -> variable name -> raw value. The raw values are
- * needed to classify placeholder-vs-set and never leave this module: `classifyVar`
- * is the only thing that reads them, and it returns a state, not a value.
+ * needed for classification and equality checks. These checks return status,
+ * never credential values.
  */
 export interface LiveState {
   services: LiveService[];
@@ -76,10 +76,11 @@ export interface PlanOptions {
    * found it in its own environment as `RAILWAY_VAR_<VAR>`.
    *
    * This is what separates "drift we can fix" from "drift we can only report".
-   * Keeping it a plain set of keys — never the values — is what lets the whole plan
-   * layer stay pure and keeps secrets out of every PlannedChange.
+   * PlannedChange records contain names and status only, never secret values.
    */
   suppliedVars: ReadonlySet<string>;
+  /** Values by variable name, used only to validate matching groups before writes. */
+  suppliedValues?: ReadonlyMap<string, string>;
 }
 
 /** The key shape used by PlanOptions.suppliedVars. */
@@ -309,6 +310,58 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
 
   for (const service of desired.services) {
     changes.push(...diffServiceVars(service, live, options));
+  }
+
+  for (const { name, serviceNames } of desired.matchingServiceVars ?? []) {
+    // Compare the state after proposed writes, so filling a missing value cannot
+    // report convergence while leaving different credentials on the services.
+    // Compare exact bytes: trimming would hide a credential the backend rejects.
+    if (serviceNames.some((serviceName) => !findService(live, serviceName))) continue;
+    const proposedWrites = changes.filter(
+      (change) =>
+        !change.blocked && change.target?.varName === name && serviceNames.includes(change.target.serviceName),
+    );
+    const credentials = serviceNames.map((serviceName) =>
+      proposedWrites.some((change) => change.target?.serviceName === serviceName)
+        ? options.suppliedValues?.get(name)
+        : live.variables[serviceName]?.[name],
+    );
+    if (credentials.some((credential) => classifyVar(credential) !== 'set')) {
+      for (const change of proposedWrites) {
+        change.blocked = true;
+        change.detail = 'Every matching service credential must be present and non-placeholder before applying.';
+      }
+      continue;
+    }
+    if (new Set(credentials).size <= 1) continue;
+    for (const change of proposedWrites) change.blocked = true;
+    changes.push({
+      resource: 'env-var',
+      summary: `${name} differs between ${serviceNames.join(' and ')}`,
+      detail: 'Set the same credential on these services. Existing values are never overwritten automatically.',
+      blocked: true,
+    });
+  }
+
+  for (const { serviceName, names } of desired.distinctServiceVars ?? []) {
+    if (!findService(live, serviceName)) continue;
+    const proposedValues = names.map((name) => {
+      const plannedWrite = changes.find(
+        (change) => !change.blocked && change.target?.serviceName === serviceName && change.target.varName === name,
+      );
+      return plannedWrite ? options.suppliedValues?.get(name) : live.variables[serviceName]?.[name];
+    });
+    if (proposedValues.some((credential) => classifyVar(credential) !== 'set')) continue;
+    if (proposedValues[0] !== proposedValues[1]) continue;
+    for (const change of changes) {
+      if (change.target?.serviceName === serviceName && names.includes(change.target.varName)) change.blocked = true;
+    }
+    changes.push({
+      resource: 'env-var',
+      summary: `${names[0]} must differ from ${names[1]} on ${serviceName}`,
+      detail: 'Use separate credentials for SSR service reads and cron jobs. Live values are never printed.',
+      blocked: true,
+    });
   }
 
   // A null map means the check was skipped for want of a DSN, which must not read
