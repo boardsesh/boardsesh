@@ -4706,6 +4706,20 @@ describe('a wall keeps the visibility picked at creation through a resumed publi
     expect(publicBucketObjects.size).toBe(0);
   });
 
+  it('never copies an admin-hidden wall’s photo when its owner makes it public (#5797)', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`);
+
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+    // Re-stating public is the self-heal path, and it must refuse too.
+    await sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, isPublic: true } }, ctxFor(OWNER));
+
+    const row = await visibilityOf(wall.uuid);
+    expect(row.is_public).toBe(true);
+    expect(row.public_photo_key).toBeNull();
+    expect(publicBucketObjects.size).toBe(0);
+  });
+
   it('applies a public choice on a version-1 commit, photo copy included', async () => {
     const wall = await createWall(OWNER, { isPublic: true });
     const versionId = await openDraft(wall.uuid);

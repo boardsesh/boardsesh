@@ -2014,8 +2014,13 @@ export const sprayWallMutations = {
     // choice (#5513) commits the flag and makes the copy afterwards, best effort,
     // so a failed copy leaves a public wall with no photo to show. Re-stating
     // "public" — which the wizard does straight after its publish — heals it.
+    //
+    // Never for an admin-hidden wall (#5797): it reads as private to everybody but
+    // its owner, so its photo has no business in the world-readable bucket even
+    // when the owner flips the flag. Re-checked under the lock below, since a hide
+    // can land while the copy is in flight.
     const promotedPhotoKey =
-      validated.isPublic === true && (!board.isPublic || wall.publicPhotoKey == null)
+      validated.isPublic === true && wall.hiddenAt == null && (!board.isPublic || wall.publicPhotoKey == null)
         ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
         : null;
 
@@ -2056,7 +2061,7 @@ export const sprayWallMutations = {
         const losingPublic = goingPrivate && boardNow?.isPublic === true;
 
         const [wallNow] = await tx
-          .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey })
+          .select({ publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey, hiddenAt: dbSchema.sprayWalls.hiddenAt })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
@@ -2104,7 +2109,11 @@ export const sprayWallMutations = {
           wallUpdates.pendingIsPublic = null;
           wallUpdates.pendingIsUnlisted = null;
         }
-        if (promotedPhotoKey) {
+        if (promotedPhotoKey && wallNow?.hiddenAt != null) {
+          // Hidden while the copy was in flight: the copy is attached to nothing
+          // and goes on the post-commit delete list with the other orphans.
+          orphanedPublicKeys.push(promotedPhotoKey);
+        } else if (promotedPhotoKey) {
           wallUpdates.publicPhotoKey = promotedPhotoKey;
           // A wall promoted twice without an intervening demotion would strand the
           // first copy; the old key goes on the sweep list rather than being left.
