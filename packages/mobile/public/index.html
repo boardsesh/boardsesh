@@ -39,7 +39,8 @@
          the createRoot() branch (hydrate is only set by static rendering, and
          this app is web.output 'single'), and createRoot clears the container's
          existing children before it mounts. So this is a pure placeholder — no
-         teardown code, no script, no extra request.
+         teardown code, no extra request. (The one script in <head> only ever
+         touches it when the root layout chunk fails to load; see below.)
 
          Why it exists: the shell paints #000000 and #root was empty, so the page
          was a black rectangle for as long as the JS bundle took to arrive and
@@ -97,7 +98,86 @@
           opacity: 0.55;
         }
       }
+      /* The boot-failure state the chunk-recovery script below swaps in. */
+      #boot-paint p {
+        margin: 0;
+        max-width: 280px;
+        text-align: center;
+        font-size: 15px;
+        line-height: 1.4;
+        color: #f4f1fb;
+        opacity: 0.7;
+      }
+      #boot-paint button {
+        min-height: 44px;
+        padding: 0 24px;
+        border: 0;
+        border-radius: 12px;
+        background-color: #6d28d9;
+        color: #ffffff;
+        font: inherit;
+        font-weight: 700;
+      }
     </style>
+    <!-- Root-layout chunk recovery (#5611). Every route, the root _layout
+         included, is its own content-hashed chunk. When the ROOT layout chunk
+         fails to load, the error boundary that recovers every other route never
+         exists (it lives in that chunk), React renders nothing, and the failure
+         surfaces only as an unhandled AsyncRequireError. This listener reloads
+         once, under the same sessionStorage guard as
+         src/lib/chunk-load-recovery.web.ts (same key, same 60 s window), and
+         only while the app has not mounted: #root still holds the boot paint,
+         or nothing. If it may not reload (offline, guard spent, storage
+         blocked), it paints a Reload button instead of a black page. Kept
+         inline because it has to run before the entry bundle it guards. -->
+    <script>
+      (function () {
+        var GUARD_KEY = 'boardsesh:chunk-reload-at';
+        var WINDOW_MS = 60000;
+        function claimAutoReload() {
+          try {
+            var now = Date.now();
+            var last = Number(sessionStorage.getItem(GUARD_KEY));
+            if (last > 0 && now - last < WINDOW_MS) return false;
+            sessionStorage.setItem(GUARD_KEY, String(now));
+            return sessionStorage.getItem(GUARD_KEY) === String(now);
+          } catch (storageError) {
+            return false;
+          }
+        }
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason;
+          if (!reason || reason.name !== 'AsyncRequireError') return;
+          var root = document.getElementById('root');
+          var bootPaint = document.getElementById('boot-paint');
+          if (!root || (root.childElementCount > 0 && !bootPaint)) return;
+          if (navigator.onLine !== false && claimAutoReload()) {
+            window.location.reload();
+            return;
+          }
+          var panel = document.createElement('div');
+          panel.id = 'boot-paint';
+          var wordmark = document.createElement('b');
+          wordmark.textContent = 'Boardsesh';
+          var message = document.createElement('p');
+          message.textContent =
+            navigator.onLine === false
+              ? "You're offline. Reconnect, then reload."
+              : "Boardsesh didn't load. Reload to try again.";
+          var reloadButton = document.createElement('button');
+          reloadButton.type = 'button';
+          reloadButton.textContent = 'Reload';
+          reloadButton.addEventListener('click', function () {
+            window.location.reload();
+          });
+          panel.appendChild(wordmark);
+          panel.appendChild(message);
+          panel.appendChild(reloadButton);
+          while (root.firstChild) root.removeChild(root.firstChild);
+          root.appendChild(panel);
+        });
+      })();
+    </script>
   </head>
 
   <body>
