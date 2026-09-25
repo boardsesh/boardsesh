@@ -167,10 +167,16 @@ current chunk map. Two places do that reload:
 - **The root `_layout` chunk.** The boundary lives inside that chunk, so an
   inline script in `public/index.html` covers it. The root layout sets
   `window.__BOARDSESH_ROOT_LAYOUT_LOADED__` as it evaluates
-  (`markRootLayoutLoaded`). While that flag is unset, the script reloads on
-  any unhandled `AsyncRequireError`, and when it may not reload it paints a
-  Reload panel over the page (a `<body>` child, never inside React's `#root`).
-  Once the flag is set, it stands down.
+  (`markRootLayoutLoaded`). While that flag is unset, the script handles any
+  unhandled `AsyncRequireError` the way the boundary does. It sends a `HEAD`
+  probe for the failed chunk (3 s) and reloads only if the probe gets an HTTP
+  answer. With no answer, which covers a captive portal, an origin outage, or
+  an in-app browser that claims to be online, a reload would land on the
+  browser's network-error page. So it keeps the shell and leaves the guard
+  unspent. Whenever it may not reload, it paints a Reload panel over the page
+  (a `<body>` child, never inside React's `#root`). Once the flag is set, it
+  stands down. The script is ES5-only, which a test pins, because the
+  formatter also rewrites it.
 
 An unhandled `AsyncRequireError` alone does not prove the root chunk failed.
 Expo Router calls `loadRoute()` for every layout at startup and drops the
