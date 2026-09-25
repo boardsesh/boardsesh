@@ -31,24 +31,24 @@ export default function SettingsLayout() {
 
   return (
     <Stack screenOptions={screenOptions}>
-      <Stack.Screen name="index" options={{ title: t('mobile.more.title') }} />
+      <Stack.Screen name="index" options={{ title: t('mobile.settings.title') }} />
       {/* Board look is a parent plus two leaves: the parent asks "which look?",
           and everything you can tune about one lives a tap away. Registered flat
           in this stack (no nested layout) so back-swipe and the header keep
           behaving. */}
-      <Stack.Screen name="board-look/index" options={{ title: t('mobile.more.boardLook.title') }} />
-      <Stack.Screen name="board-look/custom" options={{ title: t('mobile.more.boardLook.customLook.title') }} />
+      <Stack.Screen name="board-look/index" options={{ title: t('mobile.settings.boardLook.title') }} />
+      <Stack.Screen name="board-look/custom" options={{ title: t('mobile.settings.boardLook.customLook.title') }} />
       <Stack.Screen
         name="board-look/accessibility"
-        options={{ title: t('mobile.more.boardLook.accessibility.title') }}
+        options={{ title: t('mobile.settings.boardLook.accessibility.title') }}
       />
-      <Stack.Screen name="storage" options={{ title: t('mobile.more.storage.title') }} />
+      <Stack.Screen name="storage" options={{ title: t('mobile.settings.storage.title') }} />
       <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
       <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
       <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
       {/* i18n-ignore-next-line — preview-only screen */}
       <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
-      <Stack.Screen name="dev-servers" options={{ title: t('mobile.more.metroServersTitle') }} />
+      <Stack.Screen name="dev-servers" options={{ title: t('mobile.settings.metroServersTitle') }} />
       {/* i18n-ignore-next-line — tester-only screen */}
       <Stack.Screen name="feature-flags" options={{ title: 'Feature Flags' }} />
       {/* i18n-ignore-next-line — tester-only screen */}

@@ -78,8 +78,8 @@ function previewRolesFor(id: CvdPaletteId): HoldColorOverrides {
 export const CVD_PALETTE_OPTIONS: readonly CvdPaletteOption[] = Object.freeze([
   {
     id: 'default',
-    labelI18nKey: 'mobile.more.accessibility.palettes.cards.default.title',
-    descriptionI18nKey: 'mobile.more.accessibility.palettes.cards.default.subtitle',
+    labelI18nKey: 'mobile.settings.accessibility.palettes.cards.default.title',
+    descriptionI18nKey: 'mobile.settings.accessibility.palettes.cards.default.subtitle',
     previewRoles: NO_OVERRIDES,
   },
   // Every key is spelled out as a property literal, never interpolated from the
@@ -88,25 +88,25 @@ export const CVD_PALETTE_OPTIONS: readonly CvdPaletteOption[] = Object.freeze([
   {
     id: 'protanopia',
     labelI18nKey: presetFor('protanopia').labelI18nKey,
-    descriptionI18nKey: 'mobile.more.accessibility.palettes.cards.protanopia.subtitle',
+    descriptionI18nKey: 'mobile.settings.accessibility.palettes.cards.protanopia.subtitle',
     previewRoles: previewRolesFor('protanopia'),
   },
   {
     id: 'deuteranopia',
     labelI18nKey: presetFor('deuteranopia').labelI18nKey,
-    descriptionI18nKey: 'mobile.more.accessibility.palettes.cards.deuteranopia.subtitle',
+    descriptionI18nKey: 'mobile.settings.accessibility.palettes.cards.deuteranopia.subtitle',
     previewRoles: previewRolesFor('deuteranopia'),
   },
   {
     id: 'tritanopia',
     labelI18nKey: presetFor('tritanopia').labelI18nKey,
-    descriptionI18nKey: 'mobile.more.accessibility.palettes.cards.tritanopia.subtitle',
+    descriptionI18nKey: 'mobile.settings.accessibility.palettes.cards.tritanopia.subtitle',
     previewRoles: previewRolesFor('tritanopia'),
   },
   {
     id: 'custom',
-    labelI18nKey: 'mobile.more.accessibility.palettes.cards.custom.title',
-    descriptionI18nKey: 'mobile.more.accessibility.palettes.cards.custom.subtitle',
+    labelI18nKey: 'mobile.settings.accessibility.palettes.cards.custom.title',
+    descriptionI18nKey: 'mobile.settings.accessibility.palettes.cards.custom.subtitle',
     previewRoles: undefined,
   },
 ]);

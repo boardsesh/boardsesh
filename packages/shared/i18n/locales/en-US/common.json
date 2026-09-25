@@ -10,7 +10,7 @@
       "viewProfile": "View {{name}}'s profile",
       "thisClimber": "this climber"
     },
-    "more": {
+    "settings": {
       "title": "Settings",
       "library": "Library",
       "development": "Development",

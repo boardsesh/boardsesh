@@ -243,7 +243,7 @@ export function BoardLookCarousel({
         onSnapToIndex={selectOnSnap ? handleSnapToIndex : undefined}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={handleViewableItemsChanged}
-        accessibilityLabel={t('mobile.more.boardLook.presets.carouselAccessibility')}
+        accessibilityLabel={t('mobile.settings.boardLook.presets.carouselAccessibility')}
         contentStyle={contentStyle}
       />
 

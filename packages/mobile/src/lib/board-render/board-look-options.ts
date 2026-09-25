@@ -70,8 +70,8 @@ export const CLASSIC_PREVIEW_SETTINGS: BoardRenderSettings = Object.freeze({
 
 const AURA_OPTION: BoardLookOption = {
   id: 'aura',
-  labelI18nKey: 'mobile.more.boardLook.presets.aura',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.aura',
+  labelI18nKey: 'mobile.settings.boardLook.presets.aura',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.aura',
   previewSettings: presetValues('aura'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -79,8 +79,8 @@ const AURA_OPTION: BoardLookOption = {
 
 const AURA_SUBTLE_OPTION: BoardLookOption = {
   id: 'aura-subtle',
-  labelI18nKey: 'mobile.more.boardLook.presets.auraSubtle',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.auraSubtle',
+  labelI18nKey: 'mobile.settings.boardLook.presets.auraSubtle',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.auraSubtle',
   previewSettings: presetValues('aura-subtle'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -88,8 +88,8 @@ const AURA_SUBTLE_OPTION: BoardLookOption = {
 
 const MODERN_CLASSIC_OPTION: BoardLookOption = {
   id: 'modern-classic',
-  labelI18nKey: 'mobile.more.boardLook.presets.modernClassic',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.modernClassic',
+  labelI18nKey: 'mobile.settings.boardLook.presets.modernClassic',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.modernClassic',
   previewSettings: presetValues('modern-classic'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -97,8 +97,8 @@ const MODERN_CLASSIC_OPTION: BoardLookOption = {
 
 const MAX_CONTRAST_OPTION: BoardLookOption = {
   id: 'max-contrast',
-  labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.maxContrast',
+  labelI18nKey: 'mobile.settings.boardLook.presets.maxContrast',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.maxContrast',
   previewSettings: presetValues('max-contrast'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -106,8 +106,8 @@ const MAX_CONTRAST_OPTION: BoardLookOption = {
 
 const AURA_BOLD_OPTION: BoardLookOption = {
   id: 'aura-bold',
-  labelI18nKey: 'mobile.more.boardLook.presets.auraBold',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.auraBold',
+  labelI18nKey: 'mobile.settings.boardLook.presets.auraBold',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.auraBold',
   previewSettings: presetValues('aura-bold'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
@@ -115,8 +115,8 @@ const AURA_BOLD_OPTION: BoardLookOption = {
 
 const CLASSIC_OPTION: BoardLookOption = {
   id: 'classic',
-  labelI18nKey: 'mobile.more.boardLook.mode.options.classic',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.classic',
+  labelI18nKey: 'mobile.settings.boardLook.mode.options.classic',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.classic',
   previewSettings: CLASSIC_PREVIEW_SETTINGS,
   placeholderOverlay: false,
   requiresBoardseshRenderer: false,
@@ -129,8 +129,8 @@ const CLASSIC_OPTION: BoardLookOption = {
  */
 const CUSTOM_ONBOARDING_OPTION: BoardLookOption = {
   id: 'custom',
-  labelI18nKey: 'mobile.more.boardLook.presets.custom',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.custom',
+  labelI18nKey: 'mobile.settings.boardLook.presets.custom',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.custom',
   previewSettings: presetValues('aura-bold'),
   placeholderOverlay: true,
   requiresBoardseshRenderer: true,
@@ -139,8 +139,8 @@ const CUSTOM_ONBOARDING_OPTION: BoardLookOption = {
 /** The settings screen's Custom card: a mirror of what the climber has built. */
 const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
   id: 'custom',
-  labelI18nKey: 'mobile.more.boardLook.presets.custom',
-  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.custom',
+  labelI18nKey: 'mobile.settings.boardLook.presets.custom',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.custom',
   previewSettings: null,
   placeholderOverlay: false,
   requiresBoardseshRenderer: false,

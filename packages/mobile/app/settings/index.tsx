@@ -234,8 +234,8 @@ export default function MoreScreen() {
     pendingCount === 0
       ? undefined
       : effectiveOffline
-        ? t('mobile.more.offline.pendingFooter', { count: pendingCount })
-        : t('mobile.more.offline.syncingFooter', { count: pendingCount });
+        ? t('mobile.settings.offline.pendingFooter', { count: pendingCount })
+        : t('mobile.settings.offline.syncingFooter', { count: pendingCount });
 
   // Guard against a rapid double-tap spawning overlapping retries (the drain is
   // single-flight internally, but this avoids the wasted re-entrant work).
@@ -307,7 +307,7 @@ export default function MoreScreen() {
   // labelled in their own script (English / Español / Français) from
   // LOCALE_LABELS — language names are intentionally not translated.
   const languageOptions: { key: LocaleOverride; label: string }[] = [
-    { key: 'system', label: t('mobile.more.language.system') },
+    { key: 'system', label: t('mobile.settings.language.system') },
     ...SUPPORTED_LOCALES.map((locale) => ({ key: locale, label: LOCALE_LABELS[locale] })),
   ];
 
@@ -320,15 +320,15 @@ export default function MoreScreen() {
   };
 
   const appearanceOptions: { key: ThemeOverride; label: string }[] = [
-    { key: 'system', label: t('mobile.more.appearance.system') },
-    { key: 'light', label: t('mobile.more.appearance.light') },
-    { key: 'dark', label: t('mobile.more.appearance.dark') },
+    { key: 'system', label: t('mobile.settings.appearance.system') },
+    { key: 'light', label: t('mobile.settings.appearance.light') },
+    { key: 'dark', label: t('mobile.settings.appearance.dark') },
   ];
 
   const gradeFormatOptions: { key: GradeDisplayFormat; label: string }[] = [
-    { key: 'v-grade', label: t('mobile.more.gradeFormat.vGrade') },
-    { key: 'font', label: t('mobile.more.gradeFormat.font') },
-    { key: 'both', label: t('mobile.more.gradeFormat.both') },
+    { key: 'v-grade', label: t('mobile.settings.gradeFormat.vGrade') },
+    { key: 'font', label: t('mobile.settings.gradeFormat.font') },
+    { key: 'both', label: t('mobile.settings.gradeFormat.both') },
   ];
 
   const handleReplayWalkthrough = () => {
@@ -410,13 +410,13 @@ export default function MoreScreen() {
   if (!effectiveOffline && deadLetterCount > 0) {
     sections.push({
       key: 'syncIssues',
-      title: t('mobile.more.syncIssues.title'),
-      footer: t('mobile.more.syncIssues.description', { count: deadLetterCount }),
+      title: t('mobile.settings.syncIssues.title'),
+      footer: t('mobile.settings.syncIssues.description', { count: deadLetterCount }),
       rows: [
         {
           kind: 'button',
           key: 'retrySync',
-          label: t('mobile.more.syncIssues.retry'),
+          label: t('mobile.settings.syncIssues.retry'),
           emphasis: 'primary',
           onPress: () => {
             hapticLight();
@@ -433,7 +433,7 @@ export default function MoreScreen() {
   if (profile?.id) {
     sections.push({
       key: 'library',
-      title: t('mobile.more.library'),
+      title: t('mobile.settings.library'),
       rows: [
         {
           // The You tab's way in to notifications, and the only entry point for
@@ -498,14 +498,14 @@ export default function MoreScreen() {
   // Integrations.
   sections.push({
     key: 'integrations',
-    title: t('mobile.more.integrations.title'),
+    title: t('mobile.settings.integrations.title'),
     rows: [
       {
         kind: 'nav',
         key: 'integrations',
-        label: t('mobile.more.integrations.title'),
+        label: t('mobile.settings.integrations.title'),
         subtitle: t(
-          stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
+          stravaEnabled ? 'mobile.settings.integrations.subtitleWithStrava' : 'mobile.settings.integrations.subtitle',
         ),
         icon: 'integrations',
         onPress: navAction(() => router.push('/settings/integrations')),
@@ -528,12 +528,12 @@ export default function MoreScreen() {
   // Appearance (segmented).
   sections.push({
     key: 'appearance',
-    title: t('mobile.more.appearance.title'),
+    title: t('mobile.settings.appearance.title'),
     rows: [
       {
         kind: 'segmented',
         key: 'appearance',
-        label: t('mobile.more.appearance.title'),
+        label: t('mobile.settings.appearance.title'),
         options: appearanceOptions,
         selectedKey: themeOverride,
         onSelect: (key) => {
@@ -550,13 +550,13 @@ export default function MoreScreen() {
   // Grade Format (segmented) — description as the section footer.
   sections.push({
     key: 'gradeFormat',
-    title: t('mobile.more.gradeFormat.title'),
-    footer: t('mobile.more.gradeFormat.description'),
+    title: t('mobile.settings.gradeFormat.title'),
+    footer: t('mobile.settings.gradeFormat.description'),
     rows: [
       {
         kind: 'segmented',
         key: 'gradeFormat',
-        label: t('mobile.more.gradeFormat.title'),
+        label: t('mobile.settings.gradeFormat.title'),
         options: gradeFormatOptions,
         selectedKey: gradeFormat,
         onSelect: (key) => {
@@ -575,13 +575,13 @@ export default function MoreScreen() {
   // opt-in; the flag gates whether it's offered at all).
   sections.push({
     key: 'displayOptions',
-    title: t('mobile.more.displayOptions.title'),
+    title: t('mobile.settings.displayOptions.title'),
     rows: [
       {
         kind: 'toggle',
         key: 'playlistTags',
-        label: t('mobile.more.displayOptions.playlistTags'),
-        subtitle: t('mobile.more.displayOptions.playlistTagsDescription'),
+        label: t('mobile.settings.displayOptions.playlistTags'),
+        subtitle: t('mobile.settings.displayOptions.playlistTagsDescription'),
         value: showPlaylistTags,
         onValueChange: (next) => {
           hapticSelection();
@@ -591,8 +591,8 @@ export default function MoreScreen() {
       {
         kind: 'toggle',
         key: 'quickActionsButton',
-        label: t('mobile.more.displayOptions.quickActionsButton'),
-        subtitle: t('mobile.more.displayOptions.quickActionsButtonDescription'),
+        label: t('mobile.settings.displayOptions.quickActionsButton'),
+        subtitle: t('mobile.settings.displayOptions.quickActionsButtonDescription'),
         value: showQuickActionsButton,
         onValueChange: (next) => {
           hapticSelection();
@@ -605,8 +605,8 @@ export default function MoreScreen() {
             {
               kind: 'toggle' as const,
               key: 'boardseshGrades',
-              label: t('mobile.more.displayOptions.boardseshGrades'),
-              subtitle: t('mobile.more.displayOptions.boardseshGradesDescription'),
+              label: t('mobile.settings.displayOptions.boardseshGrades'),
+              subtitle: t('mobile.settings.displayOptions.boardseshGradesDescription'),
               value: showBoardseshGrades,
               onValueChange: (next: boolean) => {
                 hapticSelection();
@@ -705,7 +705,7 @@ export default function MoreScreen() {
   if (offlineEnabled) {
     sections.push({
       key: 'offline',
-      title: t('mobile.more.offline.title'),
+      title: t('mobile.settings.offline.title'),
       footer: offlineFooter,
       rows: [
         // First, because it decides whether anything below it can reach the
@@ -721,8 +721,8 @@ export default function MoreScreen() {
         {
           kind: 'toggle',
           key: 'autoOfflineBoards',
-          label: t('mobile.more.offline.autoDownload'),
-          subtitle: t('mobile.more.offline.autoDownloadDescription'),
+          label: t('mobile.settings.offline.autoDownload'),
+          subtitle: t('mobile.settings.offline.autoDownloadDescription'),
           value: autoOfflineBoards,
           onValueChange: (next) => {
             hapticSelection();
@@ -741,7 +741,7 @@ export default function MoreScreen() {
                 offlineEngineEnabled: isOfflineEngineEnabled(),
               });
               if (missing.length > 0) {
-                showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
+                showToast(t('mobile.settings.offline.downloadingAll', { count: missing.length }), 'info');
               }
             } else {
               // Switched back off before the list ever resolved: the tap is spent,
@@ -759,13 +759,13 @@ export default function MoreScreen() {
   // the old Accessibility row used to open on their own (issue #2202).
   sections.push({
     key: 'boardLook',
-    title: t('mobile.more.boardLook.title'),
+    title: t('mobile.settings.boardLook.title'),
     rows: [
       {
         kind: 'nav',
         key: 'boardLook',
-        label: t('mobile.more.boardLook.title'),
-        subtitle: t('mobile.more.boardLook.rowSubtitleShort'),
+        label: t('mobile.settings.boardLook.title'),
+        subtitle: t('mobile.settings.boardLook.rowSubtitleShort'),
         icon: 'boardLook',
         onPress: navAction(() => router.push('/settings/board-look')),
       },
@@ -776,12 +776,12 @@ export default function MoreScreen() {
   // picker's own label carries the word "Language", so no section title.
   sections.push({
     key: 'language',
-    footer: t('mobile.more.language.description'),
+    footer: t('mobile.settings.language.description'),
     rows: [
       {
         kind: 'select',
         key: 'language',
-        label: t('mobile.more.language.title'),
+        label: t('mobile.settings.language.title'),
         options: languageOptions,
         selectedKey: localePreference,
         onSelect: (key) => {
@@ -802,8 +802,8 @@ export default function MoreScreen() {
       {
         kind: 'nav',
         key: 'helpTranslate',
-        label: t('mobile.more.language.contributeTitle'),
-        subtitle: t('mobile.more.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
+        label: t('mobile.settings.language.contributeTitle'),
+        subtitle: t('mobile.settings.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
         icon: 'translate',
         onPress: navAction(handleHelpTranslate),
       },
@@ -819,13 +819,13 @@ export default function MoreScreen() {
   if (showStorage) {
     sections.push({
       key: 'storage',
-      title: t('mobile.more.storage.title'),
+      title: t('mobile.settings.storage.title'),
       rows: [
         {
           kind: 'nav',
           key: 'storage',
-          label: t('mobile.more.storage.rowLabel'),
-          subtitle: t('mobile.more.storage.rowSubtitle'),
+          label: t('mobile.settings.storage.rowLabel'),
+          subtitle: t('mobile.settings.storage.rowSubtitle'),
           icon: 'storage',
           onPress: navAction(() => router.push('/settings/storage')),
         },
@@ -836,13 +836,13 @@ export default function MoreScreen() {
   // Diagnostics — Session Recording toggle. Persist + apply live.
   sections.push({
     key: 'diagnostics',
-    title: t('mobile.more.diagnostics.title'),
+    title: t('mobile.settings.diagnostics.title'),
     rows: [
       {
         kind: 'toggle',
         key: 'sessionRecording',
-        label: t('mobile.more.diagnostics.recording'),
-        subtitle: t('mobile.more.diagnostics.recordingDescription'),
+        label: t('mobile.settings.diagnostics.recording'),
+        subtitle: t('mobile.settings.diagnostics.recordingDescription'),
         value: sessionRecordingEnabled,
         onValueChange: (next) => {
           hapticSelection();
@@ -888,8 +888,8 @@ export default function MoreScreen() {
       {
         kind: 'nav',
         key: 'replay-board-look',
-        label: t('mobile.more.boardLook.intro.replayTitle'),
-        subtitle: t('mobile.more.boardLook.intro.replaySubtitle'),
+        label: t('mobile.settings.boardLook.intro.replayTitle'),
+        subtitle: t('mobile.settings.boardLook.intro.replaySubtitle'),
         icon: 'replay',
         onPress: navAction(handleReplayBoardLook),
       },
@@ -904,22 +904,22 @@ export default function MoreScreen() {
   if (showQaPreviews) {
     sections.push({
       key: 'previews',
-      title: t('mobile.more.previews.title'),
+      title: t('mobile.settings.previews.title'),
       rows: [
         qaPrNumber !== null
           ? {
               kind: 'nav',
               key: 'qaBrief',
-              label: t('mobile.more.previews.testPlanTitle', { prNumber: qaPrNumber }),
-              subtitle: t('mobile.more.previews.testPlanSubtitle'),
+              label: t('mobile.settings.previews.testPlanTitle', { prNumber: qaPrNumber }),
+              subtitle: t('mobile.settings.previews.testPlanSubtitle'),
               icon: 'branchSwitcher',
               onPress: navAction(() => router.push('/qa/brief')),
             }
           : {
               kind: 'nav',
               key: 'qaPick',
-              label: t('mobile.more.previews.pickTitle'),
-              subtitle: t('mobile.more.previews.pickSubtitle'),
+              label: t('mobile.settings.previews.pickTitle'),
+              subtitle: t('mobile.settings.previews.pickSubtitle'),
               icon: 'branchSwitcher',
               onPress: navAction(() => router.push('/qa/pick')),
             },
@@ -928,8 +928,8 @@ export default function MoreScreen() {
               {
                 kind: 'toggle' as const,
                 key: 'qaPromptOnLaunch',
-                label: t('mobile.more.previews.promptOnLaunchTitle'),
-                subtitle: t('mobile.more.previews.promptOnLaunchSubtitle'),
+                label: t('mobile.settings.previews.promptOnLaunchTitle'),
+                subtitle: t('mobile.settings.previews.promptOnLaunchSubtitle'),
                 value: qaPromptOnLaunch,
                 onValueChange: (next: boolean) => {
                   hapticSelection();
@@ -949,8 +949,8 @@ export default function MoreScreen() {
       devRows.push({
         kind: 'nav',
         key: 'metroServers',
-        label: t('mobile.more.metroServersTitle'),
-        subtitle: t('mobile.more.metroServersSubtitle'),
+        label: t('mobile.settings.metroServersTitle'),
+        subtitle: t('mobile.settings.metroServersSubtitle'),
         icon: 'devServers',
         onPress: navAction(() => router.push('/settings/dev-servers')),
       });
@@ -1024,15 +1024,15 @@ export default function MoreScreen() {
     devRows.push({
       kind: 'toggle',
       key: 'forceServerUnreachable',
-      label: t('mobile.more.dev.forceServerUnreachable'),
-      subtitle: t('mobile.more.dev.forceServerUnreachableDescription'),
+      label: t('mobile.settings.dev.forceServerUnreachable'),
+      subtitle: t('mobile.settings.dev.forceServerUnreachableDescription'),
       value: devForcedUnreachable,
       onValueChange: (next) => {
         hapticSelection();
         setDevForcedUnreachable(next);
       },
     });
-    sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
+    sections.push({ key: 'development', title: t('mobile.settings.development'), rows: devRows });
   }
 
   // Preview Build — branch switcher, only in EAS preview dev-client builds.

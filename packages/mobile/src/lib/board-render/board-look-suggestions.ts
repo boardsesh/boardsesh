@@ -64,16 +64,16 @@ export type BoardLookSuggestionInputs = {
 
 // The keys are returned as DATA, so nothing in source references them as string
 // literals and the orphan checker cannot see them. One marker per key:
-// i18n-keep common:mobile.more.boardLook.suggestion.increaseContrast.titleIos
-// i18n-keep common:mobile.more.boardLook.suggestion.increaseContrast.titleAndroid
-// i18n-keep common:mobile.more.boardLook.suggestion.increaseContrast.body
-// i18n-keep common:mobile.more.boardLook.suggestion.increaseContrast.apply
-// i18n-keep common:mobile.more.boardLook.suggestion.grayscale.title
-// i18n-keep common:mobile.more.boardLook.suggestion.grayscale.body
-// i18n-keep common:mobile.more.boardLook.suggestion.grayscale.apply
-// i18n-keep common:mobile.more.boardLook.suggestion.dismiss
-// i18n-keep common:mobile.more.boardLook.suggestion.dismissAccessibility
-const KEY_ROOT = 'mobile.more.boardLook.suggestion';
+// i18n-keep common:mobile.settings.boardLook.suggestion.increaseContrast.titleIos
+// i18n-keep common:mobile.settings.boardLook.suggestion.increaseContrast.titleAndroid
+// i18n-keep common:mobile.settings.boardLook.suggestion.increaseContrast.body
+// i18n-keep common:mobile.settings.boardLook.suggestion.increaseContrast.apply
+// i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.title
+// i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.body
+// i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.apply
+// i18n-keep common:mobile.settings.boardLook.suggestion.dismiss
+// i18n-keep common:mobile.settings.boardLook.suggestion.dismissAccessibility
+const KEY_ROOT = 'mobile.settings.boardLook.suggestion';
 
 /** Shared by both suggestions, so the banner's two buttons never drift apart. */
 export const BOARD_LOOK_SUGGESTION_DISMISS_I18N_KEY = `${KEY_ROOT}.dismiss`;

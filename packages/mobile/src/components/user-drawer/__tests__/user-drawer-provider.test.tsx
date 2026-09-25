@@ -87,8 +87,8 @@ vi.mock('react-i18next', () => ({
           'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
           'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
           'userDrawer.qa.badge': 'QA',
-          'mobile.more.signOut.failureTitle': 'Sign-out was not confirmed',
-          'mobile.more.signOut.failure': 'Reconnect and sign out again',
+          'mobile.settings.signOut.failureTitle': 'Sign-out was not confirmed',
+          'mobile.settings.signOut.failure': 'Reconnect and sign out again',
         }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },

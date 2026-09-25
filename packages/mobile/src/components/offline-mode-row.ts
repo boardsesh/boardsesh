@@ -28,8 +28,8 @@ export function buildOfflineModeRow(t: TFunction<'common'>, offlineMode: boolean
   return {
     kind: 'toggle',
     key: 'offlineMode',
-    label: t('mobile.more.offline.offlineMode'),
-    subtitle: t('mobile.more.offline.offlineModeDescription'),
+    label: t('mobile.settings.offline.offlineMode'),
+    subtitle: t('mobile.settings.offline.offlineModeDescription'),
     value: offlineMode,
     onValueChange: (next) => {
       hapticSelection();
