@@ -25,6 +25,11 @@ import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
 
 const OWNER_USER_ID = 'sf-board-scope-owner';
 const CLIMBER_USER_ID = 'sf-board-scope-climber';
+// Logs on board A without ever pressing Start: no session_id on the tick, so the
+// feed can only show it as a daily highlight group (#5567, #5576).
+const SOLO_USER_ID = 'sf-board-scope-solo';
+const SOLO_DAY = '2026-02-04';
+const SOLO_DAILY_GROUP = `daily:${SOLO_USER_ID}:${SOLO_DAY}`;
 const CLIMB_UUID = 'sf-board-scope-climb-1';
 const BOARD_A_UUID = 'sf-board-scope-board-a';
 const BOARD_B_UUID = 'sf-board-scope-board-b';
@@ -36,7 +41,7 @@ let boardAId: number;
 let boardBId: number;
 
 type SessionFeedResult = {
-  sessions: Array<{ sessionId: string }>;
+  sessions: Array<{ sessionId: string; sessionType: string; tickCount: number }>;
 };
 
 const callFeed = (input: Record<string, unknown>) =>
@@ -81,10 +86,16 @@ const insertSession = async (id: string, boardId: number | null) => {
   `);
 };
 
-const insertTick = async (params: { uuid: string; sessionId: string; boardId: number | null; climbedAt: string }) => {
+const insertTick = async (params: {
+  uuid: string;
+  sessionId: string | null;
+  boardId: number | null;
+  climbedAt: string;
+  userId?: string;
+}) => {
   await db.execute(sql`
     INSERT INTO boardsesh_ticks (uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
-    VALUES (${params.uuid}, ${CLIMBER_USER_ID}, 'kilter', ${params.boardId}, ${CLIMB_UUID}, 40, 'send', 1, 20, ${params.climbedAt}, ${params.sessionId})
+    VALUES (${params.uuid}, ${params.userId ?? CLIMBER_USER_ID}, 'kilter', ${params.boardId}, ${CLIMB_UUID}, 40, 'send', 1, 20, ${params.climbedAt}, ${params.sessionId})
   `);
 };
 
@@ -92,12 +103,13 @@ const cleanup = async () => {
   await db.execute(
     sql`DELETE FROM boardsesh_ticks WHERE session_id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
+  await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${SOLO_USER_ID}`);
   await db.execute(
     sql`DELETE FROM board_sessions WHERE id IN (${SESSION_ON_A}, ${SESSION_ON_B}, ${SESSION_NULL_BOARD})`,
   );
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
   await db.execute(sql`DELETE FROM user_boards WHERE uuid IN (${BOARD_A_UUID}, ${BOARD_B_UUID})`);
-  await db.execute(sql`DELETE FROM "users" WHERE id IN (${OWNER_USER_ID}, ${CLIMBER_USER_ID})`);
+  await db.execute(sql`DELETE FROM "users" WHERE id IN (${OWNER_USER_ID}, ${CLIMBER_USER_ID}, ${SOLO_USER_ID})`);
 };
 
 describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
@@ -105,6 +117,7 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     await cleanup();
     await insertUser(OWNER_USER_ID);
     await insertUser(CLIMBER_USER_ID);
+    await insertUser(SOLO_USER_ID);
     await insertClimb();
 
     boardAId = await insertBoard(BOARD_A_UUID, 'board-a', 10, '1,20');
@@ -135,6 +148,22 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
       sessionId: SESSION_NULL_BOARD,
       boardId: null,
       climbedAt: '2026-02-03 10:00:00',
+    });
+
+    // Two session-less ticks on board A, same day: one daily highlight group.
+    await insertTick({
+      uuid: 'sf-tick-solo-1',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: `${SOLO_DAY} 18:00:00`,
+      userId: SOLO_USER_ID,
+    });
+    await insertTick({
+      uuid: 'sf-tick-solo-2',
+      sessionId: null,
+      boardId: boardAId,
+      climbedAt: `${SOLO_DAY} 18:30:00`,
+      userId: SOLO_USER_ID,
     });
   });
 
@@ -179,5 +208,43 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     expect(sessionIds).toContain(SESSION_ON_A);
     expect(sessionIds).toContain(SESSION_ON_B);
     expect(sessionIds).toContain(SESSION_NULL_BOARD);
+  });
+
+  describe('climbs logged without a session (daily highlights, #5567 / #5576)', () => {
+    it("shows them on the board's own feed", async () => {
+      const result = await callFeed({ boardUuid: BOARD_A_UUID, includeDailyHighlights: true, limit: 50 });
+
+      const dailyGroup = result.sessions.find((session) => session.sessionId === SOLO_DAILY_GROUP);
+      expect(dailyGroup?.sessionType).toBe('daily_highlight');
+      expect(dailyGroup?.tickCount).toBe(2);
+      // Party sessions on the board are still there alongside it.
+      expect(result.sessions.map((session) => session.sessionId)).toContain(SESSION_ON_A);
+    });
+
+    it("keeps them off another board's feed", async () => {
+      const result = await callFeed({ boardUuid: BOARD_B_UUID, includeDailyHighlights: true, limit: 50 });
+      const sessionIds = result.sessions.map((session) => session.sessionId);
+
+      expect(sessionIds).toContain(SESSION_ON_B);
+      expect(sessionIds).not.toContain(SOLO_DAILY_GROUP);
+    });
+
+    it('keeps them off the unscoped Everyone feed (#4105 cost guard)', async () => {
+      const result = await callFeed({ includeDailyHighlights: true, limit: 50 });
+      const sessionIds = result.sessions.map((session) => session.sessionId);
+
+      expect(sessionIds).toContain(SESSION_ON_A);
+      expect(result.sessions.some((session) => session.sessionType === 'daily_highlight')).toBe(false);
+    });
+
+    it('keeps them off the feed when the boardUuid does not resolve to a board', async () => {
+      const result = await callFeed({
+        boardUuid: 'sf-board-scope-nonexistent',
+        includeDailyHighlights: true,
+        limit: 50,
+      });
+
+      expect(result.sessions.some((session) => session.sessionType === 'daily_highlight')).toBe(false);
+    });
   });
 });

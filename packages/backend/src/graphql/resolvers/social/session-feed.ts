@@ -160,7 +160,16 @@ export async function getSessionFeed(
     // climber's ticks per session. Empty on social/home/following feeds, which
     // keep whole-session aggregates. Mirrors boardIdFilter's null guard.
     const sessionUserFilter = userId !== null ? sql`AND t.user_id = ${userId}` : sql``;
-    const shouldIncludeDailyHighlights = includeDailyHighlights && participantFilterEnabled;
+    // Daily highlights (a climber's session-less ticks for one day) need a
+    // bounded population. A participant filter bounds it to a few climbers; a
+    // RESOLVED board filter bounds it to one board's ticks through the
+    // (board_id, climbed_at) index. Sessions are optional and most climbers
+    // never press Start, so without this a board's Home feed showed only party
+    // sessions and a quiet board looked empty (#5567, #5576). The unscoped
+    // Everyone feed still skips them: that would aggregate every session-less
+    // tick in the table on an unauthenticated endpoint (#4105). An unknown
+    // boardUuid resolves to no filter, so it falls back to that same feed.
+    const shouldIncludeDailyHighlights = includeDailyHighlights && (participantFilterEnabled || boardIdFilter !== null);
     const eligibleUsersCte = userId
       ? sql`eligible_users AS (SELECT ${userId}::text AS user_id),`
       : followingOnly
@@ -185,7 +194,7 @@ export async function getSessionFeed(
             t.climbed_at::date AS day,
             COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS effective_difficulty
           FROM boardsesh_ticks t
-          INNER JOIN eligible_users eu ON eu.user_id = t.user_id
+          ${participantFilterEnabled ? sql`INNER JOIN eligible_users eu ON eu.user_id = t.user_id` : sql``}
           LEFT JOIN board_climb_aliases bca_stats ON bca_stats.board_type = t.board_type AND bca_stats.alias_uuid = t.climb_uuid
           LEFT JOIN board_climb_stats bcs
             ON bcs.climb_uuid = COALESCE(bca_stats.canonical_uuid, t.climb_uuid)
