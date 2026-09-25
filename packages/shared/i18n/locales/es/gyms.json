@@ -55,6 +55,23 @@
     "tension": "Tension · {{formattedCount}}",
     "countHint": "Los números cuentan rocódromos, no plafones: un rocódromo con tres muros Kilter cuenta una vez."
   },
+  "filters": {
+    "boardHeading": "Plafón",
+    "moreLabel": "Afina la búsqueda",
+    "moreLabelActive": "Afina la búsqueda · {{count}}",
+    "layoutHeading": "Disposición",
+    "layoutLocked": "Elige un plafón arriba y aparecen sus disposiciones.",
+    "sizeHeading": "Tamaño",
+    "sizeLocked": "Elige una disposición y aparecen los tamaños.",
+    "angleHeading": "Ángulo",
+    "angleLocked": "Elige un plafón arriba y aparecen sus ángulos.",
+    "angleOption": "{{angle}}°",
+    "angleHint": "El ángulo que cada rocódromo tiene registrado. Casi todos los plafones se inclinan, así que léelo como la última posición.",
+    "multiBoardLabel": "Solo rocódromos con dos o más plafones distintos",
+    "submit": "Ver rocódromos",
+    "activeHeading": "Filtrando por",
+    "clearAll": "Quitar los filtros"
+  },
   "search": {
     "geoHint": "¿Ubicación desactivada? Escribe una ciudad. No hace falta dar permiso.",
     "label": "Buscar rocódromos",

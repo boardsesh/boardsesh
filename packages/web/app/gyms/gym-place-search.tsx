@@ -24,10 +24,21 @@ export default function GymPlaceSearch({
   facet,
   query,
   locale,
+  children,
 }: {
   facet: DirectoryFacet;
   query: DirectoryQuery;
   locale: Locale;
+  /**
+   * The board filter panel, rendered INSIDE this form.
+   *
+   * It is a server component passed through as children rather than imported
+   * here, which keeps the filter chips off the client bundle. Inside the form
+   * because its checkboxes have to submit with the text and the place: one
+   * "Show gyms" for the whole search, rather than a filter that silently
+   * survives or dies depending on which button the visitor reached for.
+   */
+  children?: React.ReactNode;
 }) {
   const { t } = useTranslation('gyms');
   const router = useRouter();
@@ -143,6 +154,14 @@ export default function GymPlaceSearch({
           {t('places.attribution')}
         </MuiLink>
       </Box>
+      {/* The board TYPE rides the text search as hidden inputs, or typing a town
+          would wipe the board the visitor just picked. It needs them because the
+          board-type row is anchors, so the form has no control of its own for it.
+
+          Layout, size and angle deliberately get NO hidden inputs: the filter
+          panel renders them as real checkboxes inside this same form, so a
+          hidden twin would submit alongside an UNCHECKED box and make the filter
+          impossible to remove. Facet routes carry their board type in the path. */}
       {facet === 'all' &&
         query.boardTypes.map((boardType) => <input key={boardType} type="hidden" name="boardType" value={boardType} />)}
       {keepOrigin && (
@@ -156,6 +175,9 @@ export default function GymPlaceSearch({
       <Button type="submit" variant="contained" sx={{ textTransform: 'none', minHeight: 44, fontSize: 16 }}>
         {t('search.submit')}
       </Button>
+      {/* Full-width below the search row, so the filter tiers get the measure
+          they need while the text field and its button stay on one line. */}
+      <Box sx={{ flexBasis: '100%' }}>{children}</Box>
     </Box>
   );
 }

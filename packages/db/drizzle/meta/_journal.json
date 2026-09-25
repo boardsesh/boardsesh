@@ -1667,6 +1667,13 @@
       "when": 1790344121718,
       "tag": "0237_climb_neighbor_resumable_builds",
       "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1790370656609,
+      "tag": "0238_polite_shadowcat",
+      "breakpoints": true
     }
   ]
 }

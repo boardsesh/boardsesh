@@ -6,6 +6,7 @@ import {
   type SearchGymsDirectoryQueryResponse,
 } from '@boardsesh/graphql/operations';
 import type { SearchGymsInput } from '@boardsesh/shared-schema';
+import { toGymBoardFilterInput } from '@boardsesh/gym-filters';
 import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client';
 import { DIRECTORY_PAGE_SIZE, type DirectoryFacet, type DirectoryQuery } from './directory-facets';
 
@@ -65,7 +66,12 @@ const runFacetCountQuery = createCachedGraphQLQuery<SearchGymsDirectoryQueryResp
 export function toSearchGymsInput(query: DirectoryQuery, offset: number, limit: number): SearchGymsInput {
   return {
     ...(query.query ? { query: query.query } : {}),
-    ...(query.boardTypes.length > 0 ? { boardTypes: query.boardTypes } : {}),
+    // The whole board block — types, layouts, sizes, angles — through the shared
+    // mapper, which omits every empty array rather than sending one. That matters:
+    // `boardMatchExists` returns null when no board filter is set, and an empty
+    // array would flip it into an EXISTS clause and change the emitted SQL for
+    // every caller that never asked for a board filter.
+    ...toGymBoardFilterInput(query),
     ...(query.latitude !== null && query.longitude !== null
       ? { latitude: query.latitude, longitude: query.longitude }
       : {}),

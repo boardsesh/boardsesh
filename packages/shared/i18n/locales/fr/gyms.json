@@ -55,6 +55,23 @@
     "tension": "Tension · {{formattedCount}}",
     "countHint": "Les chiffres comptent des salles, pas des boards : une salle avec trois murs Kilter compte une fois."
   },
+  "filters": {
+    "boardHeading": "Board",
+    "moreLabel": "Affine ta recherche",
+    "moreLabelActive": "Affine ta recherche · {{count}}",
+    "layoutHeading": "Disposition",
+    "layoutLocked": "Choisis une board ci-dessus et ses dispositions apparaissent.",
+    "sizeHeading": "Taille",
+    "sizeLocked": "Choisis une disposition et les tailles apparaissent.",
+    "angleHeading": "Inclinaison",
+    "angleLocked": "Choisis une board ci-dessus et ses inclinaisons apparaissent.",
+    "angleOption": "{{angle}}°",
+    "angleHint": "L'inclinaison que chaque salle a enregistrée. La plupart des boards basculent, donc c'est le dernier réglage connu.",
+    "multiBoardLabel": "Uniquement les salles avec au moins deux boards différentes",
+    "submit": "Voir les salles",
+    "activeHeading": "Filtres actifs",
+    "clearAll": "Tout effacer"
+  },
   "search": {
     "geoHint": "Localisation désactivée ? Saisis une ville. Aucune autorisation nécessaire.",
     "label": "Rechercher une salle",

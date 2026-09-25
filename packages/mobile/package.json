@@ -24,6 +24,7 @@
     "@boardsesh/graphql": "workspace:*",
     "@boardsesh/graphql-client": "workspace:*",
     "@boardsesh/gym-claim": "workspace:*",
+    "@boardsesh/gym-filters": "workspace:*",
     "@boardsesh/i18n": "workspace:*",
     "@boardsesh/key-value-storage": "workspace:*",
     "@boardsesh/logbook": "workspace:*",

@@ -825,6 +825,7 @@ export const socialGymQueries = {
       boardTypes,
       layoutIds,
       sizeIds,
+      angles,
       multiBoardTypeOnly,
       requireSlug,
       prioritizeClaimed,
@@ -837,8 +838,8 @@ export const socialGymQueries = {
     const useProximity = latitude !== undefined && longitude !== undefined;
 
     // A board-level match: the gym must own ONE board satisfying every active
-    // board filter (type AND layout AND size), so they're ANDed inside a single
-    // EXISTS — never separate ones, or a gym could pass by owning a Kilter and a
+    // board filter (type AND layout AND size AND angle), so they're ANDed inside a
+    // single EXISTS — never separate ones, or a gym could pass by owning a Kilter and a
     // separate 16x10 board. Parameterised by the gym-id expression so the same
     // logic composes into the raw PostGIS SQL (`gyms.id`) and the text-only
     // Drizzle path (`dbSchema.gyms.id`). Returns null when no board filter is set.
@@ -864,6 +865,21 @@ export const socialGymQueries = {
         parts.push(
           sql`ub.size_id IN (${sql.join(
             sizeIds.map((sizeId) => sql`${sizeId}`),
+            sql`, `,
+          )})`,
+        );
+      }
+      // Angle joins the same `parts` array deliberately: it must AND with the
+      // others inside ONE EXISTS, so "a Kilter Homewall at 40" means one wall
+      // that is all three. It is NOT widened by `ub.is_angle_adjustable` —
+      // that column defaults to true and the location sync hardcodes true for
+      // every Aurora wall it cannot read, so an `OR is_angle_adjustable`
+      // disjunct would make nearly every gym match every angle and the filter
+      // would read as broken. Reversible later behind its own input field.
+      if (angles && angles.length > 0) {
+        parts.push(
+          sql`ub.angle IN (${sql.join(
+            angles.map((angle) => sql`${angle}`),
             sql`, `,
           )})`,
         );
