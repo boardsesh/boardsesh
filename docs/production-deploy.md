@@ -32,6 +32,8 @@ replaced Instant Rollback.
 
 ## Serial-plan verification after migrations
 
+**Disabled on 2026-09-25 pending [#5767](https://github.com/boardsesh/boardsesh/issues/5767)** (`if: false` on the job; production still resolves the setting to `2`, and the job made every deploy run red while the deploys succeeded). The paragraph below describes it as designed.
+
 After a successful `migrate`, `verify-serial-plan` checks whether application
 connections resolve `max_parallel_workers_per_gather` to `0` (#5352). It uses
 `DATABASE_URL` from the `Production` environment. When the value is already `0`,

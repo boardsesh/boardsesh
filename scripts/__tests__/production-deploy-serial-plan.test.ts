@@ -57,6 +57,15 @@ const notifyFailureJob = withoutComments(mappingEntry(workflowSource, 'notify-fa
 const notifySuccessJob = withoutComments(mappingEntry(workflowSource, 'notify-success', 2));
 
 describe('production-deploy verify-serial-plan (#5352)', () => {
+  it('is disabled pending #5767, with the enabling condition kept for the revert', () => {
+    // Production resolves max_parallel_workers_per_gather=2 and 0225's ALTER
+    // cannot land through the migration role, so the job made every deploy run
+    // red while the deploys succeeded. It stays defined so re-enabling is a
+    // one-line change once #5767 settles whether the setting is still wanted.
+    expect(verifyJob).toContain('if: false');
+    expect(verifyJob).not.toContain("if: always() && needs.migrate.result == 'success'");
+  });
+
   it('runs the verification after migrations, in the Production environment', () => {
     expect(verifyJob).toContain('needs: [migrate]');
     expect(verifyJob).toContain('environment: Production');
