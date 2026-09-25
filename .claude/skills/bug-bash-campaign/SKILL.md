@@ -76,7 +76,8 @@ reviewer.
 
 ## 5. Implement
 
-Worktree per issue, beside the repo, off fresh `origin/main`:
+Worktree per issue, as a sibling of the repo checkout (`~/projects/boardsesh/` on the dev box;
+adjust to wherever your checkouts live), off fresh `origin/main`:
 
 ```
 git fetch origin main
@@ -93,7 +94,8 @@ Never under `/tmp` or `.claude/worktrees/` (the mobile bundle check needs a sibl
 >   you did not see is not.
 > - Commit before mutating code to test a guard. `git checkout -- <file>` also throws away
 >   uncommitted real work.
-> - Scratch files go in `<scratchpad>/<issue>-<loop>/` with unique names. The shell has
+> - Scratch files go in `<scratchpad>/<issue>-<loop>/` with unique names, where `<scratchpad>` is
+>   the session's scratchpad directory from the system prompt (shared by every agent in the session). The shell has
 >   `noclobber` on, so write files with the Write tool or `>|`, never bare `>`. Read the file back
 >   right before `--body-file`, and re-read the published PR body with `gh pr view`.
 > - Run tests in the FOREGROUND with generous timeouts. Do not start background tasks or monitors
