@@ -61,12 +61,38 @@ export const boardClimbNeighbors = pgTable(
 /**
  * One row per board type: the highest `board_climbs.sync_seq` the neighbour job
  * has folded in. The next run's work set is every eligible climb above it.
+ *
+ * While a full build is in progress (the board's first run, or `--full`),
+ * `full_build_started_at` and `full_build_sync_seq` pin it: a cancelled run
+ * resumes the same build instead of starting over, and the watermark moves to
+ * `full_build_sync_seq` only when the whole board is done.
  */
 export const boardClimbNeighborRuns = pgTable('board_climb_neighbor_runs', {
   boardType: text('board_type').primaryKey().notNull(),
   lastSyncSeq: bigint('last_sync_seq', { mode: 'number' }).notNull().default(0),
   computedAt: timestamp('computed_at').defaultNow().notNull(),
+  fullBuildStartedAt: timestamp('full_build_started_at'),
+  fullBuildSyncSeq: bigint('full_build_sync_seq', { mode: 'number' }),
 });
+
+/**
+ * Comparison groups (a layout; a layout + wall on Woods) a full build has
+ * finished. A group whose `completed_at` is at or after the board's
+ * `full_build_started_at` is done for the build in progress and is skipped when
+ * a cancelled run resumes. `size_id` is 0 on boards that do not group by wall.
+ */
+export const boardClimbNeighborGroupRuns = pgTable(
+  'board_climb_neighbor_group_runs',
+  {
+    boardType: text('board_type').notNull(),
+    layoutId: integer('layout_id').notNull(),
+    sizeId: integer('size_id').notNull().default(0),
+    completedAt: timestamp('completed_at').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.boardType, table.layoutId, table.sizeId] }),
+  }),
+);
 
 export type BoardClimbNeighbor = typeof boardClimbNeighbors.$inferSelect;
 export type NewBoardClimbNeighbor = typeof boardClimbNeighbors.$inferInsert;

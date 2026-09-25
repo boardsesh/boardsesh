@@ -42,6 +42,8 @@ export {
   type NeighborClimb,
 } from './climb-neighbors';
 export {
+  CLIMB_NEIGHBOR_BOARDS,
+  orderBoardsByClimbCount,
   refreshClimbNeighborsForBoard,
   type ClimbNeighborRefreshDb,
   type ClimbNeighborRefreshOptions,

@@ -135,6 +135,7 @@ async function settleClimbs(): Promise<void> {
 
 async function reset(): Promise<void> {
   await db.execute(sql`DELETE FROM board_climb_neighbor_runs`);
+  await db.execute(sql`DELETE FROM board_climb_neighbor_group_runs`);
   await db.execute(sql`DELETE FROM board_climb_neighbors`);
   await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM board_climb_holds WHERE climb_uuid LIKE ${PREFIX + '%'}`);
@@ -364,6 +365,106 @@ describe('refreshClimbNeighborsForBoard', () => {
   it('skips spray walls outright', async () => {
     const result = await refreshClimbNeighborsForBoard(db, { boardType: 'spray', full: true });
     expect(result.skipped).toBe(true);
+  });
+});
+
+describe('a full build survives being cut off', () => {
+  beforeAll(reset);
+  afterAll(reset);
+
+  async function runRow() {
+    const [row] = await db
+      .select()
+      .from(dbSchema.boardClimbNeighborRuns)
+      .where(eq(dbSchema.boardClimbNeighborRuns.boardType, BOARD));
+    return row;
+  }
+
+  async function completedGroups(): Promise<number[]> {
+    const rows = await db
+      .select({ layoutId: dbSchema.boardClimbNeighborGroupRuns.layoutId })
+      .from(dbSchema.boardClimbNeighborGroupRuns)
+      .where(eq(dbSchema.boardClimbNeighborGroupRuns.boardType, BOARD));
+    return rows.map(({ layoutId }) => layoutId).sort((left, right) => left - right);
+  }
+
+  it('records finished groups, smallest first, and resumes without redoing them', async () => {
+    // Layout 5: 2 climbs (the smaller group, so it goes first). Layout 6: 4.
+    await insertClimb({ uuid: 'r5-a', layoutId: 5, holds: range(1, 10) });
+    await insertClimb({ uuid: 'r5-b', layoutId: 5, holds: [...range(1, 9), 11] });
+    for (let variant = 0; variant < 4; variant += 1) {
+      await insertClimb({ uuid: `r6-${variant}`, layoutId: 6, holds: [...range(1, 10), 20 + variant] });
+    }
+    await settleClimbs();
+    const pinned = await highestSyncSeq();
+
+    // Let exactly one chunk through: layout 5's only chunk.
+    let chunksAllowed = 1;
+    const first = await refreshClimbNeighborsForBoard(db, {
+      boardType: BOARD,
+      shouldContinue: () => chunksAllowed-- > 0,
+    });
+
+    expect(first.interrupted).toBe(true);
+    expect(first.full).toBe(true);
+    expect(first.groups.map(({ layoutId }) => layoutId)).toEqual([5, 6]);
+    expect(await completedGroups()).toEqual([5]);
+    expect(await neighbourList('r5-a')).toEqual([{ neighbor: 'r5-b', rank: 1, shared: 9 }]);
+    expect(await neighbourList('r6-0')).toEqual([]);
+    const midBuild = await runRow();
+    expect(midBuild.lastSyncSeq).toBe(0);
+    expect(midBuild.fullBuildSyncSeq).toBe(pinned);
+    expect(midBuild.fullBuildStartedAt).not.toBeNull();
+
+    // A climb that lands between the two runs sits above the pinned target.
+    await insertClimb({ uuid: 'r6-late', layoutId: 6, holds: [...range(1, 10), 40] });
+
+    // The next run is a plain nightly run: it resumes the build on its own.
+    const second = await refreshClimbNeighborsForBoard(db, { boardType: BOARD });
+
+    expect(second.resumed).toBe(true);
+    expect(second.interrupted).toBe(false);
+    const layoutFive = second.groups.find(({ layoutId }) => layoutId === 5);
+    expect(layoutFive?.alreadyComplete).toBe(true);
+    expect(await neighbourList('r6-0')).toHaveLength(4);
+    const finished = await runRow();
+    // The watermark lands on the target pinned when the build started, not on
+    // the late climb, so the next incremental run still folds it in.
+    expect(finished.lastSyncSeq).toBe(pinned);
+    expect(finished.fullBuildStartedAt).toBeNull();
+    expect(finished.fullBuildSyncSeq).toBeNull();
+  });
+
+  it('skips lists a cut-off run already wrote inside an unfinished group', async () => {
+    await reset();
+    for (let variant = 0; variant < 6; variant += 1) {
+      await insertClimb({ uuid: `r7-${variant}`, layoutId: 7, holds: [...range(1, 10), 50 + variant] });
+    }
+
+    let chunksAllowed = 1;
+    const first = await refreshClimbNeighborsForBoard(db, {
+      boardType: BOARD,
+      chunkSize: 2,
+      shouldContinue: () => chunksAllowed-- > 0,
+    });
+    expect(first.interrupted).toBe(true);
+    expect(first.rowsWritten).toBe(2 * 5);
+    expect(await completedGroups()).toEqual([]);
+
+    const second = await refreshClimbNeighborsForBoard(db, { boardType: BOARD, chunkSize: 2 });
+
+    expect(second.resumed).toBe(true);
+    expect(second.groups[0]).toMatchObject({ layoutId: 7, climbsSkipped: 2, climbsProcessed: 4 });
+    for (let variant = 0; variant < 6; variant += 1) {
+      expect(await neighbourList(`r7-${variant}`)).toHaveLength(5);
+    }
+    expect(await completedGroups()).toEqual([7]);
+  });
+
+  it('an explicit --full on a finished board starts a new build, rewriting every list', async () => {
+    const result = await refreshClimbNeighborsForBoard(db, { boardType: BOARD, full: true, chunkSize: 2 });
+    expect(result.resumed).toBe(false);
+    expect(result.groups[0]).toMatchObject({ climbsSkipped: 0, climbsProcessed: 6 });
   });
 });
 
