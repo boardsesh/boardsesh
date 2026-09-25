@@ -36,6 +36,7 @@ import { join } from 'node:path';
 import type { Sql, TransactionSql } from 'postgres';
 import {
   MIGRATIONS,
+  DEVICE_ONLY_STATEMENTS,
   DEVICE_ONLY_TABLES,
   LATEST_SCHEMA_VERSION,
   TABLE_CONFIGS,
@@ -234,10 +235,14 @@ export function boardSnapshotDdlStatements(
   const referencedDeviceOnlyTable = (statement: string): string | undefined =>
     DEVICE_ONLY_TABLES.find((table) => new RegExp(`\\b${table}\\b`).test(statement));
 
+  const deviceOnlyStatements = new Set(DEVICE_ONLY_STATEMENTS.map((statement) => statement.trim()));
   const statements: string[] = [];
   for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
     for (const statement of migration.statements) {
       if (!referencesSnapshotTable(statement)) continue;
+      // Statements the device needs but an artifact must not carry (the holds
+      // index's sync_seq index on board_climbs): dropped by exact text.
+      if (deviceOnlyStatements.has(statement.trim())) continue;
       const deviceOnlyTable = referencedDeviceOnlyTable(statement);
       if (deviceOnlyTable) {
         throw new Error(

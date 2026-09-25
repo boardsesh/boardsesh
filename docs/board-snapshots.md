@@ -238,10 +238,17 @@ The holds index behind similar climbs and the hold heatmap on the phone is three
 them from `board_climbs.frames`, and they are **never** part of an artifact. The exclusion is enforced in
 code, not just by convention: the tables are listed in `DEVICE_ONLY_TABLES` (`@boardsesh/offline-sync`),
 `boardSnapshotDdlStatements` throws if any statement it selects names one, and `snapshot-export-ddl.test.ts`
-pins the artifact's table list to exactly `board_climbs`, `board_climb_stats` and `snapshot_meta`. The same
-migration's `idx_climbs_sync_seq` index is on `board_climbs`, so it does get copied into the artifact DDL. It
-adds some bytes to the decoded file and nothing else, because the import never reads it. Because v10 bumps
-`schema_version`, the schema-bump staleness window below applies to it.
+pins the artifact's table list to exactly `board_climbs`, `board_climb_stats` and `snapshot_meta`.
+
+The same migration's `idx_climbs_sync_seq` index is on `board_climbs`. Matched by table name alone, it would
+land in every artifact, where it is dead weight because the import copies rows out and never queries them by
+`sync_seq`. So it is listed in `DEVICE_ONLY_STATEMENTS`, which the export drops by exact text. The same list
+serves any future statement that the device needs on an artifact table but the artifact must not carry. It
+needs no format change, because an artifact never had these statements.
+
+Because v10 bumps `schema_version`, the schema-bump staleness window below applies. v9 clients tolerate
+v10 artifacts; v10 clients crawl instead of importing a v9 artifact. Dispatch `export-board-snapshots` right
+after the v10 merge, so that v10 artifacts exist before the OTA spreads.
 
 ### Compatible additions and missing columns
 

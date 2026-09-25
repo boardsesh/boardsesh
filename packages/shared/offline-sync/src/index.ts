@@ -138,6 +138,7 @@ export {
   HOLD_INDEX_KEY_PREFIX,
   HOLD_INDEX_CHUNK_CLIMBS,
   HOLD_INDEX_INITIAL_CHUNK_CLIMBS,
+  HOLD_INDEX_GENERATION_PREFIX,
   clearBoardTypeHoldIndex,
 } from './holds-index/hold-index';
 export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
@@ -306,7 +307,7 @@ export type {
 
 // --- On-device schema ------------------------------------------------------------
 export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
-export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES } from './db/schema';
+export { SCHEMA_STATEMENTS, DEVICE_ONLY_TABLES, DEVICE_ONLY_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export { SnapshotSchemaCompatibilityError, type SchemaDriftReport } from './sync/schema-compatibility';
 export type { Migration } from './db/migrations';

@@ -97,7 +97,7 @@ It is three tables of packed blobs (schema v10), not one row per hold. One row p
 
 | Table | One row per | Contents |
 | --- | --- | --- |
-| `holds_index_climbs` | climb uuid | a stable local integer id; only ever `INSERT OR IGNORE`d |
+| `holds_index_climbs` | climb uuid | a stable local integer id; only ever `INSERT OR IGNORE`d, and `AUTOINCREMENT` so a deleted id is never reissued |
 | `board_climb_hold_sets` | indexed climb | its holds, sorted by hold id, 5 bytes each (uint32 hold id + uint8 role: 0 start, 1 hand, 2 foot, 3 finish, 255 other) |
 | `board_climb_hold_postings` | (board, layout, hold) | sorted uint32 local ids of the climbs that use the hold; `WITHOUT ROWID` |
 
@@ -111,8 +111,11 @@ None of the three is a synced table. They have no `TABLE_CONFIGS` entry, no chec
 - **Incremental.** Climbs past the watermark are re-derived 500 at a time. Each chunk edits only the postings its climbs enter or leave, and moves the watermark in the same short transaction.
 - **Which climbs are indexed.** Only listed, published, not-hidden climbs. Hiding a climb bumps its `sync_seq`, and the next pass takes it out.
 - **Postings are per layout.** Every downloaded size of a layout shares them, so builds run one at a time per layout.
-- **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The local readers also call `ensureHoldIndex` before they query.
-- **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's index, local ids included. The explicit sign-out wipe clears all three tables.
+- **Teardown generations.** Every clear of the index bumps a counter in `sync_meta` (`holds-index-generation:<board>:<layout>`, and `holds-index-generation:<board>` for a board-wide clear). A build reads the counter when it starts and re-reads it under each write lock. A teardown that lands mid-build, even one of a sibling size that leaves this scope's own markers alone, therefore stops the build before it writes rows from a read that predates the wipe.
+- **Re-checked under the lock.** Each chunk re-reads its climbs' `sync_seq` under the write lock. A climb that a tombstone deleted since the unlocked read is skipped, and so is one that changed; a later pass derives the new version.
+- **Yields between chunks.** The builder hands the JS thread back between chunks, and builds each posting list in a growable `Uint32Array`.
+- **When it runs.** `pullSync` builds the index for each scope at the end of every cycle, after the completion markers are written, so it never holds up a download. A build failure is reported through `holdIndex.onError` and never fails the cycle. The mobile similar-climbs and heatmap readers, which ship in later PRs, will also call `ensureHoldIndex` before they query.
+- **Cleanup.** A `board_climbs` tombstone takes the climb out of its postings and drops its hold set. Scope teardown clears the whole layout's index and every sibling scope's watermark, and a surviving sibling rebuilds on its next cycle. After a snapshot import, the orphan sweep deletes hold sets whose climb is gone and rebuilds that layout's postings. The spray sign-out wipe clears spray's hold sets, postings and watermarks. It also clears every hold set whose climb is already gone, then every local id that no hold set still uses, so no spray uuid is left behind. The explicit sign-out wipe clears all three tables.
 
 `board_climbs` and `board_climb_hold_sets` both invalidate `['similarClimbs']`. `['holdHeatmap']` will join them when the heatmap's local reader ships; until then the drift test would reject a key that nothing reads.
 
