@@ -13,6 +13,7 @@ import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '../board-serial-write-lock';
+import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
 
 /**
  * Validate the `boardId` argument is a positive integer. The SDL types it as
@@ -570,6 +571,48 @@ export async function requireAnonReadableBoard(
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   return true;
+}
+
+/**
+ * `requireAnonReadableBoard` plus the spray wall rule, in ONE `user_boards`
+ * read — for the polled presence reads keyed on a bare board id
+ * (`boardConnection`, `boardQueuePreview`) that do not otherwise load the row.
+ *
+ * Behaviour is exactly the two gates in sequence:
+ *  - anonymous: a missing, deleted or non-anon-readable board is NOT_FOUND;
+ *  - signed in: nothing about existence is checked (a missing board stays the
+ *    caller's null, as before);
+ *  - any found spray wall then takes `assertSprayBoardIsReadable` (private and
+ *    hidden = its principals / owner only). Every other board type returns
+ *    before that helper issues a query.
+ *
+ * Returns the anon-verified flag `requireAnonReadableBoard` returns, and the
+ * row's type and layout so a subscription can build its per-event
+ * `sprayStreamGate` without reading the row again.
+ */
+export async function requireReadablePresenceBoard(
+  boardId: number,
+  viewerUserId: string | null | undefined,
+): Promise<{ anonReadableVerified: boolean; board: { boardType: string; layoutId: number } | null }> {
+  assertValidBoardId(boardId);
+  const [row] = await db
+    .select({
+      isPublic: dbSchema.userBoards.isPublic,
+      ownerId: dbSchema.userBoards.ownerId,
+      boardType: dbSchema.userBoards.boardType,
+      layoutId: dbSchema.userBoards.layoutId,
+      deletedAt: dbSchema.userBoards.deletedAt,
+    })
+    .from(dbSchema.userBoards)
+    .where(eq(dbSchema.userBoards.id, boardId))
+    .limit(1);
+
+  if (!viewerUserId && !(row && row.deletedAt === null && isRowAnonReadable(row))) {
+    throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+  }
+  if (!row || row.layoutId == null) return { anonReadableVerified: !viewerUserId, board: null };
+  await assertSprayBoardIsReadable({ boardType: row.boardType, layoutId: row.layoutId }, viewerUserId);
+  return { anonReadableVerified: !viewerUserId, board: { boardType: row.boardType, layoutId: row.layoutId } };
 }
 
 /**

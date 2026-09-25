@@ -94,25 +94,6 @@ export async function assertSprayBoardIsReadable(
 }
 
 /**
- * {@link assertSprayBoardIsReadable} for a read that holds only the numeric
- * `user_boards.id` and does not otherwise load the row — `boardConnection` and
- * `boardQueuePreview`. A missing board is left to the caller's own existence
- * handling, so this changes nothing for any board that is not a spray wall.
- */
-export async function assertSprayBoardIdIsReadable(
-  boardId: number,
-  viewerUserId: string | null | undefined,
-): Promise<void> {
-  const [board] = await dbRead
-    .select({ boardType: dbSchema.userBoards.boardType, layoutId: dbSchema.userBoards.layoutId })
-    .from(dbSchema.userBoards)
-    .where(eq(dbSchema.userBoards.id, boardId))
-    .limit(1);
-  if (!board || board.layoutId == null) return;
-  await assertSprayBoardIsReadable({ boardType: board.boardType, layoutId: board.layoutId }, viewerUserId);
-}
-
-/**
  * The layout rule with the wall's UUID accepted as a CAPABILITY, for the reads a
  * link-holder is supposed to be able to make.
  *

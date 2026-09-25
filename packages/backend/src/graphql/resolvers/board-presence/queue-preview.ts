@@ -3,8 +3,8 @@ import { pubsub } from '../../../pubsub/index';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
-import { requireAnonReadableBoard } from './shared';
-import { assertSprayBoardIdIsReadable } from '../climbs/spray-read-access';
+import { requireReadablePresenceBoard } from './shared';
+import { sprayStreamGate } from '../climbs/spray-read-access';
 import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
 
 export const boardQueuePreviewQueries = {
@@ -36,9 +36,9 @@ export const boardQueuePreviewQueries = {
     // For anonymous viewers this already ran the exact `isBoardAnonReadable`
     // query gate 1 needs; pass the verification down so the snapshot doesn't
     // repeat it (logged-in viewers verified nothing — gate 1 still runs).
-    const anonReadableVerified = await requireAnonReadableBoard(boardId, ctx.userId);
-    // A spray wall takes the wall's own rule (private and hidden = owner only).
-    await assertSprayBoardIdIsReadable(boardId, ctx.userId);
+    // One row read: the anon gate plus a spray wall's own rule (private and
+    // hidden = owner only).
+    const { anonReadableVerified } = await requireReadablePresenceBoard(boardId, ctx.userId);
     return getBoardQueuePreviewSnapshot(boardId, { anonReadableVerified });
   },
 };
@@ -69,8 +69,11 @@ export const boardQueuePreviewSubscriptions = {
       // callers are keyed per-connection — see the query resolver's note.
       await applyRateLimit(ctx, 30, 'boardQueuePreview');
       // Same gate-1 dedup as the query resolver (see its comment).
-      const anonReadableVerified = await requireAnonReadableBoard(boardId, ctx.userId);
-      await assertSprayBoardIdIsReadable(boardId, ctx.userId);
+      const { anonReadableVerified, board } = await requireReadablePresenceBoard(boardId, ctx.userId);
+      // Re-checked per event, like `boardNowPlaying`: a wall going private or
+      // hidden mid-stream has to end a stream that is already open. Null (no
+      // cost) for every board that is not a spray wall.
+      const gate = sprayStreamGate(board?.boardType, board?.layoutId, ctx.userId);
 
       const boardKey = String(boardId);
 
@@ -91,6 +94,7 @@ export const boardQueuePreviewSubscriptions = {
         }
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
+          if (gate && !(await gate())) return;
           yield { boardQueuePreview: result.value };
         }
       } finally {
