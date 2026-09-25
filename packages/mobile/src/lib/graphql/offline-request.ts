@@ -7,13 +7,25 @@ import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '.
 import { getClimbLocal } from '../../db/queries/get-climb-local';
 import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
 import { getSetterStatsLocal } from '../../db/queries/get-setter-stats-local';
+import { getHoldHeatmapLocal } from '../../db/queries/get-hold-heatmap-local';
 import { canReadFollowedAuthors } from '../../db/queries/followed-authors-local';
 import { FollowedAuthorsUnavailableError } from '../followed-authors-error';
 import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
+import { ensureHoldIndex } from '@boardsesh/offline-sync';
 import type { OfflineReadLane, OfflineReadSurface, OfflineUnavailableReason } from '@boardsesh/offline-sync';
+import { getSimilarClimbsLocal } from '../../db/queries/get-similar-climbs-local';
+import { parseHoldRows } from '../../offline/hold-index-parser';
 import { getConnectivitySnapshot } from '../connectivity/connectivity-store';
 import { recordOfflineRead, recordOfflineReadUnavailable } from '../../offline/offline-usage-signal';
+import {
+  SIMILAR_CLIMBS_QUERY,
+  type SimilarClimbsVariables,
+  type SimilarClimbsResponse,
+  HOLD_HEATMAP_QUERY,
+  type HoldHeatmapQueryResponse,
+  type HoldHeatmapQueryVariables,
+} from '@boardsesh/graphql/operations';
 import {
   BOARDSESH_GRADE,
   BOARDSESH_GRADES_FOR_ANGLES,
@@ -58,8 +70,23 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
   return { boardType: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId };
 }
 
+/**
+ * Where a registered read may go.
+ *
+ * - `local-first` (default): local SQLite when it can serve, else the network,
+ *   with the network-error rescue back to local. Every op before similar climbs.
+ * - `local-only`: local SQLite or the empty fallback, NEVER the network. For
+ *   catalogue reads kept off the live resolver by policy: similar climbs are an
+ *   offline feature for non-admins. The server's live scan is admin-only after
+ *   #5766, and non-admins would otherwise get its nightly index. The caller
+ *   decides separately (`useCatalogQuerySource`) whether to ask the network
+ *   directly (admins).
+ */
+export type OfflineNetworkPolicy = 'local-first' | 'local-only';
+
 type OfflineOperation<TVariables, TResponse> = {
   document: string;
+  networkPolicy?: OfflineNetworkPolicy;
   // Offline-usage rollup (#4317): which read this is, and which board it is
   // scoped to. The gate keys on (day, lane, board) and carries `surface` as a
   // descriptive prop of the read that crossed a rung.
@@ -88,6 +115,19 @@ const OFFLINE_OPERATIONS = new Map<string, OfflineOperation<never, unknown>>();
 
 function registerOfflineOperation<TVariables, TResponse>(operation: OfflineOperation<TVariables, TResponse>): void {
   OFFLINE_OPERATIONS.set(operation.document, operation as OfflineOperation<never, unknown>);
+}
+
+/**
+ * Test seam: register a synthetic op so the routing policies can be exercised
+ * without a real document behind them. Returns the unregister function.
+ */
+export function registerOfflineOperationForTests<TVariables, TResponse>(
+  operation: OfflineOperation<TVariables, TResponse>,
+): () => void {
+  registerOfflineOperation(operation);
+  return () => {
+    OFFLINE_OPERATIONS.delete(operation.document);
+  };
 }
 
 // Shared by the search + count registrations so the climbs list and its
@@ -176,6 +216,34 @@ registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryRespon
   offlineFallback: () => ({ setterStats: [] }),
 });
 
+/**
+ * The local heatmap response. `unavailable` marks the fallback — the device could
+ * not answer at all (not downloaded, a filter SQLite cannot run, followed authors
+ * unreadable) — so the panel never reads it as "no climbs match". The network
+ * never sets it.
+ */
+export type LocalHoldHeatmapResponse = HoldHeatmapQueryResponse & { unavailable?: true };
+
+// Hold heatmap: per-hold usage over the climbs the list's filters match.
+// LOCAL-ONLY, kept off the live resolver by policy: the heatmap is an offline
+// feature for non-admins, and the server's GROUP BY over every hold row of a
+// layout is admin-only. Admins who have not downloaded the board are sent to the
+// network by `useHoldHeatmap`'s caller (`useCatalogQuerySource`), not by this
+// interceptor. Same gate and unavailable reasons as search, since the climb set
+// is the list's. `getHoldHeatmapLocal` brings the holds index up to date first
+// and throws on an interrupted build, so React Query retries instead of caching
+// a partial heatmap. An empty list is a real answer: no `isLocalMiss`.
+registerOfflineOperation<HoldHeatmapQueryVariables, LocalHoldHeatmapResponse>({
+  document: HOLD_HEATMAP_QUERY,
+  networkPolicy: 'local-only',
+  surface: 'hold_heatmap',
+  boardNameOf: ({ input }) => input.boardName,
+  unavailableReason: searchUnavailableReason,
+  canServeLocal: canServeSearchLocal,
+  resolveLocal: async (db, { input }) => ({ holdHeatmap: await getHoldHeatmapLocal(db, input) }),
+  offlineFallback: () => ({ holdHeatmap: [], unavailable: true }),
+});
+
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no
 // layout/size, so they gate on the board TYPE being downloaded and then read
 // board_climb_grades by the exact key. A single-row null is a local miss (the
@@ -225,6 +293,43 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
   offlineFallback: () => ({ boardseshGradesForAngles: [] }),
 });
 
+// Similar climbs (the play drawer strip): LOCAL-ONLY, kept off the live
+// resolver by policy. Similar climbs are an offline feature for non-admins: the
+// server's live scan is admin-only after #5766, and non-admins would otherwise
+// get the nightly index. Admins who have not downloaded the board are sent to
+// the network by `useSimilarClimbs` itself (`useCatalogQuerySource`), not by
+// this interceptor.
+//
+// `resolveLocal` first brings the scope's holds index up to date. That is one
+// probe when the sync cycle already built it, and the whole first build when
+// it did not (a board downloaded by a build that predates the index) — the
+// strip shows its loading state meanwhile. An aborted build throws, so React
+// Query retries instead of caching a strip built from a partial index. No
+// `isLocalMiss`: an empty list is a real answer (nothing on this layout shares
+// enough holds).
+registerOfflineOperation<SimilarClimbsVariables, SimilarClimbsResponse>({
+  document: SIMILAR_CLIMBS_QUERY,
+  networkPolicy: 'local-only',
+  surface: 'similar_climbs',
+  boardNameOf: ({ input }) => input.boardType,
+  canServeLocal: (db, { input }) =>
+    input.sizeId == null
+      ? Promise.resolve(false)
+      : isBoardDownloadedLocally(db, { boardType: input.boardType, layoutId: input.layoutId, sizeId: input.sizeId }),
+  resolveLocal: async (db, { input }) => {
+    // canServeLocal already refused a missing size; this narrows it.
+    const sizeId = input.sizeId ?? 0;
+    const build = await ensureHoldIndex(
+      db,
+      { boardType: input.boardType, layoutId: input.layoutId, sizeId },
+      { parseHoldRows },
+    );
+    if (build.status === 'aborted') throw new Error('Similar climbs: holds index build was interrupted');
+    return { similarClimbs: await getSimilarClimbsLocal(db, { ...input, sizeId }, parseHoldRows) };
+  },
+  offlineFallback: () => ({ similarClimbs: [] }),
+});
+
 /**
  * WHICH offline the app is in, for a read the downloaded board just served
  * (issue #4862). Before the connectivity store there was one bucket for all of
@@ -266,6 +371,7 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
+  if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
   // the online miss-retry path — the one path that reaches the network with a
@@ -374,4 +480,45 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
     }
     throw networkError;
   }
+}
+
+/**
+ * A `local-only` read: local SQLite when it can serve, otherwise the op's empty
+ * fallback — online or offline, and never `getHttpClient()`. Not gated by the
+ * offline-engine flag either: reading data already on disk never is (#3888), and
+ * with no local source the only alternative would be the network this policy
+ * exists to avoid.
+ *
+ * The unavailable reason is recorded only while OFFLINE, like the local-first
+ * path: online, the `download` audience never runs this query at all (the hook
+ * disables it), and a stray online record would share the rollup's dedupe key
+ * with the real offline gaps. A throwing `resolveLocal` propagates, as on the
+ * local-first path.
+ */
+async function localOnlyRequest<TResponse>(
+  operation: OfflineOperation<never, unknown>,
+  variables: Variables | undefined,
+): Promise<TResponse> {
+  const isOnline = onlineManager.isOnline();
+  const db = getDatabaseHandle();
+  if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
+    const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
+    recordOfflineRead({
+      lane: isOnline ? 'online_local' : offlineReadLane(),
+      surface: operation.surface,
+      boardName: operation.boardNameOf(variables as never),
+    });
+    return localResponse;
+  }
+  if (!isOnline && variables !== undefined) {
+    recordOfflineReadUnavailable({
+      reason: db
+        ? ((await operation.unavailableReason?.(db, variables as never)) ?? 'board_not_downloaded')
+        : 'local_db_unavailable',
+      surface: operation.surface,
+      boardName: operation.boardNameOf(variables as never),
+      connectivityReason: getConnectivitySnapshot().reason,
+    });
+  }
+  return operation.offlineFallback() as TResponse;
 }

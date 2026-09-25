@@ -233,6 +233,12 @@ vi.mock('../PanePlaceholder', () => ({
     return createElement('div', { 'data-testid': 'pane-placeholder' });
   },
 }));
+// The heatmap reads the saved search from secure storage and the offline
+// database; neither exists here, and the drawer only wires it.
+vi.mock('../heatmap/use-play-drawer-heatmap', () => ({
+  usePlayDrawerHeatmap: () => ({ enabled: false, isBusy: false, overlay: null, toggle: () => {} }),
+}));
+vi.mock('../heatmap/PlayDrawerHeatmapPanel', () => ({ PlayDrawerHeatmapPanel: () => null }));
 vi.mock('../DeferredBoard', () => ({ DeferredBoard: () => createElement('div', { 'data-testid': 'board' }) }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));

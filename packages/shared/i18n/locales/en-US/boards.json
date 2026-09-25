@@ -359,6 +359,7 @@
       "enableTitle": "Download {{name}}?",
       "enableMessage": "Downloads all this board's climbs so you can browse and log sends with no signal.",
       "enableMessageWithSize": "About {{size}}. Downloads all this board's climbs so you can browse and log sends with no signal.",
+      "enableIndexLine": "Up to about {{index}} on your phone for similar climbs.",
       "enableConfirm": "Download",
       "pickerNotice": "No signal — here are the boards you've downloaded.",
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",
@@ -391,6 +392,16 @@
           "title": "Climb where the wifi does not reach",
           "body": "Download a board once and its whole catalog lives on your phone — search, filters and logging sends all work in a basement gym with no bars.",
           "cta": "Pick a board to download"
+        },
+        "similarClimbs": {
+          "title": "Similar climbs live on your phone",
+          "body": "Download {{name}} to see climbs that share these holds",
+          "cta": "Download {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "See where the climbs are",
+          "body": "Download {{name}} to light up the holds climbers use most",
+          "cta": "Download {{name}}"
         }
       }
     },

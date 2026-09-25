@@ -778,8 +778,8 @@ export const SHARED_EVENTS = {
   // `trigger` distinguishes DELIBERATE taps from AUTOMATIC re-enables, which is
   // the whole point for discovery work: 'toggle' | 'download-all' (the My Boards
   // / More tap) vs 'auto-download-all' | 'adopt-auto' (a setting acting on its
-  // own), plus 'adopt-confirmed' | 'retry' | 'unknown'. 'unknown' is an explicit,
-  // expected value — the trigger is persisted per scope, but a scope enabled by
+  // own), plus 'adopt-confirmed' | 'retry' | 'onboarding' | 'similar_climbs' | 'hold_heatmap' | 'unknown'.
+  // 'unknown' is an explicit, expected value — the trigger is persisted per scope, but a scope enabled by
   // a build that predates this event has none.
   OfflineBoardDownloadStarted: 'Offline Board Download Started',
   // Fired once per board scope when its INITIAL download completes (every board
@@ -967,7 +967,7 @@ export const SHARED_EVENTS = {
   //   offlineEngineEnabled: boolean.
   OfflineArtifactTransfer: 'Offline Artifact Transfer',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
-  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt',
+  // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding' | 'play_drawer',
   // offlineEngineEnabled }. The enable half is the entry point #4318's discovery
   // nudges are measured against.
   OfflineBoardToggled: 'Offline Board Toggled',
@@ -1114,7 +1114,8 @@ export const SHARED_EVENTS = {
   //
   // Props: { lane: 'offline_local' | 'backend_unreachable_local' |
   //   'offline_mode_local' | 'network_error_local' | 'online_local',
-  //   surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats', boardName, readCount }.
+  //   surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats' | 'similar_climbs' | 'hold_heatmap',
+  //   boardName, readCount }.
   // `lane` is the source: served while offline, served after the network threw
   // (a lying connection — real offline value), or the online flag-on latency
   // short-circuit (NOT offline usage; excluded from the north-star).
@@ -1141,7 +1142,8 @@ export const SHARED_EVENTS = {
   // #4318 (discovery nudges) and #4002 (unsupported filters) exist to shrink.
   // Same rollup contract and same readCount semantics as Offline Read Served.
   // Props: { reason: 'board_not_downloaded' | 'filter_unsupported' |
-  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats',
+  //   'local_db_unavailable', surface: 'search' | 'climb_detail' | 'grade' | 'setter_stats' |
+  //   'similar_climbs' | 'hold_heatmap',
   //   boardName, readCount }. `local_db_unavailable` means there was no database
   // handle to ask at all (init still retrying, or wedged — #4313 / #4314). The
   // board may well BE downloaded in that case, so it is deliberately NOT part of
@@ -1205,7 +1207,8 @@ export const SHARED_EVENTS = {
   // rather than waiting to be found. One event trio across every nudge surface,
   // separated by `surface`, so the funnel reads shown → accepted → (#4316's
   // download started / OfflineBoardDownloadCompleted above). Props on all three:
-  // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card',
+  // { surface: 'post_session' | 'no_catalog' | 'whats_new' | 'board_card' | 'onboarding'
+  //   | 'similar_climbs' | 'hold_heatmap',
   //   boardType, layoutId, scopeKey, downloadedBoardCount }.
   OfflineNudgeShown: 'Offline Nudge Shown',
   // Plus { armedOnly }: true when the accept could only ARM the scope, so the pull

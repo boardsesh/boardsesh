@@ -1675,6 +1675,9 @@ export function useCreateClimbScreen({
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
+      // An admin's live heatmap counts the new climb at once; a downloaded board
+      // catches up when the climb syncs down and the index rebuilds.
+      void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
       setJustSaved(true);
       // Seed the next climb's picker with what this one published at — a session
       // on one wall clusters hard around two or three grades.

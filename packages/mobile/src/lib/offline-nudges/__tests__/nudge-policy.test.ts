@@ -44,20 +44,44 @@ describe('shouldShowNudge — eligibility', () => {
   // which is NOT in downloadedScopeKeys and has no sync in flight, so a naive
   // gate would re-prompt for the board it just armed.
   it.each(['pending', 'downloading', 'downloaded'] as const)('suppresses when the board is %s', (offlineState) => {
-    for (const surface of ['post_session', 'no_catalog', 'whats_new', 'board_card', 'onboarding'] as NudgeSurface[]) {
+    for (const surface of [
+      'post_session',
+      'no_catalog',
+      'whats_new',
+      'board_card',
+      'onboarding',
+      'similar_climbs',
+      'hold_heatmap',
+    ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, offlineState }))).toBe(false);
     }
   });
 
   it('suppresses every surface when the user auto-downloads all boards', () => {
-    for (const surface of ['post_session', 'no_catalog', 'whats_new', 'board_card', 'onboarding'] as NudgeSurface[]) {
+    for (const surface of [
+      'post_session',
+      'no_catalog',
+      'whats_new',
+      'board_card',
+      'onboarding',
+      'similar_climbs',
+      'hold_heatmap',
+    ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, autoOfflineBoards: true }))).toBe(false);
     }
   });
 
   it('suppresses every surface in screenshot mode', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-    for (const surface of ['post_session', 'no_catalog', 'whats_new', 'board_card', 'onboarding'] as NudgeSurface[]) {
+    for (const surface of [
+      'post_session',
+      'no_catalog',
+      'whats_new',
+      'board_card',
+      'onboarding',
+      'similar_climbs',
+      'hold_heatmap',
+    ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface }))).toBe(false);
     }
   });
@@ -74,7 +98,15 @@ describe('shouldShowNudge — eligibility', () => {
 
   it('suppresses everything from the storage-failure state', () => {
     const state = suppressedNudgeState();
-    for (const surface of ['post_session', 'no_catalog', 'whats_new', 'board_card', 'onboarding'] as NudgeSurface[]) {
+    for (const surface of [
+      'post_session',
+      'no_catalog',
+      'whats_new',
+      'board_card',
+      'onboarding',
+      'similar_climbs',
+      'hold_heatmap',
+    ] as NudgeSurface[]) {
       expect(shouldShowNudge(input({ surface, state }))).toBe(false);
     }
   });
@@ -115,7 +147,7 @@ describe('shouldShowNudge — caps apply to the interruptive prompt only', () =>
   // reverts to a dead end because an unrelated prompt fired two days ago.
   // `onboarding` is in here for a stronger reason still — first run happens
   // once, so a cooldown could only ever mean the offer is never made at all.
-  it.each(['no_catalog', 'whats_new', 'board_card', 'onboarding'] as NudgeSurface[])(
+  it.each(['no_catalog', 'whats_new', 'board_card', 'onboarding', 'similar_climbs', 'hold_heatmap'] as NudgeSurface[])(
     'never cools down the %s affordance',
     (surface) => {
       let state: OfflineNudgeState = { ...emptyNudgeState(), lastPromptAtMs: NOW, lastAcceptedAtMs: NOW };

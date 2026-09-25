@@ -348,6 +348,7 @@ describe('ensureHoldIndex — incremental', () => {
     await insertClimb({ uuid: 'new', seq: 3 });
     await ensureHoldIndex(db, KILTER_12, { parseHoldRows, queryClient });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['similarClimbs'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['holdHeatmap'] });
   });
 });
 

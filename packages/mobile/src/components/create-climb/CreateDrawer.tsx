@@ -31,7 +31,7 @@ import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 // with the scroll (never cancelled), zoomed-pan blocks the scroll (drags the
 // board, not the sheet) — eliminating the race instead of reacting to it.
 import BottomSheet from '@expo/ui/community/bottom-sheet';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, HoldStat } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
@@ -47,6 +47,8 @@ import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import { HeatmapOverlay } from '../board/HeatmapOverlay';
+import { Text } from '../Text';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -69,7 +71,17 @@ type CreateDrawerProps = {
   onClose: () => void;
   /** Open the climb that a publish collided with (the duplicate banner link). */
   onViewDuplicate: (uuid: string) => void;
+  /** The hold heatmap: whether it is on, its per-hold stats, and its toggle
+   *  (omitted → no heatmap button). */
+  heatmapActive?: boolean;
+  heatmapBusy?: boolean;
+  heatmapStatsByHoldId?: ReadonlyMap<number, HoldStat>;
+  /** Why the heatmap is not drawing (board not downloaded, load failed), or null. */
+  heatmapNotice?: string | null;
+  onToggleHeatmap?: () => void;
 };
+
+const NO_HEATMAP_STATS: ReadonlyMap<number, HoldStat> = new Map();
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
@@ -97,6 +109,11 @@ export function CreateDrawer({
   onLoadDraft,
   onClose,
   onViewDuplicate,
+  heatmapActive = false,
+  heatmapBusy = false,
+  heatmapStatsByHoldId = NO_HEATMAP_STATS,
+  heatmapNotice = null,
+  onToggleHeatmap,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('climbs');
@@ -231,6 +248,25 @@ export function CreateDrawer({
     }
     return { width: availWidth, height: availWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
+
+  // Painted holds keep their own marker; the heatmap only colours the rest.
+  const paintedHoldIds = useMemo(
+    () => new Set(Object.keys(controller.litUpHoldsMap).map(Number)),
+    [controller.litUpHoldsMap],
+  );
+  const heatmapOverlay = useMemo(
+    () =>
+      heatmapActive ? (
+        <HeatmapOverlay
+          statsByHoldId={heatmapStatsByHoldId}
+          holdTargets={boardHolds.holdTargets}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          paintedHoldIds={paintedHoldIds}
+        />
+      ) : null,
+    [heatmapActive, heatmapStatsByHoldId, boardHolds, paintedHoldIds],
+  );
 
   const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
     setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
@@ -377,8 +413,15 @@ export function CreateDrawer({
                 controlRef={boardControlsRef}
                 onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
+                overlay={heatmapOverlay}
               />
             </View>
+
+            {heatmapNotice ? (
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.heatmapNotice}>
+                {heatmapNotice}
+              </Text>
+            ) : null}
 
             <CreateRoutePlaybackSlot
               showRouteTransport={controller.showRouteTransport}
@@ -409,6 +452,9 @@ export function CreateDrawer({
               onSave={() => void controller.handleSave()}
               publishBlocked={controller.publishBlocked}
               draftStatus={controller.draftStatus}
+              onToggleHeatmap={onToggleHeatmap}
+              heatmapActive={heatmapActive}
+              heatmapBusy={heatmapBusy}
             />
           </View>
 
@@ -444,6 +490,11 @@ export function CreateDrawer({
 }
 
 const styles = StyleSheet.create({
+  heatmapNotice: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[2],
+    textAlign: 'center',
+  },
   scroll: {
     flex: 1,
   },

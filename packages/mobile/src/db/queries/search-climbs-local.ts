@@ -276,9 +276,9 @@ function ticksExists(negated: boolean, statusSql: string): string {
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql})`;
 }
 
-type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
+export type JoinAndWhere = { joinSql: string; whereSql: string; joinBinds: Bind[]; whereBinds: Bind[] };
 
-function buildJoinAndWhere(
+export function buildJoinAndWhere(
   input: ClimbSearchInput,
   ownerUserId: string | null,
   followedCondition?: { sql: string; binds: string[] },

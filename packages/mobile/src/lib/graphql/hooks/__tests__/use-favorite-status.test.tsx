@@ -32,6 +32,7 @@ vi.mock('@boardsesh/board-react', () => ({
 // transform.
 vi.mock('react-native', () => ({}));
 vi.mock('../use-infinite-search-climbs', () => ({ useInfiniteSearchClimbs: vi.fn() }));
+vi.mock('../use-similar-climbs', () => ({ useSimilarClimbs: vi.fn() }));
 vi.mock('../use-beta-link-preview', () => ({ useBetaLinkPreview: vi.fn() }));
 vi.mock('../use-mobile-climb-actions-data', () => ({ useMobileClimbActionsData: vi.fn() }));
 vi.mock('../use-you-data', () => ({
