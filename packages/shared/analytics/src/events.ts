@@ -265,20 +265,33 @@ export const SHARED_EVENTS = {
   // signal: a write failed with a disconnect error while we believed we were
   // connected (another device grabbed the last-connection-wins board).
   //
-  // Connect-step timings (mobile, #5775). All are whole milliseconds from the
-  // start of the connect (a monotonic clock), so tap-to-picker can be split by
-  // step without joining events:
-  //  - `pre_scan_ms` on Bluetooth Scan Started: the permission check, the
-  //    adapter availability check and tearing down a previous link.
-  //  - `picker_open_ms` on Bluetooth Connection Success / Failed: until the app
-  //    asked for the device picker. It covers everything in `pre_scan_ms` plus
-  //    the iOS config pre-stage. It is when the sheet was requested, not when
-  //    it finished sliding in. Absent when no picker opened (Expo web uses the
-  //    browser's chooser; a connect that failed before the scan).
-  //  - `configure_ms` on the same two events: the iOS native config pre-stage
-  //    alone. Absent off the iOS native adapter.
+  // Connect-step timings (mobile, #5775), in whole milliseconds on a monotonic
+  // clock, so tap-to-picker can be split by step without joining events.
+  // Bluetooth Scan Started carries:
+  //  - `preScanMs`: from the start of the connect to this event. Covers the
+  //    permission check, `availableMs` and `teardownMs`.
+  //  - `availableMs`: the adapter availability check alone (on iOS a sync hop
+  //    onto the native BLE queue).
+  //  - `teardownMs`: disconnecting the previous link alone. Absent when there
+  //    was none.
+  // Bluetooth Connection Success / Failed carry `reconnect` (a saved board was
+  // targeted, as on Scan Started) and:
+  //  - `pickerOpenMs`: from the start of the connect until the app asked for the
+  //    device picker. The adapters ask synchronously as requestAndConnect starts,
+  //    so expect pickerOpenMs ≈ preScanMs + configureMs. It is when the sheet was
+  //    requested, not when it finished sliding in. Absent when no picker opened
+  //    (Expo web uses the browser's chooser; a connect that failed before the
+  //    scan).
+  //  - `configureMs`: the iOS native config pre-stage alone. Absent off the iOS
+  //    native adapter.
   BluetoothScanStarted: 'Bluetooth Scan Started',
   BluetoothConnectionStolen: 'Bluetooth Connection Stolen',
+  // Mobile-only (#5775): a connect was dropped because another was still
+  // running (a double tap, or a second surface racing the first). Nothing
+  // happens on screen for that tap. Props: { boardName, layoutId, sizeId,
+  // reconnect, inFlightMs }; `inFlightMs` is how long the running connect had
+  // been going.
+  BluetoothConnectIgnored: 'Bluetooth Connect Ignored',
   // Mobile-only: the runtime BLE permission request came back denied, so the
   // flow bailed before any radio work. Previously this path only raised an
   // Alert (connect) or flipped the sheet to 'unavailable' (quickstart scan) and

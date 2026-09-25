@@ -4776,42 +4776,74 @@ describe('useBoardBluetooth connect-step timings (#5775)', () => {
   });
 
   function trackedProperties(eventName: string) {
-    return mockTrack.mock.calls.find(([name]) => name === eventName)?.[1] as Record<string, unknown> | undefined;
+    const calls = mockTrack.mock.calls.filter(([name]) => name === eventName);
+    return calls[calls.length - 1]?.[1] as Record<string, unknown> | undefined;
   }
 
-  it('times the waits before the scan and before the picker opens', async () => {
+  function expectAbout(actual: unknown, expectedMs: number) {
+    expect(actual).toBeGreaterThanOrEqual(expectedMs);
+    expect(actual).toBeLessThan(expectedMs + 100);
+  }
+
+  // An adapter whose requestAndConnect asks for the picker first, as both real
+  // adapters do, then connects.
+  function pickerOpeningAdapter(devicePicker: DevicePickerFn, overrides: FakeAdapterOverrides = {}) {
+    return makeFakeAdapter({
+      requestAndConnect: vi.fn(async () => {
+        void devicePicker(() => {}).catch(() => {});
+        return { deviceId: 'device-1', deviceName: 'Kilter Board#123@3' };
+      }),
+      ...overrides,
+    });
+  }
+
+  it('times each wait before the scan and before the picker opens', async () => {
     const availability = heldOpen<boolean>();
+    const teardown = heldOpen<void>();
     const preStage = heldOpen<void>();
     vi.mocked(isNativeIosBleAdapter).mockReturnValue(true);
-    vi.mocked(createBluetoothAdapter).mockImplementation(
-      (devicePicker) =>
-        ({
-          ...makeFakeAdapter({
-            isAvailable: vi.fn(() => availability.promise),
-            requestAndConnect: vi.fn(async () => {
-              void devicePicker(() => {}).catch(() => {});
-              return { deviceId: 'device-1', deviceName: 'Kilter Board#123@3' };
-            }),
-          }),
-          // The pre-stage is held open; the post-connect re-stage is not.
-          configureBoard: vi.fn().mockReturnValueOnce(preStage.promise).mockResolvedValue(undefined),
-        }) as unknown as ReturnType<typeof createBluetoothAdapter>,
-    );
+    vi.mocked(createBluetoothAdapter)
+      // The live link the second connect replaces; its disconnect is held open.
+      .mockImplementationOnce(
+        (devicePicker) =>
+          ({
+            ...pickerOpeningAdapter(devicePicker, { disconnect: vi.fn(() => teardown.promise) }),
+            configureBoard: vi.fn().mockResolvedValue(undefined),
+          }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+      )
+      .mockImplementationOnce(
+        (devicePicker) =>
+          ({
+            ...pickerOpeningAdapter(devicePicker, { isAvailable: vi.fn(() => availability.promise) }),
+            // The pre-stage is held open; the post-connect re-stage is not.
+            configureBoard: vi.fn().mockReturnValueOnce(preStage.promise).mockResolvedValue(undefined),
+          }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    await act(async () => {
+      await expect(result.current.connect()).resolves.toBe(true);
+    });
+    // No previous link on the first connect, so nothing to tear down.
+    expect(trackedProperties('Bluetooth Scan Started')?.teardownMs).toBeUndefined();
+
+    mockTrack.mockClear();
     let connectPromise: Promise<boolean> = Promise.resolve(false);
     await act(async () => {
       connectPromise = result.current.connect();
       await vi.advanceTimersByTimeAsync(5000);
       availability.resolve(true);
+      await vi.advanceTimersByTimeAsync(2000);
+      teardown.resolve();
       await vi.advanceTimersByTimeAsync(0);
     });
     const scanStarted = trackedProperties('Bluetooth Scan Started');
-    expect(scanStarted?.pre_scan_ms).toBeGreaterThanOrEqual(5000);
-    expect(scanStarted?.pre_scan_ms).toBeLessThan(5100);
+    expectAbout(scanStarted?.availableMs, 5000);
+    expectAbout(scanStarted?.teardownMs, 2000);
+    expectAbout(scanStarted?.preScanMs, 7000);
 
     // The native pre-stage runs after Scan Started, so its 3 s land in
-    // picker_open_ms but never in pre_scan_ms.
+    // pickerOpenMs but never in preScanMs.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
       preStage.resolve();
@@ -4822,13 +4854,12 @@ describe('useBoardBluetooth connect-step timings (#5775)', () => {
     });
 
     const success = trackedProperties('Bluetooth Connection Success');
-    expect(success?.picker_open_ms).toBeGreaterThanOrEqual(8000);
-    expect(success?.picker_open_ms).toBeLessThan(8100);
-    expect(success?.configure_ms).toBeGreaterThanOrEqual(3000);
-    expect(success?.configure_ms).toBeLessThan(3100);
+    expectAbout(success?.pickerOpenMs, 10000);
+    expectAbout(success?.configureMs, 3000);
+    expect(success?.reconnect).toBe(false);
   });
 
-  it('sends picker_open_ms on a failure only when the picker opened', async () => {
+  it('sends pickerOpenMs on a failure only when the picker opened', async () => {
     let opensPicker = true;
     vi.mocked(createBluetoothAdapter).mockImplementation(
       (devicePicker) =>
@@ -4847,9 +4878,10 @@ describe('useBoardBluetooth connect-step timings (#5775)', () => {
       await result.current.connect();
     });
     const withPicker = trackedProperties('Bluetooth Connection Failed');
-    expect(typeof withPicker?.picker_open_ms).toBe('number');
+    expect(typeof withPicker?.pickerOpenMs).toBe('number');
+    expect(withPicker?.reconnect).toBe(false);
     // Not the iOS native adapter: no pre-stage ran, so nothing to time.
-    expect(withPicker?.configure_ms).toBeUndefined();
+    expect(withPicker?.configureMs).toBeUndefined();
 
     mockTrack.mockClear();
     opensPicker = false;
@@ -4858,6 +4890,36 @@ describe('useBoardBluetooth connect-step timings (#5775)', () => {
     });
     const withoutPicker = trackedProperties('Bluetooth Connection Failed');
     expect(withoutPicker).toBeDefined();
-    expect(withoutPicker?.picker_open_ms).toBeUndefined();
+    expect(withoutPicker?.pickerOpenMs).toBeUndefined();
+    expect(withoutPicker?.reconnect).toBe(true);
+  });
+
+  it('reports a tap swallowed by a connect already running', async () => {
+    const availability = heldOpen<boolean>();
+    vi.mocked(createBluetoothAdapter).mockImplementation(
+      (devicePicker) =>
+        pickerOpeningAdapter(devicePicker, {
+          isAvailable: vi.fn(() => availability.promise),
+        }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let firstConnect: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      firstConnect = result.current.connect();
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    await act(async () => {
+      await expect(result.current.connect(undefined, undefined, 'NEEDLE')).resolves.toBe(false);
+    });
+
+    const ignored = trackedProperties('Bluetooth Connect Ignored');
+    expect(ignored).toMatchObject({ boardName: 'kilter', layoutId: 1, sizeId: 1, reconnect: true });
+    expectAbout(ignored?.inFlightMs, 1500);
+
+    await act(async () => {
+      availability.resolve(true);
+      await expect(firstConnect).resolves.toBe(true);
+    });
   });
 });
