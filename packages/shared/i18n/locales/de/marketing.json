@@ -686,7 +686,7 @@
       },
       "duplicate": {
         "title": "Dasselbe Board zweimal in der Liste",
-        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle zeigen wir aktuell als eine Zeile (wir arbeiten dran). Leuchtet die falsche Wand, halt die Glühbirne gedrückt, tipp auf Board trennen und versuch es nochmal.",
+        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle stehen als zwei Zeilen in der Liste. Die mit mehr Signalbalken ist meist die Wand, vor der du stehst. Leuchtet die falsche Wand, halt die Glühbirne gedrückt, tipp auf Board trennen und versuch es nochmal.",
         "p2": "Eine Liste zum Vergessen von Geräten gibt es nicht. Die App merkt sich nur dein letztes Board.",
         "p3": "Ein Board, das doppelt unter Deine Boards steht, ist etwas anderes. Tipp neben Deine Boards auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
       },
