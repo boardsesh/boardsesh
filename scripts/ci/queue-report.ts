@@ -138,8 +138,8 @@ function ensureGh(): void {
   }
 }
 
-function ghApi(path: string, jq?: string): string {
-  const args = ['api', path];
+function ghApi(path: string, jq?: string, extraArgs: string[] = []): string {
+  const args = ['api', path, ...extraArgs];
   if (jq) args.push('--jq', jq);
   try {
     return execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -180,9 +180,14 @@ function collectWorkflow(options: Options, workflow: string, sinceDate: string):
 
   const samples: JobSample[] = [];
   for (const runId of runIds) {
-    const parsed: unknown = JSON.parse(ghApi(`repos/${options.repo}/actions/runs/${runId}/jobs?per_page=100`));
-    if (!isRecord(parsed) || !Array.isArray(parsed.jobs)) continue;
-    for (const job of parsed.jobs) {
+    // `--paginate --slurp` returns one array of page objects, so a run with
+    // more than 100 jobs (a wide matrix) is not silently truncated.
+    const pages: unknown = JSON.parse(
+      ghApi(`repos/${options.repo}/actions/runs/${runId}/jobs?per_page=100`, undefined, ['--paginate', '--slurp']),
+    );
+    if (!Array.isArray(pages)) continue;
+    const jobs = pages.flatMap((page) => (isRecord(page) && Array.isArray(page.jobs) ? page.jobs : []));
+    for (const job of jobs) {
       if (!isRecord(job)) continue;
       const name = stringField(job, 'name') ?? '(unnamed)';
       const conclusion = stringField(job, 'conclusion');
