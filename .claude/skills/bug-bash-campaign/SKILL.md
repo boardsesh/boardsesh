@@ -30,9 +30,9 @@ number in it.
   issue number. Grepping titles or branch names alone has missed real fixes.
 - `gh issue view <n>`: a `closed` event about 1 s after a PR merge is an auto-close, which means
   the fix already landed.
-- `find /tmp ~/projects/boardsesh -maxdepth 1 -name 'boardsesh-*' -o -name 'wt-*'`: another loop
-  checked out on this issue has effectively taken it. (`find`, not `ls` with globs: zsh aborts on
-  a glob that matches nothing.)
+- `find /tmp ~/projects/boardsesh -maxdepth 1 \( -name 'boardsesh-*' -o -name 'wt-*' \)`: another
+  loop checked out on this issue has effectively taken it. (`find`, not `ls` with globs: zsh
+  aborts on a glob that matches nothing.)
 
 If a PR already exists but is unmerged, the job is to get **that** PR ready, not start over.
 
