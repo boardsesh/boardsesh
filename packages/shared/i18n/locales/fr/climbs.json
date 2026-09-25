@@ -851,7 +851,8 @@
       "filterUnsupported": "La carte de chaleur ne suit pas encore un filtre de prises. Touche la puce pour voir toute la board.",
       "empty": "Aucun bloc ne passe ces filtres.",
       "loadFailed": "Impossible de charger la carte de chaleur. Réessaie dans un instant.",
-      "needsDownload": "Télécharge cette board pour voir où sont les blocs."
+      "needsDownload": "Télécharge cette board pour voir où sont les blocs.",
+      "unavailable": "La carte de chaleur n'est pas disponible pour le moment."
     }
   },
   "frontDoor": {

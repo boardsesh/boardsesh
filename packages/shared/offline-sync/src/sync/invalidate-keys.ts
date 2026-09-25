@@ -108,7 +108,17 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // The setter picker reads stats too, on Woods only: a climb set at another angle
   // counts toward its setter at the browsed angle once it has a stats row there
   // (the browsed-angle restriction, #5642), so a stats pull can change a count.
-  board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
+  // ['holdHeatmap'] too: stats colour the ascent and grade modes, and decide the
+  // climb set for minAscents / minRating / grade-range filters. Only an active
+  // query refetches, so this costs nothing unless the overlay is up.
+  board_climb_stats: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['climb'],
+    ['setterStats'],
+    ['holdHeatmap'],
+  ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
   board_climb_grades: [

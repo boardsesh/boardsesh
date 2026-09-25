@@ -851,7 +851,8 @@
       "filterUnsupported": "Die Heatmap kann einem Griff-Filter noch nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
       "empty": "Kein Boulder passt zu diesen Filtern.",
       "loadFailed": "Die Heatmap konnte nicht geladen werden. Versuch es gleich noch mal.",
-      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind."
+      "needsDownload": "Lade dieses Board herunter, um zu sehen, wo die Boulder sind.",
+      "unavailable": "Die Heatmap ist gerade nicht verfügbar."
     }
   },
   "frontDoor": {

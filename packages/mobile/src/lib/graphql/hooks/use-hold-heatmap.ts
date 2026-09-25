@@ -8,7 +8,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { CatalogQuerySource } from '../../offline/use-catalog-query-source';
 import { getHttpClient } from '../client';
-import { offlineAwareRequest } from '../offline-request';
+import { offlineAwareRequest, type LocalHoldHeatmapResponse } from '../offline-request';
 
 const HOLD_HEATMAP_STALE_TIME_MS = 5 * 60 * 1000;
 const EMPTY_STATS: HoldStat[] = [];
@@ -32,16 +32,19 @@ export function useHoldHeatmap(input: ClimbSearchInput, source: CatalogQuerySour
     queryFn: () => {
       const variables: HoldHeatmapQueryVariables = { input };
       return source === 'local'
-        ? offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, variables)
+        ? offlineAwareRequest<LocalHoldHeatmapResponse>(HOLD_HEATMAP_QUERY, variables)
         : getHttpClient().request<HoldHeatmapQueryResponse, HoldHeatmapQueryVariables>(HOLD_HEATMAP_QUERY, variables);
     },
-    select: (response) => response.holdHeatmap,
     enabled: enabled && source !== 'download',
     staleTime: HOLD_HEATMAP_STALE_TIME_MS,
-    retry: false,
+    // One retry: an interrupted holds-index build throws and recovers on the
+    // next pass; a real failure still surfaces quickly.
+    retry: 1,
   });
 
-  const holdStats = query.data ?? EMPTY_STATS;
+  const holdStats = query.data?.holdHeatmap ?? EMPTY_STATS;
+  // The local fallback: the phone could not answer, which is not "no climbs".
+  const isUnavailable = query.data !== undefined && 'unavailable' in query.data && query.data.unavailable === true;
   const statsByHoldId = useMemo(() => {
     const stats = new Map<number, HoldStat>();
     for (const holdStat of holdStats) stats.set(holdStat.holdId, holdStat);
@@ -53,6 +56,7 @@ export function useHoldHeatmap(input: ClimbSearchInput, source: CatalogQuerySour
     statsByHoldId,
     isFetching: query.isFetching,
     isSuccess: query.isSuccess,
+    isUnavailable,
     isError: query.isError,
     errorUpdatedAt: query.errorUpdatedAt,
   };

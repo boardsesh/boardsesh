@@ -23,7 +23,7 @@ type HoldSetRow = { holds: unknown; ascensionist_count: number | null; display_d
  * `aggregateHoldUsage` instead of a GROUP BY over per-hold rows (the index has
  * none; see holds-index/query.ts in @boardsesh/offline-sync).
  *
- * The index is brought up to date first. Only listed, published, visible climbs
+ * The index is brought up to date first; an interrupted build throws. Only listed, published, visible climbs
  * are indexed, which is also every climb the list can show outside a by-name
  * search; a by-name search that surfaces a community-hidden climb therefore
  * counts it in the list but not here.
@@ -35,11 +35,14 @@ type HoldSetRow = { holds: unknown; ascensionist_count: number | null; display_d
 export async function getHoldHeatmapLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<HoldStat[]> {
   if (!isOfflineSearchSupported(input)) return [];
 
-  await ensureHoldIndex(
+  const build = await ensureHoldIndex(
     db,
     { boardType: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId },
     { parseHoldRows },
   );
+  // A partial index would undercount every hold. Throw so React Query retries
+  // rather than caching a heatmap built from half the board.
+  if (build.status === 'aborted') throw new Error('Hold heatmap: holds index build was interrupted');
 
   const ownerUserId = await getLocalUserId(db);
   const followedCondition = input.onlyFollowedAuthors ? await followedAuthorsLocalCondition(db) : undefined;

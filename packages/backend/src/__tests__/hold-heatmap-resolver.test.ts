@@ -23,7 +23,19 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   return { ...actual, getHoldHeatmapData: mocks.getHoldHeatmapData };
 });
 vi.mock('../db/client', () => ({ db: {}, dbRead: mocks.dbRead }));
-vi.mock('../graphql/resolvers/social/roles', () => ({ hasAdmin: mocks.hasAdmin }));
+// requireAdmin's shape (authenticated first, then a role check) with the role
+// lookup swapped for a mock, so no community_roles table is needed.
+vi.mock('../graphql/resolvers/social/roles', async () => {
+  const { requireAuthenticated } = await vi.importActual<typeof import('../graphql/resolvers/shared/helpers')>(
+    '../graphql/resolvers/shared/helpers',
+  );
+  return {
+    requireAdmin: async (ctx: ConnectionContext, boardType?: string | null) => {
+      requireAuthenticated(ctx);
+      if (!(await mocks.hasAdmin(ctx.userId, boardType))) throw new Error('Admin role required for this operation');
+    },
+  };
+});
 vi.mock('../graphql/resolvers/shared/helpers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../graphql/resolvers/shared/helpers')>();
   return { ...actual, applyRateLimit: mocks.applyRateLimit };

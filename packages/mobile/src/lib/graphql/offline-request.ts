@@ -216,16 +216,24 @@ registerOfflineOperation<GetSetterStatsQueryVariables, GetSetterStatsQueryRespon
   offlineFallback: () => ({ setterStats: [] }),
 });
 
-// Hold heatmap: per-hold usage over the climbs the list's filters match. The
-// server resolver is a GROUP BY over every hold row of a layout, so it is
-// admin-only; everyone else is answered here, from the downloaded board and the
-// device-derived holds index (getHoldHeatmapLocal brings the index up to date
-// first). `local-only`: a board that is not downloaded, or a filter SQLite cannot
-// express, gets the empty fallback, never a network call that would come back as
-// an auth error. The hook asks the network directly for admins
-// (useCatalogQuerySource). Same gate and unavailable reasons as search, since the
-// climb set is the list's. An empty list is a real answer: no `isLocalMiss`.
-registerOfflineOperation<HoldHeatmapQueryVariables, HoldHeatmapQueryResponse>({
+/**
+ * The local heatmap response. `unavailable` marks the fallback — the device could
+ * not answer at all (not downloaded, a filter SQLite cannot run, followed authors
+ * unreadable) — so the panel never reads it as "no climbs match". The network
+ * never sets it.
+ */
+export type LocalHoldHeatmapResponse = HoldHeatmapQueryResponse & { unavailable?: true };
+
+// Hold heatmap: per-hold usage over the climbs the list's filters match.
+// LOCAL-ONLY, kept off the live resolver by policy: the heatmap is an offline
+// feature for non-admins, and the server's GROUP BY over every hold row of a
+// layout is admin-only. Admins who have not downloaded the board are sent to the
+// network by `useHoldHeatmap`'s caller (`useCatalogQuerySource`), not by this
+// interceptor. Same gate and unavailable reasons as search, since the climb set
+// is the list's. `getHoldHeatmapLocal` brings the holds index up to date first
+// and throws on an interrupted build, so React Query retries instead of caching
+// a partial heatmap. An empty list is a real answer: no `isLocalMiss`.
+registerOfflineOperation<HoldHeatmapQueryVariables, LocalHoldHeatmapResponse>({
   document: HOLD_HEATMAP_QUERY,
   networkPolicy: 'local-only',
   surface: 'hold_heatmap',
@@ -233,7 +241,7 @@ registerOfflineOperation<HoldHeatmapQueryVariables, HoldHeatmapQueryResponse>({
   unavailableReason: searchUnavailableReason,
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ holdHeatmap: await getHoldHeatmapLocal(db, input) }),
-  offlineFallback: () => ({ holdHeatmap: [] }),
+  offlineFallback: () => ({ holdHeatmap: [], unavailable: true }),
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no

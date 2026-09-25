@@ -851,7 +851,8 @@
       "filterUnsupported": "The heatmap can't follow a hold filter yet. Tap the chip to see the whole board.",
       "empty": "No climbs match these filters.",
       "loadFailed": "Couldn't load the heatmap. Try again in a moment.",
-      "needsDownload": "Download this board to see where the climbs are."
+      "needsDownload": "Download this board to see where the climbs are.",
+      "unavailable": "Heatmap isn't available right now."
     }
   },
   "frontDoor": {

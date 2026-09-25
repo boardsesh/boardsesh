@@ -67,4 +67,22 @@ describe('useHoldHeatmap', () => {
     expect(mocks.request).not.toHaveBeenCalled();
     expect(mocks.offlineAwareRequest).not.toHaveBeenCalled();
   });
+
+  it('retries once, so an interrupted index build recovers on its own', async () => {
+    mocks.offlineAwareRequest.mockRejectedValueOnce(new Error('interrupted'));
+    const { result } = renderHook(() => useHoldHeatmap(input, 'local', true), {
+      // No client-level retry override: the hook's own `retry: 1` decides.
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: new QueryClient() }, children),
+    });
+    await waitFor(() => expect(result.current.holdStats).toEqual([stat(1)]), { timeout: 3000 });
+    expect(mocks.offlineAwareRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('flags the local fallback as unavailable rather than empty', async () => {
+    mocks.offlineAwareRequest.mockResolvedValue({ holdHeatmap: [], unavailable: true });
+    const { result } = renderHook(() => useHoldHeatmap(input, 'local', true), { wrapper });
+    await waitFor(() => expect(result.current.isUnavailable).toBe(true));
+    expect(result.current.holdStats).toEqual([]);
+  });
 });

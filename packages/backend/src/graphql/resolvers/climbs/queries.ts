@@ -42,7 +42,7 @@ import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { redisClientManager } from '../../../redis/client';
-import { hasAdmin } from '../social/roles';
+import { requireAdmin } from '../social/roles';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -123,11 +123,8 @@ export const climbQueries = {
     ctx: ConnectionContext,
   ): Promise<HoldStat[]> => {
     await applyRateLimit(ctx, 30, 'hold-heatmap');
-    requireAuthenticated(ctx);
     const parsedInput = validateInput(ClimbSearchInputSchema, input, 'input');
-    if (!(await hasAdmin(ctx.userId!, parsedInput.boardName))) {
-      throw new Error('Admin role required for this operation');
-    }
+    await requireAdmin(ctx, parsedInput.boardName);
     if (!isValidBoardName(parsedInput.boardName)) {
       throw new Error(`Invalid board name: ${parsedInput.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
     }

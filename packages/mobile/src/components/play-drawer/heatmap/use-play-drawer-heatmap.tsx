@@ -36,6 +36,8 @@ export type PlayDrawerHeatmap = {
   isError: boolean;
   /** The query answered with no holds at all. */
   isEmpty: boolean;
+  /** The phone could not answer (the local-only fallback), which is not "no climbs". */
+  isUnavailable: boolean;
   /** For the current board's `underOverlay` slot; null while there is nothing to draw. */
   overlay: ReactNode;
 };
@@ -116,7 +118,8 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
   const toggleWholeBoard = useCallback(() => setWholeBoard((previous) => !previous), []);
 
   const isBusy = enabled && (savedSearch === undefined || isResolving || heatmap.isFetching);
-  const isEmpty = enabled && heatmap.isSuccess && heatmap.holdStats.length === 0;
+  const isUnavailable = enabled && heatmap.isUnavailable;
+  const isEmpty = enabled && heatmap.isSuccess && !heatmap.isUnavailable && heatmap.holdStats.length === 0;
   // One object per real change, so the memoised panel and action bar skip the
   // drawer's unrelated re-renders.
   return useMemo(
@@ -134,6 +137,7 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
       isBusy,
       isError: heatmap.isError,
       isEmpty,
+      isUnavailable,
       overlay,
     }),
     [
@@ -149,6 +153,7 @@ export function usePlayDrawerHeatmap(board: PlayDrawerHeatmapBoard): PlayDrawerH
       isBusy,
       heatmap.isError,
       isEmpty,
+      isUnavailable,
       overlay,
     ],
   );

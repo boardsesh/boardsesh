@@ -1179,27 +1179,23 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
     });
   });
 
-  it('returns no holds ONLINE for a board that is not downloaded — no request', async () => {
+  it('returns the unavailable fallback ONLINE for a board that is not downloaded — no request', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(false);
     const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
-    expect(result).toEqual({ holdHeatmap: [] });
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
     expect(request).not.toHaveBeenCalled();
     expect(getHoldHeatmapLocal).not.toHaveBeenCalled();
-    expect(recordOfflineReadUnavailable).toHaveBeenCalledExactlyOnceWith({
-      reason: 'board_not_downloaded',
-      surface: 'hold_heatmap',
-      boardName: 'kilter',
-      connectivityReason: null,
-    });
+    // Online, the unavailable signal stays quiet (local-only records offline gaps only).
+    expect(recordOfflineReadUnavailable).not.toHaveBeenCalled();
   });
 
   it('declines a filter SQLite cannot run on a downloaded board — no request', async () => {
-    setOnline(true);
+    setOnline(false);
     isOfflineSearchSupported.mockReturnValue(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
     const result = await offlineAwareRequest<HoldHeatmapQueryResponse>(HOLD_HEATMAP_QUERY, heatmapVars);
-    expect(result).toEqual({ holdHeatmap: [] });
+    expect(result).toEqual({ holdHeatmap: [], unavailable: true });
     expect(request).not.toHaveBeenCalled();
     expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'filter_unsupported', surface: 'hold_heatmap' }),

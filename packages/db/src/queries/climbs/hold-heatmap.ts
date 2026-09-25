@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbGrades, boardClimbHolds, boardClimbs, boardClimbStats } from '../../schema';
+import { withSerialPlan, type SerialPlanDb } from '../util/serial-plan';
 import { createClimbFilters } from './create-climb-filters';
 import {
   boardClimbStatsAtSetAngle,
@@ -34,6 +35,10 @@ export type HoldHeatmapData = {
  * `holdId` is the renderer/frame id stored in `board_climb_holds`, MoonBoard
  * cells included. Stats (ascents, difficulty) are read from the effective row the
  * list reads, so a Woods cross-angle search counts the same numbers it shows.
+ *
+ * Runs under `withSerialPlan`, like search and setter stats: a GROUP BY over
+ * every hold row of a layout is a plan Postgres happily parallelizes, and the
+ * per-worker DSM allocations are what exhausted `/dev/shm` (#3856, #4105).
  */
 export async function getHoldHeatmapData(
   db: DbInstance,
@@ -48,6 +53,17 @@ export async function getHoldHeatmapData(
   const crossAngle = filters.isCrossAngleStats;
   const isDraftsQuery = filters.isOnlyDrafts;
 
+  const rows = await withSerialPlan(db, (tx) => runHoldHeatmapQuery(tx, params, filters, crossAngle, isDraftsQuery));
+  return rows.map(normalizeHoldHeatmapRow);
+}
+
+async function runHoldHeatmapQuery(
+  db: SerialPlanDb,
+  params: BoardRouteParams,
+  filters: ReturnType<typeof createClimbFilters>,
+  crossAngle: boolean,
+  isDraftsQuery: boolean,
+): Promise<Record<string, unknown>[]> {
   const withStatsJoin = db
     .select({
       holdId: boardClimbHolds.holdId,
@@ -78,7 +94,7 @@ export async function getHoldHeatmapData(
     ),
   );
 
-  const rows = await coreQuery
+  return coreQuery
     .where(
       and(
         ...filters.getClimbWhereConditions(),
@@ -89,8 +105,6 @@ export async function getHoldHeatmapData(
       ),
     )
     .groupBy(boardClimbHolds.holdId);
-
-  return rows.map(normalizeHoldHeatmapRow);
 }
 
 /** Postgres returns COUNT/SUM as bigint text and AVG as numeric text. */

@@ -65,6 +65,7 @@ vi.mock('../../../../offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: offer.confirmAndDownload }),
 }));
 
+import { DEFAULT_FILTERS } from '../../../../lib/climb-filter-types';
 import { PlayDrawerHeatmapPanel } from '../PlayDrawerHeatmapPanel';
 import type { PlayDrawerHeatmap } from '../use-play-drawer-heatmap';
 
@@ -85,6 +86,7 @@ function heatmap(overrides: Partial<PlayDrawerHeatmap> = {}): PlayDrawerHeatmap 
     isBusy: false,
     isError: false,
     isEmpty: false,
+    isUnavailable: false,
     overlay: null,
     ...overrides,
   };
@@ -151,7 +153,7 @@ describe('PlayDrawerHeatmapPanel', () => {
 
   it('shows the filter chip for a filtered search and toggles the whole board', () => {
     const toggleWholeBoard = vi.fn();
-    const search = { filters: {} as never, boardFilters: {}, searchText: '' };
+    const search = { filters: DEFAULT_FILTERS, boardFilters: {}, searchText: 'crimp' };
     const { getByText } = render(
       createElement(PlayDrawerHeatmapPanel, {
         heatmap: heatmap({ search, toggleWholeBoard }),
@@ -175,5 +177,29 @@ describe('PlayDrawerHeatmapPanel', () => {
     fireEvent.click(getByTestId('mode-difficulty'));
     expect(setMode).toHaveBeenCalledWith('difficulty');
     expect(getByText('mobile.heatmap.filterUnsupported')).toBeTruthy();
+  });
+
+  it('names a holds-only search by its board filters', () => {
+    const search = {
+      filters: DEFAULT_FILTERS,
+      boardFilters: { holdsFilter: { hold_1: { ANY: 'include' as const } } },
+      searchText: '',
+    };
+    const { getByText } = render(
+      createElement(PlayDrawerHeatmapPanel, { heatmap: heatmap({ search }), boardName: 'kilter', nudgeBoard: board }),
+    );
+    expect(getByText('mobile.heatmap.filtered:mobile.holdFilter.summaryCount')).toBeTruthy();
+  });
+
+  it('says the heatmap is unavailable, not that no climbs match, when the phone could not answer', () => {
+    const { getByText, queryByText } = render(
+      createElement(PlayDrawerHeatmapPanel, {
+        heatmap: heatmap({ isUnavailable: true }),
+        boardName: 'kilter',
+        nudgeBoard: board,
+      }),
+    );
+    expect(getByText('mobile.heatmap.unavailable')).toBeTruthy();
+    expect(queryByText('mobile.heatmap.empty')).toBeNull();
   });
 });

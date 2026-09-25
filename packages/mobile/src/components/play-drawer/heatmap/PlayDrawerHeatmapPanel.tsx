@@ -9,7 +9,9 @@ import { OfflineNudgeCard } from '../../offline/OfflineNudgeCard';
 import { HEAT_RAMP, HEATMAP_MODES, type HeatmapMode } from '../../board/HeatmapOverlay';
 import { useTheme } from '../../../providers/theme-provider';
 import { useGrades } from '../../../lib/graphql/hooks';
+import { countFilteredHolds, hasActiveClimbFilters } from '@boardsesh/climb-filters';
 import { getFilterSummary } from '../../../lib/filter-summary';
+import { DEFAULT_FILTERS } from '../../../lib/climb-filter-types';
 import { useOfflineNudge } from '../../../lib/offline-nudges/use-offline-nudge';
 import { useConfirmBoardDownload } from '../../../offline/use-confirm-board-download';
 import { borderRadius, spacing } from '../../../theme/tokens';
@@ -67,9 +69,11 @@ function HeatmapLegend({ heatmap, boardName }: { heatmap: PlayDrawerHeatmap; boa
     ? t('mobile.heatmap.filterUnsupported')
     : heatmap.isError
       ? t('mobile.heatmap.loadFailed')
-      : heatmap.isEmpty
-        ? t('mobile.heatmap.empty')
-        : null;
+      : heatmap.isUnavailable
+        ? t('mobile.heatmap.unavailable')
+        : heatmap.isEmpty
+          ? t('mobile.heatmap.empty')
+          : null;
 
   return (
     <View style={styles.legend} testID="play-drawer-heatmap-legend">
@@ -120,7 +124,26 @@ function HeatmapFilterChip({
   const { systemColors, brandColors } = useTheme();
   // The summary's grade names need the board's grade table (cached per board).
   const { data: grades } = useGrades(boardName);
-  const summary = useMemo(() => getFilterSummary(search.filters, search.searchText, grades, t), [search, grades, t]);
+  const summary = useMemo(() => {
+    // The list's own summary covers the filter sheet and the name; the board
+    // filters (benchmarks, holds, region) are named the way the list's tokens
+    // name them, so a holds-only search still says what it is filtering on.
+    const boardParts: string[] = [];
+    if (search.boardFilters.onlyBenchmarks) boardParts.push(t('mobile.filter.benchmark'));
+    const holdCount = countFilteredHolds(search.boardFilters.holdsFilter);
+    if (holdCount > 0) boardParts.push(t('mobile.holdFilter.summaryCount', { count: holdCount }));
+    if (search.boardFilters.zoneBox != null) boardParts.push(t('mobile.zoneFilter.title'));
+    const listFiltered =
+      hasActiveClimbFilters({
+        ...search.filters,
+        sortBy: DEFAULT_FILTERS.sortBy,
+        sortOrder: DEFAULT_FILTERS.sortOrder,
+      }) || search.searchText.trim().length > 0;
+    const parts = listFiltered
+      ? [getFilterSummary(search.filters, search.searchText, grades, t), ...boardParts]
+      : boardParts;
+    return parts.join(' · ');
+  }, [search, grades, t]);
   const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : t('mobile.heatmap.filtered', { summary });
 
   return (

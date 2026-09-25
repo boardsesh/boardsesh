@@ -851,7 +851,8 @@
       "filterUnsupported": "El mapa de calor todavía no puede seguir un filtro de presas. Toca el chip para ver todo el plafón.",
       "empty": "Ningún bloque cumple estos filtros.",
       "loadFailed": "No se pudo cargar el mapa de calor. Inténtalo de nuevo en un momento.",
-      "needsDownload": "Descarga este plafón para ver dónde están los bloques."
+      "needsDownload": "Descarga este plafón para ver dónde están los bloques.",
+      "unavailable": "El mapa de calor no está disponible ahora mismo."
     }
   },
   "frontDoor": {
