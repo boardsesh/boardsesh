@@ -359,6 +359,7 @@
       "enableTitle": "Télécharger {{name}} ?",
       "enableMessage": "Télécharge tous les blocs de cette board pour les parcourir et enregistrer tes croix hors ligne.",
       "enableMessageWithSize": "Environ {{size}}. Télécharge tous les blocs de cette board pour les parcourir et enregistrer tes croix hors ligne.",
+      "enableIndexLine": "Et jusqu'à environ {{index}} sur ton téléphone pour les blocs similaires.",
       "enableConfirm": "Télécharger",
       "pickerNotice": "Pas de réseau — voici les boards que tu as téléchargées.",
       "pickerNoticeUnreachable": "Impossible de charger tes boards pour l'instant — voici celles que tu as téléchargées.",
@@ -391,6 +392,16 @@
           "title": "Grimpe là où le wifi ne va pas",
           "body": "Télécharge une board une fois et tout son catalogue reste sur ton téléphone : recherche, filtres et croix dans le carnet marchent dans une salle en sous-sol sans réseau.",
           "cta": "Choisir une board à télécharger"
+        },
+        "similarClimbs": {
+          "title": "Les blocs similaires vivent sur ton téléphone",
+          "body": "Télécharge {{name}} pour voir les blocs qui partagent ces prises",
+          "cta": "Télécharger {{name}}"
+        },
+        "holdHeatmap": {
+          "title": "Vois où sont les blocs",
+          "body": "Télécharge {{name}} pour voir les prises que les grimpeurs utilisent le plus",
+          "cta": "Télécharger {{name}}"
         }
       }
     },

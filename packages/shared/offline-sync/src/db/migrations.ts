@@ -11,7 +11,14 @@
 // node-based fake (or node:sqlite) can exercise the version bookkeeping without
 // loading native expo-sqlite.
 
-import { SCHEMA_STATEMENTS, SPRAY_WALLS } from './schema';
+import {
+  BOARD_CLIMB_HOLD_POSTINGS,
+  BOARD_CLIMB_HOLD_SETS,
+  HOLDS_INDEX_CLIMBS,
+  INDEX_CLIMBS_SYNC_SEQ,
+  SCHEMA_STATEMENTS,
+  SPRAY_WALLS,
+} from './schema';
 import { applyBusyTimeout } from './pragmas';
 import { requeueTransportDeadLetters, setDeadLetterRecoveryNotice } from '../mutation-queue/dead-letter-recovery';
 import type { OfflineDatabase, SqlExecutor } from '../database';
@@ -150,6 +157,29 @@ export const MIGRATIONS: Migration[] = [
         snapshot TEXT NOT NULL
       );`,
     ],
+  },
+  {
+    // The device-derived holds index (hold heatmap + similar climbs on device).
+    //
+    // Three tables built on the phone from `board_climbs.frames` by
+    // holds-index/hold-index.ts: a local integer id per climb uuid, one packed
+    // hold set per climb, and one packed posting list per (layout, hold). NOT
+    // synced tables: no TABLE_CONFIGS entry, no checkpoint, no tombstones, and
+    // never part of a snapshot artifact (DEVICE_ONLY_TABLES; the export refuses
+    // DDL that names them). Freshness lives in one `holds-index:<scopeKey>`
+    // sync_meta watermark per downloaded scope.
+    //
+    // `idx_climbs_sync_seq` is on `board_climbs` because the builder walks a
+    // layout in `sync_seq` order from that watermark, and asks "is anything
+    // newer than the watermark?" on every read of the index. No existing index
+    // carries `sync_seq`, so both would sort the whole layout each time. It is
+    // in DEVICE_ONLY_STATEMENTS, so the snapshot export leaves it out of artifacts.
+    //
+    // Bumping LATEST_SCHEMA_VERSION makes today's v9 artifacts schema-stale for
+    // v10 clients until the next live threshold scan rebuilds them (every 15
+    // minutes; docs/board-snapshots.md "Schema-bump staleness window").
+    version: 10,
+    statements: [HOLDS_INDEX_CLIMBS, BOARD_CLIMB_HOLD_SETS, BOARD_CLIMB_HOLD_POSTINGS, INDEX_CLIMBS_SYNC_SEQ],
   },
 ];
 

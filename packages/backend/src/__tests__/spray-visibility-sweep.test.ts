@@ -576,6 +576,9 @@ const NOT_APPLICABLE: Record<string, string> = {
   // --- similar climbs: never materialised for a wall --------------------------
   'Query.similarClimbs':
     'a non-admin (the sweep owner included) reads board_climb_neighbors, which the nightly job never computes for spray layouts, so a wall answers []; only an admin reaches the live query, and it keeps the sprayLayoutIsReadable gate (docs/similar-climbs.md)',
+  // --- hold heatmap: admin-only live aggregate --------------------------------
+  'Query.holdHeatmap':
+    'an admin-only live aggregate behind requireAdmin, so the sweep owner (not an admin) is refused; a non-admin gets the heatmap from the wall mirrored on the phone, and an admin still passes the sprayLayoutIsReadableWithCapability gate',
 
   // --- stats and grades: numbers keyed on a uuid the caller already holds -----
   'Query.angles': 'the static angle catalogue for a board type; the layout id is not read',

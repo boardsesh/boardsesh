@@ -149,6 +149,8 @@ const TRIGGER_SETTING_KEY = 'offlineDownloadTriggers';
  *   during first-run onboarding. A tap, but its own bucket: it is the only one
  *   taken before the climber has used the app at all, so folding it into
  *   `toggle` would hide whether the offer lands at the moment it is made.
+ * - `similar_climbs` — the download offered in place of the play drawer's
+ *   Similar climbs strip, which only reads a downloaded board. A tap.
  * - `unknown` — no attribution recorded: a scope enabled by a build that predates
  *   this, or one whose entry was already consumed. An explicit, expected value.
  */
@@ -160,6 +162,8 @@ export type OfflineDownloadTrigger =
   | 'adopt-confirmed'
   | 'retry'
   | 'onboarding'
+  | 'similar_climbs'
+  | 'hold_heatmap'
   | 'unknown';
 
 const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
@@ -170,6 +174,8 @@ const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
   'adopt-confirmed',
   'retry',
   'onboarding',
+  'similar_climbs',
+  'hold_heatmap',
   'unknown',
 ];
 

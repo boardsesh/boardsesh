@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Regression guard for the Android nested-scroll fix (issue #3506): like the beta
@@ -25,6 +25,21 @@ const similar = vi.hoisted(() => ({
   data: undefined as unknown,
   isLoading: false,
   isError: false,
+  source: 'local' as 'local' | 'network' | 'download',
+  isResolvingSource: false,
+  scopes: [] as unknown[],
+}));
+
+const offer = vi.hoisted(() => ({
+  activeBoard: null as null | { boardType: string; layoutId: number; sizeId: number; name: string },
+  nudgeVisible: true,
+  nudgeBoards: [] as unknown[],
+  enabledScopeKeys: [] as string[],
+  isOffline: false,
+  confirmAndDownload: vi.fn(async () => true),
+  armWithoutConfirm: vi.fn(),
+  accept: vi.fn(),
+  showToast: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -45,12 +60,54 @@ vi.mock('../similar-climbs-utils', () => ({
   formatByline: () => '',
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useSimilarClimbs: () => ({
-    data: similar.data,
-    isLoading: similar.isLoading,
-    isError: similar.isError,
-    refetch: vi.fn(),
+  useSimilarClimbs: (scope: unknown) => {
+    similar.scopes.push(scope);
+    return {
+      data: similar.data,
+      isLoading: similar.isLoading,
+      isError: similar.isError,
+      refetch: vi.fn(),
+      source: similar.source,
+      isResolvingSource: similar.isResolvingSource,
+    };
+  },
+}));
+vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: offer.activeBoard }) }));
+vi.mock('../../../lib/offline-nudges/use-offline-nudge', () => ({
+  useOfflineNudge: ({ board }: { board: unknown }) => {
+    offer.nudgeBoards.push(board);
+    return { visible: offer.nudgeVisible && board != null, accept: offer.accept, dismiss: vi.fn() };
+  },
+}));
+vi.mock('../../../offline/use-confirm-board-download', () => ({
+  useConfirmBoardDownload: () => ({
+    confirmAndDownload: offer.confirmAndDownload,
+    armWithoutConfirm: offer.armWithoutConfirm,
   }),
+}));
+vi.mock('../../../settings', () => ({
+  offlineBoardKeyForBoard: (board: { boardType: string; layoutId: number; sizeId: number }) =>
+    `${board.boardType}:${board.layoutId}:${board.sizeId}`,
+  useSetting: () => [offer.enabledScopeKeys, vi.fn()],
+}));
+vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => offer.isOffline }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: offer.showToast }) }));
+vi.mock('../../offline/OfflineNudgeCard', () => ({
+  OfflineNudgeCard: ({
+    title,
+    primaryLabel,
+    onPrimary,
+  }: {
+    title: string;
+    primaryLabel: string;
+    onPrimary: () => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'offline-nudge-card' },
+      createElement('span', null, title),
+      createElement('button', { onClick: onPrimary }, primaryLabel),
+    ),
 }));
 vi.mock('../../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V4', color: '#333' }) }),
@@ -64,10 +121,31 @@ vi.mock('../../../theme/tokens', () => ({
 
 import { SimilarClimbsSection } from '../SimilarClimbsSection';
 
+const props = {
+  climbUuid: 'climb-1',
+  boardName: 'kilter',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1',
+  angle: 40,
+  onClimbPress: vi.fn(),
+};
+const garage = { boardType: 'kilter', layoutId: 1, sizeId: 10, name: 'Garage' };
+
 beforeEach(() => {
+  vi.clearAllMocks();
   similar.data = [{ uuid: 'sc-1' }];
   similar.isLoading = false;
   similar.isError = false;
+  similar.source = 'local';
+  similar.isResolvingSource = false;
+  similar.scopes = [];
+  offer.activeBoard = garage;
+  offer.nudgeVisible = true;
+  offer.nudgeBoards = [];
+  offer.enabledScopeKeys = [];
+  offer.isOffline = false;
+  offer.confirmAndDownload.mockResolvedValue(true);
 });
 
 describe('SimilarClimbsSection', () => {
@@ -86,5 +164,89 @@ describe('SimilarClimbsSection', () => {
 
     expect(getByTestId('rngh-scroll')).toBeTruthy();
     expect(queryByTestId('rn-scroll')).toBeNull();
+  });
+});
+
+describe('SimilarClimbsSection — source states', () => {
+  it('local: asks for the drawer scope (size included) and renders the strip', () => {
+    const { getByText, queryByTestId } = render(createElement(SimilarClimbsSection, props));
+    expect(similar.scopes.at(-1)).toEqual({ boardName: 'kilter', layoutId: 1, sizeId: 10 });
+    expect(getByText('Test Similar')).toBeTruthy();
+    expect(queryByTestId('offline-nudge-card')).toBeNull();
+  });
+
+  it('local, first index build: shows the skeleton and says it is preparing', () => {
+    similar.isLoading = true;
+    const { getByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByText('mobile.similarClimbs.preparing')).toBeTruthy();
+  });
+
+  it('network (admin): renders the strip with no download offer and no preparing copy', () => {
+    similar.source = 'network';
+    const { getByText, queryByTestId, queryByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByText('Test Similar')).toBeTruthy();
+    expect(queryByTestId('offline-nudge-card')).toBeNull();
+    similar.isLoading = true;
+    const loading = render(createElement(SimilarClimbsSection, props));
+    expect(loading.queryAllByText('mobile.similarClimbs.preparing')).toHaveLength(0);
+    expect(queryByText('mobile.similarClimbs.preparing')).toBeNull();
+  });
+
+  it('while the source resolves: skeleton, never a flash of the download offer', () => {
+    similar.source = 'download';
+    similar.isResolvingSource = true;
+    const { queryByTestId } = render(createElement(SimilarClimbsSection, props));
+    expect(queryByTestId('offline-nudge-card')).toBeNull();
+  });
+
+  it('download: offers the active board and starts an attributed download', async () => {
+    similar.source = 'download';
+    similar.data = undefined;
+    const { getByTestId, getByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByTestId('offline-nudge-card')).toBeTruthy();
+    expect(getByText('mobile.offline.nudge.similarClimbs.title')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(getByText('mobile.offline.nudge.similarClimbs.cta'));
+    });
+    expect(offer.confirmAndDownload).toHaveBeenCalledWith(garage, { trigger: 'similar_climbs', source: 'play_drawer' });
+    expect(offer.accept).toHaveBeenCalledWith('download');
+  });
+
+  it('download while offline: arms the board instead of kicking a doomed download', async () => {
+    similar.source = 'download';
+    offer.isOffline = true;
+    const { getByText } = render(createElement(SimilarClimbsSection, props));
+    await act(async () => {
+      fireEvent.click(getByText('mobile.offline.nudge.similarClimbs.cta'));
+    });
+    expect(offer.confirmAndDownload).not.toHaveBeenCalled();
+    expect(offer.armWithoutConfirm).toHaveBeenCalledWith(garage, { trigger: 'similar_climbs', source: 'play_drawer' });
+    expect(offer.accept).toHaveBeenCalledWith('armed');
+  });
+
+  it('download on a climb from another board: neutral line, no offer, never "no similar climbs"', () => {
+    similar.source = 'download';
+    offer.activeBoard = { ...garage, sizeId: 11 };
+    const { getByText, queryByTestId, queryByText } = render(createElement(SimilarClimbsSection, props));
+    expect(queryByTestId('offline-nudge-card')).toBeNull();
+    expect(offer.nudgeBoards.at(-1)).toBeNull();
+    expect(getByText('mobile.similarClimbs.downloadToSee')).toBeTruthy();
+    expect(queryByText('mobile.similarClimbs.empty')).toBeNull();
+  });
+
+  it('download with the card dismissed or unavailable: neutral line, not the empty answer', () => {
+    similar.source = 'download';
+    offer.nudgeVisible = false;
+    const { getByText, queryByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByText('mobile.similarClimbs.downloadToSee')).toBeTruthy();
+    expect(queryByText('mobile.similarClimbs.empty')).toBeNull();
+  });
+
+  it('download already asked for: says the strip arrives with the download', () => {
+    similar.source = 'download';
+    offer.nudgeVisible = false;
+    offer.enabledScopeKeys = ['kilter:1:10'];
+    const { getByText } = render(createElement(SimilarClimbsSection, props));
+    expect(getByText('mobile.similarClimbs.waitingForDownload')).toBeTruthy();
   });
 });

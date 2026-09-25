@@ -663,6 +663,9 @@ describe('board_climb_grades snapshot artifact', () => {
     });
 
     expect(readArtifactMetaTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'sync_deletions']);
+    // The exact data-table list every shipped binary depends on. The device-derived
+    // holds index (DEVICE_ONLY_TABLES) must never appear here.
+    expect(readArtifactTableNames(filePath)).toEqual(['board_climb_stats', 'board_climbs', 'snapshot_meta']);
     expect(readArtifactTableNames(filePath)).not.toContain('board_climb_grades');
     expect(readArtifactTableNames(filePath)).not.toContain('sync_deletions');
   });

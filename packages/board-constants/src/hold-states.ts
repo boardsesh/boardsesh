@@ -497,6 +497,41 @@ export function isSentinelHoldState(state: string | null | undefined): boolean {
 }
 
 /**
+ * One `board_climb_holds` row, as Postgres persists it and as the on-device
+ * holds index derives it.
+ */
+export type ClimbHoldRow = { holdId: number; holdState: HoldState };
+
+/**
+ * The per-hold rows of a climb, byte-for-byte what the server writes into
+ * `board_climb_holds`: walk the frames in order (`accumulateFramesToMaps`),
+ * keep the FIRST row seen for each hold, and drop the `{holdId}={code}`
+ * sentinel an unknown role code decodes to.
+ *
+ * First-wins is not a design choice, it is the server's quirk reproduced: the
+ * saves insert every frame's rows with `ON CONFLICT DO NOTHING` on
+ * `(board_type, climb_uuid, hold_id)`, so a hold that changes role in a later
+ * frame keeps its earlier role, and a hold an `x<id>` token turns off later
+ * keeps its row. The on-device index must agree with Postgres, or the same
+ * climb would score differently on the phone and on the web.
+ */
+export function parseFramesToHoldRows(board: BoardName, frames: string | null | undefined): ClimbHoldRow[] {
+  if (!frames) return [];
+  const rows: ClimbHoldRow[] = [];
+  const seen = new Set<number>();
+  for (const frameMap of accumulateFramesToMaps(frames, board)) {
+    for (const [holdIdKey, hold] of Object.entries(frameMap)) {
+      if (isSentinelHoldState(hold.state)) continue;
+      const holdId = Number(holdIdKey);
+      if (!Number.isFinite(holdId) || seen.has(holdId)) continue;
+      seen.add(holdId);
+      rows.push({ holdId, holdState: hold.state });
+    }
+  }
+  return rows;
+}
+
+/**
  * Convert a frames string into a map of frame index → lit-state snapshot.
  * Each frame maps hold IDs to their state, color, and display color.
  *

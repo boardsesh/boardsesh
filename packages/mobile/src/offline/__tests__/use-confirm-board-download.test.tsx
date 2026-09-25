@@ -20,7 +20,10 @@ const spies = vi.hoisted(() => ({
   confirm: vi.fn(async () => true),
   enableBoardsOffline: vi.fn(),
   armBoardsOffline: vi.fn(),
-  estimateScopeDownload: vi.fn(() => ({ kind: 'snapshot', bytes: 128_000_000 })),
+  estimateScopeDownload: vi.fn((): { kind: string; bytes?: number; climbCount?: number } => ({
+    kind: 'snapshot',
+    bytes: 128_000_000,
+  })),
   getCheckpoint: vi.fn(),
   isBootstrapDone: vi.fn(async () => false),
   isScopeDownloadComplete: vi.fn(async () => false),
@@ -59,7 +62,7 @@ vi.mock('../../settings', () => ({
 vi.mock('../../lib/format-bytes', () => ({ formatBytes: () => '128 MB' }));
 vi.mock('../../sync', () => ({ notifyBootstrapMetadataChanged: spies.notifyBootstrapMetadataChanged }));
 
-import { useConfirmBoardDownload } from '../use-confirm-board-download';
+import { HOLD_INDEX_BYTES_PER_CLIMB, useConfirmBoardDownload, withHoldIndexLine } from '../use-confirm-board-download';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,5 +84,46 @@ describe('useConfirmBoardDownload', () => {
     expect(spies.restoreBootstrapRetryBudget).toHaveBeenCalledWith(fixtures.database, 'kilter:1:10');
     expect(spies.notifyBootstrapMetadataChanged).toHaveBeenCalledWith({ scopeKey: 'kilter:1:10' });
     expect(spies.enableBoardsOffline).toHaveBeenCalledWith(fixtures.board, { trigger: 'toggle' });
+  });
+});
+
+describe('download quote: holds-index line', () => {
+  it('adds the on-phone index size when the manifest has a climb count', async () => {
+    spies.estimateScopeDownload.mockReturnValueOnce({ kind: 'snapshot', bytes: 128_000_000, climbCount: 295_000 });
+    const { result } = renderHook(() => useConfirmBoardDownload());
+
+    await act(async () => {
+      await result.current.confirmAndDownload(fixtures.board);
+    });
+
+    expect(spies.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'mobile.offline.enableMessageWithSize\n\nmobile.offline.enableIndexLine',
+      }),
+    );
+  });
+
+  it('keeps the plain quote without a climb count', async () => {
+    const { result } = renderHook(() => useConfirmBoardDownload());
+
+    await act(async () => {
+      await result.current.confirmAndDownload(fixtures.board);
+    });
+
+    expect(spies.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'mobile.offline.enableMessageWithSize' }),
+    );
+  });
+
+  it('prices the index at the measured bytes per climb', () => {
+    const indexLine = vi.fn((bytes: number) => `index ${bytes}`);
+    expect(withHoldIndexLine('quote', 295_000, indexLine)).toBe(
+      `quote\n\nindex ${295_000 * HOLD_INDEX_BYTES_PER_CLIMB}`,
+    );
+    expect(withHoldIndexLine('quote', 0, indexLine)).toBe('quote');
+    expect(withHoldIndexLine('quote', null, indexLine)).toBe('quote');
+    // ~67 MB for one Kilter size scope, the measured figure.
+    expect(295_000 * HOLD_INDEX_BYTES_PER_CLIMB).toBeGreaterThan(65_000_000);
+    expect(295_000 * HOLD_INDEX_BYTES_PER_CLIMB).toBeLessThan(70_000_000);
   });
 });

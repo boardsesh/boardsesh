@@ -1,9 +1,11 @@
+import { createHash } from 'crypto';
 import { storedWoodsSizeId } from './woods-authoring';
 import { eq, and, gte, desc, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
   type ClimbSearchInput,
   type ConnectionContext,
+  type HoldStat,
   type SetterStat,
   type SetterStatsInput,
   type SimilarClimb,
@@ -12,7 +14,7 @@ import {
   USER_SPECIFIC_SEARCH_PARAMS,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
-import { getGradeLabel, getMaterializedSimilarClimbs, getSetterStats } from '@boardsesh/db/queries';
+import { getGradeLabel, getHoldHeatmapData, getMaterializedSimilarClimbs, getSetterStats } from '@boardsesh/db/queries';
 import { logger } from '../../../utils/logger';
 import {
   type ClimbSearchParams,
@@ -40,6 +42,8 @@ import type { ClimbSearchContext } from '../shared/types';
 import { db, dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
+import { redisClientManager } from '../../../redis/client';
+import { requireAdmin } from '../social/roles';
 
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -58,7 +62,116 @@ function isSizeScopedSimilarityBoard(boardType: BoardName): boolean {
   return boardType === 'woods';
 }
 
+const HOLD_HEATMAP_CACHE_PREFIX = 'boardsesh:hold-heatmap:v2:';
+const HOLD_HEATMAP_CACHE_TTL_SECONDS = 5 * 60;
+/** Search fields that order or page a list and cannot change a whole-set aggregate. */
+const HOLD_HEATMAP_IGNORED_FIELDS = new Set(['page', 'pageSize', 'sortBy', 'sortOrder', 'sortSeed']);
+
+/**
+ * One cache entry per filter set. The input is hashed rather than spelled out
+ * because a search carries a free-form holdsFilter; sorting/paging fields are
+ * dropped so the list's scroll position does not split the cache. A search with
+ * user-specific filters is keyed by the caller too.
+ */
+export function holdHeatmapCacheKey(
+  input: Readonly<Record<string, unknown>> & { boardName: string },
+  userId: string | undefined,
+): string {
+  const relevant = Object.entries(input)
+    .filter(([field, value]) => !HOLD_HEATMAP_IGNORED_FIELDS.has(field) && value !== undefined && value !== null)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  const digest = createHash('sha1')
+    .update(JSON.stringify(relevant))
+    .update(userId ?? '')
+    .digest('hex');
+  return `${HOLD_HEATMAP_CACHE_PREFIX}${input.boardName}:${digest}`;
+}
+
+async function getCachedHoldHeatmap(cacheKey: string): Promise<HoldStat[] | null> {
+  if (!redisClientManager.isRedisConnected()) return null;
+  try {
+    const cached = await redisClientManager.getClients().publisher.get(cacheKey);
+    return cached === null ? null : (JSON.parse(cached) as HoldStat[]);
+  } catch (error) {
+    logger.warn('[hold-heatmap] cache read failed', { error });
+    return null;
+  }
+}
+
+function cacheHoldHeatmap(cacheKey: string, stats: HoldStat[]): void {
+  if (!redisClientManager.isRedisConnected()) return;
+  try {
+    redisClientManager
+      .getClients()
+      .publisher.set(cacheKey, JSON.stringify(stats), 'EX', HOLD_HEATMAP_CACHE_TTL_SECONDS)
+      .catch((error: unknown) => logger.warn('[hold-heatmap] cache write failed', { error }));
+  } catch (error) {
+    logger.warn('[hold-heatmap] cache write initiation failed', { error });
+  }
+}
+
 export const climbQueries = {
+  /**
+   * Per-hold usage over the climbs a search matches — the hold heatmap's live
+   * path. Admin only: every other climber answers this on device from the
+   * downloaded board (mobile registers the operation local-only), so this GROUP BY
+   * over board_climb_holds never runs for the public. Filters ride through the
+   * same `ClimbSearchInput` → `createClimbFilters` conversion as `searchClimbs`.
+   */
+  holdHeatmap: async (
+    _: unknown,
+    { input }: { input: ClimbSearchInput },
+    ctx: ConnectionContext,
+  ): Promise<HoldStat[]> => {
+    await applyRateLimit(ctx, 30, 'hold-heatmap');
+    const parsedInput = validateInput(ClimbSearchInputSchema, input, 'input');
+    await requireAdmin(ctx, parsedInput.boardName);
+    if (!isValidBoardName(parsedInput.boardName)) {
+      throw new Error(`Invalid board name: ${parsedInput.boardName}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+    }
+    // Same guard as searchClimbs: a spray layout id is a guessable sequence value,
+    // and an admin is not a member of every private wall.
+    const isSpray = isSprayBoardType(parsedInput.boardName);
+    if (
+      isSpray &&
+      !(await sprayLayoutIsReadableWithCapability(
+        parsedInput.boardName,
+        parsedInput.layoutId,
+        ctx.userId,
+        parsedInput.sprayWallUuid,
+      ))
+    ) {
+      return [];
+    }
+
+    const params: ParsedBoardRouteParameters = {
+      board_name: parsedInput.boardName,
+      layout_id: parsedInput.layoutId,
+      size_id: parsedInput.sizeId,
+      set_ids: parsedInput.setIds
+        .split(',')
+        .map((id) => parseInt(id.trim(), 10))
+        .filter((id) => !isNaN(id)),
+      angle: parsedInput.angle,
+    };
+    const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
+    const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
+      (param) => !!searchParams[param as keyof typeof searchParams],
+    );
+    const userId = hasUserSpecificFilters ? ctx.userId : undefined;
+
+    // A spray wall's entry would be keyed by layout, not viewer; never cache it.
+    const cacheKey = isSpray ? null : holdHeatmapCacheKey(parsedInput, userId);
+    if (cacheKey) {
+      const cached = await getCachedHoldHeatmap(cacheKey);
+      if (cached) return cached;
+    }
+
+    const stats: HoldStat[] = await getHoldHeatmapData(dbRead, params, searchParams, userId);
+    if (cacheKey) cacheHoldHeatmap(cacheKey, stats);
+    return stats;
+  },
+
   checkMoonBoardClimbDuplicates: async (
     _: unknown,
     { input }: { input: CheckMoonBoardClimbDuplicatesInput },

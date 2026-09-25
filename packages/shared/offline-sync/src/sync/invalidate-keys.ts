@@ -92,11 +92,33 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // Board reference data: the list, the count, the detail, and the setter picker
   // (#5407 made ['setterStats'] a local read too — a sync that adds/removes
   // climbs changes who's set on the board, so it must refresh alongside search).
-  board_climbs: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
+  //
+  // ['similarClimbs'] / ['holdHeatmap'] — answered on device from board_climbs
+  // joined to the derived holds index (holds-index/), so a climb arriving,
+  // changing or being hidden changes the strip and the heatmap.
+  board_climbs: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['climb'],
+    ['setterStats'],
+    ['similarClimbs'],
+    ['holdHeatmap'],
+  ],
   // The setter picker reads stats too, on Woods only: a climb set at another angle
   // counts toward its setter at the browsed angle once it has a stats row there
   // (the browsed-angle restriction, #5642), so a stats pull can change a count.
-  board_climb_stats: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['climb'], ['setterStats']],
+  // ['holdHeatmap'] too: stats colour the ascent and grade modes, and decide the
+  // climb set for minAscents / minRating / grade-range filters. Only an active
+  // query refetches, so this costs nothing unless the overlay is up.
+  board_climb_stats: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['climb'],
+    ['setterStats'],
+    ['holdHeatmap'],
+  ],
   // The stats keys plus the two grade-specific keys the play-drawer grade
   // section and the by-angle chart read.
   board_climb_grades: [
@@ -107,6 +129,11 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
     ['boardseshGrade'],
     ['boardseshGradesForAngles'],
   ],
+
+  // The device-derived holds index (holds-index/hold-index.ts). Not a synced
+  // table — nothing pulls or drains it — but the index builder invalidates
+  // through this map after a chunk changed rows, so it lives here with the rest.
+  board_climb_hold_sets: [['similarClimbs'], ['holdHeatmap']],
 
   // Deliberately empty — not a placeholder.
   //

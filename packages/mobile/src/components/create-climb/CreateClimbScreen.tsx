@@ -20,6 +20,9 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
+import { useCatalogQuerySourceState } from '../../lib/offline/use-catalog-query-source';
+import { heatmapSearchInput } from '../play-drawer/heatmap/heatmap-search-input';
 
 type CreateClimbScreenProps = {
   board: CreateClimbBoard;
@@ -97,6 +100,40 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+
+  // The hold heatmap over the whole board (the create board has no list filters
+  // to follow): the downloaded board answers, or the admin resolver, or, for a
+  // board that is not on this phone, a line under the board saying so. Inline
+  // rather than a toast: toasts draw behind this native sheet.
+  const [heatmapActive, setHeatmapActive] = useState(false);
+  const heatmapInput = useMemo(
+    () =>
+      heatmapSearchInput(
+        {
+          boardName: board.boardName,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: board.setIds,
+          angle: board.angle,
+        },
+        null,
+      ),
+    [board.boardName, board.layoutId, board.sizeId, board.setIds, board.angle],
+  );
+  const heatmapScope = useMemo(
+    () => ({ boardName: board.boardName, layoutId: board.layoutId, sizeId: board.sizeId }),
+    [board.boardName, board.layoutId, board.sizeId],
+  );
+  const { source: heatmapSource, isResolving: heatmapSourceResolving } = useCatalogQuerySourceState(heatmapScope);
+  const heatmap = useHoldHeatmap(heatmapInput, heatmapSource, heatmapActive && !heatmapSourceResolving);
+  const heatmapNotice = !heatmapActive
+    ? null
+    : heatmapSource === 'download' && !heatmapSourceResolving
+      ? t('mobile.heatmap.needsDownload')
+      : heatmap.isError
+        ? t('mobile.heatmap.loadFailed')
+        : null;
+  const toggleHeatmap = useCallback(() => setHeatmapActive((active) => !active), []);
 
   const boardHolds = useMemo(
     () =>
@@ -215,6 +252,11 @@ export function CreateClimbScreen({
         onLoadDraft={handleLoadDraft}
         onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
+        heatmapActive={heatmapActive}
+        heatmapBusy={heatmapActive && (heatmapSourceResolving || heatmap.isFetching)}
+        heatmapStatsByHoldId={heatmap.statsByHoldId}
+        heatmapNotice={heatmapNotice}
+        onToggleHeatmap={toggleHeatmap}
       />
 
       <HoldRoleSheet

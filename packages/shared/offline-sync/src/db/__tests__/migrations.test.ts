@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from '../migrations';
-import { SCHEMA_STATEMENTS } from '../schema';
+import { DEVICE_ONLY_TABLES, SCHEMA_STATEMENTS } from '../schema';
 import { TABLE_CONFIGS } from '../../sync/table-config';
 import { createTestDatabase, listTables, primaryKeyColumns, tableColumns } from '../../testing/sqlite-test-db';
 
@@ -279,6 +279,60 @@ describe('runMigrations', () => {
     await runMigrations(upgradedDb);
     expect(await listTables(upgradedDb)).toContain('spray_walls');
     expect(await primaryKeyColumns(upgradedDb, 'spray_walls')).toEqual(['layout_id']);
+  });
+
+  it('v10 creates the device-derived holds index tables and the sync_seq index, on fresh and v9-stamped databases', async () => {
+    const assertHoldsSchema = async (database: ReturnType<typeof createTestDatabase>) => {
+      const tables = await listTables(database);
+      for (const table of ['holds_index_climbs', 'board_climb_hold_sets', 'board_climb_hold_postings']) {
+        expect(tables).toContain(table);
+      }
+      expect(await primaryKeyColumns(database, 'holds_index_climbs')).toEqual(['id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_sets')).toEqual(['climb_id']);
+      expect(await primaryKeyColumns(database, 'board_climb_hold_postings')).toEqual([
+        'board_type',
+        'layout_id',
+        'hold_id',
+      ]);
+      const postings = await database.getFirstAsync<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'board_climb_hold_postings'",
+      );
+      expect(postings?.sql).toMatch(/WITHOUT ROWID/);
+      const index = await database.getFirstAsync<{ tbl_name: string }>(
+        "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = 'idx_climbs_sync_seq'",
+      );
+      expect(index).toEqual({ tbl_name: 'board_climbs' });
+    };
+
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    await assertHoldsSchema(freshDb);
+
+    // Existing install stamped at v9: only the pending v10 migration applies,
+    // and the catalog rows already on disk are untouched.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync(
+      'DROP INDEX idx_climbs_sync_seq; DROP TABLE holds_index_climbs; DROP TABLE board_climb_hold_sets; DROP TABLE board_climb_hold_postings;',
+    );
+    await upgradedDb.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq) VALUES ('kept', 'kilter', 1, 'p1r12', 3)",
+    );
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 9 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    await assertHoldsSchema(upgradedDb);
+    expect(await upgradedDb.getFirstAsync("SELECT uuid FROM board_climbs WHERE uuid = 'kept'")).toEqual({
+      uuid: 'kept',
+    });
+    expect(
+      (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(10);
+  });
+
+  it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
+    for (const table of DEVICE_ONLY_TABLES) {
+      expect(SCHEMA_STATEMENTS.some((statement) => statement.includes(table))).toBe(false);
+    }
   });
 
   it('holds every column the sync config will write, for every syncable table', async () => {

@@ -36,6 +36,8 @@ import { join } from 'node:path';
 import type { Sql, TransactionSql } from 'postgres';
 import {
   MIGRATIONS,
+  DEVICE_ONLY_STATEMENTS,
+  DEVICE_ONLY_TABLES,
   LATEST_SCHEMA_VERSION,
   TABLE_CONFIGS,
   toSqliteValue,
@@ -226,10 +228,29 @@ export function boardSnapshotDdlStatements(
   const referencesSnapshotTable = (statement: string): boolean =>
     tables.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
 
+  // The device builds some tables for itself (the derived holds index) and they
+  // must never reach a public artifact. The word-boundary match above keeps them
+  // out today only because their DDL never names a snapshot table; this makes it
+  // a hard failure instead of a convention.
+  const referencedDeviceOnlyTable = (statement: string): string | undefined =>
+    DEVICE_ONLY_TABLES.find((table) => new RegExp(`\\b${table}\\b`).test(statement));
+
+  const deviceOnlyStatements = new Set(DEVICE_ONLY_STATEMENTS.map((statement) => statement.trim()));
   const statements: string[] = [];
   for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
     for (const statement of migration.statements) {
-      if (referencesSnapshotTable(statement)) statements.push(statement.trim());
+      if (!referencesSnapshotTable(statement)) continue;
+      // Statements the device needs but an artifact must not carry (the holds
+      // index's sync_seq index on board_climbs): dropped by exact text.
+      if (deviceOnlyStatements.has(statement.trim())) continue;
+      const deviceOnlyTable = referencedDeviceOnlyTable(statement);
+      if (deviceOnlyTable) {
+        throw new Error(
+          `boardSnapshotDdlStatements: migration v${migration.version} statement names device-only table ` +
+            `${deviceOnlyTable}, which must never ship in a snapshot artifact`,
+        );
+      }
+      statements.push(statement.trim());
     }
   }
   statements.push(SNAPSHOT_META_DDL);

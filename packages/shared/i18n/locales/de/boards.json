@@ -359,6 +359,7 @@
       "enableTitle": "{{name}} herunterladen?",
       "enableMessage": "Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
       "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieses Boards, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableIndexLine": "Dazu bis zu etwa {{index}} auf deinem Handy für ähnliche Boulder.",
       "enableConfirm": "Herunterladen",
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
@@ -391,6 +392,16 @@
           "title": "Klettere, wo kein WLAN hinkommt",
           "body": "Lade ein Board einmal herunter und der ganze Katalog liegt auf deinem Handy: Suche, Filter und Begehungen eintragen funktionieren auch im Kellerraum ohne Empfang.",
           "cta": "Board zum Herunterladen wählen"
+        },
+        "similarClimbs": {
+          "title": "Ähnliche Boulder liegen auf deinem Handy",
+          "body": "Lade {{name}} herunter, um Boulder mit diesen Griffen zu sehen",
+          "cta": "{{name}} herunterladen"
+        },
+        "holdHeatmap": {
+          "title": "Sieh, wo die Boulder sind",
+          "body": "Lade {{name}} herunter, um die Griffe zu sehen, die Kletterer*innen am meisten nutzen",
+          "cta": "{{name}} herunterladen"
         }
       }
     },

@@ -231,6 +231,25 @@ layout artifact but intentionally outside the enabled size.
   artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
   next export rebuilds it at v5.
 
+### Device-derived tables stay out
+
+The holds index behind similar climbs and the hold heatmap on the phone is three tables:
+`holds_index_climbs`, `board_climb_hold_sets` and `board_climb_hold_postings` (schema v10). The device builds
+them from `board_climbs.frames`, and they are **never** part of an artifact. The exclusion is enforced in
+code, not just by convention: the tables are listed in `DEVICE_ONLY_TABLES` (`@boardsesh/offline-sync`),
+`boardSnapshotDdlStatements` throws if any statement it selects names one, and `snapshot-export-ddl.test.ts`
+pins the artifact's table list to exactly `board_climbs`, `board_climb_stats` and `snapshot_meta`.
+
+The same migration's `idx_climbs_sync_seq` index is on `board_climbs`. Matched by table name alone, it would
+land in every artifact, where it is dead weight because the import copies rows out and never queries them by
+`sync_seq`. So it is listed in `DEVICE_ONLY_STATEMENTS`, which the export drops by exact text. The same list
+serves any future statement that the device needs on an artifact table but the artifact must not carry. It
+needs no format change, because an artifact never had these statements.
+
+Because v10 bumps `schema_version`, the schema-bump staleness window below applies. v9 clients tolerate
+v10 artifacts; v10 clients crawl instead of importing a v9 artifact. Dispatch `export-board-snapshots` right
+after the v10 merge, so that v10 artifacts exist before the OTA spreads.
+
 ### Compatible additions and missing columns
 
 Extra incoming columns are expected while server exports and installed apps run different versions.

@@ -210,7 +210,10 @@
     "similarClimbs": {
       "title": "Ähnliche Boulder",
       "empty": "Keine ähnlichen Boulder gefunden",
-      "retry": "Nochmal versuchen"
+      "retry": "Nochmal versuchen",
+      "preparing": "Ähnliche Boulder werden vorbereitet …",
+      "waitingForDownload": "Ähnliche Boulder erscheinen, sobald {{name}} fertig geladen ist.",
+      "downloadToSee": "Lade dieses Board herunter, um ähnliche Boulder zu sehen"
     },
     "community": {
       "moderation": {
